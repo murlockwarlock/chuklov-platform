@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture"
+  short_description: "Preserve modular-monolith boundaries"
+  default_prompt: "Use $architecture to design a requirement-aligned module change."

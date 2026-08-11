@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI Agents"
+  short_description: "Build reviewable provider-neutral AI"
+  default_prompt: "Use $ai-agents to implement this safe AI workflow."

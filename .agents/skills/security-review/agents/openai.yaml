@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Review"
+  short_description: "Review isolation and sensitive data"
+  default_prompt: "Use $security-review to assess this change before completion."

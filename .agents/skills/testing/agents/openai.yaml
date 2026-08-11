@@ -1,0 +1,4 @@
+interface:
+  display_name: "Testing"
+  short_description: "Select and run proportional gates"
+  default_prompt: "Use $testing to design verification for this change."

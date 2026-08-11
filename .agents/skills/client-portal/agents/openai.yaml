@@ -1,0 +1,4 @@
+interface:
+  display_name: "Client Portal"
+  short_description: "Build responsive Inertia portal flows"
+  default_prompt: "Use $client-portal to implement this responsive client flow."

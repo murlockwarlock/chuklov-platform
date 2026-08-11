@@ -1,0 +1,4 @@
+interface:
+  display_name: "Integrations Sync"
+  short_description: "Build idempotent adapter sync"
+  default_prompt: "Use $integrations-sync to design this external synchronization."

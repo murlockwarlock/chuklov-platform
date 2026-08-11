@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.blade.php diff=html
+*.css diff=css
+*.html diff=html
+*.md diff=markdown
+*.php diff=php
+
+CHUKLOV_MASTER_DEVELOPMENT_PLAN_V5_2_FINAL.md -whitespace
+docs/product/source-requirements/** -whitespace
+
+/.github export-ignore
+CHANGELOG.md export-ignore
+.styleci.yml export-ignore

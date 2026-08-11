@@ -1,0 +1,4 @@
+interface:
+  display_name: "Filament CRM"
+  short_description: "Build thin authorized CRM resources"
+  default_prompt: "Use $filament-crm to implement this CRM surface safely."

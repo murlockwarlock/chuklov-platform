@@ -1,0 +1,4 @@
+interface:
+  display_name: "Database Migrations"
+  short_description: "Design safe PostgreSQL migrations"
+  default_prompt: "Use $database-migrations to plan and verify this schema change."

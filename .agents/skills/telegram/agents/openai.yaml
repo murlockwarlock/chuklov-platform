@@ -1,0 +1,4 @@
+interface:
+  display_name: "Telegram"
+  short_description: "Implement safe Nutgram boundaries"
+  default_prompt: "Use $telegram to implement this Telegram adapter behavior."

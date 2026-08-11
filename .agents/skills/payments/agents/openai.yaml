@@ -1,0 +1,4 @@
+interface:
+  display_name: "Payments"
+  short_description: "Protect money and ledger invariants"
+  default_prompt: "Use $payments to implement this pricing or payment change."

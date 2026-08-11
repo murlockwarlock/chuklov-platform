@@ -1,0 +1,4 @@
+interface:
+  display_name: "Channels"
+  short_description: "Design capability-aware channels"
+  default_prompt: "Use $channels to add channel-neutral messaging behavior."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deployment"
+  short_description: "Ship atomic recoverable releases"
+  default_prompt: "Use $deployment to prepare or verify a safe release."

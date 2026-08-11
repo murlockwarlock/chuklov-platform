@@ -1,0 +1,108 @@
+# Normalized Requirements
+
+Status values: `IMPLEMENTED` (verified in code), `ACCEPTED` (approved scope), `OPEN` (blocked by a recorded question), `FUTURE` (not current phase). Provenance values are controlled: `client-v2.2`, `client-changelog`, `owner-confirmed`, `historical-confirmed`, `assumption`, `architecture`.
+
+Private immutable evidence, when available locally, is under the ignored `source-requirements/` directory. Technical suggestions in client/history sources are non-binding unless normalized here as business behavior.
+
+| ID | Status | Phase | Source | Description | Acceptance criteria | Modules |
+|---|---|---:|---|---|---|---|
+| REQ-FOUNDATION-001 | IMPLEMENTED | M0 | architecture | Use a modular monolith with Application/Domain/Infrastructure boundaries. | Entry points remain thin; business behavior is in Application/Domain; no microservice runtime. | All |
+| REQ-FOUNDATION-002 | IMPLEMENTED | M0 | architecture | Use Laravel 13, Filament 5, Vue 3, Inertia, TypeScript, Tailwind, PostgreSQL/pgvector, Redis/Horizon, Laravel AI SDK, and Nutgram. | Exact versions are locked and recorded; app/admin/build boot. | Platform |
+| REQ-FOUNDATION-003 | IMPLEMENTED | M0 | architecture | Provide reproducible local/CI quality tooling. | Lockfiles, Compose, Make targets, CI, lint, static, tests, build, and audits exist. | Platform |
+| REQ-ORG-001 | IMPLEMENTED | M0 | architecture | `organization_id` is the ownership and security boundary; `master_id` is not. | Foundational owned records reference organizations; cross-org test passes. | Organizations |
+| REQ-ORG-002 | IMPLEMENTED | M0 | architecture | Organization context is derived server-side. | Request-provided organization IDs cannot change context. | Organizations, HTTP |
+| REQ-ORG-003 | ACCEPTED | 1 | architecture | Phase 1 runs one organization while remaining multi-organization-ready. | Runtime does not require heavy tenancy; owned configuration/data can be isolated. | Organizations |
+| REQ-ORG-004 | ACCEPTED | 1 | historical-confirmed | Optional modules can be enabled per organization and enforced beyond UI visibility. | Typed organization feature checks operate in Application/Policy layers. | Organizations, Settings |
+| REQ-IDENTITY-001 | ACCEPTED | 1 | architecture | Users, clients, memberships, and external channel identities are distinct. | One client can have multiple channel identities without conflation. | Identity, Clients |
+| REQ-IDENTITY-002 | ACCEPTED | 2 | architecture | Identity linking requires verified evidence. | Similar names never auto-merge; verified phone/email/authenticated linking is audited. | Identity |
+| REQ-PORTAL-001 | IMPLEMENTED | M0 | owner-confirmed | Client Portal supports ordinary responsive desktop/mobile web. | Responsive shell builds and renders outside Telegram. | Client Portal |
+| REQ-PORTAL-002 | IMPLEMENTED | M0 | owner-confirmed | Telegram Mini App is a runtime mode of the same portal. | Telegram detection extension exists without duplicating business logic. | Client Portal |
+| REQ-PORTAL-003 | ACCEPTED | 2 | client-v2.2 | Onboarding is a four-stage wizard for contacts/attribution, clinical profile, service/format, goals/consents. | Versioned form flow validates required fields and preserves progress. | Client Portal, Clients |
+| REQ-PORTAL-004 | ACCEPTED | 2 | historical-confirmed | Progressive profiling prefills known values, asks for confirmation/correction, and requests only missing required fields. | Returning users do not repeat confirmed data. | Client Portal, Clients |
+| REQ-PORTAL-005 | OPEN | 2 | architecture | Ordinary web authentication must not depend on Telegram. | A confirmed phone OTP/email magic-link/assisted-linking flow is implemented. | Identity, Client Portal |
+| REQ-PORTAL-006 | ACCEPTED | 2 | client-v2.2 | Client account exposes visits, finance/debt, AI materials, surveys/Road Map, documents, referrals, and consents as implemented by later milestones. | Authorized client sees only own organization-scoped records. | Client Portal |
+| REQ-CHANNEL-001 | ACCEPTED | 2 | architecture | Channel behavior uses a capability-aware `MessagingChannel` port. | Telegram adapter normalizes inbound/outbound data; core receives no Telegram objects. | Channels |
+| REQ-CHANNEL-002 | IMPLEMENTED | M0 | architecture | Nutgram provides the Phase 1 Telegram adapter foundation. | Package/config/handler routing load without real token in tests. | Channels |
+| REQ-CHANNEL-003 | ACCEPTED | 2 | client-v2.2 | Telegram menu supports RU/EN, portal entry, author, method, B2B, and partner entries. | Menu routes are configurable and localized. | Channels, Content |
+| REQ-CHANNEL-004 | ACCEPTED | 3 | historical-confirmed | Author/method content is CRM-managed, localized, media-capable, ordered, visible, and auditable. | No Chuklov copy is hardcoded in handlers. | Content, CRM |
+| REQ-CHANNEL-005 | FUTURE | 14 | owner-confirmed | MAX and Instagram adapters can be added without rewriting core. | New adapters implement capabilities; actual providers require confirmed scope. | Channels |
+| REQ-CONVERSATION-001 | ACCEPTED | 2 | architecture | Human and AI messages share an organization/client-scoped conversation model. | Provider/channel payloads are normalized and minimally retained. | Conversations, AI |
+| REQ-CLIENT-001 | ACCEPTED | 1 | client-v2.2 | Client profile stores identity/contact, lead source, referral, language, timezone, and consent references. | Fields are classified, authorized, and organization-scoped. | Clients |
+| REQ-CLIENT-002 | ACCEPTED | 7 | client-v2.2 | Medical profile stores necessary anamnesis, complaints/goals, operations/injuries, medicines, and supplements. | Sensitive access is authorized and auditable where required. | Medical Profiles |
+| REQ-CLIENT-003 | ACCEPTED | 3 | historical-confirmed | CRM can block a client from self-service online booking with reason, actor, and history. | Application/policy enforces the block; UI-only hiding is insufficient. | Clients, Scheduling, Audit |
+| REQ-SERVICE-001 | IMPLEMENTED | M0 | architecture | A minimal organization-scoped Service vertical slice proves CRM → Application → DB → Portal. | Create action sets server context; portal shows only active same-org services; tests pass. | Services |
+| REQ-SERVICE-002 | ACCEPTED | 3 | client-v2.2 | Services support RU/EN content, category, duration, buffer, active status, formats, price, and payment policy. | CRM validates configuration; later booking consumes it via Application layer. | Services, Pricing |
+| REQ-PRODUCT-001 | ACCEPTED | 3 | client-v2.2 | Catalog distinguishes services from physical/online products. | Product records do not force warehouse/e-commerce behavior. | Products |
+| REQ-PRODUCT-002 | OPEN | 3 | architecture | Product checkout/quantity/inventory/delivery/refunds/variants require explicit scope. | No unconfirmed commerce behavior is implemented. | Products |
+| REQ-TIMEZONE-001 | ACCEPTED | 4 | client-v2.2 | Store timestamps in UTC and timezones as IANA identifiers. | Client and organization views convert correctly, including DST. | Scheduling |
+| REQ-TIMEZONE-002 | ACCEPTED | 4 | client-v2.2 | Client can auto-detect and override timezone for future travel. | Slot display states selected zone and persists an allowed preference. | Client Portal, Scheduling |
+| REQ-BOOKING-001 | ACCEPTED | 4 | client-v2.2 | Booking supports office, home visit, and online formats. | Each format follows explicit validated transitions and service capabilities. | Bookings |
+| REQ-BOOKING-002 | ACCEPTED | 4 | client-v2.2 | Availability includes duration, buffers, hours, exceptions, unavailable periods, lead time, and conflict protection. | Server transaction/locking prevents double booking; concurrency test passes. | Scheduling |
+| REQ-BOOKING-003 | ACCEPTED | 4 | client-v2.2 | Home visit begins `PENDING_REVIEW`, then admin approval and configured payment/deposit condition. | No slot/payment is assumed before approval; travel/session buffers are configurable. | Bookings, Scheduling |
+| REQ-BOOKING-004 | ACCEPTED | 4 | client-v2.2 | Home-visit approver chooses full payment or fixed transport deposit. | Amount/currency are configuration, never a hardcoded 1,000 THB. | Bookings, Pricing |
+| REQ-BOOKING-005 | ACCEPTED | 4 | historical-confirmed | Location days and group/family size affect home-visit planning. | CRM shows configured location-day capacity and booking party size. | Scheduling |
+| REQ-BOOKING-006 | ACCEPTED | 4 | client-v2.2 | Online visits omit travel buffer and support AUTO or MANUAL meeting links. | Client timezone and service buffer apply. | Bookings |
+| REQ-BOOKING-007 | OPEN | 4 | historical-confirmed | Self-service cancel/reschedule cutoff is configurable; historical initial value is 24 hours. | Confirm cutoff consequences/refund policy before implementation. | Bookings, Settings |
+| REQ-BOOKING-008 | ACCEPTED | 4 | architecture | Booking and payment lifecycle states are separate. | No combined `CONFIRMED_PAID`; transitions are explicit and tested. | Bookings, Payments |
+| REQ-BOOKING-009 | ACCEPTED | 4 | client-v2.2 | Reschedules/cancellations record reason and immutable event history. | CRM shows actor, old/new values, time, and reason. | Bookings, Audit |
+| REQ-NOTIFY-001 | ACCEPTED | 5 | owner-confirmed | Notification/scenario timings are CRM-configured; v2.2 timings are seed data. | No 2h/24h/48h/72h timing is hardcoded in business code. | Scenarios |
+| REQ-NOTIFY-002 | ACCEPTED | 5 | client-v2.2 | Rules define typed trigger, delay/unit, conditions, channel priority/fallback, template/prompt version, and enabled state. | Admin edits safely; executions are auditable. | Scenarios, Notifications |
+| REQ-NOTIFY-003 | ACCEPTED | 5 | architecture | Scheduled actions and deliveries are idempotent. | Retry/scheduler replay cannot duplicate a recipient action. | Scenarios |
+| REQ-NOTIFY-004 | ACCEPTED | 5 | client-v2.2 | Seed post-session follow-ups at +24h, +48h, and conditional +72h. | Values remain editable configuration. | Scenarios |
+| REQ-NOTIFY-005 | ACCEPTED | 5 | historical-confirmed | Abandoned onboarding/test re-engagement is configurable, consent-aware, deduplicated, and stops on completion/opt-out. | Attempts, interval, template/prompt, and stop conditions are editable. | Scenarios, AI |
+| REQ-NOTIFY-006 | ACCEPTED | 5 | client-v2.2 | Retention alert triggers when no next booking exists within a configured window. | Client/master actions are configurable and auditable. | Scenarios, CRM |
+| REQ-BROADCAST-001 | ACCEPTED | 11 | owner-confirmed | Phase 1 includes a CRM-managed Broadcast Engine using the shared Channel/Delivery layer. | Draft, preview/test, schedule/immediate, counts/errors, actor/audit, batching, consent, and idempotency work. | Broadcasts, Channels |
+| REQ-BROADCAST-002 | ACCEPTED | 11 | historical-confirmed | Segments can use tags, B2B role, survey completion/result category, bookings/visits, last visit/no rebooking, referral/source, language, and channel availability. | Segment snapshot is deterministic and organization-scoped. | Broadcasts |
+| REQ-BROADCAST-003 | ACCEPTED | 11 | architecture | Sensitive-health marketing segmentation requires separate privacy/legal approval. | Technical filters do not automatically authorize marketing use. | Broadcasts, Security |
+| REQ-CURRENCY-001 | ACCEPTED | 6 | client-v2.2 | Distinguish base, display, payment, and settlement currencies. | Each financial record names currency roles explicitly. | Pricing |
+| REQ-CURRENCY-002 | ACCEPTED | 6 | client-v2.2 | Organization configures base/allowed currencies, manual rates, rounding, conversion, and force-single-currency. | Fixed service price wins over conversion; unavailable currency is hidden. | Pricing, Settings |
+| REQ-CURRENCY-003 | ACCEPTED | 6 | client-v2.2 | Financial transactions preserve applied exchange-rate and rounding snapshots. | Historical values never recalculate with a new rate. | Pricing, Payments |
+| REQ-PAYMENT-001 | ACCEPTED | 6 | architecture | Money never uses float and always has explicit currency and deterministic precision/rounding. | Value-object unit tests cover precision and rounding. | Pricing, Payments |
+| REQ-PAYMENT-002 | ACCEPTED | 6 | client-v2.2 | Payment ledger is immutable/auditable source of truth; derived balances reconcile to it. | Corrections append events rather than erase history. | Payments |
+| REQ-PAYMENT-003 | ACCEPTED | 6 | client-v2.2 | CRM records manual payments with amount, currency, method, time, note, optional receipt, and actor. | Partial payments update derived status/balance transactionally. | Payments, CRM |
+| REQ-PAYMENT-004 | ACCEPTED | 6 | client-v2.2 | Outstanding completed obligations create receivables visible in CRM and Portal. | Debt totals reconcile to ledger; reminder uses Scenario Engine. | Receivables |
+| REQ-PAYMENT-005 | ACCEPTED | 6 | architecture | Gateway integrations implement `PaymentGateway` with server calculation, webhook verification, idempotency, dedupe, and reconciliation. | Frontend amount/status/redirect is never proof of payment. | Payments |
+| REQ-PAYMENT-006 | OPEN | 13 | architecture | Real payment providers require separately confirmed scope. | Provider, merchant entity, currencies, refunds, and sandbox approval are recorded first. | Payments |
+| REQ-SUBSCRIPTION-001 | ACCEPTED | 12 | client-v2.2 | Phase 1 includes B2C AI Health Tracker subscription product and entitlements. | Tracker schedules use Scenario Engine and access follows entitlement. | Subscriptions, Scenarios |
+| REQ-SUBSCRIPTION-002 | OPEN | 12 | architecture | Billing renewal, auto-renew, cancel, failure, grace, and entitlement-end rules require confirmation. | No lifecycle behavior is guessed. | Subscriptions, Payments |
+| REQ-SURVEY-001 | ACCEPTED | 8 | client-v2.2 | Configurable versioned survey engine supports sections, field types, conditions, scoring, thresholds, and tags. | Completed attempts retain immutable definition/result snapshots. | Surveys |
+| REQ-SURVEY-002 | ACCEPTED | 8 | client-v2.2 | Initial definitions include author screening “9 systems” and MSQ, with future tests configurable. | Tests can be added/edited without engine rewrite. | Surveys |
+| REQ-SURVEY-003 | ACCEPTED | 8 | client-v2.2 | Required test completion triggers report/Road Map workflow and optional master notification. | Workflow references the attempt/version and remains retry-safe. | Surveys, AI |
+| REQ-SURVEY-004 | ACCEPTED | 8 | historical-confirmed | Comparable repeat-test metrics can emit configurable `TEST_STAGNATION_DETECTED`. | Version compatibility is checked; tone/content is configured, not hardcoded. | Surveys, Scenarios |
+| REQ-FEEDBACK-001 | ACCEPTED | 5 | client-changelog | NPS score 8–10 offers configured external review links; 1–7 collects internal feedback. | Threshold and links are CRM-configured; event is audited. | Feedback, Scenarios |
+| REQ-MEDICAL-001 | ACCEPTED | 7 | client-v2.2 | Session cockpit captures anamnesis, pain, tests, observations, root-cause hypothesis, protocol/result, files, and dynamics. | AI suggestions remain distinct from specialist-confirmed facts. | Sessions, Medical Profiles |
+| REQ-ATTACHMENT-001 | ACCEPTED | 7 | architecture | Attachments are private, UUID-named, MIME-sniffed, allowlisted, size-limited, authorized, and retention-aware. | No public direct path; signed/temporary access and scan extension point exist. | Attachments |
+| REQ-ATTACHMENT-002 | ACCEPTED | 7 | client-changelog | Process text/PDF/image medical conclusions and posture photos; raw DICOM is excluded. | Upload validation rejects unsupported raw DICOM workflows. | Attachments, AI |
+| REQ-AI-001 | IMPLEMENTED | M0 | architecture | Laravel AI SDK has a deterministic fake path; tests/CI make no paid external call. | Fake assertion test passes without provider key. | AI |
+| REQ-AI-002 | ACCEPTED | 10 | architecture | AI belongs to organization configuration, not a bot, and providers/models are replaceable. | Agent config stores provider/model/prompt version/scopes; no hardcoded paid model. | AI |
+| REQ-AI-003 | ACCEPTED | 10 | client-v2.2 | Document parser extracts structured facts from text/scans/PDF conclusions without asserting its own diagnosis. | Output schema, source refs, safety status, and review path exist. | AI |
+| REQ-AI-004 | ACCEPTED | 10 | client-v2.2 | Posture component records structured visual observations from three photos without claiming measured biomechanics. | Observations are qualified and reviewable. | AI |
+| REQ-AI-005 | ACCEPTED | 10 | client-v2.2 | Synthesizer combines permitted client, survey, session, document, posture, and RAG context for master-facing drafts. | Structured risk/questions/focus output is traceable and reviewable. | AI |
+| REQ-AI-006 | ACCEPTED | 10 | client-v2.2 | AI Companion supports client dialog using organization tone and permitted knowledge. | It remains channel-independent and tool-limited. | AI, Conversations |
+| REQ-AI-007 | ACCEPTED | 10 | architecture | Prompts are versioned and AI runs record provider/model/prompt/knowledge/input refs/status/output/usage/error. | Production prompt is never overwritten in place; secrets are excluded. | AI, Audit |
+| REQ-RAG-001 | ACCEPTED | 9 | architecture | Organization-scoped KB uses PostgreSQL/pgvector behind `KnowledgeRetriever`. | Cross-org retrieval test passes; backend can be replaced through the port. | Knowledge Base |
+| REQ-RAG-002 | ACCEPTED | 9 | architecture | Ingestion validates, extracts, normalizes, checksums/dedupes, versions, chunks, embeds, and records status/errors. | Retry-safe versioned runs and chunk/source references exist. | Knowledge Base |
+| REQ-RAG-003 | ACCEPTED | 9 | architecture | KB scopes restrict client/internal/marketing/training/method content per agent. | Agent cannot retrieve unauthorized scopes. | Knowledge Base, AI |
+| REQ-RAG-004 | ACCEPTED | 9 | architecture | Retrieved content is untrusted and cannot override prompts, permissions, tools, or reveal secrets. | Injection/security tests cover malicious documents. | RAG, Security |
+| REQ-ATTRIBUTION-001 | ACCEPTED | 11 | client-v2.2 | Capture deep-link referral/source and UTM; ask source only when no automatic attribution exists. | Automatic source hides the redundant question; first-touch is not silently overwritten. | Attribution |
+| REQ-REFERRAL-001 | ACCEPTED | 11 | client-v2.2 | Clients receive unique referral links and can see tracked registration/paid conversion bonus balance. | Bonus is a transaction ledger with redemption history. | Referrals |
+| REQ-CRM-001 | ACCEPTED | 3 | client-v2.2 | Filament CRM provides organization-authorized management surfaces and responsive practitioner use. | Resources call Application layer and scope every query. | CRM |
+| REQ-CRM-002 | ACCEPTED | 11 | client-v2.2 | Dashboard reports clients, sources, bookings, cancellations/reschedules, base-currency revenue, average receipt, LTV, debt, visits, home requests, AI/ingestion failures, and retention. | Period filters and metrics reconcile to source records. | CRM, Analytics |
+| REQ-SYNC-001 | FUTURE | 2 | owner-confirmed | External systems integrate through adapters and reliable idempotent Inbox/Outbox. | Providers never mutate internal tables directly. | Integrations, Sync |
+| REQ-SYNC-002 | FUTURE | 2 | architecture | Calendar two-way sync requires authority/conflict/timezone/recurrence/replay ADR before implementation. | No calendar integration is built before policy acceptance. | Integrations |
+| REQ-SEC-001 | IMPLEMENTED | M0 | architecture | No secrets or customer data are committed; private storage and secure environment defaults are used. | Secret scan/review and configuration checks pass. | Security |
+| REQ-SEC-002 | ACCEPTED | 1 | client-v2.2 | Legal consents capture version, timestamp, subject, and evidence for offer/privacy/medical disclaimer and optional marketing. | Required and optional consents remain distinct and auditable. | Consents |
+| REQ-SEC-003 | ACCEPTED | 1 | architecture | Policies/RBAC/ownership prevent IDOR and cross-organization/client access. | Security test suite covers forged IDs and roles. | Security |
+| REQ-SEC-004 | ACCEPTED | 2 | architecture | Telegram Mini App authentication verifies initData server-side with freshness/replay controls. | Forged/stale initData is rejected. | Identity, Channels |
+| REQ-SEC-005 | ACCEPTED | 1 | architecture | Logs redact secrets, authentication data, payment data, and sensitive medical content. | Tests verify redaction and safe metadata-only logging. | Observability |
+| REQ-SEC-006 | ACCEPTED | 1 | architecture | Sensitive data is classified and integration credentials use framework encryption with rotation/audit. | Root key stays outside DB; decrypted values are never echoed. | Security, Integrations |
+| REQ-PHASE2-001 | FUTURE | 2 | client-v2.2 | SaaS runtime, tenant onboarding, white-label, tenant billing, quotas, and expanded RBAC are Phase 2. | Phase 1 extension points do not implement self-service SaaS. | Platform |
+| REQ-PHASE3-001 | FUTURE | 3 | client-v2.2 | Marketplace/catalog/rating/certification/mobile-app scope requires separate discovery. | No marketplace behavior is implemented from high-level concepts alone. | Marketplace |
+
+## Open Requirement Links
+
+- REQ-PORTAL-005 → OQ-001
+- REQ-BOOKING-007 → OQ-002
+- REQ-PRODUCT-002 → OQ-003
+- REQ-SUBSCRIPTION-002 → OQ-004
+- REQ-PAYMENT-006 → OQ-005

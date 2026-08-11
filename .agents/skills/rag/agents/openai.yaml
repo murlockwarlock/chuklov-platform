@@ -1,0 +1,4 @@
+interface:
+  display_name: "RAG"
+  short_description: "Build organization-scoped retrieval"
+  default_prompt: "Use $rag to implement this ingestion or retrieval change."

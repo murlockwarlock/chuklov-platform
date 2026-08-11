@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scheduling"
+  short_description: "Protect booking and timezone rules"
+  default_prompt: "Use $scheduling to implement this booking or availability change."

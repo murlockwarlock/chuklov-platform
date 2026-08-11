@@ -1,0 +1,99 @@
+name: chuklov
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: /bin/sh -c "cd /app/public && exec php -S 0.0.0.0:8000 /app/vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php"
+    env_file: .env
+    environment:
+      APP_URL: http://localhost:8000
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  horizon:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: php artisan horizon
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    command: php artisan schedule:work
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      REDIS_HOST: redis
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  node:
+    image: node:24.6.0-alpine
+    command: npm run dev -- --host 0.0.0.0
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"
+
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg18-trixie
+    environment:
+      POSTGRES_DB: chuklov
+      POSTGRES_USER: chuklov
+      POSTGRES_PASSWORD: chuklov_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./docker/postgres/init-test-database.sql:/docker-entrypoint-initdb.d/10-test-database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chuklov -d chuklov"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.2.2-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:
+  redis_data:

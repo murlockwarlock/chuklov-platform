@@ -1,0 +1,23 @@
+# Architecture Decision Records
+
+ADRs record architecture rationale only. Requirement changes and implementation changes belong elsewhere.
+
+| ADR | Decision | Status |
+|---|---|---|
+| 001 | Modular monolith | Accepted |
+| 002 | Organization tenancy boundary | Accepted |
+| 003 | Responsive Inertia Client Portal | Accepted |
+| 004 | Capability-aware channel adapters | Accepted |
+| 005 | Verified identity linking | Accepted |
+| 006 | PostgreSQL and pgvector | Accepted |
+| 007 | RAG retrieval boundary | Accepted |
+| 008 | AI provider/workflow architecture | Accepted |
+| 009 | Configurable scenario engine | Accepted |
+| 010 | Payment ledger and pricing snapshots | Accepted |
+| 011 | Private storage abstraction | Accepted |
+| 012 | Integration Inbox/Outbox | Accepted |
+| 013 | Authentication approach | Proposed |
+| 014 | Atomic deployment | Accepted |
+| 015 | Security and data protection | Accepted |
+
+Use `000-template.md` for new significant decisions.
