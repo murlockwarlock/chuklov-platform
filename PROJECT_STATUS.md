@@ -11,10 +11,10 @@
 - M0-AUDIT-M01 through M06 remediated: expanded CI, Filament tenant/workflow coverage, fake-only Nutgram handler evidence, guarded User privilege fields, local unreachable-object pruning, and privacy-policy correction.
 - Safe LOW cleanup completed: skill link/size cleanup, port alignment, demo/redundant scaffold removal, and Horizon snapshot scheduling.
 - Local quality, integration, Playwright, privacy/secret, Docker build, runtime health, and Horizon gates pass.
+- Fresh clone of remediation commit `233ffcc7604a08638d05195333a5c0f1e13b1f1b` completed isolated setup, migrations/seed/build, key idempotence, integration tests, dependency health, and Horizon runtime checks.
 
 ## In Progress
 
-- Fresh-clone bootstrap/integration verification for the remediated commit.
 - Hosted GitHub Actions verification for the exact pushed remediation revision.
 
 ## Next
@@ -23,7 +23,7 @@
 
 ## Blockers / Open Questions
 
-No product or architecture question blocks remediation. M0 remains `IN_PROGRESS` until fresh-clone and hosted evidence are recorded.
+No product or architecture question blocks remediation. M0 remains `IN_PROGRESS` until hosted evidence is recorded.
 
 ## Important Decisions
 
