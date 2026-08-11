@@ -14,7 +14,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 ### Changed
 
 - Composer package metadata identifies the private client project as proprietary.
-- Hosted CI now separates quality/integration, Playwright desktop/mobile, privacy/secret scanning, and Docker runtime health/Horizon gates.
+- Hosted CI now separates quality/integration, Playwright desktop Chromium/mobile WebKit, privacy/secret scanning, and Docker runtime health/Horizon gates.
 - Oversized AI SDK and Inertia skills now route to version-aware Boost documentation instead of embedding package manuals.
 - Setup preserves an existing `APP_KEY`; host/Compose URL documentation consistently uses port 8000.
 
