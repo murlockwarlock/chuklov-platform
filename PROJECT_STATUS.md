@@ -2,37 +2,36 @@
 
 - Last updated: 2026-08-12
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 0 — Repository Foundation
-- Status: DONE
+- Current milestone: Milestone 0 — Repository Foundation remediation
+- Status: IN_PROGRESS
 
-## Completed
+## Completed Locally
 
-- Authoritative sources audited and preserved unchanged.
-- Laravel 13 application and locked backend/frontend stack installed.
-- Filament, responsive Vue/Inertia portal, Telegram Mini App runtime extension point, Nutgram, Horizon, AI SDK fake path, PostgreSQL/pgvector, Redis, Docker, and CI configured.
-- Server-derived Organization context and organization-scoped Service proof slice implemented with security tests.
-- Harness, normalized requirements, architecture records, dependency matrix, roadmap, and focused skills created.
-- Docker application image, PostgreSQL/pgvector, Redis, Horizon, scheduler, health endpoint, portal, and Filament login verified running.
+- M0-AUDIT-H01/H02 remediated with a deny-by-default Docker context, deterministic privacy regression, and repeat-safe `APP_KEY` initialization.
+- M0-AUDIT-M01 through M06 remediated: expanded CI, Filament tenant/workflow coverage, fake-only Nutgram handler evidence, guarded User privilege fields, local unreachable-object pruning, and privacy-policy correction.
+- Safe LOW cleanup completed: skill link/size cleanup, port alignment, demo/redundant scaffold removal, and Horizon snapshot scheduling.
+- Local quality, integration, Playwright, privacy/secret, Docker build, runtime health, and Horizon gates pass.
 
 ## In Progress
 
-None. Milestone 0 is complete.
+- Fresh-clone bootstrap/integration verification for the remediated commit.
+- Hosted GitHub Actions verification for the exact pushed remediation revision.
 
 ## Next
 
-- Begin Milestone 1 Organizations / Identity / Settings / Security with an implementation plan scoped to its REQ groups.
+- Complete independent M0 re-audit after hosted verification. Do not begin Milestone 1 in this session.
 
 ## Blockers / Open Questions
 
-No Milestone 0 blocker. Product questions deferred to their dependent milestones are listed in `docs/product/open-questions.md`.
+No product or architecture question blocks remediation. M0 remains `IN_PROGRESS` until fresh-clone and hosted evidence are recorded.
 
 ## Important Decisions
 
-- Modular monolith; organization is the tenant boundary.
-- PostgreSQL/pgvector and Redis are local Compose dependencies; private local storage is Phase 1 default.
-- Development and integration data use separate `chuklov` and `chuklov_test` databases.
-- npm is the sole JavaScript package manager. External AI calls are forbidden in normal tests/CI.
+- Docker build context is deny-by-default; only reviewed runtime Dockerfiles are allowed.
+- Routine setup never rotates a nonblank `APP_KEY`; deliberate rotation is a separate authorized operation.
+- M0 hosted CI separates quality/integration, Playwright, privacy/secret, and Docker runtime gates for diagnosability.
+- Client source documents and full chat history remain local-only; normalized REQs and sanitized repository docs are the Git development source.
 
-## Latest Verified Quality Gate
+## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. `make ci` passed: 2 unit tests/2 assertions, 6 feature tests/39 assertions, 3 PostgreSQL/pgvector/Redis/queue/health integration tests/6 assertions, Pint, Larastan level 8 with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Playwright desktop/mobile portal smoke passed 2/2 separately. Container build and runtime smoke passed; Horizon reported running.
+2026-08-12: `composer validate --strict` passed. `make ci` passed: 2 unit tests/2 assertions, 12 feature tests/70 assertions, 3 integration tests/6 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Playwright desktop/mobile passed 2/2. Docker context regression and Gitleaks history/working-tree scans passed. App/Horizon/scheduler images built with a 1.053 kB context; dependency health was all true and Horizon reported running.

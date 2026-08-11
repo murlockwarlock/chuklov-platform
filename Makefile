@@ -1,13 +1,13 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality ci migrate seed backup deploy rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy rollback
 
 setup:
 	test -f .env || cp .env.example .env
 	$(COMPOSE) up -d postgres redis
 	$(COMPOSE) run --rm app composer install --no-interaction --prefer-dist
-	$(COMPOSE) run --rm app php artisan key:generate --no-interaction
+	scripts/initialize-app-key.sh $(COMPOSE) run --rm app php artisan key:generate --no-interaction
 	$(COMPOSE) run --rm node npm ci
 	$(COMPOSE) run --rm app php artisan migrate --seed --force
 	$(COMPOSE) run --rm node npm run build
@@ -54,6 +54,17 @@ quality: test lint static
 	npm audit --audit-level=high
 
 ci: infra-wait quality test-integration
+
+check-app-key:
+	scripts/check-app-key-idempotence.sh
+
+check-docker-context:
+	scripts/check-docker-context.sh
+
+scan-secrets:
+	scripts/scan-secrets.sh
+
+privacy: check-docker-context scan-secrets
 
 migrate:
 	$(PHP) artisan migrate

@@ -15,6 +15,8 @@ make setup
 make up
 ```
 
+`make setup` is safely repeatable and preserves an existing `APP_KEY`.
+
 Portal: `http://localhost:8000`. CRM: `http://localhost:8000/admin`. Health: `http://localhost:8000/health`.
 
 Compose initializes `chuklov` for development and an isolated `chuklov_test` database for integration tests.
@@ -30,6 +32,7 @@ make static
 make quality
 make ci
 make test-e2e
+make privacy
 ```
 
 See `AGENTS.md` for contribution rules and `docs/index.md` for context routing.

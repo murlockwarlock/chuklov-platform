@@ -1,6 +1,7 @@
-.git
-.env
-node_modules
-public/build
-storage/logs
-vendor
+# The PHP image contains runtime tooling only. Deny the entire working tree by
+# default so private/local material cannot reach local or remote builders.
+**
+!docker/
+!docker/php/
+!docker/php/Dockerfile
+!docker/context-check.Dockerfile

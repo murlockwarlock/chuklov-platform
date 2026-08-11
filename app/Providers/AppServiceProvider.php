@@ -11,6 +11,4 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(OrganizationContext::class);
     }
-
-    public function boot(): void {}
 }

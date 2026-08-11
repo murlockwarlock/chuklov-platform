@@ -5,7 +5,7 @@ description: Implement external system adapters and reliable synchronization. Us
 
 # Integrations and Synchronization
 
-1. Confirm the milestone and load affected integration requirements plus `docs/architecture/integrations.md`.
+1. Confirm the milestone and load affected integration requirements plus `docs/architecture/integrations-sync.md`.
 2. Keep vendor SDKs and payloads in Infrastructure adapters behind an explicit port.
 3. Define ownership, direction, mapping, cursor, conflict, retry, and deletion semantics before coding sync loops.
 4. Preserve organization scope and validate external identifiers against the resolved organization.

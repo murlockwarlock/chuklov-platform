@@ -4,7 +4,7 @@ Statuses are objective: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`. Complet
 
 | Milestone | Business outcome | Technical outcome | Status | Exit criteria | Dependencies | REQ groups |
 |---|---|---|---|---|---|---|
-| M0 Repository Foundation | A demonstrable, supportable project foundation | Locked stack, harness, Compose/CI, Organization context, CRM→Service→Portal slice | DONE | All M0 definition-of-done items and `make ci` pass; status docs updated | Authoritative sources | FOUNDATION, ORG, PORTAL, CHANNEL, SERVICE, AI, SEC |
+| M0 Repository Foundation | A demonstrable, supportable project foundation | Locked stack, harness, Compose/CI, Organization context, CRM→Service→Portal slice | IN_PROGRESS | All M0 definition-of-done items and `make ci` pass; status docs updated | Authoritative sources | FOUNDATION, ORG, PORTAL, CHANNEL, SERVICE, AI, SEC |
 | M1 Organizations / Identity / Settings / Security | Safe staff/client ownership foundation | Memberships, clients/identities, RBAC, settings, encryption, audit | NOT_STARTED | Cross-organization access is impossible across implemented entities | M0 | ORG, IDENTITY, CLIENT, SEC |
 | M2 Client Portal + Telegram | Same client journey on web and Telegram | Web auth, initData verification, onboarding/progressive profiling, webhook shell | NOT_STARTED | Same client data is consistent in responsive web, Mini App, and CRM | M1, OQ-001 | PORTAL, CHANNEL, IDENTITY |
 | M3 CRM Core / Services / Specialists | Owner manages core catalog and practice settings | Full Service/catalog settings, specialists, content, branding | NOT_STARTED | Authorized CRM configuration drives portal behavior | M1–M2 | CRM, SERVICE, PRODUCT, CHANNEL |
