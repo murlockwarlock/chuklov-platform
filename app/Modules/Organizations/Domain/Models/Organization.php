@@ -2,6 +2,8 @@
 
 namespace App\Modules\Organizations\Domain\Models;
 
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -30,6 +32,18 @@ class Organization extends Model
     public function featureFlags(): HasMany
     {
         return $this->hasMany(OrganizationFeatureFlag::class);
+    }
+
+    public function defaultTimezone(): string
+    {
+        $configured = $this->settings()
+            ->where('setting_key', OrganizationSettingKey::DefaultTimezone->value)
+            ->first();
+        $timezone = $configured === null
+            ? $this->timezone
+            : ($configured->string_value ?? $this->timezone);
+
+        return IanaTimezone::from($timezone)->value;
     }
 
     protected static function newFactory(): OrganizationFactory

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, reactive } from 'vue';
+import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type Stage = 'contacts' | 'profile' | 'service' | 'goals';
 
@@ -20,6 +21,17 @@ type Service = {
     summary: string;
 };
 
+type LegalDocument = {
+    id: number;
+    documentType: string;
+    purpose: string;
+    locale: string;
+    version: string;
+    content: string;
+    isRequired: boolean;
+    publishedAt: string | null;
+};
+
 type OnboardingForm = {
     full_name: string;
     email: string;
@@ -29,6 +41,7 @@ type OnboardingForm = {
     lead_source: string;
     referral_code: string;
     confirmed_fields: string[];
+    consents: { legal_document_id: number; granted: boolean }[];
 };
 
 const props = defineProps<{
@@ -38,7 +51,10 @@ const props = defineProps<{
     profile: Profile;
     knownFields: string[];
     missingFields: string[];
+    verifiedFields: string[];
+    completed: boolean;
     blockedStages: Stage[];
+    legalDocuments: LegalDocument[];
     services: Service[];
 }>();
 
@@ -58,10 +74,14 @@ const form = useForm<OnboardingForm>({
     lead_source: props.profile.lead_source ?? '',
     referral_code: props.profile.referral_code ?? '',
     confirmed_fields: [...props.knownFields],
+    consents: [],
 });
 
+const consentState = reactive(Object.fromEntries(
+    props.legalDocuments.map((document) => [document.id, false]),
+) as Record<number, boolean>);
+
 const currentStageIndex = computed(() => props.stages.indexOf(props.currentStage));
-const isBlocked = computed(() => props.blockedStages.includes(props.currentStage));
 
 function fieldError(field: keyof OnboardingForm): string | undefined {
     return form.errors[field];
@@ -72,10 +92,19 @@ function generalError(field: string): string | undefined {
 }
 
 function submitStage(): void {
+    if (props.currentStage === 'goals') {
+        form.consents = props.legalDocuments.map((document) => ({
+            legal_document_id: document.id,
+            granted: consentState[document.id] ?? false,
+        }));
+    }
+
     form.transform((data) =>
         props.currentStage === 'contacts'
             ? data
-            : { confirmed_fields: [] },
+            : props.currentStage === 'goals'
+                ? { consents: data.consents }
+                : { confirmed_fields: [] },
     ).post(`/portal/onboarding/${props.currentStage}`, {
         preserveScroll: true,
     });
@@ -180,7 +209,11 @@ function submitStage(): void {
             >
               {{ field.replace('_', ' ') }}
               <span
-                v-if="props.missingFields.includes(field)"
+                v-if="field === 'email' && props.verifiedFields.includes('email')"
+                class="portal-muted"
+              >(verified)</span>
+              <span
+                v-else-if="props.missingFields.includes(field)"
                 class="portal-muted"
               >(optional)</span>
             </label>
@@ -188,6 +221,7 @@ function submitStage(): void {
               :id="field"
               v-model="form[field as keyof OnboardingForm]"
               :type="field === 'email' ? 'email' : 'text'"
+              :disabled="field === 'email' && props.verifiedFields.includes('email')"
               :autocomplete="field === 'email' ? 'email' : field === 'phone' ? 'tel' : undefined"
               class="portal-input"
             >
@@ -306,23 +340,84 @@ function submitStage(): void {
           v-else
           class="portal-stack"
         >
-          <p class="portal-copy">
-            Goals and consent collection will appear after the approved legal and product configuration is available.
-          </p>
-          <p
-            v-if="isBlocked"
-            class="portal-notice portal-notice--warning"
+          <div
+            v-if="props.completed"
+            class="portal-notice"
             role="status"
           >
-            This step is blocked by the current open question about consent text, lawful basis, retention, and versions (OQ-006).
-          </p>
-          <p
-            v-if="generalError('goals')"
-            class="portal-error"
-            role="alert"
+            Your M2 onboarding is complete. You can return to the portal whenever you need to review your account.
+          </div>
+          <form
+            v-else
+            class="portal-stack"
+            @submit.prevent="submitStage"
           >
-            {{ generalError('goals') }}
-          </p>
+            <p class="portal-copy">
+              Review the current organization legal documents before completing this foundation flow. Their wording and versions are supplied by configuration.
+            </p>
+            <div
+              v-if="props.legalDocuments.length"
+              class="portal-stack portal-stack--tight"
+            >
+              <article
+                v-for="document in props.legalDocuments"
+                :key="document.id"
+                class="portal-service-card"
+              >
+                <div class="portal-stack portal-stack--tight">
+                  <div>
+                    <h3 class="portal-heading portal-heading--card">
+                      {{ document.purpose }}
+                    </h3>
+                    <p class="portal-copy portal-copy--small">
+                      {{ document.documentType }} · {{ document.version }} · {{ document.locale }}
+                    </p>
+                    <p
+                      v-if="document.publishedAt"
+                      class="portal-copy portal-copy--small"
+                    >
+                      Published
+                      <PortalDateTime
+                        :value="document.publishedAt"
+                        :time-zone="props.profile.timezone ?? 'UTC'"
+                      />
+                    </p>
+                  </div>
+                  <div class="portal-legal-content">
+                    {{ document.content }}
+                  </div>
+                  <label class="portal-confirm">
+                    <input
+                      v-model="consentState[document.id]"
+                      type="checkbox"
+                      class="portal-checkbox"
+                    >
+                    <span>{{ document.isRequired ? 'I accept this required document.' : 'I accept this document.' }}</span>
+                  </label>
+                </div>
+              </article>
+            </div>
+            <p
+              v-else
+              class="portal-empty"
+            >
+              No legal documents are currently configured for this organization.
+            </p>
+            <p
+              v-if="generalError('consents')"
+              class="portal-error"
+              role="alert"
+            >
+              {{ generalError('consents') }}
+            </p>
+            <button
+              type="submit"
+              :disabled="form.processing"
+              class="portal-button portal-button--primary self-start"
+            >
+              {{ form.processing ? 'Saving…' : 'Complete onboarding' }}
+            </button>
+          </form>
         </div>
       </section>
     </section>

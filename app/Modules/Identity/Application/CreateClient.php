@@ -9,6 +9,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -56,9 +57,7 @@ class CreateClient
             throw new InvalidArgumentException('The client language is invalid.');
         }
 
-        if (! in_array($timezone, timezone_identifiers_list(), true)) {
-            throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
-        }
+        $timezone = IanaTimezone::from($timezone)->value;
 
         return DB::transaction(function () use (
             $organization,

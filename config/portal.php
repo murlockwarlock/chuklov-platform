@@ -1,11 +1,20 @@
 <?php
 
 return [
+    'email_auth' => [
+        'code_ttl' => (int) env('CLIENT_EMAIL_AUTH_CODE_TTL', 600),
+        'max_attempts' => (int) env('CLIENT_EMAIL_AUTH_MAX_ATTEMPTS', 5),
+        'request_limit' => (int) env('CLIENT_EMAIL_AUTH_REQUEST_LIMIT', 5),
+        'request_decay' => (int) env('CLIENT_EMAIL_AUTH_REQUEST_DECAY', 900),
+    ],
+
     'onboarding' => [
         'version' => env('CLIENT_ONBOARDING_VERSION', 'm2-v1'),
     ],
 
     'telegram' => [
+        'bot_username' => env('TELEGRAM_BOT_USERNAME'),
+        'link_ttl' => (int) env('TELEGRAM_CLIENT_LINK_TTL', 600),
         'portal_url' => env('CLIENT_PORTAL_URL'),
         'greeting' => [
             'en' => 'Choose an entry point.',

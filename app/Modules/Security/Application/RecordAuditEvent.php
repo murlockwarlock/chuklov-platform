@@ -19,6 +19,8 @@ class RecordAuditEvent
         'client.channel_identity.registered' => ['channel', 'verification_status'],
         'client.channel_identity.verified' => ['channel', 'verification_method'],
         'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],
+        'legal.document.published' => ['document_type', 'version', 'locale', 'management_mode'],
+        'legal.document.draft.updated' => ['document_type', 'version', 'locale'],
     ];
 
     /** @param array<array-key, mixed> $metadata */

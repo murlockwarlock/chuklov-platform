@@ -4,9 +4,12 @@ namespace Tests\Feature;
 
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
+use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
+use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
@@ -191,6 +194,45 @@ class MilestoneTwoPortalTest extends TestCase
         self::assertSame('profile', ClientOnboarding::query()->where('client_id', $client->id)->sole()->current_stage->value);
 
         unset($identity);
+    }
+
+    public function test_onboarding_records_consent_against_the_presented_published_version(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $document = app(PublishLegalDocument::class)->handle(app(CreatePlatformLegalDocumentDraft::class)->handle(
+            organization: $organization,
+            documentType: 'privacy',
+            purpose: 'privacy_consent',
+            locale: 'en',
+            version: '2026-08-12-v1',
+            content: 'Configured privacy text.',
+            isRequired: true,
+        ));
+        $this->withSession(['client_portal.client_id' => $client->id]);
+
+        $this->post(route('portal.onboarding.update', ['stage' => 'contacts']), [
+            'full_name' => $client->full_name,
+            'email' => $client->email,
+            'phone' => $client->phone,
+            'language' => $client->language,
+            'timezone' => $client->timezone,
+            'confirmed_fields' => ['full_name', 'email', 'phone', 'language', 'timezone'],
+        ])->assertRedirect();
+        $this->post(route('portal.onboarding.update', ['stage' => 'profile']))->assertRedirect();
+        $this->post(route('portal.onboarding.update', ['stage' => 'service']))->assertRedirect();
+        $this->post(route('portal.onboarding.update', ['stage' => 'goals']), [
+            'consents' => [[
+                'legal_document_id' => $document->id,
+                'granted' => true,
+            ]],
+        ])->assertRedirect(route('portal.onboarding'));
+
+        $consent = ClientConsent::query()->sole();
+        self::assertSame($document->id, $consent->legal_document_id);
+        self::assertSame($document->version, $consent->version);
+        self::assertNotNull($consent->legalDocument);
+        self::assertNotNull(ClientOnboarding::query()->where('client_id', $client->id)->whereNotNull('completed_at')->first());
     }
 
     public function test_portal_and_conversation_security_state_is_not_mass_assignable(): void

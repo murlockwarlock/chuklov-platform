@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
+use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
@@ -29,6 +31,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
+        $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
     }
 
     public function boot(): void

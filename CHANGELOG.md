@@ -14,6 +14,9 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Milestone 1 remediation for PostgreSQL Filament context regression, expand/contract membership migration safety, atomic audited mutations, action-allowlisted audit metadata, service-catalog entitlement enforcement, complete authentication-header log redaction, and privileged-state mass-assignment hardening.
 - Milestone 2 shared responsive Client Portal foundation, versioned progressive onboarding, server-verified Telegram Mini App sessions, organization-scoped verified channel identity linking, localized Telegram bot entry, capability-aware channel boundary, and normalized conversation/message persistence.
 - M2 Client Portal visual foundation with centralized warm-neutral/sage tokens, responsive layout primitives, premium wellness surfaces, accessible controls, buttons, notices, stages, and form states shared by portal pages.
+- M2 passwordless email authentication with normalized hashed one-time codes, expiry, bounded attempts/rate limits, provider-neutral mail delivery, and Laravel session regeneration.
+- M2 Telegram connection tokens with authentic Nutgram bot evidence, replay/expiry protection, organization/client binding, and deterministic identity uniqueness.
+- M2 organization-scoped versioned legal documents, immutable published content, exact-version consent evidence, platform-controlled legal-management readiness, and centralized IANA date/time conventions with PostgreSQL timezone-aware instants.
 
 ### Changed
 
@@ -27,3 +30,4 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Organization isolation tests, admin access foundation, private filesystem configuration, safe AI fakes, and dependency audit gates.
 - Docker build context is deny-by-default, Gitleaks scans reachable history and Git-relevant working files, privileged User fields are not mass assignable, and private source-history policy is explicit in the master plan.
 - Telegram initData is signature-verified through Nutgram, freshness/replay checked, never trusted from frontend identity fields, and excluded from audit metadata; client sessions resolve only through the server-derived organization context.
+- Email auth codes and Telegram connection tokens are short-lived, single-use or bounded, hashed at rest where applicable, absent from audit metadata, and do not select organization/client context from request input.

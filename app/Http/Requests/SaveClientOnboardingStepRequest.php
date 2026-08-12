@@ -28,6 +28,10 @@ class SaveClientOnboardingStepRequest extends FormRequest
                 'string',
                 'in:full_name,email,phone,language,timezone,lead_source,referral_code',
             ],
+            'consents' => ['sometimes', 'array'],
+            'consents.*' => ['required', 'array:legal_document_id,granted'],
+            'consents.*.legal_document_id' => ['required', 'integer', 'min:1'],
+            'consents.*.granted' => ['required', 'boolean'],
         ];
     }
 }

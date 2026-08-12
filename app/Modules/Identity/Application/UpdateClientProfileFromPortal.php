@@ -2,10 +2,13 @@
 
 namespace App\Modules\Identity\Application;
 
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\ValueObjects\NormalizedEmail;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +50,14 @@ class UpdateClientProfileFromPortal
 
         $confirmedFields = array_values(array_intersect($confirmedFields, self::FIELDS));
         $normalized = $this->normalize($attributes);
+
+        if (array_key_exists('email', $normalized)
+            && $this->hasVerifiedEmailIdentity($client)
+            && $normalized['email'] !== $client->email) {
+            throw ValidationException::withMessages([
+                'email' => 'A verified email can only be changed through a new verification flow.',
+            ]);
+        }
 
         foreach ($normalized as $field => $value) {
             $current = $client->getAttribute($field);
@@ -126,8 +137,12 @@ class UpdateClientProfileFromPortal
                 throw new InvalidArgumentException('The client name is invalid.');
             }
 
-            if ($field === 'email' && $value !== null && (filter_var($value, FILTER_VALIDATE_EMAIL) === false || mb_strlen($value) > 320)) {
-                throw new InvalidArgumentException('The client email is invalid.');
+            if ($field === 'email' && $value !== null) {
+                try {
+                    $value = NormalizedEmail::from($value)->value;
+                } catch (InvalidArgumentException) {
+                    throw new InvalidArgumentException('The client email is invalid.');
+                }
             }
 
             if ($field === 'phone' && $value !== null && mb_strlen($value) > 32) {
@@ -138,8 +153,12 @@ class UpdateClientProfileFromPortal
                 throw new InvalidArgumentException('The client language is invalid.');
             }
 
-            if ($field === 'timezone' && $value !== null && ! in_array($value, timezone_identifiers_list(), true)) {
-                throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
+            if ($field === 'timezone' && $value !== null) {
+                try {
+                    $value = IanaTimezone::from($value)->value;
+                } catch (InvalidArgumentException) {
+                    throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
+                }
             }
 
             if (in_array($field, ['lead_source', 'referral_code'], true) && $value !== null && mb_strlen($value) > ($field === 'lead_source' ? 120 : 160)) {
@@ -155,5 +174,24 @@ class UpdateClientProfileFromPortal
     private function hasKnownValue(mixed $value): bool
     {
         return $value !== null && $value !== '';
+    }
+
+    private function hasVerifiedEmailIdentity(Client $client): bool
+    {
+        if (! $this->hasKnownValue($client->email)) {
+            return false;
+        }
+
+        try {
+            $email = NormalizedEmail::from((string) $client->email)->value;
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return $client->channelIdentities()
+            ->where('channel', 'email')
+            ->where('external_id', $email)
+            ->where('verification_status', ChannelIdentityStatus::Verified)
+            ->exists();
     }
 }

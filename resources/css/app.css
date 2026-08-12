@@ -218,6 +218,14 @@ body {
         line-height: 1.7;
     }
 
+    .portal-legal-content {
+        border-left: 2px solid var(--portal-color-border-strong);
+        color: var(--portal-color-ink-soft);
+        padding-left: var(--portal-space-4);
+        white-space: pre-wrap;
+        line-height: 1.7;
+    }
+
     .portal-service-grid {
         display: grid;
         gap: var(--portal-space-4);

@@ -3,7 +3,7 @@
 - Last updated: 2026-08-12
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 2 — Client Portal + Telegram Foundation
-- Status: BLOCKED — M2 foundation implemented; ordinary web authentication remains open under OQ-001 and consent completion remains blocked by OQ-006
+- Status: DONE — M2 scope is implemented and locally verified
 
 ## Completed Remediation
 
@@ -33,15 +33,18 @@
 - Implemented the shared responsive Client Portal path for desktop, mobile browser, and Telegram Mini App runtime mode through the same Inertia/Vue pages and Application actions.
 - Added a centralized restrained health/wellness visual foundation for the portal: warm-neutral canvas, sage brand, terracotta accent, typography, spacing, surfaces, borders, radii, controls, feedback states, and responsive layout primitives; CRM styling remains independent.
 - Added server-verified Telegram initData authentication with signature validation through Nutgram, freshness and replay controls, session regeneration, organization-scoped client resolution, and redacted audit metadata.
-- Added verified Telegram identity linking/reuse, deterministic organization/client uniqueness, progressive profile confirmation, versioned onboarding progress, a localized configurable Telegram menu, and the capability-aware channel boundary.
+- Added passwordless email authentication with normalized identities, hashed single-use codes, expiry, bounded attempts/rate limits, provider-neutral delivery, and session regeneration.
+- Added verified Telegram identity linking/reuse through short-lived server tokens and authentic bot evidence; token replay, forged identity, cross-organization, and frontend-override paths are rejected.
+- Added deterministic organization/client uniqueness, progressive profile confirmation, versioned onboarding progress, a localized configurable Telegram menu, and the capability-aware channel boundary.
 - Added organization/client-scoped conversations and normalized idempotent message persistence with an allowlisted metadata shape.
-- Kept ordinary browser authentication unimplemented because OQ-001 is still OPEN; Telegram is not used as the ordinary-web decision.
-- Kept consent completion unimplemented because OQ-006 remains OPEN; no medical, survey, scheduling, payment, AI, broadcast, subscription, or later-channel behavior was added.
+- Added organization-scoped versioned legal documents, immutable published versions, exact-version portal consent evidence, and platform-controlled Phase 1 legal management; organizations cannot self-enable organization-managed wording.
+- Established canonical PostgreSQL timezone-aware M2 instants, IANA timezone validation/default resolution, centralized portal date/time formatting (`DD-MM-YYYY`, `HH:mm`), and future calendar/email readiness boundaries.
+- No medical, survey, scheduling, payment, AI, broadcast, subscription, MAX, Instagram, or other later-milestone behavior was added.
 
 ## Blockers / Open Questions
 
-- OQ-001 ordinary client web authentication mechanism remains open and blocks `REQ-PORTAL-005`.
-- OQ-006 legal consent texts, jurisdictions, lawful basis, retention, and approved versions remain open and blocks the goals/consents completion sub-scope of `REQ-PORTAL-003`.
+- OQ-001 and OQ-006 are resolved for M2 by the owner-confirmed decisions recorded in `docs/product/open-questions.md`.
+- Remaining open questions concern later milestone scope and do not block completed M2 behavior.
 
 ## Important Decisions
 
@@ -54,4 +57,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 8 unit tests/19 assertions, 44 feature tests/238 assertions, 8 PostgreSQL integration tests/19 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Separate M2 focused coverage passed with 16 tests/98 assertions and Playwright desktop/mobile passed with 2 tests. M0 and M1 were not re-audited in M2; hosted verification is recorded in `MILESTONE_2_REPORT.md` after push.
+2026-08-12: `composer validate --strict` passed. The single final `make ci` passed: 8 unit tests/19 assertions, 61 feature tests/335 assertions, 11 PostgreSQL integration tests/32 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. ESLint was rerun after a template-formatting warning and passed cleanly. Separate M2 focused coverage passed with 27 tests/180 assertions plus 5 PostgreSQL M2 database tests/15 assertions. Playwright desktop/mobile smoke passed with 2 tests. M0 and M1 were not re-audited in M2; hosted verification is recorded in `MILESTONE_2_REPORT.md` after push.

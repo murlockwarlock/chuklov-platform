@@ -28,9 +28,11 @@ class OnboardingController extends Controller
 
         $validated = $request->validated();
         $confirmedFields = $validated['confirmed_fields'] ?? [];
+        $consents = $validated['consents'] ?? [];
         unset($validated['confirmed_fields']);
+        unset($validated['consents']);
 
-        $saveStep->handle($onboardingStage, $validated, $confirmedFields);
+        $saveStep->handle($onboardingStage, $validated, $confirmedFields, $consents);
 
         return to_route('portal.onboarding');
     }

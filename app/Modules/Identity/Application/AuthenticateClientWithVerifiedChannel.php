@@ -64,7 +64,7 @@ class AuthenticateClientWithVerifiedChannel
                 'organization_id' => $organization->getKey(),
                 'full_name' => $verifiedIdentity->displayName,
                 'language' => $verifiedIdentity->language,
-                'timezone' => $organization->timezone,
+                'timezone' => $organization->defaultTimezone(),
                 'lead_source' => $verifiedIdentity->channel,
             ]);
             $client->save();

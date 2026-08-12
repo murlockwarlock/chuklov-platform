@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property-read Client $client
  * @property-read Organization $organization
+ * @property-read LegalDocument|null $legalDocument
  * @property ConsentSubject $subject
  * @property bool $is_required
  * @property bool $granted
@@ -36,6 +37,12 @@ class ClientConsent extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /** @return BelongsTo<LegalDocument, $this> */
+    public function legalDocument(): BelongsTo
+    {
+        return $this->belongsTo(LegalDocument::class);
     }
 
     /** @return BelongsTo<User, $this> */

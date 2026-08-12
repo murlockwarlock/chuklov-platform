@@ -20,6 +20,7 @@ class ClientConsentFactory extends Factory
         return [
             'subject' => ConsentSubject::Privacy->value,
             'version' => '2026-01',
+            'legal_document_id' => null,
             'is_required' => true,
             'granted' => true,
             'evidence' => 'web',
