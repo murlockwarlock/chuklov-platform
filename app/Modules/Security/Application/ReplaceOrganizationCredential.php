@@ -8,6 +8,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class ReplaceOrganizationCredential
@@ -46,36 +47,38 @@ class ReplaceOrganizationCredential
 
         $this->assertSerializable($credentials);
 
-        $credential = OrganizationCredential::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('provider', $provider)
-            ->where('credential_name', $credentialName)
-            ->first() ?? new OrganizationCredential;
-        $credential->forceFill([
-            'organization_id' => $organization->getKey(),
-            'provider' => $provider,
-            'credential_name' => $credentialName,
-            'credentials' => $credentials,
-            'status' => $status,
-            'last_rotated_at' => now(),
-            'rotated_by_user_id' => $actor->getKey(),
-        ]);
-        $credential->save();
-
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'organization.credential.replaced',
-            targetType: OrganizationCredential::class,
-            targetId: (string) $credential->getKey(),
-            metadata: [
+        return DB::transaction(function () use ($organization, $actor, $provider, $credentialName, $credentials, $status): OrganizationCredential {
+            $credential = OrganizationCredential::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('provider', $provider)
+                ->where('credential_name', $credentialName)
+                ->first() ?? new OrganizationCredential;
+            $credential->forceFill([
+                'organization_id' => $organization->getKey(),
                 'provider' => $provider,
                 'credential_name' => $credentialName,
-                'status' => $status->value,
-            ],
-        );
+                'credentials' => $credentials,
+                'status' => $status,
+                'last_rotated_at' => now(),
+                'rotated_by_user_id' => $actor->getKey(),
+            ]);
+            $credential->save();
 
-        return $credential->refresh();
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'organization.credential.replaced',
+                targetType: OrganizationCredential::class,
+                targetId: (string) $credential->getKey(),
+                metadata: [
+                    'provider' => $provider,
+                    'credential_name' => $credentialName,
+                    'status' => $status->value,
+                ],
+            );
+
+            return $credential->refresh();
+        });
     }
 
     /** @param array<array-key, mixed> $values */

@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property OrganizationRole $role
  * @property bool $is_active
  */
-#[Fillable(['role', 'is_active'])]
+#[Fillable([])]
 class OrganizationMembership extends Model
 {
     /** @use HasFactory<OrganizationMembershipFactory> */

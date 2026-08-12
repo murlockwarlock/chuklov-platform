@@ -24,11 +24,13 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Application\ReplaceOrganizationCredential;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogTap;
 use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use RuntimeException;
 use Tests\TestCase;
 
 class MilestoneOneSecurityTest extends TestCase
@@ -192,7 +194,7 @@ class MilestoneOneSecurityTest extends TestCase
         );
     }
 
-    public function test_audit_recorder_redacts_sensitive_metadata(): void
+    public function test_audit_recorder_drops_undeclared_metadata(): void
     {
         $organization = Organization::factory()->create();
         $event = app(RecordAuditEvent::class)->handle(
@@ -201,12 +203,135 @@ class MilestoneOneSecurityTest extends TestCase
             action: 'security.test',
             targetType: Service::class,
             targetId: '1',
-            metadata: ['token' => 'secret-value', 'safe_id' => 'value'],
+            metadata: [
+                'api_key' => 'api-secret-value',
+                'access_key' => 'access-secret-value',
+                'safe_label' => 'secret-value',
+            ],
         );
 
-        self::assertSame('[REDACTED]', $event->metadata['token']);
-        self::assertSame('value', $event->metadata['safe_id']);
+        self::assertSame([], $event->metadata);
         self::assertStringNotContainsString('secret-value', json_encode($event->metadata, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_audit_metadata_only_persists_declared_fields_for_a_known_action(): void
+    {
+        $organization = Organization::factory()->create();
+        $event = app(RecordAuditEvent::class)->handle(
+            organization: $organization,
+            actor: null,
+            action: 'client.created',
+            targetType: Client::class,
+            targetId: '1',
+            metadata: [
+                'source' => 'application',
+                'api_key' => 'api-secret-value',
+                'access_key' => 'access-secret-value',
+                'note' => 'secret-value',
+            ],
+        );
+
+        self::assertSame(['source' => 'application'], $event->metadata);
+        self::assertStringNotContainsString('secret-value', json_encode($event->metadata, JSON_THROW_ON_ERROR));
+    }
+
+    public function test_configured_output_channels_all_use_the_redaction_tap(): void
+    {
+        $channels = config('logging.channels');
+
+        foreach (['single', 'daily', 'slack', 'papertrail', 'stderr', 'syslog', 'errorlog'] as $channel) {
+            self::assertIsArray($channels[$channel]['tap'] ?? null);
+            self::assertContains(RedactSensitiveLogTap::class, $channels[$channel]['tap']);
+        }
+    }
+
+    public function test_credential_replacement_rolls_back_when_audit_persistence_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $this->failAuditPersistence();
+
+        try {
+            app(ReplaceOrganizationCredential::class)->handle(
+                actor: $admin,
+                provider: 'telegram',
+                credentialName: 'bot',
+                credentials: ['token' => 'credential-secret'],
+            );
+            self::fail('The audit failure should abort credential replacement.');
+        } catch (RuntimeException) {
+            self::assertSame(0, OrganizationCredential::query()
+                ->where('organization_id', $organization->id)
+                ->count());
+        }
+    }
+
+    public function test_client_creation_rolls_back_when_audit_persistence_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $this->enableClientRecords($organization, $admin);
+        $this->failAuditPersistence();
+
+        try {
+            app(CreateClient::class)->handle($admin, 'Atomicity Client');
+            self::fail('The audit failure should abort client creation.');
+        } catch (RuntimeException) {
+            self::assertSame(0, Client::query()
+                ->where('organization_id', $organization->id)
+                ->count());
+        }
+    }
+
+    public function test_settings_and_feature_changes_roll_back_when_audit_persistence_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $this->failAuditPersistence();
+
+        try {
+            app(SetOrganizationSetting::class)->handle(
+                actor: $admin,
+                key: OrganizationSettingKey::DefaultTimezone,
+                value: 'Asia/Almaty',
+            );
+            self::fail('The audit failure should abort the setting change.');
+        } catch (RuntimeException) {
+            self::assertSame(0, $organization->settings()->count());
+        }
+
+        try {
+            app(SetOrganizationFeatureFlag::class)->handle($admin, OrganizationFeature::ServiceCatalog, true);
+            self::fail('The audit failure should abort the feature change.');
+        } catch (RuntimeException) {
+            self::assertSame(0, $organization->featureFlags()->count());
+        }
+    }
+
+    public function test_client_identity_and_consent_changes_roll_back_when_audit_persistence_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $this->enableClientRecords($organization, $admin);
+        $client = app(CreateClient::class)->handle($admin, 'Atomicity Client');
+        $this->failAuditPersistence();
+
+        try {
+            app(RegisterClientChannelIdentity::class)->handle($admin, $client, 'telegram', 'atomicity-id');
+            self::fail('The audit failure should abort the channel identity change.');
+        } catch (RuntimeException) {
+            self::assertSame(0, $client->channelIdentities()->count());
+        }
+
+        try {
+            app(RecordClientConsent::class)->handle(
+                actor: $admin,
+                client: $client,
+                subject: ConsentSubject::Privacy,
+                version: 'privacy-2026-01',
+                granted: true,
+                evidence: 'crm',
+            );
+            self::fail('The audit failure should abort the consent change.');
+        } catch (RuntimeException) {
+            self::assertSame(0, $client->consents()->count());
+        }
     }
 
     public function test_organization_ownership_fields_are_not_mass_assignable(): void
@@ -220,6 +345,25 @@ class MilestoneOneSecurityTest extends TestCase
         self::assertSame('Safe', $client->full_name);
         self::assertArrayNotHasKey('organization_id', $client->getAttributes());
         self::assertArrayNotHasKey('credentials', $credential->getAttributes());
+    }
+
+    public function test_security_sensitive_domain_state_is_not_mass_assignable(): void
+    {
+        $membership = new OrganizationMembership;
+        $identity = new ClientChannelIdentity;
+        $consent = new ClientConsent;
+        $credential = new OrganizationCredential;
+
+        self::assertFalse($membership->isFillable('role'));
+        self::assertFalse($membership->isFillable('is_active'));
+        self::assertFalse($identity->isFillable('verification_status'));
+        self::assertFalse($identity->isFillable('verification_method'));
+        self::assertFalse($identity->isFillable('verified_at'));
+        self::assertFalse($consent->isFillable('is_required'));
+        self::assertFalse($consent->isFillable('granted'));
+        self::assertFalse($consent->isFillable('recorded_at'));
+        self::assertFalse($credential->isFillable('status'));
+        self::assertFalse($credential->isFillable('last_rotated_at'));
     }
 
     /** @return array{0: Organization, 1: User} */
@@ -236,5 +380,12 @@ class MilestoneOneSecurityTest extends TestCase
     {
         app(SetOrganizationFeatureFlag::class)->handle($admin, OrganizationFeature::ClientRecords, true);
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function failAuditPersistence(): void
+    {
+        $audit = $this->createMock(RecordAuditEvent::class);
+        $audit->method('handle')->willThrowException(new RuntimeException('audit persistence failed'));
+        $this->app->instance(RecordAuditEvent::class, $audit);
     }
 }

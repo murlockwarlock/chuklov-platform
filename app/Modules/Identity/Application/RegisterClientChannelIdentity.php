@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -39,25 +40,27 @@ class RegisterClientChannelIdentity
             throw new InvalidArgumentException('The external identity is invalid.');
         }
 
-        $identity = new ClientChannelIdentity;
-        $identity->forceFill([
-            'organization_id' => $organization->getKey(),
-            'client_id' => $client->getKey(),
-            'channel' => $channel,
-            'external_id' => $externalId,
-            'verification_status' => ChannelIdentityStatus::Unverified,
-        ]);
-        $identity->save();
+        return DB::transaction(function () use ($organization, $actor, $client, $channel, $externalId): ClientChannelIdentity {
+            $identity = new ClientChannelIdentity;
+            $identity->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'channel' => $channel,
+                'external_id' => $externalId,
+                'verification_status' => ChannelIdentityStatus::Unverified,
+            ]);
+            $identity->save();
 
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'client.channel_identity.registered',
-            targetType: ClientChannelIdentity::class,
-            targetId: (string) $identity->getKey(),
-            metadata: ['channel' => $channel, 'verification_status' => ChannelIdentityStatus::Unverified->value],
-        );
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'client.channel_identity.registered',
+                targetType: ClientChannelIdentity::class,
+                targetId: (string) $identity->getKey(),
+                metadata: ['channel' => $channel, 'verification_status' => ChannelIdentityStatus::Unverified->value],
+            );
 
-        return $identity->refresh();
+            return $identity->refresh();
+        });
     }
 }

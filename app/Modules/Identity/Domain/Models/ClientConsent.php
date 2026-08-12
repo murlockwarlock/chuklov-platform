@@ -20,7 +20,7 @@ use Illuminate\Support\Carbon;
  * @property bool $granted
  * @property Carbon $recorded_at
  */
-#[Fillable(['subject', 'version', 'is_required', 'granted', 'evidence', 'recorded_at'])]
+#[Fillable(['subject', 'version', 'evidence'])]
 class ClientConsent extends Model
 {
     /** @use HasFactory<ClientConsentFactory> */

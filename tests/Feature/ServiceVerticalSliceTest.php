@@ -4,10 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Services\Application\CreateService;
+use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -20,6 +24,7 @@ class ServiceVerticalSliceTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $this->enableServiceCatalog($organization);
         config()->set('tenancy.default_organization_id', $organization->id);
         app(OrganizationContext::class)->set($organization);
 
@@ -31,6 +36,29 @@ class ServiceVerticalSliceTest extends TestCase
                 ->component('Services/Index')
                 ->has('services', 1)
                 ->where('services.0.name', 'Foundation Service'));
+    }
+
+    public function test_application_service_creation_requires_the_service_catalog_feature(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($organization);
+
+        $this->expectException(AuthorizationException::class);
+
+        app(CreateService::class)->handle($admin, 'Blocked Service', 'Feature is disabled.', true);
+    }
+
+    public function test_application_service_update_requires_the_service_catalog_feature(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $service = Service::factory()->forOrganization($organization)->create(['name' => 'Original Service']);
+        app(OrganizationContext::class)->set($organization);
+
+        $this->expectException(AuthorizationException::class);
+
+        app(UpdateService::class)->handle($admin, $service, 'Blocked Update', 'Feature is disabled.', true);
     }
 
     public function test_request_input_cannot_override_the_organization_boundary(): void
@@ -59,5 +87,13 @@ class ServiceVerticalSliceTest extends TestCase
         $this->get(route('portal.services.index'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page->has('services', 0));
+    }
+
+    private function enableServiceCatalog(Organization $organization): void
+    {
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
     }
 }

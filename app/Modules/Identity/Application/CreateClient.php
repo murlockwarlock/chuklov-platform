@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class CreateClient
@@ -59,28 +60,40 @@ class CreateClient
             throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
         }
 
-        $client = new Client;
-        $client->forceFill([
-            'organization_id' => $organization->getKey(),
-            'full_name' => $fullName,
-            'email' => $email,
-            'phone' => $phone,
-            'language' => $language,
-            'timezone' => $timezone,
-            'lead_source' => $leadSource,
-            'referral_code' => $referralCode,
-        ]);
-        $client->save();
+        return DB::transaction(function () use (
+            $organization,
+            $actor,
+            $fullName,
+            $email,
+            $phone,
+            $language,
+            $timezone,
+            $leadSource,
+            $referralCode,
+        ): Client {
+            $client = new Client;
+            $client->forceFill([
+                'organization_id' => $organization->getKey(),
+                'full_name' => $fullName,
+                'email' => $email,
+                'phone' => $phone,
+                'language' => $language,
+                'timezone' => $timezone,
+                'lead_source' => $leadSource,
+                'referral_code' => $referralCode,
+            ]);
+            $client->save();
 
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'client.created',
-            targetType: Client::class,
-            targetId: (string) $client->getKey(),
-            metadata: ['source' => 'application'],
-        );
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'client.created',
+                targetType: Client::class,
+                targetId: (string) $client->getKey(),
+                metadata: ['source' => 'application'],
+            );
 
-        return $client->refresh();
+            return $client->refresh();
+        });
     }
 }

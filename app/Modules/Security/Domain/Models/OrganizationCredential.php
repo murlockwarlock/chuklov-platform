@@ -19,7 +19,7 @@ use Illuminate\Support\Carbon;
  * @property CredentialStatus $status
  * @property Carbon|null $last_rotated_at
  */
-#[Fillable(['provider', 'credential_name', 'status', 'last_rotated_at'])]
+#[Fillable(['provider', 'credential_name'])]
 #[Hidden(['credentials'])]
 class OrganizationCredential extends Model
 {

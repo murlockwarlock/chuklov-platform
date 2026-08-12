@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class RecordClientConsent
@@ -44,34 +45,44 @@ class RecordClientConsent
             throw new InvalidArgumentException('The consent evidence is invalid.');
         }
 
-        $consent = new ClientConsent;
-        $consent->forceFill([
-            'organization_id' => $organization->getKey(),
-            'client_id' => $client->getKey(),
-            'subject' => $subject,
-            'version' => $version,
-            'is_required' => $subject->isRequired(),
-            'granted' => $granted,
-            'evidence' => $evidence,
-            'recorded_at' => now(),
-            'recorded_by_user_id' => $actor->getKey(),
-        ]);
-        $consent->save();
-
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'client.consent.recorded',
-            targetType: ClientConsent::class,
-            targetId: (string) $consent->getKey(),
-            metadata: [
-                'subject' => $subject->value,
+        return DB::transaction(function () use (
+            $organization,
+            $actor,
+            $client,
+            $subject,
+            $version,
+            $granted,
+            $evidence,
+        ): ClientConsent {
+            $consent = new ClientConsent;
+            $consent->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'subject' => $subject,
                 'version' => $version,
+                'is_required' => $subject->isRequired(),
                 'granted' => $granted,
                 'evidence' => $evidence,
-            ],
-        );
+                'recorded_at' => now(),
+                'recorded_by_user_id' => $actor->getKey(),
+            ]);
+            $consent->save();
 
-        return $consent->refresh();
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'client.consent.recorded',
+                targetType: ClientConsent::class,
+                targetId: (string) $consent->getKey(),
+                metadata: [
+                    'subject' => $subject->value,
+                    'version' => $version,
+                    'granted' => $granted,
+                    'evidence' => $evidence,
+                ],
+            );
+
+            return $consent->refresh();
+        });
     }
 }

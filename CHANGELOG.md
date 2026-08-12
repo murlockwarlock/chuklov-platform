@@ -11,6 +11,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Repository harness, normalized requirements, architecture/operations/testing documentation, ADRs, progressive Codex skills, and quality commands.
 - Milestone 0 audit regressions for Docker-context privacy, repeat-safe key initialization, Filament tenant/workflow behavior, Nutgram fake loading, privileged User fields, and Horizon metrics scheduling.
 - Milestone 1 organization memberships and explicit RBAC, typed organization settings and feature controls, client/channel identity and consent foundations, encrypted rotatable credentials, safe audit events, redacted logs, and server-side isolation tests.
+- Milestone 1 remediation for PostgreSQL Filament context regression, expand/contract membership migration safety, atomic audited mutations, action-allowlisted audit metadata, service-catalog entitlement enforcement, complete authentication-header log redaction, and privileged-state mass-assignment hardening.
 
 ### Changed
 

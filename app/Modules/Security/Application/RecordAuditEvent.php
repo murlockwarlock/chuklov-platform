@@ -9,7 +9,15 @@ use Illuminate\Support\Str;
 
 class RecordAuditEvent
 {
-    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential_value|authorization|cookie|session|medical|content|body/i';
+    /** @var array<string, list<string>> */
+    private const ALLOWED_METADATA_KEYS = [
+        'organization.setting.updated' => ['setting_key', 'value_type'],
+        'organization.feature.updated' => ['feature_key', 'enabled'],
+        'organization.credential.replaced' => ['provider', 'credential_name', 'status'],
+        'client.created' => ['source'],
+        'client.channel_identity.registered' => ['channel', 'verification_status'],
+        'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],
+    ];
 
     /** @param array<array-key, mixed> $metadata */
     public function handle(
@@ -27,7 +35,7 @@ class RecordAuditEvent
             'action' => $action,
             'target_type' => $targetType,
             'target_id' => $targetId,
-            'metadata' => $this->sanitize($metadata),
+            'metadata' => $this->sanitize($action, $metadata),
             'occurred_at' => now(),
         ]);
         $event->save();
@@ -39,22 +47,19 @@ class RecordAuditEvent
      * @param  array<array-key, mixed>  $metadata
      * @return array<array-key, mixed>
      */
-    private function sanitize(array $metadata): array
+    private function sanitize(string $action, array $metadata): array
     {
+        $allowedKeys = self::ALLOWED_METADATA_KEYS[$action] ?? [];
         $safe = [];
 
         foreach ($metadata as $key => $value) {
             $key = (string) $key;
 
-            if (preg_match(self::SENSITIVE_KEY_PATTERN, $key) === 1) {
-                $safe[$key] = '[REDACTED]';
-
+            if (! in_array($key, $allowedKeys, true) || (! is_scalar($value) && $value !== null)) {
                 continue;
             }
 
-            $safe[$key] = is_array($value)
-                ? $this->sanitize($value)
-                : (is_string($value) ? Str::limit($value, 255, '…') : $value);
+            $safe[$key] = is_string($value) ? Str::limit($value, 128, '…') : $value;
         }
 
         return $safe;

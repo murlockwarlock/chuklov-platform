@@ -3,7 +3,7 @@
 - Last updated: 2026-08-12
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 1 — Organizations / Identity / Settings / Security Foundations
-- Status: DONE
+- Status: DONE — M1 remediation locally complete; hosted verification pending for the pushed revision
 
 ## Completed Remediation
 
@@ -20,6 +20,13 @@
 - Added PostgreSQL-oriented constraints, composite organization/client foreign keys, ownership indexes, and a legacy-user membership backfill without rewriting M0 migration history.
 - Added focused organization isolation, IDOR, membership/RBAC, mass-assignment, feature/settings, identity, credential, audit, and logging regression coverage.
 - M0 remains accepted; no M0 re-audit or fresh-clone verification was performed in this milestone.
+
+## Milestone 1 remediation
+
+- Corrected the PostgreSQL Filament/Portal regression by binding the test to the same server-derived organization used by request middleware; no tenant boundary was weakened.
+- Deferred destructive legacy-user column removal to a later contraction release; populated PostgreSQL backfill coverage verifies administrator/staff roles, idempotence, legacy-column retention, and multi-membership preservation.
+- Made audited M1 mutations transactional, replaced denylist audit sanitization with action-specific metadata allowlists, enforced the Service Catalog entitlement in Application and policy paths, hardened sensitive model state against mass assignment, and redacted complete authentication values across configured log channels.
+- Existing milestone report/review/audit Markdown artifacts are ignored and removed from the repository; the remediation report is local-only.
 
 ## Next
 
@@ -38,8 +45,8 @@
 - M0 hosted CI separates quality/integration, Playwright, privacy/secret, and Docker runtime gates for diagnosability.
 - Client source documents and full chat history remain local-only; normalized REQs and sanitized repository docs are the Git development source.
 - M1 keeps `organization_id` as the security boundary, derives runtime context from server configuration/membership, and does not introduce `master_id`, heavy tenancy, SaaS provisioning, or provider integrations.
-- M1 credentials use Laravel encrypted casts and are only exposed through masked representations; audit metadata is sanitized before persistence.
+- M1 credentials use Laravel encrypted casts and are only exposed through masked representations; audit metadata is action-allowlisted before persistence.
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 3 unit tests/6 assertions, 23 feature tests/114 assertions, 5 PostgreSQL integration tests/11 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. M1-focused security tests passed separately: 21 tests/109 assertions. Playwright, Docker build/runtime, privacy, and secret scans were not rerun because M1 did not change those M0 surfaces; no fresh-clone verification or M0 re-audit was performed.
+2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 4 unit tests/12 assertions, 32 feature tests/147 assertions, 6 PostgreSQL integration tests/17 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Focused PostgreSQL remediation tests passed separately: 27 tests/134 assertions. Playwright, Docker build/runtime, privacy, and secret scans were not rerun because M1 remediation did not change those M0 surfaces; no fresh-clone verification or M0 re-audit was performed.
