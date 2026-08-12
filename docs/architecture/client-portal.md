@@ -1,5 +1,7 @@
 # Client Portal
 
-Vue 3 + Inertia 3 + TypeScript + Tailwind 4 renders responsive ordinary web. Telegram Mini App is detected as a runtime mode; it does not own business behavior. Server routes call Application queries/actions.
+Vue 3 + Inertia 3 + TypeScript + Tailwind 4 renders one responsive portal for desktop browser, mobile browser, and Telegram Mini App runtime mode. Telegram runtime detection and initData handoff stay at the presentation/adapter boundary; server routes call Application queries/actions.
 
-M0 exposes the organization-scoped Service list. Auth/onboarding are intentionally deferred to M2 and OQ-001. See REQ-PORTAL-* and ADR-003.
+M2 adds a server-session client portal context resolved from the server-derived organization, verified Telegram onboarding entry, a versioned four-stage onboarding progress record, and progressive confirmation of the M1 client profile fields. Known values are prefilled and cannot be overwritten without explicit confirmation. Clinical, scheduling, service-format, and consent behavior remains outside the implemented M2 foundation; consent completion also waits for OQ-006. Ordinary browser authentication remains open under OQ-001.
+
+See REQ-PORTAL-001 through REQ-PORTAL-005, ADR-003, and the client-portal skill.

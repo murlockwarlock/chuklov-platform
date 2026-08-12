@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
@@ -27,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->scoped(OrganizationContext::class);
+        $this->app->scoped(ClientPortalContext::class);
     }
 
     public function boot(): void

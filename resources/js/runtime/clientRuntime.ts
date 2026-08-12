@@ -2,7 +2,12 @@ export type ClientRuntimeMode = 'web' | 'telegram-mini-app';
 
 declare global {
     interface Window {
-        Telegram?: { WebApp?: { ready(): void } };
+        Telegram?: {
+            WebApp?: {
+                initData?: string;
+                ready(): void;
+            };
+        };
     }
 }
 
@@ -14,4 +19,10 @@ export function resolveClientRuntime(): ClientRuntimeMode {
     }
 
     return 'web';
+}
+
+export function getTelegramInitData(): string | null {
+    const initData = window.Telegram?.WebApp?.initData?.trim();
+
+    return initData === '' || initData === undefined ? null : initData;
 }

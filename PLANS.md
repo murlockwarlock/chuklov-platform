@@ -17,4 +17,4 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-None. M1 implementation outcomes are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, `CHANGELOG.md`, the requirements traceability, and `MILESTONE_1_REPORT.md`.
+None. The M2 plan is complete; its implementation outcomes, open questions, quality results, and rollback boundaries are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, `CHANGELOG.md`, and `MILESTONE_2_REPORT.md`.

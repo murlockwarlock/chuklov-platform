@@ -22,4 +22,9 @@ return [
 
     // Set log channel
     'log_channel' => env('TELEGRAM_LOG_CHANNEL', 'null'),
+
+    'mini_app' => [
+        'auth_ttl' => (int) env('TELEGRAM_INIT_DATA_TTL', 900),
+        'clock_skew' => (int) env('TELEGRAM_INIT_DATA_CLOCK_SKEW', 30),
+    ],
 ];

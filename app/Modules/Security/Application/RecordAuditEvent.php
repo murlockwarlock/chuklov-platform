@@ -15,7 +15,9 @@ class RecordAuditEvent
         'organization.feature.updated' => ['feature_key', 'enabled'],
         'organization.credential.replaced' => ['provider', 'credential_name', 'status'],
         'client.created' => ['source'],
+        'client.profile.updated' => ['source', 'fields'],
         'client.channel_identity.registered' => ['channel', 'verification_status'],
+        'client.channel_identity.verified' => ['channel', 'verification_method'],
         'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],
     ];
 

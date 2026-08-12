@@ -13,4 +13,4 @@ Use session/CSRF authentication for CRM and server verification for Telegram. De
 
 ## Consequences
 
-M1 provides staff identity and organization RBAC for the CRM boundary without implementing client authentication. M2 must finalize this ADR after owner confirmation of ordinary client web authentication.
+M1 provides staff identity and organization RBAC for the CRM boundary. M2 adds only the approved Telegram Mini App verified-session foundation and does not implement ordinary client browser authentication. This ADR remains Proposed and must be finalized after owner confirmation of ordinary client web authentication.

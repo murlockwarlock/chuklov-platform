@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-12
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 1 — Organizations / Identity / Settings / Security Foundations
-- Status: DONE — M1 remediation locally complete; hosted verification pending for the pushed revision
+- Current milestone: Milestone 2 — Client Portal + Telegram Foundation
+- Status: BLOCKED — M2 foundation implemented; ordinary web authentication remains open under OQ-001 and consent completion remains blocked by OQ-006
 
 ## Completed Remediation
 
@@ -28,15 +28,19 @@
 - Made audited M1 mutations transactional, replaced denylist audit sanitization with action-specific metadata allowlists, enforced the Service Catalog entitlement in Application and policy paths, hardened sensitive model state against mass assignment, and redacted complete authentication values across configured log channels.
 - Existing milestone report/review/audit Markdown artifacts are ignored and removed from the repository; the remediation report is local-only.
 
-## Next
+## Milestone 2
 
-- Resolve OQ-001 before implementing ordinary client web authentication in M2.
-- Begin M2 only under its approved scope; Telegram onboarding and ordinary web authentication remain deferred.
+- Implemented the shared responsive Client Portal path for desktop, mobile browser, and Telegram Mini App runtime mode through the same Inertia/Vue pages and Application actions.
+- Added server-verified Telegram initData authentication with signature validation through Nutgram, freshness and replay controls, session regeneration, organization-scoped client resolution, and redacted audit metadata.
+- Added verified Telegram identity linking/reuse, deterministic organization/client uniqueness, progressive profile confirmation, versioned onboarding progress, a localized configurable Telegram menu, and the capability-aware channel boundary.
+- Added organization/client-scoped conversations and normalized idempotent message persistence with an allowlisted metadata shape.
+- Kept ordinary browser authentication unimplemented because OQ-001 is still OPEN; Telegram is not used as the ordinary-web decision.
+- Kept consent completion unimplemented because OQ-006 remains OPEN; no medical, survey, scheduling, payment, AI, broadcast, subscription, or later-channel behavior was added.
 
 ## Blockers / Open Questions
 
-- OQ-001 ordinary client web authentication mechanism remains open.
-- OQ-006 legal consent texts, jurisdictions, lawful basis, retention, and approved versions remain open.
+- OQ-001 ordinary client web authentication mechanism remains open and blocks `REQ-PORTAL-005`.
+- OQ-006 legal consent texts, jurisdictions, lawful basis, retention, and approved versions remain open and blocks the goals/consents completion sub-scope of `REQ-PORTAL-003`.
 
 ## Important Decisions
 
@@ -49,4 +53,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 4 unit tests/12 assertions, 32 feature tests/147 assertions, 6 PostgreSQL integration tests/17 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Focused PostgreSQL remediation tests passed separately: 27 tests/134 assertions. Playwright, Docker build/runtime, privacy, and secret scans were not rerun because M1 remediation did not change those M0 surfaces; no fresh-clone verification or M0 re-audit was performed.
+2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 8 unit tests/19 assertions, 44 feature tests/238 assertions, 8 PostgreSQL integration tests/19 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Separate M2 focused coverage passed with 16 tests/98 assertions and Playwright desktop/mobile passed with 2 tests. M0 and M1 were not re-audited in M2; hosted verification is recorded in `MILESTONE_2_REPORT.md` after push.
