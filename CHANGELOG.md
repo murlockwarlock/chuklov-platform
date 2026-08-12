@@ -13,6 +13,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Milestone 1 organization memberships and explicit RBAC, typed organization settings and feature controls, client/channel identity and consent foundations, encrypted rotatable credentials, safe audit events, redacted logs, and server-side isolation tests.
 - Milestone 1 remediation for PostgreSQL Filament context regression, expand/contract membership migration safety, atomic audited mutations, action-allowlisted audit metadata, service-catalog entitlement enforcement, complete authentication-header log redaction, and privileged-state mass-assignment hardening.
 - Milestone 2 shared responsive Client Portal foundation, versioned progressive onboarding, server-verified Telegram Mini App sessions, organization-scoped verified channel identity linking, localized Telegram bot entry, capability-aware channel boundary, and normalized conversation/message persistence.
+- M2 Client Portal visual foundation with centralized warm-neutral/sage tokens, responsive layout primitives, premium wellness surfaces, accessible controls, buttons, notices, stages, and form states shared by portal pages.
 
 ### Changed
 
