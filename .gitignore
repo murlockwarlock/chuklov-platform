@@ -18,9 +18,11 @@
 # Milestone reports and review/audit artifacts stay local and are never committed.
 /MILESTONE_*_AUDIT.md
 /MILESTONE_*_REVIEW.md
+/MILESTONE_*_RECHECK.md
 /MILESTONE_*_REPORT.md
 /MILESTONE_0_AUDIT.md
 /MILESTONE_0_REAUDIT.md
+/CHUKLOV_MASTER_DEVELOPMENT_PLAN*.md
 /node_modules
 /test-results
 /playwright-report

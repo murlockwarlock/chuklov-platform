@@ -3,6 +3,7 @@
 namespace App\Modules\Identity\Application;
 
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelLinkToken;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -33,10 +34,17 @@ class InitiateTelegramClientLink
         $ttl = max(1, (int) config('portal.telegram.link_ttl', 600));
 
         DB::transaction(function () use ($organization, $client, $token, $ttl): void {
+            Client::query()
+                ->whereKey($client->getKey())
+                ->where('organization_id', $organization->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
             ClientChannelLinkToken::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
                 ->where('channel', 'telegram')
+                ->where('flow', 'portal.telegram.connect')
                 ->whereNull('consumed_at')
                 ->update(['consumed_at' => now()]);
 

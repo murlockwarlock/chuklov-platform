@@ -10,6 +10,7 @@ use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Domain\Models\ClientEmailAuthChallenge;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -92,6 +93,46 @@ class MilestoneTwoDatabaseTest extends TestCase
         DB::transaction(function () use ($duplicateToken): void {
             $duplicateToken->save();
         });
+    }
+
+    public function test_one_unconsumed_link_flow_is_enforced_per_organization_client_channel_and_flow(): void
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $active = ClientChannelLinkToken::factory()->forClient($client)->create();
+        $duplicate = ClientChannelLinkToken::factory()->forClient($client)->make();
+
+        try {
+            DB::transaction(function () use ($duplicate): void {
+                $duplicate->save();
+            });
+            self::fail('Only one unconsumed link flow may exist for the scoped channel and flow.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        $active->forceFill(['consumed_at' => Carbon::now()])->save();
+        ClientChannelLinkToken::factory()->forClient($client)->create();
+    }
+
+    public function test_one_published_legal_document_is_enforced_per_organization_type_and_locale(): void
+    {
+        $organization = Organization::factory()->create();
+        LegalDocument::factory()->forOrganization($organization)->published()->create([
+            'version' => '2026-08-12-v1',
+        ]);
+        $duplicate = LegalDocument::factory()->forOrganization($organization)->published()->make([
+            'version' => '2026-08-12-v2',
+        ]);
+
+        try {
+            DB::transaction(function () use ($duplicate): void {
+                $duplicate->save();
+            });
+            self::fail('Only one legal document may be current for the scoped type and locale.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
     }
 
     public function test_channel_link_tokens_and_consents_preserve_composite_organization_foreign_keys(): void

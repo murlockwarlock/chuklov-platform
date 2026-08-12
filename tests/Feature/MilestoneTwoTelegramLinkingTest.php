@@ -87,6 +87,28 @@ class MilestoneTwoTelegramLinkingTest extends TestCase
         self::assertSame(1, ClientChannelIdentity::query()->count());
     }
 
+    public function test_expired_link_flow_is_consumed_before_a_replacement_is_created(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $client = Client::factory()->forOrganization($organization)->create();
+        $expired = ClientChannelLinkToken::factory()->forClient($client)->create([
+            'expires_at' => now()->subSecond(),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->id]);
+
+        $this->post(route('portal.telegram.link'))->assertRedirect();
+
+        $expired->refresh();
+        $replacement = ClientChannelLinkToken::query()
+            ->where('client_id', $client->id)
+            ->whereNull('consumed_at')
+            ->sole();
+
+        self::assertNotNull($expired->consumed_at);
+        self::assertTrue($replacement->expires_at->isFuture());
+    }
+
     public function test_link_is_organization_scoped_and_frontend_identity_fields_do_not_link_anything(): void
     {
         $organization = $this->organizationWithClientRecords();

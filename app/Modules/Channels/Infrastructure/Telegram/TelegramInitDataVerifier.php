@@ -5,6 +5,7 @@ namespace App\Modules\Channels\Infrastructure\Telegram;
 use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use Illuminate\Contracts\Cache\Repository;
 use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Web\WebAppData;
 use Throwable;
 
 class TelegramInitDataVerifier
@@ -40,7 +41,7 @@ class TelegramInitDataVerifier
             throw new InvalidTelegramInitData('Telegram initData is stale.');
         }
 
-        $fingerprint = hash('sha256', $initData);
+        $fingerprint = $this->fingerprint($data);
 
         if (! $this->cache->add('telegram.mini_app.init_data.'.$fingerprint, true, $ttl)) {
             throw new InvalidTelegramInitData('Telegram initData was already used.');
@@ -64,5 +65,34 @@ class TelegramInitDataVerifier
             displayName: mb_substr($displayName, 0, 160),
             language: $language,
         );
+    }
+
+    private function fingerprint(WebAppData $data): string
+    {
+        $canonicalData = $data->toArray();
+        unset($canonicalData['hash']);
+        $canonicalData['auth_date'] = $data->auth_date->getTimestamp();
+
+        return hash('sha256', json_encode(
+            $this->canonicalize($canonicalData),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+        ));
+    }
+
+    private function canonicalize(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalize($item);
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return $value;
     }
 }

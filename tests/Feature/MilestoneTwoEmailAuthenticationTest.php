@@ -7,6 +7,7 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientEmailAuthChallenge;
+use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
@@ -14,8 +15,10 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Testing\TestResponse;
+use LogicException;
 use Tests\Support\RecordingEmailVerificationCodeSender;
 use Tests\TestCase;
 
@@ -169,6 +172,30 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $resolved = Client::query()->where('email', 'server-scoped@example.test')->sole();
         self::assertSame($organization->id, $resolved->organization_id);
         self::assertNotSame($otherClient->id, (int) session('client_portal.client_id'));
+    }
+
+    public function test_configured_log_mailer_cannot_receive_an_authentication_code(): void
+    {
+        $logPath = tempnam(sys_get_temp_dir(), 'm2-auth-mail-');
+        self::assertIsString($logPath);
+        config()->set('mail.default', 'log');
+        config()->set('mail.auth_mailer', 'log');
+        config()->set('mail.mailers.log.channel', 'm2-auth-mail');
+        config()->set('logging.channels.m2-auth-mail', [
+            'driver' => 'single',
+            'path' => $logPath,
+            'level' => 'debug',
+        ]);
+        Mail::forgetMailers();
+
+        try {
+            $this->expectException(LogicException::class);
+            app(LaravelEmailVerificationCodeSender::class)->send('auth@example.test', '654321');
+        } finally {
+            $logContents = is_file($logPath) ? (string) file_get_contents($logPath) : '';
+            self::assertStringNotContainsString('654321', $logContents);
+            unlink($logPath);
+        }
     }
 
     private function fakeSender(): RecordingEmailVerificationCodeSender

@@ -42,6 +42,30 @@ class MilestoneTwoTelegramSecurityTest extends TestCase
         $verifier->handle($payload);
     }
 
+    public function test_reordered_and_equivalently_encoded_signed_init_data_cannot_bypass_replay_protection(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        Cache::flush();
+        $payload = TelegramInitData::make(777004, now()->timestamp);
+        parse_str($payload, $parameters);
+        $reordered = 'user='.rawurlencode($parameters['user'])
+            .'&auth_date='.$parameters['auth_date']
+            .'&hash='.$parameters['hash'];
+        $alternateEncoding = preg_replace_callback(
+            '/%[0-9A-F]{2}/',
+            static fn (array $match): string => strtolower($match[0]),
+            $reordered,
+        );
+        self::assertIsString($alternateEncoding);
+        $verifier = app(TelegramInitDataVerifier::class);
+
+        $verifier->handle($payload);
+
+        $this->expectException(InvalidTelegramInitData::class);
+        $verifier->handle($alternateEncoding);
+    }
+
     public function test_stale_init_data_is_rejected(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
