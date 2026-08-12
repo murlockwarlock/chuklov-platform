@@ -21,6 +21,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- Milestone 3 managed content now permits multiple organization-scoped records per section and locale while preserving ordered portal rendering through a non-unique lookup index.
 - Composer package metadata identifies the private client project as proprietary.
 - Hosted CI now separates quality/integration, Playwright desktop Chromium/mobile WebKit, privacy/secret scanning, and Docker runtime health/Horizon gates.
 - Oversized AI SDK and Inertia skills now route to version-aware Boost documentation instead of embedding package manuals.

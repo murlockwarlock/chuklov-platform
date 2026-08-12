@@ -37,6 +37,29 @@ class MilestoneThreeDatabaseTest extends TestCase
         ]);
     }
 
+    public function test_content_sections_allow_multiple_same_locale_records_per_scope(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $later = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'sort_order' => 20,
+        ]);
+        $earlier = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'sort_order' => 10,
+        ]);
+
+        self::assertNotSame($later->id, $earlier->id);
+        self::assertSame(2, DB::table('content_sections')
+            ->where('organization_id', $organization->id)
+            ->where('section_key', 'author')
+            ->where('locale', 'ru')
+            ->count());
+    }
+
     public function test_restriction_actor_composite_foreign_key_rejects_cross_organization_user(): void
     {
         $organization = Organization::factory()->create();

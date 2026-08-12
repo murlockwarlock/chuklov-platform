@@ -393,6 +393,45 @@ class MilestoneThreeCrmTest extends TestCase
                 ->where('content.0.media.alt', 'Author portrait'));
     }
 
+    public function test_portal_renders_visible_same_locale_content_in_sort_order(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+
+        app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'en',
+            'title' => 'English item A',
+            'body' => 'Rendered second.',
+            'sort_order' => 20,
+            'is_visible' => true,
+        ]);
+        app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'en',
+            'title' => 'English item B',
+            'body' => 'Rendered first.',
+            'sort_order' => 10,
+            'is_visible' => true,
+        ]);
+
+        config()->set('tenancy.default_organization_id', $organization->id);
+
+        $this->get(route('portal.section', ['section' => 'author']))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Portal/Section')
+                ->where('locale', 'en')
+                ->has('content', 2)
+                ->where('content.0.locale', 'en')
+                ->where('content.0.title', 'English item B')
+                ->where('content.0.sortOrder', 10)
+                ->where('content.1.locale', 'en')
+                ->where('content.1.title', 'English item A')
+                ->where('content.1.sortOrder', 20));
+    }
+
     public function test_portal_content_selects_the_authenticated_russian_client_locale(): void
     {
         $organization = Organization::factory()->create();
