@@ -22,9 +22,7 @@ class EditService extends EditRecord
         return app(UpdateService::class)->handle(
             actor: $actor,
             service: $record,
-            name: $data['name'],
-            summary: $data['summary'],
-            isActive: $data['is_active'],
+            name: $data,
         );
     }
 }

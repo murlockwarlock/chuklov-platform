@@ -16,6 +16,7 @@ class ListPublishedServices
         return Service::query()
             ->where('organization_id', $this->context->id())
             ->where('is_active', true)
+            ->where('catalog_type', 'service')
             ->orderBy('name')
             ->get();
     }

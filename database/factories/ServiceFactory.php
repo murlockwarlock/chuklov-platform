@@ -15,6 +15,18 @@ class ServiceFactory extends Factory
         return [
             'name' => fake()->unique()->words(3, true),
             'summary' => fake()->sentence(),
+            'catalog_type' => 'service',
+            'name_ru' => null,
+            'name_en' => null,
+            'description_ru' => null,
+            'description_en' => null,
+            'category' => 'general',
+            'duration_minutes' => 60,
+            'buffer_minutes' => 0,
+            'formats' => ['office'],
+            'price_minor' => null,
+            'price_currency' => null,
+            'payment_policy' => null,
             'is_active' => true,
         ];
     }

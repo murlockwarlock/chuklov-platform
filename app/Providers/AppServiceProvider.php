@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -14,14 +15,17 @@ use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Policies\AuditEventPolicy;
 use App\Policies\ClientChannelIdentityPolicy;
 use App\Policies\ClientConsentPolicy;
 use App\Policies\ClientPolicy;
+use App\Policies\ContentSectionPolicy;
 use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
 use App\Policies\ServicePolicy;
+use App\Policies\SpecialistPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -54,5 +58,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(OrganizationFeatureFlag::class, OrganizationFeatureFlagPolicy::class);
         Gate::policy(OrganizationCredential::class, OrganizationCredentialPolicy::class);
         Gate::policy(AuditEvent::class, AuditEventPolicy::class);
+        Gate::policy(Specialist::class, SpecialistPolicy::class);
+        Gate::policy(ContentSection::class, ContentSectionPolicy::class);
     }
 }

@@ -19,9 +19,7 @@ class CreateService extends CreateRecord
 
         return app(CreateServiceAction::class)->handle(
             actor: $actor,
-            name: $data['name'],
-            summary: $data['summary'],
-            isActive: $data['is_active'],
+            name: $data,
         );
     }
 }

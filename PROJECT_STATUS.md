@@ -1,9 +1,9 @@
 # Project Status
 
-- Last updated: 2026-08-12
+- Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 2 — Client Portal + Telegram Foundation
-- Status: DONE — M2 scope is implemented and locally verified
+- Current milestone: Milestone 3 — CRM Core / Clients / Services / Specialists
+- Status: DONE — M3 implementation and required local quality gates passed; hosted verification is recorded in the local M3 report
 
 ## Completed Remediation
 
@@ -47,6 +47,14 @@
 - OQ-001 and OQ-006 are resolved for M2 by the owner-confirmed decisions recorded in `docs/product/open-questions.md`.
 - Remaining open questions concern later milestone scope and do not block completed M2 behavior.
 
+## Milestone 3
+
+- Added organization-scoped Filament CRM resources and Application actions for Clients, Service/catalog records, Specialists/Practitioners, and managed localized portal content.
+- Client CRM edits preserve verified channel identity semantics and provide audited self-service booking restriction history; no medical fields were added.
+- Specialists remain distinct organization-owned identities. Optional staff links use active same-organization `OrganizationMembership` rows and composite database ownership constraints; `users.organization_id` is not used.
+- Service catalog configuration supports localized content, category, timing, formats, active state, catalog type, payment policy, and integer minor-unit prices with explicit currency. Products have no commerce workflow.
+- No scheduling, booking, payment, medical, notification/scenario, AI, RAG, broadcast, subscription, external-channel, or Phase 2 SaaS behavior was added.
+
 ## Important Decisions
 
 - Docker build context is deny-by-default; only reviewed runtime Dockerfiles are allowed.
@@ -58,4 +66,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. The final local `make ci` passed: 9 unit tests/21 assertions, 63 feature tests/341 assertions, 13 PostgreSQL integration tests/34 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. Focused M2 remediation coverage passed with 20 tests/98 assertions before the final gate; the repository secret/privacy scan passed with no leaks after the history rewrite. Playwright was skipped because the remediation changed no browser-visible behavior. M0 and M1 were not re-audited in M2.
+2026-08-13: `composer validate --strict` passed. The final local `make ci` passed: 9 unit tests/21 assertions, 79 feature tests/399 assertions, 22 PostgreSQL integration tests/44 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. M3 focused feature coverage passed with 15 tests/47 assertions; the PostgreSQL M3 integration suite passed with 22 tests/44 assertions. `npm run test:e2e` passed on desktop and mobile after applying the pending additive migrations to the local runtime database. `make scan-secrets` passed with no leaks. M0–M2 were not re-audited.

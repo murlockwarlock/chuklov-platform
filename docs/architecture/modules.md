@@ -7,7 +7,9 @@ Current Phase 1 modules:
 - Organizations: Organization model, server-derived `OrganizationContext`, memberships, roles, settings, and feature controls.
 - Identity: client profiles, organization-scoped channel identities, consent records, and verified channel authentication/linking actions.
 - Security: encrypted organization credentials, audit events, and sensitive log redaction.
-- Services: minimal proof model and create/update/list application actions.
+- Services: organization-scoped catalog records, configuration validation, pricing representation, and create/update/list application actions. Catalog records distinguish services from physical and online products without implementing commerce.
+- Specialists: organization-owned practitioner identity and membership-backed optional staff link; scheduling remains a later module.
+- Content: organization-scoped localized CRM-managed sections consumed by approved portal routes.
 - AI: SDK agent fake path only.
 - ClientPortal: organization-scoped client session context, onboarding/progressive profiling actions, and portal entry points.
 - Conversations: organization/client-scoped normalized conversation and message persistence.

@@ -29,6 +29,8 @@ Client documents define business requirements. The master plan and ADRs define t
 
 When sources genuinely conflict and existing architecture does not resolve them, add a precise entry to `docs/product/open-questions.md` and continue unblocked work. Never silently reinterpret scope.
 
+Project `.codex/config.toml` contains durable repository MCP configuration only. Do not modify it for transient or session-specific MCP approval decisions; user-specific approval preferences belong in the user's Codex configuration.
+
 ## Architecture Invariants
 
 - Modular monolith; no microservices without an accepted ADR and demonstrated operational need.

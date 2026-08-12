@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property-read Organization $organization
@@ -36,6 +37,18 @@ class Client extends Model
     public function consents(): HasMany
     {
         return $this->hasMany(ClientConsent::class);
+    }
+
+    /** @return HasMany<ClientBookingRestriction, $this> */
+    public function bookingRestrictions(): HasMany
+    {
+        return $this->hasMany(ClientBookingRestriction::class);
+    }
+
+    /** @return HasOne<ClientBookingRestriction, $this> */
+    public function activeBookingRestriction(): HasOne
+    {
+        return $this->hasOne(ClientBookingRestriction::class)->whereNull('unblocked_at');
     }
 
     protected static function newFactory(): ClientFactory

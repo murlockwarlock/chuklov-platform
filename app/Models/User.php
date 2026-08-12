@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -30,6 +31,12 @@ class User extends Authenticatable implements FilamentUser
     public function memberships(): HasMany
     {
         return $this->hasMany(OrganizationMembership::class);
+    }
+
+    /** @return HasMany<Specialist, $this> */
+    public function specialists(): HasMany
+    {
+        return $this->hasMany(Specialist::class, 'staff_user_id');
     }
 
     public function canAccessPanel(Panel $panel): bool

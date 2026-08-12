@@ -17,4 +17,4 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-No active plans. M2 outcomes are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, and `MILESTONE_2_REPORT.md`.
+No active implementation plans.

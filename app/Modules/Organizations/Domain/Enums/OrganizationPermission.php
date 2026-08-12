@@ -10,6 +10,9 @@ enum OrganizationPermission: string
     case ManageClients = 'manage_clients';
     case RecordConsent = 'record_consent';
     case ManageServices = 'manage_services';
+    case ViewSpecialists = 'view_specialists';
+    case ManageSpecialists = 'manage_specialists';
+    case ManageContent = 'manage_content';
     case ManageSettings = 'manage_settings';
     case ManageFeatures = 'manage_features';
     case ManageCredentials = 'manage_credentials';

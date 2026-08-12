@@ -10,6 +10,7 @@ Questions block only their dependent work.
 | OQ-005 | REQ-PAYMENT-006 | Which real payment providers, merchant entities, currencies, refund capabilities, and rollout order are contracted? | Milestone 13 adapters |
 | OQ-007 | REQ-REFERRAL-001 | Confirm bonus earning, redemption, expiry, refund reversal, and cash-out rules. | Milestone 11 ledger |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
+| OQ-009 | M4 specialist scheduling | Confirm whether specialists may be assigned to services, the required cardinality, and the authorization rules for that relationship. M3 creates no service-assignment behavior. | Milestone 4 scheduling |
 
 No open question blocks Milestone 0.
 

@@ -1,5 +1,17 @@
 # Requirements Changelog
 
+## 2026-08-12 — M3 owner clarification
+
+- Added `REQ-SPECIALIST-001`: one organization-owned Specialist/Practitioner entity with display/full name, active state, optional same-organization staff User link, optional IANA timezone, audited management, and no implied schedule or service assignment.
+- Added `REQ-NOTIFY-007` for future organization-configured internal notification recipients and verified delivery-channel selection by event type; implementation remains in Milestone 5.
+- Added `REQ-MEDICAL-SEC-001` for a future application encryption boundary supporting organization-scoped key resolution and key rotation; implementation remains in Milestone 7.
+- Added OQ-009 to defer any specialist-to-service relationship decision to Milestone 4 scheduling.
+- Clarified that specialist staff links are proven by active same-organization `OrganizationMembership` rows; legacy `users.organization_id` is not an authorization or membership source.
+
+## 2026-08-13 — M3 implementation traceability
+
+- Marked `REQ-CRM-001`, `REQ-CLIENT-003`, `REQ-SPECIALIST-001`, `REQ-SERVICE-002`, `REQ-PRODUCT-001`, and `REQ-CHANNEL-004` implemented after the organization-scoped CRM, catalog, specialist, restriction, and managed-content slices were added with focused and PostgreSQL coverage.
+
 ## 2026-08-12 — M2 owner decisions
 
 - Resolved OQ-001 as passwordless ordinary-browser email authentication with short-lived single-use bounded verification codes, Laravel session regeneration, provider-neutral delivery, and no reusable passwords or SMS OTP.

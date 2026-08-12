@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 
-defineProps<{
+const props = defineProps<{
     section: string;
-    title: { en: string; ru: string };
+    content: Record<string, { title: string; body: string; media: Record<string, string> | null }>;
 }>();
 </script>
 
 <template>
-  <Head :title="title.en" />
+  <Head :title="props.content.en?.title ?? props.content.ru?.title ?? props.section" />
   <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <div class="portal-stack portal-stack--tight">
@@ -16,11 +16,11 @@ defineProps<{
           Telegram menu
         </p>
         <h1 class="portal-heading portal-heading--page">
-          {{ title.en }}
+          {{ props.content.en?.title ?? props.content.ru?.title ?? props.section }}
         </h1>
       </div>
-      <p class="portal-notice">
-        This localized entry point is configured for the Client Portal foundation. CRM-managed content is deferred to its accepted milestone.
+      <p class="portal-copy whitespace-pre-line">
+        {{ props.content.en?.body ?? props.content.ru?.body }}
       </p>
       <Link
         href="/"
