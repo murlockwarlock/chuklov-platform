@@ -18,10 +18,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('throttle:20,1')
         ->name('portal.telegram.auth');
     Route::post('/portal/auth/email/request', [EmailAuthenticationController::class, 'requestCode'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:30,1')
         ->name('portal.email.request');
     Route::post('/portal/auth/email/verify', [EmailAuthenticationController::class, 'verifyCode'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:30,1')
         ->name('portal.email.verify');
 
     Route::middleware(ResolveClientPortalSession::class)->group(function (): void {

@@ -14,6 +14,8 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\ViewErrorBag;
+use Illuminate\Testing\TestResponse;
 use Tests\Support\RecordingEmailVerificationCodeSender;
 use Tests\TestCase;
 
@@ -62,10 +64,12 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $sender = $this->fakeSender();
 
         $this->post(route('portal.email.request'), ['email' => 'invalid@example.test']);
-        $this->post(route('portal.email.verify'), [
+        $response = $this->post(route('portal.email.verify'), [
             'email' => 'invalid@example.test',
             'code' => '000000',
-        ])->assertSessionHasErrors('code')->assertSessionHas('email_code_sent', true);
+        ]);
+        $this->assertCodeValidationError($response);
+        $response->assertSessionHas('email_code_sent', true);
         self::assertSame(
             1,
             ClientEmailAuthChallenge::query()->where('email', 'invalid@example.test')->sole()->attempts,
@@ -73,10 +77,10 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
 
         $this->post(route('portal.email.request'), ['email' => 'expired@example.test']);
         Carbon::setTestNow(now()->addMinutes(11));
-        $this->post(route('portal.email.verify'), [
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'expired@example.test',
             'code' => $sender->code,
-        ])->assertSessionHasErrors('code');
+        ]));
         Carbon::setTestNow();
 
         $this->post(route('portal.email.request'), ['email' => 'replay@example.test']);
@@ -85,10 +89,10 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             'email' => 'replay@example.test',
             'code' => $code,
         ])->assertRedirect(route('portal.onboarding'));
-        $this->post(route('portal.email.verify'), [
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'replay@example.test',
             'code' => $code,
-        ])->assertSessionHasErrors('code');
+        ]));
     }
 
     public function test_attempts_are_bounded_and_request_rate_is_limited(): void
@@ -100,18 +104,18 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
 
         $this->post(route('portal.email.request'), ['email' => 'bounded@example.test'])
             ->assertRedirect();
-        $this->post(route('portal.email.verify'), [
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'bounded@example.test',
             'code' => '000000',
-        ])->assertSessionHasErrors('code');
-        $this->post(route('portal.email.verify'), [
+        ]));
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'bounded@example.test',
             'code' => '111111',
-        ])->assertSessionHasErrors('code');
-        $this->post(route('portal.email.verify'), [
+        ]));
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'bounded@example.test',
             'code' => '222222',
-        ])->assertSessionHasErrors('code');
+        ]));
 
         self::assertSame(2, ClientEmailAuthChallenge::query()->sole()->attempts);
         $this->post(route('portal.email.request'), ['email' => 'bounded@example.test'])
@@ -176,6 +180,20 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         );
 
         return $sender;
+    }
+
+    private function assertCodeValidationError(TestResponse $response): void
+    {
+        $response->assertRedirect();
+        $response->assertSessionHas('errors', static function (mixed $errors): bool {
+            if ($errors instanceof ViewErrorBag) {
+                return $errors->getBag('default')->has('code');
+            }
+
+            return is_array($errors)
+                && isset($errors['default']['messages']['code'])
+                && $errors['default']['messages']['code'] !== [];
+        });
     }
 
     private function organizationWithClientRecords(): Organization
