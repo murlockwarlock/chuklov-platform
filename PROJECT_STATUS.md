@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 3 — CRM Core / Clients / Services / Specialists
-- Status: DONE — M3 implementation and required local quality gates passed; hosted verification is recorded in the local M3 report
+- Current milestone: Milestone 4A — Scheduling Foundation
+- Status: M4A READY FOR REVIEW — implementation and final local gates pass; hosted exact-SHA result will be recorded in the local M4 report after push
 
 ## Completed Remediation
 
@@ -45,7 +45,7 @@
 ## Blockers / Open Questions
 
 - OQ-001 and OQ-006 are resolved for M2 by the owner-confirmed decisions recorded in `docs/product/open-questions.md`.
-- Remaining open questions concern later milestone scope and do not block completed M2 behavior.
+- OQ-002 and OQ-009 remain open boundaries for the pending M4B/M4C work; no unconfirmed policy was invented in M4A.
 
 ## Milestone 3
 
@@ -54,6 +54,16 @@
 - Specialists remain distinct organization-owned identities. Optional staff links use active same-organization `OrganizationMembership` rows and composite database ownership constraints; `users.organization_id` is not used.
 - Service catalog configuration supports localized content, category, timing, formats, active state, catalog type, payment policy, and integer minor-unit prices with explicit currency. Products have no commerce workflow.
 - No scheduling, booking, payment, medical, notification/scenario, AI, RAG, broadcast, subscription, external-channel, or Phase 2 SaaS behavior was added.
+
+## Milestone 4A
+
+- Accepted M3 base is b15866f007be4a5db8397120d91f4691ce85382b; M3 remains closed and was not re-audited.
+- Added organization-scoped recurring specialist working hours, date exceptions, unavailable periods, organization-level booking lead time, typed visit formats, booking persistence, immutable booking events, and the authoritative availability Application path.
+- Availability uses specialist-or-organization IANA scheduling timezone, separate client display timezone, DST-safe local wall-clock conversion, service duration/buffer, lead time, exceptions, unavailability, and blocking booking intervals.
+- PostgreSQL composite ownership FKs, important checks, GiST exclusion constraints, specialist-row transaction locking, and online-only meeting metadata checks protect scheduling invariants. No application-only check-then-insert strategy is used.
+- Added CRM scheduling configuration, exception/unavailable-period resources, and a small authenticated Portal availability projection with explicit Inertia props.
+- OQ-002 cancellation/reschedule/refund behavior and OQ-009 specialist-service assignment/eligibility remain intentionally unresolved. No M4B/M4C lifecycle completion or M5+ behavior was started.
+- Focused verification passes: 16 scheduling Unit/Feature tests/46 assertions and 37 PostgreSQL integration tests/67 assertions. Final make quality and make ci both pass: 13 Unit tests/28 assertions, 99 Feature tests/540 assertions, Larastan 0 errors, clean Pint/ESLint/vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Playwright was not run because M4A adds no interactive booking flow.
 
 ## Important Decisions
 

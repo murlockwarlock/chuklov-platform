@@ -12,6 +12,8 @@ use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
@@ -24,8 +26,10 @@ use App\Policies\ContentSectionPolicy;
 use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
+use App\Policies\ScheduleExceptionPolicy;
 use App\Policies\ServicePolicy;
 use App\Policies\SpecialistPolicy;
+use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -59,6 +63,8 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(OrganizationCredential::class, OrganizationCredentialPolicy::class);
         Gate::policy(AuditEvent::class, AuditEventPolicy::class);
         Gate::policy(Specialist::class, SpecialistPolicy::class);
+        Gate::policy(ScheduleException::class, ScheduleExceptionPolicy::class);
+        Gate::policy(UnavailablePeriod::class, UnavailablePeriodPolicy::class);
         Gate::policy(ContentSection::class, ContentSectionPolicy::class);
     }
 }

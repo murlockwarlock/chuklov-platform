@@ -18,6 +18,7 @@ enum OrganizationRole: string
                 OrganizationPermission::ManageClients,
                 OrganizationPermission::RecordConsent,
                 OrganizationPermission::ViewSpecialists,
+                OrganizationPermission::ViewScheduling,
             ], true),
         };
     }

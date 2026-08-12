@@ -17,4 +17,6 @@ enum OrganizationPermission: string
     case ManageFeatures = 'manage_features';
     case ManageCredentials = 'manage_credentials';
     case ViewAuditEvents = 'view_audit_events';
+    case ViewScheduling = 'view_scheduling';
+    case ManageScheduling = 'manage_scheduling';
 }

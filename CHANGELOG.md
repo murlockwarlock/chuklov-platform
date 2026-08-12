@@ -6,6 +6,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Added
 
+- Milestone 4A scheduling foundation: organization-scoped specialist working hours, date exceptions, unavailable periods, configurable lead time, UTC/IANA availability projections, typed visit formats, booking persistence, immutable booking events, PostgreSQL interval conflict protection, CRM scheduling configuration, and a client-safe Portal availability read path.
 - Milestone 3 organization-scoped CRM management for Clients, Specialists, localized managed content, and the existing Service catalog, including audited profile/restriction mutations, membership-backed specialist staff links, IANA specialist timezones, catalog type/configuration, and integer minor-unit pricing.
 - Laravel 13 modular-monolith foundation with Filament 5, Vue 3/Inertia 3/TypeScript, PostgreSQL/pgvector, Redis/Horizon, Laravel AI SDK, Nutgram, Docker Compose, CI, and reproducible lockfiles.
 - Server-derived Organization context, private storage default, health endpoint, and an organization-scoped Service vertical slice shared by CRM and Client Portal.

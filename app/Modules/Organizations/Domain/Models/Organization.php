@@ -4,6 +4,7 @@ namespace App\Modules\Organizations\Domain\Models;
 
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -32,6 +33,12 @@ class Organization extends Model
     public function featureFlags(): HasMany
     {
         return $this->hasMany(OrganizationFeatureFlag::class);
+    }
+
+    /** @return HasMany<Booking, $this> */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
     }
 
     public function defaultTimezone(): string

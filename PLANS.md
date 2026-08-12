@@ -17,4 +17,31 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-No active implementation plans.
+### M4 Scheduling / Booking
+
+Accepted base: b15866f007be4a5db8397120d91f4691ce85382b
+
+Objective: implement the organization-scoped scheduling foundation and then complete the booking lifecycle without reopening M3 or entering M5+ scope.
+
+Affected requirements and modules: REQ-TIMEZONE-001/002, REQ-BOOKING-001/002/003/004/005/006/008/009, REQ-CLIENT-003, REQ-SERVICE-002, REQ-SPECIALIST-001; Scheduling, Organizations, Services, Specialists, Identity, Security, CRM, and Client Portal.
+
+Non-goals: OQ-002 cancellation/reschedule policy and payment consequences; OQ-009 specialist-service eligibility/cardinality; notifications, finance, medical, surveys, RAG, AI, SaaS, marketplace, and real providers.
+
+#### M4A — scheduling foundation — implemented
+
+- Recurring specialist working hours, date exceptions, unavailable periods, organization-level lead time, typed visit formats, booking persistence, immutable booking events, and explicit UTC/IANA projections.
+- One Application availability path consumes service duration/buffer, exceptions, unavailable periods, lead time, existing blocking bookings, and specialist/client timezone contexts.
+- PostgreSQL composite ownership FKs, checks, GiST exclusion constraints, specialist-row transaction locking, and focused Unit/Feature/PostgreSQL coverage are in place.
+- CRM configuration is limited to working hours, lead time, exceptions, and unavailable periods. Portal exposes a read-only explicit availability projection.
+
+#### M4B — booking lifecycle and CRM/client flow — pending
+
+- Implement safe request/approval/confirmation flow, client and CRM booking surfaces, and restriction-aware self-service creation on the shared Application path.
+- Do not start until M4A final local and hosted gates are recorded.
+
+#### M4C — reschedule/cancel/history/home/online completion — pending
+
+- Resolve OQ-002 before self-service cancellation/rescheduling.
+- Add explicit immutable lifecycle events, home-visit approval/payment handoff, online meeting-link completion, and client history/home/online behavior only after their accepted policies are available.
+
+Final M4A checkpoints: focused tests → PostgreSQL integration → make quality once → make ci once → exact-SHA hosted CI verification → update PROJECT_STATUS.md and local MILESTONE_4_REPORT.md.

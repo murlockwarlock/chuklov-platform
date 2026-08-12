@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\SectionController;
@@ -29,6 +30,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
 
         Route::middleware(RequireClientPortalSession::class)->group(function (): void {
+            Route::get('/portal/availability', AvailabilityController::class)->name('portal.availability');
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/onboarding', [OnboardingController::class, 'show'])->name('portal.onboarding');

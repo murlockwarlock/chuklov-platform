@@ -3,12 +3,14 @@
 namespace App\Modules\Services\Domain\Models;
 
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use Database\Factories\ServiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property-read Organization $organization
@@ -38,6 +40,41 @@ class Service extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /** @return HasMany<Booking, $this> */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
+    }
+
+    public function catalogItemType(): CatalogItemType
+    {
+        $value = $this->getAttribute('catalog_type');
+
+        return $value instanceof CatalogItemType ? $value : CatalogItemType::from((string) $value);
+    }
+
+    public function durationMinutes(): ?int
+    {
+        $value = $this->getAttribute('duration_minutes');
+
+        return $value === null ? null : (int) $value;
+    }
+
+    /** @return list<string> */
+    public function supportedFormats(): array
+    {
+        $value = $this->getAttribute('formats');
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $value,
+            static fn (mixed $format): bool => is_string($format),
+        ));
     }
 
     protected static function newFactory(): ServiceFactory

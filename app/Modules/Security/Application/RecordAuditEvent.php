@@ -33,6 +33,13 @@ class RecordAuditEvent
         'content.section.updated' => ['section_key', 'locale', 'is_visible'],
         'legal.document.published' => ['document_type', 'version', 'locale', 'management_mode'],
         'legal.document.draft.updated' => ['document_type', 'version', 'locale'],
+        'organization.scheduling.lead_time.updated' => ['minutes'],
+        'specialist.schedule.updated' => ['weekday_count', 'interval_count'],
+        'specialist.schedule.exception.created' => ['exception_type', 'source'],
+        'specialist.schedule.exception.deleted' => ['source'],
+        'specialist.unavailable_period.created' => ['source'],
+        'specialist.unavailable_period.deleted' => ['source'],
+        'booking.created' => ['source', 'visit_format', 'status'],
     ];
 
     /** @param array<array-key, mixed> $metadata */

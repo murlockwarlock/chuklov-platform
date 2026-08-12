@@ -3,6 +3,7 @@
 namespace App\Modules\Identity\Domain\Models;
 
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -49,6 +50,12 @@ class Client extends Model
     public function activeBookingRestriction(): HasOne
     {
         return $this->hasOne(ClientBookingRestriction::class)->whereNull('unblocked_at');
+    }
+
+    /** @return HasMany<Booking, $this> */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(Booking::class);
     }
 
     protected static function newFactory(): ClientFactory

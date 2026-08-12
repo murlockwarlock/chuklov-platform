@@ -5,6 +5,7 @@ namespace App\Modules\Organizations\Application;
 use App\Models\User;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingType;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -54,6 +55,11 @@ class SetOrganizationSetting
 
     private function validate(OrganizationSettingKey $key, string|int|bool $value): void
     {
+        if ($key->type() === OrganizationSettingType::Integer
+            && (! is_int($value) || $value < 0)) {
+            throw new InvalidArgumentException('The integer setting value is invalid.');
+        }
+
         if ($key->value === OrganizationSettingKey::DefaultLanguage->value) {
             if (! is_string($value) || preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/', $value) !== 1) {
                 throw new InvalidArgumentException('The default language must be a valid language tag.');
