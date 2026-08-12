@@ -11,8 +11,7 @@
 - M0-AUDIT-M01 through M06 remediated: expanded CI, Filament tenant/workflow coverage, fake-only Nutgram handler evidence, guarded User privilege fields, local unreachable-object pruning, and privacy-policy correction.
 - Safe LOW cleanup completed: skill link/size cleanup, port alignment, demo/redundant scaffold removal, and Horizon snapshot scheduling.
 - Local quality, integration, Playwright, privacy/secret, Docker build, runtime health, and Horizon gates pass.
-- Fresh clone of remediation commit `233ffcc7604a08638d05195333a5c0f1e13b1f1b` completed isolated setup, migrations/seed/build, key idempotence, integration tests, dependency health, and Horizon runtime checks.
-- Hosted GitHub Actions passed for remediation revision `881c6ac5d3ee8d4ef1bcce6ee8e69b4d904dea64`: quality/integration, Playwright desktop/mobile, privacy/secret, and Docker runtime/Horizon.
+- Fresh-clone and hosted checks from earlier milestones remain historical evidence; their pre-rewrite SHA values are not acceptance revisions.
 
 ## Milestone 1
 
@@ -35,6 +34,8 @@
 - Added server-verified Telegram initData authentication with signature validation through Nutgram, freshness and replay controls, session regeneration, organization-scoped client resolution, and redacted audit metadata.
 - Added passwordless email authentication with normalized identities, hashed single-use codes, expiry, bounded attempts/rate limits, provider-neutral delivery, and session regeneration.
 - Added verified Telegram identity linking/reuse through short-lived server tokens and authentic bot evidence; token replay, forged identity, cross-organization, and frontend-override paths are rejected.
+- Remediated M2 replay canonicalization, fail-closed authentication mail transport handling, concurrent Telegram link initiation, and concurrent legal publication with PostgreSQL invariants and stable-row serialization.
+- Removed tracked private master/report documents from the current index and rewritten reachable history; RECHECK, review/report/audit, master-plan, and source-requirement policies are now ignored while local copies remain available.
 - Added deterministic organization/client uniqueness, progressive profile confirmation, versioned onboarding progress, a localized configurable Telegram menu, and the capability-aware channel boundary.
 - Added organization/client-scoped conversations and normalized idempotent message persistence with an allowlisted metadata shape.
 - Added organization-scoped versioned legal documents, immutable published versions, exact-version portal consent evidence, and platform-controlled Phase 1 legal management; organizations cannot self-enable organization-managed wording.
@@ -57,4 +58,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. The final `make ci` passed: 8 unit tests/19 assertions, 61 feature tests/335 assertions, 11 PostgreSQL integration tests/32 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. ESLint passed cleanly. Separate M2 focused coverage passed with 27 tests/180 assertions plus 5 PostgreSQL M2 database tests/15 assertions; hosted-equivalent email/Telegram coverage passed with 15 tests/133 assertions. Playwright desktop/mobile smoke passed with 2 tests. GitHub Actions run `31621335338` passed for final implementation SHA `0080855a174164e88faecd7c3293d8c73a9c421e`. M0 and M1 were not re-audited in M2.
+2026-08-12: `composer validate --strict` passed. The final local `make ci` passed: 9 unit tests/21 assertions, 63 feature tests/341 assertions, 13 PostgreSQL integration tests/34 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. Focused M2 remediation coverage passed with 20 tests/98 assertions before the final gate; the repository secret/privacy scan passed with no leaks after the history rewrite. Playwright was skipped because the remediation changed no browser-visible behavior. M0 and M1 were not re-audited in M2.
