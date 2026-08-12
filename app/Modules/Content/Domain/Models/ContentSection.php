@@ -9,7 +9,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** @property-read Organization $organization */
+/**
+ * @property-read Organization $organization
+ * @property array<string, string>|null $media
+ */
 #[Fillable(['section_key', 'locale', 'title', 'body', 'media', 'sort_order'])]
 class ContentSection extends Model
 {

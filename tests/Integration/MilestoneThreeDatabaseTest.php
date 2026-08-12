@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -97,6 +98,63 @@ class MilestoneThreeDatabaseTest extends TestCase
         ]);
     }
 
+    public function test_postgresql_catalog_timing_upper_boundary_persists(): void
+    {
+        $organization = Organization::factory()->create();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 65535,
+            'buffer_minutes' => 65535,
+        ]);
+
+        self::assertSame(65535, $service->fresh()->duration_minutes);
+        self::assertSame(65535, $service->fresh()->buffer_minutes);
+    }
+
+    public function test_service_catalog_check_rejects_out_of_range_timing(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 65536,
+        ]);
+    }
+
+    public function test_service_catalog_check_rejects_negative_buffer(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        Service::factory()->forOrganization($organization)->create([
+            'buffer_minutes' => -1,
+        ]);
+    }
+
+    public function test_service_catalog_check_rejects_negative_price(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        Service::factory()->forOrganization($organization)->create([
+            'price_minor' => -1,
+            'price_currency' => 'USD',
+        ]);
+    }
+
+    public function test_content_section_check_rejects_negative_order(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        ContentSection::factory()->forOrganization($organization)->create([
+            'sort_order' => -1,
+        ]);
+    }
+
     public function test_service_catalog_check_rejects_mismatched_money_pair(): void
     {
         $organization = Organization::factory()->create();
@@ -116,6 +174,36 @@ class MilestoneThreeDatabaseTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    public function test_service_catalog_check_rejects_currency_without_price(): void
+    {
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        Service::factory()->forOrganization($organization)->create([
+            'price_minor' => null,
+            'price_currency' => 'USD',
+        ]);
+    }
+
+    public function test_zero_price_buffer_and_content_order_are_valid_boundaries(): void
+    {
+        $organization = Organization::factory()->create();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 1,
+            'buffer_minutes' => 0,
+            'price_minor' => 0,
+            'price_currency' => 'USD',
+        ]);
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'sort_order' => 0,
+        ]);
+
+        self::assertSame(0, $service->fresh()->buffer_minutes);
+        self::assertSame(0, $service->fresh()->price_minor);
+        self::assertSame(0, $section->fresh()->sort_order);
     }
 
     public function test_active_client_restriction_is_unique(): void

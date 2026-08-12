@@ -95,6 +95,31 @@ class FilamentServiceSecurityTest extends TestCase
                 ->where('services.0.name', 'Updated Filament Foundation Service'));
     }
 
+    public function test_filament_integer_catalog_fields_reject_decimal_input(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->enableServiceCatalog($organization);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(CreateService::class)
+            ->fillForm([
+                'name' => 'Decimal catalog item',
+                'summary' => 'Decimal values must not persist.',
+                'duration_minutes' => '60.5',
+                'buffer_minutes' => '5.5',
+                'price_minor' => '1250.50',
+                'price_currency' => 'USD',
+                'is_active' => true,
+                'catalog_type' => 'service',
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['duration_minutes', 'buffer_minutes', 'price_minor']);
+
+        self::assertSame(0, Service::query()->count());
+    }
+
     private function resolveFilamentContext(User $admin, Organization $organization): void
     {
         $this->setServerOrganization($organization);

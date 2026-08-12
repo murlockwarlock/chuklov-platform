@@ -28,7 +28,7 @@ class ServicesTable
                 TextColumn::make('category')->placeholder('—')->sortable(),
                 TextColumn::make('duration_minutes')->label('Duration')->suffix(' min')->sortable(),
                 TextColumn::make('price_minor')
-                    ->label('Price')
+                    ->label('Price (minor units)')
                     ->state(fn (Service $record): string => $record->price_minor === null
                         ? '—'
                         : $record->price_minor.' '.($record->price_currency ?? '')),

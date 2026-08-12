@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -65,6 +66,7 @@ class ServiceVerticalSliceTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $other = Organization::factory()->create();
+        $this->enableServiceCatalog($organization);
         config()->set('tenancy.default_organization_id', $organization->id);
         Service::factory()->forOrganization($organization)->create(['name' => 'Allowed']);
         Service::factory()->forOrganization($other)->create(['name' => 'Forbidden']);
@@ -80,6 +82,7 @@ class ServiceVerticalSliceTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $other = Organization::factory()->create();
+        $this->enableServiceCatalog($organization);
         config()->set('tenancy.default_organization_id', $organization->id);
         Service::factory()->forOrganization($organization)->inactive()->create();
         Service::factory()->forOrganization($other)->create();
@@ -87,6 +90,31 @@ class ServiceVerticalSliceTest extends TestCase
         $this->get(route('portal.services.index'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page->has('services', 0));
+    }
+
+    public function test_disabled_service_catalog_hides_existing_services_from_portal_and_onboarding(): void
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()
+            ->forOrganization($organization)
+            ->create();
+        Service::factory()->forOrganization($organization)->create([
+            'name' => 'Existing service after entitlement removal',
+        ]);
+        config()->set('tenancy.default_organization_id', $organization->id);
+        $this->withSession(['client_portal.client_id' => $client->id]);
+
+        $this->get(route('portal.services.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Services/Index')
+                ->has('services', 0));
+
+        $this->get(route('portal.onboarding'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Onboarding')
+                ->has('services', 0));
     }
 
     private function enableServiceCatalog(Organization $organization): void

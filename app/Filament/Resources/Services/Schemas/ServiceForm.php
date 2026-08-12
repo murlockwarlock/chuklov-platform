@@ -43,12 +43,12 @@ class ServiceForm
                     ->maxLength(120),
                 TextInput::make('duration_minutes')
                     ->label('Duration (minutes)')
-                    ->numeric()
+                    ->integer()
                     ->minValue(1)
                     ->maxValue(65535),
                 TextInput::make('buffer_minutes')
                     ->label('Buffer (minutes)')
-                    ->numeric()
+                    ->integer()
                     ->default(0)
                     ->minValue(0)
                     ->maxValue(65535),
@@ -61,8 +61,9 @@ class ServiceForm
                     ->columns(3),
                 TextInput::make('price_minor')
                     ->label('Price (minor currency units)')
-                    ->numeric()
-                    ->minValue(0),
+                    ->integer()
+                    ->minValue(0)
+                    ->maxValue(PHP_INT_MAX),
                 TextInput::make('price_currency')
                     ->label('Currency')
                     ->maxLength(3),

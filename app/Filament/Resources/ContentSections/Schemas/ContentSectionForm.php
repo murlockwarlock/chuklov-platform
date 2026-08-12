@@ -37,9 +37,10 @@ class ContentSectionForm
                     ->keyLabel('Key')
                     ->valueLabel('Value'),
                 TextInput::make('sort_order')
-                    ->numeric()
+                    ->integer()
                     ->default(0)
-                    ->minValue(0),
+                    ->minValue(0)
+                    ->maxValue(PHP_INT_MAX),
                 Toggle::make('is_visible')
                     ->required()
                     ->default(true),

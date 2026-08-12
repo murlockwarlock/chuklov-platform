@@ -160,7 +160,7 @@ final readonly class ServiceConfiguration
 
     private static function emptyToZero(mixed $value): mixed
     {
-        return is_string($value) && trim($value) === '' ? 0 : $value;
+        return $value === null || (is_string($value) && trim($value) === '') ? 0 : $value;
     }
 
     private static function catalogType(mixed $value): CatalogItemType
