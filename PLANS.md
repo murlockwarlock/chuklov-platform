@@ -17,4 +17,4 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-None. Start the next non-trivial milestone with a scoped plan before implementation.
+None. M1 implementation outcomes are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, `CHANGELOG.md`, the requirements traceability, and `MILESTONE_1_REPORT.md`.

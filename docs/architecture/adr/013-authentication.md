@@ -13,4 +13,4 @@ Use session/CSRF authentication for CRM and server verification for Telegram. De
 
 ## Consequences
 
-M0 provides admin authorization only. M2 must finalize this ADR after owner confirmation.
+M1 provides staff identity and organization RBAC for the CRM boundary without implementing client authentication. M2 must finalize this ADR after owner confirmation of ordinary client web authentication.

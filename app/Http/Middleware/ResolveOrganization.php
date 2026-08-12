@@ -16,16 +16,18 @@ class ResolveOrganization
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        $organizationId = $user instanceof User
-            ? $user->organization_id
-            : config('tenancy.default_organization_id');
+        $organizationId = config('tenancy.default_organization_id');
 
         $isInteger = is_int($organizationId)
             || (is_string($organizationId) && ctype_digit($organizationId));
 
         abort_unless($isInteger, 503, 'Organization is not configured.');
 
-        $this->context->set(Organization::query()->findOrFail((int) $organizationId));
+        $organization = Organization::query()->findOrFail((int) $organizationId);
+
+        abort_if($user instanceof User && $user->membershipFor($organization) === null, 403);
+
+        $this->context->set($organization);
 
         return $next($request);
     }

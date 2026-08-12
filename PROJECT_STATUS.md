@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-12
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 0 — Repository Foundation
-- Status: DONE — ready for independent re-audit
+- Current milestone: Milestone 1 — Organizations / Identity / Settings / Security Foundations
+- Status: DONE
 
 ## Completed Remediation
 
@@ -14,17 +14,22 @@
 - Fresh clone of remediation commit `233ffcc7604a08638d05195333a5c0f1e13b1f1b` completed isolated setup, migrations/seed/build, key idempotence, integration tests, dependency health, and Horizon runtime checks.
 - Hosted GitHub Actions passed for remediation revision `881c6ac5d3ee8d4ef1bcce6ee8e69b4d904dea64`: quality/integration, Playwright desktop/mobile, privacy/secret, and Docker runtime/Horizon.
 
-## In Progress
+## Milestone 1
 
-None. Independent re-audit is intentionally outside this remediation session.
+- Implemented organization memberships with owner/administrator/staff roles, context-bound policies, client identity foundations, typed settings and feature controls, encrypted rotatable credentials, safe audit events, and log redaction.
+- Added PostgreSQL-oriented constraints, composite organization/client foreign keys, ownership indexes, and a legacy-user membership backfill without rewriting M0 migration history.
+- Added focused organization isolation, IDOR, membership/RBAC, mass-assignment, feature/settings, identity, credential, audit, and logging regression coverage.
+- M0 remains accepted; no M0 re-audit or fresh-clone verification was performed in this milestone.
 
 ## Next
 
-- Submit Milestone 0 for independent re-audit. Do not begin Milestone 1 in this session.
+- Resolve OQ-001 before implementing ordinary client web authentication in M2.
+- Begin M2 only under its approved scope; Telegram onboarding and ordinary web authentication remain deferred.
 
 ## Blockers / Open Questions
 
-None.
+- OQ-001 ordinary client web authentication mechanism remains open.
+- OQ-006 legal consent texts, jurisdictions, lawful basis, retention, and approved versions remain open.
 
 ## Important Decisions
 
@@ -32,7 +37,9 @@ None.
 - Routine setup never rotates a nonblank `APP_KEY`; deliberate rotation is a separate authorized operation.
 - M0 hosted CI separates quality/integration, Playwright, privacy/secret, and Docker runtime gates for diagnosability.
 - Client source documents and full chat history remain local-only; normalized REQs and sanitized repository docs are the Git development source.
+- M1 keeps `organization_id` as the security boundary, derives runtime context from server configuration/membership, and does not introduce `master_id`, heavy tenancy, SaaS provisioning, or provider integrations.
+- M1 credentials use Laravel encrypted casts and are only exposed through masked representations; audit metadata is sanitized before persistence.
 
 ## Latest Verified Local Quality Gate
 
-2026-08-12: `composer validate --strict` passed. `make ci` passed: 2 unit tests/2 assertions, 12 feature tests/70 assertions, 3 integration tests/6 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Playwright desktop/mobile passed 2/2. Docker context regression and Gitleaks history/working-tree scans passed. App/Horizon/scheduler images built with a 1.053 kB context; dependency health was all true and Horizon reported running. Hosted CI run `31543680720` passed all four jobs for `881c6ac5d3ee8d4ef1bcce6ee8e69b4d904dea64`.
+2026-08-12: `composer validate --strict` passed. Final `make ci` passed: 3 unit tests/6 assertions, 23 feature tests/114 assertions, 5 PostgreSQL integration tests/11 assertions, Pint, Larastan with 0 errors, ESLint, TypeScript, Vite build, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. M1-focused security tests passed separately: 21 tests/109 assertions. Playwright, Docker build/runtime, privacy, and secret scans were not rerun because M1 did not change those M0 surfaces; no fresh-clone verification or M0 re-audit was performed.

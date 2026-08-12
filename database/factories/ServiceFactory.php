@@ -13,7 +13,6 @@ class ServiceFactory extends Factory
     public function definition(): array
     {
         return [
-            'organization_id' => Organization::factory(),
             'name' => fake()->unique()->words(3, true),
             'summary' => fake()->sentence(),
             'is_active' => true,
@@ -23,5 +22,12 @@ class ServiceFactory extends Factory
     public function inactive(): static
     {
         return $this->state(fn (): array => ['is_active' => false]);
+    }
+
+    public function forOrganization(Organization $organization): static
+    {
+        return $this->afterMaking(fn (Service $service): Service => $service->forceFill([
+            'organization_id' => $organization->getKey(),
+        ]));
     }
 }

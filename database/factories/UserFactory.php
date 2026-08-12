@@ -3,7 +3,9 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -26,14 +28,25 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'organization_id' => Organization::factory(),
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
-            'is_admin' => true,
             'remember_token' => Str::random(10),
         ];
+    }
+
+    public function forOrganization(
+        Organization $organization,
+        OrganizationRole $role = OrganizationRole::Administrator,
+    ): static {
+        return $this->afterCreating(function (User $user) use ($organization, $role): void {
+            OrganizationMembership::factory()
+                ->forOrganization($organization)
+                ->forUser($user)
+                ->state(['role' => $role->value])
+                ->create();
+        });
     }
 
     /**

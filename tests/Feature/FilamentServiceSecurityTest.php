@@ -6,6 +6,7 @@ use App\Filament\Resources\Services\Pages\CreateService;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Facades\Filament;
@@ -22,9 +23,9 @@ class FilamentServiceSecurityTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $otherOrganization = Organization::factory()->create();
-        $admin = User::factory()->for($organization)->create();
-        $ownService = Service::factory()->for($organization)->create();
-        $otherService = Service::factory()->for($otherOrganization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $ownService = Service::factory()->forOrganization($organization)->create();
+        $otherService = Service::factory()->forOrganization($otherOrganization)->create();
 
         $this->actingAs($admin)
             ->get(route('filament.admin.resources.services.edit', ['record' => $ownService]))
@@ -38,11 +39,8 @@ class FilamentServiceSecurityTest extends TestCase
     public function test_non_admin_and_organizationless_users_are_rejected(): void
     {
         $organization = Organization::factory()->create();
-        $nonAdmin = User::factory()->for($organization)->create(['is_admin' => false]);
-        $organizationlessAdmin = User::factory()->create([
-            'organization_id' => null,
-            'is_admin' => true,
-        ]);
+        $nonAdmin = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $organizationlessAdmin = User::factory()->create();
 
         $this->actingAs($nonAdmin)->get('/admin')->assertForbidden();
         $this->actingAs($organizationlessAdmin)->get('/admin')->assertForbidden();
@@ -52,7 +50,7 @@ class FilamentServiceSecurityTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $otherOrganization = Organization::factory()->create();
-        $admin = User::factory()->for($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
@@ -79,8 +77,8 @@ class FilamentServiceSecurityTest extends TestCase
             ->call('save')
             ->assertHasNoErrors();
 
-        Service::factory()->for($organization)->inactive()->create(['name' => 'Inactive Service']);
-        Service::factory()->for($otherOrganization)->create(['name' => 'Cross Organization Service']);
+        Service::factory()->forOrganization($organization)->inactive()->create(['name' => 'Inactive Service']);
+        Service::factory()->forOrganization($otherOrganization)->create(['name' => 'Cross Organization Service']);
 
         $this->actingAs($admin)
             ->get(route('portal.services.index'))

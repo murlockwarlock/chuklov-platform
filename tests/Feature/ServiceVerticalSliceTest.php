@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Services\Application\CreateService;
 use App\Modules\Services\Domain\Models\Service;
@@ -17,10 +19,11 @@ class ServiceVerticalSliceTest extends TestCase
     public function test_application_created_service_is_visible_in_the_portal(): void
     {
         $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->id);
         app(OrganizationContext::class)->set($organization);
 
-        app(CreateService::class)->handle('Foundation Service', 'Architecture proof.', true);
+        app(CreateService::class)->handle($admin, 'Foundation Service', 'Architecture proof.', true);
 
         $this->get(route('portal.services.index'))
             ->assertOk()
@@ -35,8 +38,8 @@ class ServiceVerticalSliceTest extends TestCase
         $organization = Organization::factory()->create();
         $other = Organization::factory()->create();
         config()->set('tenancy.default_organization_id', $organization->id);
-        Service::factory()->for($organization)->create(['name' => 'Allowed']);
-        Service::factory()->for($other)->create(['name' => 'Forbidden']);
+        Service::factory()->forOrganization($organization)->create(['name' => 'Allowed']);
+        Service::factory()->forOrganization($other)->create(['name' => 'Forbidden']);
 
         $this->get(route('portal.services.index', ['organization_id' => $other->id]))
             ->assertOk()
@@ -50,8 +53,8 @@ class ServiceVerticalSliceTest extends TestCase
         $organization = Organization::factory()->create();
         $other = Organization::factory()->create();
         config()->set('tenancy.default_organization_id', $organization->id);
-        Service::factory()->for($organization)->inactive()->create();
-        Service::factory()->for($other)->create();
+        Service::factory()->forOrganization($organization)->inactive()->create();
+        Service::factory()->forOrganization($other)->create();
 
         $this->get(route('portal.services.index'))
             ->assertOk()

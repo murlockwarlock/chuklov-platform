@@ -13,4 +13,4 @@ Use `organization_id` for ownership/security. Resolve context server-side from a
 
 ## Consequences
 
-Every owned query, policy, job, audit event, AI/RAG operation, and integration must carry validated organization context.
+Every owned query, policy, job, audit event, AI/RAG operation, and integration must carry validated organization context. M1 application authorization rejects a target organization that is not the current server-derived context, even when a user has memberships in multiple organizations.

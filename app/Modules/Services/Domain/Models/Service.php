@@ -9,7 +9,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['organization_id', 'name', 'summary', 'is_active'])]
+/**
+ * @property-read Organization $organization
+ */
+#[Fillable(['name', 'summary', 'is_active'])]
 class Service extends Model
 {
     /** @use HasFactory<ServiceFactory> */
