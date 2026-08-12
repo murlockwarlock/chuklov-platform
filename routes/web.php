@@ -15,13 +15,13 @@ use Illuminate\Support\Facades\Route;
 Route::get('/health', HealthController::class)->name('health');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
-        ->middleware('throttle:20,1')
+        ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
     Route::post('/portal/auth/email/request', [EmailAuthenticationController::class, 'requestCode'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:portal-email-request')
         ->name('portal.email.request');
     Route::post('/portal/auth/email/verify', [EmailAuthenticationController::class, 'verifyCode'])
-        ->middleware('throttle:30,1')
+        ->middleware('throttle:portal-email-verify')
         ->name('portal.email.verify');
 
     Route::middleware(ResolveClientPortalSession::class)->group(function (): void {

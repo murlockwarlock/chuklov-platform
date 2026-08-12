@@ -22,7 +22,10 @@ use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
 use App\Policies\ServicePolicy;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -36,6 +39,13 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        RateLimiter::for('portal-telegram-auth', static fn (Request $request): Limit => Limit::perMinute(20)
+            ->by('portal-telegram-auth|'.$request->ip()));
+        RateLimiter::for('portal-email-request', static fn (Request $request): Limit => Limit::perMinute(30)
+            ->by('portal-email-request|'.$request->ip()));
+        RateLimiter::for('portal-email-verify', static fn (Request $request): Limit => Limit::perMinute(30)
+            ->by('portal-email-verify|'.$request->ip()));
+
         Gate::policy(Service::class, ServicePolicy::class);
         Gate::policy(Client::class, ClientPolicy::class);
         Gate::policy(ClientChannelIdentity::class, ClientChannelIdentityPolicy::class);
