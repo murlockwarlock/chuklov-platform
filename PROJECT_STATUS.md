@@ -1,9 +1,9 @@
 # Project Status
 
-- Last updated: 2026-08-13
+- Last updated: 2026-08-14
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 5A — Scenario / Notification Engine foundation
-- Status: M5A_REMEDIATION_READY_FOR_INDEPENDENT_RECHECK — M4 remains CLOSED / accepted; M5B is not started
+- Current milestone: Milestone 5A CLOSED / ACCEPTED — Scenario / Notification Engine foundation
+- Status: M5A_CLOSED_ACCEPTED — M5B is not started
 
 ## Completed Remediation
 
@@ -139,3 +139,10 @@
 - ScenarioActions persist the materialized typed condition snapshot, so later rule edits do not rewrite older action semantics. Filament template edits derive immutable identity from the scoped record, create the next immutable version, and preserve existing action pins.
 - Focused M5A remediation and prior M5A Unit/Feature coverage passes with 41 tests/145 assertions. Focused PostgreSQL process-concurrency coverage passes with 2 tests/9 assertions. `make quality` passes with 27 Unit tests/49 assertions and 174 Feature tests/929 assertions; Pint, ESLint, Larastan (0 errors), vue-tsc, Vite, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. `make ci` passes with 45 PostgreSQL integration tests/100 assertions. Focused scenario Playwright passes 2/2 desktop/mobile tests including Filament template version editing.
 - The Telegram blank-token classification follow-up was not changed. M5B/M6+ remain unstarted, the undefined +72h condition remains unimplemented, and `.codex/config.toml` remains unchanged.
+
+## Milestone 5A closeout
+
+- Milestone 5A is CLOSED / ACCEPTED after final independent recheck. All six confirmed M5A blockers are independently verified fixed.
+- Final accepted M5A implementation SHA: `a20379cda0068873f275c86e593eb727436500ed`.
+- Hosted exact-SHA CI run `31736555888` passed on its first attempt: quality/integration, Playwright desktop/mobile, privacy/secret scan, and Docker runtime health.
+- M5B, staging, and deployment remain unstarted.

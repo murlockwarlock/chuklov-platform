@@ -1,0 +1,4 @@
+interface:
+  display_name: "Durable Workflows"
+  short_description: "Design replay-safe persisted workflows"
+  default_prompt: "Use $durable-workflows to design and verify this persisted or asynchronous workflow."

@@ -73,6 +73,7 @@ Consult `docs/architecture/modules.md` before adding a module dependency.
 - No TODO, FIXME, dead code, debug code, sample/demo behavior, or unused dependencies.
 - Prefer the simplest implementation preserving current requirements and extension points.
 - Do not add abstractions solely for possible future reuse.
+- Activate `.agents/skills/durable-workflows` when implementing or reviewing persisted, replayable, delayed, queued, scheduled, webhook/callback, or external-side-effect workflows.
 - Prefer production files under 300–400 lines. Review responsibility near 500 lines. Handwritten production files over 700 lines require a documented reason and are normally unacceptable.
 - Split by responsibility, not arbitrary line count. Keep controllers, handlers, jobs, resources, and Vue components focused.
 - AGENTS.md should remain about 250–350 lines or less; PROJECT_STATUS.md under 150 lines. Roadmap summarizes milestones and never duplicates requirements.
