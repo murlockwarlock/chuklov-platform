@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-08-13 — Owner-review backlog normalization
+
+- Added Phase 1/M4 requirements for idempotent booking creation, schedule-mutation safety, and explicit operational booking outcomes; linked unresolved schedule-conflict, `NO_SHOW`, and location-model decisions to OQ-010 through OQ-012.
+- Added future CRM/security/data requirements for controlled client merge, staff MFA/session revocation, historical retention semantics, client data lifecycle, and support impersonation controls.
+- Added future communication-preference requirements, clarified the attachment malware-scanning/quarantine production boundary, and extended AI governance requirements for classified-data policy, bounded usage/cost, safe provider failure, and preserved provenance.
+- Added OQ-013 for jurisdiction-specific client data lifecycle rules. M4 implementation status and active plans remain unchanged.
+
 ## 2026-08-13 — M4B owner decision and implementation traceability
 
 - Resolved OQ-009 as an explicit organization-scoped many-to-many Specialist-Service assignment. Assignments are required for availability and booking creation, managed by authorized CRM staff, tenant-safe, and removable without changing historical bookings.

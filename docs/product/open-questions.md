@@ -10,6 +10,10 @@ Questions block only their dependent work.
 | OQ-005 | REQ-PAYMENT-006 | Which real payment providers, merchant entities, currencies, refund capabilities, and rollout order are contracted? | Milestone 13 adapters |
 | OQ-007 | REQ-REFERRAL-001 | Confirm bonus earning, redemption, expiry, refund reversal, and cash-out rules. | Milestone 11 ledger |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
+| OQ-010 | REQ-SCHEDULING-001 | When a schedule/configuration mutation conflicts with future bookings, must the admin mutation be blocked until each booking is explicitly resolved, or may authorized staff save with a warning/exception? Define the required warning, affected-booking selection, and lifecycle action. | M4/M4C schedule mutation workflows |
+| OQ-011 | REQ-BOOKING-011 | Is client `NO_SHOW` a dedicated BookingStatus, an immutable booking event/outcome, or both? Confirm whether any additional declined-request representation is needed beyond the existing typed HOME_VISIT rejection, without deciding payment/refund consequences. | M4 final lifecycle acceptance |
+| OQ-012 | REQ-BOOKING-001, REQ-BOOKING-005 | Does Phase 1 require more than one managed office/service location with explicit address, timezone, capacity, and Specialist availability, or is one organization-level office sufficient? Do not add a Location aggregate until this is answered. | M4/M4C location and home-visit planning |
+| OQ-013 | REQ-CLIENT-005 | Confirm jurisdiction, legal basis, retention schedules, consent-withdrawal consequences, deletion/anonymization rules, and records that must be preserved for the client data lifecycle. | M15/M16 legal and security production readiness; earlier support only where M7 medical data requires it |
 
 No open question blocks Milestone 0.
 
