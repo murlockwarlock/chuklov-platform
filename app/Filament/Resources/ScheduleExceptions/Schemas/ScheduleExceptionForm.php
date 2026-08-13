@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources\ScheduleExceptions\Schemas;
 
+use App\Filament\Support\ScheduleImpactPreview;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -50,12 +50,7 @@ class ScheduleExceptionForm
                 TextInput::make('reason')
                     ->label('Reason')
                     ->maxLength(500),
-                Checkbox::make('acknowledge_impact')
-                    ->label('Acknowledge impact on future bookings if shown')
-                    ->default(false),
-                TextInput::make('impact_digest')
-                    ->label('Current impact preview digest')
-                    ->maxLength(64),
+                ...ScheduleImpactPreview::components(),
             ]);
     }
 }

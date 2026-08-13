@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-08-13 — M4 final narrow remediation
+
+- Verified the REQ-SCHEDULING-001 schedule-impact acknowledgement boundary in Filament, including staff-visible affected-booking previews, retained digests, changed-set rejection, quick Specialist deactivation, and exception deletion.
+- Verified REQ-TIMEZONE-002 display-local date handling across DST midnight transitions and synchronized current client timezone preference on Portal reschedule surfaces without rewriting historical booking metadata.
+- Verified REQ-BOOKING-010 retry-safe creation key rotation: missing keys remain rejected, same-intent retries retain their key, and accepted distinct intents receive a fresh key.
+
 ## 2026-08-13 — M4 independent-review remediation
 
 - Amended REQ-TIMEZONE-002, REQ-BOOKING-007, REQ-BOOKING-009, REQ-BOOKING-010, and REQ-SCHEDULING-001 with verified stale-command protection, required durable creation idempotency, current-preference display semantics, safe CRM history projections, and bound schedule-impact acknowledgement.

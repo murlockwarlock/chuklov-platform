@@ -217,6 +217,8 @@ class CalculateAvailability
             organizationId: $organization->getKey(),
             displayRangeStart: $displayRangeStart,
             displayRangeEnd: $displayRangeEnd,
+            displayDateFrom: $datesInDisplayTimezone ? $requestedDateFrom->value : null,
+            displayDateTo: $datesInDisplayTimezone ? $requestedDateTo->value : null,
             maxDateCount: $datesInDisplayTimezone ? 33 : 31,
         );
     }
@@ -233,6 +235,8 @@ class CalculateAvailability
         ?int $ignoreBookingId = null,
         ?CarbonImmutable $displayRangeStart = null,
         ?CarbonImmutable $displayRangeEnd = null,
+        ?string $displayDateFrom = null,
+        ?string $displayDateTo = null,
         int $maxDateCount = 31,
         ?int $leadTimeMinutes = null,
         ?CarbonImmutable $now = null,
@@ -357,8 +361,26 @@ class CalculateAvailability
         if ($displayRangeStart !== null && $displayRangeEnd !== null) {
             $slots = array_values(array_filter(
                 $slots,
-                static fn (AvailabilitySlot $slot): bool => $slot->startsAt->greaterThanOrEqualTo($displayRangeStart)
-                    && $slot->startsAt->lessThan($displayRangeEnd),
+                static function (AvailabilitySlot $slot) use (
+                    $displayRangeStart,
+                    $displayRangeEnd,
+                    $displayDateFrom,
+                    $displayDateTo,
+                    $resolvedDisplayTimezone,
+                ): bool {
+                    if ($slot->startsAt->lessThan($displayRangeStart)
+                        || $slot->startsAt->greaterThanOrEqualTo($displayRangeEnd)) {
+                        return false;
+                    }
+
+                    if ($displayDateFrom === null || $displayDateTo === null) {
+                        return true;
+                    }
+
+                    $displayDate = $slot->startsAt->setTimezone($resolvedDisplayTimezone)->toDateString();
+
+                    return $displayDate >= $displayDateFrom && $displayDate <= $displayDateTo;
+                },
             ));
         }
 
@@ -406,13 +428,45 @@ class CalculateAvailability
     private function localBoundary(LocalDate $date, string $timezone): CarbonImmutable
     {
         [$year, $month, $day] = array_map('intval', explode('-', $date->value));
-
-        $boundary = CarbonImmutable::createSafe($year, $month, $day, 0, 0, 0, new DateTimeZone($timezone));
-
-        if (! $boundary instanceof CarbonImmutable) {
+        $wallStart = CarbonImmutable::createSafe($year, $month, $day, 0, 0, 0, new DateTimeZone('UTC'));
+        if (! $wallStart instanceof CarbonImmutable) {
             throw new InvalidArgumentException('The availability date is invalid in the schedule timezone.');
         }
 
-        return $boundary->utc();
+        $wallEnd = $wallStart->addDay();
+        $zone = new DateTimeZone($timezone);
+        $windowStart = $wallStart->subDays(3)->getTimestamp();
+        $windowEnd = $wallEnd->addDays(3)->getTimestamp();
+        $transitions = $zone->getTransitions($windowStart, $windowEnd);
+
+        if ($transitions === []) {
+            throw new InvalidArgumentException('The availability date is invalid in the schedule timezone.');
+        }
+
+        $earliest = null;
+        $latest = null;
+
+        foreach ($transitions as $index => $transition) {
+            $segmentStart = max($windowStart, (int) $transition['ts']);
+            $segmentEnd = $index + 1 < count($transitions)
+                ? min($windowEnd, (int) $transitions[$index + 1]['ts'])
+                : $windowEnd;
+            $offset = (int) $transition['offset'];
+            $candidateStart = max($segmentStart, $wallStart->getTimestamp() - $offset);
+            $candidateEnd = min($segmentEnd, $wallEnd->getTimestamp() - $offset);
+
+            if ($candidateStart >= $candidateEnd) {
+                continue;
+            }
+
+            $earliest = $earliest === null ? $candidateStart : min($earliest, $candidateStart);
+            $latest = $latest === null ? $candidateEnd : max($latest, $candidateEnd);
+        }
+
+        if ($earliest === null || $latest === null) {
+            throw new InvalidArgumentException('The availability date has no valid instants in the schedule timezone.');
+        }
+
+        return CarbonImmutable::createFromTimestampUTC($earliest);
     }
 }

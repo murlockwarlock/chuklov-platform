@@ -173,6 +173,10 @@ class MilestoneFourConcurrencyTest extends TestCase
         self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(1, BookingEvent::query()->count());
         self::assertSame(1, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')
+            ->count());
     }
 
     public function test_postgresql_booking_events_cannot_be_deleted(): void

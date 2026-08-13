@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -16,7 +17,6 @@ use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -31,6 +31,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -144,12 +145,7 @@ class SchedulingConfiguration extends Page
                     ->addActionLabel('Add interval')
                     ->reorderable(false)
                     ->columnSpanFull(),
-                Checkbox::make('acknowledge_impact')
-                    ->label('Acknowledge impact on future bookings if shown')
-                    ->default(false),
-                TextInput::make('impact_digest')
-                    ->label('Current impact preview digest')
-                    ->maxLength(64),
+                ...ScheduleImpactPreview::components(),
             ])
             ->statePath('data');
     }
@@ -182,24 +178,30 @@ class SchedulingConfiguration extends Page
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->findOrFail((int) $data['specialist_id']);
 
-        DB::transaction(function () use ($actor, $data, $specialist): void {
-            app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
-            app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
-            if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
-                app(SetOrganizationSetting::class)->handle(
+        try {
+            DB::transaction(function () use ($actor, $data, $specialist): void {
+                app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
+                app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
+                if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
+                    app(SetOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::OfficeLocation,
+                        trim((string) $data['office_location']),
+                    );
+                }
+                app(SetSpecialistWorkingHours::class)->handle(
                     $actor,
-                    OrganizationSettingKey::OfficeLocation,
-                    trim((string) $data['office_location']),
+                    $specialist,
+                    $data['working_hours'] ?? [],
+                    (bool) ($data['acknowledge_impact'] ?? false),
+                    isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                 );
-            }
-            app(SetSpecialistWorkingHours::class)->handle(
-                $actor,
-                $specialist,
-                $data['working_hours'] ?? [],
-                (bool) ($data['acknowledge_impact'] ?? false),
-                isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
-            );
-        });
+            });
+        } catch (ValidationException $exception) {
+            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+
+            throw $exception;
+        }
 
         Notification::make()
             ->success()

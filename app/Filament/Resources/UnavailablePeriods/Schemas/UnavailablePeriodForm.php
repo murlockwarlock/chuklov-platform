@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\UnavailablePeriods\Schemas;
 
+use App\Filament\Support\ScheduleImpactPreview;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -38,12 +38,7 @@ class UnavailablePeriodForm
                 TextInput::make('reason')
                     ->label('Reason')
                     ->maxLength(500),
-                Checkbox::make('acknowledge_impact')
-                    ->label('Acknowledge impact on future bookings if shown')
-                    ->default(false),
-                TextInput::make('impact_digest')
-                    ->label('Current impact preview digest')
-                    ->maxLength(64),
+                ...ScheduleImpactPreview::components(),
             ]);
     }
 }

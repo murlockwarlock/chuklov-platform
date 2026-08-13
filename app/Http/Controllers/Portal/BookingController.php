@@ -159,6 +159,7 @@ class BookingController extends Controller
             ])
             ->with('portal_booking_result', [
                 'status' => $booking->status->value,
+                'bookingId' => $booking->getKey(),
             ]);
     }
 

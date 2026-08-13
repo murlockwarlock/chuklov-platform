@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type VisitFormat = 'office' | 'home' | 'online';
@@ -47,6 +47,7 @@ type BookingQuery = {
 
 type BookingResult = {
     status: 'requested' | 'pending_review';
+    bookingId: number;
 } | null;
 
 type Props = {
@@ -82,6 +83,27 @@ const bookingForm = useForm<{
     location: null,
     idempotency_key: globalThis.crypto?.randomUUID?.() ?? `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 });
+
+function newIdempotencyKey(): string {
+    return globalThis.crypto?.randomUUID?.() ?? `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+const acknowledgedBookingId = ref<number | null>(null);
+
+watch(
+    () => props.bookingResult?.bookingId ?? null,
+    (bookingId) => {
+        if (bookingId === null || bookingId === acknowledgedBookingId.value) {
+            return;
+        }
+
+        acknowledgedBookingId.value = bookingId;
+        selectedStart.value = null;
+        bookingForm.starts_at = null;
+        bookingForm.idempotency_key = newIdempotencyKey();
+    },
+    { immediate: true },
+);
 
 const selectedService = computed(() =>
     props.services.find((service) => service.id === props.query.serviceId),

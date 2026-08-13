@@ -150,6 +150,14 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await page.getByRole('button', { name: 'Create booking' }).click();
 
     await expect(page.getByRole('status')).toContainText('Your booking request was created.');
+
+    const secondSlot = page.locator('button[aria-pressed]').first();
+    await expect(secondSlot).toBeVisible();
+    await secondSlot.click();
+    await page.getByRole('button', { name: 'Create booking' }).click();
+    await expect(page.getByRole('status')).toContainText('Your booking request was created.');
+    await page.getByRole('link', { name: 'My bookings' }).click();
+    await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
 });
 
 test('authenticated client can manage an upcoming booking from My bookings', async ({ page }) => {
@@ -175,6 +183,17 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await page.getByRole('button', { name: 'Reschedule booking' }).click();
     await expect(page.getByText('Booking history')).toBeVisible();
     await expect(page.getByText('rescheduled')).toBeVisible();
+
+    await page.locator('input[type="text"]').fill('Asia/Almaty');
+    await page.getByRole('button', { name: 'Save timezone' }).click();
+    await expect(page.getByText('Asia/Almaty').first()).toBeVisible();
+
+    const secondAlternateSlot = page.locator('button[aria-pressed]').first();
+    await expect(secondAlternateSlot).toBeVisible();
+    await secondAlternateSlot.click();
+    await page.getByRole('button', { name: 'Reschedule booking' }).click();
+    await expect(page.getByText('Booking history')).toBeVisible();
+    await expect(page.getByText('rescheduled')).toHaveCount(2);
 
     await page.getByRole('button', { name: 'Cancel booking' }).click();
     await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();

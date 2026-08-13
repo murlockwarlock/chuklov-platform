@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\Services\Schemas;
 
+use App\Filament\Support\ScheduleImpactPreview;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -83,13 +83,7 @@ class ServiceForm
                     ])
                     ->required()
                     ->default(CatalogItemType::Service->value),
-                Checkbox::make('acknowledge_impact')
-                    ->label('Acknowledge impact on future bookings if shown')
-                    ->default(false),
-                TextInput::make('impact_digest')
-                    ->label('Current impact preview digest')
-                    ->maxLength(64)
-                    ->helperText('Required when the preview reports affected future bookings.'),
+                ...ScheduleImpactPreview::components(),
             ]);
     }
 }

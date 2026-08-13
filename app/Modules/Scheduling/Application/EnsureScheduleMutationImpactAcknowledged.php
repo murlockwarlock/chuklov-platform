@@ -11,8 +11,18 @@ final class EnsureScheduleMutationImpactAcknowledged
         bool $acknowledgeImpact,
         ?string $acknowledgedImpactDigest = null,
     ): void {
-        if (! $impact->hasConflicts()) {
+        $hasSuppliedAcknowledgement = $acknowledgeImpact || filled($acknowledgedImpactDigest);
+
+        if (! $impact->hasConflicts() && ! $hasSuppliedAcknowledgement) {
             return;
+        }
+
+        if (! $impact->hasConflicts()) {
+            throw ValidationException::withMessages([
+                'schedule_impact' => ['The future booking impact changed. Refresh the current preview before saving.'],
+                'schedule_impact_digest' => [''],
+                'schedule_impact_bookings' => [json_encode([], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)],
+            ]);
         }
 
         if (! $acknowledgeImpact || ! is_string($acknowledgedImpactDigest)

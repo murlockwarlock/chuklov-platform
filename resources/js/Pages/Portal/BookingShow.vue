@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type Slot = {
@@ -48,11 +48,33 @@ const selectedSlot = ref<string | null>(null);
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
 const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null; expected_event_version: number }>({
     starts_at: null,
-    client_timezone: props.booking.timezone,
+    client_timezone: props.client.timezone,
     reason: null,
     expected_event_version: props.booking.eventVersion,
 });
-const timezoneForm = useForm<{ timezone: string }>({ timezone: props.booking.timezone });
+const timezoneForm = useForm<{ timezone: string }>({ timezone: props.client.timezone });
+
+watch(
+    () => props.booking.eventVersion,
+    (eventVersion, previousEventVersion) => {
+        rescheduleForm.expected_event_version = eventVersion;
+
+        if (previousEventVersion !== undefined && eventVersion !== previousEventVersion) {
+            selectedSlot.value = null;
+            rescheduleForm.starts_at = null;
+        }
+    },
+    { immediate: true },
+);
+
+watch(
+    () => props.client.timezone,
+    (timezone) => {
+        timezoneForm.timezone = timezone;
+        rescheduleForm.client_timezone = timezone;
+    },
+    { immediate: true },
+);
 
 function selectSlot(slot: Slot): void {
     selectedSlot.value = slot.startsAt;

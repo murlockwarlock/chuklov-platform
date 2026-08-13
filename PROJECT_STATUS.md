@@ -103,3 +103,10 @@
 ## Latest Verified Local Quality Gate
 
 2026-08-13: M4 remediation complete and ready for independent Sol recheck. Focused remediation/M4: 58 tests/256 assertions; focused PostgreSQL: 13 tests/34 assertions including process-level race coverage and BookingEvent DELETE immutability. `make quality`: 15 Unit tests/32 assertions, 139 Feature tests/746 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 43 PostgreSQL integration tests/90 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Hosted exact-SHA CI run 31701386393 passed all jobs for 289ec953cd4f4d11b0a5b8cf803dbfdd064d6a7. M0–M3 were not re-audited.
+
+## Milestone 4 final narrow remediation
+
+- Started from accepted remediation SHA `cc5e013a546ff7e6ce0dd424e9b9e4d7e501e507`; scope was limited to M4-06, M4-R01, and M4-R02. M0–M3 were not re-audited and M5+ was not started.
+- Added a reusable Filament schedule-impact preview/acknowledgement handoff across scheduling mutations, including quick Specialist deactivation and exception deletion. The digest and safe affected-booking projection are retained server-side; stale acknowledgements, including non-empty-to-empty changes, are rejected.
+- Synchronized same-page Portal reschedule/timezone state and rotated booking idempotency keys only after accepted creation. Added transition-aware display-local day boundaries for DST midnight gaps/overlaps, with Cairo, Havana, Santiago, Berlin, and large-offset coverage.
+- Narrow remediation verification passes: 6 new Feature tests/55 assertions; `make quality` 15 Unit tests/32 assertions and 145 Feature tests/801 assertions; `make ci` 43 PostgreSQL integration tests/91 assertions; Playwright 6/6 desktop/mobile.
