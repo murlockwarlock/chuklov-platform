@@ -68,6 +68,10 @@ class MilestoneFourConcurrencyTest extends TestCase
             static fn (): string => self::insertCompetingBooking($attributes, 'parallel-b'),
         ]);
 
+        self::assertNotContains('error', array_map(
+            static fn (string $result): string => str_starts_with($result, 'error:') ? 'error' : $result,
+            $results,
+        ), implode(', ', $results));
         self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'inserted')));
         self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'conflict')));
         self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
@@ -91,7 +95,7 @@ class MilestoneFourConcurrencyTest extends TestCase
                 return 'conflict';
             }
 
-            throw $exception;
+            return 'error:'.get_class($exception).':'.(string) $exception->getCode().':'.$exception->getMessage();
         }
     }
 }
