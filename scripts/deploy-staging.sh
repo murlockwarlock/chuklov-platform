@@ -148,7 +148,7 @@ done
 echo "Isolated Compose project and app binding verified."
 
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
-    sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$database_backup"
+    sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$database_backup"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
     pg_restore -l < "$database_backup" > /dev/null
 chmod 0600 "$database_backup"

@@ -16,6 +16,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('git merge-base --is-ancestor "$revision" origin/main', $script);
         self::assertStringContainsString('--project-name "$project"', $script);
         self::assertStringContainsString('pg_dump', $script);
+        self::assertStringContainsString("-Fc' < /dev/null >", $script);
         self::assertStringContainsString('pg_restore -l', $script);
         self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
