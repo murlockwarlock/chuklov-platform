@@ -30,4 +30,16 @@ class BrandingAssetsTest extends TestCase
         self::assertStringContainsString('rel="icon" type="image/png" href="{{ asset(\'brand/chuklov-mark.png\') }}"', $template);
         self::assertStringContainsString('rel="apple-touch-icon" href="{{ asset(\'brand/chuklov-app-icon.png\') }}"', $template);
     }
+
+    public function test_root_template_loads_telegram_web_app_before_the_application_bundle(): void
+    {
+        $template = file_get_contents(resource_path('views/app.blade.php'));
+
+        self::assertIsString($template);
+        self::assertStringContainsString('src="https://telegram.org/js/telegram-web-app.js"', $template);
+        self::assertLessThan(
+            strpos($template, "@vite(['resources/css/app.css', 'resources/js/app.ts'])"),
+            strpos($template, 'src="https://telegram.org/js/telegram-web-app.js"'),
+        );
+    }
 }
