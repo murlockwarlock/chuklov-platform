@@ -153,7 +153,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 12, 45, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-1',
+            idempotencyKey: $this->idempotencyKey(1),
         );
 
         self::assertSame(BookingStatus::Requested, $firstBooking->status);
@@ -232,7 +232,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 12, 45, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
-            idempotencyKey: 'm4-scheduling-2',
+            idempotencyKey: $this->idempotencyKey(2),
         );
         self::assertSame(BookingStatus::PendingReview, $booking->status);
 
@@ -320,7 +320,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 11, 0, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-3',
+            idempotencyKey: $this->idempotencyKey(3),
         );
     }
 
@@ -342,7 +342,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
-            idempotencyKey: 'm4-scheduling-4',
+            idempotencyKey: $this->idempotencyKey(4),
         );
 
         $approved = app(ApproveHomeVisitBooking::class)->handle($admin, $pending, 'Reviewed by CRM.');
@@ -381,7 +381,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
-            idempotencyKey: 'm4-scheduling-11',
+            idempotencyKey: $this->idempotencyKey(11),
         );
         app(CreateBooking::class)->handle(
             actor: $admin,
@@ -390,7 +390,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-5',
+            idempotencyKey: $this->idempotencyKey(5),
         );
 
         $this->expectException(ValidationException::class);
@@ -414,7 +414,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
-            idempotencyKey: 'm4-scheduling-6',
+            idempotencyKey: $this->idempotencyKey(6),
         );
 
         $rejected = app(RejectHomeVisitBooking::class)->handle($admin, $pending, 'No home-visit capacity.');
@@ -498,7 +498,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-7',
+            idempotencyKey: $this->idempotencyKey(7),
         );
     }
 
@@ -520,7 +520,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 1, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-8',
+            idempotencyKey: $this->idempotencyKey(8),
         );
     }
 
@@ -544,7 +544,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-9',
+            idempotencyKey: $this->idempotencyKey(9),
         );
     }
 
@@ -641,7 +641,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
-            idempotencyKey: 'm4-scheduling-10',
+            idempotencyKey: $this->idempotencyKey(10),
         );
     }
 
@@ -691,6 +691,11 @@ class MilestoneFourSchedulingTest extends TestCase
     {
         config()->set('tenancy.default_organization_id', $organization->id);
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function idempotencyKey(int $number): string
+    {
+        return 'test-key-'.$number;
     }
 
     private function enableFeature(Organization $organization, OrganizationFeature $feature): void
