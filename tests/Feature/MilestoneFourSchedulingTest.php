@@ -301,7 +301,7 @@ class MilestoneFourSchedulingTest extends TestCase
             ]);
         $assignment = $specialist->specialistServiceAssignments()->where('service_id', $service->id)->firstOrFail();
 
-        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment);
+        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment, true);
         self::assertModelExists($historical);
 
         $this->expectException(ValidationException::class);

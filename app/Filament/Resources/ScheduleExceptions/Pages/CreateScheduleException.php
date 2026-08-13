@@ -22,6 +22,11 @@ class CreateScheduleException extends CreateRecord
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->findOrFail((int) $data['specialist_id']);
 
-        return app(CreateScheduleExceptionAction::class)->handle($actor, $specialist, $data);
+        return app(CreateScheduleExceptionAction::class)->handle(
+            $actor,
+            $specialist,
+            $data,
+            (bool) ($data['acknowledge_impact'] ?? false),
+        );
     }
 }

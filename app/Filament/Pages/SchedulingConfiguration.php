@@ -5,13 +5,18 @@ namespace App\Filament\Pages;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Scheduling\Application\GetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\GetBookingLeadTime;
+use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -41,7 +46,7 @@ class SchedulingConfiguration extends Page
 
     protected static ?int $navigationSort = 1;
 
-    /** @var array{specialist_id: int|null, lead_time_minutes: int, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
+    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
     public ?array $data = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
@@ -75,6 +80,10 @@ class SchedulingConfiguration extends Page
         $this->form->fill([
             'specialist_id' => $specialistId,
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
+            'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
+            'office_location' => app(OrganizationContext::class)->organization()->settings()
+                ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
+                ->value('string_value'),
             'working_hours' => $specialistId === null ? [] : $this->workingHours((int) $specialistId),
         ]);
     }
@@ -97,6 +106,14 @@ class SchedulingConfiguration extends Page
                     ->integer()
                     ->minValue(0)
                     ->required(),
+                TextInput::make('cancellation_cutoff_minutes')
+                    ->label('Cancellation/reschedule cutoff (minutes)')
+                    ->integer()
+                    ->minValue(0)
+                    ->required(),
+                TextInput::make('office_location')
+                    ->label('Organization office location')
+                    ->maxLength(500),
                 Repeater::make('working_hours')
                     ->label('Recurring working hours')
                     ->schema([
@@ -126,6 +143,9 @@ class SchedulingConfiguration extends Page
                     ->addActionLabel('Add interval')
                     ->reorderable(false)
                     ->columnSpanFull(),
+                Checkbox::make('acknowledge_impact')
+                    ->label('Acknowledge impact on future bookings if shown')
+                    ->default(false),
             ])
             ->statePath('data');
     }
@@ -159,7 +179,20 @@ class SchedulingConfiguration extends Page
             ->findOrFail((int) $data['specialist_id']);
 
         app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
-        app(SetSpecialistWorkingHours::class)->handle($actor, $specialist, $data['working_hours'] ?? []);
+        app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
+        if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
+            app(SetOrganizationSetting::class)->handle(
+                $actor,
+                OrganizationSettingKey::OfficeLocation,
+                trim((string) $data['office_location']),
+            );
+        }
+        app(SetSpecialistWorkingHours::class)->handle(
+            $actor,
+            $specialist,
+            $data['working_hours'] ?? [],
+            (bool) ($data['acknowledge_impact'] ?? false),
+        );
 
         Notification::make()
             ->success()

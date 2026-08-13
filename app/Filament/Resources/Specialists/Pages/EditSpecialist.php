@@ -18,6 +18,7 @@ class EditSpecialist extends EditRecord
         abort_unless($record instanceof Specialist, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        $acknowledgeImpact = (bool) ($data['acknowledge_impact'] ?? false);
 
         return app(UpdateSpecialist::class)->handle(
             actor: $actor,
@@ -26,6 +27,7 @@ class EditSpecialist extends EditRecord
             isActive: (bool) $data['is_active'],
             timezone: $data['timezone'] ?? null,
             staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
+            acknowledgeImpact: $acknowledgeImpact,
         );
     }
 }

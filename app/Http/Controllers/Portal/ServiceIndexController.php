@@ -44,6 +44,7 @@ class ServiceIndexController extends Controller
                 'telegramLinkError' => $client !== null ? (bool) $request->session()->pull('telegram_link_error', false) : false,
                 'onboardingUrl' => route('portal.onboarding'),
                 'bookingUrl' => $client !== null ? route('portal.bookings.create') : null,
+                'bookingsUrl' => $client !== null ? route('portal.bookings.index') : null,
             ],
         ]);
     }

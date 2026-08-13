@@ -6,8 +6,11 @@ use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
@@ -31,8 +34,12 @@ class ApproveHomeVisitBooking
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(User $actor, Booking $booking, ?string $reason = null): Booking
-    {
+    public function handle(
+        User $actor,
+        Booking $booking,
+        ?string $reason = null,
+        PaymentRequirementType|string|null $paymentRequirement = null,
+    ): Booking {
         $organization = $this->context->organization();
 
         if ((int) $booking->organization_id !== $organization->getKey()) {
@@ -41,8 +48,9 @@ class ApproveHomeVisitBooking
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $reason = $this->normalizeReason($reason, required: false);
+        $paymentRequirement = $this->paymentRequirement($paymentRequirement);
 
-        return DB::transaction(function () use ($actor, $booking, $organization, $reason): Booking {
+        return DB::transaction(function () use ($actor, $booking, $organization, $reason, $paymentRequirement): Booking {
             $lockedBooking = Booking::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($booking->getKey())
@@ -89,12 +97,16 @@ class ApproveHomeVisitBooking
             }
 
             $oldValues = $this->bookingSnapshot($lockedBooking);
+            [$requirementAmount, $requirementCurrency] = $this->paymentRequirementValues($organization->getKey(), $paymentRequirement);
             $lockedBooking->forceFill([
                 'status' => BookingStatus::Confirmed,
                 'starts_at' => $slot->startsAt,
                 'ends_at' => $slot->endsAt,
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
+                'payment_requirement' => $paymentRequirement,
+                'payment_requirement_amount_minor' => $requirementAmount,
+                'payment_requirement_currency' => $requirementCurrency,
                 'event_version' => $lockedBooking->event_version + 1,
             ]);
 
@@ -126,6 +138,7 @@ class ApproveHomeVisitBooking
                     'source' => 'crm',
                     'status' => BookingStatus::Confirmed->value,
                     'visit_format' => VisitFormat::HomeVisit->value,
+                    'payment_requirement' => $paymentRequirement?->value,
                 ],
             );
 
@@ -156,12 +169,15 @@ class ApproveHomeVisitBooking
         return $reason === '' ? null : $reason;
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, int|string|null> */
     private function bookingSnapshot(Booking $booking): array
     {
         return [
             'status' => $booking->status->value,
             'payment_status' => $booking->payment_status->value,
+            'payment_requirement' => $booking->payment_requirement?->value,
+            'payment_requirement_amount_minor' => $booking->payment_requirement_amount_minor,
+            'payment_requirement_currency' => $booking->payment_requirement_currency,
             'visit_format' => $booking->visit_format->value,
             'starts_at' => $booking->startsAtUtc()->toIso8601String(),
             'ends_at' => $booking->endsAtUtc()->toIso8601String(),
@@ -171,7 +187,7 @@ class ApproveHomeVisitBooking
         ];
     }
 
-    /** @param array<string, int|string> $oldValues */
+    /** @param array<string, int|string|null> $oldValues */
     private function recordEvent(Booking $booking, User $actor, array $oldValues, ?string $reason): void
     {
         $event = new BookingEvent;
@@ -194,5 +210,49 @@ class ApproveHomeVisitBooking
         $sqlState = $exception->getCode() ?: ($exception->errorInfo[0] ?? null);
 
         return in_array($sqlState, ['23P01', '40P01'], true);
+    }
+
+    private function paymentRequirement(PaymentRequirementType|string|null $value): ?PaymentRequirementType
+    {
+        if ($value === null || $value instanceof PaymentRequirementType) {
+            return $value;
+        }
+
+        $requirement = PaymentRequirementType::tryFrom($value);
+
+        if (! $requirement instanceof PaymentRequirementType) {
+            throw ValidationException::withMessages(['paymentRequirement' => 'The payment requirement is invalid.']);
+        }
+
+        return $requirement;
+    }
+
+    /** @return array{0: int|null, 1: string|null} */
+    private function paymentRequirementValues(int $organizationId, ?PaymentRequirementType $requirement): array
+    {
+        if ($requirement !== PaymentRequirementType::TransportDeposit) {
+            return [null, null];
+        }
+
+        $settings = OrganizationSetting::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('setting_key', [
+                OrganizationSettingKey::HomeVisitTransportDepositAmountMinor->value,
+                OrganizationSettingKey::HomeVisitTransportDepositCurrency->value,
+            ])
+            ->pluck('integer_value', 'setting_key');
+        $currency = OrganizationSetting::query()
+            ->where('organization_id', $organizationId)
+            ->where('setting_key', OrganizationSettingKey::HomeVisitTransportDepositCurrency->value)
+            ->value('string_value');
+        $amount = $settings->get(OrganizationSettingKey::HomeVisitTransportDepositAmountMinor->value);
+
+        if ($amount === null || $currency === null) {
+            throw ValidationException::withMessages([
+                'paymentRequirement' => 'Transport-deposit amount and currency must be configured before approval.',
+            ]);
+        }
+
+        return [(int) $amount, (string) $currency];
     }
 }

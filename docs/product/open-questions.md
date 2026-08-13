@@ -4,15 +4,11 @@ Questions block only their dependent work.
 
 | ID | Affects | Question | Needed before |
 |---|---|---|---|
-| OQ-002 | REQ-BOOKING-007 | Confirm cancellation/reschedule cutoff, admin exception flow, and payment/refund consequences. Is 24 hours the initial configured value? | Milestone 4 policies |
 | OQ-003 | REQ-PRODUCT-002 | Does Phase 1 product selling require cart, quantity, inventory, variants/SKU, delivery/fulfilment, and refunds? | Product commerce implementation |
 | OQ-004 | REQ-SUBSCRIPTION-002 | Confirm manual vs recurring billing, auto-renew, cancellation, failure, grace period, and entitlement end. | Milestone 12 billing lifecycle |
 | OQ-005 | REQ-PAYMENT-006 | Which real payment providers, merchant entities, currencies, refund capabilities, and rollout order are contracted? | Milestone 13 adapters |
 | OQ-007 | REQ-REFERRAL-001 | Confirm bonus earning, redemption, expiry, refund reversal, and cash-out rules. | Milestone 11 ledger |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
-| OQ-010 | REQ-SCHEDULING-001 | When a schedule/configuration mutation conflicts with future bookings, must the admin mutation be blocked until each booking is explicitly resolved, or may authorized staff save with a warning/exception? Define the required warning, affected-booking selection, and lifecycle action. | M4/M4C schedule mutation workflows |
-| OQ-011 | REQ-BOOKING-011 | Is client `NO_SHOW` a dedicated BookingStatus, an immutable booking event/outcome, or both? Confirm whether any additional declined-request representation is needed beyond the existing typed HOME_VISIT rejection, without deciding payment/refund consequences. | M4 final lifecycle acceptance |
-| OQ-012 | REQ-BOOKING-001, REQ-BOOKING-005 | Does Phase 1 require more than one managed office/service location with explicit address, timezone, capacity, and Specialist availability, or is one organization-level office sufficient? Do not add a Location aggregate until this is answered. | M4/M4C location and home-visit planning |
 | OQ-013 | REQ-CLIENT-005 | Confirm jurisdiction, legal basis, retention schedules, consent-withdrawal consequences, deletion/anonymization rules, and records that must be preserved for the client data lifecycle. | M15/M16 legal and security production readiness; earlier support only where M7 medical data requires it |
 
 No open question blocks Milestone 0.
@@ -30,3 +26,21 @@ Legal wording is never invented or hardcoded by the application. M2 provides org
 ### OQ-009 — RESOLVED 2026-08-13
 
 Specialist-to-Service eligibility is an explicit organization-scoped many-to-many relationship. One Specialist may be assigned to many Services and one Service may be assigned to many Specialists. Assignments are managed only by authorized CRM staff, require same-organization ownership, and are required for availability and booking creation. Inactive Specialists or Services remain non-bookable. Removing an assignment prevents future bookings for that pair without deleting or changing historical bookings. No skills, qualifications, commissions, price overrides, specialist-specific durations, inventory, or other unconfirmed behavior is implied.
+
+## Resolved M4 decisions
+
+### OQ-002 — RESOLVED 2026-08-13
+
+Self-service cancellation and rescheduling use an organization-configurable cutoff. The Phase 1 default is 1440 minutes and is configuration, not a booking-logic constant. Clients may change eligible non-terminal bookings at or beyond the cutoff; inside it they are directed to staff. Authorized CRM staff may override inside the cutoff only with an explicit reason. Pending-review HOME_VISIT requests may be withdrawn by their owning client without the confirmed-booking cutoff. Rejected, cancelled, completed, and no-show bookings are terminal. Cancellation/rescheduling changes booking state only; M4 never invents fees, credits, refunds, forfeitures, or payment-state changes. Rescheduling preserves Booking identity and calendar_uid, increments the event/version sequence, records immutable history, rechecks authoritative availability transactionally, and preserves the old time if the target loses a race.
+
+### OQ-010 — RESOLVED 2026-08-13
+
+Scheduling/configuration mutations never silently rewrite, cancel, delete, or move existing bookings. Before a relevant mutation, M4 calculates future non-terminal impact and gives CRM an explicit warning and affected-booking summary. An impacted mutation requires explicit staff acknowledgement, but existing bookings retain their identifiers, time, format, status, and history. Affected records are discoverable as needing scheduling attention and are resolved later through normal booking lifecycle actions. The acknowledgement and impact count are audited within the organization boundary.
+
+### OQ-011 — RESOLVED 2026-08-13
+
+NO_SHOW is a dedicated typed terminal BookingStatus. Only authorized staff may apply it after the scheduled start to an expected/requested or confirmed booking. The transition records an immutable BookingEvent and allowlisted audit metadata. It has no automatic payment, refund, fee, or debt consequence in M4. REJECTED remains a separate terminal request outcome.
+
+### OQ-012 — RESOLVED 2026-08-13
+
+Phase 1 has one organization-level office/service location. M4 does not introduce a Location aggregate, multiple offices, location-specific calendars, rooms, room scheduling, multi-site capacity, or practitioner-location assignments. OFFICE bookings use the organization office context; HOME_VISIT destination data is booking-specific. Future managed multi-location support remains possible but is not modeled speculatively.

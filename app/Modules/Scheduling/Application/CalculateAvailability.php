@@ -92,6 +92,7 @@ class CalculateAvailability
         VisitFormat $format,
         CarbonImmutable $startsAt,
         ?string $displayTimezone = null,
+        ?int $ignoreBookingId = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
 
@@ -104,6 +105,7 @@ class CalculateAvailability
             displayTimezone: $displayTimezone,
             client: null,
             organizationId: $organization->getKey(),
+            ignoreBookingId: $ignoreBookingId,
         );
     }
 
@@ -149,6 +151,7 @@ class CalculateAvailability
         ?string $displayTimezone,
         ?Client $client,
         int $organizationId,
+        ?int $ignoreBookingId = null,
     ): AvailabilityResult {
         if ($dateFrom->value > $dateTo->value) {
             throw ValidationException::withMessages(['dateFrom' => 'The availability range is invalid.']);
@@ -206,6 +209,7 @@ class CalculateAvailability
         $bookingIntervals = array_values(Booking::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
+            ->when($ignoreBookingId !== null, fn ($query) => $query->where('id', '<>', $ignoreBookingId))
             ->whereIn('status', BookingStatus::blockingValues())
             ->where('starts_at', '<', $rangeEnd)
             ->where('blocking_ends_at', '>', $rangeStart)

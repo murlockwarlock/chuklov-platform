@@ -32,6 +32,7 @@ class CreateUnavailablePeriod extends CreateRecord
             startsAt: $this->toDateTime($data['starts_at'], $timezone),
             endsAt: $this->toDateTime($data['ends_at'], $timezone),
             reason: $data['reason'] ?? null,
+            acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
         );
     }
 

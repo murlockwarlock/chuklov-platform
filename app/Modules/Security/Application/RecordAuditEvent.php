@@ -40,9 +40,17 @@ class RecordAuditEvent
         'specialist.unavailable_period.created' => ['source'],
         'specialist.unavailable_period.deleted' => ['source'],
         'booking.created' => ['source', 'visit_format', 'status'],
+        'booking.confirmed' => ['source', 'status', 'visit_format'],
+        'booking.cancelled' => ['source', 'status', 'inside_cutoff'],
+        'booking.rescheduled' => ['source', 'status', 'visit_format'],
+        'booking.completed' => ['source', 'status', 'visit_format'],
+        'booking.no_show' => ['source', 'status', 'visit_format'],
+        'booking.home_visit.withdrawn' => ['source', 'status', 'inside_cutoff'],
+        'booking.online.meeting_url.updated' => ['source', 'status', 'visit_format', 'url_set'],
+        'schedule.mutation.acknowledged' => ['source', 'mutation', 'affected_booking_count'],
         'specialist.service.assigned' => ['source'],
         'specialist.service.unassigned' => ['source'],
-        'booking.home_visit.approved' => ['source', 'status', 'visit_format'],
+        'booking.home_visit.approved' => ['source', 'status', 'visit_format', 'payment_requirement'],
         'booking.home_visit.rejected' => ['source', 'status', 'visit_format'],
     ];
 

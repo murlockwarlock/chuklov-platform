@@ -7,6 +7,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
+use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
 use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\ValueObjects\InstantInterval;
@@ -30,12 +31,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read VisitFormat $visit_format
  * @property-read BookingSource $source
  * @property-read MeetingLinkMode|null $meeting_link_mode
+ * @property-read PaymentRequirementType|null $payment_requirement
  */
 #[Fillable([
     'calendar_uid',
     'visit_format',
     'status',
     'payment_status',
+    'payment_requirement',
+    'payment_requirement_amount_minor',
+    'payment_requirement_currency',
     'source',
     'starts_at',
     'ends_at',
@@ -122,6 +127,7 @@ class Booking extends Model
             'visit_format' => VisitFormat::class,
             'status' => BookingStatus::class,
             'payment_status' => PaymentStatus::class,
+            'payment_requirement' => PaymentRequirementType::class,
             'source' => BookingSource::class,
             'meeting_link_mode' => MeetingLinkMode::class,
             'starts_at' => 'datetime',
@@ -130,6 +136,7 @@ class Booking extends Model
             'requested_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'party_size' => 'integer',
+            'payment_requirement_amount_minor' => 'integer',
             'event_version' => 'integer',
         ];
     }

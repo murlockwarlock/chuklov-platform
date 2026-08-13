@@ -1,5 +1,13 @@
 # Requirements Changelog
 
+## 2026-08-13 — M4C owner decisions and implementation traceability
+
+- Resolved OQ-002 with an organization-configurable cancellation/reschedule cutoff, initial Phase 1 default 1440 minutes, staff reasoned override, pending HOME_VISIT withdrawal, stable booking identity/calendar UID on reschedule, and no M4 payment/refund consequences.
+- Resolved OQ-010 with explicit future-booking impact calculation, CRM warning/acknowledgement, durable booking preservation, derived scheduling-attention visibility, and audited acknowledgement.
+- Resolved OQ-011 with dedicated typed terminal NO_SHOW status and staff/time authorization; rejected requests remain separate.
+- Resolved OQ-012 with one organization-level Phase 1 office context and booking-specific HOME_VISIT destination data; no speculative Location aggregate or multi-site capacity.
+- Updated REQ-TIMEZONE-001/002, REQ-BOOKING-001/003/004/005/006/007/011, and REQ-SCHEDULING-001 to record the accepted M4 lifecycle, timezone, payment-handoff, schedule-impact, and location boundaries.
+
 ## 2026-08-13 — Owner-review backlog normalization
 
 - Added Phase 1/M4 requirements for idempotent booking creation, schedule-mutation safety, and explicit operational booking outcomes; linked unresolved schedule-conflict, `NO_SHOW`, and location-model decisions to OQ-010 through OQ-012.

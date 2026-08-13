@@ -19,10 +19,14 @@ class EditService extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
+        $acknowledgeImpact = (bool) ($data['acknowledge_impact'] ?? false);
+        unset($data['acknowledge_impact']);
+
         return app(UpdateService::class)->handle(
             actor: $actor,
             service: $record,
             name: $data,
+            acknowledgeImpact: $acknowledgeImpact,
         );
     }
 }

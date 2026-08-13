@@ -20,12 +20,17 @@ class CreateScheduleException
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly RecordAuditEvent $audit,
     ) {}
 
     /** @param array<string, mixed> $attributes */
-    public function handle(User $actor, Specialist $specialist, array $attributes): ScheduleException
-    {
+    public function handle(
+        User $actor,
+        Specialist $specialist,
+        array $attributes,
+        bool $acknowledgeImpact = false,
+    ): ScheduleException {
         $organization = $this->context->organization();
 
         if ((int) $specialist->organization_id !== $organization->getKey()) {
@@ -35,13 +40,15 @@ class CreateScheduleException
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $definition = ScheduleExceptionDefinition::from($attributes);
 
-        return DB::transaction(function () use ($actor, $organization, $definition, $specialist): ScheduleException {
+        return DB::transaction(function () use ($actor, $organization, $definition, $specialist, $acknowledgeImpact): ScheduleException {
             Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            $impact = $this->impactCalculator->forException($specialist, $definition);
+            $this->ensureImpactAcknowledged($impact, $acknowledgeImpact);
             $this->ensureNoOverlap($organization->getKey(), $specialist->getKey(), $definition);
 
             $exception = new ScheduleException;
@@ -68,9 +75,42 @@ class CreateScheduleException
                     'source' => 'crm',
                 ],
             );
+            $this->recordImpactAcknowledgement($actor, $exception, $impact);
 
             return $exception->refresh();
         });
+    }
+
+    private function ensureImpactAcknowledged(ScheduleMutationImpact $impact, bool $acknowledgeImpact): void
+    {
+        if ($impact->hasConflicts() && ! $acknowledgeImpact) {
+            throw ValidationException::withMessages([
+                'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
+            ]);
+        }
+    }
+
+    private function recordImpactAcknowledgement(
+        User $actor,
+        ScheduleException $exception,
+        ScheduleMutationImpact $impact,
+    ): void {
+        if (! $impact->hasConflicts()) {
+            return;
+        }
+
+        $this->audit->handle(
+            organization: $this->context->organization(),
+            actor: $actor,
+            action: 'schedule.mutation.acknowledged',
+            targetType: ScheduleException::class,
+            targetId: (string) $exception->getKey(),
+            metadata: [
+                'source' => 'crm',
+                'mutation' => 'schedule_exception',
+                'affected_booking_count' => $impact->count(),
+            ],
+        );
     }
 
     private function ensureNoOverlap(

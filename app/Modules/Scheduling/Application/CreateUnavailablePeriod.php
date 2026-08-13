@@ -21,6 +21,7 @@ class CreateUnavailablePeriod
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -30,6 +31,7 @@ class CreateUnavailablePeriod
         DateTimeInterface $startsAt,
         DateTimeInterface $endsAt,
         ?string $reason = null,
+        bool $acknowledgeImpact = false,
     ): UnavailablePeriod {
         $organization = $this->context->organization();
 
@@ -41,7 +43,7 @@ class CreateUnavailablePeriod
         $interval = InstantInterval::from($startsAt, $endsAt);
         $reason = $this->reason($reason);
 
-        return DB::transaction(function () use ($actor, $organization, $interval, $reason, $specialist): UnavailablePeriod {
+        return DB::transaction(function () use ($actor, $organization, $interval, $reason, $specialist, $acknowledgeImpact): UnavailablePeriod {
             Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
@@ -58,6 +60,14 @@ class CreateUnavailablePeriod
             if ($overlaps) {
                 throw ValidationException::withMessages([
                     'starts_at' => 'The unavailable period overlaps an existing period.',
+                ]);
+            }
+
+            $impact = $this->impactCalculator->forUnavailablePeriod($specialist, $interval->start, $interval->end);
+
+            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
+                throw ValidationException::withMessages([
+                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
                 ]);
             }
 
@@ -80,6 +90,20 @@ class CreateUnavailablePeriod
                 targetId: (string) $period->getKey(),
                 metadata: ['source' => 'crm'],
             );
+            if ($impact->hasConflicts()) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'schedule.mutation.acknowledged',
+                    targetType: UnavailablePeriod::class,
+                    targetId: (string) $period->getKey(),
+                    metadata: [
+                        'source' => 'crm',
+                        'mutation' => 'unavailable_period',
+                        'affected_booking_count' => $impact->count(),
+                    ],
+                );
+            }
 
             return $period->refresh();
         });

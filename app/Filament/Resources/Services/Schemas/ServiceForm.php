@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Services\Schemas;
 
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -82,6 +83,9 @@ class ServiceForm
                     ])
                     ->required()
                     ->default(CatalogItemType::Service->value),
+                Checkbox::make('acknowledge_impact')
+                    ->label('Acknowledge impact on future bookings if shown')
+                    ->default(false),
             ]);
     }
 }

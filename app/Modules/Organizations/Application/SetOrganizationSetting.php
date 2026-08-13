@@ -77,5 +77,16 @@ class SetOrganizationSetting
                 throw new InvalidArgumentException('The default timezone must be an IANA timezone.');
             }
         }
+
+        if ($key->value === OrganizationSettingKey::HomeVisitTransportDepositCurrency->value) {
+            if (! is_string($value) || preg_match('/^[A-Z]{3}$/', $value) !== 1) {
+                throw new InvalidArgumentException('The transport deposit currency must be a three-letter uppercase code.');
+            }
+        }
+
+        if ($key->value === OrganizationSettingKey::OfficeLocation->value
+            && (! is_string($value) || trim($value) === '' || mb_strlen($value) > 500)) {
+            throw new InvalidArgumentException('The office location is invalid.');
+        }
     }
 }

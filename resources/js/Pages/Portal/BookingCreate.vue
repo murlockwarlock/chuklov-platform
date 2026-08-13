@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type VisitFormat = 'office' | 'home' | 'online';
+type MeetingLinkMode = 'auto' | 'manual';
 
 type ServiceOption = {
     id: number;
@@ -55,7 +56,7 @@ type Props = {
     query: BookingQuery;
     client: { timezone: string };
     bookingResult: BookingResult;
-    urls: { create: string; store: string; services: string };
+    urls: { create: string; store: string; services: string; bookings: string };
 };
 
 const props = defineProps<Props>();
@@ -66,12 +67,20 @@ const bookingForm = useForm<{
     starts_at: string | null;
     format: VisitFormat;
     client_timezone: string;
+    meeting_link_mode: MeetingLinkMode | null;
+    party_size: number;
+    location: string | null;
+    idempotency_key: string;
 }>({
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
     starts_at: null,
     format: props.query.format,
     client_timezone: props.query.displayTimezone,
+    meeting_link_mode: props.query.format === 'online' ? 'manual' : null,
+    party_size: 1,
+    location: null,
+    idempotency_key: globalThis.crypto?.randomUUID?.() ?? `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 });
 
 const selectedService = computed(() =>
@@ -105,6 +114,7 @@ function submitBooking(): void {
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
     bookingForm.client_timezone = props.query.displayTimezone;
+    bookingForm.meeting_link_mode = props.query.format === 'online' ? bookingForm.meeting_link_mode ?? 'manual' : null;
     bookingForm.starts_at = selectedStart.value;
     bookingForm.post(props.urls.store, { preserveScroll: true });
 }
@@ -172,6 +182,66 @@ function submitBooking(): void {
               {{ service.name }}
             </option>
           </select>
+        </div>
+
+        <div
+          v-if="props.query.format === 'online'"
+          class="portal-field"
+        >
+          <label
+            for="booking-meeting-mode"
+            class="portal-label"
+          >Meeting link mode</label>
+          <select
+            id="booking-meeting-mode"
+            v-model="bookingForm.meeting_link_mode"
+            name="meeting_link_mode"
+            class="portal-input"
+          >
+            <option value="manual">
+              Staff provides a link
+            </option>
+            <option value="auto">
+              Automatic later
+            </option>
+          </select>
+        </div>
+
+        <div
+          v-if="props.query.format === 'home'"
+          class="portal-grid portal-grid--two"
+        >
+          <div class="portal-field">
+            <label
+              for="booking-party-size"
+              class="portal-label"
+            >Party size</label>
+            <input
+              id="booking-party-size"
+              v-model.number="bookingForm.party_size"
+              name="party_size"
+              type="number"
+              min="1"
+              max="20"
+              required
+              class="portal-input"
+            >
+          </div>
+          <div class="portal-field">
+            <label
+              for="booking-location"
+              class="portal-label"
+            >Visit destination</label>
+            <input
+              id="booking-location"
+              v-model="bookingForm.location"
+              name="location"
+              type="text"
+              maxlength="500"
+              required
+              class="portal-input"
+            >
+          </div>
         </div>
 
         <div class="portal-field">
@@ -394,6 +464,12 @@ function submitBooking(): void {
         class="portal-button portal-button--secondary self-start"
       >
         Back to services
+      </Link>
+      <Link
+        :href="props.urls.bookings"
+        class="portal-link self-start"
+      >
+        My bookings
       </Link>
     </section>
   </main>

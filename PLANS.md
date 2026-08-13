@@ -21,12 +21,13 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 Accepted M3 base: b15866f007be4a5db8397120d91f4691ce85382b
 Accepted M4A base: af298476aad216b4083b93fc6f6d60f81ca3e52b
+Accepted M4B base: 2bf8d502b204f982205ab466fa1c4e7c6a4873e5
 
-Objective: implement the organization-scoped scheduling foundation and then complete the booking lifecycle without reopening M3 or entering M5+ scope.
+Objective: complete the organization-scoped scheduling and booking lifecycle without reopening M3 or entering M5+ scope.
 
-Affected requirements and modules: REQ-TIMEZONE-001/002, REQ-BOOKING-001/002/003/004/005/006/008/009, REQ-CLIENT-003, REQ-SERVICE-002, REQ-SPECIALIST-001; Scheduling, Organizations, Services, Specialists, Identity, Security, CRM, and Client Portal.
+Affected requirements and modules: REQ-TIMEZONE-001/002, REQ-BOOKING-001/002/003/004/005/006/007/008/009/010/011, REQ-SCHEDULING-001, REQ-CLIENT-003, REQ-SERVICE-002, REQ-SPECIALIST-001; Scheduling, Organizations, Services, Specialists, Identity, Security, CRM, and Client Portal.
 
-Non-goals: OQ-002 cancellation/reschedule policy and payment consequences; notifications, finance, medical, surveys, RAG, AI, SaaS, marketplace, and real providers.
+Non-goals: Notifications, finance ledger/payment providers, medical, surveys, RAG, AI, SaaS, marketplace, and external calendar/video providers.
 
 #### M4A — scheduling foundation — implemented
 
@@ -35,16 +36,20 @@ Non-goals: OQ-002 cancellation/reschedule policy and payment consequences; notif
 - PostgreSQL composite ownership FKs, checks, GiST exclusion constraints, specialist-row transaction locking, and focused Unit/Feature/PostgreSQL coverage are in place.
 - CRM configuration is limited to working hours, lead time, exceptions, and unavailable periods. Portal exposes a read-only explicit availability projection.
 
-#### M4B — booking lifecycle and CRM/client flow — implementation complete, local and hosted gates passed
+#### M4B — booking lifecycle and CRM/client flow — accepted
 
 - Resolved OQ-009 as an explicit tenant-safe Specialist-Service many-to-many assignment and added CRM create/remove management with Application authorization.
 - Corrected HOME_VISIT `PENDING_REVIEW` to remain non-blocking; added typed approval/rejection transitions, protected availability recheck, immutable booking events, and reason metadata.
 - Added restriction-aware client Service → Specialist → slot → format booking flow for OFFICE/ONLINE creation and HOME_VISIT requests, plus organization-scoped CRM booking inspection/actions.
 - Added PostgreSQL assignment ownership constraints and a true process-level competing booking test alongside focused Feature/Unit coverage.
 
-#### M4C — reschedule/cancel/history/home/online completion — pending
+#### M4C — reschedule/cancel/history/home/online completion — implementation complete, local gates passed
 
-- Resolve OQ-002 before self-service cancellation/rescheduling.
-- Add explicit immutable lifecycle events, home-visit approval/payment handoff, online meeting-link completion, and client history/home/online behavior only after their accepted policies are available.
+- Resolved OQ-002, OQ-010, OQ-011, and OQ-012 in the product decision records.
+- Added organization/actor-scoped PostgreSQL booking-creation idempotency with request-hash replay protection and scheduled retention pruning.
+- Added cutoff-aware client/staff cancellation and rescheduling that preserve Booking identity/calendar UID, recheck authoritative availability, preserve the old time on conflict, and append immutable events.
+- Added typed completion, NO_SHOW, terminal transition enforcement, manual ONLINE meeting-link action, HOME_VISIT withdrawal/approval handoff, party size, and booking-specific destination support without finance/provider behavior.
+- Added shared Portal My bookings/detail/history/timezone/reschedule/cancel surfaces and CRM lifecycle/history/needs-attention actions.
+- Added one reusable schedule-mutation impact calculator with explicit CRM acknowledgement and durable booking preservation across schedule, Specialist, Service, and assignment changes.
 
-M4B checkpoints complete: focused tests → PostgreSQL integration and process-level race test → make quality → make ci → Playwright booking flow → exact-SHA hosted CI run 31654103577 for pushed SHA f0a0357dd79d9d5a0cb0de1ca8b1dbdf0a032d31 → status/report update.
+M4C checkpoints: focused tests, PostgreSQL integration and process-level race test, make quality, make ci, and Playwright desktop/mobile booking management all pass; exact-SHA hosted CI and final status/report update remain.

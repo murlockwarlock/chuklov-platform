@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Scheduling\Application\RemoveSpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -24,11 +25,20 @@ class SpecialistServiceAssignmentsTable
                     ->label('Remove')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->action(function (SpecialistServiceAssignment $record): void {
+                    ->schema([
+                        Checkbox::make('acknowledge_impact')
+                            ->label('Acknowledge impact on future bookings')
+                            ->default(false),
+                    ])
+                    ->action(function (SpecialistServiceAssignment $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
 
-                        app(RemoveSpecialistServiceAssignment::class)->handle($actor, $record);
+                        app(RemoveSpecialistServiceAssignment::class)->handle(
+                            $actor,
+                            $record,
+                            (bool) ($data['acknowledge_impact'] ?? false),
+                        );
                     }),
             ]);
     }

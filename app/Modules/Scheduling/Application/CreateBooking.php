@@ -17,6 +17,7 @@ use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use App\Modules\Scheduling\Domain\Models\BookingIdempotencyKey;
 use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
@@ -49,6 +50,9 @@ class CreateBooking
         VisitFormat $format,
         ?string $clientTimezone = null,
         ?MeetingLinkMode $meetingLinkMode = null,
+        ?string $idempotencyKey = null,
+        int $partySize = 1,
+        ?string $location = null,
     ): Booking {
         $organization = $this->context->organization();
         $this->ensureOrganizationOwnership($organization->getKey(), $actor, $client, $specialist, $service);
@@ -65,7 +69,18 @@ class CreateBooking
             throw ValidationException::withMessages(['meetingLinkMode' => 'A meeting-link mode is only valid for online visits.']);
         }
 
+        if ($partySize < 1 || $partySize > (int) config('scheduling.home_visit_max_party_size')) {
+            throw ValidationException::withMessages(['partySize' => 'The party size is invalid.']);
+        }
+
+        if ($format !== VisitFormat::HomeVisit && $location !== null) {
+            throw ValidationException::withMessages(['location' => 'A destination is only valid for home visits.']);
+        }
+
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
+        $idempotencyKey = $this->normalizeIdempotencyKey($idempotencyKey);
+        $actorScope = $actor instanceof User ? 'user:'.$actor->getKey() : 'client:'.$actor->getKey();
+        $actorType = $actor instanceof User ? 'user' : 'client';
 
         return DB::transaction(function () use (
             $actor,
@@ -78,6 +93,11 @@ class CreateBooking
             $requestedStart,
             $source,
             $organization,
+            $idempotencyKey,
+            $actorScope,
+            $actorType,
+            $partySize,
+            $location,
         ): Booking {
             $lockedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
@@ -113,6 +133,38 @@ class CreateBooking
             );
 
             $resolvedClientTimezone = $this->resolveClientTimezone($clientTimezone, $lockedClient);
+            $resolvedMeetingLinkMode = $format === VisitFormat::Online
+                ? ($meetingLinkMode ?? MeetingLinkMode::Manual)
+                : null;
+            $requestHash = $this->requestHash(
+                client: $lockedClient,
+                specialist: $lockedSpecialist,
+                service: $lockedService,
+                startsAt: $requestedStart,
+                format: $format,
+                clientTimezone: $resolvedClientTimezone,
+                meetingLinkMode: $resolvedMeetingLinkMode,
+                partySize: $partySize,
+                location: $location,
+            );
+            $idempotency = $this->lockIdempotencyKey(
+                organizationId: $organization->getKey(),
+                idempotencyKey: $idempotencyKey,
+                actorType: $actorType,
+                actorScope: $actorScope,
+                actor: $actor,
+                requestHash: $requestHash,
+            );
+
+            if ($idempotency->booking_id !== null) {
+                $idempotency->forceFill(['last_used_at' => now()])->save();
+
+                return Booking::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereKey($idempotency->booking_id)
+                    ->firstOrFail();
+            }
+
             $availability = $this->availability->forBooking(
                 specialist: $lockedSpecialist,
                 service: $lockedService,
@@ -131,6 +183,11 @@ class CreateBooking
             $status = $format === VisitFormat::HomeVisit
                 ? BookingStatus::PendingReview
                 : BookingStatus::Requested;
+            $officeLocation = $format === VisitFormat::Office
+                ? $organization->settings()
+                    ->where('setting_key', 'office_location')
+                    ->value('string_value')
+                : null;
             $booking = new Booking;
             $booking->forceFill([
                 'organization_id' => $organization->getKey(),
@@ -147,8 +204,9 @@ class CreateBooking
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
                 'client_timezone' => $resolvedClientTimezone,
-                'meeting_link_mode' => $meetingLinkMode,
-                'party_size' => 1,
+                'location' => $format === VisitFormat::HomeVisit ? $location : $officeLocation,
+                'meeting_link_mode' => $resolvedMeetingLinkMode,
+                'party_size' => $partySize,
                 'event_version' => 1,
                 'requested_at' => now(),
             ]);
@@ -179,6 +237,11 @@ class CreateBooking
                 'occurred_at' => now(),
             ]);
             $event->save();
+
+            $idempotency->forceFill([
+                'booking_id' => $booking->getKey(),
+                'last_used_at' => now(),
+            ])->save();
 
             $this->audit->handle(
                 organization: $organization,
@@ -250,7 +313,7 @@ class CreateBooking
         return null;
     }
 
-    /** @return array<string, string|int> */
+    /** @return array<string, string|int|null> */
     private function bookingSnapshot(Booking $booking): array
     {
         return [
@@ -261,6 +324,9 @@ class CreateBooking
             'ends_at' => $booking->endsAtUtc()->toIso8601String(),
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
+            'client_timezone' => $booking->client_timezone,
+            'meeting_link_mode' => $booking->meeting_link_mode?->value,
+            'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,
         ];
     }
@@ -270,5 +336,82 @@ class CreateBooking
         $sqlState = $exception->getCode() ?: ($exception->errorInfo[0] ?? null);
 
         return in_array($sqlState, ['23P01', '40P01'], true);
+    }
+
+    private function normalizeIdempotencyKey(?string $idempotencyKey): string
+    {
+        $idempotencyKey = trim($idempotencyKey ?? (string) Str::uuid());
+
+        if ($idempotencyKey === '' || mb_strlen($idempotencyKey) > 128) {
+            throw ValidationException::withMessages(['idempotencyKey' => 'The idempotency key is invalid.']);
+        }
+
+        return $idempotencyKey;
+    }
+
+    private function lockIdempotencyKey(
+        int $organizationId,
+        string $idempotencyKey,
+        string $actorType,
+        string $actorScope,
+        User|Client $actor,
+        string $requestHash,
+    ): BookingIdempotencyKey {
+        DB::table('booking_idempotency_keys')->insertOrIgnore([
+            'organization_id' => $organizationId,
+            'idempotency_key' => $idempotencyKey,
+            'actor_type' => $actorType,
+            'actor_scope' => $actorScope,
+            'actor_user_id' => $actor instanceof User ? $actor->getKey() : null,
+            'actor_client_id' => $actor instanceof Client ? $actor->getKey() : null,
+            'request_hash' => $requestHash,
+            'booking_id' => null,
+            'expires_at' => now()->addDays((int) config('scheduling.idempotency_retention_days')),
+            'last_used_at' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $record = BookingIdempotencyKey::query()
+            ->where('organization_id', $organizationId)
+            ->where('idempotency_key', $idempotencyKey)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($record->actor_scope !== $actorScope || $record->actor_type !== $actorType) {
+            throw new AuthorizationException('The idempotency key belongs to another actor.');
+        }
+
+        if ($record->request_hash !== $requestHash) {
+            throw ValidationException::withMessages([
+                'idempotencyKey' => 'The idempotency key was already used for a different booking request.',
+            ]);
+        }
+
+        return $record;
+    }
+
+    private function requestHash(
+        Client $client,
+        Specialist $specialist,
+        Service $service,
+        CarbonImmutable $startsAt,
+        VisitFormat $format,
+        string $clientTimezone,
+        ?MeetingLinkMode $meetingLinkMode,
+        int $partySize,
+        ?string $location,
+    ): string {
+        return hash('sha256', json_encode([
+            'client_id' => $client->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'service_id' => $service->getKey(),
+            'starts_at' => $startsAt->toIso8601String(),
+            'format' => $format->value,
+            'client_timezone' => $clientTimezone,
+            'meeting_link_mode' => $meetingLinkMode?->value,
+            'party_size' => $partySize,
+            'location' => $location,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

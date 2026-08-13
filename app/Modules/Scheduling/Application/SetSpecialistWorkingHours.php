@@ -13,12 +13,14 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SetSpecialistWorkingHours
 {
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -26,8 +28,12 @@ class SetSpecialistWorkingHours
      * @param  array<int, array<string, mixed>>  $definitions
      * @return Collection<int, SpecialistWorkingHour>
      */
-    public function handle(User $actor, Specialist $specialist, array $definitions): Collection
-    {
+    public function handle(
+        User $actor,
+        Specialist $specialist,
+        array $definitions,
+        bool $acknowledgeImpact = false,
+    ): Collection {
         $organization = $this->context->organization();
 
         if ((int) $specialist->organization_id !== $organization->getKey()) {
@@ -37,12 +43,14 @@ class SetSpecialistWorkingHours
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $schedule = SpecialistScheduleDefinition::from($definitions);
 
-        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist): Collection {
+        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist, $acknowledgeImpact): Collection {
             Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $impact = $this->impactCalculator->forWorkingHours($specialist, $schedule);
+            $this->ensureImpactAcknowledged($impact, $acknowledgeImpact);
 
             SpecialistWorkingHour::query()
                 ->where('organization_id', $organization->getKey())
@@ -71,6 +79,7 @@ class SetSpecialistWorkingHours
                     'interval_count' => count($schedule->intervals),
                 ],
             );
+            $this->recordImpactAcknowledgement($actor, $specialist, $impact);
 
             return SpecialistWorkingHour::query()
                 ->where('organization_id', $organization->getKey())
@@ -79,5 +88,37 @@ class SetSpecialistWorkingHours
                 ->orderBy('start_time')
                 ->get();
         });
+    }
+
+    private function ensureImpactAcknowledged(ScheduleMutationImpact $impact, bool $acknowledgeImpact): void
+    {
+        if ($impact->hasConflicts() && ! $acknowledgeImpact) {
+            throw ValidationException::withMessages([
+                'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
+            ]);
+        }
+    }
+
+    private function recordImpactAcknowledgement(
+        User $actor,
+        Specialist $specialist,
+        ScheduleMutationImpact $impact,
+    ): void {
+        if (! $impact->hasConflicts()) {
+            return;
+        }
+
+        $this->audit->handle(
+            organization: $this->context->organization(),
+            actor: $actor,
+            action: 'schedule.mutation.acknowledged',
+            targetType: Specialist::class,
+            targetId: (string) $specialist->getKey(),
+            metadata: [
+                'source' => 'crm',
+                'mutation' => 'working_hours',
+                'affected_booking_count' => $impact->count(),
+            ],
+        );
     }
 }

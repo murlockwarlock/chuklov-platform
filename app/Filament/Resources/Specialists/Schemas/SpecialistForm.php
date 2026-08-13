@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Specialists\Schemas;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -38,6 +39,9 @@ class SpecialistForm
                 Toggle::make('is_active')
                     ->required()
                     ->default(true),
+                Checkbox::make('acknowledge_impact')
+                    ->label('Acknowledge impact on future bookings if shown')
+                    ->default(false),
             ]);
     }
 }

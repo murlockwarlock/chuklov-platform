@@ -4,14 +4,22 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreatePortalBookingRequest;
+use App\Http\Requests\PortalBookingActionRequest;
 use App\Http\Requests\PortalBookingQueryRequest;
+use App\Http\Requests\PortalBookingRescheduleRequest;
+use App\Http\Requests\PortalTimezonePreferenceRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\ListBookableServices;
 use App\Modules\Scheduling\Application\ListBookableSpecialistsForService;
+use App\Modules\Scheduling\Application\ListClientBookings;
+use App\Modules\Scheduling\Application\RescheduleBooking;
+use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -94,6 +102,7 @@ class BookingController extends Controller
                 'create' => route('portal.bookings.create'),
                 'store' => route('portal.bookings.store'),
                 'services' => route('portal.services.index'),
+                'bookings' => route('portal.bookings.index'),
             ],
         ]);
     }
@@ -103,6 +112,7 @@ class BookingController extends Controller
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
         CreateBooking $createBooking,
+        UpdateClientTimezonePreference $timezonePreference,
     ): RedirectResponse {
         $validated = $request->validated();
         $format = VisitFormat::from($validated['format']);
@@ -113,6 +123,11 @@ class BookingController extends Controller
             throw ValidationException::withMessages(['starts_at' => 'The selected time is invalid.']);
         }
 
+        $meetingLinkModeValue = $validated['meeting_link_mode'] ?? null;
+        $meetingLinkMode = $meetingLinkModeValue === null
+            ? null
+            : MeetingLinkMode::from((string) $meetingLinkModeValue);
+        $clientTimezone = $validated['client_timezone'] ?? null;
         $booking = $createBooking->handle(
             actor: $clientContext->client(),
             client: $clientContext->client(),
@@ -120,8 +135,15 @@ class BookingController extends Controller
             service: $this->service($validated['service_id'], $organizationContext->id()),
             startsAt: $startsAt,
             format: $format,
-            clientTimezone: $validated['client_timezone'] ?? null,
+            clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
+            meetingLinkMode: $meetingLinkMode,
+            idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
+            partySize: (int) ($validated['party_size'] ?? 1),
+            location: isset($validated['location']) ? (string) $validated['location'] : null,
         );
+        if (is_string($clientTimezone)) {
+            $timezonePreference->handle($clientTimezone);
+        }
 
         $displayTimezone = $booking->client_timezone ?? $booking->schedule_timezone;
 
@@ -137,6 +159,112 @@ class BookingController extends Controller
             ->with('portal_booking_result', [
                 'status' => $booking->status->value,
             ]);
+    }
+
+    public function index(ListClientBookings $bookings): Response
+    {
+        return Inertia::render('Portal/MyBookings', [
+            ...$bookings->handle(),
+            'urls' => [
+                'create' => route('portal.bookings.create'),
+                'services' => route('portal.services.index'),
+            ],
+        ]);
+    }
+
+    public function show(
+        int $bookingId,
+        ListClientBookings $bookings,
+        CalculateAvailability $availability,
+        ClientPortalContext $clientContext,
+    ): Response {
+        $booking = $bookings->find($bookingId);
+        abort_unless($booking !== null, 404);
+        $client = $clientContext->client();
+        $displayTimezone = $booking->client_timezone ?? $client->timezone;
+        $availabilityProjection = null;
+
+        if (! in_array($booking->status->value, ['rejected', 'cancelled', 'completed', 'no_show'], true)) {
+            $localDate = $booking->startsAtUtc()->setTimezone($displayTimezone);
+            $availabilityProjection = $availability->forClient(
+                client: $client,
+                specialistId: $booking->specialist_id,
+                serviceId: $booking->service_id,
+                dateFrom: $localDate->toDateString(),
+                dateTo: $localDate->addDays(6)->toDateString(),
+                format: $booking->visit_format,
+                displayTimezone: $displayTimezone,
+            )->toArray();
+        }
+
+        return Inertia::render('Portal/BookingShow', [
+            'booking' => $bookings->projection($booking),
+            'availability' => $availabilityProjection,
+            'urls' => [
+                'index' => route('portal.bookings.index'),
+                'cancel' => route('portal.bookings.cancel', $booking->getKey()),
+                'reschedule' => route('portal.bookings.reschedule', $booking->getKey()),
+                'timezone' => route('portal.preferences.timezone'),
+                'services' => route('portal.services.index'),
+            ],
+            'client' => ['timezone' => $client->timezone],
+        ]);
+    }
+
+    public function cancel(
+        PortalBookingActionRequest $request,
+        int $bookingId,
+        ListClientBookings $bookings,
+        ClientPortalContext $clientContext,
+        CancelBooking $cancelBooking,
+    ): RedirectResponse {
+        $booking = $bookings->find($bookingId);
+        abort_unless($booking !== null, 404);
+        $cancelBooking->handle($clientContext->client(), $booking, $request->validated()['reason'] ?? null);
+
+        return to_route('portal.bookings.show', $bookingId);
+    }
+
+    public function reschedule(
+        PortalBookingRescheduleRequest $request,
+        int $bookingId,
+        ListClientBookings $bookings,
+        ClientPortalContext $clientContext,
+        RescheduleBooking $rescheduleBooking,
+        UpdateClientTimezonePreference $timezonePreference,
+    ): RedirectResponse {
+        $booking = $bookings->find($bookingId);
+        abort_unless($booking !== null, 404);
+        $validated = $request->validated();
+
+        try {
+            $startsAt = CarbonImmutable::parse($validated['starts_at']);
+        } catch (Throwable) {
+            throw ValidationException::withMessages(['starts_at' => 'The selected time is invalid.']);
+        }
+
+        $clientTimezone = $validated['client_timezone'] ?? null;
+        $rescheduleBooking->handle(
+            actor: $clientContext->client(),
+            booking: $booking,
+            newStartsAt: $startsAt,
+            clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
+            reason: isset($validated['reason']) ? (string) $validated['reason'] : null,
+        );
+        if (is_string($clientTimezone)) {
+            $timezonePreference->handle($clientTimezone);
+        }
+
+        return to_route('portal.bookings.show', $bookingId);
+    }
+
+    public function updateTimezone(
+        PortalTimezonePreferenceRequest $request,
+        UpdateClientTimezonePreference $timezonePreference,
+    ): RedirectResponse {
+        $timezonePreference->handle((string) $request->validated('timezone'));
+
+        return back();
     }
 
     /**

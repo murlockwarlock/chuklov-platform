@@ -8,11 +8,13 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServiceConfiguration;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class UpdateService
 {
@@ -20,6 +22,7 @@ class UpdateService
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly OrganizationFeatureGate $features,
+        private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -45,6 +48,7 @@ class UpdateService
         ?string $priceCurrency = null,
         ?string $paymentPolicy = null,
         string $catalogType = 'service',
+        bool $acknowledgeImpact = false,
     ): Service {
         $organization = $this->context->organization();
 
@@ -73,12 +77,19 @@ class UpdateService
             'payment_policy' => $paymentPolicy,
         ]);
 
-        return DB::transaction(function () use ($actor, $configuration, $organization, $service): Service {
+        return DB::transaction(function () use ($actor, $configuration, $organization, $service, $acknowledgeImpact): Service {
             $lockedService = Service::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($service->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $impact = $this->impactCalculator->forServiceChange($lockedService, $configuration->attributes());
+
+            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
+                throw ValidationException::withMessages([
+                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
+                ]);
+            }
             $changedFields = [];
 
             foreach ($configuration->attributes() as $field => $value) {
@@ -101,6 +112,21 @@ class UpdateService
                         'fields' => implode(',', $changedFields),
                         'is_active' => $configuration->isActive,
                         'has_price' => $configuration->priceMinor !== null,
+                    ],
+                );
+            }
+
+            if ($impact->hasConflicts()) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'schedule.mutation.acknowledged',
+                    targetType: Service::class,
+                    targetId: (string) $lockedService->getKey(),
+                    metadata: [
+                        'source' => 'crm',
+                        'mutation' => 'service_change',
+                        'affected_booking_count' => $impact->count(),
                     ],
                 );
             }

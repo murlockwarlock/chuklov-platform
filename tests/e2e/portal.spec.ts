@@ -8,9 +8,10 @@ type BookingFixture = {
     serviceId: number;
     specialistId: number;
     date: string;
+    bookingId: number | null;
 };
 
-function createBookingFixture(): BookingFixture {
+function createBookingFixture(withBooking = false): BookingFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -48,6 +49,20 @@ function createBookingFixture(): BookingFixture {
                 ]);
         }
         $date = \\Carbon\\CarbonImmutable::now('UTC')->addDay()->toDateString();
+        $booking = null;
+        if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
+            $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            $booking = app(\\App\\Modules\\Scheduling\\Application\\CreateBooking::class)->handle(
+                actor: $client,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: \\Carbon\\CarbonImmutable::parse($date.' 09:00:00', 'UTC'),
+                format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
+                idempotencyKey: 'playwright-'.$suffix,
+            );
+        }
         $sessionId = \\Illuminate\\Support\\Str::random(40);
         $sessionData = json_encode([
             '_token' => \\Illuminate\\Support\\Str::random(40),
@@ -76,6 +91,7 @@ function createBookingFixture(): BookingFixture {
             'serviceId' => $service->getKey(),
             'specialistId' => $specialist->getKey(),
             'date' => $date,
+            'bookingId' => $booking?->getKey(),
         ]);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-${process.pid}`;
@@ -94,6 +110,7 @@ function createBookingFixture(): BookingFixture {
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                PLAYWRIGHT_WITH_BOOKING: withBooking ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -133,4 +150,33 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await page.getByRole('button', { name: 'Create booking' }).click();
 
     await expect(page.getByRole('status')).toContainText('Your booking request was created.');
+});
+
+test('authenticated client can manage an upcoming booking from My bookings', async ({ page }) => {
+    const fixture = createBookingFixture(true);
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/bookings');
+    await expect(page.getByRole('heading', { name: 'My bookings' })).toBeVisible();
+    await expect(page.getByText(/Playwright Service/).first()).toBeVisible();
+
+    await page.getByRole('link', { name: /Playwright Service/ }).first().click();
+    await expect(page.getByRole('heading', { name: /Playwright Service/ })).toBeVisible();
+    await expect(page.getByText('UTC').first()).toBeVisible();
+
+    const alternateSlot = page.locator('button[aria-pressed]').first();
+    await expect(alternateSlot).toBeVisible();
+    await alternateSlot.click();
+    await page.getByRole('button', { name: 'Reschedule booking' }).click();
+    await expect(page.getByText('Booking history')).toBeVisible();
+    await expect(page.getByText('rescheduled')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Cancel booking' }).click();
+    await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
+    await expect(page.locator('li').filter({ hasText: /^cancelled ·/ })).toBeVisible();
 });

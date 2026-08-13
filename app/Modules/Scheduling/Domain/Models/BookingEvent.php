@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property-read Organization $organization
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property BookingEventType $event_type
  * @property array<string, mixed> $old_values
  * @property array<string, mixed> $new_values
+ * @property Carbon $occurred_at
  */
 #[Fillable(['event_type', 'actor_type', 'old_values', 'new_values', 'reason', 'occurred_at'])]
 class BookingEvent extends Model

@@ -1,6 +1,6 @@
 # Scheduling
 
-Scheduling stores UTC instants and IANA zones, recalculates availability server-side, and protects conflicts transactionally. Office, home, and online formats have distinct typed representations; cancellation consequences await OQ-002.
+Scheduling stores UTC instants and IANA zones, recalculates availability server-side, and protects conflicts transactionally. Office, home, and online formats have distinct typed representations. Phase 1 uses one organization-level office context; HOME_VISIT destinations remain booking-specific.
 
 ## M4A decisions
 
@@ -19,5 +19,14 @@ Scheduling stores UTC instants and IANA zones, recalculates availability server-
 - `PENDING_REVIEW` is non-blocking for `HOME_VISIT`. `REQUESTED` and `CONFIRMED` are the blocking booking states. Home-visit approval locks the booking and relevant Specialist/Service rows, recalculates the exact requested interval through CalculateAvailability, and only then transitions to `CONFIRMED`.
 - A home-visit approval fails with a validation error when its preferred time is no longer available. Rejection is a typed non-blocking terminal state and requires an explicit reason. Neither transition implements payment, deposit, refund, cancellation, or reschedule behavior.
 - The shared Portal booking journey uses explicit service, Specialist, date/slot, format, and confirmation projections for browser, mobile browser, and Telegram Mini App runtime. CRM list/detail/actions remain organization scoped and call the same Application lifecycle actions.
+
+## M4C decisions
+
+- Booking creation has a PostgreSQL-backed organization/actor-scoped idempotency record with request-hash comparison, transactional booking linkage, bounded retention, and scheduled pruning. It prevents duplicate logical bookings without replacing the independent PostgreSQL interval exclusion invariant.
+- REQUESTED and CONFIRMED block intervals; PENDING_REVIEW HOME_VISIT requests remain non-blocking. Approval rechecks the exact preferred slot inside a transaction before entering CONFIRMED.
+- Cancellation and rescheduling use the organization setting booking_cancellation_cutoff_minutes, defaulting to 1440 minutes. Client self-service is cutoff-aware, staff inside-cutoff overrides require a reason, and payment state is never changed as a side effect. Rescheduling preserves Booking identity and calendar_uid, increments event_version, appends immutable history, and keeps the old interval when the target conflicts.
+- NO_SHOW is a typed terminal status available to authorized staff after scheduled start. Completion, cancellation, rejection, no-show, rescheduling, and online manual-link changes are explicit Application transitions with immutable BookingEvents and allowlisted audit metadata.
+- Schedule mutation actions use one impact calculator for future non-terminal bookings. CRM must acknowledge an impact before saving the mutation; the booking is not rewritten or auto-cancelled and is exposed as a derived scheduling-attention state for later explicit resolution.
+- HOME_VISIT approval can record a typed FULL_PAYMENT or configured TRANSPORT_DEPOSIT handoff using integer minor units and currency only. M4 does not claim payment or implement finance. ONLINE manual URLs are Application-authorized; AUTO has no real provider integration or fabricated production link.
 
 See REQ-BOOKING-* and REQ-TIMEZONE-*.

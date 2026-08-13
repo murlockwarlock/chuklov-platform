@@ -9,6 +9,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -47,12 +48,22 @@ class SpecialistsTable
                     ->label('Deactivate')
                     ->color('danger')
                     ->requiresConfirmation()
+                    ->schema([
+                        Checkbox::make('acknowledge_impact')
+                            ->label('Acknowledge impact on future bookings')
+                            ->default(false),
+                    ])
                     ->visible(fn (Specialist $record): bool => $record->is_active)
-                    ->action(function (Specialist $record): void {
+                    ->action(function (Specialist $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
 
-                        app(SetSpecialistActive::class)->handle($actor, $record, false);
+                        app(SetSpecialistActive::class)->handle(
+                            $actor,
+                            $record,
+                            false,
+                            (bool) ($data['acknowledge_impact'] ?? false),
+                        );
                     }),
                 Action::make('linkStaffUser')
                     ->label('Link staff User')

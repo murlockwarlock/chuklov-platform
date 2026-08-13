@@ -9,4 +9,6 @@ enum BookingEventType: string
     case Rescheduled = 'rescheduled';
     case Cancelled = 'cancelled';
     case Completed = 'completed';
+    case NoShow = 'no_show';
+    case MeetingLinkUpdated = 'meeting_link_updated';
 }

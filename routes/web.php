@@ -34,6 +34,18 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/availability', AvailabilityController::class)->name('portal.availability');
             Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
+            Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
+            Route::get('/portal/bookings/{bookingId}', [BookingController::class, 'show'])
+                ->whereNumber('bookingId')
+                ->name('portal.bookings.show');
+            Route::post('/portal/bookings/{bookingId}/cancel', [BookingController::class, 'cancel'])
+                ->whereNumber('bookingId')
+                ->name('portal.bookings.cancel');
+            Route::post('/portal/bookings/{bookingId}/reschedule', [BookingController::class, 'reschedule'])
+                ->whereNumber('bookingId')
+                ->name('portal.bookings.reschedule');
+            Route::post('/portal/preferences/timezone', [BookingController::class, 'updateTimezone'])
+                ->name('portal.preferences.timezone');
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/onboarding', [OnboardingController::class, 'show'])->name('portal.onboarding');

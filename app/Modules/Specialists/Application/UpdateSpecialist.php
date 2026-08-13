@@ -7,17 +7,20 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistProfile;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class UpdateSpecialist
 {
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -28,6 +31,7 @@ class UpdateSpecialist
         bool $isActive,
         ?string $timezone = null,
         ?int $staffUserId = null,
+        bool $acknowledgeImpact = false,
     ): Specialist {
         $organization = $this->context->organization();
 
@@ -38,7 +42,7 @@ class UpdateSpecialist
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSpecialists);
         $profile = SpecialistProfile::from($displayName, $timezone);
 
-        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId): Specialist {
+        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId, $acknowledgeImpact): Specialist {
             $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
@@ -61,6 +65,18 @@ class UpdateSpecialist
 
             if ((int) ($oldStaffUserId ?? 0) !== (int) ($staffUserId ?? 0)) {
                 $changedFields[] = 'staff_user_id';
+            }
+
+            $impact = $this->impactCalculator->forSpecialistChange(
+                specialist: $lockedSpecialist,
+                newIsActive: $isActive,
+                newTimezone: $profile->timezone,
+            );
+
+            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
+                throw ValidationException::withMessages([
+                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
+                ]);
             }
 
             $lockedSpecialist->forceFill([
@@ -89,6 +105,21 @@ class UpdateSpecialist
                     targetType: Specialist::class,
                     targetId: (string) $lockedSpecialist->getKey(),
                     metadata: ['source' => 'crm'],
+                );
+            }
+
+            if ($impact->hasConflicts()) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'schedule.mutation.acknowledged',
+                    targetType: Specialist::class,
+                    targetId: (string) $lockedSpecialist->getKey(),
+                    metadata: [
+                        'source' => 'crm',
+                        'mutation' => 'specialist_deactivation',
+                        'affected_booking_count' => $impact->count(),
+                    ],
                 );
             }
 
