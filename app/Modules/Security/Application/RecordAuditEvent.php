@@ -47,7 +47,7 @@ class RecordAuditEvent
         'booking.no_show' => ['source', 'status', 'visit_format'],
         'booking.home_visit.withdrawn' => ['source', 'status', 'inside_cutoff'],
         'booking.online.meeting_url.updated' => ['source', 'status', 'visit_format', 'url_set'],
-        'schedule.mutation.acknowledged' => ['source', 'mutation', 'affected_booking_count'],
+        'schedule.mutation.acknowledged' => ['source', 'mutation', 'affected_booking_count', 'impact_digest'],
         'specialist.service.assigned' => ['source'],
         'specialist.service.unassigned' => ['source'],
         'booking.home_visit.approved' => ['source', 'status', 'visit_format', 'payment_requirement'],

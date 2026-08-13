@@ -27,6 +27,7 @@ class CreateScheduleException extends CreateRecord
             $specialist,
             $data,
             (bool) ($data['acknowledge_impact'] ?? false),
+            isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
         );
     }
 }

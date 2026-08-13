@@ -78,6 +78,59 @@ class SchedulingDomainTest extends TestCase
         self::assertSame('2026-03-29T12:00:00+05:00', $slots[0]->toArray()['displayStartsAt']);
     }
 
+    public function test_dst_spring_gap_skips_nonexistent_wall_clock_candidates(): void
+    {
+        $slots = (new SlotCalculator)->calculate(
+            date: LocalDate::from('2026-03-29'),
+            scheduleTimezone: 'Europe/Berlin',
+            workingIntervals: [WallClockInterval::from('01:00', '04:00')],
+            customIntervals: [],
+            dayOff: false,
+            unavailableIntervals: [],
+            bookingIntervals: [],
+            durationMinutes: 30,
+            bufferMinutes: 0,
+            leadTimeMinutes: 0,
+            now: CarbonImmutable::create(2026, 3, 28, 12, 0, 0, new DateTimeZone('UTC')),
+            format: VisitFormat::Office,
+            displayTimezone: 'UTC',
+        );
+
+        self::assertSame([
+            '2026-03-29T00:00:00+00:00',
+            '2026-03-29T00:30:00+00:00',
+            '2026-03-29T01:00:00+00:00',
+            '2026-03-29T01:30:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $slots,
+        ));
+    }
+
+    public function test_dst_fall_overlap_has_stable_unique_instants(): void
+    {
+        $slots = (new SlotCalculator)->calculate(
+            date: LocalDate::from('2026-10-25'),
+            scheduleTimezone: 'Europe/Berlin',
+            workingIntervals: [WallClockInterval::from('01:00', '04:00')],
+            customIntervals: [],
+            dayOff: false,
+            unavailableIntervals: [],
+            bookingIntervals: [],
+            durationMinutes: 30,
+            bufferMinutes: 0,
+            leadTimeMinutes: 0,
+            now: CarbonImmutable::create(2026, 10, 24, 12, 0, 0, new DateTimeZone('UTC')),
+            format: VisitFormat::Office,
+            displayTimezone: 'UTC',
+        );
+
+        $instants = array_map(static fn ($slot): int => $slot->startsAt->getTimestamp(), $slots);
+        self::assertCount(6, $slots);
+        self::assertSame($instants, array_values(array_unique($instants)));
+        self::assertSame('2026-10-25T01:00:00+00:00', $slots[2]->startsAt->toIso8601String());
+    }
+
     public function test_lead_time_removes_candidates_before_the_configured_instant(): void
     {
         $slots = (new SlotCalculator)->calculate(

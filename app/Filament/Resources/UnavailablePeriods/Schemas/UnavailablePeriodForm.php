@@ -41,6 +41,9 @@ class UnavailablePeriodForm
                 Checkbox::make('acknowledge_impact')
                     ->label('Acknowledge impact on future bookings if shown')
                     ->default(false),
+                TextInput::make('impact_digest')
+                    ->label('Current impact preview digest')
+                    ->maxLength(64),
             ]);
     }
 }

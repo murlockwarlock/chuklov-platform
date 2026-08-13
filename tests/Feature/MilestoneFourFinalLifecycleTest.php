@@ -164,6 +164,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             booking: $booking,
             newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
             clientTimezone: 'Europe/Berlin',
+            expectedEventVersion: $booking->event_version,
         );
 
         self::assertSame($booking->id, $rescheduled->id);
@@ -188,6 +189,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
                 actor: $admin,
                 booking: $firstBooking,
                 newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+                expectedEventVersion: $firstBooking->event_version,
             );
         } finally {
             self::assertSame('2026-04-06T09:00:00+00:00', $firstBooking->fresh()->startsAtUtc()->toIso8601String());
@@ -207,6 +209,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
                 actor: $admin,
                 booking: $booking,
                 newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+                expectedEventVersion: $booking->event_version,
             );
             self::fail('A staff reschedule inside the cutoff did not require a reason.');
         } catch (ValidationException $exception) {
@@ -218,6 +221,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             booking: $booking,
             newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
             reason: 'Staff requested a new time.',
+            expectedEventVersion: $booking->event_version,
         );
 
         self::assertSame('2026-04-06T10:15:00+00:00', $rescheduled->startsAtUtc()->toIso8601String());
@@ -234,6 +238,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'withdraw-'.$client->id,
         );
         Carbon::setTestNow(CarbonImmutable::create(2026, 4, 5, 23, 0, 0, 'UTC'));
 
@@ -295,6 +300,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'deposit-'.$client->id,
         );
 
         $approved = app(ApproveHomeVisitBooking::class)->handle(
@@ -321,6 +327,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Online,
             meetingLinkMode: MeetingLinkMode::Manual,
+            idempotencyKey: 'online-'.$client->id,
         );
         $booking = app(ConfirmBooking::class)->handle($admin, $booking);
         $updated = app(SetOnlineMeetingUrl::class)->handle($admin, $booking, 'https://meet.example.test/room');
@@ -335,6 +342,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create();
         $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
 
+        $impactDigest = null;
         try {
             app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
                 'weekday' => 1,
@@ -344,6 +352,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             self::fail('A schedule mutation with an affected booking was accepted without acknowledgement.');
         } catch (ValidationException $exception) {
             self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $impactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
         self::assertModelExists($booking->fresh());
 
@@ -351,7 +360,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             'weekday' => 1,
             'start_time' => '10:00',
             'end_time' => '17:00',
-        ]], true);
+        ]], true, $impactDigest);
         self::assertSame('2026-04-06T09:00:00+00:00', $booking->fresh()->startsAtUtc()->toIso8601String());
     }
 
@@ -361,26 +370,29 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create();
         $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
 
+        $exceptionImpactDigest = null;
         try {
             app(CreateScheduleException::class)->handle($admin, $specialist, [
                 'exception_date' => '2026-04-06',
                 'exception_type' => 'day_off',
             ]);
             self::fail('A day-off mutation was accepted without acknowledgement.');
-        } catch (ValidationException) {
-            self::assertTrue(true);
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $exceptionImpactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
 
         app(CreateScheduleException::class)->handle($admin, $specialist, [
             'exception_date' => '2026-04-06',
             'exception_type' => 'day_off',
-        ], true);
+        ], true, $exceptionImpactDigest);
         self::assertModelExists($booking->fresh());
 
         [$organization, $admin, $specialist, $service] = $this->fixture();
         $client = Client::factory()->forOrganization($organization)->create();
         $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
 
+        $unavailableImpactDigest = null;
         try {
             app(CreateUnavailablePeriod::class)->handle(
                 actor: $admin,
@@ -389,8 +401,9 @@ class MilestoneFourFinalLifecycleTest extends TestCase
                 endsAt: CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
             );
             self::fail('An unavailable-period mutation was accepted without acknowledgement.');
-        } catch (ValidationException) {
-            self::assertTrue(true);
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $unavailableImpactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
 
         app(CreateUnavailablePeriod::class)->handle(
@@ -399,6 +412,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             startsAt: CarbonImmutable::create(2026, 4, 6, 8, 0, 0, 'UTC'),
             endsAt: CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
             acknowledgeImpact: true,
+            acknowledgedImpactDigest: $unavailableImpactDigest,
         );
         self::assertModelExists($booking->fresh());
     }
@@ -406,27 +420,21 @@ class MilestoneFourFinalLifecycleTest extends TestCase
     public function test_specialist_service_and_assignment_mutations_preserve_future_booking_history(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture();
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
-            'feature_key' => OrganizationFeature::ServiceCatalog->value,
-            'enabled' => true,
-        ]);
         $client = Client::factory()->forOrganization($organization)->create();
         $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
 
+        $specialistImpactDigest = null;
         try {
             app(SetSpecialistActive::class)->handle($admin, $specialist, false);
             self::fail('Specialist deactivation was accepted without acknowledgement.');
-        } catch (ValidationException) {
-            self::assertTrue(true);
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $specialistImpactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
-        app(SetSpecialistActive::class)->handle($admin, $specialist, false, true);
+        app(SetSpecialistActive::class)->handle($admin, $specialist, false, true, $specialistImpactDigest);
         self::assertModelExists($booking->fresh());
 
         [$organization, $admin, $specialist, $service] = $this->fixture();
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
-            'feature_key' => OrganizationFeature::ServiceCatalog->value,
-            'enabled' => true,
-        ]);
         $client = Client::factory()->forOrganization($organization)->create();
         $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
         $attributes = [
@@ -439,13 +447,15 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             'formats' => $service->formats,
         ];
 
+        $serviceImpactDigest = null;
         try {
             app(UpdateService::class)->handle($admin, $service, name: $attributes);
             self::fail('Service deactivation was accepted without acknowledgement.');
-        } catch (ValidationException) {
-            self::assertTrue(true);
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $serviceImpactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
-        app(UpdateService::class)->handle($admin, $service, name: $attributes, acknowledgeImpact: true);
+        app(UpdateService::class)->handle($admin, $service, name: $attributes, acknowledgeImpact: true, acknowledgedImpactDigest: $serviceImpactDigest);
         self::assertModelExists($booking->fresh());
 
         [$organization, $admin, $specialist, $service] = $this->fixture();
@@ -457,13 +467,15 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             ->where('service_id', $service->id)
             ->firstOrFail();
 
+        $assignmentImpactDigest = null;
         try {
             app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment);
             self::fail('Assignment removal was accepted without acknowledgement.');
-        } catch (ValidationException) {
-            self::assertTrue(true);
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $assignmentImpactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
         }
-        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment, true);
+        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment, true, $assignmentImpactDigest);
         self::assertModelExists($booking->fresh());
     }
 
@@ -554,6 +566,10 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             'formats' => $formats,
         ]);
         $this->setOrganization($organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
         app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
         app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
             'weekday' => 1,
@@ -578,6 +594,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::parse($startsAt, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'crm-'.$client->id.'-'.$startsAt,
         );
     }
 

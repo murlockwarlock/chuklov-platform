@@ -66,7 +66,7 @@ const bookingForm = useForm<{
     specialist_id: number | null;
     starts_at: string | null;
     format: VisitFormat;
-    client_timezone: string;
+    client_timezone: string | null;
     meeting_link_mode: MeetingLinkMode | null;
     party_size: number;
     location: string | null;
@@ -76,7 +76,7 @@ const bookingForm = useForm<{
     specialist_id: props.query.specialistId,
     starts_at: null,
     format: props.query.format,
-    client_timezone: props.query.displayTimezone,
+    client_timezone: props.query.displayTimezone === props.client.timezone ? null : props.query.displayTimezone,
     meeting_link_mode: props.query.format === 'online' ? 'manual' : null,
     party_size: 1,
     location: null,
@@ -113,7 +113,7 @@ function submitBooking(): void {
     bookingForm.service_id = props.query.serviceId;
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
-    bookingForm.client_timezone = props.query.displayTimezone;
+    bookingForm.client_timezone = props.query.displayTimezone === props.client.timezone ? null : props.query.displayTimezone;
     bookingForm.meeting_link_mode = props.query.format === 'online' ? bookingForm.meeting_link_mode ?? 'manual' : null;
     bookingForm.starts_at = selectedStart.value;
     bookingForm.post(props.urls.store, { preserveScroll: true });

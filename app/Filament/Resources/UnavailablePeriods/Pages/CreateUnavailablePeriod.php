@@ -33,6 +33,7 @@ class CreateUnavailablePeriod extends CreateRecord
             endsAt: $this->toDateTime($data['ends_at'], $timezone),
             reason: $data['reason'] ?? null,
             acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+            acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
         );
     }
 

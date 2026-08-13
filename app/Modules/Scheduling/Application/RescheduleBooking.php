@@ -37,6 +37,7 @@ final class RescheduleBooking
         DateTimeInterface $newStartsAt,
         ?string $clientTimezone = null,
         ?string $reason = null,
+        ?int $expectedEventVersion = null,
     ): Booking {
         $this->authorization->authorize($actor, $booking);
         $reason = $this->normalizeReason($reason);
@@ -49,6 +50,7 @@ final class RescheduleBooking
             $newStartsAt,
             $clientTimezone,
             $reason,
+            $expectedEventVersion,
             $organization,
         ): Booking {
             $lockedBooking = Booking::query()
@@ -56,6 +58,12 @@ final class RescheduleBooking
                 ->whereKey($booking->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($expectedEventVersion === null || $lockedBooking->event_version !== $expectedEventVersion) {
+                throw ValidationException::withMessages([
+                    'expected_event_version' => 'This booking changed before the reschedule was applied. Refresh and try again.',
+                ]);
+            }
 
             if (in_array($lockedBooking->status->value, BookingStatus::terminalValues(), true)) {
                 throw ValidationException::withMessages(['booking' => 'This booking cannot be rescheduled.']);
@@ -97,7 +105,7 @@ final class RescheduleBooking
                 ->whereKey($lockedBooking->service_id)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $resolvedTimezone = $this->resolveTimezone($clientTimezone ?? $lockedBooking->client_timezone ?? $client->timezone);
+            $resolvedTimezone = $this->resolveTimezone($clientTimezone ?? $client->timezone);
             $availability = $this->availability->forBooking(
                 specialist: $specialist,
                 service: $service,

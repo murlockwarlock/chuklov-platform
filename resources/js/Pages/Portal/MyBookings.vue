@@ -36,7 +36,7 @@ const props = defineProps<{
             My bookings
           </h1>
           <p class="portal-lede">
-            Your appointments and requests, shown in the timezone saved for each booking.
+            Your appointments and requests, shown in your current profile timezone.
           </p>
         </div>
       </header>

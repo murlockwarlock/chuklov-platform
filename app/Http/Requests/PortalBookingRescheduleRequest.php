@@ -17,6 +17,7 @@ class PortalBookingRescheduleRequest extends FormRequest
     {
         return [
             'starts_at' => ['required', 'date'],
+            'expected_event_version' => ['required', 'integer', 'min:1'],
             'client_timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
             'reason' => ['sometimes', 'nullable', 'string', 'max:500'],
         ];

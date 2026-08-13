@@ -153,6 +153,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 12, 45, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-1',
         );
 
         self::assertSame(BookingStatus::Requested, $firstBooking->status);
@@ -231,6 +232,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 12, 45, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'm4-scheduling-2',
         );
         self::assertSame(BookingStatus::PendingReview, $booking->status);
 
@@ -301,7 +303,13 @@ class MilestoneFourSchedulingTest extends TestCase
             ]);
         $assignment = $specialist->specialistServiceAssignments()->where('service_id', $service->id)->firstOrFail();
 
-        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment, true);
+        try {
+            app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment);
+            self::fail('Assignment removal was accepted without a current impact acknowledgement.');
+        } catch (ValidationException $exception) {
+            $impactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
+        }
+        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment, true, $impactDigest);
         self::assertModelExists($historical);
 
         $this->expectException(ValidationException::class);
@@ -312,6 +320,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 11, 0, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-3',
         );
     }
 
@@ -333,6 +342,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'm4-scheduling-4',
         );
 
         $approved = app(ApproveHomeVisitBooking::class)->handle($admin, $pending, 'Reviewed by CRM.');
@@ -371,6 +381,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'm4-scheduling-11',
         );
         app(CreateBooking::class)->handle(
             actor: $admin,
@@ -379,6 +390,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-5',
         );
 
         $this->expectException(ValidationException::class);
@@ -402,6 +414,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            idempotencyKey: 'm4-scheduling-6',
         );
 
         $rejected = app(RejectHomeVisitBooking::class)->handle($admin, $pending, 'No home-visit capacity.');
@@ -445,6 +458,7 @@ class MilestoneFourSchedulingTest extends TestCase
                 'starts_at' => '2026-03-30T09:00:00+00:00',
                 'format' => VisitFormat::Office->value,
                 'client_timezone' => 'Europe/Berlin',
+                'idempotency_key' => 'portal-create-m4',
             ])
             ->assertRedirect();
 
@@ -484,6 +498,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-7',
         );
     }
 
@@ -505,6 +520,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 1, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-8',
         );
     }
 
@@ -528,6 +544,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-9',
         );
     }
 
@@ -624,6 +641,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::Office,
+            idempotencyKey: 'm4-scheduling-10',
         );
     }
 
@@ -663,6 +681,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'formats' => ['office', 'home', 'online'],
         ]);
         $this->setOrganization($organization);
+        $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
         app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
 
         return [$organization, $admin, $specialist, $service];
@@ -676,9 +695,14 @@ class MilestoneFourSchedulingTest extends TestCase
 
     private function enableFeature(Organization $organization, OrganizationFeature $feature): void
     {
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+        $flag = OrganizationFeatureFlag::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('feature_key', $feature->value)
+            ->first() ?? new OrganizationFeatureFlag;
+        $flag->forceFill([
+            'organization_id' => $organization->getKey(),
             'feature_key' => $feature->value,
             'enabled' => true,
-        ]);
+        ])->save();
     }
 }

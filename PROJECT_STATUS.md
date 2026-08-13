@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 4C — final Scheduling / Booking lifecycle
-- Status: M4 complete; M4C ready for final review after passing local and exact-SHA hosted gates
+- Current milestone: Milestone 4 remediation — final review recheck
+- Status: M4 remediation complete; ready for independent Sol recheck after passing local and exact-SHA hosted gates
 
 ## Completed Remediation
 
@@ -83,6 +83,14 @@
 - Final local verification passes: focused M4 lifecycle/scheduling coverage 35 tests/163 assertions plus 4 scheduling Unit tests/7 assertions; focused PostgreSQL coverage 10 tests/22 assertions including a process-level competing-booking race; `make quality` 13 Unit tests/28 assertions and 122 Feature tests/664 assertions with clean Pint, Larastan, ESLint, vue-tsc, and Vite; `make ci` 40 PostgreSQL integration tests/78 assertions with healthy PostgreSQL/Redis, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities; Playwright 6/6 desktop/mobile tests.
 - Exact-SHA hosted CI run 31691868383 passed for 048c193a37bb2da110a1340093a3d8cb4c443916: quality/integration, Playwright desktop/mobile, Docker build/runtime health, and privacy/secret scan.
 
+## Milestone 4 final-review remediation
+
+- Remediation started from independent-review SHA 4e0b0685e5f62c6973969f1f373b14af79e2490d. M0–M3 were not re-audited and M5+ was not started.
+- Fixed M4-01 through M4-14: optimistic event-version reschedule conflicts; required durable booking idempotency and replay-before-mutable checks; CRM booking creation; direct Service Catalog gates; bound schedule-impact projection/acknowledgement including exception deletion; structural needs-attention; safe CRM BookingEvent projection; display-local date filtering; current client-timezone surfaces; locked Specialist impact state; atomic scheduling configuration; and accurate audit labels.
+- Adverse focused verification passes: 58 Unit/Feature tests/256 assertions; PostgreSQL 13 tests/34 assertions including real process-level same-Booking reschedule and same-key creation races plus BookingEvent DELETE immutability; DST spring-gap/fall-overlap Unit coverage; CRM and Portal regressions.
+- `make quality` passes: 15 Unit tests/32 assertions, 139 Feature tests/746 assertions, clean Pint/ESLint/Larastan/vue-tsc/Vite, Composer audit with 0 advisories, npm audit with 0 vulnerabilities. `make ci` passes with healthy PostgreSQL/Redis and 43 integration tests/90 assertions. Playwright passes 6/6 desktop/mobile.
+- Exact implementation SHA and hosted CI verification remain to be recorded after the remediation commit is pushed. `.codex/config.toml` remains unchanged; M5+ remains untouched.
+
 ## Important Decisions
 
 - Docker build context is deny-by-default; only reviewed runtime Dockerfiles are allowed.
@@ -94,4 +102,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-13: M4C complete. Focused M4 lifecycle/scheduling: 35 tests/163 assertions plus 4 scheduling Unit tests/7 assertions; focused PostgreSQL: 10 tests/22 assertions including process-level race coverage. `make quality`: 13 Unit tests/28 assertions, 122 Feature tests/664 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/78 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Exact-SHA hosted CI run 31691868383 passed for 048c193a37bb2da110a1340093a3d8cb4c443916. M0–M3 were not re-audited.
+2026-08-13: M4 remediation complete pending hosted verification. Focused remediation/M4: 58 tests/256 assertions; focused PostgreSQL: 13 tests/34 assertions including process-level race coverage and BookingEvent DELETE immutability. `make quality`: 15 Unit tests/32 assertions, 139 Feature tests/746 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 43 PostgreSQL integration tests/90 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Hosted exact-SHA verification is pending the remediation push. M0–M3 were not re-audited.

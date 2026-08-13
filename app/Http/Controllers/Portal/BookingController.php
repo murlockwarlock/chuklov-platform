@@ -10,6 +10,8 @@ use App\Http\Requests\PortalBookingRescheduleRequest;
 use App\Http\Requests\PortalTimezonePreferenceRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CancelBooking;
@@ -141,11 +143,10 @@ class BookingController extends Controller
             partySize: (int) ($validated['party_size'] ?? 1),
             location: isset($validated['location']) ? (string) $validated['location'] : null,
         );
-        if (is_string($clientTimezone)) {
-            $timezonePreference->handle($clientTimezone);
-        }
-
-        $displayTimezone = $booking->client_timezone ?? $booking->schedule_timezone;
+        $displayClient = is_string($clientTimezone)
+            ? $timezonePreference->handle($clientTimezone)
+            : $clientContext->client();
+        $displayTimezone = $displayClient->timezone;
 
         return redirect()
             ->route('portal.bookings.create', [
@@ -177,24 +178,27 @@ class BookingController extends Controller
         ListClientBookings $bookings,
         CalculateAvailability $availability,
         ClientPortalContext $clientContext,
+        OrganizationFeatureGate $features,
     ): Response {
         $booking = $bookings->find($bookingId);
         abort_unless($booking !== null, 404);
         $client = $clientContext->client();
-        $displayTimezone = $booking->client_timezone ?? $client->timezone;
+        $displayTimezone = $client->timezone;
         $availabilityProjection = null;
 
         if (! in_array($booking->status->value, ['rejected', 'cancelled', 'completed', 'no_show'], true)) {
             $localDate = $booking->startsAtUtc()->setTimezone($displayTimezone);
-            $availabilityProjection = $availability->forClient(
-                client: $client,
-                specialistId: $booking->specialist_id,
-                serviceId: $booking->service_id,
-                dateFrom: $localDate->toDateString(),
-                dateTo: $localDate->addDays(6)->toDateString(),
-                format: $booking->visit_format,
-                displayTimezone: $displayTimezone,
-            )->toArray();
+            if ($features->isEnabled($client->organization, OrganizationFeature::ServiceCatalog)) {
+                $availabilityProjection = $availability->forClient(
+                    client: $client,
+                    specialistId: $booking->specialist_id,
+                    serviceId: $booking->service_id,
+                    dateFrom: $localDate->toDateString(),
+                    dateTo: $localDate->addDays(6)->toDateString(),
+                    format: $booking->visit_format,
+                    displayTimezone: $displayTimezone,
+                )->toArray();
+            }
         }
 
         return Inertia::render('Portal/BookingShow', [
@@ -250,6 +254,7 @@ class BookingController extends Controller
             newStartsAt: $startsAt,
             clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
             reason: isset($validated['reason']) ? (string) $validated['reason'] : null,
+            expectedEventVersion: (int) $validated['expected_event_version'],
         );
         if (is_string($clientTimezone)) {
             $timezonePreference->handle($clientTimezone);

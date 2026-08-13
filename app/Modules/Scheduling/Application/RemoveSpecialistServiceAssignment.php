@@ -12,7 +12,6 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class RemoveSpecialistServiceAssignment
 {
@@ -20,6 +19,7 @@ class RemoveSpecialistServiceAssignment
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly ScheduleMutationImpactCalculator $impactCalculator,
+        private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -27,6 +27,7 @@ class RemoveSpecialistServiceAssignment
         User $actor,
         SpecialistServiceAssignment $assignment,
         bool $acknowledgeImpact = false,
+        ?string $acknowledgedImpactDigest = null,
     ): void {
         $organization = $this->context->organization();
 
@@ -36,7 +37,7 @@ class RemoveSpecialistServiceAssignment
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
 
-        DB::transaction(function () use ($actor, $assignment, $organization, $acknowledgeImpact): void {
+        DB::transaction(function () use ($actor, $assignment, $organization, $acknowledgeImpact, $acknowledgedImpactDigest): void {
             Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($assignment->specialist_id)
@@ -57,11 +58,7 @@ class RemoveSpecialistServiceAssignment
                 (int) $lockedAssignment->service_id,
             );
 
-            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
-                throw ValidationException::withMessages([
-                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before removing this assignment.',
-                ]);
-            }
+            $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
 
             $lockedAssignment->delete();
 
@@ -84,6 +81,7 @@ class RemoveSpecialistServiceAssignment
                         'source' => 'crm',
                         'mutation' => 'assignment_removal',
                         'affected_booking_count' => $impact->count(),
+                        'impact_digest' => $impact->digest,
                     ],
                 );
             }

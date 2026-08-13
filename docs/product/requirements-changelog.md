@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-08-13 — M4 independent-review remediation
+
+- Amended REQ-TIMEZONE-002, REQ-BOOKING-007, REQ-BOOKING-009, REQ-BOOKING-010, and REQ-SCHEDULING-001 with verified stale-command protection, required durable creation idempotency, current-preference display semantics, safe CRM history projections, and bound schedule-impact acknowledgement.
+- Verified the amendments with adverse Unit/Feature coverage, PostgreSQL process-level reschedule and same-key creation races, BookingEvent DELETE immutability coverage, full quality/CI gates, and shared Portal desktop/mobile E2E coverage.
+
 ## 2026-08-13 — M4C owner decisions and implementation traceability
 
 - Resolved OQ-002 with an organization-configurable cancellation/reschedule cutoff, initial Phase 1 default 1440 minutes, staff reasoned override, pending HOME_VISIT withdrawal, stable booking identity/calendar UID on reschedule, and no M4 payment/refund consequences.

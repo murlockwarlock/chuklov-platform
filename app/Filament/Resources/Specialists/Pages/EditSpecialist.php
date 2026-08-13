@@ -19,6 +19,7 @@ class EditSpecialist extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
         $acknowledgeImpact = (bool) ($data['acknowledge_impact'] ?? false);
+        $impactDigest = isset($data['impact_digest']) ? (string) $data['impact_digest'] : null;
 
         return app(UpdateSpecialist::class)->handle(
             actor: $actor,
@@ -28,6 +29,7 @@ class EditSpecialist extends EditRecord
             timezone: $data['timezone'] ?? null,
             staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
             acknowledgeImpact: $acknowledgeImpact,
+            acknowledgedImpactDigest: $impactDigest,
         );
     }
 }

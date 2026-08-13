@@ -13,7 +13,6 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class SetSpecialistWorkingHours
 {
@@ -21,6 +20,7 @@ class SetSpecialistWorkingHours
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly ScheduleMutationImpactCalculator $impactCalculator,
+        private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -33,6 +33,7 @@ class SetSpecialistWorkingHours
         Specialist $specialist,
         array $definitions,
         bool $acknowledgeImpact = false,
+        ?string $acknowledgedImpactDigest = null,
     ): Collection {
         $organization = $this->context->organization();
 
@@ -43,14 +44,14 @@ class SetSpecialistWorkingHours
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $schedule = SpecialistScheduleDefinition::from($definitions);
 
-        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist, $acknowledgeImpact): Collection {
-            Specialist::query()
+        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist, $acknowledgeImpact, $acknowledgedImpactDigest): Collection {
+            $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            $impact = $this->impactCalculator->forWorkingHours($specialist, $schedule);
-            $this->ensureImpactAcknowledged($impact, $acknowledgeImpact);
+            $impact = $this->impactCalculator->forWorkingHours($lockedSpecialist, $schedule);
+            $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
 
             SpecialistWorkingHour::query()
                 ->where('organization_id', $organization->getKey())
@@ -61,7 +62,7 @@ class SetSpecialistWorkingHours
                 $workingHour = new SpecialistWorkingHour;
                 $workingHour->forceFill([
                     'organization_id' => $organization->getKey(),
-                    'specialist_id' => $specialist->getKey(),
+                    'specialist_id' => $lockedSpecialist->getKey(),
                     ...$attributes,
                     'is_active' => true,
                 ]);
@@ -73,13 +74,13 @@ class SetSpecialistWorkingHours
                 actor: $actor,
                 action: 'specialist.schedule.updated',
                 targetType: Specialist::class,
-                targetId: (string) $specialist->getKey(),
+                targetId: (string) $lockedSpecialist->getKey(),
                 metadata: [
                     'weekday_count' => count(array_unique(array_column($schedule->attributes(), 'weekday'))),
                     'interval_count' => count($schedule->intervals),
                 ],
             );
-            $this->recordImpactAcknowledgement($actor, $specialist, $impact);
+            $this->recordImpactAcknowledgement($actor, $lockedSpecialist, $impact);
 
             return SpecialistWorkingHour::query()
                 ->where('organization_id', $organization->getKey())
@@ -88,15 +89,6 @@ class SetSpecialistWorkingHours
                 ->orderBy('start_time')
                 ->get();
         });
-    }
-
-    private function ensureImpactAcknowledged(ScheduleMutationImpact $impact, bool $acknowledgeImpact): void
-    {
-        if ($impact->hasConflicts() && ! $acknowledgeImpact) {
-            throw ValidationException::withMessages([
-                'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
-            ]);
-        }
     }
 
     private function recordImpactAcknowledgement(
@@ -118,6 +110,7 @@ class SetSpecialistWorkingHours
                 'source' => 'crm',
                 'mutation' => 'working_hours',
                 'affected_booking_count' => $impact->count(),
+                'impact_digest' => $impact->digest,
             ],
         );
     }

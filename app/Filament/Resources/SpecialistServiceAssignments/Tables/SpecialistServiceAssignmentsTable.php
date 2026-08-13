@@ -7,6 +7,7 @@ use App\Modules\Scheduling\Application\RemoveSpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -29,6 +30,9 @@ class SpecialistServiceAssignmentsTable
                         Checkbox::make('acknowledge_impact')
                             ->label('Acknowledge impact on future bookings')
                             ->default(false),
+                        TextInput::make('impact_digest')
+                            ->label('Current impact preview digest')
+                            ->maxLength(64),
                     ])
                     ->action(function (SpecialistServiceAssignment $record, array $data): void {
                         $actor = auth()->user();
@@ -38,6 +42,7 @@ class SpecialistServiceAssignmentsTable
                             $actor,
                             $record,
                             (bool) ($data['acknowledge_impact'] ?? false),
+                            isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                         );
                     }),
             ]);

@@ -22,6 +22,7 @@ class CreateUnavailablePeriod
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly ScheduleMutationImpactCalculator $impactCalculator,
+        private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -32,6 +33,7 @@ class CreateUnavailablePeriod
         DateTimeInterface $endsAt,
         ?string $reason = null,
         bool $acknowledgeImpact = false,
+        ?string $acknowledgedImpactDigest = null,
     ): UnavailablePeriod {
         $organization = $this->context->organization();
 
@@ -43,8 +45,8 @@ class CreateUnavailablePeriod
         $interval = InstantInterval::from($startsAt, $endsAt);
         $reason = $this->reason($reason);
 
-        return DB::transaction(function () use ($actor, $organization, $interval, $reason, $specialist, $acknowledgeImpact): UnavailablePeriod {
-            Specialist::query()
+        return DB::transaction(function () use ($actor, $organization, $interval, $reason, $specialist, $acknowledgeImpact, $acknowledgedImpactDigest): UnavailablePeriod {
+            $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
@@ -52,7 +54,7 @@ class CreateUnavailablePeriod
 
             $overlaps = UnavailablePeriod::query()
                 ->where('organization_id', $organization->getKey())
-                ->where('specialist_id', $specialist->getKey())
+                ->where('specialist_id', $lockedSpecialist->getKey())
                 ->where('starts_at', '<', $interval->end)
                 ->where('ends_at', '>', $interval->start)
                 ->exists();
@@ -63,18 +65,13 @@ class CreateUnavailablePeriod
                 ]);
             }
 
-            $impact = $this->impactCalculator->forUnavailablePeriod($specialist, $interval->start, $interval->end);
-
-            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
-                throw ValidationException::withMessages([
-                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
-                ]);
-            }
+            $impact = $this->impactCalculator->forUnavailablePeriod($lockedSpecialist, $interval->start, $interval->end);
+            $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
 
             $period = new UnavailablePeriod;
             $period->forceFill([
                 'organization_id' => $organization->getKey(),
-                'specialist_id' => $specialist->getKey(),
+                'specialist_id' => $lockedSpecialist->getKey(),
                 'created_by_user_id' => $actor->getKey(),
                 'starts_at' => $interval->start,
                 'ends_at' => $interval->end,
@@ -101,6 +98,7 @@ class CreateUnavailablePeriod
                         'source' => 'crm',
                         'mutation' => 'unavailable_period',
                         'affected_booking_count' => $impact->count(),
+                        'impact_digest' => $impact->digest,
                     ],
                 );
             }

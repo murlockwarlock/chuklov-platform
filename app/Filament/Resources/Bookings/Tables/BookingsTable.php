@@ -20,6 +20,7 @@ use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -119,6 +120,9 @@ class BookingsTable
                     ->label('Reschedule')
                     ->schema([
                         DateTimePicker::make('starts_at')->label('New start')->seconds(false)->required(),
+                        Hidden::make('expected_event_version')
+                            ->default(fn (Booking $record): int => $record->event_version)
+                            ->required(),
                         Textarea::make('reason')->label('Reason')->maxLength(500),
                     ])
                     ->visible(fn (Booking $record): bool => ! in_array($record->status->value, BookingStatus::terminalValues(), true))
@@ -129,7 +133,14 @@ class BookingsTable
                             ? $data['starts_at']
                             : CarbonImmutable::parse((string) $data['starts_at']);
 
-                        app(RescheduleBooking::class)->handle($actor, $record, $startsAt, null, $data['reason'] ?? null);
+                        app(RescheduleBooking::class)->handle(
+                            actor: $actor,
+                            booking: $record,
+                            newStartsAt: $startsAt,
+                            clientTimezone: null,
+                            reason: $data['reason'] ?? null,
+                            expectedEventVersion: (int) $data['expected_event_version'],
+                        );
                     }),
                 Action::make('complete')
                     ->label('Complete')

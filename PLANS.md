@@ -53,3 +53,10 @@ Non-goals: Notifications, finance ledger/payment providers, medical, surveys, RA
 - Added one reusable schedule-mutation impact calculator with explicit CRM acknowledgement and durable booking preservation across schedule, Specialist, Service, and assignment changes.
 
 M4C checkpoints passed: focused tests, PostgreSQL integration and process-level race test, make quality, make ci, Playwright desktop/mobile booking management, and exact-SHA hosted CI run 31691868383 for 048c193a37bb2da110a1340093a3d8cb4c443916.
+
+#### M4 final-review remediation — complete
+
+- Remediation base: 4e0b0685e5f62c6973969f1f373b14af79e2490d. Fixed M4-01 through M4-14 without reopening M0–M3 or redesigning Scheduling.
+- Added expected-event-version optimistic reschedule protection, required durable creation idempotency with replay-before-mutable-checks, CRM booking creation, direct Service Catalog enforcement, bound schedule-impact previews, exception-deletion protection, structural needs-attention analysis, safe CRM history projection, display-local date filtering, current client-timezone presentation, locked Specialist impact calculation, atomic combined configuration save, and accurate audit mutation labels.
+- Adverse verification includes stale reschedule and replay-after-mutation tests, required-key/invalid-link/authorization tests, impact-set changes, both large timezone-offset directions, DST spring-gap/fall-overlap behavior, atomic rollback, immutable BookingEvent DELETE, CRM creation, and true PostgreSQL same-Booking/same-key process races.
+- Final local gates passed: 56 focused Unit/Feature tests/246 assertions; 13 focused PostgreSQL tests/34 assertions; `make quality` (15 Unit/32 assertions, 137 Feature/736 assertions, clean static/lint/build/audits); `make ci` (43 integration tests/90 assertions); Playwright 6/6 desktop/mobile. M5+ remains out of scope; next action is independent Sol recheck.

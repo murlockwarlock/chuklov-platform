@@ -58,7 +58,7 @@ final class ListClientBookings
     public function projection(Booking $booking): array
     {
         $client = $this->clientContext->client();
-        $timezone = $booking->client_timezone ?? $client->timezone;
+        $timezone = $client->timezone;
         $localStart = $booking->startsAtUtc()->setTimezone($timezone);
         $localEnd = $booking->endsAtUtc()->setTimezone($timezone);
         $pendingHomeVisit = $booking->status->value === BookingStatus::PendingReview->value

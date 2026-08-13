@@ -29,6 +29,7 @@ type Booking = {
     location: string | null;
     meetingUrl: string | null;
     partySize: number;
+    eventVersion: number;
     canCancel: boolean;
     canReschedule: boolean;
     contactStaff: boolean;
@@ -45,10 +46,11 @@ const props = defineProps<{
 
 const selectedSlot = ref<string | null>(null);
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
-const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null }>({
+const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null; expected_event_version: number }>({
     starts_at: null,
     client_timezone: props.booking.timezone,
     reason: null,
+    expected_event_version: props.booking.eventVersion,
 });
 const timezoneForm = useForm<{ timezone: string }>({ timezone: props.booking.timezone });
 

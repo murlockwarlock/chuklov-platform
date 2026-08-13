@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Scheduling\Application\DeleteScheduleException;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -27,10 +29,23 @@ class ScheduleExceptionsTable
                     ->label('Delete')
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->action(function (ScheduleException $record): void {
+                    ->schema([
+                        Checkbox::make('acknowledge_impact')
+                            ->label('Acknowledge impact on future bookings')
+                            ->default(false),
+                        TextInput::make('impact_digest')
+                            ->label('Current impact preview digest')
+                            ->maxLength(64),
+                    ])
+                    ->action(function (ScheduleException $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
-                        app(DeleteScheduleException::class)->handle($actor, $record);
+                        app(DeleteScheduleException::class)->handle(
+                            actor: $actor,
+                            exception: $record,
+                            acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                            acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                        );
                     }),
             ]);
     }

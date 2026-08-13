@@ -2,8 +2,11 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
 
@@ -39,17 +42,51 @@ class BookingInfolist
                     ->label('Lifecycle history')
                     ->state(function (Booking $record): string {
                         return $record->events()
+                            ->with(['actorUser', 'actorClient'])
                             ->orderBy('occurred_at')
                             ->get()
-                            ->map(fn ($event): string => implode(' · ', array_filter([
-                                $event->event_type->value,
-                                $event->actor_type,
-                                $event->occurred_at->toIso8601String(),
-                                $event->reason,
-                            ])))
+                            ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
                             ->implode("\n");
                     })
                     ->columnSpanFull(),
             ]);
+    }
+
+    private static function formatHistoryEvent(BookingEvent $event): string
+    {
+        $oldStatus = self::safeValue($event->old_values, 'status');
+        $newStatus = self::safeValue($event->new_values, 'status');
+        $oldStart = self::safeValue($event->old_values, 'starts_at');
+        $newStart = self::safeValue($event->new_values, 'starts_at');
+        $actor = match ($event->actor_type) {
+            'user' => $event->actorUser instanceof User ? $event->actorUser->name : 'Staff',
+            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : 'Client',
+            default => 'System',
+        };
+        $values = [
+            $event->event_type->value,
+            $event->occurred_at->toIso8601String(),
+            $actor.' ('.$event->actor_type.')',
+        ];
+
+        if ($oldStatus !== null || $newStatus !== null) {
+            $values[] = 'status: '.($oldStatus ?? '—').' → '.($newStatus ?? '—');
+        }
+
+        if ($oldStart !== null || $newStart !== null) {
+            $values[] = 'time: '.($oldStart ?? '—').' → '.($newStart ?? '—');
+        }
+
+        if ($event->reason !== null) {
+            $values[] = 'reason: '.$event->reason;
+        }
+
+        return implode(' · ', $values);
+    }
+
+    /** @param array<string, mixed> $values */
+    private static function safeValue(array $values, string $key): ?string
+    {
+        return isset($values[$key]) && is_string($values[$key]) ? $values[$key] : null;
     }
 }

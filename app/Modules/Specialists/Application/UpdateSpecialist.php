@@ -7,13 +7,13 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scheduling\Application\EnsureScheduleMutationImpactAcknowledged;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistProfile;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class UpdateSpecialist
 {
@@ -21,6 +21,7 @@ class UpdateSpecialist
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly ScheduleMutationImpactCalculator $impactCalculator,
+        private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -32,6 +33,7 @@ class UpdateSpecialist
         ?string $timezone = null,
         ?int $staffUserId = null,
         bool $acknowledgeImpact = false,
+        ?string $acknowledgedImpactDigest = null,
     ): Specialist {
         $organization = $this->context->organization();
 
@@ -42,7 +44,7 @@ class UpdateSpecialist
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSpecialists);
         $profile = SpecialistProfile::from($displayName, $timezone);
 
-        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId, $acknowledgeImpact): Specialist {
+        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId, $acknowledgeImpact, $acknowledgedImpactDigest): Specialist {
             $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
@@ -73,11 +75,7 @@ class UpdateSpecialist
                 newTimezone: $profile->timezone,
             );
 
-            if ($impact->hasConflicts() && ! $acknowledgeImpact) {
-                throw ValidationException::withMessages([
-                    'schedule_impact' => $impact->count().' future booking(s) are affected. Review and acknowledge the impact before saving.',
-                ]);
-            }
+            $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
 
             $lockedSpecialist->forceFill([
                 ...$profile->attributes(),
@@ -117,8 +115,9 @@ class UpdateSpecialist
                     targetId: (string) $lockedSpecialist->getKey(),
                     metadata: [
                         'source' => 'crm',
-                        'mutation' => 'specialist_deactivation',
+                        'mutation' => $this->impactMutationLabel($oldIsActive, $isActive, $changedFields),
                         'affected_booking_count' => $impact->count(),
+                        'impact_digest' => $impact->digest,
                     ],
                 );
             }
@@ -153,5 +152,19 @@ class UpdateSpecialist
         if (! $isMember) {
             throw new AuthorizationException('The staff user is not an active member of this organization.');
         }
+    }
+
+    /** @param list<string> $changedFields */
+    private function impactMutationLabel(bool $oldIsActive, bool $newIsActive, array $changedFields): string
+    {
+        $timezoneChanged = in_array('timezone', $changedFields, true);
+        $deactivated = $oldIsActive && ! $newIsActive;
+
+        return match (true) {
+            $deactivated && $timezoneChanged => 'specialist_deactivation_and_timezone',
+            $deactivated => 'specialist_deactivation',
+            $timezoneChanged => 'specialist_timezone',
+            default => 'specialist_schedule_change',
+        };
     }
 }

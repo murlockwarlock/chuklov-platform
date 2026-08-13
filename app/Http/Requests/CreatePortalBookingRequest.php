@@ -32,7 +32,7 @@ class CreatePortalBookingRequest extends FormRequest
             ))],
             'party_size' => ['sometimes', 'integer', 'min:1', 'max:20'],
             'location' => ['sometimes', 'nullable', 'string', 'max:500'],
-            'idempotency_key' => ['sometimes', 'string', 'max:128'],
+            'idempotency_key' => ['required', 'string', 'min:1', 'max:128'],
         ];
     }
 }

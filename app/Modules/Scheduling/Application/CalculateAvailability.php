@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -16,6 +18,7 @@ use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
+use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
 use App\Modules\Scheduling\Domain\ValueObjects\InstantInterval;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
@@ -33,6 +36,7 @@ class CalculateAvailability
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly OrganizationFeatureGate $features,
         private readonly GetBookingLeadTime $leadTime,
         private readonly SlotCalculator $calculator,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
@@ -49,6 +53,7 @@ class CalculateAvailability
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
+        $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
 
         return $this->calculateForIds(
             specialistId: $specialistId,
@@ -74,6 +79,7 @@ class CalculateAvailability
         if ((int) $client->organization_id !== $organization->getKey()) {
             throw new AuthorizationException('The client is outside the current organization.');
         }
+        $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
 
         return $this->calculateForIds(
             specialistId: $specialistId,
@@ -83,6 +89,7 @@ class CalculateAvailability
             format: $format,
             displayTimezone: $displayTimezone,
             client: $client,
+            datesInDisplayTimezone: true,
         );
     }
 
@@ -93,6 +100,8 @@ class CalculateAvailability
         CarbonImmutable $startsAt,
         ?string $displayTimezone = null,
         ?int $ignoreBookingId = null,
+        ?int $leadTimeMinutes = null,
+        ?CarbonImmutable $now = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
 
@@ -106,7 +115,54 @@ class CalculateAvailability
             client: null,
             organizationId: $organization->getKey(),
             ignoreBookingId: $ignoreBookingId,
+            leadTimeMinutes: $leadTimeMinutes,
+            now: $now,
         );
+    }
+
+    public function isExistingBookingAligned(Booking $booking): bool
+    {
+        $booking->loadMissing(['specialist', 'service']);
+        $specialist = $booking->specialist;
+        $service = $booking->service;
+
+        if ((int) $booking->organization_id !== $this->context->id()) {
+            return false;
+        }
+
+        $scheduleTimezone = $this->scheduleTimezone($specialist);
+        $durationMinutes = $service->durationMinutes();
+
+        if ($booking->schedule_timezone !== $scheduleTimezone
+            || ! $specialist->is_active
+            || ! $service->is_active
+            || $service->catalogItemType() !== CatalogItemType::Service
+            || $durationMinutes === null
+            || ! in_array($booking->visit_format->value, $service->supportedFormats(), true)
+            || ! $this->eligibility->exists($this->context->id(), $specialist->getKey(), $service->getKey())) {
+            return false;
+        }
+
+        $availability = $this->forBooking(
+            specialist: $specialist,
+            service: $service,
+            format: $booking->visit_format,
+            startsAt: $booking->startsAtUtc(),
+            displayTimezone: $scheduleTimezone,
+            ignoreBookingId: $booking->getKey(),
+            leadTimeMinutes: 0,
+            now: $booking->startsAtUtc()->subSecond(),
+        );
+
+        foreach ($availability->slots as $slot) {
+            if ($slot->startsAt->equalTo($booking->startsAtUtc())
+                && $slot->endsAt->equalTo($booking->endsAtUtc())
+                && $slot->blockingEndsAt->equalTo($booking->blockingEndsAtUtc())) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function calculateForIds(
@@ -117,6 +173,7 @@ class CalculateAvailability
         VisitFormat $format,
         ?string $displayTimezone,
         ?Client $client = null,
+        bool $datesInDisplayTimezone = false,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $specialist = Specialist::query()->find($specialistId);
@@ -130,15 +187,37 @@ class CalculateAvailability
             throw new AuthorizationException('The service is outside the current organization.');
         }
 
+        $requestedDateFrom = LocalDate::from($dateFrom);
+        $requestedDateTo = LocalDate::from($dateTo);
+        if ($this->dateCount($requestedDateFrom, $requestedDateTo) > 31) {
+            throw ValidationException::withMessages(['dateTo' => 'The availability range cannot exceed 31 days.']);
+        }
+        $scheduleDateFrom = $requestedDateFrom;
+        $scheduleDateTo = $requestedDateTo;
+        $displayRangeStart = null;
+        $displayRangeEnd = null;
+
+        if ($datesInDisplayTimezone) {
+            $scheduleTimezone = $this->scheduleTimezone($specialist);
+            $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
+            $displayRangeStart = $this->localBoundary($requestedDateFrom, $resolvedDisplayTimezone);
+            $displayRangeEnd = $this->localBoundary($requestedDateTo->nextDay(), $resolvedDisplayTimezone);
+            $scheduleDateFrom = LocalDate::from($displayRangeStart->setTimezone($scheduleTimezone)->toDateString());
+            $scheduleDateTo = LocalDate::from($displayRangeEnd->subSecond()->setTimezone($scheduleTimezone)->toDateString());
+        }
+
         return $this->calculateForModels(
             specialist: $specialist,
             service: $service,
-            dateFrom: LocalDate::from($dateFrom),
-            dateTo: LocalDate::from($dateTo),
+            dateFrom: $scheduleDateFrom,
+            dateTo: $scheduleDateTo,
             format: $format,
             displayTimezone: $displayTimezone,
             client: $client,
             organizationId: $organization->getKey(),
+            displayRangeStart: $displayRangeStart,
+            displayRangeEnd: $displayRangeEnd,
+            maxDateCount: $datesInDisplayTimezone ? 33 : 31,
         );
     }
 
@@ -152,6 +231,11 @@ class CalculateAvailability
         ?Client $client,
         int $organizationId,
         ?int $ignoreBookingId = null,
+        ?CarbonImmutable $displayRangeStart = null,
+        ?CarbonImmutable $displayRangeEnd = null,
+        int $maxDateCount = 31,
+        ?int $leadTimeMinutes = null,
+        ?CarbonImmutable $now = null,
     ): AvailabilityResult {
         if ($dateFrom->value > $dateTo->value) {
             throw ValidationException::withMessages(['dateFrom' => 'The availability range is invalid.']);
@@ -159,7 +243,7 @@ class CalculateAvailability
 
         $dateCount = $this->dateCount($dateFrom, $dateTo);
 
-        if ($dateCount > 31) {
+        if ($dateCount > $maxDateCount) {
             throw ValidationException::withMessages(['dateTo' => 'The availability range cannot exceed 31 days.']);
         }
 
@@ -217,8 +301,9 @@ class CalculateAvailability
             ->map(fn (Booking $booking): InstantInterval => $booking->instantInterval())
             ->all());
         $slots = [];
-        $now = CarbonImmutable::instance(now())->utc();
+        $now = $now ?? CarbonImmutable::instance(now())->utc();
         $durationMinutes = $service->durationMinutes();
+        $leadTimeMinutes ??= $this->leadTime->handle();
 
         if (! $specialist->is_active || ! $service->is_active || $service->catalogItemType() !== CatalogItemType::Service
             || $durationMinutes === null || ! in_array($format->value, $service->supportedFormats(), true)) {
@@ -260,13 +345,21 @@ class CalculateAvailability
                     bookingIntervals: $bookingIntervals,
                     durationMinutes: $durationMinutes,
                     bufferMinutes: $service->buffer_minutes,
-                    leadTimeMinutes: $this->leadTime->handle(),
+                    leadTimeMinutes: $leadTimeMinutes,
                     now: $now,
                     format: $format,
                     displayTimezone: $resolvedDisplayTimezone,
                 ),
             ];
             $cursor = $cursor->nextDay();
+        }
+
+        if ($displayRangeStart !== null && $displayRangeEnd !== null) {
+            $slots = array_values(array_filter(
+                $slots,
+                static fn (AvailabilitySlot $slot): bool => $slot->startsAt->greaterThanOrEqualTo($displayRangeStart)
+                    && $slot->startsAt->lessThan($displayRangeEnd),
+            ));
         }
 
         return new AvailabilityResult(
