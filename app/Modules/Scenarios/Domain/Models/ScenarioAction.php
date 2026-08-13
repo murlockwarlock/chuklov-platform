@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ScenarioEventType $trigger_event
  * @property ScenarioRulePurpose $purpose
  * @property array<string, mixed> $render_context
- * @property array<int, array<string, mixed>> $condition_snapshot
+ * @property array<int, array<string, mixed>>|bool|float|int|string|null $condition_snapshot
  * @property list<string> $channel_priority
  */
 #[Fillable([

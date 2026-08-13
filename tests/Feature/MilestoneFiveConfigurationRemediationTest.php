@@ -16,6 +16,7 @@ use App\Modules\Scenarios\Application\CreateScenarioRule;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
@@ -30,6 +31,8 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -218,6 +221,65 @@ final class MilestoneFiveConfigurationRemediationTest extends TestCase
         self::assertCount(0, $channel->messages);
     }
 
+    #[DataProvider('persistedNonArrayConditionSnapshots')]
+    public function test_persisted_non_array_condition_snapshot_is_terminally_suppressed(mixed $snapshot): void
+    {
+        [$organization, $booking, $version] = $this->scenarioFixture();
+        ClientChannelIdentity::factory()->forClient($booking->client)->create([
+            'channel' => 'telegram',
+            'external_id' => 'non-array-snapshot-chat',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verification_method' => 'test',
+            'verified_at' => now(),
+        ]);
+        $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($version)->create([
+            'delay_value' => 0,
+        ]);
+        $action = $this->materialize($booking, $rule);
+        DB::table('scenario_actions')
+            ->where('id', $action->id)
+            ->update(['condition_snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR)]);
+        $action->refresh();
+        self::assertFalse(is_array($action->condition_snapshot));
+        $channel = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$channel]));
+        Queue::fake();
+
+        app(ExecuteScenarioAction::class)->handle($action->id);
+
+        $processedAction = $action->fresh();
+        self::assertSame(ScenarioActionStatus::Suppressed, $processedAction->status);
+        self::assertSame('current_conditions_not_met', $processedAction->terminal_reason);
+        self::assertSame(0, $processedAction->deliveries()->sum('attempt_count'));
+        self::assertCount(0, $channel->messages);
+        self::assertSame(0, app(ScheduleScenarioWork::class)->handle()['actions']);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_valid_array_condition_snapshot_remains_eligible(): void
+    {
+        [$organization, $booking, $version] = $this->scenarioFixture();
+        ClientChannelIdentity::factory()->forClient($booking->client)->create([
+            'channel' => 'telegram',
+            'external_id' => 'valid-array-snapshot-chat',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verification_method' => 'test',
+            'verified_at' => now(),
+        ]);
+        $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($version)->create([
+            'delay_value' => 0,
+        ]);
+        $action = $this->materialize($booking, $rule);
+        self::assertIsArray($action->condition_snapshot);
+        $channel = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$channel]));
+
+        app(ExecuteScenarioAction::class)->handle($action->id);
+
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertCount(1, $channel->messages);
+    }
+
     public function test_filament_template_edit_creates_new_version_and_keeps_existing_action_pinned(): void
     {
         $organization = Organization::factory()->create();
@@ -279,6 +341,14 @@ final class MilestoneFiveConfigurationRemediationTest extends TestCase
             'unsupported operator' => [[['type' => 'booking.status', 'operator' => 'contains', 'value' => 'completed']]],
             'invalid booking status' => [[['type' => 'booking.status', 'operator' => 'not_equals', 'value' => 'invalid']]],
             'invalid client language' => [[['type' => 'client.language', 'operator' => 'equals', 'value' => 'de']]],
+        ];
+    }
+
+    public static function persistedNonArrayConditionSnapshots(): array
+    {
+        return [
+            'json scalar' => ['scalar'],
+            'json null' => [null],
         ];
     }
 

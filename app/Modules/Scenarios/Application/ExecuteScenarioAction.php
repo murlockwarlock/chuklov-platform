@@ -74,6 +74,10 @@ final class ExecuteScenarioAction
 
         $context = $this->contextFactory->evaluationContext($event);
 
+        if (! is_array($action->condition_snapshot)) {
+            return false;
+        }
+
         try {
             $conditionSnapshot = ScenarioConditionSet::from($action->condition_snapshot);
         } catch (InvalidArgumentException) {
