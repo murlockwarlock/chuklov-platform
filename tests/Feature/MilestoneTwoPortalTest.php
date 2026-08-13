@@ -39,6 +39,22 @@ class MilestoneTwoPortalTest extends TestCase
         self::assertSame($organization->id, (int) config('tenancy.default_organization_id'));
     }
 
+    public function test_portal_urls_preserve_the_forwarded_https_scheme(): void
+    {
+        $this->organizationWithClientRecords();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+            ->withHeaders([
+                'X-Forwarded-Proto' => 'https',
+                'X-Forwarded-Host' => 'crm.psysoldatov.ru',
+                'X-Forwarded-Port' => '443',
+            ])
+            ->get(route('portal.services.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('portal.onboardingUrl', 'https://crm.psysoldatov.ru/portal/onboarding')
+                ->where('portal.emailRequestUrl', 'https://crm.psysoldatov.ru/portal/auth/email/request'));
+    }
+
     public function test_valid_telegram_auth_creates_a_verified_identity_and_session(): void
     {
         $this->organizationWithClientRecords();

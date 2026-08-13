@@ -8,6 +8,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 - Ordinary-browser Telegram authentication through a short-lived, single-use, browser-bound bot deep link, resolving the same verified organization-scoped Client as the Mini App while retaining passwordless email as an alternative.
 - Telegram Mini App entry now submits verified initData automatically once, with a localized recoverable failure state instead of a second manual login step.
+- Portal URL generation now honors the HTTPS scheme forwarded by the isolated reverse proxy.
 - Durable client/CRM copy rules that exclude developer terminology and generic product filler from ordinary user interfaces.
 - Exact-revision isolated staging deployment automation with preflight baselines, validated staging database backup, atomic release switching, runtime refresh, health checks, unrelated-service comparisons, and application rollback.
 

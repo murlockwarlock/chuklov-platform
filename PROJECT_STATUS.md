@@ -8,6 +8,7 @@
 ## Completed Remediation
 
 - Staging follow-up simplified the Portal entry copy, added ordinary-browser Telegram authentication through a browser-bound single-use bot deep link, retained verified Mini App initData and email OTP, and persisted client-facing copy rules. M5B remains unstarted.
+- Staging Telegram follow-up enables the existing `ClientRecords` feature gate only for organization `chuklov`, adds automatic Mini App authentication, and trusts the isolated HTTPS proxy for generated Portal URLs. M5B remains unstarted.
 - M0-AUDIT-H01/H02 remediated with a deny-by-default Docker context, deterministic privacy regression, and repeat-safe `APP_KEY` initialization.
 - M0-AUDIT-M01 through M06 remediated: expanded CI, Filament tenant/workflow coverage, fake-only Nutgram handler evidence, guarded User privilege fields, local unreachable-object pruning, and privacy-policy correction.
 - Safe LOW cleanup completed: skill link/size cleanup, port alignment, demo/redundant scaffold removal, and Horizon snapshot scheduling.
