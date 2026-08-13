@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 5 — Scenario / Notification Engine (next; not started)
-- Status: Milestone 4 CLOSED / accepted after independent Sol final recheck; GO FOR MILESTONE 5
+- Current milestone: Milestone 5A — Scenario / Notification Engine foundation
+- Status: READY_FOR_CONTINUATION — M4 remains CLOSED / accepted; M5A foundation is implemented and M5B is not started
 
 ## Completed Remediation
 
@@ -119,3 +119,14 @@
 - Independent Sol final decision: `GO FOR MILESTONE 5`.
 - Milestone 5 — Scenario / Notification Engine is next and has not started; no M5 implementation work is recorded.
 - Non-blocking M4-15 follow-up: a future focused regression may add a direct fresh-booking attempt with Service Catalog disabled and assert that no `Booking`, `BookingEvent`, or `AuditEvent` is created. This is not an M4 acceptance blocker and does not reopen M4.
+
+## Milestone 5A — Scenario / Notification Engine foundation
+
+- Started from the M4 documentation closeout commit `7b94712f3b50089e221ff7d42ee0327bb89b38e3`; accepted M4 implementation SHA `9730d1fca0137c063deabaf853b94e80f54a0936` remains closed and is not being re-audited.
+- The M5A plan was created at the starting base and completed. M5A now provides the durable organization-scoped scenario event/outbox boundary, typed configurable rules and allowlisted conditions, localized immutable template versions, verified recipient/channel resolution, durable scheduled actions, idempotent delivery attempts, CRM configuration/history, and one Booking `COMPLETED` vertical slice.
+- Booking completion writes the ScenarioEvent in the same transaction as Booking/BookingEvent/AuditEvent mutation. PostgreSQL state/row locks claim events, actions, and delivery attempts; queue jobs carry identifiers only; Redis/Horizon is not the correctness source.
+- Rules and templates are versioned through Application actions with allowlisted AuditEvent metadata. Actions snapshot source event, rule version, recipient, channel order, exact template version, render context, and schedule instant. Delivery outcomes are typed, fallback is ordered, retries retain the durable key, and current-state changes suppress history without deletion.
+- Filament provides organization-scoped rule/template configuration and safe scenario-action history. Livewire persistent middleware preserves server-derived organization context for CRM mutations. Staff may inspect scenario history; management mutations require the scenario permission.
+- Final local M5A verification: `make quality` passes with 21 Unit tests/43 assertions and 158 Feature tests/868 assertions; Pint, ESLint, Larastan (0 errors), vue-tsc, Vite, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. `make ci` passes with healthy PostgreSQL/Redis and 45 PostgreSQL integration tests/100 assertions. Full Playwright passes 8/8 desktop/mobile tests, including the new scenario CRM flow. Focused M5A PostgreSQL concurrency passes 2/2 tests/9 assertions.
+- M5B and later milestones remain unstarted. No Finance, Medical, Surveys, RAG, AI, Broadcasts, subscriptions, payments, MAX, Instagram, calendar/video provider, or production-hardening behavior is in scope.
+- The normalized requirements do not define the conditional +72h seed condition. It remains a narrow M5B owner decision; M5A does not guess or implement it.

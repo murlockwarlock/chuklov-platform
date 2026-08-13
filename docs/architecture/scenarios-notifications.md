@@ -1,7 +1,17 @@
 # Scenarios and Notifications
 
-M2 provides only the provider-neutral email delivery boundary needed for passwordless authentication. Email is also a future communication channel, but a verified channel is not a notification preference and does not imply consent to every scenario. M5 will model typed triggers, conditions, delays, templates/prompts, scheduled actions, deliveries, channel capabilities, notification preferences, and idempotency keys. v2.2 timings become editable seed data.
+M5A implements the first organization-scoped scenario pipeline:
 
-The future notification configuration must let each organization resolve internal recipients per domain event. Resolution may target one or several specific organization members, organization roles, and independently selected verified delivery channels where supported. Recipient/channel configuration is data and policy, never a hardcoded list of Telegram IDs; the implementation belongs to the Scenario/Notification milestone and is not part of M3.
+`ScenarioEvent → ScenarioRule → typed conditions → recipient → channel candidates → pinned template version → ScenarioAction → ScenarioDelivery → attempt history`.
 
-See REQ-NOTIFY-* and ADR-009.
+`scenario_events` is the PostgreSQL-backed durable input boundary for scenario-relevant facts. Booking completion writes the ScenarioEvent in the same transaction as the accepted Booking mutation. `BookingEvent` remains immutable Booking business history and `AuditEvent` remains audit/security history; neither is reused as the delivery queue. Queue jobs carry only durable identifiers, while PostgreSQL row locking and state transitions protect materialization and delivery. Redis/Horizon transports and observes work but is not the correctness source.
+
+Rules are organization-scoped, versioned on CRM mutation, and hold typed trigger, editable delay/unit, allowlisted structured conditions, recipient strategy, ordered channel priority, purpose, and a pinned published template version. Unknown condition types fail closed; arbitrary PHP, SQL, Blade execution, `eval`, and unrestricted JSON logic are not supported. Seed timing is data: M5A seeds one editable post-session +24h Booking `COMPLETED` follow-up per supported locale and does not guess the conditional +72h meaning.
+
+Templates have an organization/locale parent and immutable published versions. Rendering exposes only the allowlisted context variables declared by the selected version. Scheduled actions snapshot their source event, rule version, recipient, channel order, render context, schedule instant, and exact template version. Deliveries have durable per-action/channel idempotency keys, attempt rows, typed delivered/retryable/permanent/unavailable/suppressed outcomes, safe fallback, and pre-delivery current-state suppression without deleting history.
+
+Client recipients resolve through the current organization and verified client channel identity. Internal recipients resolve only active same-organization memberships selected by explicit member IDs or roles and verified organization-member channel identities. A verified identity is not marketing consent; service/transactional purpose remains distinct from future marketing preferences. Telegram is the only established production outbound adapter in M5A; automated tests use deterministic fakes and no network token.
+
+CRM configuration and history are organization-scoped Filament adapters. Mutations delegate to Application actions and write allowlisted audit metadata; history projections omit raw event payloads, provider payloads, secrets, and unrestricted render context.
+
+M5B still owns the remaining post-session family, abandoned onboarding/re-engagement, retention/no-next-booking, broader internal-recipient scenarios, and the exact +72h condition owner decision. See REQ-NOTIFY-*, REQ-CHANNEL-*, REQ-CONVERSATION-001, ADR-009, ADR-012, and ADR-004.

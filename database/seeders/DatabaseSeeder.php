@@ -19,5 +19,7 @@ class DatabaseSeeder extends Seeder
             ['slug' => 'chuklov'],
             ['name' => 'Chuklov', 'timezone' => 'Asia/Bangkok'],
         );
+
+        $this->call(ScenarioNotificationSeeder::class);
     }
 }

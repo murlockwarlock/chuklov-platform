@@ -56,6 +56,9 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
                 ResolveOrganization::class,
+            ])
+            ->persistentMiddleware([
+                ResolveOrganization::class,
             ]);
     }
 }

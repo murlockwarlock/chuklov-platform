@@ -17,4 +17,4 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-No active implementation plans. Milestone 4 Scheduling / Booking is CLOSED and accepted; Milestone 5 — Scenario / Notification Engine is next but has not started. Its implementation plan will be added when M5 work begins.
+No active implementation plans. M5A outcomes are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, the architecture documents, and `CHANGELOG.md`; M5B requires a new plan before implementation.

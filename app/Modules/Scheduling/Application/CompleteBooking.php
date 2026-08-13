@@ -4,6 +4,7 @@ namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -18,6 +19,7 @@ final class CompleteBooking
         private readonly OrganizationContext $context,
         private readonly BookingAuthorization $authorization,
         private readonly RecordBookingEvent $events,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -47,13 +49,18 @@ final class CompleteBooking
                 'status' => BookingStatus::Completed,
                 'event_version' => $lockedBooking->event_version + 1,
             ])->save();
-            $this->events->handle(
+            $bookingEvent = $this->events->handle(
                 booking: $lockedBooking,
                 actor: $actor,
                 type: BookingEventType::Completed,
                 oldValues: $oldValues,
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
+            );
+            $this->scenarioEvents->bookingCompleted(
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
+                occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
             $this->audit->handle(
                 organization: $organization,

@@ -6,6 +6,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Added
 
+- Milestone 5A Scenario / Notification Engine foundation: organization-scoped PostgreSQL scenario events, typed configurable rules and conditions, localized immutable template versions, verified client/internal recipient resolution, ordered channel fallback, durable scheduled actions, idempotent delivery attempts, PostgreSQL-safe worker claiming, CRM configuration/history, and the Booking `COMPLETED` transactional follow-up slice. M5B scenarios and the undefined +72h condition remain out of scope.
+
 - Milestone 4A scheduling foundation: organization-scoped specialist working hours, date exceptions, unavailable periods, configurable lead time, UTC/IANA availability projections, typed visit formats, booking persistence, immutable booking events, PostgreSQL interval conflict protection, CRM scheduling configuration, and a client-safe Portal availability read path.
 - Milestone 4B booking lifecycle: explicit organization-scoped Specialist-Service assignments, assignment-safe availability and booking creation, non-blocking HOME_VISIT review requests, protected approval/rejection actions, immutable lifecycle events, organization-scoped CRM booking surfaces, and the shared Portal Service → Specialist → slot → format flow.
 - Milestone 4C final booking lifecycle: organization/actor-scoped idempotent creation, configurable cutoff-aware cancellation/rescheduling, stable booking identity/history, completion and NO_SHOW outcomes, HOME_VISIT withdrawal/approval payment handoff, ONLINE manual-link management, client booking history, CRM lifecycle actions, and explicit schedule-mutation impact acknowledgement.
@@ -24,6 +26,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- Filament organization resolution is persistent across Livewire updates, preserving server-derived tenant authorization for scenario configuration mutations; unsupported condition types are rejected and explicit suppressed delivery outcomes close actions without fallback.
 - Milestone 3 managed content now permits multiple organization-scoped records per section and locale while preserving ordered portal rendering through a non-unique lookup index.
 - Composer package metadata identifies the private client project as proprietary.
 - Hosted CI now separates quality/integration, Playwright desktop Chromium/mobile WebKit, privacy/secret scanning, and Docker runtime health/Horizon gates.

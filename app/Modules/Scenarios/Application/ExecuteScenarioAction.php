@@ -1,0 +1,453 @@
+<?php
+
+namespace App\Modules\Scenarios\Application;
+
+use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
+use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
+use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
+use Throwable;
+
+final class ExecuteScenarioAction
+{
+    public function __construct(
+        private readonly ScenarioContextFactory $contextFactory,
+        private readonly ConditionEvaluatorRegistry $conditions,
+        private readonly ScenarioChannelIdentityResolver $identities,
+        private readonly NotificationChannelRegistry $channels,
+        private readonly NotificationTemplateRenderer $renderer,
+    ) {}
+
+    public function handle(int $scenarioActionId): void
+    {
+        $action = $this->claimAction($scenarioActionId);
+
+        if ($action === null) {
+            return;
+        }
+
+        if (! $this->isEligible($action)) {
+            $this->suppress($action->getKey(), 'current_conditions_not_met');
+
+            return;
+        }
+
+        while (true) {
+            $delivery = $this->claimDelivery($action->getKey());
+
+            if ($delivery === null) {
+                $this->reconcile($action->getKey());
+
+                return;
+            }
+
+            $result = $this->send($action->getKey(), $delivery);
+            $outcome = $this->finalizeDelivery($delivery->getKey(), $result);
+
+            if (! in_array($outcome, [NotificationDeliveryOutcome::PermanentFailure, NotificationDeliveryOutcome::Unavailable], true)) {
+                return;
+            }
+        }
+    }
+
+    private function isEligible(ScenarioAction $action): bool
+    {
+        $currentRule = $action->rule;
+        $event = $action->event;
+
+        if ($currentRule === null || $event === null || ! $currentRule->is_enabled) {
+            return false;
+        }
+
+        $context = $this->contextFactory->evaluationContext($event);
+
+        return $this->conditions->matches(
+            ScenarioConditionSet::from($currentRule->conditions),
+            $context,
+        );
+    }
+
+    private function send(int $actionId, ScenarioDelivery $delivery): NotificationDeliveryResult
+    {
+        try {
+            $action = ScenarioAction::query()
+                ->whereKey($actionId)
+                ->where('organization_id', $delivery->organization_id)
+                ->with('templateVersion.template')
+                ->firstOrFail();
+            $identity = $this->identities->resolve($action, $delivery->channel);
+
+            if ($identity === null) {
+                return NotificationDeliveryResult::unavailable('verified_identity_unavailable');
+            }
+
+            $channel = $this->channels->get($delivery->channel);
+
+            if ($channel === null || ! $channel->capabilities()->supportsProactiveDelivery) {
+                return NotificationDeliveryResult::unavailable('channel_unavailable');
+            }
+
+            $template = $action->templateVersion;
+
+            if ($template === null || $template->template === null || ! $template->template->is_active
+                || $template->status === NotificationTemplateStatus::Archived) {
+                return NotificationDeliveryResult::permanentFailure('template_unavailable');
+            }
+
+            $locale = $template->template->locale;
+            $rendered = $this->renderer->render($template, $action->render_context, $locale);
+
+            return $channel->send(new NotificationMessage(
+                recipientExternalId: $identity->externalId,
+                body: $rendered->body,
+                subject: $rendered->subject,
+                locale: $rendered->locale,
+                idempotencyKey: $delivery->idempotency_key,
+            ));
+        } catch (InvalidArgumentException) {
+            return NotificationDeliveryResult::permanentFailure('template_rendering_error');
+        } catch (ModelNotFoundException) {
+            return NotificationDeliveryResult::permanentFailure('delivery_context_missing');
+        } catch (Throwable) {
+            return NotificationDeliveryResult::retryable('delivery_execution_error');
+        }
+    }
+
+    private function claimAction(int $scenarioActionId): ?ScenarioAction
+    {
+        return DB::transaction(function () use ($scenarioActionId): ?ScenarioAction {
+            $action = ScenarioAction::query()->lockForUpdate()->find($scenarioActionId);
+
+            if ($action === null || $action->status->isTerminal()) {
+                return null;
+            }
+
+            $now = CarbonImmutable::now();
+            $staleAt = $now->subSeconds((int) config('scenarios.scheduler.stale_after_seconds', 300));
+
+            if ($action->status === ScenarioActionStatus::Processing
+                && $action->processing_started_at !== null
+                && CarbonImmutable::parse((string) $action->processing_started_at)->greaterThan($staleAt)) {
+                return null;
+            }
+
+            if ($action->scheduled_for !== null && CarbonImmutable::parse((string) $action->scheduled_for)->greaterThan($now)) {
+                return null;
+            }
+
+            if ($action->status === ScenarioActionStatus::Processing) {
+                $this->markUnknownAfterWorkerLoss($action);
+
+                return null;
+            }
+
+            $action->forceFill([
+                'status' => ScenarioActionStatus::Processing,
+                'attempt_count' => $action->attempt_count + 1,
+                'processing_started_at' => $now,
+            ])->save();
+
+            return $action->refresh();
+        });
+    }
+
+    private function claimDelivery(int $actionId): ?ScenarioDelivery
+    {
+        return DB::transaction(function () use ($actionId): ?ScenarioDelivery {
+            $action = ScenarioAction::query()->lockForUpdate()->find($actionId);
+
+            if ($action === null || $action->status !== ScenarioActionStatus::Processing) {
+                return null;
+            }
+
+            $now = CarbonImmutable::now();
+            $deliveries = ScenarioDelivery::query()
+                ->where('organization_id', $action->organization_id)
+                ->where('scenario_action_id', $action->getKey())
+                ->orderBy('priority')
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($deliveries as $delivery) {
+                if ($delivery->status->isTerminal()) {
+                    continue;
+                }
+
+                if ($delivery->status === ScenarioDeliveryStatus::Processing) {
+                    return null;
+                }
+
+                if ($delivery->next_attempt_at !== null
+                    && CarbonImmutable::parse((string) $delivery->next_attempt_at)->greaterThan($now)) {
+                    return null;
+                }
+
+                $delivery->forceFill([
+                    'status' => ScenarioDeliveryStatus::Processing,
+                    'attempt_count' => $delivery->attempt_count + 1,
+                    'processing_started_at' => $now,
+                ])->save();
+
+                $attempt = new ScenarioDeliveryAttempt;
+                $attempt->forceFill([
+                    'organization_id' => $delivery->organization_id,
+                    'scenario_delivery_id' => $delivery->getKey(),
+                    'attempt_number' => $delivery->attempt_count,
+                    'outcome' => NotificationDeliveryOutcome::Unknown,
+                    'attempted_at' => $now,
+                ])->save();
+
+                return $delivery->refresh();
+            }
+
+            return null;
+        });
+    }
+
+    private function finalizeDelivery(int $deliveryId, NotificationDeliveryResult $result): NotificationDeliveryOutcome
+    {
+        return DB::transaction(function () use ($deliveryId, $result): NotificationDeliveryOutcome {
+            $delivery = ScenarioDelivery::query()->lockForUpdate()->findOrFail($deliveryId);
+
+            if ($delivery->status !== ScenarioDeliveryStatus::Processing) {
+                return $result->outcome;
+            }
+
+            $attempt = ScenarioDeliveryAttempt::query()
+                ->where('organization_id', $delivery->organization_id)
+                ->where('scenario_delivery_id', $delivery->getKey())
+                ->where('attempt_number', $delivery->attempt_count)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $attempt->forceFill([
+                'outcome' => $result->outcome,
+                'error_code' => $this->safeCode($result->errorCode),
+                'provider_reference' => $this->safeReference($result->providerReference),
+            ])->save();
+
+            $retryable = $result->outcome === NotificationDeliveryOutcome::Retryable
+                && $delivery->attempt_count < (int) config('scenarios.deliveries.max_attempts', 3);
+            $deliveryStatus = $result->outcome === NotificationDeliveryOutcome::Retryable && ! $retryable
+                ? ScenarioDeliveryStatus::PermanentFailure
+                : $this->deliveryStatus($result->outcome);
+
+            $delivery->forceFill([
+                'status' => $deliveryStatus,
+                'processing_started_at' => null,
+                'delivered_at' => $result->outcome === NotificationDeliveryOutcome::Delivered ? now() : null,
+                'next_attempt_at' => $retryable
+                    ? now()->addSeconds((int) config('scenarios.deliveries.retry_after_seconds', 300))
+                    : null,
+                'last_error_code' => $this->safeCode($result->errorCode),
+                'terminal_reason' => $this->terminalReason($result->outcome, $delivery->attempt_count),
+                'provider_reference' => $this->safeReference($result->providerReference),
+            ])->save();
+
+            $action = ScenarioAction::query()
+                ->where('organization_id', $delivery->organization_id)
+                ->whereKey($delivery->scenario_action_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($result->outcome === NotificationDeliveryOutcome::Delivered) {
+                $action->forceFill([
+                    'status' => ScenarioActionStatus::Delivered,
+                    'processing_started_at' => null,
+                    'delivered_at' => now(),
+                    'terminal_reason' => null,
+                ])->save();
+            } elseif ($result->outcome === NotificationDeliveryOutcome::Retryable
+                && $delivery->attempt_count < (int) config('scenarios.deliveries.max_attempts', 3)) {
+                $action->forceFill([
+                    'status' => ScenarioActionStatus::Retryable,
+                    'processing_started_at' => null,
+                    'scheduled_for' => $delivery->next_attempt_at,
+                    'terminal_reason' => null,
+                ])->save();
+            } elseif ($result->outcome === NotificationDeliveryOutcome::Retryable) {
+                $action->forceFill([
+                    'status' => ScenarioActionStatus::Failed,
+                    'processing_started_at' => null,
+                    'terminal_reason' => 'retryable_attempts_exhausted',
+                ])->save();
+            } elseif ($result->outcome === NotificationDeliveryOutcome::Suppressed) {
+                $action->forceFill([
+                    'status' => ScenarioActionStatus::Suppressed,
+                    'processing_started_at' => null,
+                    'suppressed_at' => now(),
+                    'terminal_reason' => 'provider_suppressed',
+                ])->save();
+            }
+
+            return $result->outcome;
+        });
+    }
+
+    private function reconcile(int $actionId): void
+    {
+        DB::transaction(function () use ($actionId): void {
+            $action = ScenarioAction::query()->lockForUpdate()->find($actionId);
+
+            if ($action === null || $action->status !== ScenarioActionStatus::Processing) {
+                return;
+            }
+
+            $deliveries = ScenarioDelivery::query()
+                ->where('organization_id', $action->organization_id)
+                ->where('scenario_action_id', $action->getKey())
+                ->orderBy('priority')
+                ->lockForUpdate()
+                ->get();
+            $open = $deliveries->filter(static fn (ScenarioDelivery $delivery): bool => ! $delivery->status->isTerminal());
+
+            if ($open->isNotEmpty()) {
+                $nextAttempt = $open
+                    ->map(static fn (ScenarioDelivery $delivery): CarbonImmutable => $delivery->next_attempt_at === null
+                        ? CarbonImmutable::now()
+                        : CarbonImmutable::parse((string) $delivery->next_attempt_at))
+                    ->min();
+                $action->forceFill([
+                    'status' => ScenarioActionStatus::Retryable,
+                    'processing_started_at' => null,
+                    'scheduled_for' => $nextAttempt,
+                ])->save();
+
+                return;
+            }
+
+            $allUnavailable = $deliveries->isNotEmpty()
+                && $deliveries->every(static fn (ScenarioDelivery $delivery): bool => $delivery->status === ScenarioDeliveryStatus::Unavailable);
+            $action->forceFill([
+                'status' => $allUnavailable ? ScenarioActionStatus::Suppressed : ScenarioActionStatus::Failed,
+                'processing_started_at' => null,
+                'suppressed_at' => $allUnavailable ? now() : null,
+                'terminal_reason' => $allUnavailable ? 'no_available_channel' : 'all_channels_failed',
+            ])->save();
+        });
+    }
+
+    private function suppress(int $actionId, string $reason): void
+    {
+        DB::transaction(function () use ($actionId, $reason): void {
+            $action = ScenarioAction::query()->lockForUpdate()->find($actionId);
+
+            if ($action === null || $action->status->isTerminal()) {
+                return;
+            }
+
+            ScenarioDelivery::query()
+                ->where('organization_id', $action->organization_id)
+                ->where('scenario_action_id', $action->getKey())
+                ->whereIn('status', [
+                    ScenarioDeliveryStatus::Pending->value,
+                    ScenarioDeliveryStatus::Retryable->value,
+                    ScenarioDeliveryStatus::Processing->value,
+                ])
+                ->update([
+                    'status' => ScenarioDeliveryStatus::Suppressed->value,
+                    'processing_started_at' => null,
+                    'terminal_reason' => $reason,
+                    'updated_at' => now(),
+                ]);
+            $action->forceFill([
+                'status' => ScenarioActionStatus::Suppressed,
+                'processing_started_at' => null,
+                'suppressed_at' => now(),
+                'terminal_reason' => $reason,
+            ])->save();
+        });
+    }
+
+    private function markUnknownAfterWorkerLoss(ScenarioAction $action): void
+    {
+        $deliveryIds = ScenarioDelivery::query()
+            ->where('organization_id', $action->organization_id)
+            ->where('scenario_action_id', $action->getKey())
+            ->where('status', ScenarioDeliveryStatus::Processing->value)
+            ->pluck('id');
+
+        if ($deliveryIds->isNotEmpty()) {
+            DB::table('scenario_delivery_attempts')
+                ->where('organization_id', $action->organization_id)
+                ->whereIn('scenario_delivery_id', $deliveryIds)
+                ->where('outcome', NotificationDeliveryOutcome::Unknown->value)
+                ->update(['error_code' => 'worker_lost_before_outcome']);
+            ScenarioDelivery::query()
+                ->whereIn('id', $deliveryIds)
+                ->update([
+                    'status' => ScenarioDeliveryStatus::PermanentFailure->value,
+                    'processing_started_at' => null,
+                    'terminal_reason' => 'delivery_outcome_unknown',
+                    'last_error_code' => 'worker_lost_before_outcome',
+                    'updated_at' => now(),
+                ]);
+        }
+
+        $action->forceFill([
+            'status' => ScenarioActionStatus::Failed,
+            'processing_started_at' => null,
+            'terminal_reason' => 'delivery_outcome_unknown',
+        ])->save();
+    }
+
+    private function deliveryStatus(NotificationDeliveryOutcome $outcome): ScenarioDeliveryStatus
+    {
+        return match ($outcome) {
+            NotificationDeliveryOutcome::Delivered => ScenarioDeliveryStatus::Delivered,
+            NotificationDeliveryOutcome::Retryable => ScenarioDeliveryStatus::Retryable,
+            NotificationDeliveryOutcome::PermanentFailure => ScenarioDeliveryStatus::PermanentFailure,
+            NotificationDeliveryOutcome::Unavailable => ScenarioDeliveryStatus::Unavailable,
+            NotificationDeliveryOutcome::Suppressed, NotificationDeliveryOutcome::Unknown => ScenarioDeliveryStatus::Suppressed,
+        };
+    }
+
+    private function terminalReason(NotificationDeliveryOutcome $outcome, int $attemptCount): ?string
+    {
+        return match ($outcome) {
+            NotificationDeliveryOutcome::Delivered => null,
+            NotificationDeliveryOutcome::Retryable => $attemptCount >= (int) config('scenarios.deliveries.max_attempts', 3)
+                ? 'retryable_attempts_exhausted'
+                : null,
+            NotificationDeliveryOutcome::PermanentFailure => 'provider_permanent_failure',
+            NotificationDeliveryOutcome::Unavailable => 'channel_unavailable',
+            NotificationDeliveryOutcome::Suppressed => 'suppressed',
+            NotificationDeliveryOutcome::Unknown => 'delivery_outcome_unknown',
+        };
+    }
+
+    private function safeCode(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = strtolower(trim($value));
+
+        return preg_match('/^[a-z0-9_.:-]{1,120}$/', $value) === 1 ? $value : 'provider_error';
+    }
+
+    private function safeReference(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = Str::limit(trim($value), 191, '');
+        $value = preg_replace('/[^a-zA-Z0-9._:-]/', '_', $value) ?? '';
+
+        return $value === '' ? null : $value;
+    }
+}

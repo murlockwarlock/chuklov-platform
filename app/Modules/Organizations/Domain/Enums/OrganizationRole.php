@@ -19,6 +19,7 @@ enum OrganizationRole: string
                 OrganizationPermission::RecordConsent,
                 OrganizationPermission::ViewSpecialists,
                 OrganizationPermission::ViewScheduling,
+                OrganizationPermission::ViewScenarios,
             ], true),
         };
     }

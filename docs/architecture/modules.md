@@ -15,5 +15,6 @@ Current Phase 1 modules:
 - ClientPortal: organization-scoped client session context, onboarding/progressive profiling actions, and portal entry points.
 - Conversations: organization/client-scoped normalized conversation and message persistence.
 - Channels: capability-aware `MessagingChannel` boundary, Nutgram verification/menu adapter, and no business logic in handlers.
+- Scenarios: durable organization-scoped scenario events, typed rules/conditions, versioned notification templates, recipient/channel resolution, scheduled actions, delivery attempts, and CRM configuration/history.
 
 Planned bounded contexts are those listed in the master plan. Add a module only with relevant REQ IDs. Cross-module writes go through Application actions; do not reach through another module’s infrastructure.

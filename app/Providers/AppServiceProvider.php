@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
@@ -12,6 +14,13 @@ use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
+use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
+use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
+use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
+use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
+use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
@@ -35,6 +44,7 @@ use App\Policies\SpecialistPolicy;
 use App\Policies\SpecialistServiceAssignmentPolicy;
 use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -47,6 +57,21 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
+        $this->app->singleton(
+            NotificationChannelRegistry::class,
+            fn (Application $app): NotificationChannelRegistry => new NotificationChannelRegistry([
+                $app->make(TelegramNotificationChannel::class),
+            ]),
+        );
+        $this->app->singleton(
+            ConditionEvaluatorRegistry::class,
+            fn (): ConditionEvaluatorRegistry => new ConditionEvaluatorRegistry([
+                new BookingStatusConditionEvaluator,
+                new ClientLanguageConditionEvaluator,
+            ]),
+        );
+        $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);
+        $this->app->bind(NotificationTemplateRenderer::class, ScenarioTemplateRenderer::class);
     }
 
     public function boot(): void

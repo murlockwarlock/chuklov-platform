@@ -52,6 +52,10 @@ class RecordAuditEvent
         'specialist.service.unassigned' => ['source'],
         'booking.home_visit.approved' => ['source', 'status', 'visit_format', 'payment_requirement'],
         'booking.home_visit.rejected' => ['source', 'status', 'visit_format'],
+        'scenario.template.created' => ['template_key', 'locale', 'version'],
+        'scenario.template.updated' => ['template_key', 'locale', 'version'],
+        'scenario.rule.created' => ['rule_key', 'trigger_event', 'delay_value', 'delay_unit', 'enabled'],
+        'scenario.rule.updated' => ['rule_key', 'trigger_event', 'delay_value', 'delay_unit', 'enabled'],
     ];
 
     /** @param array<array-key, mixed> $metadata */
