@@ -13,6 +13,7 @@ type Portal = {
     authenticated: boolean;
     clientName: string | null;
     telegramAuthUrl: string;
+    telegramAuthError: string | null;
     telegramWebRequestUrl: string;
     telegramWebStatusUrl: string;
     telegramWebUrl: string | null;
@@ -35,7 +36,9 @@ const telegramWebForm = useForm<Record<string, never>>({});
 const emailRequestForm = useForm<{ email: string }>({ email: '' });
 const emailVerifyForm = useForm<{ email: string; code: string }>({ email: '', code: '' });
 const telegramLinkForm = useForm<Record<string, never>>({});
-const authError = ref<string | null>(null);
+const authError = ref<string | null>(props.portal.telegramAuthError);
+const telegramMiniAppAuthAttempted = ref(props.portal.telegramAuthError !== null);
+const telegramMiniAppAuthFailed = ref(props.portal.telegramAuthError !== null);
 let telegramStatusTimer: ReturnType<typeof setInterval> | null = null;
 
 function stopTelegramStatusPolling(): void {
@@ -101,6 +104,10 @@ function requestTelegramWebAuthentication(): void {
 }
 
 onMounted(() => {
+    if (!props.portal.authenticated && runtimeMode === 'telegram-mini-app') {
+        authenticateWithTelegram(true);
+    }
+
     if (props.portal.telegramWebUrl !== null) {
         startTelegramStatusPolling();
     }
@@ -108,11 +115,21 @@ onMounted(() => {
 
 onUnmounted(stopTelegramStatusPolling);
 
-function authenticateWithTelegram(): void {
+function authenticateWithTelegram(automatic = false): void {
+    if (automatic && telegramMiniAppAuthAttempted.value) {
+        return;
+    }
+
     authError.value = null;
+    telegramMiniAppAuthFailed.value = false;
+
+    if (runtimeMode === 'telegram-mini-app') {
+        telegramMiniAppAuthAttempted.value = true;
+    }
 
     if (authForm.initData === '') {
         authError.value = 'Не удалось получить данные для входа. Откройте приложение заново.';
+        telegramMiniAppAuthFailed.value = true;
 
         return;
     }
@@ -120,9 +137,14 @@ function authenticateWithTelegram(): void {
     authForm.post(props.portal.telegramAuthUrl, {
         preserveScroll: true,
         onError: () => {
-            authError.value = 'Не удалось войти через Telegram. Откройте приложение заново.';
+            authError.value = 'Не удалось войти через Telegram. Закройте приложение и откройте его снова.';
+            telegramMiniAppAuthFailed.value = true;
         },
     });
+}
+
+function retryTelegramMiniAppAuthentication(): void {
+    window.location.reload();
 }
 
 function requestEmailCode(): void {
@@ -248,15 +270,33 @@ function requestTelegramLink(): void {
               Сейчас подключение Telegram недоступно.
             </p>
           </div>
-          <button
+          <div
             v-else-if="runtimeMode === 'telegram-mini-app'"
-            type="button"
-            :disabled="authForm.processing"
-            class="portal-button portal-button--primary self-start"
-            @click="authenticateWithTelegram"
+            class="portal-stack portal-stack--tight"
           >
-            {{ authForm.processing ? 'Проверка…' : 'Войти через Telegram' }}
-          </button>
+            <p
+              v-if="!telegramMiniAppAuthFailed"
+              class="portal-notice"
+              role="status"
+            >
+              Выполняем вход…
+            </p>
+            <template v-else>
+              <p
+                class="portal-notice portal-notice--error"
+                role="alert"
+              >
+                {{ authError ?? 'Не удалось войти через Telegram. Откройте приложение заново.' }}
+              </p>
+              <button
+                type="button"
+                class="portal-button portal-button--secondary self-start"
+                @click="retryTelegramMiniAppAuthentication"
+              >
+                Открыть приложение снова
+              </button>
+            </template>
+          </div>
           <div
             v-else
             class="portal-stack portal-stack--tight"
@@ -355,13 +395,6 @@ function requestTelegramLink(): void {
             role="alert"
           >
             {{ authError }}
-          </p>
-          <p
-            v-if="authForm.errors.initData"
-            class="portal-error"
-            role="alert"
-          >
-            {{ authForm.errors.initData }}
           </p>
         </div>
       </section>

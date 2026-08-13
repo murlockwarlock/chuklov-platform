@@ -31,6 +31,7 @@ class ServiceIndexController extends Controller
                 'authenticated' => $client !== null,
                 'clientName' => $client === null ? null : ($client->full_name ?? $client->email),
                 'telegramAuthUrl' => '/portal/telegram/auth',
+                'telegramAuthError' => $client === null ? $request->session()->pull('telegram_auth_error') : null,
                 'telegramWebRequestUrl' => route('portal.telegram.web.request'),
                 'telegramWebStatusUrl' => route('portal.telegram.web.status'),
                 'telegramWebUrl' => $client === null ? $request->session()->get('telegram_web_auth.url') : null,

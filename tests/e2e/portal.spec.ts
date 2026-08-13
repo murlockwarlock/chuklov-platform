@@ -132,6 +132,61 @@ test('client portal shell is responsive', async ({ page }) => {
     await expect(page.getByText(/Responsive web|Shared runtime|secure foundation|client portal/i)).toHaveCount(0);
 });
 
+test('Telegram Mini App submits initData automatically without a second login action', async ({ page }) => {
+    let authenticationRequests = 0;
+
+    await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+        await route.fulfill({
+            contentType: 'application/javascript',
+            body: 'window.Telegram = { WebApp: { initData: "verified-init-data", ready() {} } };',
+        });
+    });
+    await page.route('**/portal/telegram/auth', async (route) => {
+        authenticationRequests += 1;
+        await route.fulfill({
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Vary': 'Accept',
+                'X-Inertia': 'true',
+            },
+            body: JSON.stringify({
+                component: 'Services/Index',
+                props: {
+                    services: [],
+                    portal: {
+                        authenticated: true,
+                        clientName: 'Telegram Client',
+                        telegramAuthUrl: '/portal/telegram/auth',
+                        telegramAuthError: null,
+                        telegramWebRequestUrl: '/portal/auth/telegram/request',
+                        telegramWebStatusUrl: '/portal/auth/telegram/status',
+                        telegramWebUrl: null,
+                        emailRequestUrl: '/portal/auth/email/request',
+                        emailVerifyUrl: '/portal/auth/email/verify',
+                        emailCodeSent: false,
+                        telegramConnected: true,
+                        telegramLinkRequestUrl: '/portal/channels/telegram/link',
+                        telegramLinkUrl: null,
+                        telegramLinkError: false,
+                        onboardingUrl: '/portal/onboarding',
+                        bookingUrl: null,
+                        bookingsUrl: null,
+                    },
+                },
+                url: '/',
+                version: null,
+            }),
+        });
+    });
+
+    await page.goto('/');
+
+    await expect(page.getByText('Вы вошли как Telegram Client.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticationRequests).toBe(1);
+});
+
 test('authenticated client can complete the booking journey', async ({ page }) => {
     const fixture = createBookingFixture();
 

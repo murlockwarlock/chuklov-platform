@@ -6,6 +6,11 @@
 - Confirmed a short-lived, single-use, browser-bound Telegram deep-link handshake using authentic bot evidence; verified identities resolve an existing organization-scoped Client or create one without matching by display name or username.
 - Retained verified fresh non-replayed initData for Mini App authentication and session regeneration after every successful authentication method.
 
+## 2026-08-14 — Telegram Mini App automatic authentication
+
+- Clarified REQ-PORTAL-002 so a Mini App with valid Telegram initData submits verified authentication once on entry, without a second manual login button.
+- Confirmed that failures expose a localized retry action and never trust frontend identity fields or automatically authenticate an ordinary browser.
+
 ## 2026-08-13 — M4 final narrow remediation
 
 - Verified the REQ-SCHEDULING-001 schedule-impact acknowledgement boundary in Filament, including staff-visible affected-booking previews, retained digests, changed-set rejection, quick Specialist deactivation, and exception deletion.

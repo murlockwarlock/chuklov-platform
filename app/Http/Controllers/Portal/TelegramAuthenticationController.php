@@ -7,6 +7,7 @@ use App\Modules\Channels\Infrastructure\Telegram\InvalidTelegramInitData;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramInitDataVerifier;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
@@ -24,11 +25,14 @@ class TelegramAuthenticationController extends Controller
 
         try {
             $identity = $verifier->handle($validated['initData']);
-        } catch (InvalidTelegramInitData) {
-            abort(403);
+            $client = $authenticate->handle($identity);
+        } catch (InvalidTelegramInitData|AuthorizationException) {
+            return to_route('portal.services.index')->with(
+                'telegram_auth_error',
+                'Не удалось войти через Telegram. Закройте приложение и откройте его снова.',
+            );
         }
 
-        $client = $authenticate->handle($identity);
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $startOnboarding->handle($client);

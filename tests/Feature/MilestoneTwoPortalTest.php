@@ -67,6 +67,26 @@ class MilestoneTwoPortalTest extends TestCase
                 ->where('currentStage', 'contacts'));
     }
 
+    public function test_telegram_auth_keeps_client_records_feature_as_a_server_gate(): void
+    {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->id);
+        $this->useTelegramToken();
+
+        $this->post(route('portal.telegram.auth'), [
+            'initData' => TelegramInitData::make(100000, now()->timestamp),
+        ])
+            ->assertRedirect(route('portal.services.index'))
+            ->assertSessionHas('telegram_auth_error');
+
+        self::assertSame(0, Client::query()->count());
+        self::assertFalse($organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->exists());
+
+        $this->get(route('portal.services.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('portal.telegramAuthError', 'Не удалось войти через Telegram. Закройте приложение и откройте его снова.'));
+    }
+
     public function test_invalid_signature_and_stale_or_replayed_auth_are_rejected(): void
     {
         $this->organizationWithClientRecords();
@@ -75,13 +95,13 @@ class MilestoneTwoPortalTest extends TestCase
 
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100002, now()->timestamp, token: 'wrong-token'),
-        ])->assertForbidden();
+        ])->assertRedirect(route('portal.services.index'));
 
         $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertRedirect();
-        $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertForbidden();
+        $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertRedirect(route('portal.services.index'));
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100003, now()->timestamp - 901),
-        ])->assertForbidden();
+        ])->assertRedirect(route('portal.services.index'));
     }
 
     public function test_valid_telegram_evidence_verifies_existing_identity_without_overwriting_profile_values(): void
