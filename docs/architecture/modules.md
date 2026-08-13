@@ -8,7 +8,8 @@ Current Phase 1 modules:
 - Identity: client profiles, organization-scoped channel identities, consent records, and verified channel authentication/linking actions.
 - Security: encrypted organization credentials, audit events, and sensitive log redaction.
 - Services: organization-scoped catalog records, configuration validation, pricing representation, and create/update/list application actions. Catalog records distinguish services from physical and online products without implementing commerce.
-- Specialists: organization-owned practitioner identity and membership-backed optional staff link; scheduling remains a later module.
+- Specialists: organization-owned practitioner identity and membership-backed optional staff link. Specialist-Service eligibility is an explicit Scheduling-owned assignment relation; no implicit capability is inferred from the Specialist record.
+- Scheduling: organization-scoped working hours, exceptions, unavailability, lead time, Specialist-Service assignments, availability calculation, booking lifecycle, immutable booking events, and PostgreSQL conflict protection.
 - Content: organization-scoped localized CRM-managed sections consumed by approved portal routes.
 - AI: SDK agent fake path only.
 - ClientPortal: organization-scoped client session context, onboarding/progressive profiling actions, and portal entry points.

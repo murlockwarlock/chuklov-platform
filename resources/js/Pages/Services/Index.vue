@@ -21,6 +21,7 @@ type Portal = {
     telegramLinkUrl: string | null;
     telegramLinkError: boolean;
     onboardingUrl: string;
+    bookingUrl: string | null;
 };
 
 const props = defineProps<{ services: Service[]; portal: Portal }>();
@@ -140,6 +141,13 @@ function requestTelegramLink(): void {
             class="portal-button portal-button--primary self-start"
           >
             Continue onboarding
+          </Link>
+          <Link
+            v-if="props.portal.bookingUrl"
+            :href="props.portal.bookingUrl"
+            class="portal-button portal-button--secondary self-start"
+          >
+            Book a visit
           </Link>
           <div
             v-if="props.portal.authenticated"

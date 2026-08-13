@@ -36,6 +36,7 @@ class CreateBooking
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly CalculateAvailability $availability,
+        private readonly SpecialistServiceAssignmentEligibility $eligibility,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -105,6 +106,11 @@ class CreateBooking
             }
 
             $this->ensureBookableService($lockedService, $format);
+            $this->eligibility->ensure(
+                $organization->getKey(),
+                $lockedSpecialist->getKey(),
+                $lockedService->getKey(),
+            );
 
             $resolvedClientTimezone = $this->resolveClientTimezone($clientTimezone, $lockedClient);
             $availability = $this->availability->forBooking(

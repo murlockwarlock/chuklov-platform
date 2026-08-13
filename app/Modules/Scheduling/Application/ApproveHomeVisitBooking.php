@@ -1,0 +1,196 @@
+<?php
+
+namespace App\Modules\Scheduling\Application;
+
+use App\Models\User;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
+use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class ApproveHomeVisitBooking
+{
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly OrganizationAuthorizer $authorizer,
+        private readonly CalculateAvailability $availability,
+        private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly RecordAuditEvent $audit,
+    ) {}
+
+    public function handle(User $actor, Booking $booking, ?string $reason = null): Booking
+    {
+        $organization = $this->context->organization();
+
+        if ((int) $booking->organization_id !== $organization->getKey()) {
+            throw new AuthorizationException('The booking is outside the current organization.');
+        }
+
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
+        $reason = $this->normalizeReason($reason, required: false);
+
+        return DB::transaction(function () use ($actor, $booking, $organization, $reason): Booking {
+            $lockedBooking = Booking::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($booking->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedBooking->status !== BookingStatus::PendingReview
+                || $lockedBooking->visit_format !== VisitFormat::HomeVisit) {
+                throw ValidationException::withMessages([
+                    'booking' => 'Only pending home-visit requests can be approved.',
+                ]);
+            }
+
+            $specialist = Specialist::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($lockedBooking->specialist_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $service = Service::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($lockedBooking->service_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->eligibility->ensure(
+                $organization->getKey(),
+                $specialist->getKey(),
+                $service->getKey(),
+            );
+
+            $availability = $this->availability->forBooking(
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::HomeVisit,
+                startsAt: $lockedBooking->startsAtUtc(),
+                displayTimezone: $lockedBooking->client_timezone,
+            );
+            $slot = $this->matchingSlot($availability->slots, $lockedBooking->startsAtUtc());
+
+            if (! $slot instanceof AvailabilitySlot) {
+                throw ValidationException::withMessages([
+                    'booking' => 'The preferred time is no longer available. Choose another time before approval.',
+                ]);
+            }
+
+            $oldValues = $this->bookingSnapshot($lockedBooking);
+            $lockedBooking->forceFill([
+                'status' => BookingStatus::Confirmed,
+                'starts_at' => $slot->startsAt,
+                'ends_at' => $slot->endsAt,
+                'blocking_ends_at' => $slot->blockingEndsAt,
+                'schedule_timezone' => $slot->scheduleTimezone,
+                'event_version' => $lockedBooking->event_version + 1,
+            ]);
+
+            try {
+                $lockedBooking->save();
+            } catch (QueryException $exception) {
+                if ($this->isExclusionViolation($exception)) {
+                    throw ValidationException::withMessages([
+                        'booking' => 'The preferred time is no longer available. Choose another time before approval.',
+                    ]);
+                }
+
+                throw $exception;
+            }
+
+            $this->recordEvent(
+                booking: $lockedBooking,
+                actor: $actor,
+                oldValues: $oldValues,
+                reason: $reason,
+            );
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'booking.home_visit.approved',
+                targetType: Booking::class,
+                targetId: (string) $lockedBooking->getKey(),
+                metadata: [
+                    'source' => 'crm',
+                    'status' => BookingStatus::Confirmed->value,
+                    'visit_format' => VisitFormat::HomeVisit->value,
+                ],
+            );
+
+            return $lockedBooking->refresh();
+        });
+    }
+
+    /** @param list<AvailabilitySlot> $slots */
+    private function matchingSlot(array $slots, CarbonImmutable $requestedStart): ?AvailabilitySlot
+    {
+        foreach ($slots as $slot) {
+            if ($slot->startsAt->equalTo($requestedStart)) {
+                return $slot;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeReason(?string $reason, bool $required): ?string
+    {
+        $reason = $reason === null ? null : trim($reason);
+
+        if (($required && ($reason === null || $reason === '')) || ($reason !== null && mb_strlen($reason) > 500)) {
+            throw ValidationException::withMessages(['reason' => 'The booking reason is invalid.']);
+        }
+
+        return $reason === '' ? null : $reason;
+    }
+
+    /** @return array<string, int|string> */
+    private function bookingSnapshot(Booking $booking): array
+    {
+        return [
+            'status' => $booking->status->value,
+            'payment_status' => $booking->payment_status->value,
+            'visit_format' => $booking->visit_format->value,
+            'starts_at' => $booking->startsAtUtc()->toIso8601String(),
+            'ends_at' => $booking->endsAtUtc()->toIso8601String(),
+            'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
+            'schedule_timezone' => $booking->schedule_timezone,
+            'event_version' => $booking->event_version,
+        ];
+    }
+
+    /** @param array<string, int|string> $oldValues */
+    private function recordEvent(Booking $booking, User $actor, array $oldValues, ?string $reason): void
+    {
+        $event = new BookingEvent;
+        $event->forceFill([
+            'organization_id' => $booking->organization_id,
+            'booking_id' => $booking->getKey(),
+            'event_type' => BookingEventType::StatusChanged,
+            'actor_type' => 'user',
+            'actor_user_id' => $actor->getKey(),
+            'old_values' => $oldValues,
+            'new_values' => $this->bookingSnapshot($booking),
+            'reason' => $reason,
+            'occurred_at' => now(),
+        ]);
+        $event->save();
+    }
+
+    private function isExclusionViolation(QueryException $exception): bool
+    {
+        return $exception->getCode() === '23P01' || ($exception->errorInfo[0] ?? null) === '23P01';
+    }
+}

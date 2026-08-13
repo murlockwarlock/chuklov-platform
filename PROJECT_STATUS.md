@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 4A — Scheduling Foundation
-- Status: M4A READY FOR REVIEW — implementation and final local gates pass; hosted exact-SHA result will be recorded in the local M4 report after push
+- Current milestone: Milestone 4B — Booking lifecycle and CRM/client flow
+- Status: M4B READY FOR CONTINUATION — final local and browser gates pass; push and hosted exact-SHA verification are pending
 
 ## Completed Remediation
 
@@ -45,7 +45,7 @@
 ## Blockers / Open Questions
 
 - OQ-001 and OQ-006 are resolved for M2 by the owner-confirmed decisions recorded in `docs/product/open-questions.md`.
-- OQ-002 and OQ-009 remain open boundaries for the pending M4B/M4C work; no unconfirmed policy was invented in M4A.
+- OQ-002 remains open for M4C cancellation/reschedule/refund policy. OQ-009 was resolved for M4B as an explicit organization-scoped Specialist-Service many-to-many assignment; no unconfirmed policy was invented.
 
 ## Milestone 3
 
@@ -62,8 +62,16 @@
 - Availability uses specialist-or-organization IANA scheduling timezone, separate client display timezone, DST-safe local wall-clock conversion, service duration/buffer, lead time, exceptions, unavailability, and blocking booking intervals.
 - PostgreSQL composite ownership FKs, important checks, GiST exclusion constraints, specialist-row transaction locking, and online-only meeting metadata checks protect scheduling invariants. No application-only check-then-insert strategy is used.
 - Added CRM scheduling configuration, exception/unavailable-period resources, and a small authenticated Portal availability projection with explicit Inertia props.
-- OQ-002 cancellation/reschedule/refund behavior and OQ-009 specialist-service assignment/eligibility remain intentionally unresolved. No M4B/M4C lifecycle completion or M5+ behavior was started.
+- At M4A close, OQ-002 and OQ-009 were intentionally left open. M4B resolves OQ-009 through explicit assignments and does not implement cancellation/reschedule/refund behavior. No M4C or M5+ behavior was started.
 - Focused verification passes: 16 scheduling Unit/Feature tests/46 assertions and 37 PostgreSQL integration tests/67 assertions. Final make quality and make ci both pass: 13 Unit tests/28 assertions, 99 Feature tests/540 assertions, Larastan 0 errors, clean Pint/ESLint/vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. Playwright was not run because M4A adds no interactive booking flow.
+
+## Milestone 4B — Booking lifecycle and CRM/client flow
+
+- Accepted M4A base is af298476aad216b4083b93fc6f6d60f81ca3e52b; M3 remains closed and was not re-audited.
+- OQ-009 is resolved as an explicit organization-scoped many-to-many `specialist_service_assignments` relation. CRM assignment actions enforce same-organization ownership, authorization, uniqueness, active-record booking rules, and historical-booking preservation.
+- Added non-blocking HOME_VISIT `PENDING_REVIEW`, typed approval/rejection actions, transactionally rechecked approval, immutable booking events, organization-scoped CRM booking list/detail/actions, and the shared client Portal booking journey for OFFICE/ONLINE/HOME_VISIT.
+- Focused M4B verification passes: 23 Unit/Feature tests/93 assertions; focused PostgreSQL assignment/pending/race coverage passes with 10 tests/20 assertions. Final `make quality` passes with 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities; the new page's auto-fixable ESLint warnings were corrected before the final CI gate. Final `make ci` passes with healthy PostgreSQL/Redis, clean ESLint, and 40 PostgreSQL integration tests/77 assertions. Final Playwright passes 4/4 on desktop and mobile, including the interactive client booking journey.
+- M4C remains deferred, including OQ-002-dependent cancellation/rescheduling and completion/history work. Push and hosted exact-SHA verification are pending.
 
 ## Important Decisions
 
@@ -76,4 +84,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-13: `composer validate --strict` passed. The final local `make ci` passed: 9 unit tests/21 assertions, 79 feature tests/399 assertions, 22 PostgreSQL integration tests/44 assertions, Pint, Larastan with 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. M3 focused feature coverage passed with 15 tests/47 assertions; the PostgreSQL M3 integration suite passed with 22 tests/44 assertions. `npm run test:e2e` passed on desktop and mobile after applying the pending additive migrations to the local runtime database. `make scan-secrets` passed with no leaks. M0–M2 were not re-audited.
+2026-08-13: M4B local gates passed. `make quality`: 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/77 assertions. Focused M4B: 23 Unit/Feature tests/93 assertions and 10 PostgreSQL tests/20 assertions. `npm run test:e2e`: 4 desktop/mobile tests passed, including the interactive booking journey. M0–M3 were not re-audited.

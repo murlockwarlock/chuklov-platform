@@ -35,6 +35,7 @@ class CalculateAvailability
         private readonly OrganizationAuthorizer $authorizer,
         private readonly GetBookingLeadTime $leadTime,
         private readonly SlotCalculator $calculator,
+        private readonly SpecialistServiceAssignmentEligibility $eligibility,
     ) {}
 
     public function forStaff(
@@ -166,6 +167,17 @@ class CalculateAvailability
 
         $scheduleTimezone = $this->scheduleTimezone($specialist);
         $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
+
+        if (! $this->eligibility->exists($organizationId, $specialist->getKey(), $service->getKey())) {
+            return new AvailabilityResult(
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                scheduleTimezone: $scheduleTimezone,
+                displayTimezone: $resolvedDisplayTimezone,
+                slots: [],
+            );
+        }
+
         $dateEnd = $dateTo->nextDay();
         $rangeStart = $this->localBoundary($dateFrom, $scheduleTimezone);
         $rangeEnd = $this->localBoundary($dateEnd, $scheduleTimezone);

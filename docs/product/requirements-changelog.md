@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-08-13 — M4B owner decision and implementation traceability
+
+- Resolved OQ-009 as an explicit organization-scoped many-to-many Specialist-Service assignment. Assignments are required for availability and booking creation, managed by authorized CRM staff, tenant-safe, and removable without changing historical bookings.
+- Clarified REQ-BOOKING-002/003: unassigned pairs have no client availability; HOME_VISIT `PENDING_REVIEW` is non-blocking and approval must recheck the preferred interval transactionally before it becomes blocking.
+
 ## 2026-08-12 — M3 owner clarification
 
 - Added `REQ-SPECIALIST-001`: one organization-owned Specialist/Practitioner entity with display/full name, active state, optional same-organization staff User link, optional IANA timezone, audited management, and no implied schedule or service assignment.

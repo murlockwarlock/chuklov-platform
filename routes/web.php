@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AvailabilityController;
+use App\Http\Controllers\Portal\BookingController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\SectionController;
@@ -31,6 +32,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
 
         Route::middleware(RequireClientPortalSession::class)->group(function (): void {
             Route::get('/portal/availability', AvailabilityController::class)->name('portal.availability');
+            Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
+            Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/onboarding', [OnboardingController::class, 'show'])->name('portal.onboarding');

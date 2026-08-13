@@ -4,6 +4,7 @@ namespace App\Modules\Services\Domain\Models;
 
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use Database\Factories\ServiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -46,6 +47,12 @@ class Service extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    /** @return HasMany<SpecialistServiceAssignment, $this> */
+    public function specialistServiceAssignments(): HasMany
+    {
+        return $this->hasMany(SpecialistServiceAssignment::class);
     }
 
     public function catalogItemType(): CatalogItemType

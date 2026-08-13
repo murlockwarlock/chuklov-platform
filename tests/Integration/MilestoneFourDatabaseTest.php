@@ -8,6 +8,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Services\Domain\Models\Service;
@@ -175,6 +176,124 @@ class MilestoneFourDatabaseTest extends TestCase
                 'visit_format' => 'office',
                 'meeting_link_mode' => 'auto',
             ]);
+    }
+
+    public function test_pending_review_booking_does_not_block_but_requested_booking_does(): void
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+
+        $pending = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::PendingReview->value,
+                'starts_at' => $start,
+                'ends_at' => $start->addHour(),
+                'blocking_ends_at' => $start->addMinutes(75),
+            ]);
+
+        try {
+            DB::transaction(function () use ($client, $specialist, $service, $start): void {
+                Booking::factory()
+                    ->forClient($client)
+                    ->forSpecialist($specialist)
+                    ->forService($service)
+                    ->create([
+                        'status' => BookingStatus::Requested->value,
+                        'starts_at' => $start,
+                        'ends_at' => $start->addHour(),
+                        'blocking_ends_at' => $start->addMinutes(75),
+                    ]);
+            });
+            self::assertTrue(true);
+        } catch (QueryException) {
+            self::fail('A requested booking must not be blocked by a pending-review request.');
+        }
+
+        try {
+            DB::transaction(function () use ($client, $specialist, $service, $start): void {
+                Booking::factory()
+                    ->forClient($client)
+                    ->forSpecialist($specialist)
+                    ->forService($service)
+                    ->create([
+                        'status' => BookingStatus::Requested->value,
+                        'starts_at' => $start->addMinutes(15),
+                        'ends_at' => $start->addMinutes(75),
+                        'blocking_ends_at' => $start->addMinutes(90),
+                    ]);
+            });
+            self::fail('Two blocking requested bookings were accepted.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        self::assertModelExists($pending);
+    }
+
+    public function test_specialist_service_assignment_has_tenant_safe_ownership_and_unique_pair(): void
+    {
+        $organization = Organization::factory()->create();
+        $otherOrganization = Organization::factory()->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $otherSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create();
+        $otherService = Service::factory()->forOrganization($otherOrganization)->create();
+
+        $assignment = SpecialistServiceAssignment::factory()
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+
+        try {
+            DB::transaction(function () use ($assignment): void {
+                SpecialistServiceAssignment::query()->create([
+                    'organization_id' => $assignment->organization_id,
+                    'specialist_id' => $assignment->specialist_id,
+                    'service_id' => $assignment->service_id,
+                ]);
+            });
+            self::fail('The duplicate specialist-service assignment was accepted.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        try {
+            DB::transaction(function () use ($organization, $otherSpecialist, $service): void {
+                DB::table('specialist_service_assignments')->insert([
+                    'organization_id' => $organization->getKey(),
+                    'specialist_id' => $otherSpecialist->getKey(),
+                    'service_id' => $service->getKey(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+            self::fail('The cross-organization specialist assignment was accepted.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        try {
+            DB::transaction(function () use ($organization, $specialist, $otherService): void {
+                DB::table('specialist_service_assignments')->insert([
+                    'organization_id' => $organization->getKey(),
+                    'specialist_id' => $specialist->getKey(),
+                    'service_id' => $otherService->getKey(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            });
+            self::fail('The cross-organization service assignment was accepted.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        self::assertModelExists($assignment);
     }
 
     /** @return array<string, mixed> */

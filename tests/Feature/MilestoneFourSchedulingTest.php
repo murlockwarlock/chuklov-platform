@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
+use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignmentResource;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Models\User;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
@@ -12,15 +14,20 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
+use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
 use App\Modules\Scheduling\Application\CreateUnavailablePeriod;
+use App\Modules\Scheduling\Application\RejectHomeVisitBooking;
+use App\Modules\Scheduling\Application\RemoveSpecialistServiceAssignment;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
@@ -226,6 +233,258 @@ class MilestoneFourSchedulingTest extends TestCase
             format: VisitFormat::HomeVisit,
         );
         self::assertSame(BookingStatus::PendingReview, $booking->status);
+
+        $afterPending = app(CalculateAvailability::class)->forStaff(
+            $admin,
+            $specialist->id,
+            $service->id,
+            '2026-03-30',
+            '2026-03-30',
+            VisitFormat::HomeVisit,
+        );
+        self::assertContains('12:45', array_map(fn ($slot): string => $slot->startsAt->format('H:i'), $afterPending->slots));
+    }
+
+    public function test_explicit_assignments_support_many_to_many_and_removal_preserves_history(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create();
+        $secondService = Service::factory()->forOrganization($organization)->create([
+            'formats' => ['office'],
+        ]);
+
+        app(AssignSpecialistToService::class)->handle($admin, $secondSpecialist, $service);
+        app(AssignSpecialistToService::class)->handle($admin, $specialist, $secondService);
+
+        self::assertSame(2, $service->specialistServiceAssignments()->count());
+        self::assertSame(2, $specialist->specialistServiceAssignments()->count());
+
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $otherSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create();
+        $otherService = Service::factory()->forOrganization($otherOrganization)->create();
+
+        try {
+            app(AssignSpecialistToService::class)->handle($admin, $otherSpecialist, $service);
+            self::fail('The cross-organization specialist assignment was accepted.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        }
+
+        try {
+            app(AssignSpecialistToService::class)->handle($admin, $specialist, $otherService);
+            self::fail('The cross-organization service assignment was accepted.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        }
+
+        $this->expectException(ValidationException::class);
+        app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
+    }
+
+    public function test_removing_assignment_blocks_future_creation_without_deleting_historical_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '17:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $historical = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+            ]);
+        $assignment = $specialist->specialistServiceAssignments()->where('service_id', $service->id)->firstOrFail();
+
+        app(RemoveSpecialistServiceAssignment::class)->handle($admin, $assignment);
+        self::assertModelExists($historical);
+
+        $this->expectException(ValidationException::class);
+        app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 11, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+        );
+    }
+
+    public function test_home_visit_approval_rechecks_authoritative_availability_and_writes_history(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->forceFill(['formats' => ['home']])->save();
+        Carbon::setTestNow(CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '17:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $pending = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+        );
+
+        $approved = app(ApproveHomeVisitBooking::class)->handle($admin, $pending, 'Reviewed by CRM.');
+
+        self::assertSame(BookingStatus::Confirmed, $approved->status);
+        self::assertSame(2, BookingEvent::query()->where('booking_id', $pending->id)->count());
+        self::assertSame('Reviewed by CRM.', BookingEvent::query()->where('booking_id', $pending->id)->latest('id')->value('reason'));
+        self::assertNotContains('09:00', array_map(
+            fn ($slot): string => $slot->startsAt->format('H:i'),
+            app(CalculateAvailability::class)->forStaff(
+                $admin,
+                $specialist->id,
+                $service->id,
+                '2026-03-30',
+                '2026-03-30',
+                VisitFormat::HomeVisit,
+            )->slots,
+        ));
+    }
+
+    public function test_home_visit_approval_fails_when_a_blocking_booking_wins_the_preferred_time(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->forceFill(['formats' => ['home', 'office']])->save();
+        Carbon::setTestNow(CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '17:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $pending = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+        );
+        app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: Client::factory()->forOrganization($organization)->create(),
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+        );
+
+        $this->expectException(ValidationException::class);
+        app(ApproveHomeVisitBooking::class)->handle($admin, $pending);
+    }
+
+    public function test_home_visit_rejection_is_non_blocking_and_requires_a_reason(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->forceFill(['formats' => ['home']])->save();
+        Carbon::setTestNow(CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '17:00',
+        ]]);
+        $pending = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: Client::factory()->forOrganization($organization)->create(),
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+        );
+
+        $rejected = app(RejectHomeVisitBooking::class)->handle($admin, $pending, 'No home-visit capacity.');
+
+        self::assertSame(BookingStatus::Rejected, $rejected->status);
+        self::assertSame('No home-visit capacity.', BookingEvent::query()->where('booking_id', $pending->id)->latest('id')->value('reason'));
+        self::assertSame(2, BookingEvent::query()->where('booking_id', $pending->id)->count());
+    }
+
+    public function test_portal_can_select_assigned_pair_and_create_a_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Europe/Berlin']);
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'date_from' => '2026-03-30',
+                'date_to' => '2026-03-30',
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->where('services.0.id', $service->id)
+                ->where('specialists.0.id', $specialist->id)
+                ->where('availability.slots.0.startsAt', '2026-03-30T09:00:00+00:00')
+                ->where('query.displayTimezone', 'Europe/Berlin'));
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'client_timezone' => 'Europe/Berlin',
+            ])
+            ->assertRedirect();
+
+        self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
+    }
+
+    public function test_portal_returns_no_slots_and_creation_rejects_an_unassigned_pair(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $secondSpecialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->id,
+                'specialist_id' => $secondSpecialist->id,
+                'date_from' => '2026-04-06',
+                'date_to' => '2026-04-06',
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->where('availability', null));
+
+        $this->expectException(ValidationException::class);
+        app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $secondSpecialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+        );
     }
 
     public function test_booking_creation_accepts_only_authoritative_slot_starts(): void
@@ -380,6 +639,11 @@ class MilestoneFourSchedulingTest extends TestCase
 
         self::assertSame([], ScheduleExceptionResource::getEloquentQuery()->pluck('id')->all());
         self::assertSame([], UnavailablePeriodResource::getEloquentQuery()->pluck('id')->all());
+        self::assertSame(
+            [$specialist->specialistServiceAssignments()->where('service_id', $service->id)->value('id')],
+            SpecialistServiceAssignmentResource::getEloquentQuery()->pluck('id')->all(),
+        );
+        self::assertSame([], BookingResource::getEloquentQuery()->pluck('id')->all());
         $this->actingAs($admin);
         self::assertTrue(SchedulingConfiguration::canAccess());
 
@@ -399,6 +663,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'formats' => ['office', 'home', 'online'],
         ]);
         $this->setOrganization($organization);
+        app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
 
         return [$organization, $admin, $specialist, $service];
     }

@@ -10,7 +10,6 @@ Questions block only their dependent work.
 | OQ-005 | REQ-PAYMENT-006 | Which real payment providers, merchant entities, currencies, refund capabilities, and rollout order are contracted? | Milestone 13 adapters |
 | OQ-007 | REQ-REFERRAL-001 | Confirm bonus earning, redemption, expiry, refund reversal, and cash-out rules. | Milestone 11 ledger |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
-| OQ-009 | M4 specialist scheduling | Confirm whether specialists may be assigned to services, the required cardinality, and the authorization rules for that relationship. M3 creates no service-assignment behavior. | Milestone 4 scheduling |
 
 No open question blocks Milestone 0.
 
@@ -23,3 +22,7 @@ Phase 1 ordinary browser authentication is passwordless email authentication wit
 ### OQ-006 — RESOLVED 2026-08-12
 
 Legal wording is never invented or hardcoded by the application. M2 provides organization-scoped, locale-aware, versioned legal documents with draft/published/archived lifecycle, immutable published content, exact-version consent evidence, and a platform-controlled Phase 1 `PLATFORM_MANAGED` mode. Organizations cannot self-enable `ORGANIZATION_MANAGED`; future authorized organization-managed wording remains a separately scopeable Phase 2 capability. The organization/platform/legal owner supplies the actual legal text, jurisdiction, lawful basis, retention, and publication decisions through the managed records.
+
+### OQ-009 — RESOLVED 2026-08-13
+
+Specialist-to-Service eligibility is an explicit organization-scoped many-to-many relationship. One Specialist may be assigned to many Services and one Service may be assigned to many Specialists. Assignments are managed only by authorized CRM staff, require same-organization ownership, and are required for availability and booking creation. Inactive Specialists or Services remain non-bookable. Removing an assignment prevents future bookings for that pair without deleting or changing historical bookings. No skills, qualifications, commissions, price overrides, specialist-specific durations, inventory, or other unconfirmed behavior is implied.

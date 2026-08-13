@@ -40,6 +40,10 @@ class RecordAuditEvent
         'specialist.unavailable_period.created' => ['source'],
         'specialist.unavailable_period.deleted' => ['source'],
         'booking.created' => ['source', 'visit_format', 'status'],
+        'specialist.service.assigned' => ['source'],
+        'specialist.service.unassigned' => ['source'],
+        'booking.home_visit.approved' => ['source', 'status', 'visit_format'],
+        'booking.home_visit.rejected' => ['source', 'status', 'visit_format'],
     ];
 
     /** @param array<array-key, mixed> $metadata */

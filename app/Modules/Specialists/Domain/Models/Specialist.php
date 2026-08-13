@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use Database\Factories\SpecialistFactory;
@@ -59,6 +60,12 @@ class Specialist extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    /** @return HasMany<SpecialistServiceAssignment, $this> */
+    public function specialistServiceAssignments(): HasMany
+    {
+        return $this->hasMany(SpecialistServiceAssignment::class);
     }
 
     protected static function newFactory(): SpecialistFactory
