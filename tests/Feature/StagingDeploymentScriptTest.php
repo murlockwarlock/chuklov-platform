@@ -27,7 +27,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap rollback ERR', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
-        self::assertStringContainsString('CHUKLOV_APP_IP', $script);
+        self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
         self::assertStringContainsString('DYNAMIC_BANS', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);

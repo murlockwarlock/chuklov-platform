@@ -105,22 +105,33 @@ compose_backup="$backups/compose-before-$revision.yml"
 
 write_normalized_nftables() {
     local output="$1"
-    local app_container app_ip
-    app_container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q app)"
-    app_ip="$(docker inspect "$app_container" --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' | awk 'NF { print; exit }')"
+    local service container service_ip escaped_service_ip
+    local -a service_ips=()
 
-    if [[ ! "$app_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
-        echo "Could not resolve the isolated staging app container IP." >&2
-        return 1
-    fi
+    for service in postgres redis app horizon scheduler telegram; do
+        container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q "$service")"
+        service_ip="$(docker inspect "$container" --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' | awk 'NF { print; exit }')"
+
+        if [[ ! "$service_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            echo "Could not resolve the isolated staging $service container IP." >&2
+            return 1
+        fi
+
+        service_ips+=("$service_ip")
+    done
 
     nft list ruleset \
-        | sed -E "s/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g; s/$app_ip/CHUKLOV_APP_IP/g" \
+        | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g' \
         | awk '
             /^table / { in_fail2ban = ($0 == "table inet f2b-table {") }
             in_fail2ban && /^[[:space:]]*elements = / { print "\t\telements = { DYNAMIC_BANS }"; next }
             { print }
         ' > "$output"
+
+    for service_ip in "${service_ips[@]}"; do
+        escaped_service_ip="${service_ip//./\.}"
+        sed -i "s/$escaped_service_ip/CHUKLOV_CONTAINER_IP/g" "$output"
+    done
 }
 
 if [[ -n "$expected_revision" && "$current_revision" != "$expected_revision" ]]; then
