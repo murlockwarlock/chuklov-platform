@@ -140,7 +140,7 @@ done
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
     sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$database_backup"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
-    sh -lc 'pg_restore -l' < "$database_backup" > /dev/null
+    pg_restore -l < "$database_backup" > /dev/null
 chmod 0600 "$database_backup"
 cp -a "$compose" "$compose_backup"
 chmod 0600 "$compose_backup"

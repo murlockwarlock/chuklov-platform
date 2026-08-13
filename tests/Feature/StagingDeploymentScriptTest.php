@@ -17,6 +17,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('--project-name "$project"', $script);
         self::assertStringContainsString('pg_dump', $script);
         self::assertStringContainsString('pg_restore -l', $script);
+        self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
         self::assertStringContainsString('up -d postgres redis', $script);
