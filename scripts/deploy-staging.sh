@@ -104,7 +104,7 @@ database_backup="$backups/postgresql-before-$revision.dump"
 compose_backup="$backups/compose-before-$revision.yml"
 
 write_normalized_nftables() {
-    local output="$1"
+    local output="$1" nftables_dump loopback_guard_count
     local service container service_ip escaped_service_ip
     local -a service_ips=()
 
@@ -120,13 +120,25 @@ write_normalized_nftables() {
         service_ips+=("$service_ip")
     done
 
-    nft list ruleset \
+    nftables_dump="$(mktemp)"
+    nft list ruleset > "$nftables_dump"
+    loopback_guard_count="$(grep -Ec 'ip daddr 127\.0\.0\.1 iifname != "lo" tcp dport 18080 .* drop$' "$nftables_dump" || true)"
+
+    if [[ "$loopback_guard_count" -ne 1 ]]; then
+        echo "Expected exactly one loopback guard for the isolated staging app port." >&2
+        rm -f "$nftables_dump"
+        return 1
+    fi
+
+    sed -E '/ip daddr 127\.0\.0\.1 iifname != "lo" tcp dport 18080 .* drop$/d' "$nftables_dump" \
         | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g' \
         | awk '
             /^table / { in_fail2ban = ($0 == "table inet f2b-table {") }
             in_fail2ban && /^[[:space:]]*elements = / { print "\t\telements = { DYNAMIC_BANS }"; next }
             { print }
         ' > "$output"
+    printf '%s\n' 'CHUKLOV_LOOPBACK_GUARD_PRESENT' >> "$output"
+    rm -f "$nftables_dump"
 
     for service_ip in "${service_ips[@]}"; do
         escaped_service_ip="${service_ip//./\.}"

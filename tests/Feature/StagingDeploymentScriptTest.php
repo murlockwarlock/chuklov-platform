@@ -30,6 +30,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
+        self::assertStringContainsString('CHUKLOV_LOOPBACK_GUARD_PRESENT', $script);
+        self::assertStringContainsString('Expected exactly one loopback guard', $script);
         self::assertStringContainsString('DYNAMIC_BANS', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
