@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 type ScenarioFixture = {
     email: string;
     password: string;
+    templateId: number;
     ruleId: number;
     ruleKey: string;
     actionId: number;
@@ -62,7 +63,7 @@ function createScenarioFixture(): ScenarioFixture {
         $event = app(\\App\\Modules\\Scenarios\\Application\\RecordScenarioEvent::class)->bookingCompleted($booking, 'playwright-'.$suffix, \\Carbon\\CarbonImmutable::now());
         app(\\App\\Modules\\Scenarios\\Application\\MaterializeScenarioEvent::class)->handle($event->getKey());
         $action = \\App\\Modules\\Scenarios\\Domain\\Models\\ScenarioAction::query()->where('scenario_rule_id', $rule->getKey())->sole();
-        echo json_encode(['email' => $email, 'password' => $password, 'ruleId' => $rule->getKey(), 'ruleKey' => $rule->rule_key, 'actionId' => $action->getKey()], JSON_THROW_ON_ERROR);
+        echo json_encode(['email' => $email, 'password' => $password, 'templateId' => $template->getKey(), 'ruleId' => $rule->getKey(), 'ruleKey' => $rule->rule_key, 'actionId' => $action->getKey()], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-scenario-${process.pid}`;
     mkdirSync(psyshConfigDirectory, { recursive: true });
@@ -112,6 +113,18 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await saveResponse;
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}`);
     await expect(page.getByText('48 hours', { exact: true })).toBeVisible();
+
+    await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
+    await page.locator('textarea').fill('Updated Playwright template {{ client.full_name }}.');
+    const templateSave = page.getByRole('button', { name: /Save changes|Save/i });
+    const templateSaveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST'
+        && response.status() === 200);
+    await templateSave.click();
+    await templateSaveResponse;
+    await page.goto(`/admin/notification-templates/${fixture.templateId}`);
+    await expect(page.getByText('v2 — published')).toBeVisible();
+    await expect(page.getByText('Updated Playwright template {{ client.full_name }}.')).toBeVisible();
 
     await page.goto('/admin/scenario-actions');
     await expect(page.getByRole('heading', { name: 'Scenario Actions' })).toBeVisible();

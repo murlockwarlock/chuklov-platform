@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ScenarioEventType $trigger_event
  * @property ScenarioRulePurpose $purpose
  * @property array<string, mixed> $render_context
+ * @property array<int, array<string, mixed>> $condition_snapshot
  * @property list<string> $channel_priority
  */
 #[Fillable([
@@ -29,6 +30,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'template_version_id',
     'trigger_event',
     'rule_version',
+    'condition_snapshot',
     'purpose',
     'channel_priority',
     'render_context',
@@ -97,6 +99,7 @@ class ScenarioAction extends Model
             'purpose' => ScenarioRulePurpose::class,
             'channel_priority' => 'array',
             'render_context' => 'array',
+            'condition_snapshot' => 'array',
             'scheduled_for' => 'datetime',
             'processing_started_at' => 'datetime',
             'delivered_at' => 'datetime',

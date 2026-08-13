@@ -114,6 +114,7 @@ final class MaterializeScenarioEvent
             'template_version_id' => $template->getKey(),
             'trigger_event' => $event->event_name->value,
             'rule_version' => $rule->version,
+            'condition_snapshot' => json_encode($rule->conditions, JSON_THROW_ON_ERROR),
             'purpose' => $rule->purpose->value,
             'channel_priority' => json_encode($rule->channel_priority, JSON_THROW_ON_ERROR),
             'render_context' => json_encode($this->contextFactory->renderContext($context, $recipient), JSON_THROW_ON_ERROR),

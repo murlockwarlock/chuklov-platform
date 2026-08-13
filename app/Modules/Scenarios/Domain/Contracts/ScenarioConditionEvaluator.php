@@ -9,5 +9,7 @@ interface ScenarioConditionEvaluator
 {
     public function type(): string;
 
+    public function validate(ScenarioCondition $condition): void;
+
     public function evaluate(ScenarioCondition $condition, ScenarioEvaluationContext $context): bool;
 }

@@ -26,6 +26,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- M5A remediation preserves materialized rule-condition semantics, continues ordered fallback after retry exhaustion, safely recovers stale pre-send work, revalidates active internal membership at delivery, rejects invalid typed conditions, and restores immutable template version editing through Filament.
 - Filament organization resolution is persistent across Livewire updates, preserving server-derived tenant authorization for scenario configuration mutations; unsupported condition types are rejected and explicit suppressed delivery outcomes close actions without fallback.
 - Milestone 3 managed content now permits multiple organization-scoped records per section and locale while preserving ordered portal rendering through a non-unique lookup index.
 - Composer package metadata identifies the private client project as proprietary.

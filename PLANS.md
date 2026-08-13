@@ -17,4 +17,4 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-No active implementation plans. M5A outcomes are recorded in `PROJECT_STATUS.md`, `ROADMAP.md`, the architecture documents, and `CHANGELOG.md`; M5B requires a new plan before implementation.
+No active implementation plans. M5A narrow remediation outcomes are recorded in `PROJECT_STATUS.md`, `CHANGELOG.md`, and the affected architecture documents. M5B requires a separate plan and remains unstarted.

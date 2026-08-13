@@ -19,7 +19,17 @@ final class ConditionEvaluatorRegistry
         foreach ($conditions->conditions as $condition) {
             $evaluator = $this->evaluator($condition->type);
 
-            if ($evaluator === null || ! $evaluator->evaluate($condition, $context)) {
+            if ($evaluator === null) {
+                return false;
+            }
+
+            try {
+                $evaluator->validate($condition);
+            } catch (InvalidArgumentException) {
+                return false;
+            }
+
+            if (! $evaluator->evaluate($condition, $context)) {
                 return false;
             }
         }
@@ -30,9 +40,13 @@ final class ConditionEvaluatorRegistry
     public function validate(ScenarioConditionSet $conditions): void
     {
         foreach ($conditions->conditions as $condition) {
-            if ($this->evaluator($condition->type) === null) {
+            $evaluator = $this->evaluator($condition->type);
+
+            if ($evaluator === null) {
                 throw new InvalidArgumentException('The scenario condition type is not supported.');
             }
+
+            $evaluator->validate($condition);
         }
     }
 

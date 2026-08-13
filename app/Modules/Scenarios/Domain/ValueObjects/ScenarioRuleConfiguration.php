@@ -52,6 +52,10 @@ final readonly class ScenarioRuleConfiguration
             throw new InvalidArgumentException('The scenario template version is invalid.');
         }
 
+        if (array_key_exists('conditions', $data) && ! is_array($data['conditions'])) {
+            throw new InvalidArgumentException('The scenario condition set is invalid.');
+        }
+
         return new self(
             ruleKey: $ruleKey,
             name: $name,
@@ -60,7 +64,7 @@ final readonly class ScenarioRuleConfiguration
             delayValue: $delayValue,
             delayUnit: $delayUnit,
             purpose: $purpose,
-            conditions: ScenarioConditionSet::from(is_array($data['conditions'] ?? null) ? $data['conditions'] : []),
+            conditions: ScenarioConditionSet::from($data['conditions'] ?? []),
             recipientStrategy: ScenarioRecipientStrategy::from(is_array($data['recipient_strategy'] ?? null) ? $data['recipient_strategy'] : []),
             channelPriority: ScenarioChannelPriority::from(is_array($data['channel_priority'] ?? null) ? $data['channel_priority'] : []),
             templateVersionId: $templateVersionId,

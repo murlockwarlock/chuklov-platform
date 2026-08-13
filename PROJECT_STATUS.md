@@ -3,7 +3,7 @@
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 5A — Scenario / Notification Engine foundation
-- Status: READY_FOR_CONTINUATION — M4 remains CLOSED / accepted; M5A foundation is implemented and M5B is not started
+- Status: M5A_REMEDIATION_READY_FOR_INDEPENDENT_RECHECK — M4 remains CLOSED / accepted; M5B is not started
 
 ## Completed Remediation
 
@@ -130,3 +130,12 @@
 - Final local M5A verification: `make quality` passes with 21 Unit tests/43 assertions and 158 Feature tests/868 assertions; Pint, ESLint, Larastan (0 errors), vue-tsc, Vite, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. `make ci` passes with healthy PostgreSQL/Redis and 45 PostgreSQL integration tests/100 assertions. Full Playwright passes 8/8 desktop/mobile tests, including the new scenario CRM flow. Focused M5A PostgreSQL concurrency passes 2/2 tests/9 assertions.
 - M5B and later milestones remain unstarted. No Finance, Medical, Surveys, RAG, AI, Broadcasts, subscriptions, payments, MAX, Instagram, calendar/video provider, or production-hardening behavior is in scope.
 - The normalized requirements do not define the conditional +72h seed condition. It remains a narrow M5B owner decision; M5A does not guess or implement it.
+
+## Milestone 5A narrow remediation
+
+- Started from reviewed implementation SHA `7633eef136a3280ed7a2348598f2af67b3fe9f2b`; scope remained limited to the six confirmed M5A blockers.
+- Retry exhaustion now terminalizes only the exhausted delivery and continues to an eligible fallback. Stale pre-send claims and states between terminal primary and pending fallback return to durable retry discovery, while a genuinely in-flight unknown attempt remains terminally uncertain.
+- Internal delivery revalidates active same-organization membership and verified identity. Typed condition configuration rejects malformed structures and invalid booking-status/language values and fails closed during execution.
+- ScenarioActions persist the materialized typed condition snapshot, so later rule edits do not rewrite older action semantics. Filament template edits derive immutable identity from the scoped record, create the next immutable version, and preserve existing action pins.
+- Focused M5A remediation and prior M5A Unit/Feature coverage passes with 41 tests/145 assertions. Focused PostgreSQL process-concurrency coverage passes with 2 tests/9 assertions. `make quality` passes with 27 Unit tests/49 assertions and 174 Feature tests/929 assertions; Pint, ESLint, Larastan (0 errors), vue-tsc, Vite, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. `make ci` passes with 45 PostgreSQL integration tests/100 assertions. Focused scenario Playwright passes 2/2 desktop/mobile tests including Filament template version editing.
+- The Telegram blank-token classification follow-up was not changed. M5B/M6+ remain unstarted, the undefined +72h condition remains unimplemented, and `.codex/config.toml` remains unchanged.

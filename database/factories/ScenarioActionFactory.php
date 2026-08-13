@@ -24,6 +24,7 @@ class ScenarioActionFactory extends Factory
             'recipient_type' => 'client',
             'trigger_event' => ScenarioEventType::BookingCompleted->value,
             'rule_version' => 1,
+            'condition_snapshot' => [],
             'purpose' => ScenarioRulePurpose::Service->value,
             'channel_priority' => ['telegram'],
             'render_context' => ['client' => ['full_name' => 'Client']],
@@ -59,6 +60,7 @@ class ScenarioActionFactory extends Factory
             'organization_id' => $rule->organization_id,
             'scenario_rule_id' => $rule->getKey(),
             'rule_version' => $rule->version,
+            'condition_snapshot' => $rule->conditions,
         ]));
     }
 

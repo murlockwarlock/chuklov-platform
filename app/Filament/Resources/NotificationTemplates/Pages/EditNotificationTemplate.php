@@ -32,6 +32,10 @@ final class EditNotificationTemplate extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(UpdateNotificationTemplate::class)->handle($actor, $record, $data);
+        return app(UpdateNotificationTemplate::class)->handle($actor, $record, [
+            ...$data,
+            'template_key' => $record->template_key,
+            'locale' => $record->locale,
+        ]);
     }
 }

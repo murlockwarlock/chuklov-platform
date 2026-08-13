@@ -22,4 +22,4 @@ Statuses are objective: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`. Complet
 | M15 Hardening / E2E | Release candidate withstands critical failures | Full security/E2E, dependency/privacy/load/failure-mode review | NOT_STARTED | Critical Playwright/security suite and release checklist pass | M1–M14 in scope | All Phase 1 |
 | M16 Production | Recoverable monitored production service | Atomic deploy, rollback, backup/restore, monitoring, smoke tests | NOT_STARTED | Exact revision healthy; restore and rollback drills verified | M15 | FOUNDATION, SEC |
 
-Current detail: `PROJECT_STATUS.md` (M5A foundation ready for continuation; M5B not started). Product acceptance detail: `docs/product/requirements.md`.
+Current detail: `PROJECT_STATUS.md` (M5A narrow remediation ready for independent recheck; M5B not started). Product acceptance detail: `docs/product/requirements.md`.

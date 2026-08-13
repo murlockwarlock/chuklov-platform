@@ -5,6 +5,7 @@ namespace App\Modules\Scenarios\Application;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioChannelIdentity;
 
@@ -20,6 +21,16 @@ final class ScenarioChannelIdentityResolver
                 ->where('verification_status', ChannelIdentityStatus::Verified->value)
                 ->first();
         } elseif ($action->recipient_type === 'internal' && $action->recipient_user_id !== null) {
+            $isActiveMember = OrganizationMembership::query()
+                ->where('organization_id', $action->organization_id)
+                ->where('user_id', $action->recipient_user_id)
+                ->active()
+                ->exists();
+
+            if (! $isActiveMember) {
+                return null;
+            }
+
             $identity = OrganizationChannelIdentity::query()
                 ->where('organization_id', $action->organization_id)
                 ->where('user_id', $action->recipient_user_id)
