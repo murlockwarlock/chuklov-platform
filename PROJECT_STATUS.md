@@ -2,8 +2,8 @@
 
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 4 remediation — final review recheck
-- Status: M4 remediation complete; ready for independent Sol recheck after passing local and exact-SHA hosted gates
+- Current milestone: Milestone 5 — Scenario / Notification Engine (next; not started)
+- Status: Milestone 4 CLOSED / accepted after independent Sol final recheck; GO FOR MILESTONE 5
 
 ## Completed Remediation
 
@@ -102,7 +102,7 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-13: M4 remediation complete and ready for independent Sol recheck. Focused remediation/M4: 58 tests/256 assertions; focused PostgreSQL: 13 tests/34 assertions including process-level race coverage and BookingEvent DELETE immutability. `make quality`: 15 Unit tests/32 assertions, 139 Feature tests/746 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 43 PostgreSQL integration tests/90 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Hosted exact-SHA CI run 31701386393 passed all jobs for 289ec953cd4f4d11b0a5b8cf803dbfdd064d6a7. M0–M3 were not re-audited.
+2026-08-13: Final M4 narrow remediation evidence includes 6 new Feature tests/55 assertions; `make quality` with 15 Unit tests/32 assertions and 145 Feature tests/801 assertions; `make ci` with 43 PostgreSQL integration tests/91 assertions; and Playwright 6/6 desktop/mobile tests. Hosted exact-SHA CI run `31707507497` passed all jobs for `9730d1fca0137c063deabf853b94e80f54a0936`. Independent Sol final recheck accepted M4 and issued `GO FOR MILESTONE 5`. M0–M3 were not re-audited.
 
 ## Milestone 4 final narrow remediation
 
@@ -110,3 +110,12 @@
 - Added a reusable Filament schedule-impact preview/acknowledgement handoff across scheduling mutations, including quick Specialist deactivation and exception deletion. The digest and safe affected-booking projection are retained server-side; stale acknowledgements, including non-empty-to-empty changes, are rejected.
 - Synchronized same-page Portal reschedule/timezone state and rotated booking idempotency keys only after accepted creation. Added transition-aware display-local day boundaries for DST midnight gaps/overlaps, with Cairo, Havana, Santiago, Berlin, and large-offset coverage.
 - Narrow remediation verification passes: 6 new Feature tests/55 assertions; `make quality` 15 Unit tests/32 assertions and 145 Feature tests/801 assertions; `make ci` 43 PostgreSQL integration tests/91 assertions; Playwright 6/6 desktop/mobile.
+
+## Milestone 4 closeout
+
+- Milestone 4 is CLOSED and accepted after final remediation and independent Sol recheck. No remaining acceptance blocker or remediation requirement remains.
+- Final accepted M4 implementation SHA: `9730d1fca0137c063deabaf853b94e80f54a0936`.
+- Hosted exact-SHA CI run `31707507497` passed for the accepted implementation SHA.
+- Independent Sol final decision: `GO FOR MILESTONE 5`.
+- Milestone 5 — Scenario / Notification Engine is next and has not started; no M5 implementation work is recorded.
+- Non-blocking M4-15 follow-up: a future focused regression may add a direct fresh-booking attempt with Service Catalog disabled and assert that no `Booking`, `BookingEvent`, or `AuditEvent` is created. This is not an M4 acceptance blocker and does not reopen M4.
