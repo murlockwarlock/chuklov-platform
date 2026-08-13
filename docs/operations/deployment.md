@@ -1,8 +1,17 @@
 # Deployment
 
-M16 will implement ADR-014: exact revision → locked install/build → shared environment/private storage → preflight → backward-compatible migration → health check → atomic revision switch → graceful Horizon reload → recorded revision.
+Production deployment remains deferred to M16 under ADR-014.
 
-`make deploy` is intentionally guarded until this runbook is implemented and production authority/configuration exists.
+The isolated staging host uses `scripts/deploy-staging.sh`. Copy `.env.staging-deploy.example` to the ignored `.env.staging-deploy`, fill the SSH connection locally, fetch the remote revision, and deploy an exact commit reachable from `origin/main`:
+
+```bash
+git fetch origin main
+scripts/deploy-staging.sh <new-full-sha> <expected-current-full-sha>
+```
+
+The script refuses a dirty working tree, unexpected current revision, unexpected app binding, or incomplete Compose service set. It captures nginx, nftables, listening ports, systemd, PM2, Docker, and host PostgreSQL baselines; creates and validates a staging-only PostgreSQL dump; builds locked PHP/Node artifacts; validates the updated Compose file; runs forward staging migrations; atomically switches the release; recreates app, Horizon, scheduler, and Telegram; reconciles PostgreSQL/Redis without needless stateful restart; verifies health; and compares unrelated infrastructure with the baseline. Failure after switching restores the previous application release and runtime Compose file. It never rolls back migrations automatically, deletes volumes, prunes Docker, or changes nginx/firewall configuration.
+
+Deployment credentials and the staging application environment remain outside Git. The committed example contains names and non-secret defaults only.
 
 ## M1 legacy membership transition
 

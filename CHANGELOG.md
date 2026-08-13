@@ -8,6 +8,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 - Ordinary-browser Telegram authentication through a short-lived, single-use, browser-bound bot deep link, resolving the same verified organization-scoped Client as the Mini App while retaining passwordless email as an alternative.
 - Durable client/CRM copy rules that exclude developer terminology and generic product filler from ordinary user interfaces.
+- Exact-revision isolated staging deployment automation with preflight baselines, validated staging database backup, atomic release switching, runtime refresh, health checks, unrelated-service comparisons, and application rollback.
 
 - Milestone 5A Scenario / Notification Engine foundation: organization-scoped PostgreSQL scenario events, typed configurable rules and conditions, localized immutable template versions, verified client/internal recipient resolution, ordered channel fallback, durable scheduled actions, idempotent delivery attempts, PostgreSQL-safe worker claiming, CRM configuration/history, and the Booking `COMPLETED` transactional follow-up slice. M5B scenarios and the undefined +72h condition remain out of scope.
 
