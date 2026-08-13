@@ -103,6 +103,26 @@ snapshot="$backups/predeploy-$revision"
 database_backup="$backups/postgresql-before-$revision.dump"
 compose_backup="$backups/compose-before-$revision.yml"
 
+write_normalized_nftables() {
+    local output="$1"
+    local app_container app_ip
+    app_container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q app)"
+    app_ip="$(docker inspect "$app_container" --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' | awk 'NF { print; exit }')"
+
+    if [[ ! "$app_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        echo "Could not resolve the isolated staging app container IP." >&2
+        return 1
+    fi
+
+    nft list ruleset \
+        | sed -E "s/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g; s/$app_ip/CHUKLOV_APP_IP/g" \
+        | awk '
+            /^table / { in_fail2ban = ($0 == "table inet f2b-table {") }
+            in_fail2ban && /^[[:space:]]*elements = / { print "\t\telements = { DYNAMIC_BANS }"; next }
+            { print }
+        ' > "$output"
+}
+
 if [[ -n "$expected_revision" && "$current_revision" != "$expected_revision" ]]; then
     echo "Remote revision mismatch: expected $expected_revision, found $current_revision" >&2
     exit 1
@@ -133,7 +153,7 @@ systemctl list-units --type=service --state=running --no-pager > "$snapshot/runn
 pm2 jlist > "$snapshot/pm2.json"
 pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort > "$snapshot/pm2-status.tsv"
 nginx -T > "$snapshot/nginx-effective.txt" 2>&1
-nft list ruleset | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g' > "$snapshot/nftables.txt"
+write_normalized_nftables "$snapshot/nftables.txt"
 docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' | sort > "$snapshot/docker.txt"
 sudo -u postgres psql -Atqc 'select datname from pg_database order by datname' > "$snapshot/host-databases.txt"
 chmod 0600 "$snapshot"/*
@@ -190,7 +210,7 @@ rollback() {
     mv -Tf "$root/current.rollback" "$root/current"
     cp "$compose_backup" "$compose"
     cd "$root"
-    docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram || true
+    docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
 }
 trap rollback ERR
 
@@ -201,9 +221,9 @@ mv -Tf "$root/current.next" "$root/current"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan migrate --force < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan optimize < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan filament:optimize < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d postgres redis
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait
+docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d postgres redis < /dev/null
+docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
+docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait < /dev/null
 
 curl --noproxy '*' --fail --silent --show-error --retry 10 --retry-delay 2 "$health_url"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status < /dev/null
@@ -217,7 +237,8 @@ for service in nginx pm2-root postgresql@16-main webstore-darimiru docker; do
     systemctl is-active --quiet "$service"
 done
 cmp -s "$snapshot/nginx-effective.txt" <(nginx -T 2>&1)
-cmp -s "$snapshot/nftables.txt" <(nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g')
+write_normalized_nftables "$snapshot/nftables.after.txt"
+cmp -s "$snapshot/nftables.txt" "$snapshot/nftables.after.txt"
 cmp -s "$snapshot/host-databases.txt" <(sudo -u postgres psql -Atqc 'select datname from pg_database order by datname')
 cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort)
 cmp -s "$snapshot/pm2-status.tsv" <(pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort)

@@ -21,10 +21,14 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
+        self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
+        self::assertStringContainsString('up -d --wait < /dev/null', $script);
         self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image)'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap rollback ERR', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
+        self::assertStringContainsString('CHUKLOV_APP_IP', $script);
+        self::assertStringContainsString('DYNAMIC_BANS', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
