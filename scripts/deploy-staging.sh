@@ -216,14 +216,16 @@ docker compose --project-name "$project" --env-file "$environment" -f "$compose.
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image)' > /dev/null
 
 rollback() {
-    echo "Deployment failed; restoring application release $current_revision." >&2
+    local failed_line="${1:-unknown}"
+    local failed_status="${2:-1}"
+    echo "Deployment failed at post-switch line $failed_line (exit $failed_status); restoring application release $current_revision." >&2
     ln -s "$previous_target" "$root/current.rollback"
     mv -Tf "$root/current.rollback" "$root/current"
     cp "$compose_backup" "$compose"
     cd "$root"
     docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
 }
-trap rollback ERR
+trap 'rollback "$LINENO" "$?"' ERR
 
 mv "$compose.next" "$compose"
 ln -s "$release" "$root/current.next"
@@ -236,23 +238,57 @@ docker compose --project-name "$project" --env-file "$environment" -f "$compose"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait < /dev/null
 
-curl --noproxy '*' --fail --silent --show-error --retry 10 --retry-delay 2 "$health_url"
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq app
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq horizon
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq scheduler
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq telegram
+echo "Runtime containers refreshed; verifying application health."
+curl --noproxy '*' --fail --silent --show-error --retry 15 --retry-delay 2 "$health_url"
+for attempt in $(seq 1 15); do
+    if docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status < /dev/null; then
+        break
+    fi
+
+    if [[ "$attempt" -eq 15 ]]; then
+        echo "Horizon did not report a running supervisor before the verification deadline." >&2
+        false
+    fi
+
+    sleep 2
+done
+for service in app horizon scheduler telegram; do
+    if ! docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq "$service"; then
+        echo "Required runtime service is not running: $service" >&2
+        false
+    fi
+done
+echo "Application, Horizon, scheduler, and Telegram runtime are healthy."
 
 nginx -t
 for service in nginx pm2-root postgresql@16-main webstore-darimiru docker; do
-    systemctl is-active --quiet "$service"
+    if ! systemctl is-active --quiet "$service"; then
+        echo "Protected system service is not active: $service" >&2
+        false
+    fi
 done
-cmp -s "$snapshot/nginx-effective.txt" <(nginx -T 2>&1)
+if ! cmp -s "$snapshot/nginx-effective.txt" <(nginx -T 2>&1); then
+    echo "Protected nginx configuration changed during deployment." >&2
+    false
+fi
 write_normalized_nftables "$snapshot/nftables.after.txt"
-cmp -s "$snapshot/nftables.txt" "$snapshot/nftables.after.txt"
-cmp -s "$snapshot/host-databases.txt" <(sudo -u postgres psql -Atqc 'select datname from pg_database order by datname')
-cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort)
-cmp -s "$snapshot/pm2-status.tsv" <(pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort)
+if ! cmp -s "$snapshot/nftables.txt" "$snapshot/nftables.after.txt"; then
+    echo "Protected nftables rules changed during deployment." >&2
+    false
+fi
+if ! cmp -s "$snapshot/host-databases.txt" <(sudo -u postgres psql -Atqc 'select datname from pg_database order by datname'); then
+    echo "Host PostgreSQL database inventory changed during deployment." >&2
+    false
+fi
+if ! cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort); then
+    echo "Host listening-port inventory changed during deployment." >&2
+    false
+fi
+if ! cmp -s "$snapshot/pm2-status.tsv" <(pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort); then
+    echo "PM2 process status changed during deployment." >&2
+    false
+fi
+echo "Protected host services and routing match the pre-deploy baseline."
 
 printf '%s\n' "$revision" > "$root/REVISION"
 chmod -R a-w "$release"

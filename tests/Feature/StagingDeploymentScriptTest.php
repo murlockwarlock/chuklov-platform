@@ -25,7 +25,9 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('up -d --wait < /dev/null', $script);
         self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image)'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
-        self::assertStringContainsString('trap rollback ERR', $script);
+        self::assertStringContainsString('trap \'rollback "$LINENO" "$?"\' ERR', $script);
+        self::assertStringContainsString('Horizon did not report a running supervisor', $script);
+        self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
         self::assertStringContainsString('DYNAMIC_BANS', $script);
