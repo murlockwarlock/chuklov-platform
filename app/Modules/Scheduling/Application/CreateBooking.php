@@ -156,7 +156,7 @@ class CreateBooking
             try {
                 $booking->save();
             } catch (QueryException $exception) {
-                if ($this->isExclusionViolation($exception)) {
+                if ($this->isBookingConflict($exception)) {
                     throw ValidationException::withMessages([
                         'startsAt' => 'The selected time is no longer available.',
                     ]);
@@ -265,8 +265,10 @@ class CreateBooking
         ];
     }
 
-    private function isExclusionViolation(QueryException $exception): bool
+    private function isBookingConflict(QueryException $exception): bool
     {
-        return $exception->getCode() === '23P01' || ($exception->errorInfo[0] ?? null) === '23P01';
+        $sqlState = $exception->getCode() ?: ($exception->errorInfo[0] ?? null);
+
+        return in_array($sqlState, ['23P01', '40P01'], true);
     }
 }

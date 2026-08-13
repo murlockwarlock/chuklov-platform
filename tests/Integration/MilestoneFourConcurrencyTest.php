@@ -91,7 +91,7 @@ class MilestoneFourConcurrencyTest extends TestCase
             return 'inserted';
         } catch (\Throwable $exception) {
             if ($exception instanceof QueryException
-                && (($exception->getCode() === '23P01') || (($exception->errorInfo[0] ?? null) === '23P01'))) {
+                && in_array($exception->getCode() ?: ($exception->errorInfo[0] ?? null), ['23P01', '40P01'], true)) {
                 return 'conflict';
             }
 
