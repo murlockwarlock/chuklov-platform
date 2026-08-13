@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import { getTelegramInitData, resolveClientRuntime, type ClientRuntimeMode } from '../../runtime/clientRuntime';
 
 type Service = {
@@ -13,6 +13,9 @@ type Portal = {
     authenticated: boolean;
     clientName: string | null;
     telegramAuthUrl: string;
+    telegramWebRequestUrl: string;
+    telegramWebStatusUrl: string;
+    telegramWebUrl: string | null;
     emailRequestUrl: string;
     emailVerifyUrl: string;
     emailCodeSent: boolean;
@@ -28,20 +31,88 @@ type Portal = {
 const props = defineProps<{ services: Service[]; portal: Portal }>();
 const runtimeMode: ClientRuntimeMode = resolveClientRuntime();
 const authForm = useForm<{ initData: string }>({ initData: getTelegramInitData() ?? '' });
+const telegramWebForm = useForm<Record<string, never>>({});
 const emailRequestForm = useForm<{ email: string }>({ email: '' });
 const emailVerifyForm = useForm<{ email: string; code: string }>({ email: '', code: '' });
 const telegramLinkForm = useForm<Record<string, never>>({});
 const authError = ref<string | null>(null);
+let telegramStatusTimer: ReturnType<typeof setInterval> | null = null;
 
-const runtimeLabel = computed(() =>
-    runtimeMode === 'telegram-mini-app' ? 'Telegram Mini App' : 'Responsive web',
-);
+function stopTelegramStatusPolling(): void {
+    if (telegramStatusTimer !== null) {
+        clearInterval(telegramStatusTimer);
+        telegramStatusTimer = null;
+    }
+}
+
+async function checkTelegramWebAuthentication(): Promise<void> {
+    try {
+        const response = await fetch(props.portal.telegramWebStatusUrl, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+        const result = await response.json() as { status: string; redirect?: string };
+
+        if (result.status === 'authenticated' && result.redirect !== undefined) {
+            stopTelegramStatusPolling();
+            window.location.assign(result.redirect);
+        } else if (result.status === 'expired') {
+            stopTelegramStatusPolling();
+            authError.value = 'Ссылка для входа истекла. Попробуйте ещё раз.';
+        }
+    } catch {
+        authError.value = 'Не удалось проверить вход. Попробуйте ещё раз.';
+    }
+}
+
+function startTelegramStatusPolling(): void {
+    stopTelegramStatusPolling();
+    void checkTelegramWebAuthentication();
+    telegramStatusTimer = setInterval(() => void checkTelegramWebAuthentication(), 1500);
+}
+
+function requestTelegramWebAuthentication(): void {
+    authError.value = null;
+    const telegramWindow = window.open('about:blank', 'telegram-authentication');
+
+    if (telegramWindow !== null) {
+        telegramWindow.opener = null;
+    }
+
+    telegramWebForm.post(props.portal.telegramWebRequestUrl, {
+        preserveScroll: true,
+        onSuccess: () => {
+            if (props.portal.telegramWebUrl === null) {
+                authError.value = 'Сейчас вход через Telegram недоступен.';
+
+                return;
+            }
+
+            startTelegramStatusPolling();
+            if (telegramWindow !== null) {
+                telegramWindow.location.assign(props.portal.telegramWebUrl);
+            }
+        },
+        onError: () => {
+            telegramWindow?.close();
+            authError.value = 'Сейчас вход через Telegram недоступен.';
+        },
+    });
+}
+
+onMounted(() => {
+    if (props.portal.telegramWebUrl !== null) {
+        startTelegramStatusPolling();
+    }
+});
+
+onUnmounted(stopTelegramStatusPolling);
 
 function authenticateWithTelegram(): void {
     authError.value = null;
 
     if (authForm.initData === '') {
-        authError.value = 'Telegram could not provide a signed session payload.';
+        authError.value = 'Не удалось получить данные для входа. Откройте приложение заново.';
 
         return;
     }
@@ -49,7 +120,7 @@ function authenticateWithTelegram(): void {
     authForm.post(props.portal.telegramAuthUrl, {
         preserveScroll: true,
         onError: () => {
-            authError.value = 'Telegram authentication was rejected. Please reopen the Mini App.';
+            authError.value = 'Не удалось войти через Telegram. Откройте приложение заново.';
         },
     });
 }
@@ -62,7 +133,7 @@ function requestEmailCode(): void {
             emailVerifyForm.email = emailRequestForm.email;
         },
         onError: () => {
-            authError.value = 'We could not send a verification code. Please try again shortly.';
+            authError.value = 'Не удалось отправить код. Попробуйте ещё раз.';
         },
     });
 }
@@ -72,7 +143,7 @@ function verifyEmailCode(): void {
     emailVerifyForm.post(props.portal.emailVerifyUrl, {
         preserveScroll: true,
         onError: () => {
-            authError.value = 'That verification code is invalid or expired.';
+            authError.value = 'Код неверный или уже истёк.';
         },
     });
 }
@@ -82,32 +153,24 @@ function requestTelegramLink(): void {
     telegramLinkForm.post(props.portal.telegramLinkRequestUrl, {
         preserveScroll: true,
         onError: () => {
-            authError.value = 'Telegram connection is not available right now.';
+            authError.value = 'Сейчас не удалось подключить Telegram. Попробуйте ещё раз.';
         },
     });
 }
 </script>
 
 <template>
-  <Head title="Services" />
+  <Head title="Личный кабинет" />
   <main class="portal-page">
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-masthead">
-        <div class="portal-masthead__copy portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ runtimeLabel }}
-          </p>
-          <h1 class="portal-heading portal-heading--page">
-            Chuklov Client Portal
-          </h1>
-          <p class="portal-lede">
-            A secure foundation for services, client care, and future channel experiences.
-          </p>
-        </div>
+        <h1 class="portal-heading portal-heading--page">
+          Личный кабинет
+        </h1>
       </header>
 
       <section
-        class="portal-grid portal-grid--access"
+        class="portal-grid"
         aria-labelledby="client-access-heading"
       >
         <div class="portal-panel portal-panel--accent portal-stack portal-stack--tight">
@@ -115,25 +178,13 @@ function requestTelegramLink(): void {
             id="client-access-heading"
             class="portal-heading portal-heading--section"
           >
-            Client access
+            Вход
           </h2>
           <p
             v-if="props.portal.authenticated"
             class="portal-copy"
           >
-            Signed in as {{ props.portal.clientName }}.
-          </p>
-          <p
-            v-else-if="runtimeMode === 'telegram-mini-app'"
-            class="portal-copy"
-          >
-            Continue with the signed Telegram session to open your client onboarding.
-          </p>
-          <p
-            v-else
-            class="portal-copy"
-          >
-            Use a short-lived code sent to your email. No reusable password is required.
+            Вы вошли как {{ props.portal.clientName }}.
           </p>
 
           <Link
@@ -141,35 +192,35 @@ function requestTelegramLink(): void {
             :href="props.portal.onboardingUrl"
             class="portal-button portal-button--primary self-start"
           >
-            Continue onboarding
+            Продолжить
           </Link>
           <Link
             v-if="props.portal.bookingUrl"
             :href="props.portal.bookingUrl"
             class="portal-button portal-button--secondary self-start"
           >
-            Book a visit
+            Записаться
           </Link>
           <Link
             v-if="props.portal.bookingsUrl"
             :href="props.portal.bookingsUrl"
             class="portal-button portal-button--secondary self-start"
           >
-            My bookings
+            Мои записи
           </Link>
           <div
             v-if="props.portal.authenticated"
             class="portal-stack portal-stack--tight"
           >
             <p class="portal-copy portal-copy--small">
-              Telegram connection
+              Telegram
             </p>
             <p
               v-if="props.portal.telegramConnected"
               class="portal-notice"
               role="status"
             >
-              Telegram is connected to this client portal account.
+              Telegram подключён.
             </p>
             <button
               v-else
@@ -178,7 +229,7 @@ function requestTelegramLink(): void {
               class="portal-button portal-button--secondary self-start"
               @click="requestTelegramLink"
             >
-              {{ telegramLinkForm.processing ? 'Preparing link…' : 'Connect Telegram' }}
+              {{ telegramLinkForm.processing ? 'Подготовка…' : 'Подключить Telegram' }}
             </button>
             <a
               v-if="props.portal.telegramLinkUrl"
@@ -187,14 +238,14 @@ function requestTelegramLink(): void {
               rel="noopener noreferrer"
               class="portal-link"
             >
-              Open the Telegram connection link
+              Открыть Telegram
             </a>
             <p
               v-if="props.portal.telegramLinkError"
               class="portal-notice portal-notice--error"
               role="alert"
             >
-              Telegram connection is not configured for this organization.
+              Сейчас подключение Telegram недоступно.
             </p>
           </div>
           <button
@@ -204,78 +255,100 @@ function requestTelegramLink(): void {
             class="portal-button portal-button--primary self-start"
             @click="authenticateWithTelegram"
           >
-            {{ authForm.processing ? 'Verifying…' : 'Continue with Telegram' }}
+            {{ authForm.processing ? 'Проверка…' : 'Войти через Telegram' }}
           </button>
-          <form
+          <div
             v-else
             class="portal-stack portal-stack--tight"
-            @submit.prevent="props.portal.emailCodeSent ? verifyEmailCode() : requestEmailCode()"
           >
-            <div
-              v-if="!props.portal.emailCodeSent"
-              class="portal-field"
+            <button
+              type="button"
+              :disabled="telegramWebForm.processing"
+              class="portal-button portal-button--primary self-start"
+              @click="requestTelegramWebAuthentication"
             >
-              <label
-                for="portal-email"
-                class="portal-label"
-              >Email address</label>
-              <input
-                id="portal-email"
-                v-model="emailRequestForm.email"
-                type="email"
-                required
-                autocomplete="email"
-                class="portal-input"
+              {{ telegramWebForm.processing ? 'Подготовка…' : 'Войти через тг' }}
+            </button>
+            <a
+              v-if="props.portal.telegramWebUrl"
+              :href="props.portal.telegramWebUrl"
+              class="portal-link self-start"
+            >
+              Открыть Telegram
+            </a>
+            <p class="portal-separator">
+              или
+            </p>
+            <form
+              class="portal-stack portal-stack--tight"
+              @submit.prevent="props.portal.emailCodeSent ? verifyEmailCode() : requestEmailCode()"
+            >
+              <div
+                v-if="!props.portal.emailCodeSent"
+                class="portal-field"
               >
-            </div>
-            <template v-else>
-              <div class="portal-field">
                 <label
-                  for="portal-verify-email"
+                  for="portal-email"
                   class="portal-label"
-                >Email address</label>
+                >Email</label>
                 <input
-                  id="portal-verify-email"
-                  v-model="emailVerifyForm.email"
+                  id="portal-email"
+                  v-model="emailRequestForm.email"
                   type="email"
                   required
                   autocomplete="email"
                   class="portal-input"
                 >
               </div>
-              <div class="portal-field">
-                <label
-                  for="portal-email-code"
-                  class="portal-label"
-                >Verification code</label>
-                <input
-                  id="portal-email-code"
-                  v-model="emailVerifyForm.code"
-                  type="text"
-                  inputmode="numeric"
-                  pattern="[0-9]{6}"
-                  minlength="6"
-                  maxlength="6"
-                  required
-                  autocomplete="one-time-code"
-                  class="portal-input"
+              <template v-else>
+                <div class="portal-field">
+                  <label
+                    for="portal-verify-email"
+                    class="portal-label"
+                  >Email</label>
+                  <input
+                    id="portal-verify-email"
+                    v-model="emailVerifyForm.email"
+                    type="email"
+                    required
+                    autocomplete="email"
+                    class="portal-input"
+                  >
+                </div>
+                <div class="portal-field">
+                  <label
+                    for="portal-email-code"
+                    class="portal-label"
+                  >Код</label>
+                  <input
+                    id="portal-email-code"
+                    v-model="emailVerifyForm.code"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]{6}"
+                    minlength="6"
+                    maxlength="6"
+                    required
+                    autocomplete="one-time-code"
+                    class="portal-input"
+                  >
+                </div>
+                <p
+                  class="portal-notice"
+                  role="status"
                 >
-              </div>
-              <p
-                class="portal-notice"
-                role="status"
+                  Код отправлен на указанную почту.
+                </p>
+              </template>
+              <button
+                type="submit"
+                :disabled="emailRequestForm.processing || emailVerifyForm.processing"
+                class="portal-button portal-button--primary self-start"
               >
-                A one-time code has been sent. It expires shortly and can be used once.
-              </p>
-            </template>
-            <button
-              type="submit"
-              :disabled="emailRequestForm.processing || emailVerifyForm.processing"
-              class="portal-button portal-button--primary self-start"
-            >
-              {{ (emailRequestForm.processing || emailVerifyForm.processing) ? 'Working…' : props.portal.emailCodeSent ? 'Verify code' : 'Send code' }}
-            </button>
-          </form>
+                {{ (emailRequestForm.processing || emailVerifyForm.processing) ? 'Подождите…' : props.portal.emailCodeSent ? 'Войти' : 'Получить код' }}
+              </button>
+            </form>
+          </div>
           <p
             v-if="authError"
             class="portal-notice portal-notice--error"
@@ -289,15 +362,6 @@ function requestTelegramLink(): void {
             role="alert"
           >
             {{ authForm.errors.initData }}
-          </p>
-        </div>
-
-        <div class="portal-panel portal-panel--quiet portal-panel--compact portal-stack portal-stack--tight">
-          <p class="portal-kicker">
-            Shared runtime
-          </p>
-          <p class="portal-copy portal-copy--small">
-            Desktop web, mobile web, and Telegram Mini App use the same server-authorized client journey.
           </p>
         </div>
       </section>
@@ -323,7 +387,7 @@ function requestTelegramLink(): void {
         v-else
         class="portal-empty"
       >
-        Services will appear here after they are published in the CRM.
+        Услуги пока не опубликованы.
       </p>
     </section>
   </main>

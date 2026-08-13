@@ -12,7 +12,7 @@ declare global {
 }
 
 export function resolveClientRuntime(): ClientRuntimeMode {
-    if (window.Telegram?.WebApp) {
+    if (getTelegramInitData() !== null && window.Telegram?.WebApp) {
         window.Telegram.WebApp.ready();
 
         return 'telegram-mini-app';

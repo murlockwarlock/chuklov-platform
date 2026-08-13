@@ -167,6 +167,23 @@ body {
         color: var(--portal-color-ink-faint);
     }
 
+    .portal-separator {
+        display: flex;
+        align-items: center;
+        gap: var(--portal-space-3);
+        margin: var(--portal-space-2) 0;
+        color: var(--portal-color-ink-faint);
+        font-size: 0.82rem;
+    }
+
+    .portal-separator::before,
+    .portal-separator::after {
+        height: 1px;
+        flex: 1;
+        background: var(--portal-color-border);
+        content: '';
+    }
+
     .portal-grid {
         display: grid;
         gap: var(--portal-space-5);

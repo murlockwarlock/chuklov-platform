@@ -9,6 +9,7 @@ use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
+use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
 use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
@@ -25,6 +26,12 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::post('/portal/auth/email/verify', [EmailAuthenticationController::class, 'verifyCode'])
         ->middleware('throttle:portal-email-verify')
         ->name('portal.email.verify');
+    Route::post('/portal/auth/telegram/request', [TelegramWebAuthenticationController::class, 'request'])
+        ->middleware('throttle:portal-telegram-web-request')
+        ->name('portal.telegram.web.request');
+    Route::get('/portal/auth/telegram/status', [TelegramWebAuthenticationController::class, 'status'])
+        ->middleware('throttle:portal-telegram-web-status')
+        ->name('portal.telegram.web.status');
 
     Route::middleware(ResolveClientPortalSession::class)->group(function (): void {
         Route::get('/', ServiceIndexController::class)->name('portal.services.index');

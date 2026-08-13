@@ -125,7 +125,11 @@ function createBookingFixture(withBooking = false): BookingFixture {
 
 test('client portal shell is responsive', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Chuklov Client Portal' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Личный кабинет' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через тг' })).toBeVisible();
+    await expect(page.getByLabel('Email')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Получить код' })).toBeVisible();
+    await expect(page.getByText(/Responsive web|Shared runtime|secure foundation|client portal/i)).toHaveCount(0);
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {

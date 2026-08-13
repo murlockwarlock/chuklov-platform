@@ -82,6 +82,10 @@ class AppServiceProvider extends ServiceProvider
             ->by('portal-email-request|'.$request->ip()));
         RateLimiter::for('portal-email-verify', static fn (Request $request): Limit => Limit::perMinute(30)
             ->by('portal-email-verify|'.$request->ip()));
+        RateLimiter::for('portal-telegram-web-request', static fn (Request $request): Limit => Limit::perMinute(10)
+            ->by('portal-telegram-web-request|'.$request->ip()));
+        RateLimiter::for('portal-telegram-web-status', static fn (Request $request): Limit => Limit::perMinute(120)
+            ->by('portal-telegram-web-status|'.$request->session()->getId()));
 
         Gate::policy(Service::class, ServicePolicy::class);
         Gate::policy(Client::class, ClientPolicy::class);

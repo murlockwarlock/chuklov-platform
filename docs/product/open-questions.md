@@ -17,7 +17,7 @@ No open question blocks Milestone 0.
 
 ### OQ-001 — RESOLVED 2026-08-12
 
-Phase 1 ordinary browser authentication is passwordless email authentication with a short-lived, single-use one-time verification code. Email is normalized consistently; codes are hashed, expire, have bounded attempts and request rate limits, do not use reusable passwords or SMS/phone OTP, and regenerate the Laravel session after success. Email delivery is provider-neutral. Telegram authentication and channel connection remain separate verified identity flows.
+Phase 1 ordinary browser authentication offers Telegram and passwordless email as independent methods. Telegram web login uses a short-lived, single-use, browser-bound deep-link handshake and authentic bot evidence; a verified identity resolves an existing organization-scoped Client or creates one without matching by name or username. Mini App authentication continues to use verified fresh non-replayed initData. Email codes remain normalized, hashed, expiring, bounded, single-use, provider-neutral, and free of reusable passwords or SMS OTP. Every successful method regenerates the session.
 
 ### OQ-006 — RESOLVED 2026-08-12
 

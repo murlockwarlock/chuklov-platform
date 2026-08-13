@@ -15,6 +15,7 @@ return [
     'telegram' => [
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         'link_ttl' => (int) env('TELEGRAM_CLIENT_LINK_TTL', 600),
+        'web_auth_ttl' => (int) env('TELEGRAM_WEB_AUTH_TTL', 600),
         'portal_url' => env('CLIENT_PORTAL_URL'),
         'greeting' => [
             'en' => 'Choose an entry point.',
