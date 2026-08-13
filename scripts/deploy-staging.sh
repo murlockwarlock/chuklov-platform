@@ -78,6 +78,14 @@ ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$remote_archive" <<'REMOTE'
 set -Eeuo pipefail
 
+report_preflight_failure() {
+    local status="$?"
+    echo "Staging deployment failed during preflight at remote script line $1 (exit $status)." >&2
+    exit "$status"
+}
+
+trap 'report_preflight_failure "$LINENO"' ERR
+
 revision="$1"
 expected_revision="$2"
 root="$3"
@@ -123,6 +131,7 @@ nft list ruleset > "$snapshot/nftables.txt"
 docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' | sort > "$snapshot/docker.txt"
 sudo -u postgres psql -Atqc 'select datname from pg_database order by datname' > "$snapshot/host-databases.txt"
 chmod 0600 "$snapshot"/*
+echo "Pre-deploy host baseline captured."
 
 cd "$root"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --quiet
@@ -136,12 +145,14 @@ fi
 for service in postgres redis app horizon scheduler telegram; do
     docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --services | grep -Fxq "$service"
 done
+echo "Isolated Compose project and app binding verified."
 
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
     sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$database_backup"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
     pg_restore -l < "$database_backup" > /dev/null
 chmod 0600 "$database_backup"
+echo "Staging PostgreSQL backup created and validated."
 cp -a "$compose" "$compose_backup"
 chmod 0600 "$compose_backup"
 

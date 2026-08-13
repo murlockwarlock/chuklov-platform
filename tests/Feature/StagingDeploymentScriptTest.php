@@ -22,6 +22,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap rollback ERR', $script);
+        self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
