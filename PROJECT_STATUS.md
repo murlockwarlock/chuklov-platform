@@ -3,7 +3,7 @@
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 4B — Booking lifecycle and CRM/client flow
-- Status: M4B READY FOR CONTINUATION — final local and browser gates pass; push and hosted exact-SHA verification are pending
+- Status: M4B READY FOR CONTINUATION — pushed SHA f0a0357dd79d9d5a0cb0de1ca8b1dbdf0a032d31; exact-SHA hosted CI run 31654103577 passed
 
 ## Completed Remediation
 
@@ -70,8 +70,8 @@
 - Accepted M4A base is af298476aad216b4083b93fc6f6d60f81ca3e52b; M3 remains closed and was not re-audited.
 - OQ-009 is resolved as an explicit organization-scoped many-to-many `specialist_service_assignments` relation. CRM assignment actions enforce same-organization ownership, authorization, uniqueness, active-record booking rules, and historical-booking preservation.
 - Added non-blocking HOME_VISIT `PENDING_REVIEW`, typed approval/rejection actions, transactionally rechecked approval, immutable booking events, organization-scoped CRM booking list/detail/actions, and the shared client Portal booking journey for OFFICE/ONLINE/HOME_VISIT.
-- Focused M4B verification passes: 23 Unit/Feature tests/93 assertions; focused PostgreSQL assignment/pending/race coverage passes with 10 tests/20 assertions. Final `make quality` passes with 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities; the new page's auto-fixable ESLint warnings were corrected before the final CI gate. Final `make ci` passes with healthy PostgreSQL/Redis, clean ESLint, and 40 PostgreSQL integration tests/77 assertions. Final Playwright passes 4/4 on desktop and mobile, including the interactive client booking journey.
-- M4C remains deferred, including OQ-002-dependent cancellation/rescheduling and completion/history work. Push and hosted exact-SHA verification are pending.
+- Focused M4B verification passes: 23 Unit/Feature tests/93 assertions; focused PostgreSQL assignment/pending/race coverage passes with 10 tests/20 assertions. Final `make quality` passes with 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities; the new page's auto-fixable ESLint warnings were corrected before the final CI gate. Final `make ci` passes with healthy PostgreSQL/Redis, clean ESLint, and 40 PostgreSQL integration tests/78 assertions. Final Playwright passes 4/4 on desktop and mobile, including the interactive client booking journey.
+- Exact-SHA hosted CI run 31654103577 passes quality/integration, Playwright desktop/mobile, Docker runtime health, and privacy/secret scan. M4C remains deferred, including OQ-002-dependent cancellation/rescheduling and completion/history work.
 
 ## Important Decisions
 
@@ -84,4 +84,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-13: M4B local gates passed. `make quality`: 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/77 assertions. Focused M4B: 23 Unit/Feature tests/93 assertions and 10 PostgreSQL tests/20 assertions. `npm run test:e2e`: 4 desktop/mobile tests passed, including the interactive booking journey. M0–M3 were not re-audited.
+2026-08-13: M4B local gates passed. `make quality`: 13 Unit tests/28 assertions, 106 Feature tests/587 assertions, Pint, Larastan 0 errors, TypeScript, Vite build, Composer audit with 0 advisories, npm audit with 0 vulnerabilities, and clean ESLint. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/78 assertions. Focused M4B: 23 Unit/Feature tests/93 assertions and 10 PostgreSQL tests/20 assertions. `npm run test:e2e`: 4 desktop/mobile tests passed, including the interactive booking journey. Exact-SHA hosted CI run 31654103577 passed for f0a0357dd79d9d5a0cb0de1ca8b1dbdf0a032d31. M0–M3 were not re-audited.

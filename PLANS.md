@@ -35,7 +35,7 @@ Non-goals: OQ-002 cancellation/reschedule policy and payment consequences; notif
 - PostgreSQL composite ownership FKs, checks, GiST exclusion constraints, specialist-row transaction locking, and focused Unit/Feature/PostgreSQL coverage are in place.
 - CRM configuration is limited to working hours, lead time, exceptions, and unavailable periods. Portal exposes a read-only explicit availability projection.
 
-#### M4B — booking lifecycle and CRM/client flow — implementation complete, local gates passed
+#### M4B — booking lifecycle and CRM/client flow — implementation complete, local and hosted gates passed
 
 - Resolved OQ-009 as an explicit tenant-safe Specialist-Service many-to-many assignment and added CRM create/remove management with Application authorization.
 - Corrected HOME_VISIT `PENDING_REVIEW` to remain non-blocking; added typed approval/rejection transitions, protected availability recheck, immutable booking events, and reason metadata.
@@ -47,4 +47,4 @@ Non-goals: OQ-002 cancellation/reschedule policy and payment consequences; notif
 - Resolve OQ-002 before self-service cancellation/rescheduling.
 - Add explicit immutable lifecycle events, home-visit approval/payment handoff, online meeting-link completion, and client history/home/online behavior only after their accepted policies are available.
 
-M4B checkpoints: focused tests → PostgreSQL integration and process-level race test → make quality once → make ci once → Playwright booking flow → exact-SHA hosted CI verification → update PROJECT_STATUS.md and local MILESTONE_4_REPORT.md.
+M4B checkpoints complete: focused tests → PostgreSQL integration and process-level race test → make quality → make ci → Playwright booking flow → exact-SHA hosted CI run 31654103577 for pushed SHA f0a0357dd79d9d5a0cb0de1ca8b1dbdf0a032d31 → status/report update.
