@@ -21,6 +21,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
+        self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image)'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap rollback ERR', $script);
         self::assertStringContainsString('report_preflight_failure', $script);

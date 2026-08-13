@@ -114,8 +114,14 @@ if [[ "$current_revision" == "$revision" ]]; then
 fi
 
 if [[ -e "$release" ]]; then
-    echo "Release already exists: $release" >&2
-    exit 1
+    if [[ "$release" == "$root/releases/$revision"
+        && "$previous_target" != "$release"
+        && "$(cat "$release/REVISION" 2>/dev/null || true)" == "$revision" ]]; then
+        rm -rf -- "$release"
+    else
+        echo "Release already exists and is not safe to replace: $release" >&2
+        exit 1
+    fi
 fi
 
 install -d -m 0700 "$snapshot"
@@ -127,7 +133,7 @@ systemctl list-units --type=service --state=running --no-pager > "$snapshot/runn
 pm2 jlist > "$snapshot/pm2.json"
 pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort > "$snapshot/pm2-status.tsv"
 nginx -T > "$snapshot/nginx-effective.txt" 2>&1
-nft list ruleset > "$snapshot/nftables.txt"
+nft list ruleset | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g' > "$snapshot/nftables.txt"
 docker ps --format '{{.Names}}|{{.Image}}|{{.Status}}|{{.Ports}}' | sort > "$snapshot/docker.txt"
 sudo -u postgres psql -Atqc 'select datname from pg_database order by datname' > "$snapshot/host-databases.txt"
 chmod 0600 "$snapshot"/*
@@ -172,12 +178,11 @@ docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-sc
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm run build
 
 sed -E "s#chuklov-staging-app:[0-9a-f]{40}#chuklov-staging-app:$revision#g" "$compose_backup" > "$compose.next"
-if [[ "$(grep -c "chuklov-staging-app:$revision" "$compose.next")" -lt 4 ]]; then
-    echo "Compose image replacement did not cover all runtime services." >&2
-    exit 1
-fi
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --quiet
 chmod 0640 "$compose.next"
+docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \
+    | jq -e --arg image "chuklov-staging-app:$revision" \
+        '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image)' > /dev/null
 
 rollback() {
     echo "Deployment failed; restoring application release $current_revision." >&2
@@ -212,7 +217,7 @@ for service in nginx pm2-root postgresql@16-main webstore-darimiru docker; do
     systemctl is-active --quiet "$service"
 done
 cmp -s "$snapshot/nginx-effective.txt" <(nginx -T 2>&1)
-cmp -s "$snapshot/nftables.txt" <(nft list ruleset 2>/dev/null)
+cmp -s "$snapshot/nftables.txt" <(nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g')
 cmp -s "$snapshot/host-databases.txt" <(sudo -u postgres psql -Atqc 'select datname from pg_database order by datname')
 cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort)
 cmp -s "$snapshot/pm2-status.tsv" <(pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort)
