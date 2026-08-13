@@ -43,7 +43,7 @@ Non-goals: Notifications, finance ledger/payment providers, medical, surveys, RA
 - Added restriction-aware client Service → Specialist → slot → format booking flow for OFFICE/ONLINE creation and HOME_VISIT requests, plus organization-scoped CRM booking inspection/actions.
 - Added PostgreSQL assignment ownership constraints and a true process-level competing booking test alongside focused Feature/Unit coverage.
 
-#### M4C — reschedule/cancel/history/home/online completion — implementation complete, local gates passed
+#### M4C — reschedule/cancel/history/home/online completion — complete
 
 - Resolved OQ-002, OQ-010, OQ-011, and OQ-012 in the product decision records.
 - Added organization/actor-scoped PostgreSQL booking-creation idempotency with request-hash replay protection and scheduled retention pruning.
@@ -52,4 +52,4 @@ Non-goals: Notifications, finance ledger/payment providers, medical, surveys, RA
 - Added shared Portal My bookings/detail/history/timezone/reschedule/cancel surfaces and CRM lifecycle/history/needs-attention actions.
 - Added one reusable schedule-mutation impact calculator with explicit CRM acknowledgement and durable booking preservation across schedule, Specialist, Service, and assignment changes.
 
-M4C checkpoints: focused tests, PostgreSQL integration and process-level race test, make quality, make ci, and Playwright desktop/mobile booking management all pass; exact-SHA hosted CI and final status/report update remain.
+M4C checkpoints passed: focused tests, PostgreSQL integration and process-level race test, make quality, make ci, Playwright desktop/mobile booking management, and exact-SHA hosted CI run 31691868383 for 048c193a37bb2da110a1340093a3d8cb4c443916.

@@ -3,7 +3,7 @@
 - Last updated: 2026-08-13
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 4C — final Scheduling / Booking lifecycle
-- Status: M4C implementation complete; final local gates pass, exact-SHA hosted verification pending
+- Status: M4 complete; M4C ready for final review after passing local and exact-SHA hosted gates
 
 ## Completed Remediation
 
@@ -81,6 +81,7 @@
 - Resolved OQ-011 with typed terminal NO_SHOW after scheduled start for authorized staff; resolved OQ-012 with one organization-level Phase 1 office and booking-specific HOME_VISIT destination.
 - Added PostgreSQL-backed booking idempotency with request-hash replay protection and retention pruning; lifecycle actions/events for cancel/reschedule/confirm/complete/no-show/meeting URL; client My bookings/history/timezone surfaces; CRM management; and HOME_VISIT/ONLINE completion boundaries. No M5+ behavior was started.
 - Final local verification passes: focused M4 lifecycle/scheduling coverage 35 tests/163 assertions plus 4 scheduling Unit tests/7 assertions; focused PostgreSQL coverage 10 tests/22 assertions including a process-level competing-booking race; `make quality` 13 Unit tests/28 assertions and 122 Feature tests/664 assertions with clean Pint, Larastan, ESLint, vue-tsc, and Vite; `make ci` 40 PostgreSQL integration tests/78 assertions with healthy PostgreSQL/Redis, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities; Playwright 6/6 desktop/mobile tests.
+- Exact-SHA hosted CI run 31691868383 passed for 048c193a37bb2da110a1340093a3d8cb4c443916: quality/integration, Playwright desktop/mobile, Docker build/runtime health, and privacy/secret scan.
 
 ## Important Decisions
 
@@ -93,4 +94,4 @@
 
 ## Latest Verified Local Quality Gate
 
-2026-08-13: M4C local gates passed. Focused M4 lifecycle/scheduling: 35 tests/163 assertions plus 4 scheduling Unit tests/7 assertions; focused PostgreSQL: 10 tests/22 assertions including process-level race coverage. `make quality`: 13 Unit tests/28 assertions, 122 Feature tests/664 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/78 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Exact-SHA hosted CI remains the final handoff gate. M0–M3 were not re-audited.
+2026-08-13: M4C complete. Focused M4 lifecycle/scheduling: 35 tests/163 assertions plus 4 scheduling Unit tests/7 assertions; focused PostgreSQL: 10 tests/22 assertions including process-level race coverage. `make quality`: 13 Unit tests/28 assertions, 122 Feature tests/664 assertions, Pint, Larastan 0 errors, clean ESLint/vue-tsc/Vite, Composer audit with 0 advisories, and npm audit with 0 vulnerabilities. `make ci`: healthy PostgreSQL/Redis and 40 PostgreSQL integration tests/78 assertions. `npm run test:e2e`: 6 desktop/mobile tests passed, including booking creation and My bookings reschedule/cancel. Exact-SHA hosted CI run 31691868383 passed for 048c193a37bb2da110a1340093a3d8cb4c443916. M0–M3 were not re-audited.
