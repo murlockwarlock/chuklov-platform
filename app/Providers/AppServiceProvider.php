@@ -14,9 +14,13 @@ use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scenarios\Application\BookingNextBookingConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
+use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
+use App\Modules\Scenarios\Application\OnboardingCompletedConditionEvaluator;
+use App\Modules\Scenarios\Application\OnboardingStageConditionEvaluator;
 use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
 use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
@@ -67,7 +71,11 @@ class AppServiceProvider extends ServiceProvider
             ConditionEvaluatorRegistry::class,
             fn (): ConditionEvaluatorRegistry => new ConditionEvaluatorRegistry([
                 new BookingStatusConditionEvaluator,
+                new BookingNextBookingConditionEvaluator,
                 new ClientLanguageConditionEvaluator,
+                new ClientMarketingConsentConditionEvaluator,
+                new OnboardingCompletedConditionEvaluator,
+                new OnboardingStageConditionEvaluator,
             ]),
         );
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);

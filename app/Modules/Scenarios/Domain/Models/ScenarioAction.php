@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use Database\Factories\ScenarioActionFactory;
@@ -22,6 +23,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array<string, mixed> $render_context
  * @property array<int, array<string, mixed>>|bool|float|int|string|null $condition_snapshot
  * @property list<string> $channel_priority
+ * @property int $sequence_number
+ * @property int $max_occurrences
+ * @property ScenarioDelayUnit|null $repeat_interval_unit
  */
 #[Fillable([
     'recipient_type',
@@ -31,6 +35,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'trigger_event',
     'rule_version',
     'condition_snapshot',
+    'sequence_number',
+    'max_occurrences',
+    'repeat_interval_value',
+    'repeat_interval_unit',
     'purpose',
     'channel_priority',
     'render_context',
@@ -100,6 +108,10 @@ class ScenarioAction extends Model
             'channel_priority' => 'array',
             'render_context' => 'array',
             'condition_snapshot' => 'array',
+            'sequence_number' => 'integer',
+            'max_occurrences' => 'integer',
+            'repeat_interval_value' => 'integer',
+            'repeat_interval_unit' => ScenarioDelayUnit::class,
             'scheduled_for' => 'datetime',
             'processing_started_at' => 'datetime',
             'delivered_at' => 'datetime',

@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
@@ -53,6 +54,11 @@ final class ScenarioRuleResource extends Resource
                 TextEntry::make('delay_summary')
                     ->label('Через')
                     ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.self::delayUnitLabel($record->delay_unit)),
+                TextEntry::make('repeat_summary')
+                    ->label('Повторения')
+                    ->state(fn (ScenarioRule $record): string => $record->max_occurrences > 1
+                        ? $record->max_occurrences.' раза, каждые '.$record->repeat_interval_value.' '.self::delayUnitLabel($record->repeat_interval_unit)
+                        : 'Одно сообщение'),
                 TextEntry::make('purpose')
                     ->label('Назначение')
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
@@ -65,7 +71,8 @@ final class ScenarioRuleResource extends Resource
                             return 'Не выбрано';
                         }
 
-                        return ($template->name ?: 'Не выбрано').' — '.self::localeLabel($template->locale);
+                        return ($template->name ?: 'Не выбрано').' — '.self::localeLabel($template->locale)
+                            .' · версия '.$record->templateVersion->version;
                     }),
                 TextEntry::make('conditions_summary')
                     ->label('Условие')
@@ -135,23 +142,34 @@ final class ScenarioRuleResource extends Resource
         ];
     }
 
-    private static function delayUnitLabel(ScenarioDelayUnit|string $unit): string
+    private static function delayUnitLabel(ScenarioDelayUnit|string|null $unit): string
     {
-        $unit = $unit instanceof ScenarioDelayUnit ? $unit : ScenarioDelayUnit::tryFrom($unit);
+        $unit = $unit instanceof ScenarioDelayUnit ? $unit : ScenarioDelayUnit::tryFrom((string) $unit);
 
-        return match ($unit) {
-            ScenarioDelayUnit::Minutes => 'мин.',
-            ScenarioDelayUnit::Hours => 'ч.',
-            ScenarioDelayUnit::Days => 'дн.',
-            default => '',
-        };
+        if ($unit === null) {
+            return '';
+        }
+
+        if ($unit->value === 'minutes') {
+            return 'мин.';
+        }
+
+        if ($unit->value === 'hours') {
+            return 'ч.';
+        }
+
+        return 'дн.';
     }
 
     private static function eventLabel(mixed $event): string
     {
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
-        return $value === 'booking.completed' ? 'После завершения визита' : 'Событие';
+        return match ($value) {
+            ScenarioEventType::BookingCompleted->value => 'После завершения визита',
+            ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
+            default => 'Событие',
+        };
     }
 
     private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
@@ -187,7 +205,11 @@ final class ScenarioRuleResource extends Resource
 
             $type = match ($condition['type'] ?? null) {
                 'booking.status' => 'статус записи',
+                'booking.has_qualifying_next_booking' => 'подходящая следующая запись',
                 'client.language' => 'язык клиента',
+                'client.marketing_consent' => 'согласие на маркетинговые сообщения',
+                'onboarding.completed' => 'завершение оформления',
+                'onboarding.stage' => 'этап оформления',
                 default => 'условие',
             };
             $operator = match ($condition['operator'] ?? null) {
@@ -214,6 +236,12 @@ final class ScenarioRuleResource extends Resource
             'cancelled' => 'отменена',
             'ru' => 'русский',
             'en' => 'английский',
+            'true' => 'да',
+            'false' => 'нет',
+            'contacts' => 'контакты',
+            'profile' => 'профиль',
+            'service' => 'услуга',
+            'goals' => 'цели',
             default => (string) $item,
         })->implode(', ');
     }

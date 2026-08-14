@@ -2,9 +2,11 @@
 
 namespace App\Modules\Scenarios\Domain\ValueObjects;
 
+use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use Carbon\CarbonImmutable;
 
 final readonly class ScenarioEvaluationContext
 {
@@ -12,5 +14,18 @@ final readonly class ScenarioEvaluationContext
         public ScenarioEvent $event,
         public ?Booking $booking,
         public ?Client $client,
+        public ?ClientOnboarding $onboarding = null,
+        public ?CarbonImmutable $evaluationEndsAt = null,
     ) {}
+
+    public function withEvaluationEndsAt(?CarbonImmutable $evaluationEndsAt): self
+    {
+        return new self(
+            event: $this->event,
+            booking: $this->booking,
+            client: $this->client,
+            onboarding: $this->onboarding,
+            evaluationEndsAt: $evaluationEndsAt,
+        );
+    }
 }

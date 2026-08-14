@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ScenarioRules\Tables;
 
 use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
 use Filament\Actions\EditAction;
@@ -26,6 +27,7 @@ final class ScenarioRulesTable
                     ->label('Через')
                     ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.self::unit($record->delay_unit)),
                 TextColumn::make('templateVersion.template.name')->label('Сообщение')->placeholder('—'),
+                TextColumn::make('max_occurrences')->label('Сообщений')->sortable(),
                 IconColumn::make('is_enabled')->label('Активно')->boolean()->sortable(),
             ])
             ->recordActions([
@@ -47,6 +49,10 @@ final class ScenarioRulesTable
     {
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
-        return $value === 'booking.completed' ? 'После визита' : 'Событие';
+        return match ($value) {
+            ScenarioEventType::BookingCompleted->value => 'После визита',
+            ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
+            default => 'Событие',
+        };
     }
 }

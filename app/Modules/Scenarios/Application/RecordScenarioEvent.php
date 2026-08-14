@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -37,9 +38,41 @@ final class RecordScenarioEvent
             causationId: $causationId,
         );
 
+        return $this->record((int) $booking->organization_id, $data);
+    }
+
+    public function onboardingStarted(
+        ClientOnboarding $onboarding,
+        ?string $causationId,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $onboarding->loadMissing(['client']);
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::OnboardingStarted,
+            aggregateType: ClientOnboarding::class,
+            aggregateId: (string) $onboarding->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'onboarding_id' => (int) $onboarding->getKey(),
+                'client_id' => (int) $onboarding->client_id,
+                'flow_version' => $onboarding->flow_version,
+                'stage' => $onboarding->current_stage->value,
+                'started_at' => $occurredAt->utc()->toIso8601String(),
+                'client_language' => $onboarding->client->language,
+            ],
+            idempotencyKey: 'onboarding.started:'.$onboarding->organization_id.':'.$onboarding->getKey().':'.$onboarding->flow_version,
+            correlationId: 'onboarding:'.$onboarding->getKey(),
+            causationId: $causationId,
+        );
+
+        return $this->record((int) $onboarding->organization_id, $data);
+    }
+
+    private function record(int $organizationId, ScenarioEventData $data): ScenarioEvent
+    {
         $timestamp = now();
         DB::table('scenario_events')->insertOrIgnore([
-            'organization_id' => $booking->organization_id,
+            'organization_id' => $organizationId,
             'event_name' => $data->eventType->value,
             'aggregate_type' => $data->aggregateType,
             'aggregate_id' => $data->aggregateId,
@@ -56,7 +89,7 @@ final class RecordScenarioEvent
         ]);
 
         return ScenarioEvent::query()
-            ->where('organization_id', $booking->organization_id)
+            ->where('organization_id', $organizationId)
             ->where('idempotency_key', $data->idempotencyKey)
             ->firstOrFail();
     }

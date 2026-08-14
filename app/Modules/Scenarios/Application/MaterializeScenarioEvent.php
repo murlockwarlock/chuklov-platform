@@ -77,12 +77,17 @@ final class MaterializeScenarioEvent
             return;
         }
 
-        if (! $this->conditions->matches(ScenarioConditionSet::from($rule->conditions), $context)) {
+        $scheduledFor = CarbonImmutable::parse((string) $event->occurred_at)
+            ->utc()
+            ->addSeconds($rule->delay_unit->toSeconds($rule->delay_value));
+        $evaluationContext = $context->withEvaluationEndsAt($scheduledFor);
+
+        if (! $this->conditions->matches(ScenarioConditionSet::from($rule->conditions), $evaluationContext)) {
             return;
         }
 
         foreach ($this->recipients->resolve($rule, $event) as $recipient) {
-            $this->materializeRecipient($event, $context, $rule, $template, $recipient);
+            $this->materializeRecipient($event, $evaluationContext, $rule, $template, $recipient, $scheduledFor);
         }
     }
 
@@ -92,15 +97,14 @@ final class MaterializeScenarioEvent
         ScenarioRule $rule,
         NotificationTemplateVersion $template,
         ScenarioRecipient $recipient,
+        CarbonImmutable $scheduledFor,
     ): void {
-        $scheduledFor = CarbonImmutable::parse((string) $event->occurred_at)
-            ->utc()
-            ->addSeconds($rule->delay_unit->toSeconds($rule->delay_value));
         $materializationKey = ScenarioIdempotencyKey::materialization(
             (int) $event->organization_id,
             (int) $event->getKey(),
             (int) $rule->getKey(),
             $recipient->key(),
+            1,
         );
         $timestamp = now();
 
@@ -115,6 +119,10 @@ final class MaterializeScenarioEvent
             'trigger_event' => $event->event_name->value,
             'rule_version' => $rule->version,
             'condition_snapshot' => json_encode($rule->conditions, JSON_THROW_ON_ERROR),
+            'sequence_number' => 1,
+            'max_occurrences' => $rule->max_occurrences,
+            'repeat_interval_value' => $rule->repeat_interval_value,
+            'repeat_interval_unit' => $rule->repeat_interval_unit?->value,
             'purpose' => $rule->purpose->value,
             'channel_priority' => json_encode($rule->channel_priority, JSON_THROW_ON_ERROR),
             'render_context' => json_encode($this->contextFactory->renderContext($context, $recipient), JSON_THROW_ON_ERROR),

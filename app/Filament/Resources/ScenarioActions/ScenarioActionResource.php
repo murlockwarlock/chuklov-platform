@@ -43,7 +43,20 @@ final class ScenarioActionResource extends Resource
                 TextEntry::make('event.event_name')
                     ->label('Когда')
                     ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
+                TextEntry::make('event.occurred_at')->label('Событие произошло')->dateTime('d.m.Y H:i'),
                 TextEntry::make('rule.name')->label('Правило'),
+                TextEntry::make('sequence_summary')
+                    ->label('Сообщение в серии')
+                    ->state(fn (ScenarioAction $record): string => $record->sequence_number.' из '.$record->max_occurrences),
+                TextEntry::make('template_summary')
+                    ->label('Версия сообщения')
+                    ->state(function (ScenarioAction $record): string {
+                        $template = $record->templateVersion?->template;
+
+                        return $template === null
+                            ? 'Недоступно'
+                            : ($template->name ?: 'Сообщение').' — версия '.$record->templateVersion->version.' — '.self::localeLabel($template->locale);
+                    }),
                 TextEntry::make('recipient_summary')
                     ->label('Получатель')
                     ->state(function (ScenarioAction $record): string {
@@ -73,6 +86,10 @@ final class ScenarioActionResource extends Resource
                 TextEntry::make('channel_order')
                     ->label('Способ связи')
                     ->state(fn (ScenarioAction $record): string => self::channelSummary($record->channel_priority)),
+                TextEntry::make('conditions_summary')
+                    ->label('Условия на момент запуска')
+                    ->state(fn (ScenarioAction $record): string => self::conditionsSummary($record->condition_snapshot))
+                    ->columnSpanFull(),
                 TextEntry::make('delivery_history')
                     ->label('История отправки')
                     ->state(fn (ScenarioAction $record): string => $record->deliveries
@@ -116,6 +133,7 @@ final class ScenarioActionResource extends Resource
             ->with([
                 'event',
                 'rule',
+                'templateVersion.template',
                 'client',
                 'recipientUser',
                 'deliveries.attempts',
@@ -144,7 +162,11 @@ final class ScenarioActionResource extends Resource
     {
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
-        return $value === 'booking.completed' ? 'После завершения визита' : 'Событие';
+        return match ($value) {
+            'booking.completed' => 'После завершения визита',
+            'onboarding.started' => 'После начала оформления',
+            default => 'Событие',
+        };
     }
 
     private static function statusLabel(ScenarioActionStatus|string $status): string
@@ -218,8 +240,65 @@ final class ScenarioActionResource extends Resource
             'current_conditions_not_met' => 'Условие больше не выполнено',
             'provider_suppressed' => 'Получатель отключил сообщения',
             'recipient_unavailable' => 'Получатель недоступен',
+            'no_available_channel' => 'Нет доступного подтверждённого канала',
             null => '—',
             default => 'Не удалось отправить',
         };
+    }
+
+    private static function localeLabel(?string $locale): string
+    {
+        return match ($locale) {
+            'ru' => 'русский',
+            'en' => 'английский',
+            default => 'другой язык',
+        };
+    }
+
+    private static function conditionsSummary(mixed $conditions): string
+    {
+        if (! is_array($conditions) || $conditions === []) {
+            return 'Без дополнительного условия';
+        }
+
+        return collect($conditions)->map(function (mixed $condition): string {
+            if (! is_array($condition)) {
+                return 'Условие';
+            }
+
+            $type = match ($condition['type'] ?? null) {
+                'booking.status' => 'статус записи',
+                'booking.has_qualifying_next_booking' => 'подходящая следующая запись',
+                'client.language' => 'язык клиента',
+                'client.marketing_consent' => 'согласие на маркетинговые сообщения',
+                'onboarding.completed' => 'завершение оформления',
+                'onboarding.stage' => 'этап оформления',
+                default => 'условие',
+            };
+            $operator = match ($condition['operator'] ?? null) {
+                'equals' => 'равно',
+                'not_equals' => 'не равно',
+                'in' => 'одно из',
+                'exists' => 'заполнено',
+                default => 'проверяется',
+            };
+
+            return ucfirst($type).' '.$operator.(array_key_exists('value', $condition) ? ' '.self::conditionValue($condition['value']) : '');
+        })->implode('; ');
+    }
+
+    private static function conditionValue(mixed $value): string
+    {
+        $values = is_array($value) ? $value : [$value];
+
+        return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
+            'true' => 'да',
+            'false' => 'нет',
+            'contacts' => 'контакты',
+            'profile' => 'профиль',
+            'service' => 'услуга',
+            'goals' => 'цели',
+            default => (string) $item,
+        })->implode(', ');
     }
 }

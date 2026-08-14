@@ -29,6 +29,9 @@ class ScenarioRuleFactory extends Factory
             'conditions' => [],
             'recipient_strategy' => ['type' => 'client'],
             'channel_priority' => ['telegram'],
+            'max_occurrences' => 1,
+            'repeat_interval_value' => null,
+            'repeat_interval_unit' => null,
             'version' => 1,
         ];
     }

@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array<int, array<string, mixed>> $conditions
  * @property array<string, mixed> $recipient_strategy
  * @property list<string> $channel_priority
+ * @property int $max_occurrences
+ * @property ScenarioDelayUnit|null $repeat_interval_unit
  */
 #[Fillable([
     'rule_key',
@@ -35,6 +37,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'recipient_strategy',
     'channel_priority',
     'template_version_id',
+    'max_occurrences',
+    'repeat_interval_value',
+    'repeat_interval_unit',
     'version',
 ])]
 class ScenarioRule extends Model
@@ -88,6 +93,9 @@ class ScenarioRule extends Model
             'conditions' => 'array',
             'recipient_strategy' => 'array',
             'channel_priority' => 'array',
+            'max_occurrences' => 'integer',
+            'repeat_interval_value' => 'integer',
+            'repeat_interval_unit' => ScenarioDelayUnit::class,
             'version' => 'integer',
         ];
     }

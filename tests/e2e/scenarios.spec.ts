@@ -37,6 +37,9 @@ function createScenarioFixture(): ScenarioFixture {
             'is_enabled' => true,
             'delay_value' => 24,
             'delay_unit' => 'hours',
+            'max_occurrences' => 3,
+            'repeat_interval_value' => 12,
+            'repeat_interval_unit' => 'hours',
             'purpose' => 'service',
             'conditions' => [],
             'recipient_strategy' => ['type' => 'client'],
@@ -113,6 +116,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await saveResponse;
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}`);
     await expect(page.getByText('48 ч.', { exact: true })).toBeVisible();
+    await expect(page.getByText('3 раза, каждые 12 ч.', { exact: true })).toBeVisible();
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
     await expect(page.getByText('Вставить данные в сообщение', { exact: true })).toBeVisible();
@@ -131,5 +135,6 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await expect(page.getByRole('heading', { name: 'История сообщений' })).toBeVisible();
     await page.goto(`/admin/scenario-actions/${fixture.actionId}`);
     await expect(page.getByText('История отправки')).toBeVisible();
+    await expect(page.getByText('1 из 3', { exact: true })).toBeVisible();
     await expect(page.getByText('Telegram — Ожидает отправки')).toBeVisible();
 });

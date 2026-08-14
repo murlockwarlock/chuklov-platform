@@ -17,6 +17,8 @@ final class ScenarioTemplateVariableCatalog
         'booking.starts_at',
         'booking.ends_at',
         'booking.completed_at',
+        'onboarding.stage',
+        'onboarding.completed',
     ];
 
     /** @return list<string> */
@@ -38,6 +40,8 @@ final class ScenarioTemplateVariableCatalog
             'booking.starts_at' => 'Дата и время записи',
             'booking.ends_at' => 'Окончание записи',
             'booking.completed_at' => 'Время завершения визита',
+            'onboarding.stage' => 'Текущий этап заполнения',
+            'onboarding.completed' => 'Заполнение завершено',
         ];
     }
 

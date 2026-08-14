@@ -33,6 +33,7 @@ final class ScenarioRuleForm
                     ->label('Когда')
                     ->options([
                         ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
+                        ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
                     ])
                     ->required(),
                 Toggle::make('is_enabled')
@@ -53,6 +54,30 @@ final class ScenarioRuleForm
                         ScenarioDelayUnit::Days->value => 'дней',
                     ])
                     ->required(),
+                TextInput::make('max_occurrences')
+                    ->label('Максимум сообщений')
+                    ->integer()
+                    ->required()
+                    ->default(1)
+                    ->minValue(1)
+                    ->maxValue(100)
+                    ->live(),
+                TextInput::make('repeat_interval_value')
+                    ->label('Интервал между сообщениями')
+                    ->integer()
+                    ->minValue(1)
+                    ->maxValue(PHP_INT_MAX)
+                    ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
+                    ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
+                Select::make('repeat_interval_unit')
+                    ->label('Единица интервала')
+                    ->options([
+                        ScenarioDelayUnit::Minutes->value => 'минут',
+                        ScenarioDelayUnit::Hours->value => 'часов',
+                        ScenarioDelayUnit::Days->value => 'дней',
+                    ])
+                    ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
+                    ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
                 Select::make('purpose')
                     ->label('Назначение сообщения')
                     ->options([
@@ -86,7 +111,11 @@ final class ScenarioRuleForm
                             ->label('Что проверить')
                             ->options([
                                 'booking.status' => 'Статус записи',
+                                'booking.has_qualifying_next_booking' => 'Есть подходящая следующая запись',
                                 'client.language' => 'Язык клиента',
+                                'client.marketing_consent' => 'Согласие на маркетинговые сообщения',
+                                'onboarding.completed' => 'Оформление завершено',
+                                'onboarding.stage' => 'Этап оформления',
                             ])
                             ->required(),
                         Select::make('operator')
@@ -184,6 +213,16 @@ final class ScenarioRuleForm
             'client.language' => [
                 'ru' => 'Русский',
                 'en' => 'Английский',
+            ],
+            'booking.has_qualifying_next_booking', 'onboarding.completed', 'client.marketing_consent' => [
+                'true' => 'Да',
+                'false' => 'Нет',
+            ],
+            'onboarding.stage' => [
+                'contacts' => 'Контакты',
+                'profile' => 'Профиль',
+                'service' => 'Услуга',
+                'goals' => 'Цели',
             ],
             default => [],
         };

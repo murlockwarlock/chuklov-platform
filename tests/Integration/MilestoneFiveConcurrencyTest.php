@@ -7,6 +7,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Application\ScheduleNextScenarioAction;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -77,6 +78,37 @@ final class MilestoneFiveConcurrencyTest extends TestCase
         self::assertSame(1, ScenarioDeliveryAttempt::query()->where('scenario_delivery_id', $action->deliveries()->sole()->id)->count());
     }
 
+    public function test_two_real_processes_materialize_one_repeat_action(): void
+    {
+        $this->requirePostgres();
+        [$organization, , , , $event] = $this->fixture();
+        $rule = ScenarioRule::query()->where('organization_id', $organization->id)->sole();
+        $rule->forceFill([
+            'max_occurrences' => 2,
+            'repeat_interval_value' => 1,
+            'repeat_interval_unit' => 'hours',
+        ])->save();
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $action = ScenarioAction::query()->sole();
+        $action->forceFill([
+            'status' => ScenarioActionStatus::Delivered,
+            'delivered_at' => now(),
+            'max_occurrences' => 2,
+            'repeat_interval_value' => 1,
+            'repeat_interval_unit' => 'hours',
+        ])->save();
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::scheduleRepeatInProcess($action->id),
+            static fn (): string => self::scheduleRepeatInProcess($action->id),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertNotContains('error', $results);
+        self::assertSame(1, ScenarioAction::query()->where('organization_id', $organization->id)->where('sequence_number', 2)->count());
+        self::assertSame(2, DB::table('scenario_deliveries')->where('organization_id', $organization->id)->count());
+    }
+
     /** @return array{Organization, Client, Specialist, Service, ScenarioEvent} */
     private function fixture(): array
     {
@@ -120,6 +152,18 @@ final class MilestoneFiveConcurrencyTest extends TestCase
     {
         try {
             app(ExecuteScenarioAction::class)->handle($actionId);
+
+            return 'ok';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function scheduleRepeatInProcess(int $actionId): string
+    {
+        try {
+            $action = ScenarioAction::query()->findOrFail($actionId);
+            app(ScheduleNextScenarioAction::class)->handle($action);
 
             return 'ok';
         } catch (\Throwable $exception) {

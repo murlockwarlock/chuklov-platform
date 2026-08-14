@@ -29,6 +29,7 @@ final class ExecuteScenarioAction
         private readonly ScenarioChannelIdentityResolver $identities,
         private readonly NotificationChannelRegistry $channels,
         private readonly NotificationTemplateRenderer $renderer,
+        private readonly ScheduleNextScenarioAction $nextActions,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -72,7 +73,12 @@ final class ExecuteScenarioAction
             return false;
         }
 
-        $context = $this->contextFactory->evaluationContext($event);
+        $context = $this->contextFactory->evaluationContext(
+            $event,
+            $action->scheduled_for === null
+                ? null
+                : CarbonImmutable::parse((string) $action->scheduled_for)->utc(),
+        );
 
         if (! is_array($action->condition_snapshot)) {
             return false;
@@ -279,6 +285,7 @@ final class ExecuteScenarioAction
                     'delivered_at' => now(),
                     'terminal_reason' => null,
                 ])->save();
+                $this->nextActions->handle($action->refresh());
             } elseif ($result->outcome === NotificationDeliveryOutcome::Retryable
                 && $delivery->attempt_count < (int) config('scenarios.deliveries.max_attempts', 3)) {
                 $action->forceFill([

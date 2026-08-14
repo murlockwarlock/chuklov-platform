@@ -2,8 +2,17 @@
 
 - Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 5A CLOSED / ACCEPTED — Scenario / Notification Engine foundation
-- Status: M5A_CLOSED_ACCEPTED — M5B is not started
+- Current milestone: Milestone 5B implementation candidate — Scenario families and product integration
+- Status: M5B_IMPLEMENTATION_IN_PROGRESS — awaiting fresh independent acceptance; M5A remains CLOSED / ACCEPTED
+
+## Milestone 5B implementation candidate — 2026-08-15
+
+- Implementation started from repository HEAD `7e8a7f7f87fab3b4ed17d2e4fceec0c5e77f579a1`; the accepted deployed baseline remains `a487f5c216b43e687b26d6916e6af5032fbe4429`.
+- M5B extends the accepted M5A engine with typed `onboarding.started` events, configurable bounded repeat sequences, post-session +24h/+48h/conditional +72h seed rules, typed onboarding/consent/qualifying-next-booking conditions, configurable retention windows, and same-organization member/role recipient validation with verified-channel revalidation.
+- Re-engagement consumes the internal `ClientOnboarding` progress record only; the removed visible Portal wizard, surveys/tests, AI prompts, communication-preference model, and all M6+ behavior remain out of scope.
+- Retention counts only future `REQUESTED` or `CONFIRMED` bookings within the configured rule window. Materialization and execution both evaluate the typed condition; action template, condition, recipient, channel, render, sequence, and repeat values remain immutable snapshots.
+- OQ-014 records the still-unconfirmed business/clinical meaning of the conditional +72h follow-up. The seed uses only a neutral typed completed-booking guard until the owner decides otherwise.
+- Focused M5B Feature coverage passes 11 tests/42 assertions; focused M5A regression coverage passes 54 tests/202 assertions; PostgreSQL integration coverage passes 46 tests/104 assertions; focused scenario Playwright passes 2/2 desktop/mobile. `make quality` passes with 27 Unit tests/49 assertions and 215 Feature tests/1,323 assertions; `make ci` passes with healthy PostgreSQL/Redis and the same 46 PostgreSQL integration tests/104 assertions. Hosted exact-SHA CI, staging deployment, and independent acceptance remain pending for this implementation candidate.
 
 ## Client Portal booking acceptance remediation — 2026-08-15
 

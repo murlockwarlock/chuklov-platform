@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-08-15 — M5B scenario-family implementation traceability
+
+- Implemented `REQ-NOTIFY-001`–`REQ-NOTIFY-007` on the accepted M5A engine: CRM-configured delays and bounded repeats, typed `booking.completed`/`onboarding.started` rules, immutable action snapshots, idempotent sequence materialization and delivery, RU/EN version-pinned templates, consent-aware onboarding re-engagement boundaries, configured no-next-booking retention evaluation, and organization-scoped internal member/role recipients with verified-channel revalidation.
+- Seeded organization-safe editable RU/EN post-session +24h, +48h, and conditional +72h rules without overwriting owner changes. The exact business meaning of the conditional +72h guard remains OQ-014; survey/test and AI behavior remain future work.
+- Clarified that retention considers only future `REQUESTED` and `CONFIRMED` bookings within the configured window; onboarding re-engagement consumes the existing internal progress record and does not restore the removed client-facing wizard.
+
 ## 2026-08-14 — Owner-confirmed authenticated Client Portal IA
 
 - Superseded the visible four-stage onboarding presentation in REQ-PORTAL-003 with an internal versioned progress record; authenticated clients enter the useful Portal immediately and the legacy onboarding route is not a product destination.

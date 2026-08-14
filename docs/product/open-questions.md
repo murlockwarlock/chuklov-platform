@@ -10,6 +10,7 @@ Questions block only their dependent work.
 | OQ-007 | REQ-REFERRAL-001 | Confirm bonus earning, redemption, expiry, refund reversal, and cash-out rules. | Milestone 11 ledger |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
 | OQ-013 | REQ-CLIENT-005 | Confirm jurisdiction, legal basis, retention schedules, consent-withdrawal consequences, deletion/anonymization rules, and records that must be preserved for the client data lifecycle. | M15/M16 legal and security production readiness; earlier support only where M7 medical data requires it |
+| OQ-014 | REQ-NOTIFY-004 | Confirm the business/clinical condition intended by the conditional +72h post-session follow-up. M5B seeds only the supported neutral `booking.status = completed` guard until this is confirmed. | Owner decision before changing the +72h rule condition; generic scenario capability is unblocked |
 
 No open question blocks Milestone 0.
 

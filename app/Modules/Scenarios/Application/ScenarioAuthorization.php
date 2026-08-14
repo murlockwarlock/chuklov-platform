@@ -7,8 +7,12 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scenarios\Domain\Enums\ScenarioAudienceType;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 
 final class ScenarioAuthorization
@@ -47,6 +51,32 @@ final class ScenarioAuthorization
             }
         } catch (LogicException) {
             throw new AuthorizationException('The scenario organization is not resolved.');
+        }
+    }
+
+    public function assertRecipientStrategy(ScenarioRecipientStrategy $strategy): void
+    {
+        if ($strategy->type !== ScenarioAudienceType::Members) {
+            return;
+        }
+
+        $memberIds = [];
+
+        foreach ($strategy->values as $value) {
+            if (is_int($value) || is_string($value)) {
+                $memberIds[] = (int) $value;
+            }
+        }
+        $activeMembers = OrganizationMembership::query()
+            ->where('organization_id', $this->context->id())
+            ->active()
+            ->whereIn('user_id', $memberIds)
+            ->count();
+
+        if ($activeMembers !== count($memberIds)) {
+            throw ValidationException::withMessages([
+                'recipient_strategy' => 'Выбранный сотрудник не состоит в организации или неактивен.',
+            ]);
         }
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ScenarioActions\Tables;
 
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
@@ -21,6 +22,9 @@ final class ScenarioActionsTable
                 TextColumn::make('client.full_name')->label('Клиент')->placeholder('Сотрудник')->searchable(),
                 TextColumn::make('recipientUser.name')->label('Сотрудник')->placeholder('—'),
                 TextColumn::make('scheduled_for')->label('Запланировано')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('sequence_number')
+                    ->label('В серии')
+                    ->formatStateUsing(fn (mixed $state, ScenarioAction $record): string => $state.' из '.$record->max_occurrences),
                 TextColumn::make('status')
                     ->label('Статус')
                     ->badge()
@@ -55,6 +59,7 @@ final class ScenarioActionsTable
             'current_conditions_not_met' => 'Условие больше не выполнено',
             'provider_suppressed' => 'Получатель отключил сообщения',
             'recipient_unavailable' => 'Получатель недоступен',
+            'no_available_channel' => 'Нет доступного канала',
             null => '—',
             default => 'Не удалось отправить',
         };

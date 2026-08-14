@@ -6,13 +6,18 @@ use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class StartClientOnboarding
 {
-    public function __construct(private readonly OrganizationContext $context) {}
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly RecordScenarioEvent $scenarioEvents,
+    ) {}
 
     public function handle(Client $client): ClientOnboarding
     {
@@ -58,6 +63,11 @@ class StartClientOnboarding
                 'data' => [],
             ]);
             $onboarding->save();
+            $this->scenarioEvents->onboardingStarted(
+                onboarding: $onboarding,
+                causationId: null,
+                occurredAt: CarbonImmutable::instance(now())->utc(),
+            );
 
             return $onboarding->refresh();
         });

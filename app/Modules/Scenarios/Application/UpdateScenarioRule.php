@@ -25,6 +25,7 @@ final class UpdateScenarioRule
         $this->authorization->assertOwned($rule);
         $configuration = ScenarioRuleConfiguration::from($data);
         $this->conditions->validate($configuration->conditions);
+        $this->authorization->assertRecipientStrategy($configuration->recipientStrategy);
 
         abort_unless(
             NotificationTemplateVersion::query()
@@ -62,6 +63,12 @@ final class UpdateScenarioRule
                     'delay_value' => $configuration->delayValue,
                     'delay_unit' => $configuration->delayUnit->value,
                     'enabled' => $configuration->isEnabled,
+                    'max_occurrences' => $configuration->maxOccurrences,
+                    'repeat_interval_value' => $configuration->repeatIntervalValue,
+                    'repeat_interval_unit' => $configuration->repeatIntervalUnit?->value,
+                    'recipient_type' => $configuration->recipientStrategy->type->value,
+                    'recipient_count' => count($configuration->recipientStrategy->values),
+                    'channel_count' => count($configuration->channelPriority->channels),
                 ],
             );
 
