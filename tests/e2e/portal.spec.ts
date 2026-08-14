@@ -331,29 +331,34 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
         url: 'http://127.0.0.1:8000',
     }]);
 
+    await page.goto('/');
+    await expect(page.getByText('Перенести', { exact: true })).toHaveCount(0);
+
     await page.goto('/portal/bookings');
     await expect(page.getByRole('heading', { name: 'Мои записи' })).toBeVisible();
     await expect(page.getByText(/Playwright Service/).first()).toBeVisible();
 
     await page.getByRole('link', { name: /Playwright Service/ }).first().click();
     await expect(page.getByRole('heading', { name: /Playwright Service/ })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Часовой пояс' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Часовой пояс' })).toHaveCount(0);
+    await expect(page.getByTestId('availability-slot')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Перенести', exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Перенести', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Выберите новое время' })).toBeVisible();
     const alternateSlot = page.getByTestId('availability-slot').first();
     await expect(alternateSlot).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Перенести запись', exact: true })).toBeDisabled();
     await alternateSlot.click();
-    await page.getByRole('button', { name: 'Перенести' }).click();
+    await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toBeVisible();
 
-    await page.getByRole('combobox').last().selectOption('Asia/Almaty');
-    await page.getByRole('button', { name: 'Сохранить' }).click();
-    await expect(page.getByRole('combobox').last()).toHaveValue('Asia/Almaty');
-
+    await page.getByRole('button', { name: 'Перенести', exact: true }).click();
     const secondAlternateSlot = page.getByTestId('availability-slot').first();
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
-    await page.getByRole('button', { name: 'Перенести' }).click();
+    await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toHaveCount(2);
 

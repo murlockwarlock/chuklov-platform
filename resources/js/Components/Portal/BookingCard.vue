@@ -65,12 +65,6 @@ defineProps<{
       >
         {{ portalText(locale, 'home.details') }}
       </Link>
-      <span
-        v-if="booking.canReschedule"
-        class="portal-copy portal-copy--small"
-      >
-        {{ portalText(locale, 'booking.reschedule') }}
-      </span>
     </div>
   </article>
 </template>

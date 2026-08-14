@@ -40,6 +40,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 - The booking time view now hides redundant one-format context controls, keeps progress labels intact at 320px, and uses a stacked mobile confirmation summary to preserve the reference composition and readable touch layout.
 - A confirmed booking now ends in a dedicated result state with the selected service, specialist, date/time, and format; the calendar and availability list no longer remain underneath the success message, and booking headings/time context have explicit spacing.
+- Booking details now stay compact until the client explicitly starts a reschedule; rescheduling uses the shared calendar and selected-day time grid, while the home booking card no longer shows a non-interactive reschedule label.
+- Booking detail times now render once in the client's display timezone, and technical timezone/payment controls are no longer presented as part of the ordinary client action flow.
 - The Portal shell now uses the full CHUKLOV logo with its inscription; the same full-mark raster is used for the browser, Apple, and Filament admin icons.
 - Removed the visible four-stage client onboarding journey and generic post-authentication Continue entry points. Internal onboarding progress remains available to Application state and legacy mutation compatibility, while optional profile data is progressive and action-specific requirements remain at their business boundary.
 - Authentication now redirects directly to the authenticated Portal home; login/provider status is absent from the authenticated home, and the shell leads with committed CHUKLOV brand assets.

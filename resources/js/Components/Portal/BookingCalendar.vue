@@ -26,14 +26,17 @@ type CalendarDay = {
     hasSlots: boolean;
 };
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     availability: Availability | null;
     dateFrom: string;
     dateTo: string;
     locale: PortalLocale;
     selectedDate: string | null;
     selectedStart: string | null;
-}>();
+    showHeading?: boolean;
+}>(), {
+    showHeading: true,
+});
 
 const emit = defineEmits<{
     selectDate: [date: string];
@@ -222,9 +225,13 @@ function selectSlot(slot: AvailabilitySlot): void {
 <template>
   <section
     class="portal-booking-calendar portal-stack"
-    aria-labelledby="booking-calendar-heading"
+    :aria-labelledby="props.showHeading ? 'booking-calendar-heading' : undefined"
+    :aria-label="props.showHeading ? undefined : text('booking.chooseNewDateTime')"
   >
-    <header class="portal-stack portal-stack--tight">
+    <header
+      v-if="props.showHeading"
+      class="portal-stack portal-stack--tight"
+    >
       <p class="portal-eyebrow">
         {{ text('booking.stepTime') }}
       </p>

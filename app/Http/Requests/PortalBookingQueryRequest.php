@@ -17,6 +17,7 @@ class PortalBookingQueryRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'reschedule' => ['sometimes', 'boolean'],
             'service_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'specialist_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'date_from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -9,8 +10,8 @@ import type { PortalShell } from '../../types/portal';
 type Slot = {
     startsAt: string;
     endsAt: string;
-    displayStartsAt: string;
-    displayEndsAt: string;
+    displayTimezone: string;
+    format: 'office' | 'home' | 'online';
 };
 
 type Booking = {
@@ -37,16 +38,25 @@ type Booking = {
     history: { label: string; oldStartsAt: string | null; newStartsAt: string | null; occurredAt: string }[];
 };
 
+type AvailabilityRange = {
+    dateFrom: string;
+    dateTo: string;
+};
+
 const props = defineProps<{
     portal: PortalShell;
     booking: Booking;
     availability: { displayTimezone: string; slots: Slot[] } | null;
+    availabilityRange: AvailabilityRange | null;
     client: { timezone: string };
-    urls: { index: string; cancel: string; reschedule: string; timezone: string; services: string };
+    urls: { index: string; show: string; cancel: string; reschedule: string; timezone: string; services: string };
 }>();
 
 const { locale, t } = usePortalLocale();
 const selectedSlot = ref<string | null>(null);
+const selectedDate = ref<string | null>(props.booking.localDate);
+const rescheduleOpen = ref(props.availability !== null);
+const rescheduleLoading = ref(false);
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
 const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null; expected_event_version: number }>({
     starts_at: null,
@@ -54,7 +64,6 @@ const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: stri
     reason: null,
     expected_event_version: props.booking.eventVersion,
 });
-const timezoneForm = useForm<{ timezone: string }>({ timezone: props.client.timezone });
 const rescheduleError = computed(() => {
     const errors = rescheduleForm.errors as Record<string, string | undefined>;
 
@@ -64,42 +73,6 @@ const rescheduleError = computed(() => {
         ?? errors.expected_event_version;
 });
 const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
-
-const timezoneLabels: Record<'ru' | 'en', Record<string, string>> = {
-    ru: {
-        UTC: 'Всемирное время',
-        'Asia/Almaty': 'Алматы',
-        'Asia/Aqtau': 'Актау',
-        'Asia/Atyrau': 'Атырау',
-        'Asia/Aqtobe': 'Актобе',
-        'Asia/Tashkent': 'Ташкент',
-        'Asia/Dubai': 'Дубай',
-        'Europe/Moscow': 'Москва',
-        'Europe/Berlin': 'Берлин',
-    },
-    en: {
-        UTC: 'Coordinated Universal Time',
-        'Asia/Almaty': 'Almaty',
-        'Asia/Aqtau': 'Aktau',
-        'Asia/Atyrau': 'Atyrau',
-        'Asia/Aqtobe': 'Aktobe',
-        'Asia/Tashkent': 'Tashkent',
-        'Asia/Dubai': 'Dubai',
-        'Europe/Moscow': 'Moscow',
-        'Europe/Berlin': 'Berlin',
-    },
-};
-
-const timezoneOptions = computed(() => Array.from(new Set([
-    props.client.timezone,
-    'Asia/Almaty',
-    'Europe/Moscow',
-    'Europe/Berlin',
-    'UTC',
-])).map((value) => ({
-    value,
-    label: timezoneLabels[locale.value][value] ?? t('booking.timezone'),
-})));
 
 watch(
     () => props.booking.eventVersion,
@@ -117,7 +90,6 @@ watch(
 watch(
     () => props.client.timezone,
     (timezone) => {
-        timezoneForm.timezone = timezone;
         rescheduleForm.client_timezone = timezone;
     },
     { immediate: true },
@@ -126,6 +98,72 @@ watch(
 function selectSlot(slot: Slot): void {
     selectedSlot.value = slot.startsAt;
     rescheduleForm.starts_at = slot.startsAt;
+}
+
+function selectDate(date: string): void {
+    selectedDate.value = date;
+    selectedSlot.value = null;
+    rescheduleForm.starts_at = null;
+}
+
+function dateKey(date: Date): string {
+    return [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()]
+        .map((part, index) => index === 0 ? String(part) : String(part).padStart(2, '0'))
+        .join('-');
+}
+
+function monthRange(dateValue: string): AvailabilityRange {
+    const [year, month] = dateValue.split('-').map(Number);
+    const fallback = new Date();
+    const resolvedYear = Number.isInteger(year) ? year : fallback.getUTCFullYear();
+    const resolvedMonth = Number.isInteger(month) ? month - 1 : fallback.getUTCMonth();
+    const first = new Date(Date.UTC(resolvedYear, resolvedMonth, 1));
+    const last = new Date(Date.UTC(resolvedYear, resolvedMonth + 1, 0));
+
+    return {
+        dateFrom: dateValue.match(/^\d{4}-\d{2}-\d{2}$/) ? dateValue : dateKey(first),
+        dateTo: dateKey(last),
+    };
+}
+
+function loadAvailability(range: AvailabilityRange): void {
+    rescheduleOpen.value = true;
+    rescheduleLoading.value = true;
+    selectedDate.value = range.dateFrom;
+    selectedSlot.value = null;
+    rescheduleForm.starts_at = null;
+
+    router.get(props.urls.show, {
+        reschedule: 1,
+        date_from: range.dateFrom,
+        date_to: range.dateTo,
+    }, {
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => {
+            rescheduleLoading.value = false;
+        },
+    });
+}
+
+function openReschedule(): void {
+    if (props.availability !== null && props.availabilityRange !== null) {
+        rescheduleOpen.value = true;
+
+        return;
+    }
+
+    loadAvailability(monthRange(props.booking.localDate));
+}
+
+function closeReschedule(): void {
+    rescheduleOpen.value = false;
+    selectedSlot.value = null;
+    rescheduleForm.starts_at = null;
+}
+
+function changeMonth(dateFrom: string, dateTo: string): void {
+    loadAvailability({ dateFrom, dateTo });
 }
 
 function cancelBooking(): void {
@@ -137,12 +175,16 @@ function rescheduleBooking(): void {
         return;
     }
 
-    rescheduleForm.post(props.urls.reschedule, { preserveScroll: true });
+    rescheduleForm.post(props.urls.reschedule, {
+        preserveScroll: true,
+        onSuccess: () => {
+            rescheduleOpen.value = false;
+            selectedSlot.value = null;
+            rescheduleForm.starts_at = null;
+        },
+    });
 }
 
-function saveTimezone(): void {
-    timezoneForm.post(props.urls.timezone, { preserveScroll: true });
-}
 </script>
 
 <template>
@@ -181,13 +223,10 @@ function saveTimezone(): void {
             :value="props.booking.startsAt"
             :time-zone="props.booking.timezone"
             :locale="locale"
+            mode="date"
           />
-        </p>
-        <p class="portal-copy portal-copy--small">
-          {{ props.booking.localTime }}–{{ props.booking.localEndsAt }}
-        </p>
-        <p class="portal-copy portal-copy--small">
-          {{ props.booking.paymentStatusLabel }}
+          <span aria-hidden="true"> · </span>
+          <span>{{ props.booking.localTime }}–{{ props.booking.localEndsAt }}</span>
         </p>
         <p
           v-if="props.booking.location"
@@ -216,53 +255,70 @@ function saveTimezone(): void {
         >
           {{ t('booking.contactStaff') }}
         </p>
+        <div
+          v-if="props.booking.canReschedule"
+          class="portal-form-actions"
+        >
+          <button
+            type="button"
+            class="portal-button portal-button--primary"
+            :disabled="rescheduleLoading"
+            @click="openReschedule"
+          >
+            {{ rescheduleLoading ? t('common.loading') : t('booking.reschedule') }}
+          </button>
+        </div>
       </section>
 
       <section
-        v-if="props.booking.canReschedule && props.availability"
-        class="portal-stack"
-        aria-labelledby="reschedule-heading"
+        v-if="rescheduleOpen"
+        class="portal-panel portal-stack"
+        :aria-label="t('booking.reschedule')"
       >
-        <h2
-          id="reschedule-heading"
-          class="portal-heading portal-heading--section"
-        >
-          {{ t('booking.reschedule') }}
-        </h2>
+        <header class="portal-section-heading">
+          <div class="portal-stack portal-stack--tight">
+            <p class="portal-eyebrow">
+              {{ t('booking.reschedule') }}
+            </p>
+            <h2 class="portal-heading portal-heading--section">
+              {{ t('booking.chooseNewDateTime') }}
+            </h2>
+          </div>
+          <button
+            type="button"
+            class="portal-link portal-link--button"
+            @click="closeReschedule"
+          >
+            {{ t('booking.backToDetails') }}
+          </button>
+        </header>
         <p
-          v-if="props.availability.slots.length === 0"
+          v-if="rescheduleLoading"
           class="portal-notice"
         >
-          {{ t('booking.noSlots') }}
+          {{ t('booking.loadingAvailability') }}
         </p>
-        <div
-          v-else
-          class="portal-grid portal-grid--cards"
-          aria-label="Свободное время для переноса"
-        >
-          <button
-            v-for="slot in props.availability.slots"
-            :key="slot.startsAt"
-            type="button"
-            class="portal-card portal-card--interactive"
-            data-testid="availability-slot"
-            :aria-pressed="selectedSlot === slot.startsAt"
-            @click="selectSlot(slot)"
-          >
-            <PortalDateTime
-              :value="slot.startsAt"
-              :time-zone="props.availability.displayTimezone"
-              :locale="locale"
-            />
-          </button>
-        </div>
+        <BookingCalendar
+          v-else-if="props.availability && props.availabilityRange"
+          :availability="props.availability"
+          :date-from="props.availabilityRange.dateFrom"
+          :date-to="props.availabilityRange.dateTo"
+          :locale="locale"
+          :selected-date="selectedDate"
+          :selected-start="selectedSlot"
+          :show-heading="false"
+          @select-date="selectDate"
+          @select-slot="selectSlot"
+          @change-month="changeMonth"
+        />
         <button
+          v-if="props.availability && props.availabilityRange"
           type="button"
           class="portal-button portal-button--primary self-start"
           :disabled="rescheduleForm.processing || selectedSlot === null"
           @click="rescheduleBooking"
         >
-          {{ rescheduleForm.processing ? t('profile.saving') : t('booking.reschedule') }}
+          {{ rescheduleForm.processing ? t('profile.saving') : t('booking.confirmReschedule') }}
         </button>
         <p
           v-if="rescheduleError"
@@ -282,7 +338,7 @@ function saveTimezone(): void {
           id="cancel-heading"
           class="portal-heading portal-heading--section"
         >
-          {{ t('booking.cancel') }}
+          {{ t('booking.cancelTitle') }}
         </h2>
         <button
           type="button"
@@ -299,46 +355,6 @@ function saveTimezone(): void {
         >
           {{ cancelError }}
         </p>
-      </section>
-
-      <section
-        class="portal-panel portal-stack portal-stack--tight"
-        aria-labelledby="timezone-heading"
-      >
-        <h2
-          id="timezone-heading"
-          class="portal-heading portal-heading--section"
-        >
-          {{ t('booking.timezone') }}
-        </h2>
-        <p class="portal-copy portal-copy--small">
-          {{ t('booking.timezone') }}
-        </p>
-        <form
-          class="portal-cluster"
-          @submit.prevent="saveTimezone"
-        >
-          <select
-            v-model="timezoneForm.timezone"
-            required
-            class="portal-input"
-          >
-            <option
-              v-for="option in timezoneOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-          <button
-            type="submit"
-            class="portal-button portal-button--secondary"
-            :disabled="timezoneForm.processing"
-          >
-            {{ t('profile.save') }}
-          </button>
-        </form>
       </section>
 
       <section

@@ -523,6 +523,34 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         app(UpdateClientTimezonePreference::class)->handle('+05:00');
     }
 
+    public function test_client_booking_details_load_availability_only_when_rescheduling(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $client->forceFill(['timezone' => 'Europe/Berlin'])->save();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+        $this->setOrganization($organization);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.show', $booking->getKey()))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('availability', null)
+                ->where('availabilityRange', null));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.show', $booking->getKey()).'?'.http_build_query([
+                'reschedule' => 1,
+                'date_from' => '2026-04-01',
+                'date_to' => '2026-04-30',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('availabilityRange.dateFrom', '2026-04-01')
+                ->where('availabilityRange.dateTo', '2026-04-30')
+                ->has('availability.slots'));
+    }
+
     public function test_idempotency_key_is_organization_scoped(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture();

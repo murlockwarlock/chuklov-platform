@@ -180,6 +180,7 @@ class BookingController extends Controller
 
     public function show(
         int $bookingId,
+        PortalBookingQueryRequest $request,
         ListClientBookings $bookings,
         CalculateAvailability $availability,
         ClientPortalContext $clientContext,
@@ -190,27 +191,40 @@ class BookingController extends Controller
         $client = $clientContext->client();
         $displayTimezone = $client->timezone;
         $availabilityProjection = null;
+        $availabilityRange = null;
+        $bookingProjection = $bookings->projection($booking, app()->getLocale());
 
-        if (! in_array($booking->status->value, ['rejected', 'cancelled', 'completed', 'no_show'], true)) {
+        if ($request->boolean('reschedule')
+            && ($bookingProjection['canReschedule'] ?? false) === true
+            && ! in_array($booking->status->value, ['rejected', 'cancelled', 'completed', 'no_show'], true)) {
             $localDate = $booking->startsAtUtc()->setTimezone($displayTimezone);
+            $dateFrom = $request->validated('date_from') ?? $localDate->startOfMonth()->toDateString();
+            $dateTo = $request->validated('date_to') ?? $localDate->endOfMonth()->toDateString();
+
             if ($features->isEnabled($client->organization, OrganizationFeature::ServiceCatalog)) {
                 $availabilityProjection = $availability->forClient(
                     client: $client,
                     specialistId: $booking->specialist_id,
                     serviceId: $booking->service_id,
-                    dateFrom: $localDate->toDateString(),
-                    dateTo: $localDate->addDays(6)->toDateString(),
+                    dateFrom: $dateFrom,
+                    dateTo: $dateTo,
                     format: $booking->visit_format,
                     displayTimezone: $displayTimezone,
                 )->toArray();
+                $availabilityRange = [
+                    'dateFrom' => $dateFrom,
+                    'dateTo' => $dateTo,
+                ];
             }
         }
 
         return Inertia::render('Portal/BookingShow', [
-            'booking' => $bookings->projection($booking, app()->getLocale()),
+            'booking' => $bookingProjection,
             'availability' => $availabilityProjection,
+            'availabilityRange' => $availabilityRange,
             'urls' => [
                 'index' => route('portal.bookings.index'),
+                'show' => route('portal.bookings.show', $booking->getKey()),
                 'cancel' => route('portal.bookings.cancel', $booking->getKey()),
                 'reschedule' => route('portal.bookings.reschedule', $booking->getKey()),
                 'timezone' => route('portal.preferences.timezone'),
