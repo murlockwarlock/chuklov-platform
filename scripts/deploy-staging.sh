@@ -171,7 +171,7 @@ install -d -m 0700 "$snapshot"
 install -d -m 0700 "$backups"
 date --iso-8601=seconds > "$snapshot/captured-at.txt"
 ss -H -lntup | sort > "$snapshot/listening-ports-full.txt"
-ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort > "$snapshot/listening-ports.txt"
+ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g; s/[[:space:]]+$//' | sort > "$snapshot/listening-ports.txt"
 systemctl list-units --type=service --state=running --no-pager > "$snapshot/running-services.txt"
 pm2 jlist > "$snapshot/pm2.json"
 pm2 jlist | jq -r '.[] | [.name, .pm2_env.status] | @tsv' | sort > "$snapshot/pm2-status.tsv"
@@ -292,7 +292,7 @@ if ! cmp -s "$snapshot/host-databases.txt" <(sudo -u postgres psql -Atqc 'select
     echo "Host PostgreSQL database inventory changed during deployment." >&2
     false
 fi
-if ! cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g' | sort); then
+if ! cmp -s "$snapshot/listening-ports.txt" <(ss -H -lntup | sed -E 's/pid=[0-9]+/pid=PID/g; s/fd=[0-9]+/fd=FD/g; s/[[:space:]]+$//' | sort); then
     echo "Host listening-port inventory changed during deployment." >&2
     false
 fi
