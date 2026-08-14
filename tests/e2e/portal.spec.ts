@@ -211,6 +211,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+    await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
     await page.getByRole('link', { name: 'Profile' }).last().click();
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
 });
@@ -224,10 +225,12 @@ test('authenticated client can complete the booking journey', async ({ page }) =
         url: 'http://127.0.0.1:8000',
     }]);
 
-    const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&specialist_id=${fixture.specialistId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
     expect(response?.status()).toBe(200);
 
     await expect(page.getByRole('heading', { name: 'Дата и время' })).toBeVisible();
+    await expect(page.locator('#booking-specialist')).toHaveCount(0);
+    await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
     await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
     const firstSlot = page.getByTestId('availability-slot').first();
     await expect(firstSlot).toBeVisible();

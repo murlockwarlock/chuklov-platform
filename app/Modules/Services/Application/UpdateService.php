@@ -61,7 +61,7 @@ class UpdateService
         $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageServices);
 
-        $configuration = ServiceConfiguration::from(is_array($name) ? $name : [
+        $attributes = is_array($name) ? $name : [
             'name' => $name,
             'summary' => $summary,
             'is_active' => $isActive,
@@ -77,7 +77,9 @@ class UpdateService
             'price_minor' => $priceMinor,
             'price_currency' => $priceCurrency,
             'payment_policy' => $paymentPolicy,
-        ]);
+        ];
+        $attributes['image_path'] ??= $service->getAttribute('image_path');
+        $configuration = ServiceConfiguration::from($attributes);
 
         return DB::transaction(function () use ($actor, $configuration, $organization, $service, $acknowledgeImpact, $acknowledgedImpactDigest): Service {
             $lockedService = Service::query()

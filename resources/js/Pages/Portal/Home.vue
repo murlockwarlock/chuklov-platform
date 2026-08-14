@@ -26,6 +26,7 @@ type Service = {
     id: number;
     name: string;
     summary: string | null;
+    imageUrl: string | null;
     durationMinutes: number | null;
     priceMinor: number | null;
     priceCurrency: string | null;

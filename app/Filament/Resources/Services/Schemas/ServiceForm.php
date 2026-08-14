@@ -26,6 +26,10 @@ class ServiceForm
                     ->required()
                     ->maxLength(500)
                     ->rows(4),
+                TextInput::make('image_path')
+                    ->label('Изображение карточки')
+                    ->helperText('Путь к изображению в публичных ассетах, например portal-assets/services/consultation.jpg.')
+                    ->maxLength(255),
                 TextInput::make('name_ru')
                     ->label('Название на русском')
                     ->maxLength(160),

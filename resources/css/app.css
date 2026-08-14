@@ -416,6 +416,25 @@ body {
         padding: var(--portal-space-5);
     }
 
+    .portal-service-card--with-image {
+        padding: 0;
+        overflow: hidden;
+    }
+
+    .portal-service-card__media {
+        min-height: 10rem;
+        background: var(--portal-color-surface-muted);
+        overflow: hidden;
+    }
+
+    .portal-service-card__image {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 10rem;
+        object-fit: cover;
+    }
+
     .portal-service-grid--wide {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -424,6 +443,149 @@ body {
         display: flex;
         flex-direction: column;
         gap: var(--portal-space-3);
+    }
+
+    .portal-service-card--with-image .portal-service-card__body,
+    .portal-service-card--with-image .portal-service-card__link {
+        margin-inline: var(--portal-space-5);
+    }
+
+    .portal-service-card--with-image .portal-service-card__link {
+        margin-bottom: var(--portal-space-5);
+    }
+
+    .portal-booking-progress {
+        display: flex;
+        align-items: center;
+        gap: var(--portal-space-3);
+        overflow-x: auto;
+        padding: 0.25rem 0;
+        color: var(--portal-color-ink-faint);
+        font-size: 0.72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .portal-booking-progress__step {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--portal-space-2);
+    }
+
+    .portal-booking-progress__step--active {
+        color: var(--portal-color-ink);
+    }
+
+    .portal-booking-progress__number {
+        display: inline-flex;
+        width: 1.5rem;
+        height: 1.5rem;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--portal-color-border-strong);
+        border-radius: 50%;
+        background: var(--portal-color-surface);
+        color: inherit;
+        font-size: 0.7rem;
+    }
+
+    .portal-booking-progress__step--active .portal-booking-progress__number {
+        border-color: var(--portal-color-brand);
+        background: var(--portal-color-brand);
+        color: var(--portal-color-surface);
+    }
+
+    .portal-booking-progress__line {
+        width: 2rem;
+        height: 1px;
+        flex: 0 0 auto;
+        background: var(--portal-color-border);
+    }
+
+    .portal-booking-specialist {
+        display: flex;
+        flex-direction: column;
+        gap: var(--portal-space-2);
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface-muted);
+        padding: var(--portal-space-4);
+    }
+
+    .portal-slot-days {
+        display: flex;
+        flex-direction: column;
+        gap: var(--portal-space-5);
+    }
+
+    .portal-slot-day {
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        padding: var(--portal-space-4);
+    }
+
+    .portal-slot-day__header {
+        margin-bottom: var(--portal-space-4);
+    }
+
+    .portal-slot-day__header .portal-kicker {
+        color: var(--portal-color-ink);
+        letter-spacing: 0.04em;
+        text-transform: none;
+    }
+
+    .portal-slot-grid {
+        display: grid;
+        gap: var(--portal-space-3);
+        grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    }
+
+    .portal-slot {
+        display: flex;
+        min-height: 4.25rem;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 0.25rem;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-sm);
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        padding: var(--portal-space-3) var(--portal-space-4);
+        text-align: left;
+        transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+    }
+
+    .portal-slot:hover {
+        border-color: var(--portal-color-brand);
+        transform: translateY(-1px);
+    }
+
+    .portal-slot:focus-visible {
+        outline: 3px solid rgb(194 111 79 / 35%);
+        outline-offset: 3px;
+    }
+
+    .portal-slot[aria-pressed='true'] {
+        border-color: var(--portal-color-ink);
+        background: var(--portal-color-ink);
+        color: var(--portal-color-surface);
+    }
+
+    .portal-slot__time {
+        font-size: 1rem;
+        font-weight: 750;
+    }
+
+    .portal-slot__until {
+        color: var(--portal-color-ink-soft);
+        font-size: 0.75rem;
+    }
+
+    .portal-slot[aria-pressed='true'] .portal-slot__until {
+        color: rgb(255 255 255 / 76%);
     }
 
     .portal-service-card__meta {
@@ -776,6 +938,32 @@ body {
 
         .portal-service-grid--wide {
             grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .portal-service-card--with-image {
+            display: grid;
+            grid-template-columns: minmax(7rem, 0.72fr) minmax(0, 1.28fr);
+            grid-template-rows: 1fr auto;
+        }
+
+        .portal-service-card--with-image .portal-service-card__media {
+            grid-row: 1 / -1;
+            min-height: 100%;
+        }
+
+        .portal-service-card--with-image .portal-service-card__image {
+            min-height: 100%;
+        }
+
+        .portal-service-card--with-image .portal-service-card__body {
+            grid-column: 2;
+            grid-row: 1;
+            align-self: center;
+        }
+
+        .portal-service-card--with-image .portal-service-card__link {
+            grid-column: 2;
+            grid-row: 2;
         }
 
         .portal-panel,

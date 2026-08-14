@@ -7,6 +7,7 @@ type Service = {
     id: number;
     name: string;
     summary: string | null;
+    imageUrl: string | null;
     durationMinutes: number | null;
     priceMinor: number | null;
     priceCurrency: string | null;
@@ -39,10 +40,30 @@ const price = computed(() => {
 
     return portalText(props.locale, 'service.from') + ' ' + formatted;
 });
+
+const bookingLink = computed(() => {
+    const separator = props.bookingUrl.includes('?') ? '&' : '?';
+
+    return `${props.bookingUrl}${separator}service_id=${props.service.id}`;
+});
 </script>
 
 <template>
-  <article class="portal-service-card">
+  <article
+    class="portal-service-card"
+    :class="{ 'portal-service-card--with-image': service.imageUrl }"
+  >
+    <div
+      v-if="service.imageUrl"
+      class="portal-service-card__media"
+    >
+      <img
+        :src="service.imageUrl"
+        :alt="service.name"
+        class="portal-service-card__image"
+        loading="lazy"
+      >
+    </div>
     <div class="portal-service-card__body">
       <h3 class="portal-heading portal-heading--card">
         {{ service.name }}
@@ -59,7 +80,7 @@ const price = computed(() => {
       </div>
     </div>
     <a
-      :href="bookingUrl"
+      :href="bookingLink"
       class="portal-link portal-service-card__link"
     >
       {{ portalText(locale, 'services.book') }}

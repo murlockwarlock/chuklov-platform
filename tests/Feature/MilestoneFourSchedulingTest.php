@@ -465,6 +465,34 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
     }
 
+    public function test_portal_auto_selects_the_only_bookable_specialist(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->id,
+                'date_from' => '2026-03-30',
+                'date_to' => '2026-03-30',
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->where('specialists', [[
+                    'id' => $specialist->id,
+                    'displayName' => $specialist->display_name,
+                ]])
+                ->where('query.specialistId', $specialist->id)
+                ->where('availability.specialistId', $specialist->id));
+    }
+
     public function test_portal_returns_no_slots_and_creation_rejects_an_unassigned_pair(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
@@ -488,7 +516,7 @@ class MilestoneFourSchedulingTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/BookingCreate')
-                ->where('availability', null));
+                ->where('availability.slots', []));
 
         $this->expectException(ValidationException::class);
         app(CreateBooking::class)->handle(

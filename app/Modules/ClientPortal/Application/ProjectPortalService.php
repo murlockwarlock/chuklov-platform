@@ -14,6 +14,7 @@ final class ProjectPortalService
             'name' => $this->localizedValue($service, 'name', $locale) ?? (string) $service->name,
             'summary' => $this->localizedValue($service, 'description', $locale)
                 ?? (string) $service->summary,
+            'imageUrl' => $this->imageUrl($service),
             'category' => $this->stringValue($service->getAttribute('category')),
             'durationMinutes' => $service->durationMinutes(),
             'priceMinor' => $service->getAttribute('price_minor'),
@@ -46,5 +47,12 @@ final class ProjectPortalService
         }
 
         return trim($value);
+    }
+
+    private function imageUrl(Service $service): ?string
+    {
+        $path = $this->stringValue($service->getAttribute('image_path'));
+
+        return $path === null ? null : asset($path);
     }
 }

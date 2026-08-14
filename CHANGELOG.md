@@ -14,6 +14,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Telegram `/start` is registered with the Russian `Запустить приложение` description.
 - Durable client/CRM copy rules that exclude developer terminology and generic product filler from ordinary user interfaces.
 - Exact-revision isolated staging deployment automation with preflight baselines, validated staging database backup, atomic release switching, runtime refresh, health checks, unrelated-service comparisons, and application rollback.
+- Portal service cards now support optional configured imagery, use the refreshed CHUKLOV logo/favicon assets, and present a compact reference-inspired booking flow with grouped date/time slots.
 
 - Milestone 5A Scenario / Notification Engine foundation: organization-scoped PostgreSQL scenario events, typed configurable rules and conditions, localized immutable template versions, verified client/internal recipient resolution, ordered channel fallback, durable scheduled actions, idempotent delivery attempts, PostgreSQL-safe worker claiming, CRM configuration/history, and the Booking `COMPLETED` transactional follow-up slice. M5B scenarios and the undefined +72h condition remain out of scope.
 
@@ -38,6 +39,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Removed the visible four-stage client onboarding journey and generic post-authentication Continue entry points. Internal onboarding progress remains available to Application state and legacy mutation compatibility, while optional profile data is progressive and action-specific requirements remain at their business boundary.
 - Authentication now redirects directly to the authenticated Portal home; login/provider status is absent from the authenticated home, and the shell leads with committed CHUKLOV brand assets.
 - Portal UI strings use one RU/EN localization dictionary with a visible shell switcher; organization-owned service/legal content falls back without fabricated translations.
+- Service entry links preserve the selected service, and the Portal auto-selects the only bookable specialist while retaining a selector for organizations with multiple specialists.
 - Productized the existing Russian Portal and CRM journeys: removed milestone, runtime, provider, timezone, event-ledger, version, and technical-key leakage; derived booking idempotency server-side; translated statuses, errors, scheduling controls, templates, content, and CRM fields into business language; and kept the underlying security, concurrency, audit, immutable revision, and durable workflow guarantees unchanged.
 
 - Simplified the unauthenticated Portal entry to Russian client-facing login controls and changed the bot `/start` command description to `Запустить приложение`.

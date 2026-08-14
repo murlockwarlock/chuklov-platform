@@ -56,6 +56,13 @@ class BookingController extends Controller
         $selectedSpecialist = $specialistId === null
             ? null
             : $bookableSpecialists->first(fn (Specialist $specialist): bool => $specialist->getKey() === $specialistId);
+
+        if ($selectedSpecialist === null && $bookableSpecialists->count() === 1) {
+            $selectedSpecialist = $bookableSpecialists->first();
+            $specialistId = $selectedSpecialist instanceof Specialist
+                ? (int) $selectedSpecialist->getKey()
+                : null;
+        }
         $displayTimezone = $this->displayTimezone($validated['display_timezone'] ?? null, $client->timezone);
         [$dateFrom, $dateTo] = $this->dateRange($validated, $displayTimezone);
         $format = $this->selectedFormat($validated['format'] ?? null, $selectedService);

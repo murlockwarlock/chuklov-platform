@@ -7,6 +7,11 @@
 - Confirmed a CHUKLOV-first authenticated shell, persistent RU/EN client locale selection, desktop navigation, Mini App/mobile bottom navigation, direct Profile access, and authentication UI disappearing after success.
 - Confirmed that existing immutable/versioned consent semantics remain unchanged; absent an explicit global legal gate, published consents are presented directly in Profile rather than as a generic onboarding step.
 
+## 2026-08-14 — Owner-confirmed Phase 1 specialist selection
+
+- Confirmed that the current client booking journey has one bookable specialist, Евгений Чуклов, so the Portal preselects that specialist and does not ask the client to make a redundant choice.
+- Confirmed that the specialist selector remains available when a service later has multiple eligible specialists; the domain assignment and authorization rules remain unchanged.
+
 ## 2026-08-14 — Owner-confirmed Telegram web authentication
 
 - Amended REQ-PORTAL-005 and REQ-SEC-004 so ordinary web offers Telegram and passwordless email as independent authentication methods.

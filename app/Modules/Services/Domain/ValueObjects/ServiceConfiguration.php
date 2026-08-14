@@ -11,6 +11,7 @@ final readonly class ServiceConfiguration
     private function __construct(
         public string $name,
         public string $summary,
+        public ?string $imagePath,
         public bool $isActive,
         public CatalogItemType $catalogType,
         public ?string $nameRu,
@@ -44,6 +45,7 @@ final readonly class ServiceConfiguration
             'The service summary is invalid.',
             500,
         );
+        $imagePath = self::imagePath($attributes['image_path'] ?? null);
         $catalogType = self::catalogType($attributes['catalog_type'] ?? CatalogItemType::Service->value);
 
         $descriptionRu = self::optionalString(
@@ -91,6 +93,7 @@ final readonly class ServiceConfiguration
         return new self(
             name: $name,
             summary: $summary,
+            imagePath: $imagePath,
             isActive: (bool) ($attributes['is_active'] ?? true),
             catalogType: $catalogType,
             nameRu: $nameRu,
@@ -113,6 +116,7 @@ final readonly class ServiceConfiguration
         return [
             'name' => $this->name,
             'summary' => $this->summary,
+            'image_path' => $this->imagePath,
             'is_active' => $this->isActive,
             'catalog_type' => $this->catalogType->value,
             'name_ru' => $this->nameRu,
@@ -161,6 +165,30 @@ final readonly class ServiceConfiguration
     private static function emptyToZero(mixed $value): mixed
     {
         return $value === null || (is_string($value) && trim($value) === '') ? 0 : $value;
+    }
+
+    private static function imagePath(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException('The service image path is invalid.');
+        }
+
+        $value = trim($value);
+
+        if ($value === ''
+            || mb_strlen($value) > 255
+            || str_starts_with($value, '/')
+            || str_contains($value, '..')
+            || preg_match('/\.(?:jpe?g|png|webp|avif)$/i', $value) !== 1
+        ) {
+            throw new InvalidArgumentException('The service image path is invalid.');
+        }
+
+        return $value;
     }
 
     private static function catalogType(mixed $value): CatalogItemType

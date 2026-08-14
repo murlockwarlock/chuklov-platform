@@ -15,6 +15,7 @@ class ServiceFactory extends Factory
         return [
             'name' => fake()->unique()->words(3, true),
             'summary' => fake()->sentence(),
+            'image_path' => null,
             'catalog_type' => 'service',
             'name_ru' => null,
             'name_en' => null,

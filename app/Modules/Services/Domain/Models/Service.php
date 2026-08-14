@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'name',
     'summary',
+    'image_path',
     'catalog_type',
     'name_ru',
     'name_en',

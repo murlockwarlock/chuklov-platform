@@ -48,6 +48,12 @@ type BookingResult = {
     bookingId: number;
 } | null;
 
+type SlotDay = {
+    key: string;
+    firstSlot: AvailabilitySlot;
+    slots: AvailabilitySlot[];
+};
+
 type Props = {
     portal: PortalShell;
     services: ServiceOption[];
@@ -99,12 +105,47 @@ const selectedService = computed(() =>
 const formatOptions = computed<VisitFormat[]>(() =>
     selectedService.value?.formats ?? ['office', 'home', 'online'],
 );
+const singleSpecialist = computed(() =>
+    props.specialists.length === 1 ? props.specialists[0] : null,
+);
+const slotDays = computed<SlotDay[]>(() => {
+    if (!props.availability) {
+        return [];
+    }
+
+    const groups = new Map<string, SlotDay>();
+
+    for (const slot of props.availability.slots) {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            day: '2-digit',
+            month: '2-digit',
+            timeZone: props.availability.displayTimezone,
+            year: 'numeric',
+        }).formatToParts(new Date(slot.startsAt));
+        const values = Object.fromEntries(
+            parts
+                .filter((part) => ['day', 'month', 'year'].includes(part.type))
+                .map((part) => [part.type, part.value]),
+        ) as Record<'day' | 'month' | 'year', string>;
+        const key = `${values.year}-${values.month}-${values.day}`;
+        const existing = groups.get(key);
+
+        if (existing) {
+            existing.slots.push(slot);
+        } else {
+            groups.set(key, { key, firstSlot: slot, slots: [slot] });
+        }
+    }
+
+    return Array.from(groups.values());
+});
 const bookingFormErrors = computed(() => bookingForm.errors as Record<string, string | undefined>);
 const bookingError = computed(() =>
     bookingFormErrors.value.starts_at
     ?? bookingFormErrors.value.startsAt
     ?? bookingFormErrors.value.assignment
     ?? bookingFormErrors.value.service_id
+    ?? bookingFormErrors.value.specialist_id
     ?? bookingFormErrors.value.format
     ?? bookingFormErrors.value.party_size
     ?? bookingFormErrors.value.location,
@@ -125,7 +166,7 @@ function submitBooking(): void {
     }
 
     bookingForm.service_id = props.query.serviceId;
-    bookingForm.specialist_id = props.query.specialistId;
+    bookingForm.specialist_id = props.query.specialistId ?? singleSpecialist.value?.id ?? null;
     bookingForm.format = props.query.format;
     bookingForm.starts_at = selectedStart.value;
     bookingForm.post(props.urls.store, { preserveScroll: true });
@@ -153,6 +194,40 @@ function submitBooking(): void {
         </div>
       </header>
 
+      <nav
+        class="portal-booking-progress"
+        :aria-label="t('booking.title')"
+      >
+        <span class="portal-booking-progress__step portal-booking-progress__step--active">
+          <span class="portal-booking-progress__number">1</span>
+          {{ t('booking.stepService') }}
+        </span>
+        <span
+          class="portal-booking-progress__line"
+          aria-hidden="true"
+        />
+        <span class="portal-booking-progress__step">
+          <span class="portal-booking-progress__number">2</span>
+          {{ t('booking.stepFormat') }}
+        </span>
+        <span
+          class="portal-booking-progress__line"
+          aria-hidden="true"
+        />
+        <span class="portal-booking-progress__step">
+          <span class="portal-booking-progress__number">3</span>
+          {{ t('booking.stepTime') }}
+        </span>
+        <span
+          class="portal-booking-progress__line"
+          aria-hidden="true"
+        />
+        <span class="portal-booking-progress__step">
+          <span class="portal-booking-progress__number">4</span>
+          {{ t('booking.stepConfirm') }}
+        </span>
+      </nav>
+
       <p
         v-if="props.bookingResult"
         class="portal-notice"
@@ -166,7 +241,7 @@ function submitBooking(): void {
         method="get"
         class="portal-panel portal-stack"
       >
-        <div class="portal-field">
+        <div class="portal-field portal-field--wide">
           <label
             for="booking-service"
             class="portal-label"
@@ -231,7 +306,23 @@ function submitBooking(): void {
           </div>
         </div>
 
-        <div class="portal-field">
+        <div
+          v-if="props.query.serviceId && singleSpecialist"
+          class="portal-booking-specialist"
+        >
+          <span class="portal-label">{{ t('booking.specialist') }}</span>
+          <strong>{{ singleSpecialist.displayName }}</strong>
+          <input
+            type="hidden"
+            name="specialist_id"
+            :value="props.query.specialistId ?? singleSpecialist.id"
+          >
+        </div>
+
+        <div
+          v-else-if="props.query.serviceId && props.specialists.length > 1"
+          class="portal-field"
+        >
           <label
             for="booking-specialist"
             class="portal-label"
@@ -242,7 +333,6 @@ function submitBooking(): void {
             required
             class="portal-input"
             :value="props.query.specialistId ?? ''"
-            :disabled="props.specialists.length === 0"
           >
             <option
               value=""
@@ -258,20 +348,22 @@ function submitBooking(): void {
               {{ specialist.displayName }}
             </option>
           </select>
-          <p
-            v-if="props.query.serviceId && props.specialists.length === 0"
-            class="portal-copy portal-copy--small"
-          >
-            {{ t('booking.noSpecialists') }}
-          </p>
         </div>
 
-        <div class="portal-grid portal-grid--two">
+        <p
+          v-if="props.query.serviceId && props.specialists.length === 0"
+          class="portal-notice portal-notice--warning"
+          role="status"
+        >
+          {{ t('booking.noSpecialists') }}
+        </p>
+
+        <div class="portal-grid portal-grid--two portal-booking-date-window">
           <div class="portal-field">
             <label
               for="booking-date-from"
               class="portal-label"
-            >{{ t('booking.dateTime') }}</label>
+            >{{ t('booking.from') }}</label>
             <input
               id="booking-date-from"
               name="date_from"
@@ -285,7 +377,7 @@ function submitBooking(): void {
             <label
               for="booking-date-to"
               class="portal-label"
-            >{{ t('booking.dateTime') }}</label>
+            >{{ t('booking.to') }}</label>
             <input
               id="booking-date-to"
               name="date_to"
@@ -351,34 +443,54 @@ function submitBooking(): void {
 
         <div
           v-else
-          class="portal-grid portal-grid--cards"
+          class="portal-slot-days"
           :aria-label="t('booking.chooseTime')"
         >
-          <button
-            v-for="slot in props.availability.slots"
-            :key="slot.startsAt"
-            type="button"
-            class="portal-card portal-card--interactive"
-            data-testid="availability-slot"
-            :aria-pressed="selectedStart === slot.startsAt"
-            @click="selectSlot(slot)"
+          <section
+            v-for="day in slotDays"
+            :key="day.key"
+            class="portal-slot-day"
           >
-            <span class="portal-heading portal-heading--card">
-              <PortalDateTime
-                :value="slot.startsAt"
-                :time-zone="props.availability.displayTimezone"
-                :locale="locale"
-              />
-            </span>
-            <span class="portal-card__summary">
-              {{ t('booking.until') }}
-              <PortalDateTime
-                :value="slot.endsAt"
-                :time-zone="props.availability.displayTimezone"
-                :locale="locale"
-              />
-            </span>
-          </button>
+            <header class="portal-slot-day__header">
+              <p class="portal-kicker">
+                <PortalDateTime
+                  :value="day.firstSlot.startsAt"
+                  :time-zone="props.availability.displayTimezone"
+                  :locale="locale"
+                  mode="date"
+                />
+              </p>
+            </header>
+            <div class="portal-slot-grid">
+              <button
+                v-for="slot in day.slots"
+                :key="slot.startsAt"
+                type="button"
+                class="portal-slot"
+                data-testid="availability-slot"
+                :aria-pressed="selectedStart === slot.startsAt"
+                @click="selectSlot(slot)"
+              >
+                <span class="portal-slot__time">
+                  <PortalDateTime
+                    :value="slot.startsAt"
+                    :time-zone="props.availability.displayTimezone"
+                    :locale="locale"
+                    mode="time"
+                  />
+                </span>
+                <span class="portal-slot__until">
+                  {{ t('booking.until') }}
+                  <PortalDateTime
+                    :value="slot.endsAt"
+                    :time-zone="props.availability.displayTimezone"
+                    :locale="locale"
+                    mode="time"
+                  />
+                </span>
+              </button>
+            </div>
+          </section>
         </div>
       </section>
 

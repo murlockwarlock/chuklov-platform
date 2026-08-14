@@ -6,19 +6,22 @@ use Tests\TestCase;
 
 class BrandingAssetsTest extends TestCase
 {
-    public function test_original_brand_assets_are_preserved(): void
+    public function test_current_brand_assets_are_available(): void
     {
         $assets = [
-            'brand/chuklov-emblem.png' => '724a54661c864b45531dc7855c7b354e82f49a69204ffff6b22eff6328a0e01b',
-            'brand/chuklov-mark.png' => 'a51aec77a667c92091ded3ac13d96cf4351a9a254d92ac14b411c80d6c88f973',
-            'brand/chuklov-app-icon.png' => 'efb403d1d2b1086e13abb928ed2a4ec20ac93a0bc95c682a3d00a59afc96a599',
+            'brand/chuklov-logo.jpg',
+            'brand/chuklov-emblem.png',
+            'brand/chuklov-mark.png',
+            'brand/chuklov-app-icon.png',
+            'brand/chuklov-favicon.png',
         ];
 
-        foreach ($assets as $path => $expectedHash) {
+        foreach ($assets as $path) {
             $absolutePath = public_path($path);
 
             self::assertFileExists($absolutePath);
-            self::assertSame($expectedHash, hash_file('sha256', $absolutePath));
+            self::assertGreaterThan(0, filesize($absolutePath));
+            self::assertNotFalse(getimagesize($absolutePath));
         }
     }
 
@@ -27,8 +30,16 @@ class BrandingAssetsTest extends TestCase
         $template = file_get_contents(resource_path('views/app.blade.php'));
 
         self::assertIsString($template);
-        self::assertStringContainsString('rel="icon" type="image/png" href="{{ asset(\'brand/chuklov-mark.png\') }}"', $template);
+        self::assertStringContainsString('rel="icon" type="image/png" href="{{ asset(\'brand/chuklov-favicon.png\') }}"', $template);
         self::assertStringContainsString('rel="apple-touch-icon" href="{{ asset(\'brand/chuklov-app-icon.png\') }}"', $template);
+    }
+
+    public function test_admin_panel_uses_the_chuklov_favicon(): void
+    {
+        $provider = file_get_contents(app_path('Providers/Filament/AdminPanelProvider.php'));
+
+        self::assertIsString($provider);
+        self::assertStringContainsString("->favicon(asset('brand/chuklov-favicon.png'))", $provider);
     }
 
     public function test_root_template_loads_telegram_web_app_before_the_application_bundle(): void

@@ -29,14 +29,19 @@ class ServiceVerticalSliceTest extends TestCase
         config()->set('tenancy.default_organization_id', $organization->id);
         app(OrganizationContext::class)->set($organization);
 
-        app(CreateService::class)->handle($admin, 'Foundation Service', 'Architecture proof.', true);
+        app(CreateService::class)->handle($admin, [
+            'name' => 'Foundation Service',
+            'summary' => 'Architecture proof.',
+            'image_path' => 'portal-assets/services/consultation.jpg',
+        ]);
 
         $this->get(route('portal.services.index'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Services/Index')
                 ->has('services', 1)
-                ->where('services.0.name', 'Foundation Service'));
+                ->where('services.0.name', 'Foundation Service')
+                ->where('services.0.imageUrl', asset('portal-assets/services/consultation.jpg')));
     }
 
     public function test_application_service_creation_requires_the_service_catalog_feature(): void
