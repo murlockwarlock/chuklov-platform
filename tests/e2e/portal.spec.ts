@@ -232,7 +232,7 @@ test('authenticated client can complete the booking journey', async ({ page }) =
 
     await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
     await expect(page.locator('#booking-specialist')).toHaveCount(0);
-    await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
+    await expect(page.getByText(/Playwright Specialist/)).toHaveCount(0);
     await expect(page.locator('input[name="date_from"], input[name="date_to"]')).toHaveCount(0);
     await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
     const firstSlot = page.getByTestId('availability-slot').first();
@@ -250,7 +250,7 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await page.getByRole('button', { name: 'Продолжить' }).click();
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
     await expect(page.getByRole('status')).toContainText('Запись создана.');
-    await page.getByRole('main').getByRole('link', { name: 'Мои записи' }).click();
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
 });
 
@@ -295,6 +295,34 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await expect(page.getByText(/Playwright Service/)).toBeVisible();
     await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
+});
+
+test('booking shell stays readable at narrow Mini App widths', async ({ page }) => {
+    const fixture = createBookingFixture();
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [320, 360]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
+        await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
+        await expect(page.locator('.portal-booking-progress__label')).toHaveCount(3);
+        await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+        await page.locator('.portal-booking-option').filter({ hasText: fixture.serviceName }).click();
+        await page.getByRole('button', { name: 'Продолжить' }).click();
+        await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
+        await expect(page.locator('.portal-calendar-card__weekdays span')).toHaveCount(7);
+        await expect(page.getByTestId('availability-slot').first()).toBeVisible();
+        await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
 });
 
 test('authenticated client can manage an upcoming booking from My bookings', async ({ page }) => {

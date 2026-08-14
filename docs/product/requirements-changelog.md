@@ -18,6 +18,12 @@
 - Confirmed that date range bounds remain an internal availability query detail; ordinary clients see a month calendar, unavailable dates are disabled, and only the selected date's start times are rendered.
 - Confirmed that booking creation continues to use the authoritative server slot and existing UTC/IANA, assignment, conflict, idempotency, and organization-scope guarantees.
 
+## 2026-08-14 — Owner-confirmed booking visual remediation
+
+- Confirmed that the client booking surface must materially follow the approved CHUKLOV reference: a calm contained wizard, readable responsive stepper, service rows, format chips, calendar/time card composition, and clean confirmation rather than a backend-shaped form.
+- Confirmed that mobile and Telegram Mini App clipping, collapsed weekday/date grids, horizontal overflow, and unreadable time walls are blocking defects; the same selected-day-only availability behavior applies at narrow widths.
+- Confirmed that a single bookable Евгений Чуклов is server-selected and omitted from the intermediate choice/context UI, while the selected specialist remains visible as confirmation information and a future multi-specialist service can expose a real choice step.
+
 ## 2026-08-14 — Owner-confirmed Telegram web authentication
 
 - Amended REQ-PORTAL-005 and REQ-SEC-004 so ordinary web offers Telegram and passwordless email as independent authentication methods.

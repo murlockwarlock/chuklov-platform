@@ -137,6 +137,7 @@ const selectedSpecialist = computed(() =>
 const formatOptions = computed<VisitFormat[]>(() => selectedService.value?.formats ?? []);
 const needsSpecialistChoice = computed(() => props.query.serviceId !== null && props.specialists.length > 1 && props.query.specialistId === null);
 const needsFormatChoice = computed(() => props.query.serviceId !== null && !needsSpecialistChoice.value && formatOptions.value.length > 1 && !props.query.formatSelected);
+const hasSpecialistChoice = computed(() => props.specialists.length > 1);
 const currentStepKey = computed(() => {
     if (props.query.serviceId === null) {
         return 'service';
@@ -154,13 +155,18 @@ const currentStepKey = computed(() => {
 });
 const progressSteps = computed<ProgressStep[]>(() => [
     { key: 'service', label: t('booking.stepService') },
-    { key: 'specialist', label: t('booking.stepSpecialist') },
+    ...(hasSpecialistChoice.value
+        ? [{ key: 'specialist', label: t('booking.stepSpecialist') }]
+        : []),
     ...(formatOptions.value.length > 1
         ? [{ key: 'format', label: t('booking.stepFormat') }]
         : []),
     { key: 'time', label: t('booking.stepTime') },
     { key: 'confirmation', label: t('booking.stepConfirm') },
 ]);
+const currentStepLabel = computed(() =>
+    progressSteps.value.find((step) => step.key === currentStepKey.value)?.label ?? '',
+);
 const bookingError = computed(() => {
     const errors = bookingForm.errors as Record<string, string | undefined>;
 
@@ -292,18 +298,6 @@ function changeService(): void {
     visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo });
 }
 
-function changeSpecialist(): void {
-    if (props.query.serviceId === null) {
-        return;
-    }
-
-    visitBooking({
-        date_from: props.query.dateFrom,
-        date_to: props.query.dateTo,
-        service_id: props.query.serviceId,
-    });
-}
-
 function changeFormat(): void {
     if (props.query.serviceId === null) {
         return;
@@ -366,130 +360,110 @@ function submitBooking(): void {
     :portal="props.portal"
     active="services"
   >
-    <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-masthead">
-        <div class="portal-masthead__copy portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ t('booking.title') }}
-          </p>
-          <h1 class="portal-heading portal-heading--page">
-            {{ currentStepKey === 'service' ? t('booking.chooseService') : t('booking.title') }}
-          </h1>
-          <p class="portal-lede">
-            {{ currentStepKey === 'service' ? t('booking.serviceDescription') : t('booking.description') }}
-          </p>
-        </div>
-      </header>
-
-      <nav
-        class="portal-booking-progress"
-        :aria-label="t('booking.title')"
+    <section
+      class="portal-container portal-container--booking portal-stack portal-stack--loose"
+      :style="{ '--portal-step-count': progressSteps.length }"
+    >
+      <Link
+        :href="props.urls.services"
+        class="portal-booking-back"
       >
-        <template
-          v-for="(step, index) in progressSteps"
-          :key="step.key"
-        >
-          <span
-            class="portal-booking-progress__step"
-            :class="{
-              'portal-booking-progress__step--active': currentStepKey === step.key,
-              'portal-booking-progress__step--complete': progressSteps.findIndex((item) => item.key === currentStepKey) > index,
-            }"
-          >
-            <span class="portal-booking-progress__number">
-              {{ index + 1 }}
-            </span>
-            {{ step.label }}
+        <span aria-hidden="true">←</span>
+        <span>{{ t('services.title') }}</span>
+      </Link>
+
+      <section class="portal-booking-flow portal-panel">
+        <header class="portal-booking-flow__header">
+          <div class="portal-booking-flow__title-wrap">
+            <p class="portal-eyebrow">
+              CHUKLOV
+            </p>
+            <h1 class="portal-heading portal-booking-flow__title">
+              {{ t('booking.title') }}
+            </h1>
+          </div>
+          <span class="portal-booking-flow__step-caption">
+            {{ currentStepKey === 'service' ? t('booking.chooseService') : currentStepLabel }}
           </span>
-          <span
-            v-if="index < progressSteps.length - 1"
-            class="portal-booking-progress__line"
-            aria-hidden="true"
-          />
-        </template>
-      </nav>
+        </header>
 
-      <p
-        v-if="props.bookingResult"
-        class="portal-notice"
-        role="status"
-      >
-        {{ props.bookingResult.message }}
-      </p>
-
-      <BookingChoiceList
-        v-if="currentStepKey === 'service'"
-        heading-id="booking-service-heading"
-        :heading="t('booking.chooseService')"
-        :choices="serviceChoices"
-        :selected-id="selectedServiceId"
-        :continue-label="t('booking.continue')"
-        :empty-message="t('services.empty')"
-        @select="selectedServiceId = $event"
-        @continue="continueService"
-      />
-
-      <BookingChoiceList
-        v-else-if="currentStepKey === 'specialist'"
-        heading-id="booking-specialist-heading"
-        :heading="t('booking.chooseSpecialist')"
-        :choices="specialistChoices"
-        :selected-id="selectedSpecialistId"
-        :continue-label="t('booking.continue')"
-        :change-label="t('booking.changeService')"
-        @select="selectedSpecialistId = $event"
-        @continue="continueSpecialist"
-        @change="changeService"
-      />
-
-      <section
-        v-else-if="currentStepKey === 'format'"
-        class="portal-booking-choice portal-stack"
-        aria-labelledby="booking-format-heading"
-      >
-        <div class="portal-page-heading">
-          <h2
-            id="booking-format-heading"
-            class="portal-heading portal-heading--section"
-          >
-            {{ t('booking.chooseFormat') }}
-          </h2>
-          <button
-            type="button"
-            class="portal-link portal-link--button"
-            @click="changeService"
-          >
-            {{ t('booking.changeService') }}
-          </button>
-        </div>
-        <div class="portal-format-options">
-          <button
-            v-for="format in formatOptions"
-            :key="format"
-            type="button"
-            class="portal-format-option"
-            :class="{ 'portal-format-option--selected': selectedFormat === format }"
-            :aria-pressed="selectedFormat === format"
-            @click="selectedFormat = format"
-          >
-            {{ formatLabel(format) }}
-          </button>
-        </div>
-        <button
-          type="button"
-          class="portal-button portal-button--primary self-start"
-          :disabled="selectedFormat === null"
-          @click="continueFormat"
+        <nav
+          class="portal-booking-progress"
+          :aria-label="t('booking.title')"
         >
-          {{ t('booking.continue') }}
-        </button>
-      </section>
+          <template
+            v-for="(step, index) in progressSteps"
+            :key="step.key"
+          >
+            <span
+              class="portal-booking-progress__step"
+              :class="{
+                'portal-booking-progress__step--active': currentStepKey === step.key,
+                'portal-booking-progress__step--complete': progressSteps.findIndex((item) => item.key === currentStepKey) > index,
+              }"
+              :aria-current="currentStepKey === step.key ? 'step' : undefined"
+            >
+              <span
+                class="portal-booking-progress__number"
+                aria-hidden="true"
+              />
+              <span class="portal-booking-progress__label">
+                {{ step.label }}
+              </span>
+            </span>
+          </template>
+        </nav>
 
-      <template v-else-if="bookingStep === 'time'">
-        <section class="portal-booking-context">
-          <div class="portal-booking-context__item">
-            <span class="portal-label">{{ t('booking.service') }}</span>
-            <strong>{{ selectedService?.name }}</strong>
+        <p
+          v-if="props.bookingResult"
+          class="portal-notice portal-notice--success"
+          role="status"
+        >
+          {{ props.bookingResult.message }}
+        </p>
+
+        <BookingChoiceList
+          v-if="currentStepKey === 'service'"
+          heading-id="booking-service-heading"
+          :heading="t('booking.chooseService')"
+          :choices="serviceChoices"
+          :selected-id="selectedServiceId"
+          :continue-label="t('booking.continue')"
+          :empty-message="t('services.empty')"
+          @select="selectedServiceId = $event"
+          @continue="continueService"
+        />
+
+        <BookingChoiceList
+          v-else-if="currentStepKey === 'specialist'"
+          heading-id="booking-specialist-heading"
+          :heading="t('booking.chooseSpecialist')"
+          :choices="specialistChoices"
+          :selected-id="selectedSpecialistId"
+          :continue-label="t('booking.continue')"
+          :change-label="t('booking.changeService')"
+          @select="selectedSpecialistId = $event"
+          @continue="continueSpecialist"
+          @change="changeService"
+        />
+
+        <section
+          v-else-if="currentStepKey === 'format'"
+          class="portal-booking-choice portal-stack"
+          aria-labelledby="booking-format-heading"
+        >
+          <div class="portal-booking-stage-heading">
+            <div class="portal-stack portal-stack--tight">
+              <p class="portal-kicker">
+                {{ t('booking.format') }}
+              </p>
+              <h2
+                id="booking-format-heading"
+                class="portal-heading portal-heading--section"
+              >
+                {{ t('booking.chooseFormat') }}
+              </h2>
+            </div>
             <button
               type="button"
               class="portal-link portal-link--button"
@@ -498,21 +472,46 @@ function submitBooking(): void {
               {{ t('booking.changeService') }}
             </button>
           </div>
-          <div class="portal-booking-context__item">
-            <span class="portal-label">{{ t('booking.specialist') }}</span>
-            <strong>{{ selectedSpecialist?.displayName }}</strong>
+          <div class="portal-format-options">
             <button
-              v-if="props.specialists.length > 1"
+              v-for="format in formatOptions"
+              :key="format"
               type="button"
-              class="portal-link portal-link--button"
-              @click="changeSpecialist"
+              class="portal-format-option"
+              :class="{ 'portal-format-option--selected': selectedFormat === format }"
+              :aria-pressed="selectedFormat === format"
+              @click="selectedFormat = format"
             >
-              {{ t('booking.changeSpecialist') }}
+              {{ formatLabel(format) }}
             </button>
           </div>
-          <div class="portal-booking-context__item">
-            <span class="portal-label">{{ t('booking.format') }}</span>
-            <strong>{{ formatLabel(props.query.format) }}</strong>
+          <button
+            type="button"
+            class="portal-button portal-button--primary portal-booking-flow__cta"
+            :disabled="selectedFormat === null"
+            @click="continueFormat"
+          >
+            {{ t('booking.continue') }}
+          </button>
+        </section>
+
+        <template v-else-if="bookingStep === 'time'">
+          <section class="portal-booking-selection-bar">
+            <div class="portal-booking-selection-bar__item">
+              <span class="portal-label">{{ t('booking.service') }}</span>
+              <strong>{{ selectedService?.name }}</strong>
+            </div>
+            <button
+              type="button"
+              class="portal-link portal-link--button"
+              @click="changeService"
+            >
+              {{ t('booking.changeService') }}
+            </button>
+            <div class="portal-booking-selection-bar__item portal-booking-selection-bar__item--format">
+              <span class="portal-label">{{ t('booking.format') }}</span>
+              <strong>{{ formatLabel(props.query.format) }}</strong>
+            </div>
             <button
               v-if="formatOptions.length > 1"
               type="button"
@@ -521,64 +520,57 @@ function submitBooking(): void {
             >
               {{ t('booking.changeFormat') }}
             </button>
-          </div>
-        </section>
+          </section>
 
-        <BookingCalendar
-          :availability="props.availability"
-          :date-from="props.query.dateFrom"
-          :date-to="props.query.dateTo"
-          :locale="locale"
-          :selected-date="selectedDate"
+          <BookingCalendar
+            :availability="props.availability"
+            :date-from="props.query.dateFrom"
+            :date-to="props.query.dateTo"
+            :locale="locale"
+            :selected-date="selectedDate"
+            :selected-start="selectedStart"
+            @select-date="selectDate"
+            @select-slot="selectSlot"
+            @change-month="changeMonth"
+          />
+
+          <p
+            v-if="bookingError"
+            class="portal-notice portal-notice--error"
+            role="alert"
+          >
+            {{ bookingError }}
+          </p>
+
+          <button
+            type="button"
+            class="portal-button portal-button--primary portal-booking-flow__cta"
+            :disabled="selectedStart === null"
+            @click="continueToConfirmation"
+          >
+            {{ t('booking.continue') }}
+          </button>
+        </template>
+
+        <BookingConfirmation
+          v-else
+          :service-name="selectedService?.name ?? null"
+          :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"
-          @select-date="selectDate"
-          @select-slot="selectSlot"
-          @change-month="changeMonth"
+          :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
+          :locale="locale"
+          :format="props.query.format"
+          :format-label="formatLabel(props.query.format)"
+          :party-size="bookingForm.party_size"
+          :location="bookingForm.location"
+          :processing="bookingForm.processing"
+          :error="bookingError"
+          @update:party-size="bookingForm.party_size = $event"
+          @update:location="bookingForm.location = $event"
+          @change="returnToTime"
+          @confirm="submitBooking"
         />
-
-        <p
-          v-if="bookingError"
-          class="portal-notice portal-notice--error"
-          role="alert"
-        >
-          {{ bookingError }}
-        </p>
-
-        <button
-          type="button"
-          class="portal-button portal-button--primary self-start"
-          :disabled="selectedStart === null"
-          @click="continueToConfirmation"
-        >
-          {{ t('booking.continue') }}
-        </button>
-      </template>
-
-      <BookingConfirmation
-        v-else
-        :service-name="selectedService?.name ?? null"
-        :specialist-name="selectedSpecialist?.displayName ?? null"
-        :selected-start="selectedStart"
-        :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
-        :locale="locale"
-        :format="props.query.format"
-        :format-label="formatLabel(props.query.format)"
-        :party-size="bookingForm.party_size"
-        :location="bookingForm.location"
-        :processing="bookingForm.processing"
-        :error="bookingError"
-        @update:party-size="bookingForm.party_size = $event"
-        @update:location="bookingForm.location = $event"
-        @change="returnToTime"
-        @confirm="submitBooking"
-      />
-
-      <Link
-        :href="props.urls.bookings"
-        class="portal-link self-start"
-      >
-        {{ t('bookings.title') }}
-      </Link>
+      </section>
     </section>
   </AppShell>
 </template>

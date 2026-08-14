@@ -43,3 +43,5 @@ The client-facing Portal supports a visible RU/EN switcher backed by one maintai
 ## Visual direction
 
 Use committed CHUKLOV brand assets in a calm light shell with restrained warm accents, high-contrast text, generous spacing, subtle borders, and minimal shadow. Do not introduce generic SaaS hero treatments, glassmorphism, random gradients, fake business data, or fabricated service imagery.
+
+An approved visual reference is a material product constraint, not a loose mood board. Reproduce its information hierarchy, card relationships, selection states, density, and responsive behavior before wiring real data; do not ship a backend-shaped form with a superficial color treatment. On mobile and Telegram Mini App widths, clipped labels, horizontal overflow, collapsed calendars, concatenated weekday labels, or unreadable option walls are blocking UI defects.
