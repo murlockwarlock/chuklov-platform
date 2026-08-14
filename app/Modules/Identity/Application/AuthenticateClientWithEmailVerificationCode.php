@@ -102,7 +102,7 @@ class AuthenticateClientWithEmailVerificationCode
                 'organization_id' => $organization->getKey(),
                 'full_name' => null,
                 'email' => $email,
-                'language' => 'en',
+                'language' => config('portal.default_locale', 'ru'),
                 'timezone' => $organization->defaultTimezone(),
                 'lead_source' => 'email_auth',
             ]);

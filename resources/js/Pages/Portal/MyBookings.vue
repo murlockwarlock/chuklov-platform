@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
+import AppShell from '../../Components/Portal/AppShell.vue';
+import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
+import { usePortalLocale } from '../../composables/usePortalLocale';
+import type { PortalShell } from '../../types/portal';
 
 type Booking = {
     id: number;
@@ -9,52 +13,58 @@ type Booking = {
     startsAt: string;
     timezone: string;
     formatLabel: string;
-    status: string;
     statusLabel: string;
-    pendingReview: boolean;
 };
 
 const props = defineProps<{
+    portal: PortalShell;
     upcoming: Booking[];
     history: Booking[];
     urls: { create: string; services: string };
 }>();
+
+const { locale, t } = usePortalLocale();
 </script>
 
 <template>
-  <Head title="Мои записи" />
-  <main class="portal-page">
+  <AppShell
+    :title="t('bookings.title')"
+    :portal="props.portal"
+    active="bookings"
+  >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-masthead">
-        <div class="portal-masthead__copy portal-stack portal-stack--tight">
+      <header class="portal-page-heading">
+        <div class="portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Личный кабинет
+            CHUKLOV
           </p>
-          <h1 class="portal-heading portal-heading--page">
-            Мои записи
+          <h1 class="portal-heading portal-heading--section">
+            {{ t('bookings.title') }}
           </h1>
-          <p class="portal-lede">
-            Ваши записи и заявки.
-          </p>
         </div>
+        <Link
+          :href="props.urls.create"
+          class="portal-button portal-button--primary"
+        >
+          {{ t('bookings.new') }}
+        </Link>
       </header>
 
-      <section
-        class="portal-stack"
-        aria-labelledby="upcoming-heading"
-      >
-        <h2
-          id="upcoming-heading"
-          class="portal-heading portal-heading--section"
-        >
-          Предстоящие
+      <section class="portal-stack">
+        <h2 class="portal-heading portal-heading--section">
+          {{ t('bookings.upcoming') }}
         </h2>
-        <p
+        <EmptyState
           v-if="props.upcoming.length === 0"
-          class="portal-empty"
+          :title="t('bookings.empty')"
         >
-          Предстоящих записей пока нет.
-        </p>
+          <Link
+            :href="props.urls.create"
+            class="portal-button portal-button--primary"
+          >
+            {{ t('bookings.book') }}
+          </Link>
+        </EmptyState>
         <div
           v-else
           class="portal-grid portal-grid--cards"
@@ -62,7 +72,7 @@ const props = defineProps<{
           <Link
             v-for="booking in props.upcoming"
             :key="booking.id"
-            :href="`/portal/bookings/${booking.id}`"
+            :href="props.portal.urls.bookings + '/' + booking.id"
             class="portal-card portal-card--interactive portal-stack portal-stack--tight"
           >
             <span class="portal-kicker">{{ booking.statusLabel }}</span>
@@ -72,28 +82,21 @@ const props = defineProps<{
               <PortalDateTime
                 :value="booking.startsAt"
                 :time-zone="booking.timezone"
+                :locale="locale"
               />
             </span>
           </Link>
         </div>
       </section>
 
-      <section
-        class="portal-stack"
-        aria-labelledby="history-heading"
-      >
-        <h2
-          id="history-heading"
-          class="portal-heading portal-heading--section"
-        >
-          История
+      <section class="portal-stack">
+        <h2 class="portal-heading portal-heading--section">
+          {{ t('bookings.history') }}
         </h2>
-        <p
+        <EmptyState
           v-if="props.history.length === 0"
-          class="portal-empty"
-        >
-          Здесь появятся завершённые записи.
-        </p>
+          :title="t('bookings.emptyHistory')"
+        />
         <div
           v-else
           class="portal-grid portal-grid--cards"
@@ -101,7 +104,7 @@ const props = defineProps<{
           <Link
             v-for="booking in props.history"
             :key="booking.id"
-            :href="`/portal/bookings/${booking.id}`"
+            :href="props.portal.urls.bookings + '/' + booking.id"
             class="portal-card portal-card--interactive portal-stack portal-stack--tight"
           >
             <span class="portal-kicker">{{ booking.statusLabel }}</span>
@@ -111,26 +114,12 @@ const props = defineProps<{
               <PortalDateTime
                 :value="booking.startsAt"
                 :time-zone="booking.timezone"
+                :locale="locale"
               />
             </span>
           </Link>
         </div>
       </section>
-
-      <div class="portal-cluster">
-        <Link
-          :href="props.urls.create"
-          class="portal-button portal-button--primary"
-        >
-          Записаться
-        </Link>
-        <Link
-          :href="props.urls.services"
-          class="portal-button portal-button--secondary"
-        >
-          К услугам
-        </Link>
-      </div>
     </section>
-  </main>
+  </AppShell>
 </template>

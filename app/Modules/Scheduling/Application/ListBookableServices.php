@@ -42,6 +42,18 @@ class ListBookableServices
             ->where('catalog_type', CatalogItemType::Service->value)
             ->whereIn('id', $assignedServices)
             ->orderBy('name')
-            ->get(['id', 'name', 'summary', 'formats']);
+            ->get([
+                'id',
+                'name',
+                'summary',
+                'name_ru',
+                'name_en',
+                'description_ru',
+                'description_en',
+                'duration_minutes',
+                'price_minor',
+                'price_currency',
+                'formats',
+            ]);
     }
 }

@@ -25,6 +25,7 @@ function createBookingFixture(withBooking = false): BookingFixture {
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Playwright Client '.$suffix,
             'email' => 'playwright-'.$suffix.'@example.test',
+            'language' => 'ru',
             'timezone' => 'UTC',
         ]);
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
@@ -125,11 +126,12 @@ function createBookingFixture(withBooking = false): BookingFixture {
 
 test('client portal shell is responsive', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Личный кабинет' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Войти через тг' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'CHUKLOV' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Получить код' })).toBeVisible();
-    await expect(page.getByText(/Responsive web|Shared runtime|secure foundation|client portal|milestone|flow version/i)).toHaveCount(0);
+    await expect(page.getByText(/Личный кабинет|Вы вошли как|Продолжить/)).toHaveCount(0);
 });
 
 test('Telegram Mini App submits initData automatically without a second login action', async ({ page }) => {
@@ -151,27 +153,22 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 'X-Inertia': 'true',
             },
             body: JSON.stringify({
-                component: 'Services/Index',
+                component: 'Portal/Home',
                 props: {
                     services: [],
+                    upcomingBooking: null,
                     portal: {
                         authenticated: true,
                         clientName: 'Telegram Client',
-                        telegramAuthUrl: '/portal/telegram/auth',
-                        telegramAuthError: null,
-                        telegramWebRequestUrl: '/portal/auth/telegram/request',
-                        telegramWebStatusUrl: '/portal/auth/telegram/status',
-                        telegramWebUrl: null,
-                        emailRequestUrl: '/portal/auth/email/request',
-                        emailVerifyUrl: '/portal/auth/email/verify',
-                        emailCodeSent: false,
-                        telegramConnected: true,
-                        telegramLinkRequestUrl: '/portal/channels/telegram/link',
-                        telegramLinkUrl: null,
-                        telegramLinkError: false,
-                        onboardingUrl: '/portal/onboarding',
-                        bookingUrl: null,
-                        bookingsUrl: null,
+                        locale: 'ru',
+                        localeUrl: '/portal/locale',
+                        urls: {
+                            home: '/',
+                            services: '/portal/services',
+                            bookings: '/portal/bookings',
+                            profile: '/portal/profile',
+                            booking: '/portal/bookings/create',
+                        },
                     },
                 },
                 url: '/',
@@ -182,9 +179,40 @@ test('Telegram Mini App submits initData automatically without a second login ac
 
     await page.goto('/');
 
-    await expect(page.getByText('Вы вошли как Telegram Client.')).toBeVisible();
+    await expect(page.getByText('Добро пожаловать, Telegram Client')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
     expect(authenticationRequests).toBe(1);
+});
+
+test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'EN' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'RU' })).toBeVisible();
+
+    if ((page.viewportSize()?.width ?? 0) >= 768) {
+        await expect(page.getByRole('link', { name: 'Услуги' }).first()).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Профиль' }).first()).toBeVisible();
+    } else {
+        await expect(page.getByRole('navigation').last()).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Профиль' }).last()).toBeVisible();
+    }
+
+    await page.getByRole('button', { name: 'EN' }).click();
+    await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('link', { name: 'Services' }).last().click();
+    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+    await page.getByRole('link', { name: 'Profile' }).last().click();
+    await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
@@ -199,21 +227,21 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&specialist_id=${fixture.specialistId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
     expect(response?.status()).toBe(200);
 
-    await expect(page.getByRole('heading', { name: 'Выберите удобное время' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Дата и время' })).toBeVisible();
     await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
-    const firstSlot = page.locator('button[aria-pressed]').first();
+    const firstSlot = page.getByTestId('availability-slot').first();
     await expect(firstSlot).toBeVisible();
     await firstSlot.click();
-    await page.getByRole('button', { name: 'Записаться' }).click();
+    await page.getByRole('button', { name: 'Подтвердить запись' }).click();
 
     await expect(page.getByRole('status')).toContainText('Запись создана.');
 
-    const secondSlot = page.locator('button[aria-pressed]').first();
+    const secondSlot = page.getByTestId('availability-slot').first();
     await expect(secondSlot).toBeVisible();
     await secondSlot.click();
-    await page.getByRole('button', { name: 'Записаться' }).click();
+    await page.getByRole('button', { name: 'Подтвердить запись' }).click();
     await expect(page.getByRole('status')).toContainText('Запись создана.');
-    await page.getByRole('link', { name: 'Мои записи' }).click();
+    await page.getByRole('main').getByRole('link', { name: 'Мои записи' }).click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
 });
 
@@ -234,25 +262,25 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(page.getByRole('heading', { name: /Playwright Service/ })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Часовой пояс' })).toBeVisible();
 
-    const alternateSlot = page.locator('button[aria-pressed]').first();
+    const alternateSlot = page.getByTestId('availability-slot').first();
     await expect(alternateSlot).toBeVisible();
     await alternateSlot.click();
-    await page.getByRole('button', { name: 'Перенести запись' }).click();
-    await expect(page.getByText('История записи')).toBeVisible();
+    await page.getByRole('button', { name: 'Перенести' }).click();
+    await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toBeVisible();
 
     await page.getByRole('combobox').last().selectOption('Asia/Almaty');
     await page.getByRole('button', { name: 'Сохранить' }).click();
     await expect(page.getByRole('combobox').last()).toHaveValue('Asia/Almaty');
 
-    const secondAlternateSlot = page.locator('button[aria-pressed]').first();
+    const secondAlternateSlot = page.getByTestId('availability-slot').first();
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
-    await page.getByRole('button', { name: 'Перенести запись' }).click();
-    await expect(page.getByText('История записи')).toBeVisible();
+    await page.getByRole('button', { name: 'Перенести' }).click();
+    await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toHaveCount(2);
 
-    await page.getByRole('button', { name: 'Отменить запись' }).click();
+    await page.getByRole('button', { name: 'Отменить' }).click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();
 });

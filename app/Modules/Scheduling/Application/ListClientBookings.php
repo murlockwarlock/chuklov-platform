@@ -9,6 +9,7 @@ use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use App\Modules\Services\Domain\Models\Service;
 use Carbon\CarbonImmutable;
 
 final class ListClientBookings
@@ -19,7 +20,7 @@ final class ListClientBookings
     ) {}
 
     /** @return array{upcoming: list<array<string, mixed>>, history: list<array<string, mixed>>} */
-    public function handle(): array
+    public function handle(?string $locale = null): array
     {
         $client = $this->clientContext->client();
         $bookings = Booking::query()
@@ -39,8 +40,8 @@ final class ListClientBookings
         )->sortByDesc('starts_at');
 
         return [
-            'upcoming' => array_values($upcoming->map(fn (Booking $booking): array => $this->projection($booking))->all()),
-            'history' => array_values($history->map(fn (Booking $booking): array => $this->projection($booking))->all()),
+            'upcoming' => array_values($upcoming->map(fn (Booking $booking): array => $this->projection($booking, $locale))->all()),
+            'history' => array_values($history->map(fn (Booking $booking): array => $this->projection($booking, $locale))->all()),
         ];
     }
 
@@ -57,7 +58,7 @@ final class ListClientBookings
     }
 
     /** @return array<string, mixed> */
-    public function projection(Booking $booking): array
+    public function projection(Booking $booking, ?string $locale = null): array
     {
         $client = $this->clientContext->client();
         $timezone = $client->timezone;
@@ -72,7 +73,7 @@ final class ListClientBookings
 
         return [
             'id' => $booking->getKey(),
-            'service' => ['name' => $booking->service->name],
+            'service' => ['name' => $this->localizedServiceName($booking->service, $locale)],
             'specialist' => ['displayName' => $booking->specialist->display_name],
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
             'endsAt' => $booking->endsAtUtc()->toIso8601String(),
@@ -80,9 +81,9 @@ final class ListClientBookings
             'localTime' => $localStart->format('H:i'),
             'localEndsAt' => $localEnd->format('H:i'),
             'timezone' => $timezone,
-            'formatLabel' => $this->formatLabel($booking->visit_format),
-            'statusLabel' => $this->statusLabel($booking->status),
-            'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status),
+            'formatLabel' => $this->formatLabel($booking->visit_format, $locale),
+            'statusLabel' => $this->statusLabel($booking->status, $locale),
+            'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status, $locale),
             'location' => $booking->location,
             'meetingUrl' => $booking->visit_format === VisitFormat::Online ? $booking->meeting_url : null,
             'partySize' => $booking->party_size,
@@ -91,12 +92,12 @@ final class ListClientBookings
             'canReschedule' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
             'contactStaff' => ! $terminal && ! $pendingHomeVisit && ! $outsideCutoff,
             'pendingReview' => $pendingHomeVisit,
-            'history' => $this->safeHistory($booking),
+            'history' => $this->safeHistory($booking, $locale),
         ];
     }
 
     /** @return list<array{label: string, oldStartsAt: string|null, newStartsAt: string|null, occurredAt: string}> */
-    private function safeHistory(Booking $booking): array
+    private function safeHistory(Booking $booking, ?string $locale): array
     {
         if (! $booking->relationLoaded('events')) {
             return [];
@@ -104,12 +105,12 @@ final class ListClientBookings
 
         return array_values($booking->events
             ->sortBy('occurred_at')
-            ->map(function (BookingEvent $event): array {
+            ->map(function (BookingEvent $event) use ($locale): array {
                 $oldValues = $event->old_values;
                 $newValues = $event->new_values;
 
                 return [
-                    'label' => $this->historyLabel($event),
+                    'label' => $this->historyLabel($event, $locale),
                     'oldStartsAt' => $event->event_type === BookingEventType::Rescheduled
                         && isset($oldValues['starts_at']) && is_string($oldValues['starts_at'])
                         ? $oldValues['starts_at']
@@ -123,8 +124,16 @@ final class ListClientBookings
             })->all());
     }
 
-    private function formatLabel(VisitFormat $format): string
+    private function formatLabel(VisitFormat $format, ?string $locale): string
     {
+        if ($this->isEnglish($locale)) {
+            return match ($format) {
+                VisitFormat::Office => 'At the clinic',
+                VisitFormat::HomeVisit => 'Home visit',
+                VisitFormat::Online => 'Online',
+            };
+        }
+
         return match ($format) {
             VisitFormat::Office => 'В клинике',
             VisitFormat::HomeVisit => 'Выезд на дом',
@@ -132,8 +141,20 @@ final class ListClientBookings
         };
     }
 
-    private function statusLabel(BookingStatus $status): string
+    private function statusLabel(BookingStatus $status, ?string $locale): string
     {
+        if ($this->isEnglish($locale)) {
+            return match ($status) {
+                BookingStatus::Requested => 'Awaiting confirmation',
+                BookingStatus::PendingReview => 'Request sent',
+                BookingStatus::Confirmed => 'Confirmed',
+                BookingStatus::Rejected => 'Request declined',
+                BookingStatus::Cancelled => 'Cancelled',
+                BookingStatus::Completed => 'Completed',
+                BookingStatus::NoShow => 'Did not attend',
+            };
+        }
+
         return match ($status) {
             BookingStatus::Requested => 'Ожидает подтверждения',
             BookingStatus::PendingReview => 'Заявка отправлена',
@@ -145,8 +166,18 @@ final class ListClientBookings
         };
     }
 
-    private function paymentStatusLabel(PaymentStatus $status): string
+    private function paymentStatusLabel(PaymentStatus $status, ?string $locale): string
     {
+        if ($this->isEnglish($locale)) {
+            return match ($status) {
+                PaymentStatus::Unpaid => 'Payment not made',
+                PaymentStatus::Pending => 'Payment pending',
+                PaymentStatus::PartiallyPaid => 'Partially paid',
+                PaymentStatus::Paid => 'Paid',
+                PaymentStatus::Refunded => 'Payment refunded',
+            };
+        }
+
         return match ($status) {
             PaymentStatus::Unpaid => 'Оплата не внесена',
             PaymentStatus::Pending => 'Оплата ожидается',
@@ -156,8 +187,23 @@ final class ListClientBookings
         };
     }
 
-    private function historyLabel(BookingEvent $event): string
+    private function historyLabel(BookingEvent $event, ?string $locale): string
     {
+        if ($this->isEnglish($locale)) {
+            return match ($event->event_type) {
+                BookingEventType::Created => 'Booking created',
+                BookingEventType::Rescheduled => 'Booking rescheduled',
+                BookingEventType::Cancelled => 'Booking cancelled',
+                BookingEventType::Completed => 'Visit completed',
+                BookingEventType::NoShow => 'No-show recorded',
+                BookingEventType::MeetingLinkUpdated => 'Meeting link updated',
+                BookingEventType::StatusChanged => $this->statusHistoryLabel(
+                    $event->new_values['status'] ?? null,
+                    $locale,
+                ),
+            };
+        }
+
         return match ($event->event_type) {
             BookingEventType::Created => 'Запись создана',
             BookingEventType::Rescheduled => 'Запись перенесена',
@@ -169,9 +215,22 @@ final class ListClientBookings
         };
     }
 
-    private function statusHistoryLabel(mixed $status): string
+    private function statusHistoryLabel(mixed $status, ?string $locale = null): string
     {
         $bookingStatus = is_string($status) ? BookingStatus::tryFrom($status) : null;
+
+        if ($this->isEnglish($locale)) {
+            return match ($bookingStatus) {
+                BookingStatus::Confirmed => 'Booking confirmed',
+                BookingStatus::PendingReview => 'Request sent',
+                BookingStatus::Rejected => 'Request declined',
+                BookingStatus::Cancelled => 'Booking cancelled',
+                BookingStatus::Completed => 'Visit completed',
+                BookingStatus::NoShow => 'No-show recorded',
+                BookingStatus::Requested => 'Booking created',
+                default => 'Booking status updated',
+            };
+        }
 
         return match ($bookingStatus) {
             BookingStatus::Confirmed => 'Запись подтверждена',
@@ -183,5 +242,26 @@ final class ListClientBookings
             BookingStatus::Requested => 'Запись создана',
             default => 'Статус записи обновлён',
         };
+    }
+
+    private function isEnglish(?string $locale): bool
+    {
+        return str_starts_with(strtolower((string) $locale), 'en');
+    }
+
+    private function localizedServiceName(Service $service, ?string $locale): string
+    {
+        $primary = $this->isEnglish($locale) ? 'name_en' : 'name_ru';
+        $secondary = $this->isEnglish($locale) ? 'name_ru' : 'name_en';
+
+        foreach ([$primary, $secondary, 'name'] as $field) {
+            $value = $service->getAttribute($field);
+
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return '';
     }
 }

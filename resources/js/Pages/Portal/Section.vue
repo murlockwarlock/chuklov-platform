@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import AppShell from '../../Components/Portal/AppShell.vue';
+import { usePortalLocale } from '../../composables/usePortalLocale';
+import type { PortalShell } from '../../types/portal';
 
 type Locale = 'en' | 'ru';
 
@@ -18,17 +21,22 @@ type ContentItem = {
 };
 
 const props = defineProps<{
+    portal: PortalShell;
     section: string;
     locale: Locale;
     content: ContentItem[];
 }>();
 
+const { t } = usePortalLocale();
 const pageTitle = computed(() => props.content[0]?.title ?? props.section);
 </script>
 
 <template>
-  <Head :title="pageTitle" />
-  <main class="portal-page">
+  <AppShell
+    :title="pageTitle"
+    :portal="props.portal"
+    :bottom-navigation="false"
+  >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <article
         v-for="(item, index) in props.content"
@@ -60,11 +68,11 @@ const pageTitle = computed(() => props.content[0]?.title ?? props.section);
         </p>
       </article>
       <Link
-        href="/"
+        :href="props.portal.urls.home"
         class="portal-button portal-button--secondary self-start"
       >
-        В личный кабинет
+        {{ t('shell.home') }}
       </Link>
     </section>
-  </main>
+  </AppShell>
 </template>

@@ -29,6 +29,12 @@ class MilestoneTwoPortalTest extends TestCase
     {
         $organization = $this->organizationWithClientRecords();
 
+        $this->get(route('portal.home'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Entry')
+                ->where('portal.authenticated', false));
+
         $this->get(route('portal.services.index'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
@@ -49,10 +55,10 @@ class MilestoneTwoPortalTest extends TestCase
                 'X-Forwarded-Host' => 'crm.psysoldatov.ru',
                 'X-Forwarded-Port' => '443',
             ])
-            ->get(route('portal.services.index'))
+            ->get(route('portal.home'))
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('portal.onboardingUrl', 'https://crm.psysoldatov.ru/portal/onboarding')
-                ->where('portal.emailRequestUrl', 'https://crm.psysoldatov.ru/portal/auth/email/request'));
+                ->where('portal.localeUrl', 'https://crm.psysoldatov.ru/portal/locale')
+                ->where('auth.emailRequestUrl', 'https://crm.psysoldatov.ru/portal/auth/email/request'));
     }
 
     public function test_valid_telegram_auth_creates_a_verified_identity_and_session(): void
@@ -66,7 +72,7 @@ class MilestoneTwoPortalTest extends TestCase
             'client_id' => 999999,
         ]);
 
-        $response->assertRedirect(route('portal.onboarding'));
+        $response->assertRedirect(route('portal.home'));
         $client = Client::query()->sole();
         $identity = ClientChannelIdentity::query()->sole();
 
@@ -75,12 +81,11 @@ class MilestoneTwoPortalTest extends TestCase
         self::assertSame('100001', $identity->external_id);
         $response->assertSessionHas('client_portal.client_id', $client->id);
 
-        $this->get(route('portal.onboarding'))
+        $this->get(route('portal.home'))
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->component('Portal/Onboarding')
-                ->where('profile.full_name', 'New Client')
-                ->where('currentStage', 'contacts'));
+                ->component('Portal/Home')
+                ->where('portal.clientName', 'New Client'));
     }
 
     public function test_telegram_auth_keeps_client_records_feature_as_a_server_gate(): void
@@ -92,15 +97,15 @@ class MilestoneTwoPortalTest extends TestCase
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100000, now()->timestamp),
         ])
-            ->assertRedirect(route('portal.services.index'))
+            ->assertRedirect(route('portal.home'))
             ->assertSessionHas('telegram_auth_error');
 
         self::assertSame(0, Client::query()->count());
         self::assertFalse($organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->exists());
 
-        $this->get(route('portal.services.index'))
+        $this->get(route('portal.home'))
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('portal.telegramAuthError', 'Не удалось войти через Telegram. Закройте приложение и откройте его снова.'));
+                ->where('auth.telegramAuthError', 'Не удалось войти через Telegram. Закройте приложение и откройте его снова.'));
     }
 
     public function test_invalid_signature_and_stale_or_replayed_auth_are_rejected(): void
@@ -111,13 +116,13 @@ class MilestoneTwoPortalTest extends TestCase
 
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100002, now()->timestamp, token: 'wrong-token'),
-        ])->assertRedirect(route('portal.services.index'));
+        ])->assertRedirect(route('portal.home'));
 
         $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertRedirect();
-        $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertRedirect(route('portal.services.index'));
+        $this->post(route('portal.telegram.auth'), ['initData' => $payload])->assertRedirect(route('portal.home'));
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100003, now()->timestamp - 901),
-        ])->assertRedirect(route('portal.services.index'));
+        ])->assertRedirect(route('portal.home'));
     }
 
     public function test_valid_telegram_evidence_verifies_existing_identity_without_overwriting_profile_values(): void
@@ -135,7 +140,7 @@ class MilestoneTwoPortalTest extends TestCase
 
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100004, now()->timestamp, firstName: 'Different'),
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         $identity->refresh();
         $client->refresh();
@@ -170,7 +175,7 @@ class MilestoneTwoPortalTest extends TestCase
             'telegram_user_id' => 100006,
             'client_id' => $otherClient->id,
             'organization_id' => $otherOrganization->id,
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         $response->assertSessionHas('client_portal.client_id', $client->id);
         self::assertNotSame($otherClient->id, (int) session('client_portal.client_id'));
@@ -186,14 +191,14 @@ class MilestoneTwoPortalTest extends TestCase
 
         $this->post(route('portal.telegram.auth'), [
             'initData' => TelegramInitData::make(100007, now()->timestamp),
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         self::assertSame(2, ClientChannelIdentity::query()->where('external_id', '100007')->count());
         self::assertSame(2, Client::query()->count());
         self::assertSame($organization->id, (int) config('tenancy.default_organization_id'));
     }
 
-    public function test_onboarding_prefills_known_values_and_saves_edits_without_confirmation_checkboxes(): void
+    public function test_profile_is_progressive_and_the_legacy_onboarding_route_is_not_a_destination(): void
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create([
@@ -202,7 +207,7 @@ class MilestoneTwoPortalTest extends TestCase
             'phone' => null,
             'lead_source' => null,
         ]);
-        $identity = ClientChannelIdentity::factory()->forClient($client)->create([
+        ClientChannelIdentity::factory()->forClient($client)->create([
             'external_id' => '100008',
             'verification_status' => ChannelIdentityStatus::Verified->value,
         ]);
@@ -210,22 +215,25 @@ class MilestoneTwoPortalTest extends TestCase
         $this->withSession(['client_portal.client_id' => $client->id]);
 
         $this->get(route('portal.onboarding'))
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('profile.full_name', 'Known Client')
-                ->where('profile.email', 'known@example.test')
-                ->where('askLeadSource', true));
+            ->assertRedirect(route('portal.profile'));
 
-        $this->post(route('portal.onboarding.update', ['stage' => 'contacts']), [
+        $this->get(route('portal.profile'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Profile')
+                ->where('profile.fullName', 'Known Client')
+                ->where('profile.email', 'known@example.test')
+                ->missing('lead_source')
+                ->missing('referral_code'));
+
+        $this->post(route('portal.profile.update'), [
             'full_name' => 'Changed Without Confirmation',
             'email' => 'known@example.test',
-        ])->assertRedirect();
+            'phone' => null,
+        ])->assertRedirect(route('portal.profile'));
         self::assertSame('Changed Without Confirmation', $client->refresh()->full_name);
-        self::assertSame('profile', ClientOnboarding::query()->where('client_id', $client->id)->sole()->current_stage->value);
-
-        unset($identity);
     }
 
-    public function test_onboarding_records_consent_against_the_presented_published_version(): void
+    public function test_profile_records_consent_against_the_presented_published_version(): void
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
@@ -240,28 +248,18 @@ class MilestoneTwoPortalTest extends TestCase
         ));
         $this->withSession(['client_portal.client_id' => $client->id]);
 
-        $this->post(route('portal.onboarding.update', ['stage' => 'contacts']), [
-            'full_name' => $client->full_name,
-            'email' => $client->email,
-            'phone' => $client->phone,
-            'language' => $client->language,
-            'timezone' => $client->timezone,
-            'confirmed_fields' => ['full_name', 'email', 'phone', 'language', 'timezone'],
-        ])->assertRedirect();
-        $this->post(route('portal.onboarding.update', ['stage' => 'profile']))->assertRedirect();
-        $this->post(route('portal.onboarding.update', ['stage' => 'service']))->assertRedirect();
-        $this->post(route('portal.onboarding.update', ['stage' => 'goals']), [
+        $this->post(route('portal.profile.consents'), [
             'consents' => [[
                 'legal_document_id' => $document->id,
                 'granted' => true,
             ]],
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.profile'));
 
         $consent = ClientConsent::query()->sole();
         self::assertSame($document->id, $consent->legal_document_id);
         self::assertSame($document->version, $consent->version);
         self::assertNotNull($consent->legalDocument);
-        self::assertNotNull(ClientOnboarding::query()->where('client_id', $client->id)->whereNotNull('completed_at')->first());
+        self::assertNull(ClientOnboarding::query()->where('client_id', $client->id)->whereNotNull('completed_at')->first());
     }
 
     public function test_portal_and_conversation_security_state_is_not_mass_assignable(): void

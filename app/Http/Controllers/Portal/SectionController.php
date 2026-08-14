@@ -51,7 +51,8 @@ class SectionController extends Controller
         try {
             $language = $clientContext->client()->language;
         } catch (LogicException) {
-            $language = $request->getPreferredLanguage(['ru', 'en']);
+            $language = $request->session()->get('portal.locale')
+                ?? $request->getPreferredLanguage(['ru', 'en']);
         }
 
         return str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';

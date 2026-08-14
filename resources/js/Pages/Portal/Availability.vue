@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
+import AppShell from '../../Components/Portal/AppShell.vue';
+import { usePortalLocale } from '../../composables/usePortalLocale';
+import type { PortalShell } from '../../types/portal';
 
 type AvailabilitySlot = {
     startsAt: string;
@@ -25,20 +28,17 @@ type AvailabilityQuery = {
 };
 
 const props = defineProps<{
+    portal: PortalShell;
     availability: Availability;
     query: AvailabilityQuery;
 }>();
 
-const formatLabels: Record<AvailabilityQuery['format'], string> = {
-    office: 'В клинике',
-    home: 'Выезд на дом',
-    online: 'Онлайн',
-};
+const { locale, t } = usePortalLocale();
 
 function formatDate(date: string): string {
     const [year, month, day] = date.split('-').map(Number);
 
-    return new Intl.DateTimeFormat('ru-RU', {
+    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-GB', {
         day: 'numeric',
         month: 'long',
     }).format(new Date(year, month - 1, day));
@@ -46,16 +46,19 @@ function formatDate(date: string): string {
 </script>
 
 <template>
-  <Head title="Свободное время" />
-  <main class="portal-page">
+  <AppShell
+    :title="t('booking.chooseTime')"
+    :portal="props.portal"
+    active="services"
+  >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            {{ formatLabels[props.query.format] }}
+            {{ t('booking.' + props.query.format) }}
           </p>
           <h1 class="portal-heading portal-heading--page">
-            Свободное время
+            {{ t('booking.chooseTime') }}
           </h1>
           <p class="portal-lede">
             {{ formatDate(props.query.dateFrom) }} — {{ formatDate(props.query.dateTo) }}
@@ -68,13 +71,13 @@ function formatDate(date: string): string {
         class="portal-notice"
         role="status"
       >
-        Для выбранных параметров свободного времени пока нет.
+        {{ t('booking.noSlots') }}
       </p>
 
       <div
         v-else
         class="portal-grid portal-grid--cards"
-        aria-label="Свободное время для записи"
+        :aria-label="t('booking.chooseTime')"
       >
         <article
           v-for="slot in props.availability.slots"
@@ -85,24 +88,26 @@ function formatDate(date: string): string {
             <PortalDateTime
               :value="slot.startsAt"
               :time-zone="props.availability.displayTimezone"
+              :locale="locale"
             />
           </p>
           <p class="portal-copy portal-copy--small">
-            До
+            {{ t('booking.until') }}
             <PortalDateTime
               :value="slot.endsAt"
               :time-zone="props.availability.displayTimezone"
+              :locale="locale"
             />
           </p>
         </article>
       </div>
 
       <Link
-        href="/"
+        :href="props.portal.urls.home"
         class="portal-button portal-button--secondary self-start"
       >
-        В личный кабинет
+        {{ t('shell.home') }}
       </Link>
     </section>
-  </main>
+  </AppShell>
 </template>

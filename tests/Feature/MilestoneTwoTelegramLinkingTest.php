@@ -32,7 +32,7 @@ class MilestoneTwoTelegramLinkingTest extends TestCase
             'client_id' => 999999,
             'organization_id' => 999999,
             'telegram_user_id' => 999999,
-        ])->assertRedirect(route('portal.services.index'));
+        ])->assertRedirect(route('portal.profile'));
 
         $url = session('telegram_link_url');
         self::assertIsString($url);

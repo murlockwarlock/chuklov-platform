@@ -68,17 +68,6 @@ class UpdateClientProfileFromPortal
                 ]);
             }
 
-            if ($field === 'full_name' && $value === null) {
-                throw ValidationException::withMessages([
-                    'full_name' => 'A full name is required.',
-                ]);
-            }
-        }
-
-        if (! array_key_exists('full_name', $normalized) && ! $this->hasKnownValue($client->full_name)) {
-            throw ValidationException::withMessages([
-                'full_name' => 'A full name is required.',
-            ]);
         }
 
         return DB::transaction(function () use ($client, $normalized, $organization): Client {
@@ -133,7 +122,7 @@ class UpdateClientProfileFromPortal
             $value = $value === null ? null : trim($value);
             $value = $value === '' ? null : $value;
 
-            if ($field === 'full_name' && ($value === null || mb_strlen($value) > 160)) {
+            if ($field === 'full_name' && $value !== null && mb_strlen($value) > 160) {
                 throw new InvalidArgumentException('The client name is invalid.');
             }
 

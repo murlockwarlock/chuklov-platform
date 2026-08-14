@@ -9,6 +9,7 @@ use App\Http\Requests\PortalBookingQueryRequest;
 use App\Http\Requests\PortalBookingRescheduleRequest;
 use App\Http\Requests\PortalTimezonePreferenceRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -39,6 +40,7 @@ class BookingController extends Controller
         ListBookableServices $services,
         ListBookableSpecialistsForService $specialists,
         CalculateAvailability $availability,
+        ProjectPortalService $serviceProjection,
     ): Response {
         $client = $clientContext->client();
         $validated = $request->validated();
@@ -75,9 +77,7 @@ class BookingController extends Controller
 
         return Inertia::render('Portal/BookingCreate', [
             'services' => $bookableServices->map(fn (Service $service): array => [
-                'id' => $service->getKey(),
-                'name' => $service->name,
-                'summary' => $service->summary,
+                ...$serviceProjection->booking($service, app()->getLocale()),
                 'formats' => array_values(array_filter(
                     $service->supportedFormats(),
                     static fn (string $value): bool => VisitFormat::tryFrom($value) instanceof VisitFormat,
@@ -150,8 +150,11 @@ class BookingController extends Controller
             ])
             ->with('portal_booking_result', [
                 'message' => $booking->visit_format === VisitFormat::HomeVisit
-                    ? 'Заявка отправлена. Мы подтвердим время отдельно.'
-                    : 'Запись создана.',
+                    ? $this->localizedMessage(
+                        'Заявка отправлена. Мы подтвердим время отдельно.',
+                        'Request sent. We will confirm the time separately.',
+                    )
+                    : $this->localizedMessage('Запись создана.', 'Booking created.'),
                 'bookingId' => $booking->getKey(),
             ]);
     }
@@ -159,7 +162,7 @@ class BookingController extends Controller
     public function index(ListClientBookings $bookings): Response
     {
         return Inertia::render('Portal/MyBookings', [
-            ...$bookings->handle(),
+            ...$bookings->handle(app()->getLocale()),
             'urls' => [
                 'create' => route('portal.bookings.create'),
                 'services' => route('portal.services.index'),
@@ -196,7 +199,7 @@ class BookingController extends Controller
         }
 
         return Inertia::render('Portal/BookingShow', [
-            'booking' => $bookings->projection($booking),
+            'booking' => $bookings->projection($booking, app()->getLocale()),
             'availability' => $availabilityProjection,
             'urls' => [
                 'index' => route('portal.bookings.index'),
@@ -317,6 +320,11 @@ class BookingController extends Controller
     private function nullableInteger(mixed $value): ?int
     {
         return $value === null || $value === '' ? null : (int) $value;
+    }
+
+    private function localizedMessage(string $russian, string $english): string
+    {
+        return app()->getLocale() === 'en' ? $english : $russian;
     }
 
     private function specialist(int|string $specialistId, int $organizationId): Specialist

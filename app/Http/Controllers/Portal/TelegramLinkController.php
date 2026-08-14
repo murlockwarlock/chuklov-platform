@@ -15,9 +15,9 @@ class TelegramLinkController extends Controller
         try {
             $url = $initiate->handle();
         } catch (LogicException) {
-            return to_route('portal.services.index')->with('telegram_link_error', true);
+            return to_route('portal.profile')->with('telegram_link_error', true);
         }
 
-        return to_route('portal.services.index')->with('telegram_link_url', $url);
+        return to_route('portal.profile')->with('telegram_link_url', $url);
     }
 }

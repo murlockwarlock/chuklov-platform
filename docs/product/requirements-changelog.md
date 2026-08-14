@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-08-14 — Owner-confirmed authenticated Client Portal IA
+
+- Superseded the visible four-stage onboarding presentation in REQ-PORTAL-003 with an internal versioned progress record; authenticated clients enter the useful Portal immediately and the legacy onboarding route is not a product destination.
+- Confirmed REQ-PORTAL-004 progressive profiling behavior: optional fields do not globally gate Portal access, action-specific data is collected just in time, and attribution/technical fields are derived or hidden.
+- Confirmed a CHUKLOV-first authenticated shell, persistent RU/EN client locale selection, desktop navigation, Mini App/mobile bottom navigation, direct Profile access, and authentication UI disappearing after success.
+- Confirmed that existing immutable/versioned consent semantics remain unchanged; absent an explicit global legal gate, published consents are presented directly in Profile rather than as a generic onboarding step.
+
 ## 2026-08-14 — Owner-confirmed Telegram web authentication
 
 - Amended REQ-PORTAL-005 and REQ-SEC-004 so ordinary web offers Telegram and passwordless email as independent authentication methods.

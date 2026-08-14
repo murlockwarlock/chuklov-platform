@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'locales' => ['ru', 'en'],
+
+    'default_locale' => env('CLIENT_PORTAL_LOCALE', 'ru'),
+
     'email_auth' => [
         'code_ttl' => (int) env('CLIENT_EMAIL_AUTH_CODE_TTL', 600),
         'max_attempts' => (int) env('CLIENT_EMAIL_AUTH_MAX_ATTEMPTS', 5),

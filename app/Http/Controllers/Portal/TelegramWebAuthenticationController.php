@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\Identity\Application\ConsumeTelegramWebAuthentication;
 use App\Modules\Identity\Application\InitiateTelegramWebAuthentication;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
+use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,13 +25,14 @@ class TelegramWebAuthenticationController extends Controller
             'telegram_web_auth.browser_binding' => $browserBinding,
         ]);
 
-        return to_route('portal.services.index');
+        return to_route('portal.home');
     }
 
     public function status(
         Request $request,
         ConsumeTelegramWebAuthentication $consume,
         StartClientOnboarding $startOnboarding,
+        ApplyClientPortalLocale $applyLocale,
     ): JsonResponse {
         $requestId = $request->session()->get('telegram_web_auth.request_id');
         $browserBinding = $request->session()->get('telegram_web_auth.browser_binding');
@@ -55,11 +58,24 @@ class TelegramWebAuthenticationController extends Controller
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $request->session()->forget('telegram_web_auth');
+        $this->applySessionLocale($request, $client, $applyLocale);
         $startOnboarding->handle($client);
 
         return response()->json([
             'status' => 'authenticated',
-            'redirect' => route('portal.onboarding'),
+            'redirect' => route('portal.home'),
         ]);
+    }
+
+    private function applySessionLocale(
+        Request $request,
+        Client $client,
+        ApplyClientPortalLocale $applyLocale,
+    ): void {
+        $locale = $request->session()->get('portal.locale');
+
+        if (is_string($locale) && in_array($locale, ['ru', 'en'], true)) {
+            $applyLocale->handle($client, $locale);
+        }
     }
 }

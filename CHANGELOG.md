@@ -6,6 +6,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Added
 
+- Authenticated CHUKLOV Client Portal home, branded desktop/mobile shell, reusable booking/service/profile components, direct Profile destination, and RU/EN locale switching with persisted client preference.
+- Organization-scoped direct Profile consent presentation that retains immutable exact-version legal evidence without exposing a mandatory onboarding wizard.
 - Ordinary-browser Telegram authentication through a short-lived, single-use, browser-bound bot deep link, resolving the same verified organization-scoped Client as the Mini App while retaining passwordless email as an alternative.
 - Telegram Mini App entry now submits verified initData automatically once, with a localized recoverable failure state instead of a second manual login step.
 - Portal URL generation now honors the HTTPS scheme forwarded by the isolated reverse proxy.
@@ -33,6 +35,9 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- Removed the visible four-stage client onboarding journey and generic post-authentication Continue entry points. Internal onboarding progress remains available to Application state and legacy mutation compatibility, while optional profile data is progressive and action-specific requirements remain at their business boundary.
+- Authentication now redirects directly to the authenticated Portal home; login/provider status is absent from the authenticated home, and the shell leads with committed CHUKLOV brand assets.
+- Portal UI strings use one RU/EN localization dictionary with a visible shell switcher; organization-owned service/legal content falls back without fabricated translations.
 - Productized the existing Russian Portal and CRM journeys: removed milestone, runtime, provider, timezone, event-ledger, version, and technical-key leakage; derived booking idempotency server-side; translated statuses, errors, scheduling controls, templates, content, and CRM fields into business language; and kept the underlying security, concurrency, audit, immutable revision, and durable workflow guarantees unchanged.
 
 - Simplified the unauthenticated Portal entry to Russian client-facing login controls and changed the bot `/start` command description to `Запустить приложение`.

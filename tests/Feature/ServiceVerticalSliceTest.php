@@ -92,7 +92,7 @@ class ServiceVerticalSliceTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page->has('services', 0));
     }
 
-    public function test_disabled_service_catalog_hides_existing_services_from_portal_and_onboarding(): void
+    public function test_disabled_service_catalog_hides_existing_services_from_portal_and_legacy_onboarding_route(): void
     {
         $organization = Organization::factory()->create();
         $client = Client::factory()
@@ -111,10 +111,7 @@ class ServiceVerticalSliceTest extends TestCase
                 ->has('services', 0));
 
         $this->get(route('portal.onboarding'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page) => $page
-                ->component('Portal/Onboarding')
-                ->has('services', 0));
+            ->assertRedirect(route('portal.profile'));
     }
 
     private function enableServiceCatalog(Organization $organization): void

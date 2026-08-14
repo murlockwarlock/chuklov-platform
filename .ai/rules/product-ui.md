@@ -27,3 +27,17 @@ Different internal flows that represent one user concept must share one simple p
 ## Product UX definition of done
 
 A user-facing feature is incomplete until it has understandable business terminology, sensible defaults, safely derived values where possible, minimal required steps, a clear primary action, human-readable statuses and errors, sensible empty states, and no unnecessary internal architecture. Before finishing a UI change, inspect every visible heading, label, helper, button, status, notice, error, empty state, field, and technical value as the intended user would see it. Ask whether the user needs it, whether it expresses business intent/state, whether the system can derive it, whether a normal user understands why it exists, whether the language is natural, and whether architecture leaked only because the backend model exposed it.
+
+## Client Portal information architecture
+
+An internal workflow, state machine, milestone, completeness state, or progressive-profile stage does not imply a visible wizard. A visible step exists only when the client makes a real decision or provides information required for the action currently being performed. A screen whose only purpose is advancing backend state is not product navigation.
+
+Collect information just in time. Optional profile fields belong in Profile and missing action-specific data is requested at the action that needs it; incomplete optional profile data must not block unrelated authenticated Portal use. Keep legal acceptance at the business action or direct account destination where an existing requirement needs it, without inventing a global gate.
+
+Authentication is an entry mechanism and disappears after success. The authenticated shell leads with CHUKLOV branding and useful destinations; it does not display login sections, provider implementation state, raw profile completeness, onboarding state, or generic persistent Continue links. The same shell uses a compact bottom navigation in Mini App/mobile contexts and a stable desktop navigation in wider layouts.
+
+The client-facing Portal supports a visible RU/EN switcher backed by one maintainable localization mechanism. The selected locale persists in the trusted client preference when authenticated and in session before authentication; organization-owned content and proper names are not machine-translated and fall back safely.
+
+## Visual direction
+
+Use committed CHUKLOV brand assets in a calm light shell with restrained warm accents, high-contrast text, generous spacing, subtle borders, and minimal shadow. Do not introduce generic SaaS hero treatments, glassmorphism, random gradients, fake business data, or fabricated service imagery.

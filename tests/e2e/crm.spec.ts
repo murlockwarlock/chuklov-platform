@@ -125,6 +125,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByLabel('Клиент').click();
     await page.getByText(fixture.clientName, { exact: true }).click();
     await page.getByLabel('Услуга').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByLabel('Специалист').click();
     await page.getByText(fixture.specialistName, { exact: true }).click();

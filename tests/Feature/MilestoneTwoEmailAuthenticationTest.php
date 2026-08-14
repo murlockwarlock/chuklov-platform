@@ -33,7 +33,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $sessionId = session()->getId();
 
         $this->post(route('portal.email.request'), ['email' => 'Case@Example.test'])
-            ->assertRedirect(route('portal.services.index'))
+            ->assertRedirect(route('portal.home'))
             ->assertSessionHas('email_code_sent', true);
 
         self::assertSame('case@example.test', $sender->email);
@@ -44,7 +44,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             'code' => $sender->code,
             'organization_id' => 900001,
             'client_id' => 900001,
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         $client = Client::query()->sole();
         $identity = ClientChannelIdentity::query()->sole();
@@ -52,6 +52,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
 
         self::assertSame('case@example.test', $client->email);
         self::assertNull($client->full_name);
+        self::assertSame('ru', $client->language);
         self::assertSame('email', $identity->channel);
         self::assertSame('case@example.test', $identity->external_id);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
@@ -91,7 +92,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $this->post(route('portal.email.verify'), [
             'email' => 'replay@example.test',
             'code' => $code,
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
         $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'replay@example.test',
             'code' => $code,
@@ -138,7 +139,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $this->post(route('portal.email.verify'), [
             'email' => 'known@example.test',
             'code' => $code,
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         self::assertCount(2, Client::query()->get());
         self::assertNotSame($existing->id, (int) session('client_portal.client_id'));
@@ -167,7 +168,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             'code' => $sender->code,
             'organization_id' => $otherOrganization->id,
             'client_id' => $otherClient->id,
-        ])->assertRedirect(route('portal.onboarding'));
+        ])->assertRedirect(route('portal.home'));
 
         $resolved = Client::query()->where('email', 'server-scoped@example.test')->sole();
         self::assertSame($organization->id, $resolved->organization_id);

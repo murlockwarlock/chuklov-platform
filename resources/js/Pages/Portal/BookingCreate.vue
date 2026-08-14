@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
+import AppShell from '../../Components/Portal/AppShell.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
+import { usePortalLocale } from '../../composables/usePortalLocale';
+import type { PortalShell } from '../../types/portal';
 
 type VisitFormat = 'office' | 'home' | 'online';
 
@@ -46,6 +49,7 @@ type BookingResult = {
 } | null;
 
 type Props = {
+    portal: PortalShell;
     services: ServiceOption[];
     specialists: SpecialistOption[];
     availability: Availability | null;
@@ -55,6 +59,7 @@ type Props = {
 };
 
 const props = defineProps<Props>();
+const { locale, t } = usePortalLocale();
 const selectedStart = ref<string | null>(null);
 const bookingForm = useForm<{
     service_id: number | null;
@@ -105,11 +110,9 @@ const bookingError = computed(() =>
     ?? bookingFormErrors.value.location,
 );
 
-const formatLabels: Record<VisitFormat, string> = {
-    office: 'В клинике',
-    home: 'Выезд на дом',
-    online: 'Онлайн',
-};
+function formatLabel(format: VisitFormat): string {
+    return t('booking.' + format);
+}
 
 function selectSlot(slot: AvailabilitySlot): void {
     selectedStart.value = slot.startsAt;
@@ -130,19 +133,22 @@ function submitBooking(): void {
 </script>
 
 <template>
-  <Head title="Запись" />
-  <main class="portal-page">
+  <AppShell
+    :title="t('booking.title')"
+    :portal="props.portal"
+    active="services"
+  >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Запись
+            {{ t('booking.title') }}
           </p>
           <h1 class="portal-heading portal-heading--page">
-            Выберите удобное время
+            {{ t('booking.dateTime') }}
           </h1>
           <p class="portal-lede">
-            Выберите услугу, специалиста, формат и время.
+            {{ t('booking.description') }}
           </p>
         </div>
       </header>
@@ -164,7 +170,7 @@ function submitBooking(): void {
           <label
             for="booking-service"
             class="portal-label"
-          >Услуга</label>
+          >{{ t('booking.service') }}</label>
           <select
             id="booking-service"
             name="service_id"
@@ -176,7 +182,7 @@ function submitBooking(): void {
               value=""
               disabled
             >
-              Выберите услугу
+              {{ t('booking.chooseService') }}
             </option>
             <option
               v-for="service in props.services"
@@ -196,7 +202,7 @@ function submitBooking(): void {
             <label
               for="booking-party-size"
               class="portal-label"
-            >Количество человек</label>
+            >{{ t('booking.partySize') }}</label>
             <input
               id="booking-party-size"
               v-model.number="bookingForm.party_size"
@@ -212,7 +218,7 @@ function submitBooking(): void {
             <label
               for="booking-location"
               class="portal-label"
-            >Адрес</label>
+            >{{ t('booking.address') }}</label>
             <input
               id="booking-location"
               v-model="bookingForm.location"
@@ -229,7 +235,7 @@ function submitBooking(): void {
           <label
             for="booking-specialist"
             class="portal-label"
-          >Специалист</label>
+          >{{ t('booking.specialist') }}</label>
           <select
             id="booking-specialist"
             name="specialist_id"
@@ -242,7 +248,7 @@ function submitBooking(): void {
               value=""
               disabled
             >
-              Выберите специалиста
+              {{ t('booking.chooseSpecialist') }}
             </option>
             <option
               v-for="specialist in props.specialists"
@@ -256,7 +262,7 @@ function submitBooking(): void {
             v-if="props.query.serviceId && props.specialists.length === 0"
             class="portal-copy portal-copy--small"
           >
-            Для этой услуги сейчас нет доступного специалиста.
+            {{ t('booking.noSpecialists') }}
           </p>
         </div>
 
@@ -265,7 +271,7 @@ function submitBooking(): void {
             <label
               for="booking-date-from"
               class="portal-label"
-            >С даты</label>
+            >{{ t('booking.dateTime') }}</label>
             <input
               id="booking-date-from"
               name="date_from"
@@ -279,7 +285,7 @@ function submitBooking(): void {
             <label
               for="booking-date-to"
               class="portal-label"
-            >По дату</label>
+            >{{ t('booking.dateTime') }}</label>
             <input
               id="booking-date-to"
               name="date_to"
@@ -295,7 +301,7 @@ function submitBooking(): void {
           <label
             for="booking-format"
             class="portal-label"
-          >Формат</label>
+          >{{ t('booking.format') }}</label>
           <select
             id="booking-format"
             name="format"
@@ -308,7 +314,7 @@ function submitBooking(): void {
               :key="format"
               :value="format"
             >
-              {{ formatLabels[format] }}
+              {{ formatLabel(format) }}
             </option>
           </select>
         </div>
@@ -317,7 +323,7 @@ function submitBooking(): void {
           type="submit"
           class="portal-button portal-button--primary self-start"
         >
-          Показать свободное время
+          {{ t('booking.chooseTime') }}
         </button>
       </form>
 
@@ -331,7 +337,7 @@ function submitBooking(): void {
             id="booking-times-heading"
             class="portal-heading portal-heading--section"
           >
-            Свободное время
+            {{ t('booking.chooseTime') }}
           </h2>
         </div>
 
@@ -340,19 +346,20 @@ function submitBooking(): void {
           class="portal-notice"
           role="status"
         >
-          Для выбранных параметров свободного времени пока нет.
+          {{ t('booking.noSlots') }}
         </p>
 
         <div
           v-else
           class="portal-grid portal-grid--cards"
-          aria-label="Свободное время для записи"
+          :aria-label="t('booking.chooseTime')"
         >
           <button
             v-for="slot in props.availability.slots"
             :key="slot.startsAt"
             type="button"
             class="portal-card portal-card--interactive"
+            data-testid="availability-slot"
             :aria-pressed="selectedStart === slot.startsAt"
             @click="selectSlot(slot)"
           >
@@ -360,13 +367,15 @@ function submitBooking(): void {
               <PortalDateTime
                 :value="slot.startsAt"
                 :time-zone="props.availability.displayTimezone"
+                :locale="locale"
               />
             </span>
             <span class="portal-card__summary">
-              До
+              {{ t('booking.until') }}
               <PortalDateTime
                 :value="slot.endsAt"
                 :time-zone="props.availability.displayTimezone"
+                :locale="locale"
               />
             </span>
           </button>
@@ -382,20 +391,21 @@ function submitBooking(): void {
           id="booking-confirm-heading"
           class="portal-heading portal-heading--section"
         >
-          Подтвердите запись
+          {{ t('booking.create') }}
         </h2>
         <p class="portal-copy">
           <PortalDateTime
             :value="selectedStart"
             :time-zone="props.availability.displayTimezone"
+            :locale="locale"
           />
-          · {{ formatLabels[props.query.format] }}
+          · {{ formatLabel(props.query.format) }}
         </p>
         <p
           v-if="props.query.format === 'home'"
           class="portal-copy portal-copy--small"
         >
-          Для выезда на дом мы отдельно подтвердим время.
+          {{ t('booking.requestSent') }}
         </p>
         <p
           v-if="bookingError"
@@ -410,7 +420,7 @@ function submitBooking(): void {
           :disabled="bookingForm.processing"
           @click="submitBooking"
         >
-          {{ bookingForm.processing ? 'Сохраняем…' : props.query.format === 'home' ? 'Отправить заявку' : 'Записаться' }}
+          {{ bookingForm.processing ? t('booking.creating') : t('booking.create') }}
         </button>
       </section>
 
@@ -418,14 +428,14 @@ function submitBooking(): void {
         :href="props.urls.services"
         class="portal-button portal-button--secondary self-start"
       >
-        К услугам
+        {{ t('services.title') }}
       </Link>
       <Link
         :href="props.urls.bookings"
         class="portal-link self-start"
       >
-        Мои записи
+        {{ t('bookings.title') }}
       </Link>
     </section>
-  </main>
+  </AppShell>
 </template>

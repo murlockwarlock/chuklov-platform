@@ -27,7 +27,8 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
         $this->organizationWithClientRecords();
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
 
-        $this->post(route('portal.telegram.web.request'))->assertRedirect(route('portal.services.index'));
+        $this->withSession(['portal.locale' => 'en']);
+        $this->post(route('portal.telegram.web.request'))->assertRedirect(route('portal.home'));
 
         $url = session('telegram_web_auth.url');
         self::assertIsString($url);
@@ -47,10 +48,11 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'status' => 'authenticated',
-                'redirect' => route('portal.onboarding'),
+                'redirect' => route('portal.home'),
             ])
             ->assertSessionHas('client_portal.client_id', $client->id);
 
+        self::assertSame('en', $client->refresh()->language);
         self::assertNotNull(ClientTelegramAuthenticationRequest::query()->sole()->consumed_at);
     }
 
