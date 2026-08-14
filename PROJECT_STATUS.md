@@ -5,6 +5,15 @@
 - Current milestone: Milestone 5A CLOSED / ACCEPTED — Scenario / Notification Engine foundation
 - Status: M5A_CLOSED_ACCEPTED — M5B is not started
 
+## Client Portal booking visual remediation — 2026-08-14
+
+- Starting code revision: `694d98c9d0392ba50dfd70bc088a5918b18f0a6f`.
+- Rebuilt the client booking surface around the approved CHUKLOV reference: focused service rows, meaningful specialist/format decisions, calendar plus selected-day time choices, and confirmation summary. One valid specialist is auto-selected; booking availability remains server-authoritative.
+- Removed client-facing date-range controls and multi-day slot dumps. The mobile booking flow hides the persistent bottom navigation while the focused wizard is active so the calendar and CTA remain fully readable; normal Portal destinations retain bottom navigation.
+- Final deployed implementation revision: `bfcd7374a85c79eacee816619d814aefb674fd0b` at `https://crm.psysoldatov.ru`.
+- Verification: `make quality`, `make ci`, full Portal Playwright `14/14`, and real staging desktop/390px/320px authenticated smoke all pass. Live Telegram launch link resolves to `@chuklovtestbot`; an authenticated Telegram-client session was not available for a true in-client Mini App smoke, so no synthetic initData result is reported as live Telegram verification.
+- M5B and unrelated milestones remain unstarted.
+
 ## Completed Remediation
 
 - Staging follow-up simplified the Portal entry copy, added ordinary-browser Telegram authentication through a browser-bound single-use bot deep link, retained verified Mini App initData and email OTP, and persisted client-facing copy rules. M5B remains unstarted.
