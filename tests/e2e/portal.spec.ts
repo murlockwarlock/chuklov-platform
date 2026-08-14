@@ -242,16 +242,11 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await page.getByRole('button', { name: 'Продолжить' }).click();
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
 
-    await expect(page.getByRole('status')).toContainText('Запись создана.');
-
-    const secondSlot = page.getByTestId('availability-slot').first();
-    await expect(secondSlot).toBeVisible();
-    await secondSlot.click();
-    await page.getByRole('button', { name: 'Продолжить' }).click();
-    await page.getByRole('button', { name: 'Подтвердить запись' }).click();
-    await expect(page.getByRole('status')).toContainText('Запись создана.');
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toHaveCount(0);
+    await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
-    await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
+    await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
 });
 
 test('booking uses a service step and selected-day calendar before confirmation', async ({ page }) => {

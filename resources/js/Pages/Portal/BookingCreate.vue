@@ -5,11 +5,12 @@ import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
 import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
+import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
 type VisitFormat = 'office' | 'home' | 'online';
-type BookingStep = 'time' | 'confirmation';
+type BookingStep = 'time' | 'confirmation' | 'success';
 
 type ServiceOption = {
     id: number;
@@ -103,12 +104,17 @@ watch(
         selectedSpecialistId.value = specialistId;
         selectedFormat.value = formatSelected ? format : null;
         selectedDate.value = dateFrom;
-        selectedStart.value = null;
-        bookingStep.value = 'time';
         bookingForm.service_id = serviceId;
         bookingForm.specialist_id = specialistId;
         bookingForm.format = format;
-        bookingForm.starts_at = null;
+
+        if (props.bookingResult === null) {
+            selectedStart.value = null;
+            bookingStep.value = 'time';
+            bookingForm.starts_at = null;
+        } else {
+            bookingStep.value = 'success';
+        }
     },
     { immediate: true },
 );
@@ -121,9 +127,7 @@ watch(
         }
 
         acknowledgedBookingId.value = bookingId;
-        selectedStart.value = null;
-        bookingForm.starts_at = null;
-        bookingStep.value = 'time';
+        bookingStep.value = 'success';
     },
     { immediate: true },
 );
@@ -138,7 +142,12 @@ const formatOptions = computed<VisitFormat[]>(() => selectedService.value?.forma
 const needsSpecialistChoice = computed(() => props.query.serviceId !== null && props.specialists.length > 1 && props.query.specialistId === null);
 const needsFormatChoice = computed(() => props.query.serviceId !== null && !needsSpecialistChoice.value && formatOptions.value.length > 1 && !props.query.formatSelected);
 const hasSpecialistChoice = computed(() => props.specialists.length > 1);
+const bookingCompleted = computed(() => props.bookingResult !== null || bookingStep.value === 'success');
 const currentStepKey = computed(() => {
+    if (bookingCompleted.value) {
+        return 'confirmation';
+    }
+
     if (props.query.serviceId === null) {
         return 'service';
     }
@@ -415,16 +424,20 @@ function submitBooking(): void {
           </template>
         </nav>
 
-        <p
-          v-if="props.bookingResult"
-          class="portal-notice portal-notice--success"
-          role="status"
-        >
-          {{ props.bookingResult.message }}
-        </p>
+        <BookingSuccess
+          v-if="bookingCompleted && props.bookingResult"
+          :message="props.bookingResult.message"
+          :service-name="selectedService?.name ?? null"
+          :specialist-name="selectedSpecialist?.displayName ?? null"
+          :selected-start="selectedStart"
+          :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
+          :locale="locale"
+          :format-label="formatLabel(props.query.format)"
+          :urls="{ bookings: props.urls.bookings, services: props.urls.services }"
+        />
 
         <BookingChoiceList
-          v-if="currentStepKey === 'service'"
+          v-else-if="currentStepKey === 'service'"
           heading-id="booking-service-heading"
           :heading="t('booking.chooseService')"
           :choices="serviceChoices"
@@ -557,7 +570,7 @@ function submitBooking(): void {
         </template>
 
         <BookingConfirmation
-          v-else
+          v-else-if="bookingStep === 'confirmation'"
           :service-name="selectedService?.name ?? null"
           :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"

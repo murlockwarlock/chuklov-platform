@@ -1644,14 +1644,16 @@ body {
 }
 
 .portal-booking-calendar {
-    gap: 1rem;
+    gap: 1.35rem;
 }
 
 .portal-booking-calendar > header {
-    gap: 0.3rem;
+    gap: 0.65rem;
+    padding-top: 0.2rem;
 }
 
 .portal-booking-calendar > header .portal-heading--section {
+    margin: 0;
     font-family: var(--font-sans);
     font-size: clamp(1.2rem, 3vw, 1.55rem);
     font-weight: 750;
@@ -1734,7 +1736,7 @@ body {
 
 .portal-time-card__header {
     min-width: 0;
-    gap: 0.25rem;
+    gap: 0.5rem;
 }
 
 .portal-time-card__header .portal-kicker {
@@ -1816,6 +1818,39 @@ body {
     color: #2d7139;
 }
 
+.portal-booking-success {
+    min-width: 0;
+    gap: 1.25rem;
+    border: 1px solid rgb(76 155 89 / 24%);
+    border-radius: 1rem;
+    background: var(--portal-color-surface-warm);
+    padding: clamp(1rem, 3vw, 1.5rem);
+}
+
+.portal-booking-success__header {
+    gap: 0.65rem;
+}
+
+.portal-booking-success__header .portal-heading--section {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: clamp(1.3rem, 3vw, 1.75rem);
+    font-weight: 750;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+}
+
+.portal-booking-success__actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.portal-booking-success__actions > * {
+    flex: 1 1 12rem;
+}
+
 @media (max-width: 47.99rem) {
     .portal-booking-progress__label {
         overflow-wrap: normal;
@@ -1863,6 +1898,11 @@ body {
     .portal-booking-selection-bar > .portal-link {
         font-size: 0.72rem;
         white-space: nowrap;
+    }
+
+    .portal-booking-success__actions > * {
+        width: 100%;
+        flex-basis: 100%;
     }
 }
 
