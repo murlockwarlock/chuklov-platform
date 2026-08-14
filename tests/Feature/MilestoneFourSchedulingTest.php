@@ -449,6 +449,7 @@ class MilestoneFourSchedulingTest extends TestCase
                 ->where('services.0.id', $service->id)
                 ->where('specialists.0.id', $specialist->id)
                 ->where('availability.slots.0.startsAt', '2026-03-30T09:00:00+00:00')
+                ->where('query.formatSelected', true)
                 ->where('query.displayTimezone', 'Europe/Berlin'));
 
         $this->withSession(['client_portal.client_id' => $client->id])
@@ -490,6 +491,7 @@ class MilestoneFourSchedulingTest extends TestCase
                     'displayName' => $specialist->display_name,
                 ]])
                 ->where('query.specialistId', $specialist->id)
+                ->where('query.formatSelected', true)
                 ->where('availability.specialistId', $specialist->id));
     }
 

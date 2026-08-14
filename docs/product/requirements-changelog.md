@@ -12,6 +12,12 @@
 - Confirmed that the current client booking journey has one bookable specialist, Евгений Чуклов, so the Portal preselects that specialist and does not ask the client to make a redundant choice.
 - Confirmed that the specialist selector remains available when a service later has multiple eligible specialists; the domain assignment and authorization rules remain unchanged.
 
+## 2026-08-14 — Owner-confirmed calendar booking interaction
+
+- Confirmed that REQ-BOOKING-002 client availability is presented as a focused service/specialist/format/calendar/time/confirmation journey rather than a single form with a multi-day slot dump.
+- Confirmed that date range bounds remain an internal availability query detail; ordinary clients see a month calendar, unavailable dates are disabled, and only the selected date's start times are rendered.
+- Confirmed that booking creation continues to use the authoritative server slot and existing UTC/IANA, assignment, conflict, idempotency, and organization-scope guarantees.
+
 ## 2026-08-14 — Owner-confirmed Telegram web authentication
 
 - Amended REQ-PORTAL-005 and REQ-SEC-004 so ordinary web offers Telegram and passwordless email as independent authentication methods.

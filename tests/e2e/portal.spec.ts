@@ -6,6 +6,7 @@ type BookingFixture = {
     cookieName: string;
     cookieValue: string;
     serviceId: number;
+    serviceName: string;
     specialistId: number;
     date: string;
     bookingId: number | null;
@@ -90,6 +91,7 @@ function createBookingFixture(withBooking = false): BookingFixture {
             'cookieName' => $cookieName,
             'cookieValue' => $cookieValue,
             'serviceId' => $service->getKey(),
+            'serviceName' => $service->name,
             'specialistId' => $specialist->getKey(),
             'date' => $date,
             'bookingId' => $booking?->getKey(),
@@ -228,13 +230,16 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
     expect(response?.status()).toBe(200);
 
-    await expect(page.getByRole('heading', { name: 'Дата и время' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
     await expect(page.locator('#booking-specialist')).toHaveCount(0);
     await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
+    await expect(page.locator('input[name="date_from"], input[name="date_to"]')).toHaveCount(0);
     await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
     const firstSlot = page.getByTestId('availability-slot').first();
     await expect(firstSlot).toBeVisible();
     await firstSlot.click();
+    await expect(page.getByRole('button', { name: 'Продолжить' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Продолжить' }).click();
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
 
     await expect(page.getByRole('status')).toContainText('Запись создана.');
@@ -242,10 +247,54 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     const secondSlot = page.getByTestId('availability-slot').first();
     await expect(secondSlot).toBeVisible();
     await secondSlot.click();
+    await page.getByRole('button', { name: 'Продолжить' }).click();
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
     await expect(page.getByRole('status')).toContainText('Запись создана.');
     await page.getByRole('main').getByRole('link', { name: 'Мои записи' }).click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
+});
+
+test('booking uses a service step and selected-day calendar before confirmation', async ({ page }) => {
+    const fixture = createBookingFixture();
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
+    const unavailableDate = new Date(dateToValue.getTime());
+    unavailableDate.setUTCDate(unavailableDate.getUTCDate() + 1);
+    const unavailableDateValue = unavailableDate.toISOString().slice(0, 10);
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
+    await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
+    await expect(page.locator('select[name="service_id"]')).toHaveCount(0);
+    await expect(page.locator('input[name="date_from"], input[name="date_to"]')).toHaveCount(0);
+    await page.locator('.portal-booking-option').filter({ hasText: fixture.serviceName }).click();
+    await page.getByRole('button', { name: 'Продолжить' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
+    await expect(page.locator('.portal-slot-day')).toHaveCount(0);
+    expect(await page.locator('.portal-calendar-card__day').count()).toBeGreaterThan(7);
+    await expect(page.getByRole('button', { name: unavailableDateValue, exact: true })).toBeDisabled();
+
+    const availableDays = page.locator('.portal-calendar-card__day--available');
+    await expect(availableDays).toHaveCount(2);
+    await availableDays.nth(1).click();
+    await expect(availableDays.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.portal-time-card')).toHaveCount(1);
+
+    const time = page.getByTestId('availability-slot').first();
+    await time.click();
+    await expect(time).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Продолжить' }).click();
+    await expect(page.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
+    await expect(page.getByText(/Playwright Service/)).toBeVisible();
+    await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
 });
 
 test('authenticated client can manage an upcoming booking from My bookings', async ({ page }) => {

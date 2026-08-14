@@ -101,6 +101,7 @@ class BookingController extends Controller
                 'dateFrom' => $dateFrom,
                 'dateTo' => $dateTo,
                 'format' => $format->value,
+                'formatSelected' => ($validated['format'] ?? null) !== null,
                 'displayTimezone' => $displayTimezone,
             ],
             'bookingResult' => $request->session()->pull('portal_booking_result'),

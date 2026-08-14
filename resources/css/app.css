@@ -495,6 +495,16 @@ body {
         color: var(--portal-color-surface);
     }
 
+    .portal-booking-progress__step--complete {
+        color: var(--portal-color-brand-strong);
+    }
+
+    .portal-booking-progress__step--complete .portal-booking-progress__number {
+        border-color: var(--portal-color-brand-soft);
+        background: var(--portal-color-brand-soft);
+        color: var(--portal-color-brand-strong);
+    }
+
     .portal-booking-progress__line {
         width: 2rem;
         height: 1px;
@@ -510,6 +520,333 @@ body {
         border-radius: var(--portal-radius-md);
         background: var(--portal-color-surface-muted);
         padding: var(--portal-space-4);
+    }
+
+    .portal-booking-options {
+        display: grid;
+        gap: var(--portal-space-3);
+    }
+
+    .portal-booking-option {
+        display: grid;
+        min-height: 5.5rem;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--portal-space-4);
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        padding: var(--portal-space-5);
+        text-align: left;
+        transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .portal-booking-option:hover,
+    .portal-booking-option--selected {
+        border-color: var(--portal-color-brand);
+        background: var(--portal-color-surface-warm);
+        box-shadow: var(--portal-shadow-card);
+    }
+
+    .portal-booking-option:focus-visible,
+    .portal-format-option:focus-visible,
+    .portal-calendar-card__day:focus-visible,
+    .portal-calendar-card__nav:focus-visible,
+    .portal-time-button:focus-visible,
+    .portal-link--button:focus-visible {
+        outline: 3px solid rgb(194 111 79 / 35%);
+        outline-offset: 3px;
+    }
+
+    .portal-booking-option__indicator {
+        width: 1.15rem;
+        height: 1.15rem;
+        border: 2px solid var(--portal-color-border-strong);
+        border-radius: 50%;
+        background: var(--portal-color-surface);
+    }
+
+    .portal-booking-option--selected .portal-booking-option__indicator {
+        border: 0.35rem solid var(--portal-color-ink);
+    }
+
+    .portal-booking-option__copy {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+
+    .portal-booking-option__copy strong {
+        font-size: 0.98rem;
+    }
+
+    .portal-booking-option__copy span {
+        color: var(--portal-color-ink-soft);
+        font-size: 0.85rem;
+        line-height: 1.45;
+    }
+
+    .portal-booking-option__copy small {
+        color: var(--portal-color-ink-faint);
+        font-size: 0.78rem;
+    }
+
+    .portal-booking-option__price {
+        white-space: nowrap;
+    }
+
+    .portal-format-options {
+        display: grid;
+        gap: var(--portal-space-3);
+        grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    }
+
+    .portal-format-option {
+        min-height: 3.5rem;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        padding: var(--portal-space-4);
+        font: inherit;
+        font-weight: 700;
+    }
+
+    .portal-format-option:hover,
+    .portal-format-option--selected {
+        border-color: var(--portal-color-ink);
+        background: var(--portal-color-ink);
+        color: var(--portal-color-surface);
+    }
+
+    .portal-link--button {
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        padding: 0;
+        font: inherit;
+    }
+
+    .portal-booking-context {
+        display: grid;
+        gap: var(--portal-space-3);
+        grid-template-columns: minmax(0, 1fr);
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        padding: var(--portal-space-5);
+    }
+
+    .portal-booking-context__item {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.35rem;
+    }
+
+    .portal-booking-context__item strong {
+        overflow: hidden;
+        max-width: 100%;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .portal-booking-calendar__layout {
+        display: grid;
+        gap: var(--portal-space-5);
+    }
+
+    .portal-calendar-card,
+    .portal-time-card {
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-lg);
+        background: var(--portal-color-surface);
+        padding: var(--portal-space-5);
+        box-shadow: var(--portal-shadow-card);
+    }
+
+    .portal-calendar-card__header {
+        display: grid;
+        grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+        align-items: center;
+        gap: var(--portal-space-3);
+        margin-bottom: var(--portal-space-5);
+    }
+
+    .portal-calendar-card__month {
+        margin: 0;
+        color: var(--portal-color-ink);
+        font-size: 1rem;
+        font-weight: 750;
+        text-align: center;
+        text-transform: capitalize;
+    }
+
+    .portal-calendar-card__nav {
+        display: inline-flex;
+        width: 2.5rem;
+        height: 2.5rem;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--portal-color-border);
+        border-radius: 50%;
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        font-size: 1.4rem;
+        line-height: 1;
+    }
+
+    .portal-calendar-card__nav:hover:not(:disabled) {
+        border-color: var(--portal-color-brand);
+        color: var(--portal-color-brand-strong);
+    }
+
+    .portal-calendar-card__nav:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+    }
+
+    .portal-calendar-card__weekdays,
+    .portal-calendar-card__days {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+    }
+
+    .portal-calendar-card__weekdays {
+        margin-bottom: var(--portal-space-2);
+        color: var(--portal-color-ink-faint);
+        font-size: 0.72rem;
+        font-weight: 750;
+        text-align: center;
+        text-transform: uppercase;
+    }
+
+    .portal-calendar-card__day {
+        display: inline-flex;
+        width: 2.5rem;
+        height: 2.5rem;
+        align-items: center;
+        justify-content: center;
+        justify-self: center;
+        border: 1px solid transparent;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--portal-color-ink-faint);
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.86rem;
+    }
+
+    .portal-calendar-card__day--outside {
+        color: transparent;
+        pointer-events: none;
+    }
+
+    .portal-calendar-card__day--available {
+        color: var(--portal-color-ink);
+        font-weight: 700;
+    }
+
+    .portal-calendar-card__day--available:hover:not(:disabled) {
+        border-color: var(--portal-color-brand);
+    }
+
+    .portal-calendar-card__day--selected {
+        border-color: var(--portal-color-ink);
+        background: var(--portal-color-ink);
+        color: var(--portal-color-surface);
+    }
+
+    .portal-calendar-card__day:disabled {
+        cursor: not-allowed;
+    }
+
+    .portal-time-card {
+        display: flex;
+        min-height: 100%;
+        flex-direction: column;
+        gap: var(--portal-space-5);
+        background: var(--portal-color-surface-warm);
+    }
+
+    .portal-time-card__header {
+        display: flex;
+        flex-direction: column;
+        gap: var(--portal-space-2);
+    }
+
+    .portal-time-card__header .portal-kicker {
+        margin: 0;
+        color: var(--portal-color-ink);
+        font-size: 0.98rem;
+        letter-spacing: 0.02em;
+        text-transform: none;
+    }
+
+    .portal-time-grid {
+        display: grid;
+        align-content: start;
+        gap: var(--portal-space-3);
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .portal-time-button {
+        display: inline-flex;
+        min-height: 3.2rem;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-sm);
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        padding: var(--portal-space-3);
+        font-size: 0.94rem;
+        font-weight: 750;
+        transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+    }
+
+    .portal-time-button:hover {
+        border-color: var(--portal-color-brand);
+        transform: translateY(-1px);
+    }
+
+    .portal-time-button[aria-pressed='true'] {
+        border-color: var(--portal-color-ink);
+        background: var(--portal-color-ink);
+        color: var(--portal-color-surface);
+    }
+
+    .portal-booking-summary {
+        display: grid;
+        gap: var(--portal-space-4);
+        grid-template-columns: minmax(0, 1fr);
+        margin: 0;
+    }
+
+    .portal-booking-summary div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        border-bottom: 1px solid var(--portal-color-border);
+        padding-bottom: var(--portal-space-3);
+    }
+
+    .portal-booking-summary dt {
+        color: var(--portal-color-ink-faint);
+        font-size: 0.78rem;
+    }
+
+    .portal-booking-summary dd {
+        margin: 0;
+        color: var(--portal-color-ink);
+        font-weight: 700;
     }
 
     .portal-slot-days {
@@ -966,6 +1303,16 @@ body {
             grid-row: 2;
         }
 
+        .portal-booking-calendar__layout {
+            grid-template-columns: minmax(0, 1.05fr) minmax(16rem, 0.95fr);
+            align-items: stretch;
+        }
+
+        .portal-booking-context,
+        .portal-booking-summary {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .portal-panel,
         .portal-card {
             padding: var(--portal-space-8);
@@ -1008,5 +1355,25 @@ body {
         .portal-booking-card__content {
             align-items: center;
         }
+    }
+
+    @media (min-width: 64rem) {
+        .portal-booking-context {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+}
+
+@media (min-width: 48rem) {
+    .portal-header__navigation {
+        display: flex;
+    }
+
+    .portal-main {
+        padding-bottom: 0;
+    }
+
+    .portal-bottom-nav {
+        display: none;
     }
 }

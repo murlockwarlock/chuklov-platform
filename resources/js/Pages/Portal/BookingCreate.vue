@@ -1,18 +1,24 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
-import PortalDateTime from '../../Components/PortalDateTime.vue';
+import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
+import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
+import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
 type VisitFormat = 'office' | 'home' | 'online';
+type BookingStep = 'time' | 'confirmation';
 
 type ServiceOption = {
     id: number;
     name: string;
     summary: string;
     formats: VisitFormat[];
+    durationMinutes: number | null;
+    priceMinor: number | null;
+    priceCurrency: string | null;
 };
 
 type SpecialistOption = {
@@ -40,6 +46,7 @@ type BookingQuery = {
     dateFrom: string;
     dateTo: string;
     format: VisitFormat;
+    formatSelected: boolean;
     displayTimezone: string;
 };
 
@@ -47,12 +54,6 @@ type BookingResult = {
     message: string;
     bookingId: number;
 } | null;
-
-type SlotDay = {
-    key: string;
-    firstSlot: AvailabilitySlot;
-    slots: AvailabilitySlot[];
-};
 
 type Props = {
     portal: PortalShell;
@@ -64,9 +65,19 @@ type Props = {
     urls: { create: string; store: string; services: string; bookings: string };
 };
 
+type ProgressStep = {
+    key: string;
+    label: string;
+};
+
 const props = defineProps<Props>();
 const { locale, t } = usePortalLocale();
+const selectedServiceId = ref<number | null>(props.query.serviceId);
+const selectedSpecialistId = ref<number | null>(props.query.specialistId);
+const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
+const selectedDate = ref<string | null>(props.query.dateFrom);
 const selectedStart = ref<string | null>(null);
+const bookingStep = ref<BookingStep>('time');
 const bookingForm = useForm<{
     service_id: number | null;
     specialist_id: number | null;
@@ -86,6 +97,23 @@ const bookingForm = useForm<{
 const acknowledgedBookingId = ref<number | null>(null);
 
 watch(
+    () => [props.query.serviceId, props.query.specialistId, props.query.format, props.query.formatSelected, props.query.dateFrom] as const,
+    ([serviceId, specialistId, format, formatSelected, dateFrom]) => {
+        selectedServiceId.value = serviceId;
+        selectedSpecialistId.value = specialistId;
+        selectedFormat.value = formatSelected ? format : null;
+        selectedDate.value = dateFrom;
+        selectedStart.value = null;
+        bookingStep.value = 'time';
+        bookingForm.service_id = serviceId;
+        bookingForm.specialist_id = specialistId;
+        bookingForm.format = format;
+        bookingForm.starts_at = null;
+    },
+    { immediate: true },
+);
+
+watch(
     () => props.bookingResult?.bookingId ?? null,
     (bookingId) => {
         if (bookingId === null || bookingId === acknowledgedBookingId.value) {
@@ -95,64 +123,213 @@ watch(
         acknowledgedBookingId.value = bookingId;
         selectedStart.value = null;
         bookingForm.starts_at = null;
+        bookingStep.value = 'time';
     },
     { immediate: true },
 );
 
 const selectedService = computed(() =>
-    props.services.find((service) => service.id === props.query.serviceId),
+    props.services.find((service) => service.id === props.query.serviceId) ?? null,
 );
-const formatOptions = computed<VisitFormat[]>(() =>
-    selectedService.value?.formats ?? ['office', 'home', 'online'],
+const selectedSpecialist = computed(() =>
+    props.specialists.find((specialist) => specialist.id === props.query.specialistId) ?? null,
 );
-const singleSpecialist = computed(() =>
-    props.specialists.length === 1 ? props.specialists[0] : null,
-);
-const slotDays = computed<SlotDay[]>(() => {
-    if (!props.availability) {
-        return [];
+const formatOptions = computed<VisitFormat[]>(() => selectedService.value?.formats ?? []);
+const needsSpecialistChoice = computed(() => props.query.serviceId !== null && props.specialists.length > 1 && props.query.specialistId === null);
+const needsFormatChoice = computed(() => props.query.serviceId !== null && !needsSpecialistChoice.value && formatOptions.value.length > 1 && !props.query.formatSelected);
+const currentStepKey = computed(() => {
+    if (props.query.serviceId === null) {
+        return 'service';
     }
 
-    const groups = new Map<string, SlotDay>();
-
-    for (const slot of props.availability.slots) {
-        const parts = new Intl.DateTimeFormat('en-CA', {
-            day: '2-digit',
-            month: '2-digit',
-            timeZone: props.availability.displayTimezone,
-            year: 'numeric',
-        }).formatToParts(new Date(slot.startsAt));
-        const values = Object.fromEntries(
-            parts
-                .filter((part) => ['day', 'month', 'year'].includes(part.type))
-                .map((part) => [part.type, part.value]),
-        ) as Record<'day' | 'month' | 'year', string>;
-        const key = `${values.year}-${values.month}-${values.day}`;
-        const existing = groups.get(key);
-
-        if (existing) {
-            existing.slots.push(slot);
-        } else {
-            groups.set(key, { key, firstSlot: slot, slots: [slot] });
-        }
+    if (needsSpecialistChoice.value) {
+        return 'specialist';
     }
 
-    return Array.from(groups.values());
+    if (needsFormatChoice.value) {
+        return 'format';
+    }
+
+    return bookingStep.value === 'confirmation' ? 'confirmation' : 'time';
 });
-const bookingFormErrors = computed(() => bookingForm.errors as Record<string, string | undefined>);
-const bookingError = computed(() =>
-    bookingFormErrors.value.starts_at
-    ?? bookingFormErrors.value.startsAt
-    ?? bookingFormErrors.value.assignment
-    ?? bookingFormErrors.value.service_id
-    ?? bookingFormErrors.value.specialist_id
-    ?? bookingFormErrors.value.format
-    ?? bookingFormErrors.value.party_size
-    ?? bookingFormErrors.value.location,
-);
+const progressSteps = computed<ProgressStep[]>(() => [
+    { key: 'service', label: t('booking.stepService') },
+    { key: 'specialist', label: t('booking.stepSpecialist') },
+    ...(formatOptions.value.length > 1
+        ? [{ key: 'format', label: t('booking.stepFormat') }]
+        : []),
+    { key: 'time', label: t('booking.stepTime') },
+    { key: 'confirmation', label: t('booking.stepConfirm') },
+]);
+const bookingError = computed(() => {
+    const errors = bookingForm.errors as Record<string, string | undefined>;
+
+    return errors.starts_at
+        ?? errors.startsAt
+        ?? errors.assignment
+        ?? errors.service_id
+        ?? errors.specialist_id
+        ?? errors.format
+        ?? errors.party_size
+        ?? errors.location;
+});
+
+function durationLabel(service: ServiceOption): string | null {
+    return service.durationMinutes === null
+        ? null
+        : t('service.durationMinutes', { value: service.durationMinutes });
+}
+
+function priceLabel(service: ServiceOption): string | null {
+    if (service.priceMinor === null || service.priceCurrency === null) {
+        return null;
+    }
+
+    return new Intl.NumberFormat(locale.value === 'ru' ? 'ru-RU' : 'en-GB', {
+        style: 'currency',
+        currency: service.priceCurrency,
+        maximumFractionDigits: 0,
+    }).format(service.priceMinor / 100);
+}
+
+const serviceChoices = computed(() => props.services.map((service) => ({
+    id: service.id,
+    title: service.name,
+    description: service.summary,
+    meta: durationLabel(service),
+    trailing: priceLabel(service),
+})));
+const specialistChoices = computed(() => props.specialists.map((specialist) => ({
+    id: specialist.id,
+    title: specialist.displayName,
+})));
 
 function formatLabel(format: VisitFormat): string {
     return t('booking.' + format);
+}
+
+function bookingQuery(
+    dateFrom = props.query.dateFrom,
+    dateTo = props.query.dateTo,
+    includeFormat = props.query.formatSelected,
+): Record<string, string | number> {
+    const query: Record<string, string | number> = {
+        date_from: dateFrom,
+        date_to: dateTo,
+    };
+
+    if (props.query.serviceId !== null) {
+        query.service_id = props.query.serviceId;
+    }
+
+    if (props.query.specialistId !== null) {
+        query.specialist_id = props.query.specialistId;
+    }
+
+    if (includeFormat) {
+        query.format = props.query.format;
+    }
+
+    return query;
+}
+
+function visitBooking(query: Record<string, string | number>): void {
+    router.get(props.urls.create, query, {
+        preserveState: false,
+        preserveScroll: false,
+    });
+}
+
+function continueService(): void {
+    if (selectedServiceId.value === null) {
+        return;
+    }
+
+    const service = props.services.find((item) => item.id === selectedServiceId.value);
+    const query: Record<string, string | number> = {
+        date_from: props.query.dateFrom,
+        date_to: props.query.dateTo,
+        service_id: selectedServiceId.value,
+    };
+
+    if (service?.formats.length === 1) {
+        query.format = service.formats[0];
+    }
+
+    visitBooking(query);
+}
+
+function continueSpecialist(): void {
+    if (selectedSpecialistId.value === null || props.query.serviceId === null) {
+        return;
+    }
+
+    const query: Record<string, string | number> = {
+        ...bookingQuery(),
+        service_id: props.query.serviceId,
+        specialist_id: selectedSpecialistId.value,
+    };
+
+    if (formatOptions.value.length === 1) {
+        query.format = formatOptions.value[0];
+    }
+
+    visitBooking(query);
+}
+
+function continueFormat(): void {
+    if (selectedFormat.value === null || props.query.serviceId === null) {
+        return;
+    }
+
+    visitBooking({
+        ...bookingQuery(),
+        format: selectedFormat.value,
+    });
+}
+
+function changeService(): void {
+    visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo });
+}
+
+function changeSpecialist(): void {
+    if (props.query.serviceId === null) {
+        return;
+    }
+
+    visitBooking({
+        date_from: props.query.dateFrom,
+        date_to: props.query.dateTo,
+        service_id: props.query.serviceId,
+    });
+}
+
+function changeFormat(): void {
+    if (props.query.serviceId === null) {
+        return;
+    }
+
+    const query: Record<string, string | number> = {
+        date_from: props.query.dateFrom,
+        date_to: props.query.dateTo,
+        service_id: props.query.serviceId,
+    };
+
+    if (props.query.specialistId !== null) {
+        query.specialist_id = props.query.specialistId;
+    }
+
+    visitBooking(query);
+}
+
+function changeMonth(dateFrom: string, dateTo: string): void {
+    visitBooking(bookingQuery(dateFrom, dateTo));
+}
+
+function selectDate(date: string): void {
+    selectedDate.value = date;
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
 }
 
 function selectSlot(slot: AvailabilitySlot): void {
@@ -160,13 +337,23 @@ function selectSlot(slot: AvailabilitySlot): void {
     bookingForm.starts_at = slot.startsAt;
 }
 
+function continueToConfirmation(): void {
+    if (selectedStart.value !== null) {
+        bookingStep.value = 'confirmation';
+    }
+}
+
+function returnToTime(): void {
+    bookingStep.value = 'time';
+}
+
 function submitBooking(): void {
-    if (selectedStart.value === null) {
+    if (selectedStart.value === null || props.query.serviceId === null || props.query.specialistId === null) {
         return;
     }
 
     bookingForm.service_id = props.query.serviceId;
-    bookingForm.specialist_id = props.query.specialistId ?? singleSpecialist.value?.id ?? null;
+    bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
     bookingForm.starts_at = selectedStart.value;
     bookingForm.post(props.urls.store, { preserveScroll: true });
@@ -186,10 +373,10 @@ function submitBooking(): void {
             {{ t('booking.title') }}
           </p>
           <h1 class="portal-heading portal-heading--page">
-            {{ t('booking.dateTime') }}
+            {{ currentStepKey === 'service' ? t('booking.chooseService') : t('booking.title') }}
           </h1>
           <p class="portal-lede">
-            {{ t('booking.description') }}
+            {{ currentStepKey === 'service' ? t('booking.serviceDescription') : t('booking.description') }}
           </p>
         </div>
       </header>
@@ -198,34 +385,28 @@ function submitBooking(): void {
         class="portal-booking-progress"
         :aria-label="t('booking.title')"
       >
-        <span class="portal-booking-progress__step portal-booking-progress__step--active">
-          <span class="portal-booking-progress__number">1</span>
-          {{ t('booking.stepService') }}
-        </span>
-        <span
-          class="portal-booking-progress__line"
-          aria-hidden="true"
-        />
-        <span class="portal-booking-progress__step">
-          <span class="portal-booking-progress__number">2</span>
-          {{ t('booking.stepFormat') }}
-        </span>
-        <span
-          class="portal-booking-progress__line"
-          aria-hidden="true"
-        />
-        <span class="portal-booking-progress__step">
-          <span class="portal-booking-progress__number">3</span>
-          {{ t('booking.stepTime') }}
-        </span>
-        <span
-          class="portal-booking-progress__line"
-          aria-hidden="true"
-        />
-        <span class="portal-booking-progress__step">
-          <span class="portal-booking-progress__number">4</span>
-          {{ t('booking.stepConfirm') }}
-        </span>
+        <template
+          v-for="(step, index) in progressSteps"
+          :key="step.key"
+        >
+          <span
+            class="portal-booking-progress__step"
+            :class="{
+              'portal-booking-progress__step--active': currentStepKey === step.key,
+              'portal-booking-progress__step--complete': progressSteps.findIndex((item) => item.key === currentStepKey) > index,
+            }"
+          >
+            <span class="portal-booking-progress__number">
+              {{ index + 1 }}
+            </span>
+            {{ step.label }}
+          </span>
+          <span
+            v-if="index < progressSteps.length - 1"
+            class="portal-booking-progress__line"
+            aria-hidden="true"
+          />
+        </template>
       </nav>
 
       <p
@@ -236,289 +417,125 @@ function submitBooking(): void {
         {{ props.bookingResult.message }}
       </p>
 
-      <form
-        :action="props.urls.create"
-        method="get"
-        class="portal-panel portal-stack"
-      >
-        <div class="portal-field portal-field--wide">
-          <label
-            for="booking-service"
-            class="portal-label"
-          >{{ t('booking.service') }}</label>
-          <select
-            id="booking-service"
-            name="service_id"
-            required
-            class="portal-input"
-            :value="props.query.serviceId ?? ''"
-          >
-            <option
-              value=""
-              disabled
-            >
-              {{ t('booking.chooseService') }}
-            </option>
-            <option
-              v-for="service in props.services"
-              :key="service.id"
-              :value="service.id"
-            >
-              {{ service.name }}
-            </option>
-          </select>
-        </div>
+      <BookingChoiceList
+        v-if="currentStepKey === 'service'"
+        heading-id="booking-service-heading"
+        :heading="t('booking.chooseService')"
+        :choices="serviceChoices"
+        :selected-id="selectedServiceId"
+        :continue-label="t('booking.continue')"
+        :empty-message="t('services.empty')"
+        @select="selectedServiceId = $event"
+        @continue="continueService"
+      />
 
-        <div
-          v-if="props.query.format === 'home'"
-          class="portal-grid portal-grid--two"
-        >
-          <div class="portal-field">
-            <label
-              for="booking-party-size"
-              class="portal-label"
-            >{{ t('booking.partySize') }}</label>
-            <input
-              id="booking-party-size"
-              v-model.number="bookingForm.party_size"
-              name="party_size"
-              type="number"
-              min="1"
-              max="20"
-              required
-              class="portal-input"
-            >
-          </div>
-          <div class="portal-field">
-            <label
-              for="booking-location"
-              class="portal-label"
-            >{{ t('booking.address') }}</label>
-            <input
-              id="booking-location"
-              v-model="bookingForm.location"
-              name="location"
-              type="text"
-              maxlength="500"
-              required
-              class="portal-input"
-            >
-          </div>
-        </div>
-
-        <div
-          v-if="props.query.serviceId && singleSpecialist"
-          class="portal-booking-specialist"
-        >
-          <span class="portal-label">{{ t('booking.specialist') }}</span>
-          <strong>{{ singleSpecialist.displayName }}</strong>
-          <input
-            type="hidden"
-            name="specialist_id"
-            :value="props.query.specialistId ?? singleSpecialist.id"
-          >
-        </div>
-
-        <div
-          v-else-if="props.query.serviceId && props.specialists.length > 1"
-          class="portal-field"
-        >
-          <label
-            for="booking-specialist"
-            class="portal-label"
-          >{{ t('booking.specialist') }}</label>
-          <select
-            id="booking-specialist"
-            name="specialist_id"
-            required
-            class="portal-input"
-            :value="props.query.specialistId ?? ''"
-          >
-            <option
-              value=""
-              disabled
-            >
-              {{ t('booking.chooseSpecialist') }}
-            </option>
-            <option
-              v-for="specialist in props.specialists"
-              :key="specialist.id"
-              :value="specialist.id"
-            >
-              {{ specialist.displayName }}
-            </option>
-          </select>
-        </div>
-
-        <p
-          v-if="props.query.serviceId && props.specialists.length === 0"
-          class="portal-notice portal-notice--warning"
-          role="status"
-        >
-          {{ t('booking.noSpecialists') }}
-        </p>
-
-        <div class="portal-grid portal-grid--two portal-booking-date-window">
-          <div class="portal-field">
-            <label
-              for="booking-date-from"
-              class="portal-label"
-            >{{ t('booking.from') }}</label>
-            <input
-              id="booking-date-from"
-              name="date_from"
-              type="date"
-              required
-              class="portal-input"
-              :value="props.query.dateFrom"
-            >
-          </div>
-          <div class="portal-field">
-            <label
-              for="booking-date-to"
-              class="portal-label"
-            >{{ t('booking.to') }}</label>
-            <input
-              id="booking-date-to"
-              name="date_to"
-              type="date"
-              required
-              class="portal-input"
-              :value="props.query.dateTo"
-            >
-          </div>
-        </div>
-
-        <div class="portal-field">
-          <label
-            for="booking-format"
-            class="portal-label"
-          >{{ t('booking.format') }}</label>
-          <select
-            id="booking-format"
-            name="format"
-            required
-            class="portal-input"
-            :value="props.query.format"
-          >
-            <option
-              v-for="format in formatOptions"
-              :key="format"
-              :value="format"
-            >
-              {{ formatLabel(format) }}
-            </option>
-          </select>
-        </div>
-
-        <button
-          type="submit"
-          class="portal-button portal-button--primary self-start"
-        >
-          {{ t('booking.chooseTime') }}
-        </button>
-      </form>
+      <BookingChoiceList
+        v-else-if="currentStepKey === 'specialist'"
+        heading-id="booking-specialist-heading"
+        :heading="t('booking.chooseSpecialist')"
+        :choices="specialistChoices"
+        :selected-id="selectedSpecialistId"
+        :continue-label="t('booking.continue')"
+        :change-label="t('booking.changeService')"
+        @select="selectedSpecialistId = $event"
+        @continue="continueSpecialist"
+        @change="changeService"
+      />
 
       <section
-        v-if="props.availability"
-        class="portal-stack"
-        aria-labelledby="booking-times-heading"
+        v-else-if="currentStepKey === 'format'"
+        class="portal-booking-choice portal-stack"
+        aria-labelledby="booking-format-heading"
       >
-        <div class="portal-stack portal-stack--tight">
+        <div class="portal-page-heading">
           <h2
-            id="booking-times-heading"
+            id="booking-format-heading"
             class="portal-heading portal-heading--section"
           >
-            {{ t('booking.chooseTime') }}
+            {{ t('booking.chooseFormat') }}
           </h2>
-        </div>
-
-        <p
-          v-if="props.availability.slots.length === 0"
-          class="portal-notice"
-          role="status"
-        >
-          {{ t('booking.noSlots') }}
-        </p>
-
-        <div
-          v-else
-          class="portal-slot-days"
-          :aria-label="t('booking.chooseTime')"
-        >
-          <section
-            v-for="day in slotDays"
-            :key="day.key"
-            class="portal-slot-day"
+          <button
+            type="button"
+            class="portal-link portal-link--button"
+            @click="changeService"
           >
-            <header class="portal-slot-day__header">
-              <p class="portal-kicker">
-                <PortalDateTime
-                  :value="day.firstSlot.startsAt"
-                  :time-zone="props.availability.displayTimezone"
-                  :locale="locale"
-                  mode="date"
-                />
-              </p>
-            </header>
-            <div class="portal-slot-grid">
-              <button
-                v-for="slot in day.slots"
-                :key="slot.startsAt"
-                type="button"
-                class="portal-slot"
-                data-testid="availability-slot"
-                :aria-pressed="selectedStart === slot.startsAt"
-                @click="selectSlot(slot)"
-              >
-                <span class="portal-slot__time">
-                  <PortalDateTime
-                    :value="slot.startsAt"
-                    :time-zone="props.availability.displayTimezone"
-                    :locale="locale"
-                    mode="time"
-                  />
-                </span>
-                <span class="portal-slot__until">
-                  {{ t('booking.until') }}
-                  <PortalDateTime
-                    :value="slot.endsAt"
-                    :time-zone="props.availability.displayTimezone"
-                    :locale="locale"
-                    mode="time"
-                  />
-                </span>
-              </button>
-            </div>
-          </section>
+            {{ t('booking.changeService') }}
+          </button>
         </div>
+        <div class="portal-format-options">
+          <button
+            v-for="format in formatOptions"
+            :key="format"
+            type="button"
+            class="portal-format-option"
+            :class="{ 'portal-format-option--selected': selectedFormat === format }"
+            :aria-pressed="selectedFormat === format"
+            @click="selectedFormat = format"
+          >
+            {{ formatLabel(format) }}
+          </button>
+        </div>
+        <button
+          type="button"
+          class="portal-button portal-button--primary self-start"
+          :disabled="selectedFormat === null"
+          @click="continueFormat"
+        >
+          {{ t('booking.continue') }}
+        </button>
       </section>
 
-      <section
-        v-if="selectedStart && props.availability"
-        class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
-        aria-labelledby="booking-confirm-heading"
-      >
-        <h2
-          id="booking-confirm-heading"
-          class="portal-heading portal-heading--section"
-        >
-          {{ t('booking.create') }}
-        </h2>
-        <p class="portal-copy">
-          <PortalDateTime
-            :value="selectedStart"
-            :time-zone="props.availability.displayTimezone"
-            :locale="locale"
-          />
-          · {{ formatLabel(props.query.format) }}
-        </p>
-        <p
-          v-if="props.query.format === 'home'"
-          class="portal-copy portal-copy--small"
-        >
-          {{ t('booking.requestSent') }}
-        </p>
+      <template v-else-if="bookingStep === 'time'">
+        <section class="portal-booking-context">
+          <div class="portal-booking-context__item">
+            <span class="portal-label">{{ t('booking.service') }}</span>
+            <strong>{{ selectedService?.name }}</strong>
+            <button
+              type="button"
+              class="portal-link portal-link--button"
+              @click="changeService"
+            >
+              {{ t('booking.changeService') }}
+            </button>
+          </div>
+          <div class="portal-booking-context__item">
+            <span class="portal-label">{{ t('booking.specialist') }}</span>
+            <strong>{{ selectedSpecialist?.displayName }}</strong>
+            <button
+              v-if="props.specialists.length > 1"
+              type="button"
+              class="portal-link portal-link--button"
+              @click="changeSpecialist"
+            >
+              {{ t('booking.changeSpecialist') }}
+            </button>
+          </div>
+          <div class="portal-booking-context__item">
+            <span class="portal-label">{{ t('booking.format') }}</span>
+            <strong>{{ formatLabel(props.query.format) }}</strong>
+            <button
+              v-if="formatOptions.length > 1"
+              type="button"
+              class="portal-link portal-link--button"
+              @click="changeFormat"
+            >
+              {{ t('booking.changeFormat') }}
+            </button>
+          </div>
+        </section>
+
+        <BookingCalendar
+          :availability="props.availability"
+          :date-from="props.query.dateFrom"
+          :date-to="props.query.dateTo"
+          :locale="locale"
+          :selected-date="selectedDate"
+          :selected-start="selectedStart"
+          @select-date="selectDate"
+          @select-slot="selectSlot"
+          @change-month="changeMonth"
+        />
+
         <p
           v-if="bookingError"
           class="portal-notice portal-notice--error"
@@ -526,22 +543,36 @@ function submitBooking(): void {
         >
           {{ bookingError }}
         </p>
+
         <button
           type="button"
           class="portal-button portal-button--primary self-start"
-          :disabled="bookingForm.processing"
-          @click="submitBooking"
+          :disabled="selectedStart === null"
+          @click="continueToConfirmation"
         >
-          {{ bookingForm.processing ? t('booking.creating') : t('booking.create') }}
+          {{ t('booking.continue') }}
         </button>
-      </section>
+      </template>
 
-      <Link
-        :href="props.urls.services"
-        class="portal-button portal-button--secondary self-start"
-      >
-        {{ t('services.title') }}
-      </Link>
+      <BookingConfirmation
+        v-else
+        :service-name="selectedService?.name ?? null"
+        :specialist-name="selectedSpecialist?.displayName ?? null"
+        :selected-start="selectedStart"
+        :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
+        :locale="locale"
+        :format="props.query.format"
+        :format-label="formatLabel(props.query.format)"
+        :party-size="bookingForm.party_size"
+        :location="bookingForm.location"
+        :processing="bookingForm.processing"
+        :error="bookingError"
+        @update:party-size="bookingForm.party_size = $event"
+        @update:location="bookingForm.location = $event"
+        @change="returnToTime"
+        @confirm="submitBooking"
+      />
+
       <Link
         :href="props.urls.bookings"
         class="portal-link self-start"

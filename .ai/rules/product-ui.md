@@ -34,6 +34,8 @@ An internal workflow, state machine, milestone, completeness state, or progressi
 
 Collect information just in time. Optional profile fields belong in Profile and missing action-specific data is requested at the action that needs it; incomplete optional profile data must not block unrelated authenticated Portal use. Keep legal acceptance at the business action or direct account destination where an existing requirement needs it, without inventing a global gate.
 
+Availability is a selection problem, not a data dump. When a client chooses a date and time from server availability, expose a focused calendar or date selector, show options only for the selected date and current context, and keep internal query windows and availability ranges out of ordinary client controls. Month or date navigation may request a new authoritative availability projection as needed; the default UI must not render every date and slot in one long list.
+
 Authentication is an entry mechanism and disappears after success. The authenticated shell leads with CHUKLOV branding and useful destinations; it does not display login sections, provider implementation state, raw profile completeness, onboarding state, or generic persistent Continue links. The same shell uses a compact bottom navigation in Mini App/mobile contexts and a stable desktop navigation in wider layouts.
 
 The client-facing Portal supports a visible RU/EN switcher backed by one maintainable localization mechanism. The selected locale persists in the trusted client preference when authenticated and in session before authentication; organization-owned content and proper names are not machine-translated and fall back safely.
