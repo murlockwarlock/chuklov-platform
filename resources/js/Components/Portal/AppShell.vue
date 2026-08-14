@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import MobileBottomNavigation from './MobileBottomNavigation.vue';
 import { portalText } from '../../locales/portal';
@@ -21,6 +22,10 @@ const navigation = [
     { key: 'bookings', label: 'shell.bookings' },
     { key: 'profile', label: 'shell.profile' },
 ] as const;
+
+const brandLogo = computed(() => props.portal.locale === 'en'
+    ? '/brand/chuklov-designer-logo-en.jpg'
+    : '/brand/chuklov-designer-logo-ru.jpg');
 </script>
 
 <template>
@@ -35,7 +40,7 @@ const navigation = [
           aria-label="CHUKLOV"
         >
           <img
-            src="/brand/chuklov-logo.svg"
+            :src="brandLogo"
             alt="CHUKLOV"
             class="portal-brand__logo"
           >

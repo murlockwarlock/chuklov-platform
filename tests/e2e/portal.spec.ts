@@ -196,7 +196,7 @@ test('client portal shell is responsive', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CHUKLOV' })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-logo.svg');
+    await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-ru.jpg');
     await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Получить код' })).toBeVisible();
@@ -278,6 +278,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await page.getByRole('button', { name: 'EN' }).click();
     await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
     await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);

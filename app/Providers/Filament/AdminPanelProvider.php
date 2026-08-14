@@ -30,7 +30,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            ->favicon(asset('brand/chuklov-mark.svg'))
+            ->favicon(asset('brand/chuklov-designer-logo-en.jpg'))
             ->colors([
                 'primary' => Color::Amber,
             ])
