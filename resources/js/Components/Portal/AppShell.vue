@@ -35,11 +35,10 @@ const navigation = [
           aria-label="CHUKLOV"
         >
           <img
-            src="/brand/chuklov-mark.png"
-            alt=""
-            class="portal-brand__mark"
+            src="/brand/chuklov-logo.jpg"
+            alt="CHUKLOV"
+            class="portal-brand__logo"
           >
-          <span class="portal-brand__name">CHUKLOV</span>
         </Link>
 
         <nav

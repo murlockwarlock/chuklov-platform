@@ -98,9 +98,6 @@ function requestTelegramLink(): void {
           <h1 class="portal-heading portal-heading--section">
             {{ t('profile.title') }}
           </h1>
-          <p class="portal-lede">
-            {{ t('profile.description') }}
-          </p>
         </div>
       </header>
 

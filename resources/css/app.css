@@ -93,16 +93,11 @@ body {
     text-decoration: none;
 }
 
-.portal-brand__mark {
-    width: 2.25rem;
-    height: 2.25rem;
+.portal-brand__logo {
+    width: 3.5rem;
+    height: 3.5rem;
+    flex: 0 0 auto;
     object-fit: contain;
-}
-
-.portal-brand__name {
-    font-size: 1rem;
-    font-weight: 750;
-    letter-spacing: 0.16em;
 }
 
 .portal-header__navigation {
@@ -155,6 +150,13 @@ body {
 .portal-language-switcher__option--active {
     background: var(--portal-color-ink);
     color: var(--portal-color-surface);
+}
+
+@media (max-width: 22.5rem) {
+    .portal-brand__logo {
+        width: 3rem;
+        height: 3rem;
+    }
 }
 
 .portal-main {
