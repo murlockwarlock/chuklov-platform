@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -21,9 +22,6 @@ class PortalTimezonePreferenceRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'timezone.required' => 'Выберите часовой пояс.',
-            'timezone.max' => 'Не удалось сохранить часовой пояс.',
-        ];
+        return app(PortalBookingErrorMessages::class)->timezonePreferenceRequestMessages();
     }
 }

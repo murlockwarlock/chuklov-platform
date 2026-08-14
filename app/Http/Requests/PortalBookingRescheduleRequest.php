@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -26,13 +27,6 @@ class PortalBookingRescheduleRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'starts_at.required' => 'Выберите новое время.',
-            'starts_at.date' => 'Выберите корректные дату и время.',
-            'expected_event_version.required' => 'Обновите страницу и выберите время ещё раз.',
-            'expected_event_version.integer' => 'Обновите страницу и выберите время ещё раз.',
-            'client_timezone.max' => 'Не удалось сохранить часовой пояс.',
-            'reason.max' => 'Комментарий слишком длинный.',
-        ];
+        return app(PortalBookingErrorMessages::class)->rescheduleRequestMessages();
     }
 }

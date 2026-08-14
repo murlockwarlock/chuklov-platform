@@ -38,6 +38,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- Portal booking and rescheduling calendars now load the complete visible calendar month from server-authoritative availability, including policy-valid dates before the existing booking date; outside-month dates remain visibly distinct and unavailable.
+- Client-visible booking, availability, rescheduling, cancellation, and timezone failures now use the shared RU/EN error mapping instead of exposing Russian-only action errors to English Portal clients.
+- The 320px multi-specialist/multi-format booking path preserves readable selected service, specialist, and format context through choice, calendar, confirmation, and success states without horizontal overflow or ellipsis.
+- Telegram browser-login `/start web_…` commands no longer fall through to the generic Telegram-link handler after successful authentication.
+- The Portal header, browser favicon, Apple touch icon, and Filament favicon now use the calm gold CHUKLOV mark/wordmark instead of the legacy orange Massage Academy artwork.
 - The booking time view now hides redundant one-format context controls, keeps progress labels intact at 320px, and uses a stacked mobile confirmation summary to preserve the reference composition and readable touch layout.
 - A confirmed booking now ends in a dedicated result state with the selected service, specialist, date/time, and format; the calendar and availability list no longer remain underneath the success message, and booking headings/time context have explicit spacing.
 - Booking details now stay compact until the client explicitly starts a reschedule; rescheduling uses the shared calendar and selected-day time grid, while the home booking card no longer shows a non-interactive reschedule label.

@@ -37,6 +37,8 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
 
         $bot = $this->fakeBot(720001, 'Новый', 'Клиент');
         $bot->hearText('/start web_'.$token)->reply();
+        $bot->assertCalled('sendMessage', 1)
+            ->assertReplyText('Вход подтверждён. Вернитесь в браузер.');
 
         $client = Client::query()->sole();
         $identity = ClientChannelIdentity::query()->sole();

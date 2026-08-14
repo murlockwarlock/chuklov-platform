@@ -121,7 +121,7 @@ function monthRange(dateValue: string): AvailabilityRange {
     const last = new Date(Date.UTC(resolvedYear, resolvedMonth + 1, 0));
 
     return {
-        dateFrom: dateValue.match(/^\d{4}-\d{2}-\d{2}$/) ? dateValue : dateKey(first),
+        dateFrom: dateKey(first),
         dateTo: dateKey(last),
     };
 }

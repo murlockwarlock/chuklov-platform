@@ -41,7 +41,7 @@ $bot->onCommand('start {token}', function (
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
-})->description('Запустить приложение');
+})->where('token', '(?!web_)[A-Za-z0-9_-]+')->description('Запустить приложение');
 
 $bot->onCommand('start', function (Nutgram $bot, GetTelegramMenu $menu): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';

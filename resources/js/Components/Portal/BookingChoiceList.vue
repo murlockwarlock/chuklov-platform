@@ -15,6 +15,9 @@ const props = defineProps<{
     continueLabel: string;
     emptyMessage?: string;
     changeLabel?: string;
+    contextLabel?: string;
+    contextValue?: string;
+    contextTestId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -44,6 +47,14 @@ const emit = defineEmits<{
       >
         {{ props.changeLabel }}
       </button>
+    </div>
+
+    <div
+      v-if="props.contextLabel && props.contextValue"
+      class="portal-booking-choice__context"
+    >
+      <span class="portal-label">{{ props.contextLabel }}</span>
+      <strong :data-testid="props.contextTestId">{{ props.contextValue }}</strong>
     </div>
 
     <div

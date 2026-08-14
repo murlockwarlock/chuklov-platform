@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type BookingFixture = {
     cookieName: string;
@@ -8,14 +8,25 @@ type BookingFixture = {
     serviceId: number;
     serviceName: string;
     specialistId: number;
+    specialistName: string;
+    alternateSpecialistName: string | null;
     date: string;
     bookingId: number | null;
 };
 
-function createBookingFixture(withBooking = false): BookingFixture {
+type BookingFixtureOptions = {
+    withBooking?: boolean;
+    multipleChoices?: boolean;
+    longServiceTitle?: boolean;
+};
+
+function createBookingFixture(options: BookingFixtureOptions | boolean = false): BookingFixture {
+    const normalizedOptions = typeof options === 'boolean' ? { withBooking: options } : options;
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
+        $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
+        $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -33,22 +44,39 @@ function createBookingFixture(withBooking = false): BookingFixture {
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
+        $alternateSpecialist = null;
+        if ($multipleChoices) {
+            $alternateSpecialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
+                'display_name' => 'Playwright Alternate Specialist '.$suffix,
+                'timezone' => 'UTC',
+            ]);
+        }
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
-            'name' => 'Playwright Service '.$suffix,
-            'formats' => ['office'],
+            'name' => $longServiceTitle
+                ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
+                : 'Playwright Service '.$suffix,
+            'formats' => $multipleChoices ? ['office', 'online'] : ['office'],
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
             ->forSpecialist($specialist)
             ->forService($service)
             ->create();
-        foreach (range(1, 7) as $weekday) {
-            \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistWorkingHour::factory()
-                ->forSpecialist($specialist)
-                ->create([
-                    'weekday' => $weekday,
-                    'start_time' => '00:00',
-                    'end_time' => '23:59',
-                ]);
+        if ($alternateSpecialist !== null) {
+            \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
+                ->forSpecialist($alternateSpecialist)
+                ->forService($service)
+                ->create();
+        }
+        foreach (array_filter([$specialist, $alternateSpecialist]) as $availableSpecialist) {
+            foreach (range(1, 7) as $weekday) {
+                \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistWorkingHour::factory()
+                    ->forSpecialist($availableSpecialist)
+                    ->create([
+                        'weekday' => $weekday,
+                        'start_time' => '09:00',
+                        'end_time' => '12:00',
+                    ]);
+            }
         }
         $date = \\Carbon\\CarbonImmutable::now('UTC')->addDay()->toDateString();
         $booking = null;
@@ -93,6 +121,8 @@ function createBookingFixture(withBooking = false): BookingFixture {
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
             'specialistId' => $specialist->getKey(),
+            'specialistName' => $specialist->display_name,
+            'alternateSpecialistName' => $alternateSpecialist?->display_name,
             'date' => $date,
             'bookingId' => $booking?->getKey(),
         ]);
@@ -113,7 +143,9 @@ function createBookingFixture(withBooking = false): BookingFixture {
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
-                PLAYWRIGHT_WITH_BOOKING: withBooking ? '1' : '0',
+                PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+                PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
+                PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -126,11 +158,45 @@ function createBookingFixture(withBooking = false): BookingFixture {
     return JSON.parse(json) as BookingFixture;
 }
 
+async function assertNoHorizontalOverflow(page: Page): Promise<void> {
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function assertReadableProgress(page: Page, expectedCount: number): Promise<void> {
+    const labels = page.locator('.portal-booking-progress__label');
+
+    await expect(labels).toHaveCount(expectedCount);
+    expect(await labels.evaluateAll((elements) => elements.every((element) => {
+        const styles = window.getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+
+        return element.textContent?.trim() !== ''
+            && element.scrollWidth <= element.clientWidth + 1
+            && element.scrollHeight <= element.clientHeight + 1
+            && bounds.left >= -1
+            && bounds.right <= window.innerWidth + 1
+            && styles.overflowX !== 'hidden';
+    }))).toBe(true);
+}
+
+async function assertFullSelectedServiceTitle(page: Page, serviceName: string, testId = 'booking-selection-service'): Promise<void> {
+    const service = page.getByTestId(testId);
+
+    await expect(service).toHaveText(serviceName);
+    expect(await service.evaluate((element) => {
+        const styles = window.getComputedStyle(element);
+
+        return element.scrollWidth <= element.clientWidth + 1
+            && styles.whiteSpace !== 'nowrap'
+            && styles.textOverflow !== 'ellipsis';
+    })).toBe(true);
+}
+
 test('client portal shell is responsive', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'CHUKLOV' })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-logo.jpg');
+    await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-logo.svg');
     await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Получить код' })).toBeVisible();
@@ -256,9 +322,9 @@ test('booking uses a service step and selected-day calendar before confirmation'
     const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
     dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
     const dateTo = dateToValue.toISOString().slice(0, 10);
-    const unavailableDate = new Date(dateToValue.getTime());
-    unavailableDate.setUTCDate(unavailableDate.getUTCDate() + 1);
-    const unavailableDateValue = unavailableDate.toISOString().slice(0, 10);
+    const nextMonth = new Date(`${fixture.date.slice(0, 7)}-01T00:00:00Z`);
+    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+    const nextMonthFrom = nextMonth.toISOString().slice(0, 10);
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -276,15 +342,24 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
     await expect(page.locator('.portal-slot-day')).toHaveCount(0);
     expect(await page.locator('.portal-calendar-card__day').count()).toBeGreaterThan(7);
-    await expect(page.getByRole('button', { name: unavailableDateValue, exact: true })).toBeDisabled();
+    const outsideMonthDays = page.locator('.portal-calendar-card__day--outside');
+    expect(await outsideMonthDays.count()).toBeGreaterThan(0);
+    await expect(outsideMonthDays.first()).toBeDisabled();
+    expect(await outsideMonthDays.first().evaluate((element) => window.getComputedStyle(element).pointerEvents)).not.toBe('none');
+    await expect(page.locator('.portal-calendar-card__day--outside.portal-calendar-card__day--available')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Следующий месяц' }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('date_from')).toBe(nextMonthFrom);
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
 
     const availableDays = page.locator('.portal-calendar-card__day--available');
-    await expect(availableDays).toHaveCount(2);
-    await availableDays.nth(1).click();
-    await expect(availableDays.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    expect(await availableDays.count()).toBeGreaterThan(1);
+    await availableDays.first().click();
+    await expect(availableDays.first()).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.portal-time-card')).toHaveCount(1);
 
     const time = page.getByTestId('availability-slot').first();
+    await expect(page.getByTestId('availability-slot')).toHaveCount(3);
     await time.click();
     await expect(time).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Продолжить' }).click();
@@ -322,8 +397,72 @@ test('booking shell stays readable at narrow Mini App widths', async ({ page }) 
     }
 });
 
+test('long multi-specialist and multi-format booking stays fully readable at 320px', async ({ page }) => {
+    const fixture = createBookingFixture({
+        multipleChoices: true,
+        longServiceTitle: true,
+    });
+
+    expect(fixture.alternateSpecialistName).not.toBeNull();
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Выберите услугу' })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+
+    await page.locator('.portal-booking-option').filter({ hasText: fixture.serviceName }).click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Выберите специалиста' })).toBeVisible();
+    await assertReadableProgress(page, 5);
+    await assertFullSelectedServiceTitle(page, fixture.serviceName, 'booking-choice-service');
+    await assertNoHorizontalOverflow(page);
+
+    await page.locator('.portal-booking-option').filter({ hasText: fixture.specialistName }).click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Выберите формат' })).toBeVisible();
+    await assertReadableProgress(page, 5);
+    await assertFullSelectedServiceTitle(page, fixture.serviceName, 'booking-choice-service');
+    await expect(page.getByTestId('booking-choice-specialist')).toHaveText(fixture.specialistName);
+    await assertNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: 'В клинике', exact: true }).click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
+    await assertReadableProgress(page, 5);
+    await assertFullSelectedServiceTitle(page, fixture.serviceName);
+    await expect(page.getByTestId('booking-selection-specialist')).toHaveText(fixture.specialistName);
+    await expect(page.getByTestId('booking-selection-format')).toHaveText('В клинике');
+    await expect(page.locator('.portal-calendar-card__weekdays span')).toHaveCount(7);
+    await expect(page.getByTestId('availability-slot').first()).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+    await assertReadableProgress(page, 5);
+    await assertNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
 test('authenticated client can manage an upcoming booking from My bookings', async ({ page }) => {
     const fixture = createBookingFixture(true);
+    const earlierDate = new Date(`${fixture.date}T00:00:00Z`);
+    earlierDate.setUTCDate(earlierDate.getUTCDate() - 1);
+    const earlierDateValue = earlierDate.toISOString().slice(0, 10);
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -346,6 +485,9 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
 
     await page.getByRole('button', { name: 'Перенести', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Выберите новое время' })).toBeVisible();
+    const earlierDateButton = page.getByRole('button', { name: earlierDateValue, exact: true });
+    await expect(earlierDateButton).toBeEnabled();
+    await earlierDateButton.click();
     const alternateSlot = page.getByTestId('availability-slot').first();
     await expect(alternateSlot).toBeVisible();
     await expect(page.getByRole('button', { name: 'Перенести запись', exact: true })).toBeDisabled();
@@ -355,7 +497,10 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(page.getByText('Запись перенесена')).toBeVisible();
 
     await page.getByRole('button', { name: 'Перенести', exact: true }).click();
-    const secondAlternateSlot = page.getByTestId('availability-slot').first();
+    const originalDateButton = page.getByRole('button', { name: fixture.date, exact: true });
+    await expect(originalDateButton).toBeEnabled();
+    await originalDateButton.click();
+    const secondAlternateSlot = page.getByTestId('availability-slot').nth(1);
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();

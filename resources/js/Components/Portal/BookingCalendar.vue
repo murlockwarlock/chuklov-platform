@@ -289,7 +289,7 @@ function selectSlot(slot: AvailabilitySlot): void {
             class="portal-calendar-card__day"
             :class="{
               'portal-calendar-card__day--outside': !day.inCurrentMonth,
-              'portal-calendar-card__day--available': day.hasSlots,
+              'portal-calendar-card__day--available': day.inCurrentMonth && day.hasSlots,
               'portal-calendar-card__day--selected': selectedDayKey === day.key,
             }"
             :disabled="!day.inRange || !day.hasSlots"

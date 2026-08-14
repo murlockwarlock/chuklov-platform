@@ -35,7 +35,7 @@ const navigation = [
           aria-label="CHUKLOV"
         >
           <img
-            src="/brand/chuklov-logo.jpg"
+            src="/brand/chuklov-logo.svg"
             alt="CHUKLOV"
             class="portal-brand__logo"
           >

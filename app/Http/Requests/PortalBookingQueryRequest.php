@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -33,11 +34,6 @@ class PortalBookingQueryRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'date_from.date_format' => 'Выберите корректную дату.',
-            'date_to.date_format' => 'Выберите корректную дату.',
-            'format.in' => 'Выберите формат визита из списка.',
-            'display_timezone.max' => 'Не удалось определить часовой пояс.',
-        ];
+        return app(PortalBookingErrorMessages::class)->queryRequestMessages();
     }
 }

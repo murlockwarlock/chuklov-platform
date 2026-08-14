@@ -94,10 +94,11 @@ body {
 }
 
 .portal-brand__logo {
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 11.5rem;
+    height: 3.25rem;
     flex: 0 0 auto;
     object-fit: contain;
+    object-position: left center;
 }
 
 .portal-header__navigation {
@@ -154,8 +155,8 @@ body {
 
 @media (max-width: 22.5rem) {
     .portal-brand__logo {
-        width: 3rem;
-        height: 3rem;
+        width: 8.5rem;
+        height: 2.875rem;
     }
 }
 
@@ -1637,15 +1638,40 @@ body {
     line-height: 1.35;
 }
 
-.portal-booking-selection-bar__item--format {
+.portal-booking-choice__context {
+    display: grid;
+    min-width: 0;
+    gap: 0.2rem;
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-sm);
+    background: var(--portal-color-surface-muted);
+    padding: 0.75rem 0.9rem;
+}
+
+.portal-booking-choice__context strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.9rem;
+    line-height: 1.35;
+}
+
+.portal-booking-choice__context .portal-label:not(:first-child) {
+    margin-top: 0.45rem;
+    border-top: 1px solid var(--portal-color-border);
+    padding-top: 0.45rem;
+}
+
+.portal-booking-selection-bar__item:not(:first-child) {
     grid-column: 1;
     border-top: 1px solid var(--portal-color-border);
     padding-top: 0.65rem;
 }
 
-.portal-booking-selection-bar > .portal-link:nth-of-type(2) {
+.portal-booking-selection-bar > .portal-link {
     grid-column: 2;
-    grid-row: 2;
+    min-width: 0;
+    align-self: center;
+    text-align: right;
 }
 
 .portal-booking-calendar {
@@ -1733,6 +1759,12 @@ body {
     min-height: 2.25rem;
     aspect-ratio: 1;
     font-size: 0.84rem;
+}
+
+.portal-calendar-card__day--outside {
+    color: var(--portal-color-ink-faint);
+    opacity: 0.45;
+    pointer-events: auto;
 }
 
 .portal-time-card {
@@ -1858,10 +1890,12 @@ body {
 
 @media (max-width: 47.99rem) {
     .portal-booking-progress__label {
-        overflow-wrap: normal;
+        min-height: 3.75em;
+        overflow-wrap: anywhere;
         word-break: normal;
-        font-size: clamp(0.5rem, 1.9vw, 0.7rem);
+        font-size: clamp(0.58rem, 2vw, 0.72rem);
         letter-spacing: -0.015em;
+        line-height: 1.2;
     }
 
     .portal-booking-flow__header {
@@ -1895,14 +1929,14 @@ body {
     }
 
     .portal-booking-selection-bar__item strong {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        white-space: normal;
     }
 
     .portal-booking-selection-bar > .portal-link {
         font-size: 0.72rem;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        white-space: normal;
     }
 
     .portal-booking-success__actions > * {
@@ -1947,23 +1981,6 @@ body {
 }
 
 @media (min-width: 48rem) {
-    .portal-booking-selection-bar {
-        grid-template-columns: minmax(0, 1fr) auto minmax(8rem, auto) auto;
-    }
-
-    .portal-booking-selection-bar__item--format {
-        grid-column: auto;
-        border-top: 0;
-        border-left: 1px solid var(--portal-color-border);
-        padding-top: 0;
-        padding-left: 1rem;
-    }
-
-    .portal-booking-selection-bar > .portal-link:nth-of-type(2) {
-        grid-column: auto;
-        grid-row: auto;
-    }
-
     .portal-time-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }

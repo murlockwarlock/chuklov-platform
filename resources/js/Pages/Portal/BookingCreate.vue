@@ -181,6 +181,7 @@ const bookingError = computed(() => {
 
     return errors.starts_at
         ?? errors.startsAt
+        ?? errors.booking
         ?? errors.assignment
         ?? errors.service_id
         ?? errors.specialist_id
@@ -325,6 +326,18 @@ function changeFormat(): void {
     visitBooking(query);
 }
 
+function changeSpecialist(): void {
+    if (props.query.serviceId === null) {
+        return;
+    }
+
+    visitBooking({
+        date_from: props.query.dateFrom,
+        date_to: props.query.dateTo,
+        service_id: props.query.serviceId,
+    });
+}
+
 function changeMonth(dateFrom: string, dateTo: string): void {
     visitBooking(bookingQuery(dateFrom, dateTo));
 }
@@ -359,7 +372,7 @@ function submitBooking(): void {
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
     bookingForm.starts_at = selectedStart.value;
-    bookingForm.post(props.urls.store, { preserveScroll: true });
+    bookingForm.post(props.urls.store, { preserveScroll: false });
 }
 </script>
 
@@ -456,6 +469,9 @@ function submitBooking(): void {
           :selected-id="selectedSpecialistId"
           :continue-label="t('booking.continue')"
           :change-label="t('booking.changeService')"
+          :context-label="t('booking.service')"
+          :context-value="selectedService?.name"
+          context-test-id="booking-choice-service"
           @select="selectedSpecialistId = $event"
           @continue="continueSpecialist"
           @change="changeService"
@@ -486,6 +502,17 @@ function submitBooking(): void {
               {{ t('booking.changeService') }}
             </button>
           </div>
+          <div
+            v-if="selectedService"
+            class="portal-booking-choice__context"
+          >
+            <span class="portal-label">{{ t('booking.service') }}</span>
+            <strong data-testid="booking-choice-service">{{ selectedService.name }}</strong>
+            <template v-if="selectedSpecialist">
+              <span class="portal-label">{{ t('booking.specialist') }}</span>
+              <strong data-testid="booking-choice-specialist">{{ selectedSpecialist.displayName }}</strong>
+            </template>
+          </div>
           <div class="portal-format-options">
             <button
               v-for="format in formatOptions"
@@ -511,12 +538,12 @@ function submitBooking(): void {
 
         <template v-else-if="bookingStep === 'time'">
           <section
-            v-if="formatOptions.length > 1"
+            v-if="selectedService && (hasSpecialistChoice || formatOptions.length > 1)"
             class="portal-booking-selection-bar"
           >
             <div class="portal-booking-selection-bar__item">
               <span class="portal-label">{{ t('booking.service') }}</span>
-              <strong>{{ selectedService?.name }}</strong>
+              <strong data-testid="booking-selection-service">{{ selectedService.name }}</strong>
             </div>
             <button
               type="button"
@@ -525,18 +552,34 @@ function submitBooking(): void {
             >
               {{ t('booking.changeService') }}
             </button>
-            <div class="portal-booking-selection-bar__item portal-booking-selection-bar__item--format">
-              <span class="portal-label">{{ t('booking.format') }}</span>
-              <strong>{{ formatLabel(props.query.format) }}</strong>
-            </div>
-            <button
-              v-if="formatOptions.length > 1"
-              type="button"
-              class="portal-link portal-link--button"
-              @click="changeFormat"
-            >
-              {{ t('booking.changeFormat') }}
-            </button>
+
+            <template v-if="hasSpecialistChoice && selectedSpecialist">
+              <div class="portal-booking-selection-bar__item">
+                <span class="portal-label">{{ t('booking.specialist') }}</span>
+                <strong data-testid="booking-selection-specialist">{{ selectedSpecialist.displayName }}</strong>
+              </div>
+              <button
+                type="button"
+                class="portal-link portal-link--button"
+                @click="changeSpecialist"
+              >
+                {{ t('booking.changeSpecialist') }}
+              </button>
+            </template>
+
+            <template v-if="formatOptions.length > 1">
+              <div class="portal-booking-selection-bar__item">
+                <span class="portal-label">{{ t('booking.format') }}</span>
+                <strong data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</strong>
+              </div>
+              <button
+                type="button"
+                class="portal-link portal-link--button"
+                @click="changeFormat"
+              >
+                {{ t('booking.changeFormat') }}
+              </button>
+            </template>
           </section>
 
           <BookingCalendar

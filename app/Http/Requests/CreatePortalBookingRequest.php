@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -32,20 +33,6 @@ class CreatePortalBookingRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'service_id.required' => 'Выберите услугу.',
-            'service_id.integer' => 'Выберите услугу из списка.',
-            'specialist_id.required' => 'Выберите специалиста.',
-            'specialist_id.integer' => 'Выберите специалиста из списка.',
-            'starts_at.required' => 'Выберите дату и время.',
-            'starts_at.date' => 'Выберите корректные дату и время.',
-            'format.required' => 'Выберите формат визита.',
-            'format.in' => 'Выберите формат визита из списка.',
-            'party_size.integer' => 'Укажите количество человек.',
-            'party_size.min' => 'Количество человек должно быть не меньше одного.',
-            'party_size.max' => 'Количество человек не может быть больше 20.',
-            'location.required' => 'Укажите адрес выезда.',
-            'location.max' => 'Адрес слишком длинный.',
-        ];
+        return app(PortalBookingErrorMessages::class)->creationRequestMessages();
     }
 }
