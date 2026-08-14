@@ -1817,6 +1817,13 @@ body {
 }
 
 @media (max-width: 47.99rem) {
+    .portal-booking-progress__label {
+        overflow-wrap: normal;
+        word-break: normal;
+        font-size: clamp(0.5rem, 1.9vw, 0.7rem);
+        letter-spacing: -0.015em;
+    }
+
     .portal-booking-flow__header {
         align-items: flex-start;
         flex-direction: column;
@@ -1833,6 +1840,18 @@ body {
 
     .portal-time-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .portal-booking-summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-booking-summary div {
+        border-bottom: 1px solid var(--portal-color-border);
+    }
+
+    .portal-booking-summary div:last-child {
+        border-bottom: 0;
     }
 }
 

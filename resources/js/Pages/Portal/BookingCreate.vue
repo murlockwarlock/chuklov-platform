@@ -496,7 +496,10 @@ function submitBooking(): void {
         </section>
 
         <template v-else-if="bookingStep === 'time'">
-          <section class="portal-booking-selection-bar">
+          <section
+            v-if="formatOptions.length > 1"
+            class="portal-booking-selection-bar"
+          >
             <div class="portal-booking-selection-bar__item">
               <span class="portal-label">{{ t('booking.service') }}</span>
               <strong>{{ selectedService?.name }}</strong>

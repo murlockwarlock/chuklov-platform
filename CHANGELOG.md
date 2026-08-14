@@ -38,6 +38,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- The booking time view now hides redundant one-format context controls, keeps progress labels intact at 320px, and uses a stacked mobile confirmation summary to preserve the reference composition and readable touch layout.
 - Removed the visible four-stage client onboarding journey and generic post-authentication Continue entry points. Internal onboarding progress remains available to Application state and legacy mutation compatibility, while optional profile data is progressive and action-specific requirements remain at their business boundary.
 - Authentication now redirects directly to the authenticated Portal home; login/provider status is absent from the authenticated home, and the shell leads with committed CHUKLOV brand assets.
 - Portal UI strings use one RU/EN localization dictionary with a visible shell switcher; organization-owned service/legal content falls back without fabricated translations.
