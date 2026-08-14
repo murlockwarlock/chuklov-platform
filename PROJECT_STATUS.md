@@ -147,4 +147,12 @@
 - Milestone 5A is CLOSED / ACCEPTED after final independent recheck. All six confirmed M5A blockers are independently verified fixed.
 - Final accepted M5A implementation SHA: `a20379cda0068873f275c86e593eb727436500ed`.
 - Hosted exact-SHA CI run `31736555888` passed on its first attempt: quality/integration, Playwright desktop/mobile, privacy/secret scan, and Docker runtime health.
-- M5B, staging, and deployment remain unstarted.
+- M5B remains unstarted. Staging review deployment is available through the guarded `make deploy-staging` target; production `make deploy` and `make rollback` remain blocked until M16.
+
+## Product UX / staging review pass
+
+- Started from `37dcae3bbf40edb58924c6ca5675569a85c5e554`; productized the existing Russian Portal and Filament CRM surfaces without starting M5B or later functionality. Technical values are now hidden, translated, or derived at the trusted Application boundary while identity verification, organization isolation, idempotency, concurrency, audit, immutable revisions, scheduling, and durable scenario guarantees remain in place.
+- Added the durable `.ai/rules/product-ui.md` rule and path mapping, server-side booking idempotency derivation, Russian business labels/statuses/errors, human-friendly timezone controls, safe scenario/template/content controls, focused Portal/CRM regressions, and desktop/mobile Playwright coverage.
+- Final local verification on `33fd6c59d461a7f54d778e1bc355e820c1840ca3`: `make quality` passes with 27 Unit tests/49 assertions and 189 Feature tests/1046 assertions; Pint, ESLint, PHPStan (0 errors), vue-tsc, Vite, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. `make ci` passes with healthy PostgreSQL/Redis and 45 Integration tests/100 assertions. Full Playwright passes 14/14 desktop/mobile; focused Portal/CRM/Scenario PHPUnit coverage passes 62/62 tests/369 assertions.
+- The first staging attempt safely rolled back after a false host-listening-port comparison caused by trailing whitespace dependent on PID width. The normalizer was corrected and syntax-checked; the second deployment succeeded at exact SHA `33fd6c59d461a7f54d778e1bc355e820c1840ca3`.
+- Real staging smoke passed for health, database/pgvector/Redis/private storage, Horizon, nginx/protected-service baselines, Russian Portal entry (`/`), Telegram/email controls, CRM login (`/admin/login`), authenticated-route guards, and Telegram web status expiry. Staging host: `https://crm.psysoldatov.ru`.
