@@ -359,6 +359,7 @@ function submitBooking(): void {
     :title="t('booking.title')"
     :portal="props.portal"
     active="services"
+    :bottom-navigation="props.bookingResult !== null"
   >
     <section
       class="portal-container portal-container--booking portal-stack portal-stack--loose"
