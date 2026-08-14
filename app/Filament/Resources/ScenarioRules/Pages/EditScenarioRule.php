@@ -19,6 +19,9 @@ final class EditScenarioRule extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(UpdateScenarioRule::class)->handle($actor, $record, $data);
+        return app(UpdateScenarioRule::class)->handle($actor, $record, [
+            ...$data,
+            'rule_key' => $record->rule_key,
+        ]);
     }
 }

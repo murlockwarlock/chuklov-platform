@@ -20,7 +20,7 @@ class ScheduleExceptionForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Specialist')
+                    ->label('Специалист')
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('display_name')
@@ -29,26 +29,26 @@ class ScheduleExceptionForm
                     ->searchable()
                     ->required(),
                 DatePicker::make('exception_date')
-                    ->label('Date')
+                    ->label('Дата')
                     ->required(),
                 Select::make('exception_type')
-                    ->label('Type')
+                    ->label('Тип изменения')
                     ->options([
-                        ScheduleExceptionType::DayOff->value => 'Day off',
-                        ScheduleExceptionType::CustomWindow->value => 'Custom working window',
+                        ScheduleExceptionType::DayOff->value => 'Выходной день',
+                        ScheduleExceptionType::CustomWindow->value => 'Дополнительные часы',
                     ])
                     ->required()
                     ->live(),
                 TimePicker::make('start_time')
-                    ->label('Start')
+                    ->label('Начало')
                     ->seconds(false)
                     ->visible(fn (Get $get): bool => $get('exception_type') === ScheduleExceptionType::CustomWindow->value),
                 TimePicker::make('end_time')
-                    ->label('End')
+                    ->label('Окончание')
                     ->seconds(false)
                     ->visible(fn (Get $get): bool => $get('exception_type') === ScheduleExceptionType::CustomWindow->value),
                 TextInput::make('reason')
-                    ->label('Reason')
+                    ->label('Причина')
                     ->maxLength(500),
                 ...ScheduleImpactPreview::components(),
             ]);

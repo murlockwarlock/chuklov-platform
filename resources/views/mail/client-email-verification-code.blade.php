@@ -1,3 +1,3 @@
-<p>Your Chuklov client portal verification code is:</p>
+<p>Код для входа в личный кабинет Chuklov:</p>
 <p><strong>{{ $code }}</strong></p>
-<p>This code expires shortly and can be used once.</p>
+<p>Код действует недолго и используется один раз.</p>

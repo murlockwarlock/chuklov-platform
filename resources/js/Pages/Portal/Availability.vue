@@ -5,8 +5,6 @@ import PortalDateTime from '../../Components/PortalDateTime.vue';
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
-    blockingEndsAt: string;
-    scheduleTimezone: string;
     displayTimezone: string;
     format: 'office' | 'home' | 'online';
 };
@@ -14,7 +12,6 @@ type AvailabilitySlot = {
 type Availability = {
     specialistId: number;
     serviceId: number;
-    scheduleTimezone: string;
     displayTimezone: string;
     slots: AvailabilitySlot[];
 };
@@ -31,23 +28,37 @@ const props = defineProps<{
     availability: Availability;
     query: AvailabilityQuery;
 }>();
+
+const formatLabels: Record<AvailabilityQuery['format'], string> = {
+    office: 'В клинике',
+    home: 'Выезд на дом',
+    online: 'Онлайн',
+};
+
+function formatDate(date: string): string {
+    const [year, month, day] = date.split('-').map(Number);
+
+    return new Intl.DateTimeFormat('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+    }).format(new Date(year, month - 1, day));
+}
 </script>
 
 <template>
-  <Head title="Availability" />
+  <Head title="Свободное время" />
   <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            {{ props.query.format }}
+            {{ formatLabels[props.query.format] }}
           </p>
           <h1 class="portal-heading portal-heading--page">
-            Available times
+            Свободное время
           </h1>
           <p class="portal-lede">
-            {{ props.query.dateFrom }} to {{ props.query.dateTo }} · shown in
-            {{ props.availability.displayTimezone }}
+            {{ formatDate(props.query.dateFrom) }} — {{ formatDate(props.query.dateTo) }}
           </p>
         </div>
       </header>
@@ -57,13 +68,13 @@ const props = defineProps<{
         class="portal-notice"
         role="status"
       >
-        No times are currently available for this selection.
+        Для выбранных параметров свободного времени пока нет.
       </p>
 
       <div
         v-else
         class="portal-grid portal-grid--cards"
-        aria-label="Available appointment times"
+        aria-label="Свободное время для записи"
       >
         <article
           v-for="slot in props.availability.slots"
@@ -77,14 +88,11 @@ const props = defineProps<{
             />
           </p>
           <p class="portal-copy portal-copy--small">
-            Ends
+            До
             <PortalDateTime
               :value="slot.endsAt"
               :time-zone="props.availability.displayTimezone"
             />
-          </p>
-          <p class="portal-copy portal-copy--small">
-            Specialist schedule: {{ slot.scheduleTimezone }}
           </p>
         </article>
       </div>
@@ -93,7 +101,7 @@ const props = defineProps<{
         href="/"
         class="portal-button portal-button--secondary self-start"
       >
-        Back to portal
+        В личный кабинет
       </Link>
     </section>
   </main>

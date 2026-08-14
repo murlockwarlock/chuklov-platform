@@ -40,11 +40,11 @@ use UnitEnum;
  */
 class SchedulingConfiguration extends Page
 {
-    protected static ?string $navigationLabel = 'Working hours';
+    protected static ?string $navigationLabel = 'Расписание';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Scheduling';
+    protected static string|UnitEnum|null $navigationGroup = 'Записи';
 
     protected static ?int $navigationSort = 1;
 
@@ -95,7 +95,7 @@ class SchedulingConfiguration extends Page
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Specialist')
+                    ->label('Специалист')
                     ->options(fn (): array => $this->specialists())
                     ->required()
                     ->searchable()
@@ -104,45 +104,45 @@ class SchedulingConfiguration extends Page
                         $set('working_hours', $state === null ? [] : $this->workingHours((int) $state));
                     }),
                 TextInput::make('lead_time_minutes')
-                    ->label('Booking lead time (minutes)')
+                    ->label('Минимальный срок до записи (минуты)')
                     ->integer()
                     ->minValue(0)
                     ->required(),
                 TextInput::make('cancellation_cutoff_minutes')
-                    ->label('Cancellation/reschedule cutoff (minutes)')
+                    ->label('Срок отмены или переноса (минуты)')
                     ->integer()
                     ->minValue(0)
                     ->required(),
                 TextInput::make('office_location')
-                    ->label('Organization office location')
+                    ->label('Адрес клиники')
                     ->maxLength(500),
                 Repeater::make('working_hours')
-                    ->label('Recurring working hours')
+                    ->label('Рабочие часы')
                     ->schema([
                         Select::make('weekday')
-                            ->label('Weekday')
+                            ->label('День недели')
                             ->options([
-                                1 => 'Monday',
-                                2 => 'Tuesday',
-                                3 => 'Wednesday',
-                                4 => 'Thursday',
-                                5 => 'Friday',
-                                6 => 'Saturday',
-                                7 => 'Sunday',
+                                1 => 'Понедельник',
+                                2 => 'Вторник',
+                                3 => 'Среда',
+                                4 => 'Четверг',
+                                5 => 'Пятница',
+                                6 => 'Суббота',
+                                7 => 'Воскресенье',
                             ])
                             ->required(),
                         TimePicker::make('start_time')
-                            ->label('Start')
+                            ->label('Начало')
                             ->seconds(false)
                             ->required(),
                         TimePicker::make('end_time')
-                            ->label('End')
+                            ->label('Окончание')
                             ->seconds(false)
                             ->required(),
                     ])
                     ->columns(3)
                     ->defaultItems(0)
-                    ->addActionLabel('Add interval')
+                    ->addActionLabel('Добавить часы')
                     ->reorderable(false)
                     ->columnSpanFull(),
                 ...ScheduleImpactPreview::components(),
@@ -163,7 +163,7 @@ class SchedulingConfiguration extends Page
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label('Save working hours')
+                        ->label('Сохранить расписание')
                         ->submit('save'),
                 ]),
             ]);
@@ -205,7 +205,7 @@ class SchedulingConfiguration extends Page
 
         Notification::make()
             ->success()
-            ->title('Scheduling configuration saved')
+            ->title('Расписание сохранено')
             ->send();
     }
 

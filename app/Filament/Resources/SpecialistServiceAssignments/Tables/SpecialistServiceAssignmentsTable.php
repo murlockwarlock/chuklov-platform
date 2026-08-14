@@ -19,13 +19,13 @@ class SpecialistServiceAssignmentsTable
     {
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Specialist')->sortable(),
-                TextColumn::make('service.name')->label('Service')->sortable(),
-                TextColumn::make('created_at')->label('Assigned')->dateTime()->sortable(),
+                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('service.name')->label('Услуга')->sortable(),
+                TextColumn::make('created_at')->label('Назначено')->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->recordActions([
                 Action::make('remove')
-                    ->label('Remove')
+                    ->label('Убрать услугу')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([

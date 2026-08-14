@@ -28,4 +28,17 @@ class PortalAvailabilityRequest extends FormRequest
             'display_timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
         ];
     }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'specialist_id.required' => 'Выберите специалиста.',
+            'service_id.required' => 'Выберите услугу.',
+            'date_from.date_format' => 'Выберите корректную дату.',
+            'date_to.date_format' => 'Выберите корректную дату.',
+            'format.in' => 'Выберите формат визита из списка.',
+            'display_timezone.max' => 'Не удалось определить часовой пояс.',
+        ];
+    }
 }

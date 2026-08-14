@@ -9,6 +9,7 @@ use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\NotificationTemplateConfiguration;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class CreateNotificationTemplate
 {
@@ -21,6 +22,7 @@ final class CreateNotificationTemplate
     public function handle(User $actor, array $data): NotificationTemplate
     {
         $organization = $this->authorization->authorizeManage($actor);
+        $data['template_key'] ??= 'template-'.Str::uuid()->toString();
         $configuration = NotificationTemplateConfiguration::from($data);
 
         return DB::transaction(function () use ($actor, $configuration, $organization): NotificationTemplate {

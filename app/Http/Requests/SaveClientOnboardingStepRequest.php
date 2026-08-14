@@ -34,4 +34,19 @@ class SaveClientOnboardingStepRequest extends FormRequest
             'consents.*.granted' => ['required', 'boolean'],
         ];
     }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'full_name.max' => 'Имя слишком длинное.',
+            'email.email' => 'Введите корректный email.',
+            'email.max' => 'Email слишком длинный.',
+            'phone.max' => 'Телефон слишком длинный.',
+            'lead_source.max' => 'Ответ слишком длинный.',
+            'consents.array' => 'Проверьте согласия с документами.',
+            'consents.*.legal_document_id.required' => 'Выберите документ.',
+            'consents.*.granted.required' => 'Подтвердите согласие.',
+        ];
+    }
 }

@@ -21,7 +21,6 @@ use App\Modules\Scheduling\Application\ListBookableSpecialistsForService;
 use App\Modules\Scheduling\Application\ListClientBookings;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
-use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -87,7 +86,6 @@ class BookingController extends Controller
             'specialists' => $bookableSpecialists->map(fn (Specialist $specialist): array => [
                 'id' => $specialist->getKey(),
                 'displayName' => $specialist->display_name,
-                'timezone' => $specialist->timezone,
             ])->values()->all(),
             'availability' => $result,
             'query' => [
@@ -98,7 +96,6 @@ class BookingController extends Controller
                 'format' => $format->value,
                 'displayTimezone' => $displayTimezone,
             ],
-            'client' => ['timezone' => $client->timezone],
             'bookingResult' => $request->session()->pull('portal_booking_result'),
             'urls' => [
                 'create' => route('portal.bookings.create'),
@@ -114,7 +111,6 @@ class BookingController extends Controller
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
         CreateBooking $createBooking,
-        UpdateClientTimezonePreference $timezonePreference,
     ): RedirectResponse {
         $validated = $request->validated();
         $format = VisitFormat::from($validated['format']);
@@ -122,31 +118,27 @@ class BookingController extends Controller
         try {
             $startsAt = CarbonImmutable::parse($validated['starts_at']);
         } catch (Throwable) {
-            throw ValidationException::withMessages(['starts_at' => 'The selected time is invalid.']);
+            throw ValidationException::withMessages(['starts_at' => 'Выбранное время недействительно.']);
         }
 
-        $meetingLinkModeValue = $validated['meeting_link_mode'] ?? null;
-        $meetingLinkMode = $meetingLinkModeValue === null
-            ? null
-            : MeetingLinkMode::from((string) $meetingLinkModeValue);
-        $clientTimezone = $validated['client_timezone'] ?? null;
-        $booking = $createBooking->handle(
-            actor: $clientContext->client(),
-            client: $clientContext->client(),
-            specialist: $this->specialist($validated['specialist_id'], $organizationContext->id()),
-            service: $this->service($validated['service_id'], $organizationContext->id()),
-            startsAt: $startsAt,
-            format: $format,
-            clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
-            meetingLinkMode: $meetingLinkMode,
-            idempotencyKey: isset($validated['idempotency_key']) ? (string) $validated['idempotency_key'] : null,
-            partySize: (int) ($validated['party_size'] ?? 1),
-            location: isset($validated['location']) ? (string) $validated['location'] : null,
-        );
-        $displayClient = is_string($clientTimezone)
-            ? $timezonePreference->handle($clientTimezone)
-            : $clientContext->client();
-        $displayTimezone = $displayClient->timezone;
+        try {
+            $booking = $createBooking->handle(
+                actor: $clientContext->client(),
+                client: $clientContext->client(),
+                specialist: $this->specialist($validated['specialist_id'], $organizationContext->id()),
+                service: $this->service($validated['service_id'], $organizationContext->id()),
+                startsAt: $startsAt,
+                format: $format,
+                clientTimezone: null,
+                meetingLinkMode: null,
+                idempotencyKey: null,
+                partySize: (int) ($validated['party_size'] ?? 1),
+                location: isset($validated['location']) ? (string) $validated['location'] : null,
+            );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($this->portalBookingErrors($exception));
+        }
+        $displayTimezone = $clientContext->client()->timezone;
 
         return redirect()
             ->route('portal.bookings.create', [
@@ -155,10 +147,11 @@ class BookingController extends Controller
                 'date_from' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'date_to' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'format' => $booking->visit_format->value,
-                'display_timezone' => $displayTimezone,
             ])
             ->with('portal_booking_result', [
-                'status' => $booking->status->value,
+                'message' => $booking->visit_format === VisitFormat::HomeVisit
+                    ? 'Заявка отправлена. Мы подтвердим время отдельно.'
+                    : 'Запись создана.',
                 'bookingId' => $booking->getKey(),
             ]);
     }
@@ -225,7 +218,11 @@ class BookingController extends Controller
     ): RedirectResponse {
         $booking = $bookings->find($bookingId);
         abort_unless($booking !== null, 404);
-        $cancelBooking->handle($clientContext->client(), $booking, $request->validated()['reason'] ?? null);
+        try {
+            $cancelBooking->handle($clientContext->client(), $booking, $request->validated()['reason'] ?? null);
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($this->portalBookingActionErrors($exception));
+        }
 
         return to_route('portal.bookings.show', $bookingId);
     }
@@ -245,18 +242,22 @@ class BookingController extends Controller
         try {
             $startsAt = CarbonImmutable::parse($validated['starts_at']);
         } catch (Throwable) {
-            throw ValidationException::withMessages(['starts_at' => 'The selected time is invalid.']);
+            throw ValidationException::withMessages(['starts_at' => 'Выбранное время недействительно.']);
         }
 
         $clientTimezone = $validated['client_timezone'] ?? null;
-        $rescheduleBooking->handle(
-            actor: $clientContext->client(),
-            booking: $booking,
-            newStartsAt: $startsAt,
-            clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
-            reason: isset($validated['reason']) ? (string) $validated['reason'] : null,
-            expectedEventVersion: (int) $validated['expected_event_version'],
-        );
+        try {
+            $rescheduleBooking->handle(
+                actor: $clientContext->client(),
+                booking: $booking,
+                newStartsAt: $startsAt,
+                clientTimezone: is_string($clientTimezone) ? $clientTimezone : null,
+                reason: isset($validated['reason']) ? (string) $validated['reason'] : null,
+                expectedEventVersion: (int) $validated['expected_event_version'],
+            );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($this->portalRescheduleErrors($exception));
+        }
         if (is_string($clientTimezone)) {
             $timezonePreference->handle($clientTimezone);
         }
@@ -291,7 +292,7 @@ class BookingController extends Controller
             return IanaTimezone::from($requested ?? $fallback)->value;
         } catch (Throwable) {
             throw ValidationException::withMessages([
-                'display_timezone' => 'The display timezone must be an IANA timezone.',
+                'display_timezone' => 'Не удалось определить часовой пояс. Обновите страницу.',
             ]);
         }
     }
@@ -325,7 +326,7 @@ class BookingController extends Controller
             ->find((int) $specialistId);
 
         if (! $specialist instanceof Specialist) {
-            throw ValidationException::withMessages(['specialist_id' => 'The specialist is not available.']);
+            throw ValidationException::withMessages(['specialist_id' => 'Сейчас для этой услуги нет доступного специалиста.']);
         }
 
         return $specialist;
@@ -338,9 +339,71 @@ class BookingController extends Controller
             ->find((int) $serviceId);
 
         if (! $service instanceof Service) {
-            throw ValidationException::withMessages(['service_id' => 'The service is not available.']);
+            throw ValidationException::withMessages(['service_id' => 'Эта услуга сейчас недоступна.']);
         }
 
         return $service;
+    }
+
+    /** @return array<string, list<string>> */
+    private function portalBookingErrors(ValidationException $exception): array
+    {
+        $errors = [];
+
+        foreach ($exception->errors() as $field => $_messages) {
+            $displayField = match ($field) {
+                'startsAt' => 'starts_at',
+                'partySize' => 'party_size',
+                'client' => 'starts_at',
+                'service' => 'service_id',
+                'specialist' => 'specialist_id',
+                default => $field,
+            };
+            $errors[$displayField][] = match ($field) {
+                'startsAt' => 'Это время уже недоступно. Выберите другое.',
+                'client' => 'Самостоятельная запись сейчас недоступна. Свяжитесь с нами.',
+                'service' => 'Эта услуга сейчас недоступна.',
+                'specialist' => 'Сейчас для этой услуги нет доступного специалиста.',
+                'format' => 'Выберите другой формат для этой услуги.',
+                'partySize' => 'Укажите количество человек.',
+                'location' => 'Укажите адрес выезда.',
+                default => 'Не удалось создать запись. Попробуйте ещё раз.',
+            };
+        }
+
+        return $errors;
+    }
+
+    /** @return array<string, list<string>> */
+    private function portalRescheduleErrors(ValidationException $exception): array
+    {
+        $errors = [];
+
+        foreach ($exception->errors() as $field => $_messages) {
+            $displayField = $field === 'startsAt' ? 'starts_at' : $field;
+            $errors[$displayField][] = match ($field) {
+                'startsAt' => 'Это время уже недоступно. Выберите другое.',
+                'booking' => 'Перенести запись онлайн уже нельзя. Свяжитесь с нами.',
+                'expected_event_version' => 'Запись изменилась. Обновите страницу и выберите время ещё раз.',
+                default => 'Не удалось перенести запись. Попробуйте ещё раз.',
+            };
+        }
+
+        return $errors;
+    }
+
+    /** @return array<string, list<string>> */
+    private function portalBookingActionErrors(ValidationException $exception): array
+    {
+        $errors = [];
+
+        foreach ($exception->errors() as $field => $_messages) {
+            $errors[$field][] = match ($field) {
+                'booking' => 'Отменить запись онлайн уже нельзя. Свяжитесь с нами.',
+                default => 'Не удалось изменить запись. Попробуйте ещё раз.',
+            };
+        }
+
+        return $errors;
     }
 }

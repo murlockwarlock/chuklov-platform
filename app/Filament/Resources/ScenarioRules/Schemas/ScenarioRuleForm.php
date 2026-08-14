@@ -25,81 +25,83 @@ final class ScenarioRuleForm
     {
         return $schema
             ->components([
-                TextInput::make('rule_key')
-                    ->label('Rule key')
-                    ->required()
-                    ->maxLength(120)
-                    ->helperText('Stable technical identity; it cannot be duplicated within this organization.'),
                 TextInput::make('name')
-                    ->label('Name')
+                    ->label('Название правила')
                     ->required()
                     ->maxLength(160),
                 Select::make('trigger_event')
-                    ->label('Trigger')
+                    ->label('Когда')
                     ->options([
-                        ScenarioEventType::BookingCompleted->value => 'Booking completed',
+                        ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
                     ])
                     ->required(),
                 Toggle::make('is_enabled')
-                    ->label('Enabled')
+                    ->label('Активно')
                     ->required()
                     ->default(false),
                 TextInput::make('delay_value')
-                    ->label('Delay')
+                    ->label('Через')
                     ->integer()
                     ->required()
                     ->minValue(0)
                     ->maxValue(PHP_INT_MAX),
                 Select::make('delay_unit')
-                    ->label('Delay unit')
+                    ->label('Единица времени')
                     ->options([
-                        ScenarioDelayUnit::Minutes->value => 'Minutes',
-                        ScenarioDelayUnit::Hours->value => 'Hours',
-                        ScenarioDelayUnit::Days->value => 'Days',
+                        ScenarioDelayUnit::Minutes->value => 'минут',
+                        ScenarioDelayUnit::Hours->value => 'часов',
+                        ScenarioDelayUnit::Days->value => 'дней',
                     ])
                     ->required(),
                 Select::make('purpose')
-                    ->label('Communication purpose')
+                    ->label('Назначение сообщения')
                     ->options([
-                        ScenarioRulePurpose::Service->value => 'Service',
-                        ScenarioRulePurpose::Transactional->value => 'Transactional',
+                        ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
+                        ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
                     ])
                     ->required(),
                 Select::make('template_version_id')
-                    ->label('Published template version')
+                    ->label('Сообщение')
                     ->options(fn (): array => NotificationTemplateVersion::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('status', NotificationTemplateStatus::Published->value)
                         ->with('template')
                         ->orderByDesc('id')
                         ->get()
-                        ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [
-                            $version->getKey() => $version->template?->template_key.' / '.$version->template?->locale.' / v'.$version->version,
-                        ])
+                        ->mapWithKeys(function (NotificationTemplateVersion $version): array {
+                            $template = $version->template;
+
+                            return [
+                                $version->getKey() => ($template?->name ?: 'Сообщение').' — '.self::localeLabel($template?->locale),
+                            ];
+                        })
                         ->all())
                     ->searchable()
                     ->required()
-                    ->helperText('Actions keep this exact version after scheduling.'),
+                    ->helperText('Для уже отправленных сообщений сохраняется выбранный текст.'),
                 Repeater::make('conditions')
-                    ->label('Typed conditions (all must match)')
+                    ->label('Дополнительное условие')
                     ->schema([
                         Select::make('type')
+                            ->label('Что проверить')
                             ->options([
-                                'booking.status' => 'Booking status',
-                                'client.language' => 'Client language',
+                                'booking.status' => 'Статус записи',
+                                'client.language' => 'Язык клиента',
                             ])
                             ->required(),
                         Select::make('operator')
+                            ->label('Проверка')
                             ->options([
-                                ScenarioConditionOperator::Equals->value => 'Equals',
-                                ScenarioConditionOperator::NotEquals->value => 'Does not equal',
-                                ScenarioConditionOperator::In->value => 'Is one of',
-                                ScenarioConditionOperator::Exists->value => 'Exists',
+                                ScenarioConditionOperator::Equals->value => 'Равно',
+                                ScenarioConditionOperator::NotEquals->value => 'Не равно',
+                                ScenarioConditionOperator::In->value => 'Одно из',
+                                ScenarioConditionOperator::Exists->value => 'Заполнено',
                             ])
                             ->required(),
-                        TextInput::make('value')
-                            ->label('Value')
-                            ->maxLength(120)
+                        Select::make('value')
+                            ->label('Значение')
+                            ->options(fn (Get $get): array => self::conditionValues($get('type')))
+                            ->searchable()
                             ->visible(fn (Get $get): bool => ! in_array($get('operator'), [
                                 ScenarioConditionOperator::In->value,
                                 ScenarioConditionOperator::Exists->value,
@@ -109,7 +111,7 @@ final class ScenarioRuleForm
                                 ScenarioConditionOperator::NotEquals->value,
                             ], true)),
                         TagsInput::make('value')
-                            ->label('Values')
+                            ->label('Значения')
                             ->visible(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
                             ->required(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
                             ->nestedRecursiveRules(['string', 'max:120']),
@@ -117,20 +119,20 @@ final class ScenarioRuleForm
                     ->columns(3)
                     ->defaultItems(0)
                     ->reorderable(false)
-                    ->addActionLabel('Add condition')
+                    ->addActionLabel('Добавить условие')
                     ->columnSpanFull(),
                 Select::make('recipient_strategy.type')
-                    ->label('Audience')
+                    ->label('Кому')
                     ->options([
-                        'client' => 'Booking client',
-                        'members' => 'Explicit organization members',
-                        'roles' => 'Organization roles',
+                        'client' => 'Клиенту записи',
+                        'members' => 'Выбранным сотрудникам',
+                        'roles' => 'Сотрудникам по роли',
                     ])
                     ->required()
                     ->default('client')
                     ->live(),
                 Select::make('recipient_strategy.user_ids')
-                    ->label('Members')
+                    ->label('Сотрудники')
                     ->options(fn (): array => OrganizationMembership::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->active()
@@ -146,24 +148,53 @@ final class ScenarioRuleForm
                     ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'members')
                     ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'members'),
                 Select::make('recipient_strategy.roles')
-                    ->label('Roles')
+                    ->label('Роли')
                     ->options([
-                        OrganizationRole::Owner->value => 'Owner',
-                        OrganizationRole::Administrator->value => 'Administrator',
-                        OrganizationRole::Staff->value => 'Staff',
+                        OrganizationRole::Owner->value => 'Владелец',
+                        OrganizationRole::Administrator->value => 'Администратор',
+                        OrganizationRole::Staff->value => 'Сотрудник',
                     ])
                     ->multiple()
                     ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
                     ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles'),
                 Select::make('channel_priority')
-                    ->label('Channel priority / fallback order')
+                    ->label('Способ связи')
                     ->options([
                         'telegram' => 'Telegram',
                     ])
                     ->multiple()
                     ->required()
-                    ->default(['telegram'])
-                    ->helperText('Candidates are attempted in this order. Retryable failures wait; unavailable channels may fall back.'),
+                    ->default(['telegram']),
             ]);
+    }
+
+    /** @return array<string, string> */
+    private static function conditionValues(mixed $type): array
+    {
+        return match ($type) {
+            'booking.status' => [
+                'requested' => 'Ожидает подтверждения',
+                'pending_review' => 'На рассмотрении',
+                'confirmed' => 'Подтверждена',
+                'rejected' => 'Отклонена',
+                'cancelled' => 'Отменена',
+                'completed' => 'Завершена',
+                'no_show' => 'Не состоялась',
+            ],
+            'client.language' => [
+                'ru' => 'Русский',
+                'en' => 'Английский',
+            ],
+            default => [],
+        };
+    }
+
+    private static function localeLabel(?string $locale): string
+    {
+        return match ($locale) {
+            'ru' => 'Русский',
+            'en' => 'Английский',
+            default => 'Другой язык',
+        };
     }
 }

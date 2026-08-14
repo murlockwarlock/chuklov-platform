@@ -21,7 +21,11 @@ class UnavailablePeriodResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static ?string $navigationLabel = 'Unavailable periods';
+    protected static ?string $navigationLabel = 'Недоступное время';
+
+    protected static ?string $modelLabel = 'период недоступности';
+
+    protected static ?string $pluralModelLabel = 'периоды недоступности';
 
     public static function getEloquentQuery(): Builder
     {

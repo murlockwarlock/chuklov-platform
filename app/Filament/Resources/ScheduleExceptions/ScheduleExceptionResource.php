@@ -21,7 +21,11 @@ class ScheduleExceptionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static ?string $navigationLabel = 'Schedule exceptions';
+    protected static ?string $navigationLabel = 'Изменения расписания';
+
+    protected static ?string $modelLabel = 'изменение расписания';
+
+    protected static ?string $pluralModelLabel = 'изменения расписания';
 
     public static function getEloquentQuery(): Builder
     {

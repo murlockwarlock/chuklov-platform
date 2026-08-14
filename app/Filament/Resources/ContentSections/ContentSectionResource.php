@@ -24,6 +24,12 @@ class ContentSectionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
 
+    protected static ?string $navigationLabel = 'Разделы контента';
+
+    protected static ?string $modelLabel = 'раздел';
+
+    protected static ?string $pluralModelLabel = 'разделы контента';
+
     protected static ?string $recordTitleAttribute = 'title';
 
     public static function form(Schema $schema): Schema
@@ -35,13 +41,20 @@ class ContentSectionResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('section_key')->label('Section'),
-                TextEntry::make('locale'),
-                TextEntry::make('title'),
-                TextEntry::make('body')->columnSpanFull(),
-                TextEntry::make('media')->columnSpanFull(),
-                TextEntry::make('sort_order')->label('Order'),
-                TextEntry::make('is_visible')->label('Visible'),
+                TextEntry::make('section_key')
+                    ->label('Раздел')
+                    ->formatStateUsing(fn (string $state): string => self::sectionLabel($state)),
+                TextEntry::make('locale')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                TextEntry::make('title')->label('Название'),
+                TextEntry::make('body')->label('Текст')->columnSpanFull(),
+                TextEntry::make('media')
+                    ->label('Изображение')
+                    ->formatStateUsing(fn (?array $state): string => $state === null ? 'Не добавлено' : 'Добавлено')
+                    ->columnSpanFull(),
+                TextEntry::make('sort_order')->label('Порядок показа'),
+                TextEntry::make('is_visible')->label('Показывать'),
             ]);
     }
 
@@ -59,6 +72,18 @@ class ContentSectionResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id());
+    }
+
+    private static function sectionLabel(string $section): string
+    {
+        return match ($section) {
+            'author' => 'Об академии',
+            'method' => 'Методика',
+            'b2b' => 'Для бизнеса',
+            'partner' => 'Партнёрам',
+            'hidden' => 'Скрытый раздел',
+            default => 'Раздел',
+        };
     }
 
     public static function getPages(): array

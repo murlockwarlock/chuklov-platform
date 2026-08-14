@@ -4,9 +4,14 @@ namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
+use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use Carbon\CarbonImmutable;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
 
@@ -16,30 +21,32 @@ class BookingInfolist
     {
         return $schema
             ->components([
-                TextEntry::make('client.full_name')->label('Client'),
-                TextEntry::make('specialist.display_name')->label('Specialist'),
-                TextEntry::make('service.name')->label('Service'),
-                TextEntry::make('visit_format')->label('Visit format'),
+                TextEntry::make('client.full_name')->label('Клиент'),
+                TextEntry::make('specialist.display_name')->label('Специалист'),
+                TextEntry::make('service.name')->label('Услуга'),
+                TextEntry::make('visit_format')
+                    ->label('Формат')
+                    ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
                 TextEntry::make('status')
-                    ->label('Status')
-                    ->formatStateUsing(fn (BookingStatus|string $state): string => $state instanceof BookingStatus ? $state->value : $state),
-                TextEntry::make('payment_status')->label('Payment status'),
-                TextEntry::make('payment_requirement')->label('Payment handoff'),
-                TextEntry::make('party_size')->label('Party size'),
-                TextEntry::make('starts_at')->label('Starts')->dateTime(),
-                TextEntry::make('ends_at')->label('Ends')->dateTime(),
-                TextEntry::make('blocking_ends_at')->label('Buffer ends')->dateTime(),
-                TextEntry::make('schedule_timezone')->label('Schedule timezone'),
-                TextEntry::make('client_timezone')->label('Client timezone'),
-                TextEntry::make('source')->label('Source'),
-                TextEntry::make('requested_at')->label('Requested')->dateTime(),
-                TextEntry::make('location')->label('Location'),
-                TextEntry::make('meeting_link_mode')->label('Meeting-link mode'),
-                TextEntry::make('meeting_url')->label('Meeting URL'),
-                TextEntry::make('calendar_uid')->label('Calendar UID'),
-                TextEntry::make('event_version')->label('Event version'),
+                    ->label('Статус')
+                    ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state)),
+                TextEntry::make('payment_status')
+                    ->label('Оплата')
+                    ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state)),
+                TextEntry::make('payment_requirement')
+                    ->label('Условие оплаты')
+                    ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state)),
+                TextEntry::make('party_size')->label('Количество человек'),
+                TextEntry::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i'),
+                TextEntry::make('ends_at')->label('Окончание')->dateTime('d.m.Y H:i'),
+                TextEntry::make('requested_at')->label('Создана')->dateTime('d.m.Y H:i'),
+                TextEntry::make('location')->label('Адрес'),
+                TextEntry::make('meeting_url')
+                    ->label('Ссылка на встречу')
+                    ->url(fn (Booking $record): ?string => $record->meeting_url)
+                    ->openUrlInNewTab(),
                 TextEntry::make('history')
-                    ->label('Lifecycle history')
+                    ->label('История записи')
                     ->state(function (Booking $record): string {
                         return $record->events()
                             ->with(['actorUser', 'actorClient'])
@@ -54,34 +61,101 @@ class BookingInfolist
 
     private static function formatHistoryEvent(BookingEvent $event): string
     {
-        $oldStatus = self::safeValue($event->old_values, 'status');
-        $newStatus = self::safeValue($event->new_values, 'status');
         $oldStart = self::safeValue($event->old_values, 'starts_at');
         $newStart = self::safeValue($event->new_values, 'starts_at');
         $actor = match ($event->actor_type) {
-            'user' => $event->actorUser instanceof User ? $event->actorUser->name : 'Staff',
-            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : 'Client',
-            default => 'System',
+            'user' => $event->actorUser instanceof User ? $event->actorUser->name : 'Сотрудник',
+            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : 'Клиент',
+            default => 'Система',
         };
         $values = [
-            $event->event_type->value,
-            $event->occurred_at->toIso8601String(),
-            $actor.' ('.$event->actor_type.')',
+            self::eventLabel($event),
+            $event->occurred_at->format('d.m.Y H:i'),
+            'Изменил: '.$actor,
         ];
 
-        if ($oldStatus !== null || $newStatus !== null) {
-            $values[] = 'status: '.($oldStatus ?? '—').' → '.($newStatus ?? '—');
-        }
-
-        if ($oldStart !== null || $newStart !== null) {
-            $values[] = 'time: '.($oldStart ?? '—').' → '.($newStart ?? '—');
+        if ($event->event_type === BookingEventType::Rescheduled && $oldStart !== null && $newStart !== null) {
+            $values[] = 'С '.self::humanDateTime($oldStart).' на '.self::humanDateTime($newStart);
         }
 
         if ($event->reason !== null) {
-            $values[] = 'reason: '.$event->reason;
+            $values[] = 'Причина: '.$event->reason;
         }
 
         return implode(' · ', $values);
+    }
+
+    private static function humanDateTime(string $value): string
+    {
+        return CarbonImmutable::parse($value)->format('d.m.Y H:i');
+    }
+
+    private static function eventLabel(BookingEvent $event): string
+    {
+        return match ($event->event_type) {
+            BookingEventType::Created => 'Запись создана',
+            BookingEventType::StatusChanged => 'Статус записи обновлён',
+            BookingEventType::Rescheduled => 'Запись перенесена',
+            BookingEventType::Cancelled => 'Запись отменена',
+            BookingEventType::Completed => 'Визит завершён',
+            BookingEventType::NoShow => 'Отмечена неявка',
+            BookingEventType::MeetingLinkUpdated => 'Ссылка на встречу обновлена',
+        };
+    }
+
+    private static function formatLabel(VisitFormat|string $format): string
+    {
+        $format = $format instanceof VisitFormat ? $format : VisitFormat::tryFrom($format);
+
+        return match ($format) {
+            VisitFormat::Office => 'В клинике',
+            VisitFormat::HomeVisit => 'Выезд на дом',
+            VisitFormat::Online => 'Онлайн',
+            default => 'Не указан',
+        };
+    }
+
+    private static function statusLabel(BookingStatus|string $status): string
+    {
+        $status = $status instanceof BookingStatus ? $status : BookingStatus::tryFrom($status);
+
+        return match ($status) {
+            BookingStatus::Requested => 'Ожидает подтверждения',
+            BookingStatus::PendingReview => 'На рассмотрении',
+            BookingStatus::Confirmed => 'Подтверждена',
+            BookingStatus::Rejected => 'Отклонена',
+            BookingStatus::Cancelled => 'Отменена',
+            BookingStatus::Completed => 'Завершена',
+            BookingStatus::NoShow => 'Не состоялась',
+            default => 'Не указан',
+        };
+    }
+
+    private static function paymentStatusLabel(PaymentStatus|string $status): string
+    {
+        $status = $status instanceof PaymentStatus ? $status : PaymentStatus::tryFrom($status);
+
+        return match ($status) {
+            PaymentStatus::Unpaid => 'Не оплачено',
+            PaymentStatus::Pending => 'Ожидается',
+            PaymentStatus::PartiallyPaid => 'Оплачено частично',
+            PaymentStatus::Paid => 'Оплачено',
+            PaymentStatus::Refunded => 'Возвращено',
+            default => 'Не указано',
+        };
+    }
+
+    private static function paymentRequirementLabel(PaymentRequirementType|string|null $requirement): string
+    {
+        $requirement = $requirement instanceof PaymentRequirementType || $requirement === null
+            ? $requirement
+            : PaymentRequirementType::tryFrom($requirement);
+
+        return match ($requirement) {
+            PaymentRequirementType::FullPayment => 'Полная оплата',
+            PaymentRequirementType::TransportDeposit => 'Депозит за выезд',
+            default => 'Не указано',
+        };
     }
 
     /** @param array<string, mixed> $values */

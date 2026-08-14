@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ScenarioActions\Tables;
 
+use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -12,15 +13,57 @@ final class ScenarioActionsTable
     {
         return $table
             ->columns([
-                TextColumn::make('id')->label('Action')->sortable(),
-                TextColumn::make('rule.name')->label('Rule')->searchable(),
-                TextColumn::make('event.event_name')->label('Source event')->badge(),
-                TextColumn::make('client.full_name')->label('Client')->placeholder('Internal recipient')->searchable(),
-                TextColumn::make('recipientUser.name')->label('Staff recipient')->placeholder('—'),
-                TextColumn::make('scheduled_for')->label('Scheduled')->dateTime()->sortable(),
-                TextColumn::make('status')->badge()->sortable(),
-                TextColumn::make('terminal_reason')->label('Outcome reason')->placeholder('—'),
+                TextColumn::make('rule.name')->label('Правило')->searchable(),
+                TextColumn::make('event.event_name')
+                    ->label('Когда')
+                    ->badge()
+                    ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
+                TextColumn::make('client.full_name')->label('Клиент')->placeholder('Сотрудник')->searchable(),
+                TextColumn::make('recipientUser.name')->label('Сотрудник')->placeholder('—'),
+                TextColumn::make('scheduled_for')->label('Запланировано')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('status')
+                    ->label('Статус')
+                    ->badge()
+                    ->formatStateUsing(fn (mixed $state): string => self::statusLabel($state))
+                    ->sortable(),
+                TextColumn::make('terminal_reason')
+                    ->label('Результат')
+                    ->formatStateUsing(fn (?string $state): string => self::reasonLabel($state))
+                    ->placeholder('—'),
             ])
-            ->recordActions([ViewAction::make()]);
+            ->recordActions([ViewAction::make()->label('Открыть')]);
+    }
+
+    private static function statusLabel(mixed $status): string
+    {
+        $value = $status instanceof BackedEnum ? $status->value : (string) $status;
+
+        return match ($value) {
+            'scheduled' => 'Запланировано',
+            'processing' => 'Отправляется',
+            'delivered' => 'Отправлено',
+            'retryable' => 'Повторим позже',
+            'failed', 'suppressed' => 'Не отправлено',
+            'cancelled' => 'Отменено',
+            default => 'Неизвестный статус',
+        };
+    }
+
+    private static function reasonLabel(?string $reason): string
+    {
+        return match ($reason) {
+            'current_conditions_not_met' => 'Условие больше не выполнено',
+            'provider_suppressed' => 'Получатель отключил сообщения',
+            'recipient_unavailable' => 'Получатель недоступен',
+            null => '—',
+            default => 'Не удалось отправить',
+        };
+    }
+
+    private static function eventLabel(mixed $event): string
+    {
+        $value = $event instanceof BackedEnum ? $event->value : (string) $event;
+
+        return $value === 'booking.completed' ? 'После визита' : 'Событие';
     }
 }

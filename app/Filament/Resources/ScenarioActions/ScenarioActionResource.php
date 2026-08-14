@@ -10,6 +10,9 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
@@ -27,40 +30,51 @@ final class ScenarioActionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
-    protected static ?string $navigationLabel = 'Scenario history';
+    protected static ?string $navigationLabel = 'История сообщений';
+
+    protected static ?string $modelLabel = 'отправка';
+
+    protected static ?string $pluralModelLabel = 'история сообщений';
 
     public static function infolist(Schema $schema): Schema
     {
         return $schema
             ->components([
-                TextEntry::make('id')->label('Action ID'),
-                TextEntry::make('event.event_name')->label('Source event'),
-                TextEntry::make('event.id')->label('Source event ID'),
-                TextEntry::make('rule.name')->label('Rule'),
-                TextEntry::make('rule_version')->label('Rule version'),
+                TextEntry::make('event.event_name')
+                    ->label('Когда')
+                    ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
+                TextEntry::make('rule.name')->label('Правило'),
                 TextEntry::make('recipient_summary')
-                    ->label('Recipient')
+                    ->label('Получатель')
                     ->state(function (ScenarioAction $record): string {
                         if ($record->recipient_type === 'client') {
                             $client = $record->client;
 
-                            return 'Client: '.($client instanceof Client ? $client->full_name : 'unavailable');
+                            return 'Клиент: '.($client instanceof Client ? $client->full_name : 'недоступен');
                         }
 
                         $user = $record->recipientUser;
 
-                        return 'Organization member: '.($user instanceof User ? $user->name : 'unavailable');
+                        return 'Сотрудник: '.($user instanceof User ? $user->name : 'недоступен');
                     }),
-                TextEntry::make('purpose'),
-                TextEntry::make('scheduled_for')->dateTime(),
-                TextEntry::make('status')->badge(),
-                TextEntry::make('delivered_at')->dateTime()->placeholder('—'),
-                TextEntry::make('terminal_reason')->placeholder('—'),
+                TextEntry::make('purpose')
+                    ->label('Назначение')
+                    ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
+                TextEntry::make('scheduled_for')->label('Запланировано')->dateTime('d.m.Y H:i'),
+                TextEntry::make('status')
+                    ->label('Статус')
+                    ->badge()
+                    ->formatStateUsing(fn (ScenarioActionStatus|string $state): string => self::statusLabel($state)),
+                TextEntry::make('delivered_at')->label('Отправлено')->dateTime('d.m.Y H:i')->placeholder('—'),
+                TextEntry::make('terminal_reason')
+                    ->label('Результат')
+                    ->formatStateUsing(fn (?string $state): string => self::reasonLabel($state))
+                    ->placeholder('—'),
                 TextEntry::make('channel_order')
-                    ->label('Channel order')
-                    ->state(fn (ScenarioAction $record): string => implode(' → ', $record->channel_priority)),
+                    ->label('Способ связи')
+                    ->state(fn (ScenarioAction $record): string => self::channelSummary($record->channel_priority)),
                 TextEntry::make('delivery_history')
-                    ->label('Delivery history')
+                    ->label('История отправки')
                     ->state(fn (ScenarioAction $record): string => $record->deliveries
                         ->sortBy('priority')
                         ->map(fn (ScenarioDelivery $delivery): string => self::formatDelivery($delivery))
@@ -120,10 +134,92 @@ final class ScenarioActionResource extends Resource
     {
         $attempts = $delivery->attempts
             ->sortBy('attempt_number')
-            ->map(fn (ScenarioDeliveryAttempt $attempt): string => '#'.$attempt->attempt_number.' '.$attempt->outcome->value
-                .($attempt->error_code === null ? '' : ' ('.$attempt->error_code.')'))
+            ->map(fn (ScenarioDeliveryAttempt $attempt): string => 'Попытка '.$attempt->attempt_number.': '.self::attemptLabel($attempt->outcome->value))
             ->implode(', ');
 
-        return $delivery->priority.'. '.$delivery->channel.' — '.$delivery->status->value.' — '.($attempts === '' ? 'no attempts' : $attempts);
+        return ($delivery->priority + 1).'. '.self::channelLabel($delivery->channel).' — '.self::deliveryLabel($delivery->status).' — '.($attempts === '' ? 'попыток ещё не было' : $attempts);
+    }
+
+    private static function eventLabel(mixed $event): string
+    {
+        $value = $event instanceof BackedEnum ? $event->value : (string) $event;
+
+        return $value === 'booking.completed' ? 'После завершения визита' : 'Событие';
+    }
+
+    private static function statusLabel(ScenarioActionStatus|string $status): string
+    {
+        $status = $status instanceof ScenarioActionStatus ? $status : ScenarioActionStatus::tryFrom($status);
+
+        return match ($status) {
+            ScenarioActionStatus::Scheduled => 'Запланировано',
+            ScenarioActionStatus::Processing => 'Отправляется',
+            ScenarioActionStatus::Delivered => 'Отправлено',
+            ScenarioActionStatus::Retryable => 'Повторим позже',
+            ScenarioActionStatus::Failed, ScenarioActionStatus::Suppressed => 'Не отправлено',
+            ScenarioActionStatus::Cancelled => 'Отменено',
+            default => 'Неизвестный статус',
+        };
+    }
+
+    private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
+    {
+        $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
+
+        return match ($purpose) {
+            ScenarioRulePurpose::Service => 'Сервисное сообщение',
+            ScenarioRulePurpose::Transactional => 'Системное сообщение',
+            default => 'Не указано',
+        };
+    }
+
+    private static function deliveryLabel(ScenarioDeliveryStatus|string $status): string
+    {
+        $status = $status instanceof ScenarioDeliveryStatus ? $status : ScenarioDeliveryStatus::tryFrom($status);
+
+        return match ($status) {
+            ScenarioDeliveryStatus::Pending => 'Ожидает отправки',
+            ScenarioDeliveryStatus::Processing => 'Отправляется',
+            ScenarioDeliveryStatus::Delivered => 'Отправлено',
+            ScenarioDeliveryStatus::Retryable => 'Повторим позже',
+            ScenarioDeliveryStatus::PermanentFailure => 'Не отправлено',
+            ScenarioDeliveryStatus::Unavailable => 'Канал недоступен',
+            ScenarioDeliveryStatus::Suppressed => 'Получатель отключил сообщения',
+            default => 'Неизвестный статус',
+        };
+    }
+
+    private static function attemptLabel(string $outcome): string
+    {
+        return match ($outcome) {
+            'delivered' => 'отправлено',
+            'retryable' => 'повторим позже',
+            'permanent_failure' => 'не отправлено',
+            'unavailable' => 'канал недоступен',
+            'suppressed' => 'получатель отключил сообщения',
+            default => 'результат не определён',
+        };
+    }
+
+    private static function channelLabel(string $channel): string
+    {
+        return $channel === 'telegram' ? 'Telegram' : 'Другой способ связи';
+    }
+
+    /** @param list<string> $channels */
+    private static function channelSummary(array $channels): string
+    {
+        return implode(' → ', array_map(static fn (string $channel): string => self::channelLabel($channel), $channels));
+    }
+
+    private static function reasonLabel(?string $reason): string
+    {
+        return match ($reason) {
+            'current_conditions_not_met' => 'Условие больше не выполнено',
+            'provider_suppressed' => 'Получатель отключил сообщения',
+            'recipient_unavailable' => 'Получатель недоступен',
+            null => '—',
+            default => 'Не удалось отправить',
+        };
     }
 }

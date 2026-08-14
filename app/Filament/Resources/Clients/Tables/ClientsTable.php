@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Tables;
 
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
@@ -21,20 +22,26 @@ class ClientsTable
     {
         return $table
             ->columns([
-                TextColumn::make('full_name')->label('Full name')->searchable()->sortable(),
-                TextColumn::make('email')->searchable()->placeholder('—'),
-                TextColumn::make('phone')->placeholder('—'),
-                TextColumn::make('language')->sortable(),
-                TextColumn::make('timezone')->sortable(),
-                TextColumn::make('channel_identities_count')->label('Channels')->sortable(),
+                TextColumn::make('full_name')->label('Имя')->searchable()->sortable(),
+                TextColumn::make('email')->label('Email')->searchable()->placeholder('—'),
+                TextColumn::make('phone')->label('Телефон')->placeholder('—'),
+                TextColumn::make('language')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->sortable(),
+                TextColumn::make('timezone')
+                    ->label('Часовой пояс')
+                    ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
+                    ->sortable(),
+                TextColumn::make('channel_identities_count')->label('Способы связи')->sortable(),
                 IconColumn::make('activeBookingRestriction')
-                    ->label('Self-booking blocked')
+                    ->label('Самостоятельная запись заблокирована')
                     ->boolean()
                     ->state(fn (Client $record): bool => $record->activeBookingRestriction !== null),
             ])
             ->filters([
                 TernaryFilter::make('activeBookingRestriction')
-                    ->label('Self-booking blocked')
+                    ->label('Самостоятельная запись заблокирована')
                     ->queries(
                         true: fn ($query) => $query->whereHas('activeBookingRestriction'),
                         false: fn ($query) => $query->whereDoesntHave('activeBookingRestriction'),
@@ -44,7 +51,7 @@ class ClientsTable
                 ViewAction::make(),
                 EditAction::make(),
                 Action::make('blockSelfBooking')
-                    ->label('Block self-booking')
+                    ->label('Запретить самостоятельную запись')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([
@@ -60,7 +67,7 @@ class ClientsTable
                         app(BlockClientSelfBooking::class)->handle($actor, $record, $data['reason']);
                     }),
                 Action::make('unblockSelfBooking')
-                    ->label('Allow self-booking')
+                    ->label('Разрешить самостоятельную запись')
                     ->color('success')
                     ->requiresConfirmation()
                     ->visible(fn (Client $record): bool => $record->activeBookingRestriction !== null)

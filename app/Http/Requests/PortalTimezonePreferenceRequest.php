@@ -17,4 +17,13 @@ class PortalTimezonePreferenceRequest extends FormRequest
     {
         return ['timezone' => ['required', 'string', 'max:64']];
     }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'timezone.required' => 'Выберите часовой пояс.',
+            'timezone.max' => 'Не удалось сохранить часовой пояс.',
+        ];
+    }
 }

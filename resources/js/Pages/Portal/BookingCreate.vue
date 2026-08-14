@@ -4,7 +4,6 @@ import { computed, ref, watch } from 'vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type VisitFormat = 'office' | 'home' | 'online';
-type MeetingLinkMode = 'auto' | 'manual';
 
 type ServiceOption = {
     id: number;
@@ -16,14 +15,11 @@ type ServiceOption = {
 type SpecialistOption = {
     id: number;
     displayName: string;
-    timezone: string | null;
 };
 
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
-    blockingEndsAt: string;
-    scheduleTimezone: string;
     displayTimezone: string;
     format: VisitFormat;
 };
@@ -31,7 +27,6 @@ type AvailabilitySlot = {
 type Availability = {
     specialistId: number;
     serviceId: number;
-    scheduleTimezone: string;
     displayTimezone: string;
     slots: AvailabilitySlot[];
 };
@@ -46,7 +41,7 @@ type BookingQuery = {
 };
 
 type BookingResult = {
-    status: 'requested' | 'pending_review';
+    message: string;
     bookingId: number;
 } | null;
 
@@ -55,7 +50,6 @@ type Props = {
     specialists: SpecialistOption[];
     availability: Availability | null;
     query: BookingQuery;
-    client: { timezone: string };
     bookingResult: BookingResult;
     urls: { create: string; store: string; services: string; bookings: string };
 };
@@ -67,26 +61,16 @@ const bookingForm = useForm<{
     specialist_id: number | null;
     starts_at: string | null;
     format: VisitFormat;
-    client_timezone: string | null;
-    meeting_link_mode: MeetingLinkMode | null;
     party_size: number;
     location: string | null;
-    idempotency_key: string;
 }>({
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
     starts_at: null,
     format: props.query.format,
-    client_timezone: props.query.displayTimezone === props.client.timezone ? null : props.query.displayTimezone,
-    meeting_link_mode: props.query.format === 'online' ? 'manual' : null,
     party_size: 1,
     location: null,
-    idempotency_key: globalThis.crypto?.randomUUID?.() ?? `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 });
-
-function newIdempotencyKey(): string {
-    return globalThis.crypto?.randomUUID?.() ?? `booking-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
 
 const acknowledgedBookingId = ref<number | null>(null);
 
@@ -100,7 +84,6 @@ watch(
         acknowledgedBookingId.value = bookingId;
         selectedStart.value = null;
         bookingForm.starts_at = null;
-        bookingForm.idempotency_key = newIdempotencyKey();
     },
     { immediate: true },
 );
@@ -111,15 +94,21 @@ const selectedService = computed(() =>
 const formatOptions = computed<VisitFormat[]>(() =>
     selectedService.value?.formats ?? ['office', 'home', 'online'],
 );
+const bookingFormErrors = computed(() => bookingForm.errors as Record<string, string | undefined>);
 const bookingError = computed(() =>
-    bookingForm.errors.starts_at
-    ?? (bookingForm.errors as Record<string, string | undefined>).assignment,
+    bookingFormErrors.value.starts_at
+    ?? bookingFormErrors.value.startsAt
+    ?? bookingFormErrors.value.assignment
+    ?? bookingFormErrors.value.service_id
+    ?? bookingFormErrors.value.format
+    ?? bookingFormErrors.value.party_size
+    ?? bookingFormErrors.value.location,
 );
 
 const formatLabels: Record<VisitFormat, string> = {
-    office: 'Office',
-    home: 'Home visit',
-    online: 'Online',
+    office: 'В клинике',
+    home: 'Выезд на дом',
+    online: 'Онлайн',
 };
 
 function selectSlot(slot: AvailabilitySlot): void {
@@ -135,27 +124,25 @@ function submitBooking(): void {
     bookingForm.service_id = props.query.serviceId;
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
-    bookingForm.client_timezone = props.query.displayTimezone === props.client.timezone ? null : props.query.displayTimezone;
-    bookingForm.meeting_link_mode = props.query.format === 'online' ? bookingForm.meeting_link_mode ?? 'manual' : null;
     bookingForm.starts_at = selectedStart.value;
     bookingForm.post(props.urls.store, { preserveScroll: true });
 }
 </script>
 
 <template>
-  <Head title="Book a visit" />
+  <Head title="Запись" />
   <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Client booking
+            Запись
           </p>
           <h1 class="portal-heading portal-heading--page">
-            Find a suitable time
+            Выберите удобное время
           </h1>
           <p class="portal-lede">
-            Choose an eligible service and specialist. Times are shown in your selected timezone.
+            Выберите услугу, специалиста, формат и время.
           </p>
         </div>
       </header>
@@ -165,12 +152,7 @@ function submitBooking(): void {
         class="portal-notice"
         role="status"
       >
-        <span v-if="props.bookingResult.status === 'pending_review'">
-          Your home-visit request was sent for CRM review. The time is not reserved until it is approved.
-        </span>
-        <span v-else>
-          Your booking request was created. The selected time is protected while the booking is active.
-        </span>
+        {{ props.bookingResult.message }}
       </p>
 
       <form
@@ -182,7 +164,7 @@ function submitBooking(): void {
           <label
             for="booking-service"
             class="portal-label"
-          >Service</label>
+          >Услуга</label>
           <select
             id="booking-service"
             name="service_id"
@@ -194,7 +176,7 @@ function submitBooking(): void {
               value=""
               disabled
             >
-              Select a service
+              Выберите услугу
             </option>
             <option
               v-for="service in props.services"
@@ -207,29 +189,6 @@ function submitBooking(): void {
         </div>
 
         <div
-          v-if="props.query.format === 'online'"
-          class="portal-field"
-        >
-          <label
-            for="booking-meeting-mode"
-            class="portal-label"
-          >Meeting link mode</label>
-          <select
-            id="booking-meeting-mode"
-            v-model="bookingForm.meeting_link_mode"
-            name="meeting_link_mode"
-            class="portal-input"
-          >
-            <option value="manual">
-              Staff provides a link
-            </option>
-            <option value="auto">
-              Automatic later
-            </option>
-          </select>
-        </div>
-
-        <div
           v-if="props.query.format === 'home'"
           class="portal-grid portal-grid--two"
         >
@@ -237,7 +196,7 @@ function submitBooking(): void {
             <label
               for="booking-party-size"
               class="portal-label"
-            >Party size</label>
+            >Количество человек</label>
             <input
               id="booking-party-size"
               v-model.number="bookingForm.party_size"
@@ -253,7 +212,7 @@ function submitBooking(): void {
             <label
               for="booking-location"
               class="portal-label"
-            >Visit destination</label>
+            >Адрес</label>
             <input
               id="booking-location"
               v-model="bookingForm.location"
@@ -270,7 +229,7 @@ function submitBooking(): void {
           <label
             for="booking-specialist"
             class="portal-label"
-          >Specialist</label>
+          >Специалист</label>
           <select
             id="booking-specialist"
             name="specialist_id"
@@ -283,7 +242,7 @@ function submitBooking(): void {
               value=""
               disabled
             >
-              Select a specialist
+              Выберите специалиста
             </option>
             <option
               v-for="specialist in props.specialists"
@@ -297,7 +256,7 @@ function submitBooking(): void {
             v-if="props.query.serviceId && props.specialists.length === 0"
             class="portal-copy portal-copy--small"
           >
-            No active specialist is currently assigned to this service.
+            Для этой услуги сейчас нет доступного специалиста.
           </p>
         </div>
 
@@ -306,7 +265,7 @@ function submitBooking(): void {
             <label
               for="booking-date-from"
               class="portal-label"
-            >From</label>
+            >С даты</label>
             <input
               id="booking-date-from"
               name="date_from"
@@ -320,7 +279,7 @@ function submitBooking(): void {
             <label
               for="booking-date-to"
               class="portal-label"
-            >To</label>
+            >По дату</label>
             <input
               id="booking-date-to"
               name="date_to"
@@ -336,7 +295,7 @@ function submitBooking(): void {
           <label
             for="booking-format"
             class="portal-label"
-          >Visit format</label>
+          >Формат</label>
           <select
             id="booking-format"
             name="format"
@@ -354,34 +313,11 @@ function submitBooking(): void {
           </select>
         </div>
 
-        <div class="portal-field">
-          <label
-            for="booking-timezone"
-            class="portal-label"
-          >Display timezone</label>
-          <input
-            id="booking-timezone"
-            name="display_timezone"
-            type="text"
-            required
-            maxlength="64"
-            class="portal-input"
-            :value="props.query.displayTimezone"
-            aria-describedby="booking-timezone-help"
-          >
-          <p
-            id="booking-timezone-help"
-            class="portal-copy portal-copy--small"
-          >
-            Your profile timezone is {{ props.client.timezone }}. You can override it with an IANA timezone such as Europe/Berlin.
-          </p>
-        </div>
-
         <button
           type="submit"
           class="portal-button portal-button--primary self-start"
         >
-          Find available times
+          Показать свободное время
         </button>
       </form>
 
@@ -395,11 +331,8 @@ function submitBooking(): void {
             id="booking-times-heading"
             class="portal-heading portal-heading--section"
           >
-            Available times
+            Свободное время
           </h2>
-          <p class="portal-copy portal-copy--small">
-            {{ props.availability.displayTimezone }} · specialist schedule {{ props.availability.scheduleTimezone }}
-          </p>
         </div>
 
         <p
@@ -407,13 +340,13 @@ function submitBooking(): void {
           class="portal-notice"
           role="status"
         >
-          No times are currently available for this selection.
+          Для выбранных параметров свободного времени пока нет.
         </p>
 
         <div
           v-else
           class="portal-grid portal-grid--cards"
-          aria-label="Available appointment times"
+          aria-label="Свободное время для записи"
         >
           <button
             v-for="slot in props.availability.slots"
@@ -430,7 +363,7 @@ function submitBooking(): void {
               />
             </span>
             <span class="portal-card__summary">
-              Ends
+              До
               <PortalDateTime
                 :value="slot.endsAt"
                 :time-zone="props.availability.displayTimezone"
@@ -449,7 +382,7 @@ function submitBooking(): void {
           id="booking-confirm-heading"
           class="portal-heading portal-heading--section"
         >
-          Confirm your selection
+          Подтвердите запись
         </h2>
         <p class="portal-copy">
           <PortalDateTime
@@ -462,7 +395,7 @@ function submitBooking(): void {
           v-if="props.query.format === 'home'"
           class="portal-copy portal-copy--small"
         >
-          Home visits are requests for CRM review. This time will not be reserved until approval.
+          Для выезда на дом мы отдельно подтвердим время.
         </p>
         <p
           v-if="bookingError"
@@ -477,7 +410,7 @@ function submitBooking(): void {
           :disabled="bookingForm.processing"
           @click="submitBooking"
         >
-          {{ bookingForm.processing ? 'Submitting…' : props.query.format === 'home' ? 'Request home visit' : 'Create booking' }}
+          {{ bookingForm.processing ? 'Сохраняем…' : props.query.format === 'home' ? 'Отправить заявку' : 'Записаться' }}
         </button>
       </section>
 
@@ -485,13 +418,13 @@ function submitBooking(): void {
         :href="props.urls.services"
         class="portal-button portal-button--secondary self-start"
       >
-        Back to services
+        К услугам
       </Link>
       <Link
         :href="props.urls.bookings"
         class="portal-link self-start"
       >
-        My bookings
+        Мои записи
       </Link>
     </section>
   </main>

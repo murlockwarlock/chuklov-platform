@@ -7,8 +7,6 @@ type Booking = {
     service: { name: string };
     specialist: { displayName: string };
     startsAt: string;
-    localDate: string;
-    localTime: string;
     timezone: string;
     formatLabel: string;
     status: string;
@@ -24,19 +22,19 @@ const props = defineProps<{
 </script>
 
 <template>
-  <Head title="My bookings" />
+  <Head title="Мои записи" />
   <main class="portal-page">
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Client portal
+            Личный кабинет
           </p>
           <h1 class="portal-heading portal-heading--page">
-            My bookings
+            Мои записи
           </h1>
           <p class="portal-lede">
-            Your appointments and requests, shown in your current profile timezone.
+            Ваши записи и заявки.
           </p>
         </div>
       </header>
@@ -49,13 +47,13 @@ const props = defineProps<{
           id="upcoming-heading"
           class="portal-heading portal-heading--section"
         >
-          Upcoming
+          Предстоящие
         </h2>
         <p
           v-if="props.upcoming.length === 0"
           class="portal-empty"
         >
-          You have no upcoming bookings.
+          Предстоящих записей пока нет.
         </p>
         <div
           v-else
@@ -76,7 +74,6 @@ const props = defineProps<{
                 :time-zone="booking.timezone"
               />
             </span>
-            <span class="portal-card__summary">{{ booking.timezone }}</span>
           </Link>
         </div>
       </section>
@@ -89,13 +86,13 @@ const props = defineProps<{
           id="history-heading"
           class="portal-heading portal-heading--section"
         >
-          History
+          История
         </h2>
         <p
           v-if="props.history.length === 0"
           class="portal-empty"
         >
-          Your completed booking history will appear here.
+          Здесь появятся завершённые записи.
         </p>
         <div
           v-else
@@ -110,7 +107,12 @@ const props = defineProps<{
             <span class="portal-kicker">{{ booking.statusLabel }}</span>
             <span class="portal-heading portal-heading--card">{{ booking.service.name }}</span>
             <span class="portal-card__summary">{{ booking.specialist.displayName }} · {{ booking.formatLabel }}</span>
-            <span class="portal-card__summary">{{ booking.localDate }} {{ booking.localTime }} · {{ booking.timezone }}</span>
+            <span class="portal-card__summary">
+              <PortalDateTime
+                :value="booking.startsAt"
+                :time-zone="booking.timezone"
+              />
+            </span>
           </Link>
         </div>
       </section>
@@ -120,13 +122,13 @@ const props = defineProps<{
           :href="props.urls.create"
           class="portal-button portal-button--primary"
         >
-          Book a visit
+          Записаться
         </Link>
         <Link
           :href="props.urls.services"
           class="portal-button portal-button--secondary"
         >
-          Back to services
+          К услугам
         </Link>
       </div>
     </section>

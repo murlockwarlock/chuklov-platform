@@ -21,7 +21,11 @@ class SpecialistServiceAssignmentResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static ?string $navigationLabel = 'Specialist services';
+    protected static ?string $navigationLabel = 'Специалисты и услуги';
+
+    protected static ?string $modelLabel = 'услуга специалиста';
+
+    protected static ?string $pluralModelLabel = 'услуги специалистов';
 
     public static function form(Schema $schema): Schema
     {

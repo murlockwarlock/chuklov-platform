@@ -3,7 +3,9 @@
 namespace App\Modules\Scheduling\Application;
 
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
@@ -78,16 +80,12 @@ final class ListClientBookings
             'localTime' => $localStart->format('H:i'),
             'localEndsAt' => $localEnd->format('H:i'),
             'timezone' => $timezone,
-            'scheduleTimezone' => $booking->schedule_timezone,
-            'format' => $booking->visit_format->value,
             'formatLabel' => $this->formatLabel($booking->visit_format),
-            'status' => $booking->status->value,
             'statusLabel' => $this->statusLabel($booking->status),
-            'paymentStatus' => $booking->payment_status->value,
+            'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status),
             'location' => $booking->location,
             'meetingUrl' => $booking->visit_format === VisitFormat::Online ? $booking->meeting_url : null,
             'partySize' => $booking->party_size,
-            'calendarUid' => $booking->calendar_uid,
             'eventVersion' => $booking->event_version,
             'canCancel' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
             'canReschedule' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
@@ -97,7 +95,7 @@ final class ListClientBookings
         ];
     }
 
-    /** @return list<array{eventType: string, status: string|null, startsAt: string|null, occurredAt: string}> */
+    /** @return list<array{label: string, oldStartsAt: string|null, newStartsAt: string|null, occurredAt: string}> */
     private function safeHistory(Booking $booking): array
     {
         if (! $booking->relationLoaded('events')) {
@@ -107,12 +105,19 @@ final class ListClientBookings
         return array_values($booking->events
             ->sortBy('occurred_at')
             ->map(function (BookingEvent $event): array {
+                $oldValues = $event->old_values;
                 $newValues = $event->new_values;
 
                 return [
-                    'eventType' => $event->event_type->value,
-                    'status' => isset($newValues['status']) && is_string($newValues['status']) ? $newValues['status'] : null,
-                    'startsAt' => isset($newValues['starts_at']) && is_string($newValues['starts_at']) ? $newValues['starts_at'] : null,
+                    'label' => $this->historyLabel($event),
+                    'oldStartsAt' => $event->event_type === BookingEventType::Rescheduled
+                        && isset($oldValues['starts_at']) && is_string($oldValues['starts_at'])
+                        ? $oldValues['starts_at']
+                        : null,
+                    'newStartsAt' => $event->event_type === BookingEventType::Rescheduled
+                        && isset($newValues['starts_at']) && is_string($newValues['starts_at'])
+                        ? $newValues['starts_at']
+                        : null,
                     'occurredAt' => $event->occurred_at->toIso8601String(),
                 ];
             })->all());
@@ -121,22 +126,62 @@ final class ListClientBookings
     private function formatLabel(VisitFormat $format): string
     {
         return match ($format) {
-            VisitFormat::Office => 'Office',
-            VisitFormat::HomeVisit => 'Home visit',
-            VisitFormat::Online => 'Online',
+            VisitFormat::Office => 'В клинике',
+            VisitFormat::HomeVisit => 'Выезд на дом',
+            VisitFormat::Online => 'Онлайн',
         };
     }
 
     private function statusLabel(BookingStatus $status): string
     {
         return match ($status) {
-            BookingStatus::Requested => 'Requested',
-            BookingStatus::PendingReview => 'Awaiting review',
-            BookingStatus::Confirmed => 'Confirmed',
-            BookingStatus::Rejected => 'Request declined',
-            BookingStatus::Cancelled => 'Cancelled',
-            BookingStatus::Completed => 'Completed',
-            BookingStatus::NoShow => 'No-show',
+            BookingStatus::Requested => 'Ожидает подтверждения',
+            BookingStatus::PendingReview => 'Заявка отправлена',
+            BookingStatus::Confirmed => 'Подтверждена',
+            BookingStatus::Rejected => 'Заявка отклонена',
+            BookingStatus::Cancelled => 'Отменена',
+            BookingStatus::Completed => 'Завершена',
+            BookingStatus::NoShow => 'Не состоялась',
+        };
+    }
+
+    private function paymentStatusLabel(PaymentStatus $status): string
+    {
+        return match ($status) {
+            PaymentStatus::Unpaid => 'Оплата не внесена',
+            PaymentStatus::Pending => 'Оплата ожидается',
+            PaymentStatus::PartiallyPaid => 'Оплачено частично',
+            PaymentStatus::Paid => 'Оплачено',
+            PaymentStatus::Refunded => 'Оплата возвращена',
+        };
+    }
+
+    private function historyLabel(BookingEvent $event): string
+    {
+        return match ($event->event_type) {
+            BookingEventType::Created => 'Запись создана',
+            BookingEventType::Rescheduled => 'Запись перенесена',
+            BookingEventType::Cancelled => 'Запись отменена',
+            BookingEventType::Completed => 'Визит завершён',
+            BookingEventType::NoShow => 'Неявка отмечена',
+            BookingEventType::MeetingLinkUpdated => 'Ссылка на встречу обновлена',
+            BookingEventType::StatusChanged => $this->statusHistoryLabel($event->new_values['status'] ?? null),
+        };
+    }
+
+    private function statusHistoryLabel(mixed $status): string
+    {
+        $bookingStatus = is_string($status) ? BookingStatus::tryFrom($status) : null;
+
+        return match ($bookingStatus) {
+            BookingStatus::Confirmed => 'Запись подтверждена',
+            BookingStatus::PendingReview => 'Заявка отправлена',
+            BookingStatus::Rejected => 'Заявка отклонена',
+            BookingStatus::Cancelled => 'Запись отменена',
+            BookingStatus::Completed => 'Визит завершён',
+            BookingStatus::NoShow => 'Неявка отмечена',
+            BookingStatus::Requested => 'Запись создана',
+            default => 'Статус записи обновлён',
         };
     }
 }

@@ -35,7 +35,7 @@ class EmailAuthenticationController extends Controller
             $request->session()->flash('email_code_sent', true);
 
             throw ValidationException::withMessages([
-                'code' => 'The verification code is invalid or expired.',
+                'code' => 'Код неверный или уже истёк.',
             ]);
         }
 

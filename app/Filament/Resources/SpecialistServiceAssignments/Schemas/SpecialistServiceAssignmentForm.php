@@ -15,7 +15,7 @@ class SpecialistServiceAssignmentForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Specialist')
+                    ->label('Специалист')
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('display_name')
@@ -24,7 +24,7 @@ class SpecialistServiceAssignmentForm
                     ->searchable()
                     ->required(),
                 Select::make('service_id')
-                    ->label('Service')
+                    ->label('Услуга')
                     ->options(fn (): array => Service::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('name')

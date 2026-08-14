@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type Slot = {
@@ -20,12 +20,9 @@ type Booking = {
     localTime: string;
     localEndsAt: string;
     timezone: string;
-    scheduleTimezone: string;
     formatLabel: string;
-    format: 'office' | 'home' | 'online';
-    status: string;
     statusLabel: string;
-    paymentStatus: string;
+    paymentStatusLabel: string;
     location: string | null;
     meetingUrl: string | null;
     partySize: number;
@@ -34,7 +31,7 @@ type Booking = {
     canReschedule: boolean;
     contactStaff: boolean;
     pendingReview: boolean;
-    history: { eventType: string; status: string | null; startsAt: string | null; occurredAt: string }[];
+    history: { label: string; oldStartsAt: string | null; newStartsAt: string | null; occurredAt: string }[];
 };
 
 const props = defineProps<{
@@ -53,6 +50,41 @@ const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: stri
     expected_event_version: props.booking.eventVersion,
 });
 const timezoneForm = useForm<{ timezone: string }>({ timezone: props.client.timezone });
+const rescheduleError = computed(() => {
+    const errors = rescheduleForm.errors as Record<string, string | undefined>;
+
+    return errors.starts_at
+        ?? errors.startsAt
+        ?? errors.booking
+        ?? errors.expected_event_version;
+});
+const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
+
+const timezoneLabels: Record<string, string> = {
+    UTC: 'Всемирное время',
+    'Asia/Almaty': 'Алматы',
+    'Asia/Aqtau': 'Актау',
+    'Asia/Atyrau': 'Атырау',
+    'Asia/Aqtobe': 'Актобе',
+    'Asia/Tashkent': 'Ташкент',
+    'Asia/Dubai': 'Дубай',
+    'Europe/Moscow': 'Москва',
+    'Europe/Berlin': 'Берлин',
+    'Europe/London': 'Лондон',
+    'America/New_York': 'Нью-Йорк',
+    'America/Los_Angeles': 'Лос-Анджелес',
+};
+
+const timezoneOptions = computed(() => Array.from(new Set([
+    props.client.timezone,
+    'Asia/Almaty',
+    'Europe/Moscow',
+    'Europe/Berlin',
+    'UTC',
+])).map((value) => ({
+    value,
+    label: timezoneLabels[value] ?? 'Текущий часовой пояс',
+})));
 
 watch(
     () => props.booking.eventVersion,
@@ -99,7 +131,7 @@ function saveTimezone(): void {
 </script>
 
 <template>
-  <Head title="Booking details" />
+  <Head title="Детали записи" />
   <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
@@ -124,7 +156,7 @@ function saveTimezone(): void {
           id="booking-time-heading"
           class="portal-heading portal-heading--section"
         >
-          Appointment
+          Дата и время
         </h2>
         <p class="portal-heading portal-heading--card">
           <PortalDateTime
@@ -133,10 +165,10 @@ function saveTimezone(): void {
           />
         </p>
         <p class="portal-copy portal-copy--small">
-          Ends {{ props.booking.localEndsAt }} · {{ props.booking.timezone }}
+          До {{ props.booking.localEndsAt }}
         </p>
         <p class="portal-copy portal-copy--small">
-          Schedule timezone: {{ props.booking.scheduleTimezone }}
+          Оплата: {{ props.booking.paymentStatusLabel }}
         </p>
         <p
           v-if="props.booking.location"
@@ -151,19 +183,19 @@ function saveTimezone(): void {
           target="_blank"
           class="portal-link"
         >
-          Open meeting link
+          Открыть ссылку на встречу
         </a>
         <p
           v-if="props.booking.pendingReview"
           class="portal-notice"
         >
-          This home-visit request is awaiting CRM review and does not reserve the specialist's time yet.
+          Заявка на выезд отправлена. Мы подтвердим время отдельно.
         </p>
         <p
           v-if="props.booking.contactStaff"
           class="portal-notice"
         >
-          Self-service changes are closed inside the configured cutoff. Please contact staff.
+          Перенести запись онлайн уже нельзя. Свяжитесь с нами.
         </p>
       </section>
 
@@ -176,21 +208,18 @@ function saveTimezone(): void {
           id="reschedule-heading"
           class="portal-heading portal-heading--section"
         >
-          Choose another time
+          Перенести запись
         </h2>
-        <p class="portal-copy portal-copy--small">
-          Available times are authoritative and shown in {{ props.availability.displayTimezone }}.
-        </p>
         <p
           v-if="props.availability.slots.length === 0"
           class="portal-notice"
         >
-          No alternative times are currently available.
+          Другого свободного времени пока нет.
         </p>
         <div
           v-else
           class="portal-grid portal-grid--cards"
-          aria-label="Available reschedule times"
+          aria-label="Свободное время для переноса"
         >
           <button
             v-for="slot in props.availability.slots"
@@ -212,8 +241,15 @@ function saveTimezone(): void {
           :disabled="rescheduleForm.processing || selectedSlot === null"
           @click="rescheduleBooking"
         >
-          {{ rescheduleForm.processing ? 'Saving…' : 'Reschedule booking' }}
+          {{ rescheduleForm.processing ? 'Сохраняем…' : 'Перенести запись' }}
         </button>
+        <p
+          v-if="rescheduleError"
+          class="portal-notice portal-notice--error"
+          role="alert"
+        >
+          {{ rescheduleError }}
+        </p>
       </section>
 
       <section
@@ -225,19 +261,23 @@ function saveTimezone(): void {
           id="cancel-heading"
           class="portal-heading portal-heading--section"
         >
-          Cancel
+          Отмена
         </h2>
-        <p class="portal-copy portal-copy--small">
-          Payment status is separate from this booking change.
-        </p>
         <button
           type="button"
           class="portal-button portal-button--secondary self-start"
           :disabled="cancelForm.processing"
           @click="cancelBooking"
         >
-          {{ props.booking.pendingReview ? 'Withdraw request' : 'Cancel booking' }}
+          {{ props.booking.pendingReview ? 'Отозвать заявку' : 'Отменить запись' }}
         </button>
+        <p
+          v-if="cancelError"
+          class="portal-notice portal-notice--error"
+          role="alert"
+        >
+          {{ cancelError }}
+        </p>
       </section>
 
       <section
@@ -248,28 +288,34 @@ function saveTimezone(): void {
           id="timezone-heading"
           class="portal-heading portal-heading--section"
         >
-          Display timezone
+          Часовой пояс
         </h2>
         <p class="portal-copy portal-copy--small">
-          Your profile timezone is {{ props.client.timezone }}. Use an IANA timezone when travelling.
+          Время записи будет показано в выбранном часовом поясе.
         </p>
         <form
           class="portal-cluster"
           @submit.prevent="saveTimezone"
         >
-          <input
+          <select
             v-model="timezoneForm.timezone"
-            type="text"
-            maxlength="64"
             required
             class="portal-input"
           >
+            <option
+              v-for="option in timezoneOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
           <button
             type="submit"
             class="portal-button portal-button--secondary"
             :disabled="timezoneForm.processing"
           >
-            Save timezone
+            Сохранить
           </button>
         </form>
       </section>
@@ -282,15 +328,34 @@ function saveTimezone(): void {
           id="history-heading"
           class="portal-heading portal-heading--section"
         >
-          Booking history
+          История записи
         </h2>
         <ol class="portal-stack portal-stack--tight">
           <li
             v-for="event in props.booking.history"
-            :key="`${event.eventType}-${event.occurredAt}`"
+            :key="`${event.label}-${event.occurredAt}`"
             class="portal-copy portal-copy--small"
           >
-            {{ event.eventType }} · {{ event.status ?? 'updated' }} · {{ event.occurredAt }}
+            <span>{{ event.label }}</span>
+            <span v-if="event.oldStartsAt && event.newStartsAt">
+              — с
+              <PortalDateTime
+                :value="event.oldStartsAt"
+                :time-zone="props.booking.timezone"
+              />
+              на
+              <PortalDateTime
+                :value="event.newStartsAt"
+                :time-zone="props.booking.timezone"
+              />
+            </span>
+            <span v-else>
+              ·
+              <PortalDateTime
+                :value="event.occurredAt"
+                :time-zone="props.booking.timezone"
+              />
+            </span>
           </li>
         </ol>
       </section>
@@ -300,13 +365,13 @@ function saveTimezone(): void {
           :href="props.urls.index"
           class="portal-button portal-button--secondary"
         >
-          Back to my bookings
+          К моим записям
         </Link>
         <Link
           :href="props.urls.services"
           class="portal-link"
         >
-          Services
+          Услуги
         </Link>
       </div>
     </section>

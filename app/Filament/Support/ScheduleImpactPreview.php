@@ -3,6 +3,8 @@
 namespace App\Filament\Support;
 
 use App\Modules\Scheduling\Application\ScheduleMutationImpact;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use Carbon\CarbonImmutable;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Hidden;
 use Filament\Infolists\Components\TextEntry;
@@ -25,12 +27,12 @@ final class ScheduleImpactPreview
             Hidden::make('schedule_impact_bookings')
                 ->dehydrated(false),
             TextEntry::make('schedule_impact_preview')
-                ->label('Affected future bookings')
+                ->label('Затронутые будущие записи')
                 ->state(fn (Get $get): string => self::formatBookings($get('schedule_impact_bookings')))
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
             Checkbox::make('acknowledge_impact')
-                ->label('Acknowledge the current future-booking impact')
+                ->label('Подтверждаю влияние на будущие записи')
                 ->default(false)
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
@@ -109,13 +111,12 @@ final class ScheduleImpactPreview
 
         return implode("\n", array_map(
             static fn (array $booking): string => sprintf(
-                '#%s · %s · %s · %s · %s · %s',
-                (string) ($booking['id'] ?? ''),
-                (string) ($booking['client'] ?? 'Client'),
-                (string) ($booking['service'] ?? 'Service'),
-                (string) ($booking['specialist'] ?? 'Specialist'),
-                (string) ($booking['local_start'] ?? ''),
-                (string) ($booking['status'] ?? ''),
+                '%s · %s · %s · %s · %s',
+                (string) ($booking['client'] ?? 'Клиент'),
+                (string) ($booking['service'] ?? 'Услуга'),
+                (string) ($booking['specialist'] ?? 'Специалист'),
+                self::dateLabel($booking['local_start'] ?? null),
+                self::statusLabel($booking['status'] ?? null),
             ),
             array_values(array_filter($bookings, static fn (mixed $booking): bool => is_array($booking))),
         ));
@@ -124,5 +125,30 @@ final class ScheduleImpactPreview
     private static function hasBookings(mixed $bookings): bool
     {
         return is_array($bookings) && $bookings !== [];
+    }
+
+    private static function dateLabel(mixed $value): string
+    {
+        if (! is_string($value) || $value === '') {
+            return 'Дата не указана';
+        }
+
+        return CarbonImmutable::parse($value, 'UTC')->format('d.m.Y H:i');
+    }
+
+    private static function statusLabel(mixed $status): string
+    {
+        $status = is_string($status) ? BookingStatus::tryFrom($status) : null;
+
+        return match ($status) {
+            BookingStatus::Requested => 'Ожидает подтверждения',
+            BookingStatus::PendingReview => 'На рассмотрении',
+            BookingStatus::Confirmed => 'Подтверждена',
+            BookingStatus::Rejected => 'Отклонена',
+            BookingStatus::Cancelled => 'Отменена',
+            BookingStatus::Completed => 'Завершена',
+            BookingStatus::NoShow => 'Не состоялась',
+            default => 'Статус не указан',
+        };
     }
 }

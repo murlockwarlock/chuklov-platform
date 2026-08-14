@@ -15,14 +15,14 @@ class UnavailablePeriodsTable
     {
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Specialist')->sortable(),
-                TextColumn::make('starts_at')->label('Starts at')->dateTime()->sortable(),
-                TextColumn::make('ends_at')->label('Ends at')->dateTime()->sortable(),
-                TextColumn::make('reason')->limit(80)->placeholder('—'),
+                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('starts_at')->label('Начало')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('ends_at')->label('Окончание')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('reason')->label('Причина')->limit(80)->placeholder('—'),
             ])
             ->recordActions([
                 Action::make('delete')
-                    ->label('Delete')
+                    ->label('Удалить')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (UnavailablePeriod $record): void {

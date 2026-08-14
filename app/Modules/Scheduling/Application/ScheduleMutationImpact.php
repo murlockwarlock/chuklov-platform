@@ -2,6 +2,9 @@
 
 namespace App\Modules\Scheduling\Application;
 
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use Carbon\CarbonImmutable;
+
 final readonly class ScheduleMutationImpact
 {
     /**
@@ -28,15 +31,39 @@ final readonly class ScheduleMutationImpact
     {
         return implode('; ', array_map(
             static fn (array $booking): string => sprintf(
-                '#%s %s · %s · %s · %s',
-                (string) ($booking['id'] ?? ''),
+                '%s · %s · %s · %s',
                 (string) ($booking['client'] ?? 'Client'),
                 (string) ($booking['service'] ?? 'Service'),
-                (string) ($booking['local_start'] ?? ''),
-                (string) ($booking['status'] ?? ''),
+                self::dateLabel($booking['local_start'] ?? null),
+                self::statusLabel($booking['status'] ?? null),
             ),
             $this->bookings,
         ));
+    }
+
+    private static function dateLabel(mixed $value): string
+    {
+        if (! is_string($value) || $value === '') {
+            return 'дата не указана';
+        }
+
+        return CarbonImmutable::parse($value, 'UTC')->format('d.m.Y H:i');
+    }
+
+    private static function statusLabel(mixed $status): string
+    {
+        $status = is_string($status) ? BookingStatus::tryFrom($status) : null;
+
+        return match ($status) {
+            BookingStatus::Requested => 'ожидает подтверждения',
+            BookingStatus::PendingReview => 'на рассмотрении',
+            BookingStatus::Confirmed => 'подтверждена',
+            BookingStatus::Rejected => 'отклонена',
+            BookingStatus::Cancelled => 'отменена',
+            BookingStatus::Completed => 'завершена',
+            BookingStatus::NoShow => 'не состоялась',
+            default => 'статус не указан',
+        };
     }
 
     /** @return array{count: int, bookingIds: list<int>, digest: string, bookings: list<array<string, mixed>>} */

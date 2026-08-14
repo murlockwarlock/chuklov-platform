@@ -4,7 +4,6 @@ namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
-use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
@@ -23,7 +22,7 @@ class BookingForm
         return $schema
             ->components([
                 Select::make('client_id')
-                    ->label('Client')
+                    ->label('Клиент')
                     ->options(fn (): array => Client::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('full_name')
@@ -32,7 +31,7 @@ class BookingForm
                     ->searchable()
                     ->required(),
                 Select::make('service_id')
-                    ->label('Service')
+                    ->label('Услуга')
                     ->options(fn (): array => Service::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -44,7 +43,7 @@ class BookingForm
                     ->required()
                     ->live(),
                 Select::make('specialist_id')
-                    ->label('Specialist')
+                    ->label('Специалист')
                     ->options(fn (Get $get): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -58,45 +57,29 @@ class BookingForm
                     ->searchable()
                     ->required(),
                 DateTimePicker::make('starts_at')
-                    ->label('Start')
+                    ->label('Дата и время')
                     ->seconds(false)
                     ->required(),
                 Select::make('visit_format')
-                    ->label('Visit format')
+                    ->label('Формат визита')
                     ->options([
-                        VisitFormat::Office->value => 'Office',
-                        VisitFormat::HomeVisit->value => 'Home visit',
-                        VisitFormat::Online->value => 'Online',
+                        VisitFormat::Office->value => 'В клинике',
+                        VisitFormat::HomeVisit->value => 'Выезд на дом',
+                        VisitFormat::Online->value => 'Онлайн',
                     ])
                     ->required()
                     ->live(),
-                TextInput::make('client_timezone')
-                    ->label('Client display timezone')
-                    ->maxLength(64),
-                Select::make('meeting_link_mode')
-                    ->label('Meeting-link mode')
-                    ->options([
-                        MeetingLinkMode::Auto->value => 'Automatic (future provider)',
-                        MeetingLinkMode::Manual->value => 'Manual',
-                    ])
-                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::Online->value)
-                    ->nullable(),
                 TextInput::make('party_size')
-                    ->label('Party size')
+                    ->label('Количество участников')
                     ->integer()
                     ->default(1)
                     ->minValue(1)
                     ->maxValue(20)
                     ->required(),
                 TextInput::make('location')
-                    ->label('Home-visit destination')
+                    ->label('Адрес выезда')
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
-                TextInput::make('idempotency_key')
-                    ->label('Idempotency key')
-                    ->helperText('Use one stable key if the request must be retried.')
-                    ->maxLength(128)
-                    ->required(),
             ]);
     }
 }

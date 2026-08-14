@@ -12,7 +12,9 @@ use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -27,7 +29,11 @@ final class NotificationTemplateResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
 
-    protected static ?string $navigationLabel = 'Notification templates';
+    protected static ?string $navigationLabel = 'Сообщения';
+
+    protected static ?string $modelLabel = 'сообщение';
+
+    protected static ?string $pluralModelLabel = 'сообщения';
 
     public static function form(Schema $schema): Schema
     {
@@ -38,30 +44,34 @@ final class NotificationTemplateResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('template_key')->label('Template key'),
-                TextEntry::make('name'),
-                TextEntry::make('locale'),
-                TextEntry::make('purpose'),
-                TextEntry::make('is_active')->label('Active'),
+                TextEntry::make('name')->label('Сообщение'),
+                TextEntry::make('locale')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                TextEntry::make('purpose')
+                    ->label('Назначение')
+                    ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
+                TextEntry::make('is_active')->label('Включён')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
                 TextEntry::make('version_summary')
-                    ->label('Versions')
+                    ->label('Состояние текста')
                     ->state(fn (NotificationTemplate $record): string => $record->versions
                         ->sortByDesc('version')
-                        ->map(fn ($version): string => 'v'.$version->version.' — '.$version->status->value)
-                        ->implode(', ')),
+                        ->isEmpty() ? 'Текст не добавлен' : 'Текст сохранён'),
                 TextEntry::make('latest_subject')
-                    ->label('Latest subject')
+                    ->label('Тема')
                     ->state(fn (NotificationTemplate $record): ?string => $record->versions->sortByDesc('version')->first()?->subject),
                 TextEntry::make('latest_body')
-                    ->label('Latest body')
+                    ->label('Текст сообщения')
                     ->state(fn (NotificationTemplate $record): ?string => $record->versions->sortByDesc('version')->first()?->body)
                     ->columnSpanFull(),
                 TextEntry::make('latest_variables')
-                    ->label('Latest declared variables')
+                    ->label('Доступные данные')
                     ->state(function (NotificationTemplate $record): string {
                         $latest = $record->versions->sortByDesc('version')->first();
 
-                        return $latest === null ? '' : implode(', ', $latest->variables);
+                        return $latest === null
+                            ? ''
+                            : collect($latest->variables)->map(fn (string $variable): string => ScenarioTemplateVariableCatalog::labels()[$variable] ?? 'Данные')->implode(', ');
                     })
                     ->columnSpanFull(),
             ]);
@@ -114,5 +124,16 @@ final class NotificationTemplateResource extends Resource
             'view' => ViewNotificationTemplate::route('/{record}'),
             'edit' => EditNotificationTemplate::route('/{record}/edit'),
         ];
+    }
+
+    private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
+    {
+        $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
+
+        return match ($purpose) {
+            ScenarioRulePurpose::Service => 'Сервисное сообщение',
+            ScenarioRulePurpose::Transactional => 'Системное сообщение',
+            default => 'Не указано',
+        };
     }
 }

@@ -25,6 +25,22 @@ final class ScenarioTemplateVariableCatalog
         return self::ALLOWED;
     }
 
+    /** @return array<string, string> */
+    public static function labels(): array
+    {
+        return [
+            'client.full_name' => 'Имя клиента',
+            'client.language' => 'Язык клиента',
+            'booking.id' => 'Номер записи',
+            'booking.status' => 'Статус записи',
+            'booking.visit_format' => 'Формат визита',
+            'booking.service_name' => 'Название услуги',
+            'booking.starts_at' => 'Дата и время записи',
+            'booking.ends_at' => 'Окончание записи',
+            'booking.completed_at' => 'Время завершения визита',
+        ];
+    }
+
     /** @return list<string> */
     public static function used(string ...$contents): array
     {

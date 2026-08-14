@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
@@ -28,7 +30,11 @@ final class ScenarioRuleResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBellAlert;
 
-    protected static ?string $navigationLabel = 'Scenario rules';
+    protected static ?string $navigationLabel = 'Правила сообщений';
+
+    protected static ?string $modelLabel = 'правило';
+
+    protected static ?string $pluralModelLabel = 'правила сообщений';
 
     public static function form(Schema $schema): Schema
     {
@@ -39,31 +45,43 @@ final class ScenarioRuleResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('rule_key')->label('Rule key'),
-                TextEntry::make('name'),
-                TextEntry::make('trigger_event')->label('Trigger'),
-                TextEntry::make('is_enabled')->label('Enabled'),
+                TextEntry::make('name')->label('Название'),
+                TextEntry::make('trigger_event')
+                    ->label('Когда')
+                    ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
+                TextEntry::make('is_enabled')->label('Активно')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
                 TextEntry::make('delay_summary')
-                    ->label('Delay')
-                    ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.$record->delay_unit->value),
-                TextEntry::make('purpose'),
-                TextEntry::make('version')->label('Rule version'),
+                    ->label('Через')
+                    ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.self::delayUnitLabel($record->delay_unit)),
+                TextEntry::make('purpose')
+                    ->label('Назначение')
+                    ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 TextEntry::make('template_summary')
-                    ->label('Pinned template')
-                    ->state(fn (ScenarioRule $record): string => $record->templateVersion?->template?->template_key.' / '
-                        .$record->templateVersion?->template?->locale.' / v'.$record->templateVersion?->version),
-                TextEntry::make('conditions')
-                    ->formatStateUsing(fn (mixed $state): string => json_encode($state, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))
+                    ->label('Сообщение')
+                    ->state(function (ScenarioRule $record): string {
+                        $template = $record->templateVersion?->template;
+
+                        if ($template === null) {
+                            return 'Не выбрано';
+                        }
+
+                        return ($template->name ?: 'Не выбрано').' — '.self::localeLabel($template->locale);
+                    }),
+                TextEntry::make('conditions_summary')
+                    ->label('Условие')
+                    ->state(fn (ScenarioRule $record): string => self::conditionsSummary($record->conditions))
                     ->columnSpanFull(),
-                TextEntry::make('recipient_strategy')
-                    ->formatStateUsing(fn (mixed $state): string => json_encode($state, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR))
+                TextEntry::make('recipient_summary')
+                    ->label('Кому')
+                    ->state(fn (ScenarioRule $record): string => self::recipientSummary($record->recipient_strategy))
                     ->columnSpanFull(),
                 TextEntry::make('channel_priority')
-                    ->formatStateUsing(fn (mixed $state): string => implode(' → ', is_array($state) ? $state : []))
+                    ->label('Способ связи')
+                    ->formatStateUsing(fn (mixed $state): string => self::channelSummary($state))
                     ->columnSpanFull(),
-                TextEntry::make('actions_count')->label('Scheduled/executed actions'),
-                TextEntry::make('created_at')->dateTime(),
-                TextEntry::make('updated_at')->dateTime(),
+                TextEntry::make('actions_count')->label('Отправок'),
+                TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
+                TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
             ]);
     }
 
@@ -115,5 +133,108 @@ final class ScenarioRuleResource extends Resource
             'view' => ViewScenarioRule::route('/{record}'),
             'edit' => EditScenarioRule::route('/{record}/edit'),
         ];
+    }
+
+    private static function delayUnitLabel(ScenarioDelayUnit|string $unit): string
+    {
+        $unit = $unit instanceof ScenarioDelayUnit ? $unit : ScenarioDelayUnit::tryFrom($unit);
+
+        return match ($unit) {
+            ScenarioDelayUnit::Minutes => 'мин.',
+            ScenarioDelayUnit::Hours => 'ч.',
+            ScenarioDelayUnit::Days => 'дн.',
+            default => '',
+        };
+    }
+
+    private static function eventLabel(mixed $event): string
+    {
+        $value = $event instanceof BackedEnum ? $event->value : (string) $event;
+
+        return $value === 'booking.completed' ? 'После завершения визита' : 'Событие';
+    }
+
+    private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
+    {
+        $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
+
+        return match ($purpose) {
+            ScenarioRulePurpose::Service => 'Сервисное сообщение',
+            ScenarioRulePurpose::Transactional => 'Системное сообщение',
+            default => 'Не указано',
+        };
+    }
+
+    private static function localeLabel(?string $locale): string
+    {
+        return match ($locale) {
+            'ru' => 'Русский',
+            'en' => 'Английский',
+            default => 'Другой язык',
+        };
+    }
+
+    private static function conditionsSummary(mixed $conditions): string
+    {
+        if (! is_array($conditions) || $conditions === []) {
+            return 'Без дополнительного условия';
+        }
+
+        return collect($conditions)->map(function (mixed $condition): string {
+            if (! is_array($condition)) {
+                return 'Условие';
+            }
+
+            $type = match ($condition['type'] ?? null) {
+                'booking.status' => 'статус записи',
+                'client.language' => 'язык клиента',
+                default => 'условие',
+            };
+            $operator = match ($condition['operator'] ?? null) {
+                'equals' => 'равно',
+                'not_equals' => 'не равно',
+                'in' => 'одно из',
+                'exists' => 'заполнено',
+                default => 'проверяется',
+            };
+
+            return ucfirst($type).' '.$operator.(array_key_exists('value', $condition) ? ' '.self::conditionValue($condition['value']) : '');
+        })->implode('; ');
+    }
+
+    private static function conditionValue(mixed $value): string
+    {
+        $values = is_array($value) ? $value : [$value];
+
+        return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
+            'requested' => 'ожидает подтверждения',
+            'pending_review' => 'на рассмотрении',
+            'confirmed' => 'подтверждена',
+            'completed' => 'завершена',
+            'cancelled' => 'отменена',
+            'ru' => 'русский',
+            'en' => 'английский',
+            default => (string) $item,
+        })->implode(', ');
+    }
+
+    private static function recipientSummary(mixed $strategy): string
+    {
+        $type = is_array($strategy) ? ($strategy['type'] ?? null) : null;
+
+        return match ($type) {
+            'client' => 'Клиент записи',
+            'members' => 'Выбранные сотрудники',
+            'roles' => 'Сотрудники по роли',
+            default => 'Не указано',
+        };
+    }
+
+    private static function channelSummary(mixed $channels): string
+    {
+        return collect(is_array($channels) ? $channels : [])->map(static fn (mixed $channel): string => match ((string) $channel) {
+            'telegram' => 'Telegram',
+            default => 'Другой способ связи',
+        })->implode(' → ');
     }
 }

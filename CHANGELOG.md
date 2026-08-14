@@ -33,6 +33,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ### Changed
 
+- Productized the existing Russian Portal and CRM journeys: removed milestone, runtime, provider, timezone, event-ledger, version, and technical-key leakage; derived booking idempotency server-side; translated statuses, errors, scheduling controls, templates, content, and CRM fields into business language; and kept the underlying security, concurrency, audit, immutable revision, and durable workflow guarantees unchanged.
+
 - Simplified the unauthenticated Portal entry to Russian client-facing login controls and changed the bot `/start` command description to `Запустить приложение`.
 - M5A remediation preserves materialized rule-condition semantics, continues ordered fallback after retry exhaustion, safely recovers stale pre-send work, revalidates active internal membership at delivery, rejects invalid typed conditions, and restores immutable template version editing through Filament.
 - Filament organization resolution is persistent across Livewire updates, preserving server-derived tenant authorization for scenario configuration mutations; unsupported condition types are rejected and explicit suppressed delivery outcomes close actions without fallback.

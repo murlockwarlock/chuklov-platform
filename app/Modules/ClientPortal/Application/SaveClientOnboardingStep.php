@@ -6,6 +6,7 @@ use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
+use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,6 +32,10 @@ class SaveClientOnboardingStep
     ): ClientOnboarding {
         $client = $this->clientContext->client();
         $onboarding = $this->startOnboarding->handle($client);
+
+        if ($stage === ClientOnboardingStage::Contacts) {
+            $confirmedFields = $this->deriveConfirmedFields($client, $attributes, $confirmedFields);
+        }
 
         if ($onboarding->current_stage !== $stage) {
             throw ValidationException::withMessages([
@@ -87,5 +92,26 @@ class SaveClientOnboardingStep
 
             return $onboarding->refresh();
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $confirmedFields
+     * @return list<string>
+     */
+    private function deriveConfirmedFields(Client $client, array $attributes, array $confirmedFields): array
+    {
+        foreach (array_keys($attributes) as $field) {
+            if ($this->hasKnownValue($client->getAttribute($field))) {
+                $confirmedFields[] = $field;
+            }
+        }
+
+        return array_values(array_unique($confirmedFields));
+    }
+
+    private function hasKnownValue(mixed $value): bool
+    {
+        return $value !== null && $value !== '';
     }
 }

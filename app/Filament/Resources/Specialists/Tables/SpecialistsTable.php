@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Specialists\Tables;
 
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Specialists\Application\SetSpecialistActive;
@@ -25,19 +26,24 @@ class SpecialistsTable
     {
         return $table
             ->columns([
-                TextColumn::make('display_name')->label('Full name')->searchable()->sortable(),
-                IconColumn::make('is_active')->boolean()->sortable(),
-                TextColumn::make('timezone')->placeholder('Organization fallback'),
-                TextColumn::make('staffUser.name')->label('Linked staff User')->placeholder('Not linked'),
+                TextColumn::make('display_name')->label('Имя специалиста')->searchable()->sortable(),
+                IconColumn::make('is_active')->label('Доступен')->boolean()->sortable(),
+                TextColumn::make('timezone')
+                    ->label('Часовой пояс')
+                    ->formatStateUsing(fn (?string $state): string => $state === null
+                        ? 'Часовой пояс организации'
+                        : TimezoneOptions::label($state))
+                    ->placeholder('Часовой пояс организации'),
+                TextColumn::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан'),
             ])
             ->filters([
-                TernaryFilter::make('is_active')->label('Active'),
+                TernaryFilter::make('is_active')->label('Доступен'),
             ])
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
                 Action::make('activate')
-                    ->label('Activate')
+                    ->label('Сделать доступным')
                     ->color('success')
                     ->requiresConfirmation()
                     ->visible(fn (Specialist $record): bool => ! $record->is_active)
@@ -48,7 +54,7 @@ class SpecialistsTable
                         app(SetSpecialistActive::class)->handle($actor, $record, true);
                     }),
                 Action::make('deactivate')
-                    ->label('Deactivate')
+                    ->label('Скрыть из записи')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([
@@ -81,7 +87,7 @@ class SpecialistsTable
                         }
                     }),
                 Action::make('linkStaffUser')
-                    ->label('Link staff User')
+                    ->label('Привязать сотрудника CRM')
                     ->schema([
                         Select::make('staff_user_id')
                             ->required()
@@ -103,7 +109,7 @@ class SpecialistsTable
                         );
                     }),
                 Action::make('unlinkStaffUser')
-                    ->label('Unlink staff User')
+                    ->label('Отвязать сотрудника CRM')
                     ->color('warning')
                     ->requiresConfirmation()
                     ->visible(fn (Specialist $record): bool => $record->staff_user_id !== null)

@@ -19,6 +19,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -48,9 +49,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             'specialist_id' => $specialist->getKey(),
             'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             'visit_format' => 'office',
-            'client_timezone' => 'UTC',
             'party_size' => 1,
-            'idempotency_key' => 'crm-booking-retry',
         ];
 
         $component = Livewire::actingAs($admin)
@@ -88,7 +87,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_crm_booking_creation_rejects_a_missing_idempotency_key(): void
+    public function test_crm_booking_creation_generates_idempotency_key_server_side(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
@@ -101,13 +100,14 @@ class MilestoneFourCrmBookingTest extends TestCase
                 'specialist_id' => $specialist->getKey(),
                 'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
                 'visit_format' => 'office',
-                'client_timezone' => 'UTC',
                 'party_size' => 1,
             ])
             ->call('create')
-            ->assertHasFormErrors(['idempotency_key']);
+            ->assertHasNoErrors()
+            ->assertRedirect();
 
-        self::assertSame(0, Booking::query()->count());
+        self::assertSame(1, Booking::query()->count());
+        self::assertSame(1, DB::table('booking_idempotency_keys')->count());
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

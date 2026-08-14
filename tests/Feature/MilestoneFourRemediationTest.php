@@ -56,7 +56,7 @@ class MilestoneFourRemediationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_portal_creation_rejects_a_missing_idempotency_key_at_the_boundary(): void
+    public function test_portal_creation_generates_idempotency_key_at_the_application_boundary(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture(formats: ['office', 'home', 'online']);
 
@@ -66,10 +66,27 @@ class MilestoneFourRemediationTest extends TestCase
                 'specialist_id' => $specialist->getKey(),
                 'starts_at' => '2026-04-06T09:00:00+00:00',
                 'format' => VisitFormat::Office->value,
+                'idempotency_key' => 'client-controlled-key',
+                'client_timezone' => 'America/New_York',
+                'meeting_link_mode' => 'manual',
             ])
-            ->assertSessionHasErrors('idempotency_key');
+            ->assertRedirect();
 
-        self::assertSame(0, Booking::query()->where('organization_id', $organization->getKey())->count());
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-04-06T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+            ])
+            ->assertRedirect();
+
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+        self::assertNotSame(
+            'client-controlled-key',
+            DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->value('idempotency_key'),
+        );
     }
 
     public function test_stale_reschedule_is_rejected_without_mutation_or_history(): void

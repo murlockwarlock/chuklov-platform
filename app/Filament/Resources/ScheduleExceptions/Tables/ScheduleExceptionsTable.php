@@ -6,6 +6,7 @@ use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Scheduling\Application\DeleteScheduleException;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
+use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use Filament\Actions\Action;
 use Filament\Schemas\Schema;
@@ -19,16 +20,22 @@ class ScheduleExceptionsTable
     {
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Specialist')->sortable(),
-                TextColumn::make('exception_date')->label('Date')->date()->sortable(),
-                TextColumn::make('exception_type')->label('Type'),
-                TextColumn::make('start_time')->label('Start')->placeholder('All day'),
-                TextColumn::make('end_time')->label('End')->placeholder('All day'),
-                TextColumn::make('reason')->limit(80)->placeholder('—'),
+                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('exception_date')->label('Дата')->date()->sortable(),
+                TextColumn::make('exception_type')
+                    ->label('Тип')
+                    ->formatStateUsing(fn (ScheduleExceptionType|string $state): string => match ($state instanceof ScheduleExceptionType ? $state : ScheduleExceptionType::tryFrom($state)) {
+                        ScheduleExceptionType::DayOff => 'Выходной день',
+                        ScheduleExceptionType::CustomWindow => 'Дополнительные часы',
+                        default => 'Не указан',
+                    }),
+                TextColumn::make('start_time')->label('Начало')->placeholder('Весь день'),
+                TextColumn::make('end_time')->label('Окончание')->placeholder('Весь день'),
+                TextColumn::make('reason')->label('Причина')->limit(80)->placeholder('—'),
             ])
             ->recordActions([
                 Action::make('delete')
-                    ->label('Delete')
+                    ->label('Удалить')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([

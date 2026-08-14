@@ -19,4 +19,14 @@ class RequestClientEmailCodeRequest extends FormRequest
             'email' => ['required', 'string', 'email', 'max:320'],
         ];
     }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Введите email.',
+            'email.email' => 'Введите корректный email.',
+            'email.max' => 'Email слишком длинный.',
+        ];
+    }
 }

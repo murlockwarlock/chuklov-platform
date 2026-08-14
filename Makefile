@@ -1,7 +1,7 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
 
 setup:
 	test -f .env || cp .env.example .env
@@ -77,6 +77,10 @@ backup:
 
 deploy:
 	@echo "Deployment is intentionally unavailable before Milestone 16." && exit 2
+
+deploy-staging:
+	@test -n "$(REVISION)" || (echo "Usage: make deploy-staging REVISION=<full-sha> [EXPECTED_CURRENT_REVISION=<full-sha>]" >&2; exit 1)
+	scripts/deploy-staging.sh "$(REVISION)" "$(EXPECTED_CURRENT_REVISION)"
 
 rollback:
 	@echo "Rollback is intentionally unavailable before Milestone 16." && exit 2

@@ -129,7 +129,7 @@ test('client portal shell is responsive', async ({ page }) => {
     await expect(page.getByRole('button', { name: 'Войти через тг' })).toBeVisible();
     await expect(page.getByLabel('Email')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Получить код' })).toBeVisible();
-    await expect(page.getByText(/Responsive web|Shared runtime|secure foundation|client portal/i)).toHaveCount(0);
+    await expect(page.getByText(/Responsive web|Shared runtime|secure foundation|client portal|milestone|flow version/i)).toHaveCount(0);
 });
 
 test('Telegram Mini App submits initData automatically without a second login action', async ({ page }) => {
@@ -196,26 +196,24 @@ test('authenticated client can complete the booking journey', async ({ page }) =
         url: 'http://127.0.0.1:8000',
     }]);
 
-    const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&specialist_id=${fixture.specialistId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office&display_timezone=UTC`);
+    const response = await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&specialist_id=${fixture.specialistId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
     expect(response?.status()).toBe(200);
 
-    if (await page.getByRole('heading', { name: 'Find a suitable time' }).count() === 0) {
-        throw new Error(`Booking page did not render at ${page.url()}: ${await page.locator('body').innerText()}`);
-    }
-    await expect(page.getByRole('heading', { name: 'Find a suitable time' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Выберите удобное время' })).toBeVisible();
+    await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
     const firstSlot = page.locator('button[aria-pressed]').first();
     await expect(firstSlot).toBeVisible();
     await firstSlot.click();
-    await page.getByRole('button', { name: 'Create booking' }).click();
+    await page.getByRole('button', { name: 'Записаться' }).click();
 
-    await expect(page.getByRole('status')).toContainText('Your booking request was created.');
+    await expect(page.getByRole('status')).toContainText('Запись создана.');
 
     const secondSlot = page.locator('button[aria-pressed]').first();
     await expect(secondSlot).toBeVisible();
     await secondSlot.click();
-    await page.getByRole('button', { name: 'Create booking' }).click();
-    await expect(page.getByRole('status')).toContainText('Your booking request was created.');
-    await page.getByRole('link', { name: 'My bookings' }).click();
+    await page.getByRole('button', { name: 'Записаться' }).click();
+    await expect(page.getByRole('status')).toContainText('Запись создана.');
+    await page.getByRole('link', { name: 'Мои записи' }).click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(2);
 });
 
@@ -229,32 +227,32 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     }]);
 
     await page.goto('/portal/bookings');
-    await expect(page.getByRole('heading', { name: 'My bookings' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Мои записи' })).toBeVisible();
     await expect(page.getByText(/Playwright Service/).first()).toBeVisible();
 
     await page.getByRole('link', { name: /Playwright Service/ }).first().click();
     await expect(page.getByRole('heading', { name: /Playwright Service/ })).toBeVisible();
-    await expect(page.getByText('UTC').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Часовой пояс' })).toBeVisible();
 
     const alternateSlot = page.locator('button[aria-pressed]').first();
     await expect(alternateSlot).toBeVisible();
     await alternateSlot.click();
-    await page.getByRole('button', { name: 'Reschedule booking' }).click();
-    await expect(page.getByText('Booking history')).toBeVisible();
-    await expect(page.getByText('rescheduled')).toBeVisible();
+    await page.getByRole('button', { name: 'Перенести запись' }).click();
+    await expect(page.getByText('История записи')).toBeVisible();
+    await expect(page.getByText('Запись перенесена')).toBeVisible();
 
-    await page.locator('input[type="text"]').fill('Asia/Almaty');
-    await page.getByRole('button', { name: 'Save timezone' }).click();
-    await expect(page.getByText('Asia/Almaty').first()).toBeVisible();
+    await page.getByRole('combobox').last().selectOption('Asia/Almaty');
+    await page.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(page.getByRole('combobox').last()).toHaveValue('Asia/Almaty');
 
     const secondAlternateSlot = page.locator('button[aria-pressed]').first();
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
-    await page.getByRole('button', { name: 'Reschedule booking' }).click();
-    await expect(page.getByText('Booking history')).toBeVisible();
-    await expect(page.getByText('rescheduled')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Перенести запись' }).click();
+    await expect(page.getByText('История записи')).toBeVisible();
+    await expect(page.getByText('Запись перенесена')).toHaveCount(2);
 
-    await page.getByRole('button', { name: 'Cancel booking' }).click();
-    await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
-    await expect(page.locator('li').filter({ hasText: /^cancelled ·/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Отменить запись' }).click();
+    await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
+    await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();
 });

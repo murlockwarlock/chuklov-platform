@@ -193,13 +193,14 @@ class MilestoneTwoPortalTest extends TestCase
         self::assertSame($organization->id, (int) config('tenancy.default_organization_id'));
     }
 
-    public function test_onboarding_prefills_known_values_and_requires_explicit_confirmation_before_changes(): void
+    public function test_onboarding_prefills_known_values_and_saves_edits_without_confirmation_checkboxes(): void
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Known Client',
             'email' => 'known@example.test',
             'phone' => null,
+            'lead_source' => null,
         ]);
         $identity = ClientChannelIdentity::factory()->forClient($client)->create([
             'external_id' => '100008',
@@ -212,21 +213,13 @@ class MilestoneTwoPortalTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->where('profile.full_name', 'Known Client')
                 ->where('profile.email', 'known@example.test')
-                ->where('missingFields.0', 'phone'));
+                ->where('askLeadSource', true));
 
         $this->post(route('portal.onboarding.update', ['stage' => 'contacts']), [
             'full_name' => 'Changed Without Confirmation',
             'email' => 'known@example.test',
-            'confirmed_fields' => ['email'],
         ])->assertRedirect();
-        self::assertSame('Known Client', $client->refresh()->full_name);
-
-        $this->post(route('portal.onboarding.update', ['stage' => 'contacts']), [
-            'full_name' => 'Corrected Client',
-            'email' => 'known@example.test',
-            'confirmed_fields' => ['full_name', 'email'],
-        ])->assertRedirect(route('portal.onboarding'));
-        self::assertSame('Corrected Client', $client->refresh()->full_name);
+        self::assertSame('Changed Without Confirmation', $client->refresh()->full_name);
         self::assertSame('profile', ClientOnboarding::query()->where('client_id', $client->id)->sole()->current_stage->value);
 
         unset($identity);

@@ -9,6 +9,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRuleConfiguration;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class CreateScenarioRule
 {
@@ -22,6 +23,7 @@ final class CreateScenarioRule
     public function handle(User $actor, array $data): ScenarioRule
     {
         $organization = $this->authorization->authorizeManage($actor);
+        $data['rule_key'] ??= 'rule-'.Str::uuid()->toString();
         $configuration = ScenarioRuleConfiguration::from($data);
         $this->conditions->validate($configuration->conditions);
         $this->assertTemplate($organization->getKey(), $configuration->templateVersionId);

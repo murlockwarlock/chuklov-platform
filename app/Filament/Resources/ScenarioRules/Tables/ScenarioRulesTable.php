@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ScenarioRules\Tables;
 
 use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
+use BackedEnum;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\IconColumn;
@@ -16,17 +17,16 @@ final class ScenarioRulesTable
     {
         return $table
             ->columns([
-                TextColumn::make('rule_key')->label('Rule')->searchable()->sortable(),
-                TextColumn::make('name')->searchable(),
-                TextColumn::make('trigger_event')->label('Trigger')->badge(),
+                TextColumn::make('name')->label('Правило')->searchable()->sortable(),
+                TextColumn::make('trigger_event')
+                    ->label('Когда')
+                    ->badge()
+                    ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
                 TextColumn::make('delay_value')
-                    ->label('Delay')
+                    ->label('Через')
                     ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.self::unit($record->delay_unit)),
-                TextColumn::make('templateVersion.version')->label('Template version')->formatStateUsing(
-                    fn (mixed $state): string => 'v'.(string) $state,
-                ),
-                TextColumn::make('version')->label('Rule version')->sortable(),
-                IconColumn::make('is_enabled')->label('Enabled')->boolean()->sortable(),
+                TextColumn::make('templateVersion.template.name')->label('Сообщение')->placeholder('—'),
+                IconColumn::make('is_enabled')->label('Активно')->boolean()->sortable(),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -37,9 +37,16 @@ final class ScenarioRulesTable
     private static function unit(ScenarioDelayUnit $unit): string
     {
         return match ($unit) {
-            ScenarioDelayUnit::Minutes => 'min',
-            ScenarioDelayUnit::Hours => 'h',
-            ScenarioDelayUnit::Days => 'd',
+            ScenarioDelayUnit::Minutes => 'мин',
+            ScenarioDelayUnit::Hours => 'ч',
+            ScenarioDelayUnit::Days => 'дн.',
         };
+    }
+
+    private static function eventLabel(mixed $event): string
+    {
+        $value = $event instanceof BackedEnum ? $event->value : (string) $event;
+
+        return $value === 'booking.completed' ? 'После визита' : 'Событие';
     }
 }

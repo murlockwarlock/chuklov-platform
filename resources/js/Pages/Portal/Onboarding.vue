@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, reactive } from 'vue';
-import PortalDateTime from '../../Components/PortalDateTime.vue';
 
 type Stage = 'contacts' | 'profile' | 'service' | 'goals';
 
@@ -9,10 +8,7 @@ type Profile = {
     full_name: string | null;
     email: string | null;
     phone: string | null;
-    language: string | null;
-    timezone: string | null;
     lead_source: string | null;
-    referral_code: string | null;
 };
 
 type Service = {
@@ -23,57 +19,42 @@ type Service = {
 
 type LegalDocument = {
     id: number;
-    documentType: string;
     purpose: string;
-    locale: string;
-    version: string;
     content: string;
     isRequired: boolean;
-    publishedAt: string | null;
 };
 
 type OnboardingForm = {
     full_name: string;
     email: string;
     phone: string;
-    language: string;
-    timezone: string;
     lead_source: string;
-    referral_code: string;
-    confirmed_fields: string[];
     consents: { legal_document_id: number; granted: boolean }[];
 };
 
 const props = defineProps<{
-    flowVersion: string;
     currentStage: Stage;
     stages: Stage[];
     profile: Profile;
-    knownFields: string[];
-    missingFields: string[];
     verifiedFields: string[];
     completed: boolean;
-    blockedStages: Stage[];
+    askLeadSource: boolean;
     legalDocuments: LegalDocument[];
     services: Service[];
 }>();
 
 const labels: Record<Stage, string> = {
-    contacts: 'Contacts and attribution',
-    profile: 'Profile',
-    service: 'Service and format',
-    goals: 'Goals and consents',
+    contacts: 'Контакты',
+    profile: 'Профиль',
+    service: 'Услуги',
+    goals: 'Документы',
 };
 
 const form = useForm<OnboardingForm>({
     full_name: props.profile.full_name ?? '',
     email: props.profile.email ?? '',
     phone: props.profile.phone ?? '',
-    language: props.profile.language ?? 'en',
-    timezone: props.profile.timezone ?? 'UTC',
     lead_source: props.profile.lead_source ?? '',
-    referral_code: props.profile.referral_code ?? '',
-    confirmed_fields: [...props.knownFields],
     consents: [],
 });
 
@@ -83,12 +64,22 @@ const consentState = reactive(Object.fromEntries(
 
 const currentStageIndex = computed(() => props.stages.indexOf(props.currentStage));
 
+const documentLabels: Record<string, string> = {
+    privacy: 'Политика конфиденциальности',
+    terms: 'Условия использования',
+    consent: 'Согласие на обработку данных',
+};
+
 function fieldError(field: keyof OnboardingForm): string | undefined {
     return form.errors[field];
 }
 
 function generalError(field: string): string | undefined {
     return (form.errors as Record<string, string | undefined>)[field];
+}
+
+function documentLabel(purpose: string): string {
+    return documentLabels[purpose] ?? 'Документ';
 }
 
 function submitStage(): void {
@@ -99,45 +90,53 @@ function submitStage(): void {
         }));
     }
 
-    form.transform((data) =>
-        props.currentStage === 'contacts'
-            ? data
-            : props.currentStage === 'goals'
-                ? { consents: data.consents }
-                : { confirmed_fields: [] },
-    ).post(`/portal/onboarding/${props.currentStage}`, {
+    form.transform((data) => {
+        if (props.currentStage === 'contacts') {
+            return props.askLeadSource
+                ? {
+                    full_name: data.full_name,
+                    email: data.email,
+                    phone: data.phone,
+                    lead_source: data.lead_source,
+                }
+                : {
+                    full_name: data.full_name,
+                    email: data.email,
+                    phone: data.phone,
+                };
+        }
+
+        return props.currentStage === 'goals' ? { consents: data.consents } : {};
+    }).post(`/portal/onboarding/${props.currentStage}`, {
         preserveScroll: true,
     });
 }
 </script>
 
 <template>
-  <Head title="Client onboarding" />
+  <Head title="Настройка профиля" />
   <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">
         <div class="portal-masthead__copy portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Client portal
+            Личный кабинет
           </p>
           <h1 class="portal-heading portal-heading--page">
-            Onboarding
+            Настройка профиля
           </h1>
-          <p class="portal-copy portal-copy--small">
-            Flow {{ props.flowVersion }}. Known information is shown for confirmation, and later steps stay limited to the current milestone.
-          </p>
         </div>
         <Link
           href="/"
           class="portal-button portal-button--secondary"
         >
-          Back to portal
+          В личный кабинет
         </Link>
       </header>
 
       <ol
         class="portal-stage-list"
-        aria-label="Onboarding progress"
+        aria-label="Этапы настройки профиля"
       >
         <li
           v-for="(stage, index) in props.stages"
@@ -163,7 +162,7 @@ function submitStage(): void {
       >
         <div class="portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
-            Current step
+            Текущий шаг
           </p>
           <h2
             id="stage-heading"
@@ -182,7 +181,7 @@ function submitStage(): void {
             <label
               for="full_name"
               class="portal-label"
-            >Full name</label>
+            >Имя и фамилия</label>
             <input
               id="full_name"
               v-model="form.full_name"
@@ -198,76 +197,80 @@ function submitStage(): void {
             </p>
           </div>
 
-          <div
-            v-for="field in ['email', 'phone', 'language', 'timezone', 'lead_source', 'referral_code']"
-            :key="field"
-            class="portal-field"
-          >
+          <div class="portal-field">
             <label
-              :for="field"
+              for="email"
               class="portal-label"
-            >
-              {{ field.replace('_', ' ') }}
+            >Email
               <span
-                v-if="field === 'email' && props.verifiedFields.includes('email')"
+                v-if="props.verifiedFields.includes('email')"
                 class="portal-muted"
-              >(verified)</span>
-              <span
-                v-else-if="props.missingFields.includes(field)"
-                class="portal-muted"
-              >(optional)</span>
+              >Подтверждён</span>
             </label>
             <input
-              :id="field"
-              v-model="form[field as keyof OnboardingForm]"
-              :type="field === 'email' ? 'email' : 'text'"
-              :disabled="field === 'email' && props.verifiedFields.includes('email')"
-              :autocomplete="field === 'email' ? 'email' : field === 'phone' ? 'tel' : undefined"
+              id="email"
+              v-model="form.email"
+              type="email"
+              autocomplete="email"
+              :disabled="props.verifiedFields.includes('email')"
               class="portal-input"
             >
             <p
-              v-if="fieldError(field as keyof OnboardingForm)"
+              v-if="fieldError('email')"
               class="portal-error"
             >
-              {{ fieldError(field as keyof OnboardingForm) }}
+              {{ fieldError('email') }}
             </p>
-            <label
-              v-if="props.knownFields.includes(field)"
-              class="portal-confirm"
-            >
-              <input
-                v-model="form.confirmed_fields"
-                type="checkbox"
-                :value="field"
-                class="portal-checkbox"
-              >
-              <span>Confirm this known value</span>
-            </label>
           </div>
 
-          <label
-            v-if="props.knownFields.includes('full_name')"
-            class="portal-confirm portal-field--wide"
-          >
+          <div class="portal-field">
+            <label
+              for="phone"
+              class="portal-label"
+            >Телефон</label>
             <input
-              v-model="form.confirmed_fields"
-              type="checkbox"
-              value="full_name"
-              class="portal-checkbox"
+              id="phone"
+              v-model="form.phone"
+              type="tel"
+              autocomplete="tel"
+              class="portal-input"
             >
-            <span>Confirm the known full name, or edit it above before continuing.</span>
-          </label>
+            <p
+              v-if="fieldError('phone')"
+              class="portal-error"
+            >
+              {{ fieldError('phone') }}
+            </p>
+          </div>
+
+          <div
+            v-if="props.askLeadSource"
+            class="portal-field portal-field--wide"
+          >
+            <label
+              for="lead_source"
+              class="portal-label"
+            >Как вы узнали о нас?</label>
+            <input
+              id="lead_source"
+              v-model="form.lead_source"
+              class="portal-input"
+            >
+            <p
+              v-if="fieldError('lead_source')"
+              class="portal-error"
+            >
+              {{ fieldError('lead_source') }}
+            </p>
+          </div>
 
           <div class="portal-form-actions">
-            <p class="portal-copy portal-copy--small">
-              Only current M2 profile fields are collected.
-            </p>
             <button
               type="submit"
               :disabled="form.processing"
               class="portal-button portal-button--primary"
             >
-              {{ form.processing ? 'Saving…' : 'Save and continue' }}
+              {{ form.processing ? 'Сохраняем…' : 'Сохранить и продолжить' }}
             </button>
           </div>
         </form>
@@ -278,7 +281,7 @@ function submitStage(): void {
           @submit.prevent="submitStage"
         >
           <p class="portal-copy">
-            No medical or survey questions are collected in this milestone. Continue to preserve your progress.
+            Профиль готов. Перейдите дальше, чтобы посмотреть доступные услуги.
           </p>
           <p
             v-if="generalError('stage')"
@@ -292,7 +295,7 @@ function submitStage(): void {
             :disabled="form.processing"
             class="portal-button portal-button--primary self-start"
           >
-            {{ form.processing ? 'Saving…' : 'Continue' }}
+            {{ form.processing ? 'Сохраняем…' : 'Продолжить' }}
           </button>
         </form>
 
@@ -301,9 +304,6 @@ function submitStage(): void {
           class="portal-stack"
           @submit.prevent="submitStage"
         >
-          <p class="portal-copy">
-            Published services are shown for orientation. Booking and service-format selection are deferred to the scheduling milestone.
-          </p>
           <div
             v-if="props.services.length"
             class="portal-service-grid"
@@ -325,14 +325,14 @@ function submitStage(): void {
             v-else
             class="portal-empty"
           >
-            No published services are available.
+            Услуги пока не добавлены.
           </p>
           <button
             type="submit"
             :disabled="form.processing"
             class="portal-button portal-button--primary self-start"
           >
-            {{ form.processing ? 'Saving…' : 'Continue' }}
+            {{ form.processing ? 'Сохраняем…' : 'Продолжить' }}
           </button>
         </form>
 
@@ -345,16 +345,13 @@ function submitStage(): void {
             class="portal-notice"
             role="status"
           >
-            Your M2 onboarding is complete. You can return to the portal whenever you need to review your account.
+            Профиль настроен. Теперь можно пользоваться личным кабинетом.
           </div>
           <form
             v-else
             class="portal-stack"
             @submit.prevent="submitStage"
           >
-            <p class="portal-copy">
-              Review the current organization legal documents before completing this foundation flow. Their wording and versions are supplied by configuration.
-            </p>
             <div
               v-if="props.legalDocuments.length"
               class="portal-stack portal-stack--tight"
@@ -365,24 +362,9 @@ function submitStage(): void {
                 class="portal-service-card"
               >
                 <div class="portal-stack portal-stack--tight">
-                  <div>
-                    <h3 class="portal-heading portal-heading--card">
-                      {{ document.purpose }}
-                    </h3>
-                    <p class="portal-copy portal-copy--small">
-                      {{ document.documentType }} · {{ document.version }} · {{ document.locale }}
-                    </p>
-                    <p
-                      v-if="document.publishedAt"
-                      class="portal-copy portal-copy--small"
-                    >
-                      Published
-                      <PortalDateTime
-                        :value="document.publishedAt"
-                        :time-zone="props.profile.timezone ?? 'UTC'"
-                      />
-                    </p>
-                  </div>
+                  <h3 class="portal-heading portal-heading--card">
+                    {{ documentLabel(document.purpose) }}
+                  </h3>
                   <div class="portal-legal-content">
                     {{ document.content }}
                   </div>
@@ -392,7 +374,7 @@ function submitStage(): void {
                       type="checkbox"
                       class="portal-checkbox"
                     >
-                    <span>{{ document.isRequired ? 'I accept this required document.' : 'I accept this document.' }}</span>
+                    <span>{{ document.isRequired ? 'Принимаю обязательный документ.' : 'Принимаю документ.' }}</span>
                   </label>
                 </div>
               </article>
@@ -401,7 +383,7 @@ function submitStage(): void {
               v-else
               class="portal-empty"
             >
-              No legal documents are currently configured for this organization.
+              Документы пока не добавлены.
             </p>
             <p
               v-if="generalError('consents')"
@@ -415,7 +397,7 @@ function submitStage(): void {
               :disabled="form.processing"
               class="portal-button portal-button--primary self-start"
             >
-              {{ form.processing ? 'Saving…' : 'Complete onboarding' }}
+              {{ form.processing ? 'Сохраняем…' : 'Завершить настройку' }}
             </button>
           </form>
         </div>

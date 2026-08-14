@@ -20,4 +20,15 @@ class VerifyClientEmailCodeRequest extends FormRequest
             'code' => ['required', 'string', 'digits:6'],
         ];
     }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'email.required' => 'Введите email.',
+            'email.email' => 'Введите корректный email.',
+            'code.required' => 'Введите код из письма.',
+            'code.digits' => 'Код должен содержать 6 цифр.',
+        ];
+    }
 }

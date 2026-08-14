@@ -28,22 +28,14 @@ const pageTitle = computed(() => props.content[0]?.title ?? props.section);
 
 <template>
   <Head :title="pageTitle" />
-  <main
-    class="portal-page"
-    :data-locale="props.locale"
-  >
+  <main class="portal-page">
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <article
         v-for="(item, index) in props.content"
         :key="`${item.locale}-${item.sortOrder}-${index}`"
         class="portal-panel portal-stack portal-stack--tight"
-        :data-locale="item.locale"
-        :data-sort-order="item.sortOrder"
       >
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ props.locale }}
-          </p>
           <h1
             v-if="index === 0"
             class="portal-heading portal-heading--page"
@@ -71,7 +63,7 @@ const pageTitle = computed(() => props.content[0]?.title ?? props.section);
         href="/"
         class="portal-button portal-button--secondary self-start"
       >
-        Back to portal
+        В личный кабинет
       </Link>
     </section>
   </main>

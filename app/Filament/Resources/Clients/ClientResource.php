@@ -8,6 +8,7 @@ use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\Schemas\ClientForm;
 use App\Filament\Resources\Clients\Tables\ClientsTable;
+use App\Filament\Support\TimezoneOptions;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -25,6 +26,12 @@ class ClientResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
+    protected static ?string $navigationLabel = 'Клиенты';
+
+    protected static ?string $modelLabel = 'клиент';
+
+    protected static ?string $pluralModelLabel = 'клиенты';
+
     protected static ?string $recordTitleAttribute = 'full_name';
 
     public static function form(Schema $schema): Schema
@@ -36,23 +43,27 @@ class ClientResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('full_name')->label('Full name'),
-                TextEntry::make('email')->placeholder('Not provided'),
-                TextEntry::make('phone')->placeholder('Not provided'),
-                TextEntry::make('language'),
-                TextEntry::make('timezone'),
-                TextEntry::make('lead_source')->placeholder('Not provided'),
-                TextEntry::make('referral_code')->placeholder('Not provided'),
-                TextEntry::make('channel_identities_count')->label('Channel identities'),
+                TextEntry::make('full_name')->label('Имя и фамилия'),
+                TextEntry::make('email')->label('Email')->placeholder('Не указан'),
+                TextEntry::make('phone')->label('Телефон')->placeholder('Не указан'),
+                TextEntry::make('language')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                TextEntry::make('timezone')
+                    ->label('Часовой пояс')
+                    ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state)),
+                TextEntry::make('lead_source')->label('Источник обращения')->placeholder('Не указан'),
+                TextEntry::make('referral_code')->label('Код рекомендации')->placeholder('Не указан'),
+                TextEntry::make('channel_identities_count')->label('Способы связи'),
                 TextEntry::make('channel_identity_summary')
-                    ->label('Channel status')
+                    ->label('Статус способов связи')
                     ->state(fn (Client $record): string => $record->channelIdentities
-                        ->map(fn (ClientChannelIdentity $identity): string => $identity->channel.' — '.$identity->verification_status->value)
+                        ->map(fn (ClientChannelIdentity $identity): string => self::channelLabel($identity))
                         ->implode(', '))
-                    ->placeholder('No channel identities'),
+                    ->placeholder('Нет подключённых способов связи'),
                 TextEntry::make('activeBookingRestriction.reason')
-                    ->label('Self-service booking restriction')
-                    ->placeholder('Not blocked'),
+                    ->label('Ограничение самостоятельной записи')
+                    ->placeholder('Ограничений нет'),
             ]);
     }
 
@@ -64,6 +75,22 @@ class ClientResource extends Resource
     public static function getRelations(): array
     {
         return [];
+    }
+
+    private static function channelLabel(ClientChannelIdentity $identity): string
+    {
+        $channel = match ($identity->channel) {
+            'telegram' => 'Telegram',
+            'email' => 'Email',
+            default => 'Другой способ связи',
+        };
+        $status = match ($identity->verification_status->value) {
+            'verified' => 'подтверждён',
+            'revoked' => 'отключён',
+            default => 'не подтверждён',
+        };
+
+        return $channel.' — '.$status;
     }
 
     public static function getEloquentQuery(): Builder

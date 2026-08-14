@@ -8,6 +8,7 @@ use App\Filament\Resources\Specialists\Pages\ListSpecialists;
 use App\Filament\Resources\Specialists\Pages\ViewSpecialist;
 use App\Filament\Resources\Specialists\Schemas\SpecialistForm;
 use App\Filament\Resources\Specialists\Tables\SpecialistsTable;
+use App\Filament\Support\TimezoneOptions;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use BackedEnum;
@@ -24,6 +25,12 @@ class SpecialistResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedIdentification;
 
+    protected static ?string $navigationLabel = 'Специалисты';
+
+    protected static ?string $modelLabel = 'специалист';
+
+    protected static ?string $pluralModelLabel = 'специалисты';
+
     protected static ?string $recordTitleAttribute = 'display_name';
 
     public static function form(Schema $schema): Schema
@@ -35,12 +42,16 @@ class SpecialistResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('display_name')->label('Full name'),
-                TextEntry::make('is_active')->label('Active'),
-                TextEntry::make('timezone')->placeholder('Organization timezone fallback'),
-                TextEntry::make('staffUser.name')->label('Linked staff User')->placeholder('Not linked'),
-                TextEntry::make('created_at')->dateTime(),
-                TextEntry::make('updated_at')->dateTime(),
+                TextEntry::make('display_name')->label('Имя специалиста'),
+                TextEntry::make('is_active')->label('Доступен'),
+                TextEntry::make('timezone')
+                    ->label('Часовой пояс')
+                    ->formatStateUsing(fn (?string $state): string => $state === null
+                        ? 'Часовой пояс организации'
+                        : TimezoneOptions::label($state)),
+                TextEntry::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан'),
+                TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
+                TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
             ]);
     }
 

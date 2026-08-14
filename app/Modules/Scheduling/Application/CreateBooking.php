@@ -81,7 +81,6 @@ class CreateBooking
         }
 
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
-        $idempotencyKey = $this->normalizeIdempotencyKey($idempotencyKey);
         $actorScope = $actor instanceof User ? 'user:'.$actor->getKey() : 'client:'.$actor->getKey();
         $actorType = $actor instanceof User ? 'user' : 'client';
         $requestHash = $this->requestHash(
@@ -94,6 +93,13 @@ class CreateBooking
             meetingLinkMode: $meetingLinkMode,
             partySize: $partySize,
             location: $location,
+        );
+        $idempotencyKey = $this->resolveIdempotencyKey(
+            idempotencyKey: $idempotencyKey,
+            organizationId: $organization->getKey(),
+            actorType: $actorType,
+            actorScope: $actorScope,
+            requestHash: $requestHash,
         );
 
         return DB::transaction(function () use (
@@ -349,9 +355,29 @@ class CreateBooking
         return in_array($sqlState, ['23P01', '40P01'], true);
     }
 
-    private function normalizeIdempotencyKey(?string $idempotencyKey): string
+    private function resolveIdempotencyKey(
+        ?string $idempotencyKey,
+        int $organizationId,
+        string $actorType,
+        string $actorScope,
+        string $requestHash,
+    ): string {
+        if ($idempotencyKey === null) {
+            return hash('sha256', implode('|', [
+                'booking',
+                $organizationId,
+                $actorType,
+                $actorScope,
+                $requestHash,
+            ]));
+        }
+
+        return $this->normalizeIdempotencyKey($idempotencyKey);
+    }
+
+    private function normalizeIdempotencyKey(string $idempotencyKey): string
     {
-        $idempotencyKey = trim((string) $idempotencyKey);
+        $idempotencyKey = trim($idempotencyKey);
 
         if ($idempotencyKey === '' || mb_strlen($idempotencyKey) > 128) {
             throw ValidationException::withMessages(['idempotencyKey' => 'The idempotency key is invalid.']);

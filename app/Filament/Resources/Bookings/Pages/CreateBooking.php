@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
-use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -32,9 +31,6 @@ class CreateBooking extends CreateRecord
         $startsAt = $data['starts_at'] instanceof DateTimeInterface
             ? $data['starts_at']
             : CarbonImmutable::parse((string) $data['starts_at'], $context->organization()->defaultTimezone());
-        $meetingLinkMode = isset($data['meeting_link_mode']) && $data['meeting_link_mode'] !== ''
-            ? MeetingLinkMode::from((string) $data['meeting_link_mode'])
-            : null;
 
         return app(CreateBookingAction::class)->handle(
             actor: $actor,
@@ -43,9 +39,9 @@ class CreateBooking extends CreateRecord
             service: $service,
             startsAt: $startsAt,
             format: VisitFormat::from((string) $data['visit_format']),
-            clientTimezone: isset($data['client_timezone']) ? (string) $data['client_timezone'] : null,
-            meetingLinkMode: $meetingLinkMode,
-            idempotencyKey: (string) $data['idempotency_key'],
+            clientTimezone: null,
+            meetingLinkMode: null,
+            idempotencyKey: null,
             partySize: (int) ($data['party_size'] ?? 1),
             location: isset($data['location']) ? (string) $data['location'] : null,
         );

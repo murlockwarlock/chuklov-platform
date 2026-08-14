@@ -16,26 +16,26 @@ class ServicesTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
-                TextColumn::make('summary')->limit(80),
+                TextColumn::make('name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('summary')->label('Описание')->limit(80),
                 TextColumn::make('catalog_type')
-                    ->label('Type')
+                    ->label('Тип')
                     ->formatStateUsing(fn (CatalogItemType|string|null $state): string => match ($state instanceof CatalogItemType ? $state : CatalogItemType::tryFrom((string) $state)) {
-                        CatalogItemType::PhysicalProduct => 'Physical product',
-                        CatalogItemType::OnlineProduct => 'Online product',
-                        default => 'Service',
+                        CatalogItemType::PhysicalProduct => 'Физический товар',
+                        CatalogItemType::OnlineProduct => 'Онлайн-товар',
+                        default => 'Услуга',
                     }),
-                TextColumn::make('category')->placeholder('—')->sortable(),
-                TextColumn::make('duration_minutes')->label('Duration')->suffix(' min')->sortable(),
+                TextColumn::make('category')->label('Категория')->placeholder('—')->sortable(),
+                TextColumn::make('duration_minutes')->label('Длительность')->suffix(' мин.')->sortable(),
                 TextColumn::make('price_minor')
-                    ->label('Price (minor units)')
+                    ->label('Цена')
                     ->state(fn (Service $record): string => $record->price_minor === null
                         ? '—'
                         : $record->price_minor.' '.($record->price_currency ?? '')),
-                IconColumn::make('is_active')->boolean()->sortable(),
+                IconColumn::make('is_active')->label('Доступна')->boolean()->sortable(),
             ])
             ->filters([
-                TernaryFilter::make('is_active')->label('Active'),
+                TernaryFilter::make('is_active')->label('Доступна для записи'),
             ])
             ->recordActions([
                 EditAction::make(),

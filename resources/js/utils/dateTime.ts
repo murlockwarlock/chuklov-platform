@@ -6,9 +6,9 @@ export type PortalDateTimePreferences = {
 };
 
 export const defaultPortalDateTimePreferences: PortalDateTimePreferences = {
-    locale: 'en-GB',
+    locale: 'ru-RU',
     dateOrder: 'day-month-year',
-    dateSeparator: '-',
+    dateSeparator: '.',
     timeCycle: 'h23',
 };
 

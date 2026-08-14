@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\NotificationTemplates\Tables;
 
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -15,22 +16,38 @@ final class NotificationTemplatesTable
     {
         return $table
             ->columns([
-                TextColumn::make('template_key')->label('Template')->searchable()->sortable(),
-                TextColumn::make('name')->searchable(),
-                TextColumn::make('locale')->sortable(),
-                TextColumn::make('purpose')->badge(),
+                TextColumn::make('name')->label('Сообщение')->searchable()->sortable(),
+                TextColumn::make('locale')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->sortable(),
+                TextColumn::make('purpose')
+                    ->label('Назначение')
+                    ->badge()
+                    ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 TextColumn::make('latest_version')
-                    ->label('Latest version')
+                    ->label('Состояние текста')
                     ->state(function (NotificationTemplate $record): string {
                         $latest = $record->versions->sortByDesc('version')->first();
 
-                        return 'v'.($latest === null ? '—' : $latest->version);
+                        return $latest === null ? 'Нет текста' : 'Текст сохранён';
                     }),
-                IconColumn::make('is_active')->label('Active')->boolean()->sortable(),
+                IconColumn::make('is_active')->label('Включён')->boolean()->sortable(),
             ])
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
             ]);
+    }
+
+    private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
+    {
+        $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
+
+        return match ($purpose) {
+            ScenarioRulePurpose::Service => 'Сервисное',
+            ScenarioRulePurpose::Transactional => 'Системное',
+            default => 'Не указано',
+        };
     }
 }

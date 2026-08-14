@@ -16,21 +16,40 @@ class ContentSectionsTable
     {
         return $table
             ->columns([
-                TextColumn::make('section_key')->label('Section')->searchable()->sortable(),
-                TextColumn::make('locale')->sortable(),
-                TextColumn::make('title')->searchable(),
-                TextColumn::make('sort_order')->label('Order')->sortable(),
-                IconColumn::make('is_visible')->boolean()->sortable(),
+                TextColumn::make('section_key')
+                    ->label('Раздел')
+                    ->formatStateUsing(fn (string $state): string => self::sectionLabel($state))
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('locale')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->sortable(),
+                TextColumn::make('title')->label('Название')->searchable(),
+                TextColumn::make('sort_order')->label('Порядок показа')->sortable(),
+                IconColumn::make('is_visible')->label('Показывать')->boolean()->sortable(),
                 TextColumn::make('media')
-                    ->label('Media')
-                    ->state(fn (ContentSection $record): string => $record->media === null ? '—' : 'Configured'),
+                    ->label('Изображение')
+                    ->state(fn (ContentSection $record): string => $record->media === null ? '—' : 'Добавлено'),
             ])
             ->filters([
-                TernaryFilter::make('is_visible')->label('Visible'),
+                TernaryFilter::make('is_visible')->label('Показывать'),
             ])
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),
             ]);
+    }
+
+    private static function sectionLabel(string $section): string
+    {
+        return match ($section) {
+            'author' => 'Об академии',
+            'method' => 'Методика',
+            'b2b' => 'Для бизнеса',
+            'partner' => 'Партнёрам',
+            'hidden' => 'Скрытый раздел',
+            default => 'Раздел',
+        };
     }
 }
