@@ -10,8 +10,9 @@
 - Starting code revision: `694d98c9d0392ba50dfd70bc088a5918b18f0a6f`.
 - Rebuilt the client booking surface around the approved CHUKLOV reference: focused service rows, meaningful specialist/format decisions, calendar plus selected-day time choices, and confirmation summary. One valid specialist is auto-selected; booking availability remains server-authoritative.
 - Removed client-facing date-range controls and multi-day slot dumps. The mobile booking flow hides the persistent bottom navigation while the focused wizard is active so the calendar and CTA remain fully readable; normal Portal destinations retain bottom navigation.
-- Final deployed implementation revision: `bfcd7374a85c79eacee816619d814aefb674fd0b` at `https://crm.psysoldatov.ru`.
-- Verification: `make quality`, `make ci`, full Portal Playwright `14/14`, and real staging desktop/390px/320px authenticated smoke all pass. Live Telegram launch link resolves to `@chuklovtestbot`; an authenticated Telegram-client session was not available for a true in-client Mini App smoke, so no synthetic initData result is reported as live Telegram verification.
+- Follow-up after staging review: a successful booking now renders a dedicated result card instead of leaving the calendar and availability slots underneath the success message; the result retains service, specialist, date/time, and format details, and calendar/time headings have explicit spacing.
+- Final deployed implementation revision: `743a5f5dac3bbd9465aa9408453797d825662345` at `https://crm.psysoldatov.ru`.
+- Verification: `make quality`, `make ci`, full Portal Playwright `14/14`, and real staging booking smoke at desktop/390px/320px pass. After confirmation, the calendar count is zero, availability-slot count is zero, success details are visible, horizontal overflow is false at mobile widths, and browser/page errors are empty. Live Telegram launch link resolves to `@chuklovtestbot`; an authenticated Telegram-client session was not available for a true in-client Mini App smoke, so no synthetic initData result is reported as live Telegram verification.
 - M5B and unrelated milestones remain unstarted.
 
 ## Completed Remediation
