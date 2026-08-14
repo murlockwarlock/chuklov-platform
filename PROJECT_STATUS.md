@@ -1,9 +1,21 @@
 # Project Status
 
-- Last updated: 2026-08-14
+- Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 5A CLOSED / ACCEPTED — Scenario / Notification Engine foundation
 - Status: M5A_CLOSED_ACCEPTED — M5B is not started
+
+## Client Portal booking acceptance remediation — 2026-08-15
+
+- Code remediation started from `996dc6fcb0088d512f7c516eff1e2851c1cae02a`; deployed code revision is `9250376f2d8ae6b87e29286570291c152b803e2e`.
+- Booking and reschedule calendars now request the complete visible month from the server-authoritative availability path. Month navigation reloads that exact range, outside-month cells are distinct/unavailable, and rescheduling does not hide earlier policy-valid future dates in the same month.
+- The 320px multi-specialist/multi-format flow now retains full selected service, specialist, and format context at selection, calendar, confirmation, and success stages without ellipsis or horizontal overflow. The focused worst-case Playwright path covers service, specialist, format, calendar/time, confirmation, and success.
+- Booking query, creation, availability, reschedule, cancellation, conflict, cutoff, stale-version, and timezone failures use a shared RU/EN client error mapping. Focused coverage proves English responses are English and Russian responses remain Russian.
+- A real Telegram bot update no longer processes `/start web_…` twice: the generic Telegram-link handler excludes browser-login tokens. Focused fake-bot coverage asserts a single successful reply; a true authenticated Telegram-client Mini App/session was unavailable, so no real in-client Telegram smoke is claimed.
+- Replaced the legacy orange Massage Academy Portal/favicon assets with the new calm gold CHUKLOV wordmark/rounded mark. Browser, Apple touch, and Filament icons use the new assets.
+- Verification: focused Feature tests `15/15` (150 assertions), local `make quality`, local `make ci`, and full Playwright `24/24` passed. Hosted exact-SHA CI run `31837128566` passed quality/integration, Playwright desktop/mobile, Docker runtime health, and privacy/secret scan for `9250376f2d8ae6b87e29286570291c152b803e2e`.
+- Guarded staging deployment from expected `d24554d01f149c1fd24c2ac7443c75162186a408` succeeded, including validated staging database backup, health, Horizon, scheduler, Telegram runtime, and protected-host baseline checks. Public staging browser smoke at desktop/390px/360px/320px confirms the new logo/icons load, no horizontal overflow, and no page errors. Authenticated staging booking flows were not synthesized; their evidence is local and hosted Playwright.
+- Scope remained the three Portal NO-GO blockers plus the owner-reported Telegram duplicate reply and requested favicon/brand correction. M5B and unrelated milestones remain unstarted.
 
 ## Client Portal booking visual remediation — 2026-08-14
 
