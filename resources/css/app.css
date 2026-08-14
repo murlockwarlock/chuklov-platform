@@ -1853,6 +1853,17 @@ body {
     .portal-booking-summary div:last-child {
         border-bottom: 0;
     }
+
+    .portal-booking-selection-bar__item strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .portal-booking-selection-bar > .portal-link {
+        font-size: 0.72rem;
+        white-space: nowrap;
+    }
 }
 
 @media (max-width: 22.5rem) {
