@@ -366,3 +366,24 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();
 });
+
+test('booking details stay readable at 320px Mini App width', async ({ page }) => {
+    const fixture = createBookingFixture(true);
+
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/bookings');
+    await page.getByRole('link', { name: /Playwright Service/ }).first().click();
+    await expect(page.getByRole('heading', { name: /Playwright Service/ })).toBeVisible();
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await page.getByRole('button', { name: 'Перенести', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Выберите новое время' })).toBeVisible();
+    await expect(page.locator('.portal-calendar-card__weekdays span')).toHaveCount(7);
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
