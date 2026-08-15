@@ -178,7 +178,7 @@ jobs:
       - name: Verify application health
         run: |
           for attempt in $(seq 1 30); do
-            health_status="$(curl --silent --show-error --output /tmp/health-response --write-out '%{http_code}' http://127.0.0.1:8000/health || true)"
+            health_status="$(curl --silent --show-error --header 'Accept: application/json' --output /tmp/health-response --write-out '%{http_code}' http://127.0.0.1:8000/health || true)"
             if [ "$health_status" = "200" ]; then
               exit 0
             fi
