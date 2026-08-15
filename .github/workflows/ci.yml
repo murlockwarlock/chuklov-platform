@@ -185,6 +185,8 @@ jobs:
             sleep 2
           done
           echo 'Health response body:'
+          echo 'Health error markers:'
+          grep -Eio 'tempnam\(\)[^<]*|permission denied|failed to open stream|file_put_contents\([^<]{0,300}|rename\([^<]{0,300}|[A-Za-z_\\]+Exception[^<]{0,200}|500 Internal Server Error' /tmp/health-response | head -40 || true
           head -c 4000 /tmp/health-response 2>/dev/null || true
           tail -c 4000 /tmp/health-response 2>/dev/null || true
           exit 1
