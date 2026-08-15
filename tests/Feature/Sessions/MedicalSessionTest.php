@@ -351,6 +351,16 @@ final class MedicalSessionTest extends TestCase
         ]);
     }
 
+    public function test_create_session_command_rejects_invalid_non_empty_occurred_at(): void
+    {
+        $this->expectException(ValidationException::class);
+        CreateSessionCommand::fromArray([
+            'specialist_id' => 1,
+            'occurred_at' => 'not-a-real-date-zzz-random-garbage-12345',
+            'pain' => 'some pain',
+        ]);
+    }
+
     public function test_create_session_command_accepts_string_and_datetime_occurred_at_inputs(): void
     {
         $fromString = CreateSessionCommand::fromArray([
@@ -602,8 +612,52 @@ final class MedicalSessionTest extends TestCase
         $this->expectException(ValidationException::class);
         UpdateSessionCommand::fromArray([
             'pain' => 'только боль',
-            // tests, observations, root_cause_hypothesis, protocol, result omitted.
         ]);
+    }
+
+    public function test_update_session_command_from_array_rejects_non_string_clinical_value_instead_of_clearing(): void
+    {
+        $this->expectException(ValidationException::class);
+        UpdateSessionCommand::fromArray([
+            'pain' => 42,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+        ]);
+    }
+
+    public function test_update_session_command_from_array_rejects_array_clinical_value_instead_of_clearing(): void
+    {
+        $this->expectException(ValidationException::class);
+        UpdateSessionCommand::fromArray([
+            'pain' => 'настоящая боль',
+            'tests' => ['unexpected', 'array'],
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+        ]);
+    }
+
+    public function test_update_session_command_from_array_accepts_explicit_null_clears(): void
+    {
+        $command = UpdateSessionCommand::fromArray([
+            'pain' => null,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+        ]);
+
+        self::assertNull($command->pain);
+        self::assertNull($command->tests);
+        self::assertNull($command->observations);
+        self::assertNull($command->rootCauseHypothesis);
+        self::assertNull($command->protocol);
+        self::assertNull($command->result);
     }
 
     public function test_update_session_preserves_structural_ownership_and_occurred_at_immutability(): void

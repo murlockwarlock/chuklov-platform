@@ -43,16 +43,16 @@ final readonly class UpdateSessionCommand
         }
 
         return new self(
-            pain: self::normalizeOptionalValue($data['pain']),
-            tests: self::normalizeOptionalValue($data['tests']),
-            observations: self::normalizeOptionalValue($data['observations']),
-            rootCauseHypothesis: self::normalizeOptionalValue($data['root_cause_hypothesis']),
-            protocol: self::normalizeOptionalValue($data['protocol']),
-            result: self::normalizeOptionalValue($data['result']),
+            pain: self::normalizeOptionalValue($data['pain'], 'pain'),
+            tests: self::normalizeOptionalValue($data['tests'], 'tests'),
+            observations: self::normalizeOptionalValue($data['observations'], 'observations'),
+            rootCauseHypothesis: self::normalizeOptionalValue($data['root_cause_hypothesis'], 'root_cause_hypothesis'),
+            protocol: self::normalizeOptionalValue($data['protocol'], 'protocol'),
+            result: self::normalizeOptionalValue($data['result'], 'result'),
         );
     }
 
-    private static function normalizeOptionalValue(mixed $value): ?string
+    private static function normalizeOptionalValue(mixed $value, string $field): ?string
     {
         if ($value === null) {
             return null;
@@ -62,6 +62,8 @@ final readonly class UpdateSessionCommand
             return trim($value);
         }
 
-        return null;
+        throw ValidationException::withMessages([
+            $field => 'The "'.$field.'" field must be a string or null.',
+        ]);
     }
 }

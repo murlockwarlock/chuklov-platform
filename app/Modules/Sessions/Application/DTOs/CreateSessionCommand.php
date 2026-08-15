@@ -2,6 +2,7 @@
 
 namespace App\Modules\Sessions\Application\DTOs;
 
+use Carbon\Exceptions\InvalidFormatException;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
@@ -29,7 +30,7 @@ final readonly class CreateSessionCommand
         $rawOccurredAt = $data['occurred_at'] ?? null;
         $occurredAt = match (true) {
             $rawOccurredAt instanceof DateTimeInterface => Carbon::instance($rawOccurredAt)->utc()->toDateTimeImmutable(),
-            is_string($rawOccurredAt) && $rawOccurredAt !== '' => Carbon::parse($rawOccurredAt)->utc()->toDateTimeImmutable(),
+            is_string($rawOccurredAt) && $rawOccurredAt !== '' => self::parseOccurredAt($rawOccurredAt),
             default => throw ValidationException::withMessages([
                 'occurred_at' => 'The "occurred_at" field is required and must be a valid date or date-time value.',
             ]),
@@ -51,6 +52,17 @@ final readonly class CreateSessionCommand
     public function occurredAtUtc(): DateTimeImmutable
     {
         return Carbon::instance($this->occurredAt)->utc()->toDateTimeImmutable();
+    }
+
+    private static function parseOccurredAt(string $rawOccurredAt): DateTimeImmutable
+    {
+        try {
+            return Carbon::parse($rawOccurredAt)->utc()->toDateTimeImmutable();
+        } catch (InvalidFormatException) {
+            throw ValidationException::withMessages([
+                'occurred_at' => 'The "occurred_at" field must be a valid date or date-time value.',
+            ]);
+        }
     }
 
     /** @param  array<string, mixed>  $data */
