@@ -4,6 +4,17 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- M7B.1 — Durable Medical Session Foundation (implementation candidate):
+  - Added `medical_sessions` PostgreSQL table with composite-tenant identity `(organization_id, id)` and composite foreign keys to `clients`, `specialists`, and an optional nullable composite foreign key to `bookings`, mirroring the M7A `medical_profiles` and M4 `bookings` patterns. `specialist_id` is NOT NULL (responsible practitioner); `booking_id` is nullable (optional origin reference). Added justified index `(organization_id, client_id, occurred_at, id)` for future chronological client history.
+  - Session-specific Class C clinical columns (`pain`, `tests`, `observations`, `root_cause_hypothesis`, `protocol`, `result`) are encrypted at rest via the existing dedicated `MedicalEncryptorInterface` / `MedicalKeyResolverInterface` primitives (`encryptField` / `decryptField`), reusing ADR-017's key/version boundary independently of `APP_KEY`. No anamnesis column is added to `medical_sessions` — longitudinal anamnesis remains owned by M7A `medical_profiles`.
+  - Added `Sessions` module under `app/Modules/Sessions/{Application,Domain}` with `MedicalSession` Eloquent model, `EncryptedSessionPayload` value object, `MedicalSessionAuthorization`, `CreateSession`, `GetSession`, `UpdateSession` Application actions, and `MedicalSessionData`, `CreateSessionCommand`, `UpdateSessionCommand` DTOs. No Filament UI, no list/history projection, no delete action, no AI schema.
+  - Registered `medical.session.created` and `medical.session.updated` audit actions in `RecordAuditEvent::ALLOWED_METADATA_KEYS` with allowlist metadata only (source, key_version, booking_id, client_id, specialist_id / updated_fields); no clinical plaintext is recorded.
+  - Extended `RedactSensitiveLogData::SENSITIVE_KEY_PATTERN` narrowly with `pain`, `observations`, and `root_cause_hypothesis`; deliberately did NOT add broad operational terms (`test`, `result`, `session`, `clinical`, `protocol`). The Application layer never logs clinical plaintext, and the redactor remains a defense-in-depth backstop.
+  - M7B Session Cockpit UI, AI suggestions (M10), Session↔attachment linking, M8+ surveys, RAG, and any client-facing Session UI remain out of scope and unchanged.
+  - M7 remains IN_PROGRESS; M7B and REQ-MEDICAL-001 remain incomplete.
+
+## [Pre-M7B.1]
+
 - Developer workflow remediation — local-light / hosted-heavy verification:
   - AGENTS.md now defines local development feedback (targeted tests, lint, formatting) vs authoritative hosted CI (full `make quality`, integration, Playwright, Docker runtime, privacy/secret scan). Agents must not run heavy verification locally unless the user explicitly requests it.
   - Added `workflow_dispatch` trigger and branch-level concurrency cancellation to `.github/workflows/ci.yml`.

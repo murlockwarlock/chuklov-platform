@@ -3,7 +3,17 @@
 - Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
-- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B Session Cockpit is next and NOT STARTED)
+- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B.1 Session Foundation implementation candidate; M7B Session Cockpit UI / history / AI / attachments-link remain NOT STARTED)
+
+## Milestone 7B.1 — Durable Medical Session Foundation — IMPLEMENTATION CANDIDATE — 2026-08-16
+
+- Implemented the durable backend foundation for specialist-confirmed medical Sessions only. Built the `medical_sessions` PostgreSQL table with composite-tenant identity `(organization_id, id)` and composite foreign keys to `clients` (NOT NULL), `specialists` (NOT NULL), and an optional nullable composite FK to `bookings`. Added a justified index `(organization_id, client_id, occurred_at, id)` for future chronological client history. No partitioning, no status column, no speculative specialist/booking indexes.
+- Reused the existing dedicated medical encryption boundary (`MedicalEncryptorInterface` / `MedicalKeyResolverInterface` from M7A) via the generic `encryptField` / `decryptField` primitives for the six Class C Session clinical fields (`pain`, `tests`, `observations`, `root_cause_hypothesis`, `protocol`, `result`); `encryption_key_version` per row; no Laravel encrypted casts; ciphertext only at rest; no plaintext in audit metadata or logs. `medical_sessions` does NOT add an `anamnesis` column — longitudinal anamnesis remains owned by `medical_profiles`.
+- Added `app/Modules/Sessions/{Application,Domain}` with `MedicalSession` model, `EncryptedSessionPayload` VO, `MedicalSessionAuthorization`, `CreateSession`, `GetSession`, `UpdateSession` actions, and `MedicalSessionData` / `CreateSessionCommand` / `UpdateSessionCommand` DTOs. No `ListSessions`, no delete, no Filament UI, no AI, no M8+ surveys, no attachment linking.
+- Application authorization reuses `OrganizationPermission::ViewClients` / `ManageClients` via `OrganizationContext` / `OrganizationAuthorizer`; structural ownership is additionally enforced by PostgreSQL composite foreign keys. Application actions re-validate that an optional Booking belongs to the session's organization, client, and specialist. Specialist activity is NOT required, allowing safe retroactive/historical recording.
+- Registered `medical.session.created` and `medical.session.updated` audit actions with allowlisted metadata only. Narrowly extended log redaction for `pain`, `observations`, `root_cause_hypothesis`; did NOT broadly redact `test` / `result` / `session` / `protocol` operational terms.
+- Local verification: focused PHPUnit feature tests under `tests/Feature/Sessions/MedicalSessionTest.php` and integration tests under `tests/Integration/MilestoneSevenDatabaseTest.php` pass. Hosted CI remains authoritative for the full suite.
+- Status: M7 remains IN_PROGRESS; M7B Session Cockpit UI is next and NOT STARTED; REQ-MEDICAL-001 remains incomplete; OQ-013 remains OPEN. M7A status is unchanged.
 
 ## CRM Performance & Staging Runtime Remediation — DEPLOYED / HOSTED CI GREEN — 2026-08-15
 

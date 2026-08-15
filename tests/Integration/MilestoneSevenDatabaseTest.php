@@ -11,8 +11,13 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -178,5 +183,80 @@ final class MilestoneSevenDatabaseTest extends TestCase
 
         $this->expectException(QueryException::class);
         $membership->delete();
+    }
+
+    public function test_postgresql_composite_foreign_key_rejects_cross_organization_medical_session_client(): void
+    {
+        $organizationA = Organization::factory()->create();
+        $organizationB = Organization::factory()->create();
+        $clientA = Client::factory()->forOrganization($organizationA)->create();
+        $specialistB = Specialist::factory()->forOrganization($organizationB)->create();
+
+        $session = new MedicalSession;
+        $session->forceFill([
+            'organization_id' => $organizationB->getKey(),
+            'client_id' => $clientA->getKey(),
+            'specialist_id' => $specialistB->getKey(),
+            'pain' => 'encrypted_pain',
+            'encryption_key_version' => 1,
+            'occurred_at' => Carbon::now('UTC'),
+        ]);
+
+        $this->expectException(QueryException::class);
+        $session->save();
+    }
+
+    public function test_postgresql_composite_foreign_key_rejects_cross_organization_medical_session_specialist(): void
+    {
+        $organizationA = Organization::factory()->create();
+        $organizationB = Organization::factory()->create();
+        $clientA = Client::factory()->forOrganization($organizationA)->create();
+        $specialistB = Specialist::factory()->forOrganization($organizationB)->create();
+
+        $session = new MedicalSession;
+        $session->forceFill([
+            'organization_id' => $organizationA->getKey(),
+            'client_id' => $clientA->getKey(),
+            'specialist_id' => $specialistB->getKey(),
+            'pain' => 'encrypted_pain',
+            'encryption_key_version' => 1,
+            'occurred_at' => Carbon::now('UTC'),
+        ]);
+
+        $this->expectException(QueryException::class);
+        $session->save();
+    }
+
+    public function test_postgresql_composite_foreign_key_rejects_cross_organization_medical_session_booking(): void
+    {
+        $organizationA = Organization::factory()->create();
+        $organizationB = Organization::factory()->create();
+        $clientA = Client::factory()->forOrganization($organizationA)->create();
+        $specialistA = Specialist::factory()->forOrganization($organizationA)->create();
+        $serviceA = Service::factory()->forOrganization($organizationA)->create();
+
+        $bookingA = Booking::factory()
+            ->forOrganization($organizationA)
+            ->forClient($clientA)
+            ->forSpecialist($specialistA)
+            ->forService($serviceA)
+            ->create();
+
+        $clientB = Client::factory()->forOrganization($organizationB)->create();
+        $specialistB = Specialist::factory()->forOrganization($organizationB)->create();
+
+        $session = new MedicalSession;
+        $session->forceFill([
+            'organization_id' => $organizationB->getKey(),
+            'client_id' => $clientB->getKey(),
+            'specialist_id' => $specialistB->getKey(),
+            'booking_id' => $bookingA->getKey(),
+            'pain' => 'encrypted_pain',
+            'encryption_key_version' => 1,
+            'occurred_at' => Carbon::now('UTC'),
+        ]);
+
+        $this->expectException(QueryException::class);
+        $session->save();
     }
 }
