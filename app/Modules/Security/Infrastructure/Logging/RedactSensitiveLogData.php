@@ -9,7 +9,11 @@ use Throwable;
 
 class RedactSensitiveLogData implements ProcessorInterface
 {
-    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|pain|root[_-]?cause[_-]?hypothesis|observations|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer/i';
+    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer/i';
+
+    private const SESSION_CLINICAL_KEY_PATTERN = '/^(pain|tests|observations|root_cause_hypothesis|protocol|result)$/i';
+
+    private const SESSION_CLINICAL_MESSAGE_PATTERN = '/(?P<boundary>^|\s|[\[{(])(?P<prefix>medical_session|clinical)\.(?P<field>pain|tests|observations|root_cause_hypothesis|protocol|result)\s*[:=]\s*["\']?(?P<value>[^\r\n}\]"\'\s]+(?:\s[^\r\n}\]"\'\s]+)*?)(?=\s+(?:medical_session|clinical)\.(?:pain|tests|observations|root_cause_hypothesis|protocol|result)\s*[:=]|[\]}),;]|[\s]*$|\s*\z)/iu';
 
     private const AUTHORIZATION_MESSAGE_PATTERN = '/\b(authorization|proxy-authorization)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
 
@@ -37,7 +41,7 @@ class RedactSensitiveLogData implements ProcessorInterface
         foreach ($context as $key => $value) {
             $key = (string) $key;
 
-            if (preg_match(self::SENSITIVE_KEY_PATTERN, $key) === 1) {
+            if ($this->isSensitiveKey($key)) {
                 $redacted[$key] = '[REDACTED]';
 
                 continue;
@@ -56,6 +60,12 @@ class RedactSensitiveLogData implements ProcessorInterface
         return $redacted;
     }
 
+    private function isSensitiveKey(string $key): bool
+    {
+        return preg_match(self::SENSITIVE_KEY_PATTERN, $key) === 1
+            || preg_match(self::SESSION_CLINICAL_KEY_PATTERN, $key) === 1;
+    }
+
     private function redactMessage(string $message): string
     {
         $message = preg_replace_callback(
@@ -67,6 +77,12 @@ class RedactSensitiveLogData implements ProcessorInterface
         $message = preg_replace_callback(
             self::SENSITIVE_MESSAGE_PATTERN,
             static fn (array $matches): string => $matches[1].'=[REDACTED]',
+            $message,
+        ) ?? $message;
+
+        $message = preg_replace_callback(
+            self::SESSION_CLINICAL_MESSAGE_PATTERN,
+            static fn (array $matches): string => $matches['boundary'].$matches['prefix'].'.'.$matches['field'].'=[REDACTED]',
             $message,
         ) ?? $message;
 

@@ -5,11 +5,11 @@ namespace App\Modules\Sessions\Application\DTOs;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 final readonly class CreateSessionCommand
 {
     public function __construct(
-        public int $clientId,
         public int $specialistId,
         public DateTimeInterface $occurredAt,
         public ?int $bookingId = null,
@@ -30,25 +30,44 @@ final readonly class CreateSessionCommand
         $occurredAt = match (true) {
             $rawOccurredAt instanceof DateTimeInterface => Carbon::instance($rawOccurredAt)->utc()->toDateTimeImmutable(),
             is_string($rawOccurredAt) && $rawOccurredAt !== '' => Carbon::parse($rawOccurredAt)->utc()->toDateTimeImmutable(),
-            default => Carbon::now('UTC')->toDateTimeImmutable(),
+            default => throw ValidationException::withMessages([
+                'occurred_at' => 'The "occurred_at" field is required and must be a valid date or date-time value.',
+            ]),
         };
 
         return new self(
-            clientId: isset($data['client_id']) && is_numeric($data['client_id']) ? (int) $data['client_id'] : 0,
             specialistId: isset($data['specialist_id']) && is_numeric($data['specialist_id']) ? (int) $data['specialist_id'] : 0,
             occurredAt: $occurredAt,
             bookingId: isset($data['booking_id']) && is_numeric($data['booking_id']) ? (int) $data['booking_id'] : null,
-            pain: isset($data['pain']) && is_string($data['pain']) ? trim($data['pain']) : null,
-            tests: isset($data['tests']) && is_string($data['tests']) ? trim($data['tests']) : null,
-            observations: isset($data['observations']) && is_string($data['observations']) ? trim($data['observations']) : null,
-            rootCauseHypothesis: isset($data['root_cause_hypothesis']) && is_string($data['root_cause_hypothesis']) ? trim($data['root_cause_hypothesis']) : null,
-            protocol: isset($data['protocol']) && is_string($data['protocol']) ? trim($data['protocol']) : null,
-            result: isset($data['result']) && is_string($data['result']) ? trim($data['result']) : null,
+            pain: self::optionalTrimmedString($data, 'pain'),
+            tests: self::optionalTrimmedString($data, 'tests'),
+            observations: self::optionalTrimmedString($data, 'observations'),
+            rootCauseHypothesis: self::optionalTrimmedString($data, 'root_cause_hypothesis'),
+            protocol: self::optionalTrimmedString($data, 'protocol'),
+            result: self::optionalTrimmedString($data, 'result'),
         );
     }
 
     public function occurredAtUtc(): DateTimeImmutable
     {
         return Carbon::instance($this->occurredAt)->utc()->toDateTimeImmutable();
+    }
+
+    /** @param  array<string, mixed>  $data */
+    private static function optionalTrimmedString(array $data, string $key): ?string
+    {
+        if (! array_key_exists($key, $data)) {
+            return null;
+        }
+
+        if ($data[$key] === null) {
+            return null;
+        }
+
+        if (is_string($data[$key])) {
+            return trim($data[$key]);
+        }
+
+        return null;
     }
 }

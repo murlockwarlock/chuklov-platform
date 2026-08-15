@@ -143,12 +143,6 @@ final readonly class CreateSession
 
     private function validateCommand(CreateSessionCommand $command): void
     {
-        if ($command->clientId <= 0) {
-            throw ValidationException::withMessages([
-                'client_id' => 'A valid client identifier is required.',
-            ]);
-        }
-
         if ($command->specialistId <= 0) {
             throw ValidationException::withMessages([
                 'specialist_id' => 'A valid specialist identifier is required.',

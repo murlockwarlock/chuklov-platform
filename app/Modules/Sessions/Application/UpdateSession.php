@@ -58,6 +58,27 @@ final readonly class UpdateSession
                 ]);
             }
 
+            $previousKeyVersion = (int) $existing->encryption_key_version;
+
+            $existingPain = $this->encryptor->decryptField($orgId, $existing->pain, $previousKeyVersion);
+            $existingTests = $this->encryptor->decryptField($orgId, $existing->tests, $previousKeyVersion);
+            $existingObservations = $this->encryptor->decryptField($orgId, $existing->observations, $previousKeyVersion);
+            $existingRootCauseHypothesis = $this->encryptor->decryptField($orgId, $existing->root_cause_hypothesis, $previousKeyVersion);
+            $existingProtocol = $this->encryptor->decryptField($orgId, $existing->protocol, $previousKeyVersion);
+            $existingResult = $this->encryptor->decryptField($orgId, $existing->result, $previousKeyVersion);
+
+            $updatedFields = $this->diffUpdatedFieldNames(
+                previous: [
+                    'pain' => $existingPain,
+                    'tests' => $existingTests,
+                    'observations' => $existingObservations,
+                    'root_cause_hypothesis' => $existingRootCauseHypothesis,
+                    'protocol' => $existingProtocol,
+                    'result' => $existingResult,
+                ],
+                command: $command,
+            );
+
             $existing->forceFill([
                 'pain' => $encrypted->encryptedPain,
                 'tests' => $encrypted->encryptedTests,
@@ -68,8 +89,6 @@ final readonly class UpdateSession
                 'encryption_key_version' => $keyVersion,
             ]);
             $existing->save();
-
-            $updatedFields = $this->collectUpdatedFieldNames($command);
 
             $this->audit->handle(
                 organization: $organization,
@@ -126,26 +145,30 @@ final readonly class UpdateSession
         }
     }
 
-    /** @return list<string> */
-    private function collectUpdatedFieldNames(UpdateSessionCommand $command): array
+    /**
+     * @param  array<string, string|null>  $previous
+     * @return list<string>
+     */
+    private function diffUpdatedFieldNames(array $previous, UpdateSessionCommand $command): array
     {
         $fields = [];
-        if ($command->pain !== null) {
+
+        if ($previous['pain'] !== $command->pain) {
             $fields[] = 'pain';
         }
-        if ($command->tests !== null) {
+        if ($previous['tests'] !== $command->tests) {
             $fields[] = 'tests';
         }
-        if ($command->observations !== null) {
+        if ($previous['observations'] !== $command->observations) {
             $fields[] = 'observations';
         }
-        if ($command->rootCauseHypothesis !== null) {
+        if ($previous['root_cause_hypothesis'] !== $command->rootCauseHypothesis) {
             $fields[] = 'root_cause_hypothesis';
         }
-        if ($command->protocol !== null) {
+        if ($previous['protocol'] !== $command->protocol) {
             $fields[] = 'protocol';
         }
-        if ($command->result !== null) {
+        if ($previous['result'] !== $command->result) {
             $fields[] = 'result';
         }
 

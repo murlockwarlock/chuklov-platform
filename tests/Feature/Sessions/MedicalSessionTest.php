@@ -41,7 +41,6 @@ final class MedicalSessionTest extends TestCase
         $occurredAt = Carbon::parse('2026-01-15 10:30:00', 'Europe/Moscow');
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: $occurredAt,
             pain: 'Острая боль в пояснице, иррадиирующая в левую ногу.',
@@ -72,11 +71,19 @@ final class MedicalSessionTest extends TestCase
             ->first();
 
         self::assertNotNull($rawRow);
+        // Encryption-at-rest assertions for every clinical field use the exact
+        // plaintext casing so a substring match definitively proves ciphertext.
+        self::assertNotSame('Острая боль в пояснице, иррадиирующая в левую ногу.', (string) $rawRow->pain);
         self::assertStringNotContainsString('пояснице', (string) $rawRow->pain);
+        self::assertNotSame('МРТ пояснично-крестцового отдела, тест на прямую ногу.', (string) $rawRow->tests);
         self::assertStringNotContainsString('МРТ', (string) $rawRow->tests);
+        self::assertNotSame('Сглаженность лордоза, напряжение паравертебральных мышц.', (string) $rawRow->observations);
         self::assertStringNotContainsString('лордоза', (string) $rawRow->observations);
+        self::assertNotSame('Дисфункция крестцово-подвздошного сочленения.', (string) $rawRow->root_cause_hypothesis);
         self::assertStringNotContainsString('крестцово-подвздошного', (string) $rawRow->root_cause_hypothesis);
-        self::assertStringNotContainsString('МАНУАЛЬНАЯ', (string) $rawRow->protocol);
+        self::assertNotSame('Мануальная терапия 5 сеансов, НПВС местно.', (string) $rawRow->protocol);
+        self::assertStringNotContainsString('Мануальная', (string) $rawRow->protocol);
+        self::assertNotSame('Уменьшение болевого синдрома на 70% после первого сеанса.', (string) $rawRow->result);
         self::assertStringNotContainsString('синдром', (string) $rawRow->result);
         self::assertSame(1, (int) $rawRow->encryption_key_version);
 
@@ -93,7 +100,6 @@ final class MedicalSessionTest extends TestCase
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: 'Ambient pain note',
@@ -120,7 +126,6 @@ final class MedicalSessionTest extends TestCase
             ->create();
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             bookingId: (int) $booking->getKey(),
@@ -145,7 +150,6 @@ final class MedicalSessionTest extends TestCase
             ->create();
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             bookingId: (int) $booking->getKey(),
@@ -169,7 +173,6 @@ final class MedicalSessionTest extends TestCase
             ->create();
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             bookingId: (int) $booking->getKey(),
@@ -187,7 +190,6 @@ final class MedicalSessionTest extends TestCase
         app(OrganizationContext::class)->set($orgA);
 
         $command = new CreateSessionCommand(
-            clientId: (int) $clientA->getKey(),
             specialistId: (int) $specialistB->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: 'Попытка использовать чужого специалиста.',
@@ -222,7 +224,14 @@ final class MedicalSessionTest extends TestCase
         app(OrganizationContext::class)->set($orgB);
 
         $this->expectException(AuthorizationException::class);
-        app(UpdateSession::class)->handle($adminB, $session, new UpdateSessionCommand(pain: 'Взлом записи.'));
+        app(UpdateSession::class)->handle($adminB, $session, new UpdateSessionCommand(
+            pain: 'Взлом записи.',
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
+            protocol: null,
+            result: null,
+        ));
     }
 
     public function test_cross_organization_staff_cannot_create_session_for_other_org_client(): void
@@ -233,7 +242,6 @@ final class MedicalSessionTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(CreateSession::class)->handle($adminB, $clientA, new CreateSessionCommand(
-            clientId: (int) $clientA->getKey(),
             specialistId: (int) $specialistA->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: 'Атака по чужому клиенту.',
@@ -245,7 +253,6 @@ final class MedicalSessionTest extends TestCase
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
 
         $command = new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: 'Очень секретная находка: смещение позвонка L4.',
@@ -272,7 +279,12 @@ final class MedicalSessionTest extends TestCase
         self::assertStringNotContainsString('Выздоровление', (string) $metadataJson);
 
         app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($result->id), new UpdateSessionCommand(
+            pain: 'Очень секретная находка: смещение позвонка L4.',
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
             protocol: 'Расширенный протокол: добавлены процедуры.',
+            result: 'Полное выздоровление после терапии.',
         ));
 
         $updateAudit = AuditEvent::query()
@@ -309,7 +321,6 @@ final class MedicalSessionTest extends TestCase
         $occurredAt = Carbon::parse('2026-02-14 18:00:00', 'Asia/Yekaterinburg');
 
         $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: $occurredAt,
             pain: 'Сеанс в Екатеринбурге冬天.',
@@ -321,6 +332,41 @@ final class MedicalSessionTest extends TestCase
         self::assertSame($occurredAt->utc()->toISOString(), $stored->toISOString());
     }
 
+    public function test_create_session_command_rejects_missing_occurred_at(): void
+    {
+        $this->expectException(ValidationException::class);
+        CreateSessionCommand::fromArray([
+            'specialist_id' => 1,
+            'pain' => 'some pain',
+        ]);
+    }
+
+    public function test_create_session_command_rejects_empty_occurred_at(): void
+    {
+        $this->expectException(ValidationException::class);
+        CreateSessionCommand::fromArray([
+            'specialist_id' => 1,
+            'occurred_at' => '',
+            'pain' => 'some pain',
+        ]);
+    }
+
+    public function test_create_session_command_accepts_string_and_datetime_occurred_at_inputs(): void
+    {
+        $fromString = CreateSessionCommand::fromArray([
+            'specialist_id' => 1,
+            'occurred_at' => '2026-03-15 12:00:00',
+            'pain' => 'p',
+        ]);
+        self::assertSame('2026-03-15T12:00:00+00:00', $fromString->occurredAtUtc()->format(\DateTimeInterface::ATOM));
+
+        $fromDateTime = CreateSessionCommand::fromArray([
+            'specialist_id' => 1,
+            'occurred_at' => Carbon::parse('2026-04-15 13:00:00', 'Europe/Moscow'),
+        ]);
+        self::assertSame('2026-04-15T10:00:00+00:00', $fromDateTime->occurredAtUtc()->format(\DateTimeInterface::ATOM));
+    }
+
     public function test_field_length_validation(): void
     {
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
@@ -329,7 +375,6 @@ final class MedicalSessionTest extends TestCase
 
         $this->expectException(ValidationException::class);
         app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: $tooLong,
@@ -343,7 +388,6 @@ final class MedicalSessionTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $inactiveSpecialist->getKey(),
             occurredAt: Carbon::parse('2025-12-01 09:00:00', 'UTC'),
             pain: 'Ретроактивная запись по неактивному специалисту.',
@@ -375,20 +419,68 @@ final class MedicalSessionTest extends TestCase
 
         $redacted = $processor($record);
 
-        // 'session' is already covered by the pre-existing sensitive key pattern
-        // (it was present before M7B.1 for HTTP session privacy), so 'session_id'
-        // and 'medical_session_id' keys are redacted by name here too.
+        // All six Session clinical field context keys must be redacted; no clinical
+        // plaintext may remain. 'session' / 'medical' / 'root_cause_hypothesis'
+        // are covered by the pre-existing general sensitive key pattern or via the
+        // dedicated Session clinical exact-key matcher; 'pain', 'tests',
+        // 'observations', 'protocol', 'result' are covered by the Session clinical
+        // exact-key matcher.
         self::assertSame('[REDACTED]', $redacted->context['session_id']);
         self::assertSame('[REDACTED]', $redacted->context['medical_session_id']);
         self::assertSame('[REDACTED]', $redacted->context['pain']);
         self::assertSame('[REDACTED]', $redacted->context['observations']);
         self::assertSame('[REDACTED]', $redacted->context['root_cause_hypothesis']);
-        // 'tests', 'protocol', 'result' are intentionally NOT added to the sensitive
-        // key pattern (they commonly appear in non-medical operational logs), per
-        // the M7B.1 plan redaction policy and amendment #8.
-        self::assertSame('МРТ 1.5Т без контраста.', $redacted->context['tests']);
-        self::assertSame('Мануальная терапия 5 сеансов.', $redacted->context['protocol']);
-        self::assertSame('Улучшение на 70%.', $redacted->context['result']);
+        self::assertSame('[REDACTED]', $redacted->context['tests']);
+        self::assertSame('[REDACTED]', $redacted->context['protocol']);
+        self::assertSame('[REDACTED]', $redacted->context['result']);
+    }
+
+    public function test_session_clinical_message_text_is_redacted_only_when_labeled(): void
+    {
+        $processor = new RedactSensitiveLogData;
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable,
+            channel: 'testing',
+            level: Level::Info,
+            message: 'medical_session.pain=Секретная находка medical_session.tests: МРТ без контраста medical_session.protocol=Мануальная терапия medical_session.result=Улучшение на 70% medical_session.observations=Сглаженность Лордоза medical_session.root_cause_hypothesis=Дисфункция КПС clinical.pain=Дополнительная находка',
+            context: [],
+        );
+
+        $redacted = $processor($record);
+
+        self::assertSame('medical_session.pain=[REDACTED] medical_session.tests=[REDACTED] medical_session.protocol=[REDACTED] medical_session.result=[REDACTED] medical_session.observations=[REDACTED] medical_session.root_cause_hypothesis=[REDACTED] clinical.pain=[REDACTED]', $redacted->message);
+        self::assertStringNotContainsString('Секретная', $redacted->message);
+        self::assertStringNotContainsString('МРТ', $redacted->message);
+        self::assertStringNotContainsString('Мануальная', $redacted->message);
+        self::assertStringNotContainsString('Улучшение', $redacted->message);
+        self::assertStringNotContainsString('Лордоза', $redacted->message);
+        self::assertStringNotContainsString('Дисфункция', $redacted->message);
+        self::assertStringNotContainsString('Дополнительная', $redacted->message);
+    }
+
+    public function test_unlabeled_operational_test_result_sessions_words_remain_unredacted(): void
+    {
+        $processor = new RedactSensitiveLogData;
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable,
+            channel: 'testing',
+            level: Level::Info,
+            message: 'Running test suite. Result: 42 tests passed. Sessions flushed to storage. Protocol version 2 negotiated. pain: user reported soreness. tests=521 protocol:mqtt result=ok observations logged.',
+            context: [],
+        );
+
+        $redacted = $processor($record);
+
+        self::assertStringContainsString('Running test suite. Result: 42 tests passed.', $redacted->message);
+        self::assertStringContainsString('Sessions flushed to storage.', $redacted->message);
+        self::assertStringContainsString('Protocol version 2 negotiated.', $redacted->message);
+        self::assertStringContainsString('pain: user reported soreness.', $redacted->message);
+        self::assertStringContainsString('tests=521', $redacted->message);
+        self::assertStringContainsString('protocol:mqtt', $redacted->message);
+        self::assertStringContainsString('result=ok', $redacted->message);
+        self::assertStringContainsString('observations logged.', $redacted->message);
     }
 
     public function test_medical_sessions_table_does_not_have_anamnesis_column(): void
@@ -404,27 +496,169 @@ final class MedicalSessionTest extends TestCase
         self::assertContains('result', $columns);
     }
 
-    public function test_update_session_round_trip_preserves_structural_ownership(): void
+    public function test_update_session_with_full_snapshot_preserves_unchanged_fields_and_truthfully_records_audit(): void
     {
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
 
-        $session = $this->createSession($admin, $client, $specialist, pain: 'Первая запись боли.');
-
-        $updated = app(UpdateSession::class)->handle($admin, $session, new UpdateSessionCommand(
-            pain: 'Обновлённая запись боли.',
-            protocol: 'Новый протокол.',
+        $createResult = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-10 09:00:00', 'UTC'),
+            pain: 'Исходная запись боли.',
+            tests: 'Исходные тесты.',
+            observations: 'Исходные наблюдения.',
+            rootCauseHypothesis: 'Исходная гипотеза.',
+            protocol: 'Исходный протокол.',
+            result: 'Исходный результат.',
         ));
 
-        self::assertSame($session->getKey(), $updated->id);
-        self::assertSame((int) $client->getKey(), $updated->clientId);
-        self::assertSame((int) $specialist->getKey(), $updated->specialistId);
-        self::assertSame('Обновлённая запись боли.', $updated->pain);
-        self::assertSame('Новый протокол.', $updated->protocol);
+        // Full snapshot identical to current persisted state should yield no changed fields.
+        app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($createResult->id), new UpdateSessionCommand(
+            pain: 'Исходная запись боли.',
+            tests: 'Исходные тесты.',
+            observations: 'Исходные наблюдения.',
+            rootCauseHypothesis: 'Исходная гипотеза.',
+            protocol: 'Исходный протокол.',
+            result: 'Исходный результат.',
+        ));
 
-        $rawBeforeUpdate = DB::table('medical_sessions')->where('id', $session->getKey())->first();
-        self::assertSame($rawBeforeUpdate->occurred_at, $rawBeforeUpdate->occurred_at); // immutability reference
-        self::assertSame((int) $specialist->getKey(), (int) $rawBeforeUpdate->specialist_id);
-        self::assertSame((int) $client->getKey(), (int) $rawBeforeUpdate->client_id);
+        $noChangeAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('target_type', MedicalSession::class)
+            ->where('action', 'medical.session.updated')
+            ->orderByDesc('id')
+            ->first();
+        self::assertNotNull($noChangeAudit);
+        self::assertSame('', $noChangeAudit->metadata['updated_fields'] ?? null);
+
+        // Full snapshot where only pain actually changes: every other field must be preserved.
+        $updated = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($createResult->id), new UpdateSessionCommand(
+            pain: 'Обновлённая запись боли.',
+            tests: 'Исходные тесты.',
+            observations: 'Исходные наблюдения.',
+            rootCauseHypothesis: 'Исходная гипотеза.',
+            protocol: 'Исходный протокол.',
+            result: 'Исходный результат.',
+        ));
+
+        self::assertSame('Обновлённая запись боли.', $updated->pain);
+        self::assertSame('Исходные тесты.', $updated->tests);
+        self::assertSame('Исходные наблюдения.', $updated->observations);
+        self::assertSame('Исходная гипотеза.', $updated->rootCauseHypothesis);
+        self::assertSame('Исходный протокол.', $updated->protocol);
+        self::assertSame('Исходный результат.', $updated->result);
+
+        $painOnlyAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('target_type', MedicalSession::class)
+            ->where('action', 'medical.session.updated')
+            ->orderByDesc('id')
+            ->first();
+        self::assertNotNull($painOnlyAudit);
+        self::assertSame('pain', $painOnlyAudit->metadata['updated_fields'] ?? null);
+
+        $painAuditJson = json_encode($painOnlyAudit->metadata, JSON_UNESCAPED_UNICODE);
+        self::assertStringNotContainsString('Обновлённая запись боли', (string) $painAuditJson);
+    }
+
+    public function test_update_session_explicit_clear_is_recorded_audit_truthfully(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+
+        $createResult = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-10 09:00:00', 'UTC'),
+            pain: 'Боль до очищения.',
+            tests: 'Тесты до очищения.',
+            observations: 'Наблюдения до очищения.',
+            rootCauseHypothesis: 'Гипотеза до очищения.',
+            protocol: 'Протокол до очищения.',
+            result: 'Результат до очищения.',
+        ));
+
+        $updated = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($createResult->id), new UpdateSessionCommand(
+            pain: null,
+            tests: 'Тесты до очищения.',
+            observations: 'Наблюдения до очищения.',
+            rootCauseHypothesis: 'Гипотеза до очищения.',
+            protocol: 'Протокол до очищения.',
+            result: 'Результат до очищения.',
+        ));
+
+        self::assertNull($updated->pain);
+        self::assertSame('Тесты до очищения.', $updated->tests);
+
+        $clearAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('target_type', MedicalSession::class)
+            ->where('action', 'medical.session.updated')
+            ->orderByDesc('id')
+            ->first();
+        self::assertNotNull($clearAudit);
+        self::assertSame('pain', $clearAudit->metadata['updated_fields'] ?? null);
+    }
+
+    public function test_update_session_command_from_array_rejects_missing_clinical_field_keys(): void
+    {
+        $this->expectException(ValidationException::class);
+        UpdateSessionCommand::fromArray([
+            'pain' => 'только боль',
+            // tests, observations, root_cause_hypothesis, protocol, result omitted.
+        ]);
+    }
+
+    public function test_update_session_preserves_structural_ownership_and_occurred_at_immutability(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+
+        $occurredAt = Carbon::parse('2026-01-10 09:00:00', 'UTC');
+
+        $createResult = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: $occurredAt,
+            bookingId: (int) $booking->getKey(),
+            pain: 'Первая запись боли.',
+            tests: 'Тесты.',
+            observations: 'Наблюдения.',
+            rootCauseHypothesis: 'Гипотеза.',
+            protocol: 'Протокол.',
+            result: 'Результат.',
+        ));
+
+        // Capture persisted structural/time values BEFORE the update.
+        $before = DB::table('medical_sessions')->where('id', $createResult->id)->first();
+        self::assertNotNull($before);
+
+        $updated = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($createResult->id), new UpdateSessionCommand(
+            pain: 'Обновлённая запись боли.',
+            tests: 'Тесты.',
+            observations: 'Наблюдения.',
+            rootCauseHypothesis: 'Гипотеза.',
+            protocol: 'Новый протокол.',
+            result: 'Результат.',
+        ));
+
+        $after = DB::table('medical_sessions')->where('id', $createResult->id)->first();
+        self::assertNotNull($after);
+
+        // Structural ownership and occurred_at MUST be immutable under UpdateSession.
+        self::assertSame((int) $before->organization_id, (int) $after->organization_id);
+        self::assertSame((int) $before->client_id, (int) $after->client_id);
+        self::assertSame((int) $before->specialist_id, (int) $after->specialist_id);
+        self::assertSame((int) $before->booking_id, (int) $after->booking_id);
+        self::assertSame($before->occurred_at, $after->occurred_at);
+
+        // And the returned DTO agrees.
+        self::assertSame((int) $before->organization_id, $updated->organizationId);
+        self::assertSame((int) $before->client_id, $updated->clientId);
+        self::assertSame((int) $before->specialist_id, $updated->specialistId);
+        self::assertSame((int) $before->booking_id, $updated->bookingId);
     }
 
     /**
@@ -449,7 +683,6 @@ final class MedicalSessionTest extends TestCase
     private function createSession(User $admin, Client $client, Specialist $specialist, ?string $pain = null): MedicalSession
     {
         $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
-            clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
             pain: $pain ?? 'Запись боли для теста.',

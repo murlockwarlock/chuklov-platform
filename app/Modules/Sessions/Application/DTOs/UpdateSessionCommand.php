@@ -2,15 +2,17 @@
 
 namespace App\Modules\Sessions\Application\DTOs;
 
+use Illuminate\Validation\ValidationException;
+
 final readonly class UpdateSessionCommand
 {
     public function __construct(
-        public ?string $pain = null,
-        public ?string $tests = null,
-        public ?string $observations = null,
-        public ?string $rootCauseHypothesis = null,
-        public ?string $protocol = null,
-        public ?string $result = null,
+        public ?string $pain,
+        public ?string $tests,
+        public ?string $observations,
+        public ?string $rootCauseHypothesis,
+        public ?string $protocol,
+        public ?string $result,
     ) {}
 
     /**
@@ -18,13 +20,48 @@ final readonly class UpdateSessionCommand
      */
     public static function fromArray(array $data): self
     {
+        $required = [
+            'pain',
+            'tests',
+            'observations',
+            'root_cause_hypothesis',
+            'protocol',
+            'result',
+        ];
+
+        $missing = [];
+        foreach ($required as $field) {
+            if (! array_key_exists($field, $data)) {
+                $missing[] = $field;
+            }
+        }
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages([
+                $missing[0] => 'The following clinical fields are required as a full snapshot: '.implode(', ', $missing).'.',
+            ]);
+        }
+
         return new self(
-            pain: isset($data['pain']) && is_string($data['pain']) ? trim($data['pain']) : null,
-            tests: isset($data['tests']) && is_string($data['tests']) ? trim($data['tests']) : null,
-            observations: isset($data['observations']) && is_string($data['observations']) ? trim($data['observations']) : null,
-            rootCauseHypothesis: isset($data['root_cause_hypothesis']) && is_string($data['root_cause_hypothesis']) ? trim($data['root_cause_hypothesis']) : null,
-            protocol: isset($data['protocol']) && is_string($data['protocol']) ? trim($data['protocol']) : null,
-            result: isset($data['result']) && is_string($data['result']) ? trim($data['result']) : null,
+            pain: self::normalizeOptionalValue($data['pain']),
+            tests: self::normalizeOptionalValue($data['tests']),
+            observations: self::normalizeOptionalValue($data['observations']),
+            rootCauseHypothesis: self::normalizeOptionalValue($data['root_cause_hypothesis']),
+            protocol: self::normalizeOptionalValue($data['protocol']),
+            result: self::normalizeOptionalValue($data['result']),
         );
+    }
+
+    private static function normalizeOptionalValue(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            return trim($value);
+        }
+
+        return null;
     }
 }
