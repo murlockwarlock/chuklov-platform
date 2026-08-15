@@ -2,23 +2,23 @@
 
 - Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (M7A IMPLEMENTED; M7B NEXT)
-- Status: M0–M6 are CLOSED / ACCEPTED; M7A (Medical Profile + Medical Encryption + Private Attachment Security Foundation) is implemented and verified; M7B Session Cockpit is next and NOT STARTED
+- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
+- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B Session Cockpit is next and NOT STARTED)
 
-## Milestone 7A — IMPLEMENTED — 2026-08-15
+## Milestone 7A — IMPLEMENTATION CANDIDATE — 2026-08-15
 
 - Implemented M7A scope (`REQ-CLIENT-002`, `REQ-MEDICAL-SEC-001`, `REQ-ATTACHMENT-001`, `REQ-ATTACHMENT-002`, ADR-017). M7B Session Cockpit and M8+ remain unstarted.
 - ADR-017 accepted: Class C clinical fields (`anamnesis`, `complaints_goals`, `operations_injuries`, `medicines`, `supplements`) are encrypted at rest with AES-256-CBC and HMAC-SHA256 authenticated envelopes using `Illuminate\Encryption\Encrypter` behind `MedicalEncryptorInterface` and `MedicalKeyResolverInterface`. Database models store raw ciphertext with an explicit `encryption_key_version` and rotation seam.
-- Dedicated medical encryption secret: `MEDICAL_ENCRYPTION_KEY_V1` configured outside the database, decoupling medical encryption from `APP_KEY` rotation.
-- Forward-only additive PostgreSQL migrations created: `2026_08_15_140000_create_medical_profiles_table.php` (composite foreign key `(organization_id, client_id)` referencing `clients(organization_id, id)` and unique `[organization_id, client_id]`) and `2026_08_15_140001_create_medical_attachments_table.php` (composite foreign keys to `clients` and `organization_memberships`).
+- Dedicated medical encryption secret configured outside the database via medical configuration (`config/medical.php`), decoupling medical encryption from application key rotation.
+- Forward-only additive PostgreSQL migrations created: `2026_08_15_140000_create_medical_profiles_table.php` (composite foreign key `(organization_id, client_id)` referencing `clients(organization_id, id)` and unique `[organization_id, client_id]`) and `2026_08_15_140001_create_medical_attachments_table.php` (not-null client ownership and composite foreign keys to `clients` and `organization_memberships` with restrict-on-delete semantics).
 - Application actions `GetMedicalProfile` and `UpdateMedicalProfile` enforce server-derived organization context and authorization (`OrganizationPermission::ViewClients`/`ManageClients`) and length limits (<= 10,000 chars per field).
-- Private attachment storage on disk `private` under UUID-based paths `medical/attachments/{organization_id}/{uuid}.{ext}` via `AttachmentStorageInterface` / `PrivateMedicalAttachmentStorage`. Uploads enforce server-side MIME sniffing, explicit raw DICOM rejection (detecting `.dcm`/`.dicom`, MIME `application/dicom`, and 128-byte preamble with `DICM` signature), configurable file size limits (`MEDICAL_ATTACHMENT_MAX_BYTES`, default 20 MB recorded in ASM-008), and SHA-256 checksums.
+- Private attachment storage on disk `private` under UUID-based paths `medical/attachments/{organization_id}/{uuid}.{ext}` via `AttachmentStorageInterface` / `PrivateMedicalAttachmentStorage`. Uploads enforce server-side MIME sniffing, explicit raw DICOM rejection (detecting `.dcm`/`.dicom`, MIME `application/dicom`, and 128-byte preamble with `DICM` signature), configurable file size limits (default 20 MB recorded in ASM-008), and SHA-256 checksums.
 - Attachment taxonomy strictly restricted to confirmed requirements: `medical_report` and `posture_photo`.
 - Fail-closed runtime scanner `FailClosedAttachmentScanner` binds by default in normal runtime to quarantine unconfigured uploads. Test fake `LocalDeterministicAttachmentScanner` is retained solely for testing.
 - Temporary signed download URL generation (`GetTemporaryAttachmentUrl`, 15-minute default TTL) and streaming controller `AdminMedicalAttachmentController` (`GET /admin/attachments/{uuid}`) requiring valid signatures, staff authorization, and cleared status without exposing storage paths.
 - Filament CRM integration: `ClientResource` infolist displays decrypted fields and temporary signed download links; dedicated `editMedicalProfile` modal action handles medical updates cleanly without touching ordinary client profile saves.
 - Security allowlists updated in `RecordAuditEvent` (`medical.profile.created`, `medical.profile.updated`, `attachment.uploaded`, `attachment.downloaded`) with zero plaintext clinical data; Monolog processor `RedactSensitiveLogData` masks medical field names; scan metadata is sanitized to allowlisted keys.
-- Verification: 34 Unit tests (61 assertions) and 252 Feature tests (1549 assertions) pass; 59 PostgreSQL integration tests (149 assertions) pass; 24 Playwright e2e tests pass; Pint, ESLint, Larastan (0 errors), vue-tsc (0 errors), Vite build, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. Local `make quality`, `make privacy`, and `make ci` pass.
+- Verification: 34 Unit tests (61 assertions) and 252 Feature tests (1549 assertions) pass; 61 PostgreSQL integration tests (153 assertions) pass; 24 Playwright e2e tests pass; Pint, ESLint, Larastan (0 errors), vue-tsc (0 errors), Vite build, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. Local `make quality`, `make privacy`, and `make ci` pass.
 
 ## Milestone 6 — CLOSED / ACCEPTED — 2026-08-15
 

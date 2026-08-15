@@ -10,6 +10,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -117,5 +118,65 @@ final class MilestoneSevenDatabaseTest extends TestCase
 
         $this->expectException(QueryException::class);
         $attachment->save();
+    }
+
+    public function test_postgresql_rejects_client_less_medical_attachment(): void
+    {
+        $organization = Organization::factory()->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+
+        $attachment = new MedicalAttachment;
+        $attachment->forceFill([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $organization->getKey(),
+            'client_id' => null, // Required NOT NULL
+            'uploaded_by_user_id' => $user->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$organization->getKey().'/test.pdf',
+            'original_filename' => 'test.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 1024,
+            'sha256_checksum' => 'checksum',
+            'scan_status' => AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
+
+        $this->expectException(QueryException::class);
+        $attachment->save();
+    }
+
+    public function test_postgresql_composite_foreign_key_restricts_deletion_of_uploader_membership(): void
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+
+        $attachment = new MedicalAttachment;
+        $attachment->forceFill([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'uploaded_by_user_id' => $user->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$organization->getKey().'/test.pdf',
+            'original_filename' => 'test.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 1024,
+            'sha256_checksum' => 'checksum',
+            'scan_status' => AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
+        $attachment->save();
+
+        // Attempting to delete the organization membership referenced by the attachment must fail
+        $membership = OrganizationMembership::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('user_id', $user->getKey())
+            ->firstOrFail();
+
+        $this->expectException(QueryException::class);
+        $membership->delete();
     }
 }

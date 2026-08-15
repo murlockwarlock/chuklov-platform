@@ -20,6 +20,6 @@ final class MedicalAttachmentPolicy
 
     public function delete(User $user, MedicalAttachment $attachment): bool
     {
-        return app(AttachmentAuthorization::class)->allowsUpload($user);
+        return false;
     }
 }

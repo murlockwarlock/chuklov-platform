@@ -24,14 +24,11 @@ final class AttachmentAuthorization
         return $this->context->organization();
     }
 
-    public function authorizeUpload(User $actor, ?Client $client = null): Organization
+    public function authorizeUpload(User $actor, Client $client): Organization
     {
         $organization = $this->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
-
-        if ($client !== null) {
-            $this->assertClientOwned($client, $organization);
-        }
+        $this->assertClientOwned($client, $organization);
 
         return $organization;
     }

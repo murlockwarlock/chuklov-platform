@@ -12,8 +12,8 @@ return new class extends Migration
             $table->id();
             $table->uuid('uuid')->unique();
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
-            $table->foreignId('client_id')->nullable();
-            $table->foreignId('uploaded_by_user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('client_id');
+            $table->foreignId('uploaded_by_user_id')->constrained('users')->restrictOnDelete();
             $table->string('attachment_type', 64);
             $table->string('disk', 64)->default('private');
             $table->string('storage_path', 500);
@@ -33,7 +33,7 @@ return new class extends Migration
             $table->foreign(['organization_id', 'uploaded_by_user_id'])
                 ->references(['organization_id', 'user_id'])
                 ->on('organization_memberships')
-                ->nullOnDelete();
+                ->restrictOnDelete();
             $table->index(['organization_id', 'client_id', 'created_at']);
             $table->index(['organization_id', 'scan_status']);
             $table->index(['organization_id', 'uuid']);

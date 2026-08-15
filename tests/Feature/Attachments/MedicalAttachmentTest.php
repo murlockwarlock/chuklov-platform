@@ -386,6 +386,7 @@ final class MedicalAttachmentTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         $client = Client::factory()->create(['organization_id' => $organization->getKey()]);
 
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin, $client];

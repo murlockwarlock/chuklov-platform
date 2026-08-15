@@ -7,7 +7,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 - M7A Medical Profile + Medical Encryption + Private Attachment Security Foundation implementation candidate:
   - ADR-017 accepted and recorded.
   - Forward-only additive PostgreSQL migrations for `medical_profiles` and `medical_attachments` with composite foreign keys `(organization_id, client_id)` referencing `clients(organization_id, id)` and `(organization_id, uploaded_by_user_id)` referencing `organization_memberships(organization_id, user_id)`.
-  - Dedicated versioned medical encryption secret `MEDICAL_ENCRYPTION_KEY_V1` outside database/APP_KEY dependency, with `MedicalKeyResolverInterface` / `AppKeyMedicalKeyResolver` and `MedicalEncryptorInterface` / `MedicalDataEncryptor` supporting key versioning and rotation.
+  - Dedicated versioned medical encryption secret outside database/APP_KEY dependency via `config/medical.php`, with `MedicalKeyResolverInterface` / `AppKeyMedicalKeyResolver` and `MedicalEncryptorInterface` / `MedicalDataEncryptor` supporting key versioning and rotation.
   - Class C sensitive clinical fields (`anamnesis`, `complaints_goals`, `operations_injuries`, `medicines`, `supplements`) encrypted at rest with AES-256-CBC and HMAC-SHA256 authenticated envelopes.
   - Application actions `GetMedicalProfile` and `UpdateMedicalProfile` with strict organization authorization and length validation (<= 10,000 chars per field).
   - Private attachment storage on disk `private` under UUID-named paths `medical/attachments/{organization_id}/{uuid}.{ext}` via `AttachmentStorageInterface` / `PrivateMedicalAttachmentStorage` with configurable file size limit (`MEDICAL_ATTACHMENT_MAX_BYTES`, default 20 MB recorded in ASM-008).

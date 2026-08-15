@@ -9,7 +9,7 @@ final readonly class AttachmentUploadCommand
 {
     public function __construct(
         public UploadedFile $file,
+        public int $clientId,
         public AttachmentType $attachmentType = AttachmentType::MedicalReport,
-        public ?int $clientId = null,
     ) {}
 }

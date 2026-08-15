@@ -23,11 +23,7 @@ final readonly class UploadMedicalAttachment
 
     public function handle(User $actor, AttachmentUploadCommand $command): MedicalAttachment
     {
-        $client = null;
-
-        if ($command->clientId !== null) {
-            $client = Client::query()->findOrFail($command->clientId);
-        }
+        $client = Client::query()->findOrFail($command->clientId);
 
         $organization = $this->authorization->authorizeUpload($actor, $client);
         $orgId = (int) $organization->getKey();
@@ -42,7 +38,7 @@ final readonly class UploadMedicalAttachment
             $attachment->forceFill([
                 'uuid' => $uuid,
                 'organization_id' => $organization->getKey(),
-                'client_id' => $client?->getKey(),
+                'client_id' => $client->getKey(),
                 'uploaded_by_user_id' => $actor->getKey(),
                 'attachment_type' => $command->attachmentType,
                 'disk' => $stored->disk,
