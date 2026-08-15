@@ -23,7 +23,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
         self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
         self::assertStringContainsString('up -d --wait < /dev/null', $script);
-        self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image)'", $script);
+        self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image and .user == \"33:33\")'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap \'rollback "$LINENO" "$?"\' ERR', $script);
         self::assertStringContainsString('Horizon did not report a running supervisor', $script);
@@ -35,6 +35,9 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('DYNAMIC_BANS', $script);
         self::assertStringContainsString('normalize_legacy_app_server_command', $script);
         self::assertStringContainsString('forbidden php -S app command', $script);
+        self::assertStringContainsString('normalize_staging_runtime_user', $script);
+        self::assertStringContainsString('Staging Compose configuration is missing the hardened app base.', $script);
+        self::assertStringContainsString('all(.image == $image and .user == "33:33")', $script);
         self::assertStringContainsString('prepare_runtime_ownership', $script);
         self::assertStringContainsString('chown -R 33:33', $script);
         self::assertStringContainsString('prepare_release_permissions', $script);

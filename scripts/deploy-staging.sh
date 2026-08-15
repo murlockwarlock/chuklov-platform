@@ -272,11 +272,56 @@ if grep -Fq 'php -S' "$compose.next"; then
     exit 1
 fi
 
+normalize_staging_runtime_user() {
+    local source="$1"
+    local target="$2"
+
+    awk '
+        /^x-app-base:/ {
+            in_app_base = 1
+            runtime_user_written = 0
+            print
+            next
+        }
+
+        in_app_base && /^  image:/ {
+            print
+            if (!runtime_user_written) {
+                print "  user: \"33:33\""
+                runtime_user_written = 1
+            }
+            next
+        }
+
+        in_app_base && /^  user:/ {
+            if (!runtime_user_written) {
+                print "  user: \"33:33\""
+                runtime_user_written = 1
+            }
+            next
+        }
+
+        in_app_base && /^[^[:space:]]/ {
+            in_app_base = 0
+        }
+
+        { print }
+    ' "$source" > "$target"
+}
+
+if ! grep -Eq '^x-app-base:' "$compose.next"; then
+    echo "Staging Compose configuration is missing the hardened app base." >&2
+    exit 1
+fi
+normalized_compose="$compose.next.runtime-user"
+normalize_staging_runtime_user "$compose.next" "$normalized_compose"
+mv "$normalized_compose" "$compose.next"
+
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --quiet
 chmod 0640 "$compose.next"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \
     | jq -e --arg image "chuklov-staging-app:$revision" \
-        '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image)' > /dev/null
+        '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
 
 rollback() {
     local failed_line="${1:-unknown}"
