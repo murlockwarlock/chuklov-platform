@@ -6,16 +6,6 @@ if [ "$#" -gt 0 ] && [ "$1" != "app-server" ]; then
 fi
 
 mkdir -p /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp
-mkdir -p \
-    /app/storage/app/private \
-    /app/storage/app/public \
-    /app/storage/framework/cache/data \
-    /app/storage/framework/sessions \
-    /app/storage/framework/views \
-    /app/storage/inertia-devtools \
-    /app/storage/logs \
-    /app/bootstrap/cache
-
 ensure_runtime_ownership() {
     runtime_path="$1"
 
@@ -24,12 +14,29 @@ ensure_runtime_ownership() {
     fi
 }
 
-ensure_runtime_ownership /app/storage/app/private
-ensure_runtime_ownership /app/storage/app/public
-ensure_runtime_ownership /app/storage/framework
-ensure_runtime_ownership /app/storage/inertia-devtools
-ensure_runtime_ownership /app/storage/logs
-ensure_runtime_ownership /app/bootstrap/cache
+runtime_paths="/app/storage/app/private
+/app/storage/app/public
+/app/storage/framework/cache/data
+/app/storage/framework/sessions
+/app/storage/framework/views
+/app/storage/inertia-devtools
+/app/storage/logs
+/app/bootstrap/cache"
+
+if [ -w /app/storage ] && [ -w /app/bootstrap/cache ]; then
+    mkdir -p $runtime_paths
+
+    for runtime_path in $runtime_paths; do
+        ensure_runtime_ownership "$runtime_path"
+    done
+else
+    for runtime_path in $runtime_paths; do
+        if [ ! -d "$runtime_path" ]; then
+            echo "CRITICAL: Runtime directory is missing or inaccessible: $runtime_path" >&2
+            exit 1
+        fi
+    done
+fi
 
 # Start PHP-FPM in foreground mode as background job with PID tracking
 php-fpm -F &

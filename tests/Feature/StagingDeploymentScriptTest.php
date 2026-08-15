@@ -37,6 +37,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('forbidden php -S app command', $script);
         self::assertStringContainsString('prepare_runtime_ownership', $script);
         self::assertStringContainsString('chown -R 33:33', $script);
+        self::assertStringContainsString('prepare_release_permissions', $script);
+        self::assertStringContainsString('chown -R root:33', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);

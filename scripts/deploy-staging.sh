@@ -223,6 +223,14 @@ docker run --rm --env-file "$environment" \
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-scripts
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm run build
 
+prepare_release_permissions() {
+    chown -R root:33 "$release"
+    find "$release" -type d -exec chmod 0550 {} +
+    find "$release" -type f -exec chmod 0440 {} +
+}
+
+prepare_release_permissions
+
 sed -E "s#chuklov-staging-app:[0-9a-f]{40}#chuklov-staging-app:$revision#g" "$compose_backup" > "$compose.next"
 
 normalize_legacy_app_server_command() {
@@ -306,6 +314,12 @@ prepare_runtime_ownership() {
     done
 
     chown -R 33:33 "$root/shared/storage" "$root/shared/bootstrap-cache"
+    chmod 0711 \
+        "$root/shared/storage" \
+        "$root/shared/storage/app" \
+        "$root/shared/storage/framework" \
+        "$root/shared/storage/framework/cache" \
+        "$root/shared/bootstrap-cache"
 }
 
 prepare_runtime_ownership
