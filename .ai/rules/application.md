@@ -19,3 +19,15 @@ Delayed work must keep historically truthful semantics through immutable revisio
 
 ## Prove races and durable failure states on PostgreSQL
 Use PostgreSQL locking or constraints and focused process-level race tests when writers can compete; ordinary feature tests and transaction wrappers are not concurrency proof. Every failure path must end in an explicit terminal or recoverable durable state, including stale work, malformed data, dependency failure, retry exhaustion, fallback, and uncertain side effects; verify the next scheduler or replay cycle and never accept exception or recovery loops as fail-closed.
+
+## Bound collection/read-path cost
+For list/table/collection paths, planning and review must inspect work performed per record, including database queries; I/O; decryption; authorization; feature/config lookups; and repeated calculations. Avoid hidden O(N) work through policies; accessors; serializers/projections; callbacks; and helpers. Where material regression risk exists, use focused bounded-query or collection-size regression tests comparing different collection sizes rather than only asserting page/request success. Query count alone is insufficient — also consider rows/data fetched, payload growth, and memory/object graph growth. Do not fix N+1 by blindly eager-loading huge relationship graphs.
+
+## Cache / memoization correctness
+Any performance cache or memoization must define: scope/lifetime; organization/tenant keying where applicable; invalidation; authorization implications; and consistency requirements. Do not introduce persistent caching merely to hide an inefficient request path.
+
+## Data growth / migration cost
+For hot or append-heavy tables: consider real query patterns and indexes; consider migration locking/rewrite cost; preserve expand/contract deployment compatibility; and identify retention/archive needs for durable append-only histories where relevant. Do not introduce speculative partitioning or premature complexity.
+
+## Async / deploy compatibility for jobs and durable workflows
+Consider queue/backlog growth and retries; consider already-enqueued work across overlapping application revisions; avoid provider/network I/O inside long database transactions; and keep lock ordering and retry side effects explicit.

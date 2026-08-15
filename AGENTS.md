@@ -136,6 +136,13 @@ Never claim a check passed unless it was executed. Record exact results and skip
 
 Never use persistent staging as a replacement for isolated CI. Do not run destructive or full automated test suites against staging. Deploy to staging only after the exact candidate SHA has passed all required hosted CI jobs. Staging may then be used for guarded deployment verification, synthetic smoke tests, real browser performance measurements, and environment-specific checks that cannot be meaningfully reproduced in GitHub Actions.
 
+### Performance & Runtime Quality Gate
+
+- Correctness tests alone do not prove acceptable runtime characteristics; list/collection/hot read paths must consider per-record DB/I/O/decryption, bounded query and payload/memory growth, relevant indexes, and cache/invalidation.
+- Runtime/deployment changes must be verified through production-like runtime paths, not development shortcuts such as `php -S`.
+- Hosted CI remains authoritative for heavy verification; perceived staging CRM/UI speed is evaluated manually by the owner unless automated measurement is explicitly requested.
+- Agents MUST NOT create CRM timing benchmark scripts/harnesses unless explicitly requested by the owner.
+
 ## Dependencies and Migrations
 
 - One JavaScript manager: npm. Keep only `package-lock.json`.

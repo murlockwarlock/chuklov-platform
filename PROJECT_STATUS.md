@@ -1,16 +1,19 @@
 # Project Status
 
-- Last updated: 2026-08-15
+- Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
 - Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B Session Cockpit is next and NOT STARTED)
 
-## CRM Performance & Staging Runtime Remediation — IMPLEMENTATION CANDIDATE — 2026-08-15
+## CRM Performance & Staging Runtime Remediation — DEPLOYED / HOSTED CI GREEN — 2026-08-15
 
 - Remediated staging and CRM performance bottleneck: enabled Filament SPA navigation (`->spa()`) with binary attachment/receipt URL exceptions; transitioned container runtime from single-threaded PHP CLI built-in web server to production-grade `php:8.5.9-fpm-bookworm` + Nginx with clean PHP 8.5 OPcache and PID 1 fail-fast supervisor; added repository-tracked staging host Nginx reverse proxy template serving static fingerprinted Vite assets (`/build/*`), fonts, brand, and published vendor styles with long-lived immutable cache headers.
-- Eliminated redundant $O(N)$ repeated queries and duplicate reads: request-scoped memoization in `GetMedicalProfile` (keyed by `actor_id:org_id:client_id`) with strict per-read authorization; direct organization context resolution in `ClientPolicy` and `BookingPolicy`; static in-memory memoization in `OrganizationFeatureGate` and `GetBookingLeadTime` with context-scoped invalidation.
-- Verification: 34 Unit tests (61 assertions) and 257 Feature tests (1566 assertions) pass; 61 PostgreSQL integration tests (151 assertions) pass; 26 Playwright e2e tests pass (including desktop and mobile CRM SPA navigation tests); Pint, ESLint, Larastan (0 errors), vue-tsc (0 errors), Vite build, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. Local `make quality`, `make privacy`, and `make ci` pass.
-- Status: Ready for push, hosted CI, guarded host Nginx update, guarded staging deployment, and authenticated staging benchmark.
+- Eliminated redundant O(N) repeated queries and duplicate reads: request-scoped memoization in `GetMedicalProfile` (keyed by `actor_id:org_id:client_id`) with strict per-read authorization; direct organization context resolution in `ClientPolicy` and `BookingPolicy`; static in-memory memoization in `OrganizationFeatureGate` and `GetBookingLeadTime` with context-scoped invalidation.
+- Deployment fixes applied: (1) PHP-FPM global directives were placed after the pool include, triggering `unknown entry 'error_log'` — now ordered correctly; (2) legacy staging workers ran as root under `cap_drop: ALL` against hardened `www-data`-owned runtime directories — app/workers now run as UID/GID `33:33`. The deploy path now guards these runtime assumptions so equivalent legacy drift is detected before release switching.
+- Deployed application SHA: `594a38b7dbad16576308ab1965feffb5d88849b0`.
+- Hosted CI run `31904011750` green: Quality and integration, Playwright desktop and mobile, Privacy and secret scan, Docker build and runtime health.
+- Staging verified at the exact deployed SHA: `/health` healthy; PHP-FPM, container Nginx, OPcache, Horizon, scheduler, and Telegram running; PostgreSQL/pgvector/Redis healthy; private storage protected; `php -S` absent; database not reset; unrelated host services unchanged.
+- Automated authenticated AFTER page-timing benchmarks were not completed; perceived CRM/UI speed is evaluated manually by the owner, and no scripted CRM timing benchmark is required unless the owner explicitly requests one.
 
 ## Milestone 7A — IMPLEMENTATION CANDIDATE — 2026-08-15
 
