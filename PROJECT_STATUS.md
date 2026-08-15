@@ -2,10 +2,10 @@
 
 - Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 6 implementation candidate — Finance / Multi-Currency
-- Status: M6_IMPLEMENTATION_REMEDIATION_PENDING_INDEPENDENT_REVIEW — M5 is CLOSED / ACCEPTED; M5A remains CLOSED / ACCEPTED
+- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (NOT STARTED)
+- Status: M0–M6 are CLOSED / ACCEPTED; M7 is next and NOT STARTED
 
-## Milestone 6 remediation candidate — 2026-08-15
+## Milestone 6 — CLOSED / ACCEPTED — 2026-08-15
 
 - Remediation started from pre-remediation M6 application SHA `b0bacaf4130f192f95dea07744f8560ebaf4b611`; the final remediation application SHA is `72b4987124c4897bb6fe34bd74443848f6f85eea`. M5B application behavior remains unchanged.
 - Added forward-only organization-scoped finance bootstrap `2026_08_15_100002_bootstrap_finance_currency_configuration`: a single existing priced Service currency becomes an explicit force-single configuration, no-priced organizations remain unconfigured for owner setup, multiple priced currencies fail before writes, and existing owner configuration is never overwritten. Configuration saves now validate existing Service/obligation currencies and all required directed FX paths atomically; same-currency paths require no rate.
@@ -14,7 +14,8 @@
 - Hosted exact-SHA CI run `31884758963` is green for `72b4987124c4897bb6fe34bd74443848f6f85eea`: Quality/integration `95012327744`, Privacy/secret scan `95012327712`, Docker/runtime health `95012327769`, and Playwright desktop/mobile `95012327733`.
 - Guarded staging now runs exact application SHA `72b4987124c4897bb6fe34bd74443848f6f85eea` at `https://crm.psysoldatov.ru`; the forward-only bootstrap migration applied without a database reset, health reports database/pgvector/Redis/private storage healthy, Horizon is running, scheduler and Telegram containers are running, and the isolated Compose app/Horizon/scheduler/Telegram images all match the remediation SHA. The pre-smoke staging inventory contained one organization, no priced Services, and no Finance configuration rows.
 - Rollback-safe staging Finance smoke created a temporary pre-M6-like USD-priced Service and confirmed Booking, ran bootstrap twice, verified the Service remained listed, rejected missing directed FX atomically, preserved an owner-edited configuration on repeat bootstrap, completed the Booking into an obligation, exercised obligation-rate `90` with a later payment-rate `200`, and verified settlement `5000` USD minor units, display/base `450000` RUB minor units, Portal `450000` RUB, CRM `50.00 USD` settlement outstanding, Scenario debt `450000` RUB, and exact zero after full settlement. Temporary rows were rolled back; no real provider, payment, reminder, or delivery was used.
-- M6 remains IMPLEMENTATION / REMEDIATION CANDIDATE pending fresh independent acceptance. REQ-PAYMENT-006 and OQ-005 remain outside M6; OQ-014 remains OPEN; M7+ were not started.
+- Independent remediation re-review returned GO FOR M6 CLOSEOUT. M6 is CLOSED / ACCEPTED: the rollout/currency configuration and mixed-FX open-balance blockers are CLOSED; accepted application SHA is `72b4987124c4897bb6fe34bd74443848f6f85eea`, exact hosted CI run is `31884758963`, and staging runs the same SHA.
+- `REQ-CURRENCY-001`–`REQ-CURRENCY-003` and `REQ-PAYMENT-001`–`REQ-PAYMENT-005` are accepted for M6. `REQ-PAYMENT-006` and OQ-005 remain future/outside M6 for M13; OQ-014 remains OPEN; M7+ are NOT STARTED.
 
 ## Milestone 5 — CLOSED / ACCEPTED — 2026-08-15
 
