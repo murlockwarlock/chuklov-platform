@@ -84,6 +84,11 @@ final class ExecuteScenarioAction
             return false;
         }
 
+        if ($event->event_name->value === 'finance.obligation.created'
+            && ! $this->contextFactory->financeDebtIsCurrent($context)) {
+            return false;
+        }
+
         try {
             $conditionSnapshot = ScenarioConditionSet::from($action->condition_snapshot);
         } catch (InvalidArgumentException) {

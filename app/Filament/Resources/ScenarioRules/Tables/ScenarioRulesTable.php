@@ -52,6 +52,7 @@ final class ScenarioRulesTable
         return match ($value) {
             ScenarioEventType::BookingCompleted->value => 'После визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
+            ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
             default => 'Событие',
         };
     }

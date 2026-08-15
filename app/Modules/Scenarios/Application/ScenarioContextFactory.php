@@ -3,6 +3,8 @@
 namespace App\Modules\Scenarios\Application;
 
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Finance\Application\ReconcileFinancialObligation;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -20,6 +22,7 @@ final class ScenarioContextFactory
         return match ($event->event_name) {
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
+            ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
         };
     }
 
@@ -57,7 +60,20 @@ final class ScenarioContextFactory
             ];
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding'])) {
+        if ($context->obligation !== null) {
+            $reconciliation = app(ReconcileFinancialObligation::class)->handle(
+                (int) $context->obligation->organization_id,
+                (int) $context->obligation->getKey(),
+            );
+            $renderContext['finance'] = [
+                'amount' => $context->obligation->display_amount_minor,
+                'currency' => $context->obligation->display_currency->value,
+                'outstanding_amount' => max(0, $reconciliation->displayOutstanding->minorUnits()),
+                'status' => $reconciliation->status->value,
+            ];
+        }
+
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance'])) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -90,6 +106,34 @@ final class ScenarioContextFactory
             onboarding: $onboarding,
             evaluationEndsAt: $evaluationEndsAt,
         );
+    }
+
+    private function financialContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $obligation = FinancialObligation::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($this->payloadId($event, 'obligation_id'))
+            ->with(['client', 'booking.service'])
+            ->first();
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: $obligation?->booking,
+            client: $obligation?->client,
+            evaluationEndsAt: $evaluationEndsAt,
+            obligation: $obligation,
+        );
+    }
+
+    public function financeDebtIsCurrent(ScenarioEvaluationContext $context): bool
+    {
+        if ($context->obligation === null) {
+            return false;
+        }
+
+        return ! app(ReconcileFinancialObligation::class)
+            ->handle((int) $context->obligation->organization_id, (int) $context->obligation->getKey())
+            ->isSettled();
     }
 
     private function payloadId(ScenarioEvent $event, string $key): int

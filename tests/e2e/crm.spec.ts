@@ -123,6 +123,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
     await page.getByLabel('Клиент').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByText(fixture.clientName, { exact: true }).click();
     await page.getByLabel('Услуга').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);

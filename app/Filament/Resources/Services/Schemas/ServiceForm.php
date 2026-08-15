@@ -3,6 +3,9 @@
 namespace App\Filament\Resources\Services\Schemas;
 
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Modules\Finance\Application\CurrencyConfigurationService;
+use App\Modules\Finance\Domain\Services\CurrencyCatalog;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
@@ -71,9 +74,10 @@ class ServiceForm
                     ->integer()
                     ->minValue(0)
                     ->maxValue(PHP_INT_MAX),
-                TextInput::make('price_currency')
+                Select::make('price_currency')
                     ->label('Валюта')
-                    ->maxLength(3),
+                    ->options(fn (): array => self::priceCurrencyOptions())
+                    ->searchable(),
                 TextInput::make('payment_policy')
                     ->label('Условия оплаты')
                     ->maxLength(64),
@@ -92,5 +96,24 @@ class ServiceForm
                     ->default(CatalogItemType::Service->value),
                 ...ScheduleImpactPreview::components(),
             ]);
+    }
+
+    /** @return array<string, string> */
+    private static function priceCurrencyOptions(): array
+    {
+        $catalog = app(CurrencyCatalog::class);
+
+        try {
+            $allowed = app(CurrencyConfigurationService::class)->allowedCurrencies(app(OrganizationContext::class)->id());
+
+            if ($allowed !== []) {
+                return collect($allowed)->mapWithKeys(fn ($currency): array => [
+                    $currency->value => $catalog->definition($currency)->name,
+                ])->all();
+            }
+        } catch (\Throwable) {
+        }
+
+        return $catalog->options();
     }
 }

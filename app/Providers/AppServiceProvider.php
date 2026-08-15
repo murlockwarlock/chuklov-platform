@@ -6,6 +6,12 @@ use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Finance\Domain\Contracts\PaymentGateway;
+use App\Modules\Finance\Domain\Contracts\ReceiptStorage;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\FinancialReceipt;
+use App\Modules\Finance\Infrastructure\Fake\FakePaymentGateway;
+use App\Modules\Finance\Infrastructure\Storage\PrivateReceiptStorage;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -19,6 +25,7 @@ use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
+use App\Modules\Scenarios\Application\FinancialOutstandingDebtConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingCompletedConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingStageConditionEvaluator;
 use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
@@ -39,6 +46,8 @@ use App\Policies\ClientChannelIdentityPolicy;
 use App\Policies\ClientConsentPolicy;
 use App\Policies\ClientPolicy;
 use App\Policies\ContentSectionPolicy;
+use App\Policies\FinancialObligationPolicy;
+use App\Policies\FinancialReceiptPolicy;
 use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
@@ -76,8 +85,11 @@ class AppServiceProvider extends ServiceProvider
                 new ClientMarketingConsentConditionEvaluator,
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,
+                new FinancialOutstandingDebtConditionEvaluator,
             ]),
         );
+        $this->app->bind(PaymentGateway::class, FakePaymentGateway::class);
+        $this->app->bind(ReceiptStorage::class, PrivateReceiptStorage::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);
         $this->app->bind(NotificationTemplateRenderer::class, ScenarioTemplateRenderer::class);
     }
@@ -109,5 +121,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ScheduleException::class, ScheduleExceptionPolicy::class);
         Gate::policy(UnavailablePeriod::class, UnavailablePeriodPolicy::class);
         Gate::policy(ContentSection::class, ContentSectionPolicy::class);
+        Gate::policy(FinancialObligation::class, FinancialObligationPolicy::class);
+        Gate::policy(FinancialReceipt::class, FinancialReceiptPolicy::class);
     }
 }

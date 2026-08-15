@@ -2,6 +2,7 @@
 
 namespace App\Modules\Services\Application;
 
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -13,6 +14,7 @@ class ListPublishedServices
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
+        private readonly CurrencyConfigurationService $currencies,
     ) {}
 
     /** @return Collection<int, Service> */
@@ -29,6 +31,8 @@ class ListPublishedServices
             ->where('is_active', true)
             ->where('catalog_type', 'service')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (Service $service): bool => $this->currencies->isServicePriceAvailable($organization, $service))
+            ->values();
     }
 }

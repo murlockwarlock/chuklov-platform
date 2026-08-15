@@ -2,6 +2,7 @@
 
 namespace App\Modules\Services\Domain\ValueObjects;
 
+use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use InvalidArgumentException;
 
@@ -295,7 +296,7 @@ final readonly class ServiceConfiguration
 
         $currency = strtoupper(trim($value));
 
-        if (preg_match('/^[A-Z]{3}$/', $currency) !== 1) {
+        if (preg_match('/^[A-Z]{3}$/', $currency) !== 1 || CurrencyCode::tryFrom($currency) === null) {
             throw new InvalidArgumentException('The service currency is invalid.');
         }
 

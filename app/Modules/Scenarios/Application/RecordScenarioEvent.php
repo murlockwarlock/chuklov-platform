@@ -3,6 +3,7 @@
 namespace App\Modules\Scenarios\Application;
 
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -66,6 +67,33 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $onboarding->organization_id, $data);
+    }
+
+    public function financialObligationCreated(
+        FinancialObligation $obligation,
+        ?string $causationId,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $client = $obligation->client()->firstOrFail();
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::FinancialObligationCreated,
+            aggregateType: FinancialObligation::class,
+            aggregateId: (string) $obligation->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'obligation_id' => (int) $obligation->getKey(),
+                'client_id' => (int) $obligation->client_id,
+                'booking_id' => (int) $obligation->booking_id,
+                'service_id' => (int) $obligation->service_id,
+                'currency' => $obligation->currency->value,
+                'client_language' => $client->language,
+            ],
+            idempotencyKey: 'finance.obligation.created:'.$obligation->organization_id.':'.$obligation->getKey(),
+            correlationId: 'finance:obligation:'.$obligation->getKey(),
+            causationId: $causationId,
+        );
+
+        return $this->record((int) $obligation->organization_id, $data);
     }
 
     private function record(int $organizationId, ScenarioEventData $data): ScenarioEvent

@@ -34,6 +34,7 @@ final class ScenarioRuleForm
                     ->options([
                         ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
                         ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
+                        ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',
                     ])
                     ->required(),
                 Toggle::make('is_enabled')
@@ -116,6 +117,7 @@ final class ScenarioRuleForm
                                 'client.marketing_consent' => 'Согласие на маркетинговые сообщения',
                                 'onboarding.completed' => 'Оформление завершено',
                                 'onboarding.stage' => 'Этап оформления',
+                                'finance.has_outstanding_debt' => 'Есть непогашенная задолженность',
                             ])
                             ->required(),
                         Select::make('operator')

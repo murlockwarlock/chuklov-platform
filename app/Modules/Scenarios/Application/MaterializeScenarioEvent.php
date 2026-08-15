@@ -86,6 +86,11 @@ final class MaterializeScenarioEvent
             return;
         }
 
+        if ($event->event_name->value === 'finance.obligation.created'
+            && ! $this->contextFactory->financeDebtIsCurrent($evaluationContext)) {
+            return;
+        }
+
         foreach ($this->recipients->resolve($rule, $event) as $recipient) {
             $this->materializeRecipient($event, $evaluationContext, $rule, $template, $recipient, $scheduledFor);
         }

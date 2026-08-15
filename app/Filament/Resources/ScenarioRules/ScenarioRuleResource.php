@@ -168,6 +168,7 @@ final class ScenarioRuleResource extends Resource
         return match ($value) {
             ScenarioEventType::BookingCompleted->value => 'После завершения визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
+            ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
             default => 'Событие',
         };
     }
@@ -210,6 +211,7 @@ final class ScenarioRuleResource extends Resource
                 'client.marketing_consent' => 'согласие на маркетинговые сообщения',
                 'onboarding.completed' => 'завершение оформления',
                 'onboarding.stage' => 'этап оформления',
+                'finance.has_outstanding_debt' => 'непогашенная задолженность',
                 default => 'условие',
             };
             $operator = match ($condition['operator'] ?? null) {

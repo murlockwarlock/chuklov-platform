@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scheduling\Application;
 
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -16,6 +17,7 @@ class ListBookableServices
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
+        private readonly CurrencyConfigurationService $currencies,
     ) {}
 
     /** @return Collection<int, Service> */
@@ -55,6 +57,8 @@ class ListBookableServices
                 'price_minor',
                 'price_currency',
                 'formats',
-            ]);
+            ])
+            ->filter(fn (Service $service): bool => $this->currencies->isServicePriceAvailable($this->context->organization(), $service))
+            ->values();
     }
 }

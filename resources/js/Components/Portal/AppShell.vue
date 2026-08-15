@@ -20,6 +20,7 @@ const navigation = [
     { key: 'home', label: 'shell.home' },
     { key: 'services', label: 'shell.services' },
     { key: 'bookings', label: 'shell.bookings' },
+    { key: 'finance', label: 'shell.finance' },
     { key: 'profile', label: 'shell.profile' },
 ] as const;
 

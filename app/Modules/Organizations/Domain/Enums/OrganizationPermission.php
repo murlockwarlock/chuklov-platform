@@ -21,4 +21,6 @@ enum OrganizationPermission: string
     case ManageScheduling = 'manage_scheduling';
     case ViewScenarios = 'view_scenarios';
     case ManageScenarios = 'manage_scenarios';
+    case ViewFinance = 'view_finance';
+    case ManageFinance = 'manage_finance';
 }

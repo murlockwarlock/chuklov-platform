@@ -3,6 +3,7 @@
 namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
+use App\Modules\Finance\Application\CreateFinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
@@ -20,6 +21,7 @@ final class CompleteBooking
         private readonly BookingAuthorization $authorization,
         private readonly RecordBookingEvent $events,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly CreateFinancialObligation $financialObligations,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -56,6 +58,11 @@ final class CompleteBooking
                 oldValues: $oldValues,
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
+            );
+            $this->financialObligations->handle(
+                actor: $actor,
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
             );
             $this->scenarioEvents->bookingCompleted(
                 booking: $lockedBooking,

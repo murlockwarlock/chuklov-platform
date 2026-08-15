@@ -165,6 +165,7 @@ final class ScenarioActionResource extends Resource
         return match ($value) {
             'booking.completed' => 'После завершения визита',
             'onboarding.started' => 'После начала оформления',
+            'finance.obligation.created' => 'После появления задолженности',
             default => 'Событие',
         };
     }

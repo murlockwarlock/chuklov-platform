@@ -11,6 +11,7 @@ const props = defineProps<{
 const items = [
     { key: 'home', label: 'shell.home', icon: '⌂' },
     { key: 'bookings', label: 'shell.bookings', icon: '▣' },
+    { key: 'finance', label: 'shell.finance', icon: '₽' },
     { key: 'services', label: 'shell.services', icon: '◌' },
     { key: 'profile', label: 'shell.profile', icon: '○' },
 ] as const;

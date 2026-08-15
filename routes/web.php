@@ -1,9 +1,12 @@
 <?php
 
+use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\BookingController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
+use App\Http\Controllers\Portal\FinanceController;
+use App\Http\Controllers\Portal\FinanceReceiptController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\OnboardingController;
@@ -20,6 +23,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
+    Route::get('/admin/finance/receipts/{receiptId}', AdminFinanceReceiptController::class)
+        ->middleware('auth')
+        ->whereNumber('receiptId')
+        ->name('admin.finance.receipt');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
@@ -47,6 +54,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
+            Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::get('/portal/finance/receipts/{receiptId}', FinanceReceiptController::class)
+                ->whereNumber('receiptId')
+                ->name('portal.finance.receipt');
             Route::get('/portal/bookings/{bookingId}', [BookingController::class, 'show'])
                 ->whereNumber('bookingId')
                 ->name('portal.bookings.show');
