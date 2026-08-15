@@ -270,9 +270,12 @@ body {
 
     .portal-heading--page {
         max-width: 42rem;
-        overflow-wrap: anywhere;
-        font-size: clamp(2.75rem, 9vw, 5.75rem);
-        line-height: 0.98;
+        overflow-wrap: break-word;
+        word-break: normal;
+        hyphens: none;
+        text-wrap: balance;
+        font-size: clamp(2rem, 5.5vw, 3.75rem);
+        line-height: 1.1;
     }
 
     .portal-heading--section {

@@ -44,9 +44,6 @@ const location = computed({
     aria-labelledby="booking-confirmation-heading"
   >
     <header class="portal-stack portal-stack--tight">
-      <p class="portal-eyebrow">
-        {{ t('booking.stepConfirm') }}
-      </p>
       <h2
         id="booking-confirmation-heading"
         class="portal-heading portal-heading--section"

@@ -232,9 +232,6 @@ function selectSlot(slot: AvailabilitySlot): void {
       v-if="props.showHeading"
       class="portal-stack portal-stack--tight"
     >
-      <p class="portal-eyebrow">
-        {{ text('booking.stepTime') }}
-      </p>
       <h2
         id="booking-calendar-heading"
         class="portal-heading portal-heading--section"

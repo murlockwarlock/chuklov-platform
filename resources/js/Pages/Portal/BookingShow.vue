@@ -256,10 +256,11 @@ function rescheduleBooking(): void {
           {{ t('booking.contactStaff') }}
         </p>
         <div
-          v-if="props.booking.canReschedule"
-          class="portal-form-actions"
+          v-if="props.booking.canReschedule || props.booking.canCancel"
+          class="portal-form-actions portal-cluster"
         >
           <button
+            v-if="props.booking.canReschedule"
             type="button"
             class="portal-button portal-button--primary"
             :disabled="rescheduleLoading"
@@ -267,7 +268,23 @@ function rescheduleBooking(): void {
           >
             {{ rescheduleLoading ? t('common.loading') : t('booking.reschedule') }}
           </button>
+          <button
+            v-if="props.booking.canCancel"
+            type="button"
+            class="portal-button portal-button--secondary"
+            :disabled="cancelForm.processing"
+            @click="cancelBooking"
+          >
+            {{ cancelForm.processing ? t('common.loading') : t('booking.cancel') }}
+          </button>
         </div>
+        <p
+          v-if="cancelError"
+          class="portal-notice portal-notice--error"
+          role="alert"
+        >
+          {{ cancelError }}
+        </p>
       </section>
 
       <section
@@ -326,34 +343,6 @@ function rescheduleBooking(): void {
           role="alert"
         >
           {{ rescheduleError }}
-        </p>
-      </section>
-
-      <section
-        v-if="props.booking.canCancel"
-        class="portal-panel portal-stack portal-stack--tight"
-        aria-labelledby="cancel-heading"
-      >
-        <h2
-          id="cancel-heading"
-          class="portal-heading portal-heading--section"
-        >
-          {{ t('booking.cancelTitle') }}
-        </h2>
-        <button
-          type="button"
-          class="portal-button portal-button--secondary self-start"
-          :disabled="cancelForm.processing"
-          @click="cancelBooking"
-        >
-          {{ t('booking.cancel') }}
-        </button>
-        <p
-          v-if="cancelError"
-          class="portal-notice portal-notice--error"
-          role="alert"
-        >
-          {{ cancelError }}
         </p>
       </section>
 

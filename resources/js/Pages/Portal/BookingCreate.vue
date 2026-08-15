@@ -173,9 +173,6 @@ const progressSteps = computed<ProgressStep[]>(() => [
     { key: 'time', label: t('booking.stepTime') },
     { key: 'confirmation', label: t('booking.stepConfirm') },
 ]);
-const currentStepLabel = computed(() =>
-    progressSteps.value.find((step) => step.key === currentStepKey.value)?.label ?? '',
-);
 const bookingError = computed(() => {
     const errors = bookingForm.errors as Record<string, string | undefined>;
 
@@ -396,7 +393,10 @@ function submitBooking(): void {
       </Link>
 
       <section class="portal-booking-flow portal-panel">
-        <header class="portal-booking-flow__header">
+        <header
+          v-if="!bookingCompleted"
+          class="portal-booking-flow__header"
+        >
           <div class="portal-booking-flow__title-wrap">
             <p class="portal-eyebrow">
               CHUKLOV
@@ -405,12 +405,10 @@ function submitBooking(): void {
               {{ t('booking.title') }}
             </h1>
           </div>
-          <span class="portal-booking-flow__step-caption">
-            {{ currentStepKey === 'service' ? t('booking.chooseService') : currentStepLabel }}
-          </span>
         </header>
 
         <nav
+          v-if="!bookingCompleted"
           class="portal-booking-progress"
           :aria-label="t('booking.title')"
         >
