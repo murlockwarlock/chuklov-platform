@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    ".ai/rules/index.md"
+  ],
+  "mcp": {
+    "laravel-boost": {
+      "type": "local",
+      "command": ["php", "artisan", "boost:mcp"],
+      "cwd": ".",
+      "enabled": true
+    }
+  }
+}
