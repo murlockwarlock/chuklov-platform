@@ -3,6 +3,8 @@
 namespace App\Modules\Organizations\Application;
 
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scheduling\Application\GetBookingLeadTime;
+use App\Modules\Scheduling\Application\SpecialistServiceAssignmentEligibility;
 use LogicException;
 
 class OrganizationContext
@@ -12,6 +14,9 @@ class OrganizationContext
     public function set(Organization $organization): void
     {
         $this->organization = $organization;
+        OrganizationFeatureGate::invalidate();
+        GetBookingLeadTime::invalidate();
+        SpecialistServiceAssignmentEligibility::invalidate();
     }
 
     public function organization(): Organization

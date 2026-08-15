@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use LogicException;
 
@@ -23,7 +24,9 @@ class BookingPolicy
 
     public function view(User $user, Booking $booking): bool
     {
-        return $this->authorizer->allows($user, $booking->organization, OrganizationPermission::ViewScheduling);
+        $organization = $this->resolveBookingOrganization($booking);
+
+        return $this->authorizer->allows($user, $organization, OrganizationPermission::ViewScheduling);
     }
 
     private function allowsCurrent(User $user, OrganizationPermission $permission): bool
@@ -33,5 +36,18 @@ class BookingPolicy
         } catch (LogicException) {
             return false;
         }
+    }
+
+    private function resolveBookingOrganization(Booking $booking): Organization
+    {
+        try {
+            if ((int) $booking->organization_id === $this->context->id()) {
+                return $this->context->organization();
+            }
+        } catch (LogicException) {
+            // Context not bound
+        }
+
+        return $booking->organization;
     }
 }

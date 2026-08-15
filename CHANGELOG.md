@@ -4,6 +4,14 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- CRM Performance & Staging Runtime Remediation:
+  - Enabled Filament SPA mode (`->spa()`) with binary attachment and receipt download URL exceptions in `AdminPanelProvider`.
+  - Replaced single-threaded PHP CLI built-in web server with production-like concurrent `php:8.5.9-fpm-bookworm` + Nginx container runtime on port 8000 with clean PHP 8.5 OPcache configuration and a fail-fast PID 1 process supervisor.
+  - Added repository-tracked staging host Nginx reverse proxy template in `docker/host-nginx/chuklov-staging-tls.conf` serving static fingerprinted assets (`/build/*`), fonts, brand, and published vendor styles directly with long-lived immutable cache headers while proxying dynamic application endpoints.
+  - Eliminated duplicate reads and decryption on Client View infolist via request-scoped memoization in `GetMedicalProfile` (keyed by `actor_id:org_id:client_id`) with strict per-read authorization evaluation and cache invalidation in `UpdateMedicalProfile`.
+  - Remediated repeated queries in CRM Clients and Bookings lists by resolving organization context directly in `ClientPolicy` and `BookingPolicy`, request-scoped memoization in `OrganizationFeatureGate` and `GetBookingLeadTime`, and context-scoped cache invalidation.
+  - Added regression test suite `tests/Feature/PerformanceBoundedQueryTest.php` and Playwright E2E SPA navigation test verifying DOM preservation across route transitions.
+
 - M7A Medical Profile + Medical Encryption + Private Attachment Security Foundation implementation candidate:
   - ADR-017 accepted and recorded.
   - Forward-only additive PostgreSQL migrations for `medical_profiles` and `medical_attachments` with composite foreign keys `(organization_id, client_id)` referencing `clients(organization_id, id)` and `(organization_id, uploaded_by_user_id)` referencing `organization_memberships(organization_id, user_id)`.

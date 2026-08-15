@@ -5,6 +5,13 @@
 - Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
 - Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B Session Cockpit is next and NOT STARTED)
 
+## CRM Performance & Staging Runtime Remediation — IMPLEMENTATION CANDIDATE — 2026-08-15
+
+- Remediated staging and CRM performance bottleneck: enabled Filament SPA navigation (`->spa()`) with binary attachment/receipt URL exceptions; transitioned container runtime from single-threaded PHP CLI built-in web server to production-grade `php:8.5.9-fpm-bookworm` + Nginx with clean PHP 8.5 OPcache and PID 1 fail-fast supervisor; added repository-tracked staging host Nginx reverse proxy template serving static fingerprinted Vite assets (`/build/*`), fonts, brand, and published vendor styles with long-lived immutable cache headers.
+- Eliminated redundant $O(N)$ repeated queries and duplicate reads: request-scoped memoization in `GetMedicalProfile` (keyed by `actor_id:org_id:client_id`) with strict per-read authorization; direct organization context resolution in `ClientPolicy` and `BookingPolicy`; static in-memory memoization in `OrganizationFeatureGate` and `GetBookingLeadTime` with context-scoped invalidation.
+- Verification: 34 Unit tests (61 assertions) and 257 Feature tests (1566 assertions) pass; 61 PostgreSQL integration tests (151 assertions) pass; 26 Playwright e2e tests pass (including desktop and mobile CRM SPA navigation tests); Pint, ESLint, Larastan (0 errors), vue-tsc (0 errors), Vite build, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. Local `make quality`, `make privacy`, and `make ci` pass.
+- Status: Ready for push, hosted CI, guarded host Nginx update, guarded staging deployment, and authenticated staging benchmark.
+
 ## Milestone 7A — IMPLEMENTATION CANDIDATE — 2026-08-15
 
 - Implemented M7A scope (`REQ-CLIENT-002`, `REQ-MEDICAL-SEC-001`, `REQ-ATTACHMENT-001`, `REQ-ATTACHMENT-002`, ADR-017). M7B Session Cockpit and M8+ remain unstarted.

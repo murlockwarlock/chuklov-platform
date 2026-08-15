@@ -164,3 +164,51 @@ test('staff sees business labels for client and content settings', async ({ page
     await expect(page.locator('body')).not.toContainText('author');
     await expect(page.locator('body')).not.toContainText('ru');
 });
+
+test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+
+    // Set a marker on the window object to detect full document reloads
+    await page.evaluate(() => {
+        (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker = 998877;
+    });
+
+    const openSidebarIfMobile = async () => {
+        const toggle = page.locator('.fi-topbar-open-sidebar-btn, button[aria-label*="sidebar"], [x-on\\:click*="sidebar.open"]').first();
+        if (await toggle.isVisible()) {
+            await toggle.click();
+            await page.waitForTimeout(300);
+        }
+    };
+
+    // Navigate to Clients via sidebar link
+    await openSidebarIfMobile();
+    await page.getByRole('link', { name: 'Клиенты', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/clients$/);
+    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+
+    // Verify window marker persists (no full page reload)
+    const markerAfterClients = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
+    expect(markerAfterClients).toBe(998877);
+
+    // Navigate to Content Sections via sidebar link
+    await openSidebarIfMobile();
+    await page.getByRole('link', { name: 'Разделы контента', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/content-sections$/);
+    await expect(page.getByRole('heading', { name: 'Разделы контента' })).toBeVisible();
+
+    const markerAfterContent = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
+    expect(markerAfterContent).toBe(998877);
+
+    // Navigate to Services via sidebar link
+    await openSidebarIfMobile();
+    await page.getByRole('link', { name: 'Услуги', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/services$/);
+    await expect(page.getByRole('heading', { name: 'Услуги' })).toBeVisible();
+
+    const markerAfterServices = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
+    expect(markerAfterServices).toBe(998877);
+});
+

@@ -22,6 +22,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\MedicalProfiles\Infrastructure\Encryption\AppKeyMedicalKeyResolver;
@@ -79,6 +80,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
+        $this->app->scoped(GetMedicalProfile::class);
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
         $this->app->singleton(
             NotificationChannelRegistry::class,

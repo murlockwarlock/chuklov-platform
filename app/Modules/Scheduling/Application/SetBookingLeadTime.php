@@ -19,6 +19,7 @@ class SetBookingLeadTime
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly GetBookingLeadTime $leadTime,
     ) {}
 
     public function handle(User $actor, int $minutes): OrganizationSetting
@@ -30,7 +31,7 @@ class SetBookingLeadTime
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
 
-        return DB::transaction(function () use ($actor, $minutes, $organization): OrganizationSetting {
+        $result = DB::transaction(function () use ($actor, $minutes, $organization): OrganizationSetting {
             $setting = OrganizationSetting::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('setting_key', OrganizationSettingKey::BookingLeadTimeMinutes->value)
@@ -57,5 +58,9 @@ class SetBookingLeadTime
 
             return $setting->refresh();
         });
+
+        $this->leadTime->invalidate();
+
+        return $result;
     }
 }

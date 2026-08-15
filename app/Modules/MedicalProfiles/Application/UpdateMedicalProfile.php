@@ -22,6 +22,7 @@ final readonly class UpdateMedicalProfile
         private MedicalEncryptorInterface $encryptor,
         private MedicalKeyResolverInterface $keyResolver,
         private RecordAuditEvent $audit,
+        private GetMedicalProfile $getProfile,
     ) {}
 
     public function handle(User $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -44,7 +45,7 @@ final readonly class UpdateMedicalProfile
 
         $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
-        return DB::transaction(function () use ($actor, $organization, $client, $plainData, $encrypted, $keyVersion, $orgId) {
+        $result = DB::transaction(function () use ($actor, $organization, $client, $plainData, $encrypted, $keyVersion, $orgId) {
             /** @var MedicalProfile|null $existing */
             $existing = MedicalProfile::query()
                 ->where('organization_id', $orgId)
@@ -91,6 +92,10 @@ final readonly class UpdateMedicalProfile
                 updatedAt: $profile->updated_at,
             );
         });
+
+        $this->getProfile->invalidate($actor->getKey(), $orgId, $client->getKey());
+
+        return $result;
     }
 
     private function validateCommand(UpdateMedicalProfileCommand $command): void

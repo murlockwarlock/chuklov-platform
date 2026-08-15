@@ -24,4 +24,9 @@ final class SpecialistServiceAssignmentEligibility
             ]);
         }
     }
+
+    public static function invalidate(): void
+    {
+        // No-op
+    }
 }

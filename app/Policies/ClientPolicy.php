@@ -30,7 +30,9 @@ class ClientPolicy
 
     public function view(User $user, Client $client): bool
     {
-        return $this->allows($user, $client->organization, OrganizationPermission::ViewClients);
+        $organization = $this->resolveClientOrganization($client);
+
+        return $this->allows($user, $organization, OrganizationPermission::ViewClients);
     }
 
     public function create(User $user): bool
@@ -43,7 +45,9 @@ class ClientPolicy
 
     public function update(User $user, Client $client): bool
     {
-        return $this->allows($user, $client->organization, OrganizationPermission::ManageClients);
+        $organization = $this->resolveClientOrganization($client);
+
+        return $this->allows($user, $organization, OrganizationPermission::ManageClients);
     }
 
     public function delete(User $user, Client $client): bool
@@ -64,5 +68,18 @@ class ClientPolicy
         } catch (LogicException) {
             return null;
         }
+    }
+
+    private function resolveClientOrganization(Client $client): Organization
+    {
+        try {
+            if ((int) $client->organization_id === $this->context->id()) {
+                return $this->context->organization();
+            }
+        } catch (LogicException) {
+            // Context not bound
+        }
+
+        return $client->organization;
     }
 }
