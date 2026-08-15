@@ -224,6 +224,46 @@ docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-sc
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm run build
 
 sed -E "s#chuklov-staging-app:[0-9a-f]{40}#chuklov-staging-app:$revision#g" "$compose_backup" > "$compose.next"
+
+normalize_legacy_app_server_command() {
+    local source="$1"
+    local target="$2"
+
+    awk '
+        /^  [^[:space:]][^:]*:/ {
+            in_app = ($0 == "  app:")
+            skipping_command = 0
+        }
+
+        in_app && /^    command:/ {
+            skipping_command = ($0 ~ /^    command:[[:space:]]*$/)
+            next
+        }
+
+        in_app && skipping_command && /^    [^[:space:]]/ {
+            skipping_command = 0
+        }
+
+        in_app && skipping_command {
+            next
+        }
+
+        { print }
+    ' "$source" > "$target"
+}
+
+if grep -Fq 'php -S' "$compose.next"; then
+    normalized_compose="$compose.next.normalized"
+    normalize_legacy_app_server_command "$compose.next" "$normalized_compose"
+    mv "$normalized_compose" "$compose.next"
+    echo "Removed legacy php -S app command from the staging Compose configuration."
+fi
+
+if grep -Fq 'php -S' "$compose.next"; then
+    echo "Staging Compose configuration still contains the forbidden php -S app command." >&2
+    exit 1
+fi
+
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --quiet
 chmod 0640 "$compose.next"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \

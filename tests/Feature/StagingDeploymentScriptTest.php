@@ -33,6 +33,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('CHUKLOV_LOOPBACK_GUARD_PRESENT', $script);
         self::assertStringContainsString('Expected exactly one loopback guard', $script);
         self::assertStringContainsString('DYNAMIC_BANS', $script);
+        self::assertStringContainsString('normalize_legacy_app_server_command', $script);
+        self::assertStringContainsString('forbidden php -S app command', $script);
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
