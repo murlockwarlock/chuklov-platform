@@ -6,6 +6,24 @@ if [ "$#" -gt 0 ] && [ "$1" != "app-server" ]; then
 fi
 
 mkdir -p /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp
+mkdir -p \
+    /app/storage/app/private \
+    /app/storage/app/public \
+    /app/storage/framework/cache \
+    /app/storage/framework/sessions \
+    /app/storage/framework/views \
+    /app/storage/logs \
+    /app/bootstrap/cache
+
+chown www-data:www-data \
+    /app/storage/app/private \
+    /app/storage/app/public
+chown -R www-data:www-data \
+    /app/storage/framework/cache \
+    /app/storage/framework/sessions \
+    /app/storage/framework/views \
+    /app/storage/logs \
+    /app/bootstrap/cache
 
 # Start PHP-FPM in foreground mode as background job with PID tracking
 php-fpm -F &
