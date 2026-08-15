@@ -1,7 +1,7 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
 
 setup:
 	test -f .env || cp .env.example .env
@@ -52,6 +52,8 @@ quality: test lint static
 	npm run build
 	composer audit --locked --no-interaction
 	npm audit --audit-level=high
+
+check-fast: test lint static
 
 ci: infra-wait quality test-integration
 

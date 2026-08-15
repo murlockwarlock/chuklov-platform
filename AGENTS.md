@@ -109,16 +109,32 @@ Consult `docs/architecture/modules.md` before adding a module dependency.
 
 ## Quality Gates
 
-During development run focused tests, then affected module tests. Before completion run:
+### Local Development Feedback
 
-```bash
-make quality
-make ci
-```
+Agents must not run heavy verification locally by default. Do not locally run `make ci`, `make test-integration`, `npm run test:e2e`, full Playwright suites, `npx playwright install`, Docker image builds, `docker compose up` for the complete stack, or Docker runtime health suites unless the user explicitly requests local execution.
 
-Required checks: PHPUnit unit/feature/integration, Pint, Larastan, ESLint, `vue-tsc`, Vite build, Composer audit, npm audit. Run Playwright when client behavior enters the milestone; infrastructure alone is acceptable in Milestone 0.
+Allowed local checks: targeted unit or feature test files/filters, lint/static analysis on changed files, formatting on changed files (`vendor/bin/pint --dirty`), and other low-resource checks that do not start Docker, browser, or container infrastructure. Stop any check that begins consuming significant CPU/memory and move verification to hosted CI.
+
+### Hosted CI Is Authoritative
+
+For candidate application code:
+
+1. Create a cohesive candidate commit.
+2. Push the candidate SHA or branch.
+3. Allow GitHub Actions to run the full suite.
+4. Inspect the exact-SHA hosted CI result.
+5. If red, inspect hosted logs, fix locally, and push a new candidate.
+6. Repeat until green.
+
+Do not claim full verification from local checks alone. Report the exact candidate SHA, hosted CI run ID, job statuses, and staging SHA if deployment was performed.
+
+Required hosted checks: PHPUnit unit/feature/integration, Pint, Larastan, ESLint, `vue-tsc`, Vite build, Composer audit, npm audit, Playwright desktop/mobile, Docker build/runtime health, and privacy/secret scan.
 
 Never claim a check passed unless it was executed. Record exact results and skips in `PROJECT_STATUS.md`.
+
+### Staging Is Not CI
+
+Never use persistent staging as a replacement for isolated CI. Do not run destructive or full automated test suites against staging. Deploy to staging only after the exact candidate SHA has passed all required hosted CI jobs. Staging may then be used for guarded deployment verification, synthetic smoke tests, real browser performance measurements, and environment-specific checks that cannot be meaningfully reproduced in GitHub Actions.
 
 ## Dependencies and Migrations
 

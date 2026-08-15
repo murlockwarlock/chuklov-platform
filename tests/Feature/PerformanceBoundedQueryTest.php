@@ -106,7 +106,7 @@ class PerformanceBoundedQueryTest extends TestCase
         // Create 2 clients and 2 bookings
         $clients = Client::factory()->count(2)->forOrganization($organization)->create(['timezone' => 'UTC']);
         foreach ($clients as $index => $client) {
-            $this->createBooking($organization, $client, $specialist, $service, CarbonImmutable::create(2026, 4, 6, 9 + $index, 0, 0, 'UTC'));
+            $this->createBooking($organization, $client, $specialist, $service, CarbonImmutable::create(2026, 4, 6, 9 + ($index * 2), 0, 0, 'UTC'));
         }
 
         DB::flushQueryLog();
@@ -125,7 +125,7 @@ class PerformanceBoundedQueryTest extends TestCase
         // Create 8 more clients and bookings (total 10)
         $moreClients = Client::factory()->count(8)->forOrganization($organization)->create(['timezone' => 'UTC']);
         foreach ($moreClients as $index => $client) {
-            $this->createBooking($organization, $client, $specialist, $service, CarbonImmutable::create(2026, 4, 13, 9 + $index, 0, 0, 'UTC'));
+            $this->createBooking($organization, $client, $specialist, $service, CarbonImmutable::create(2026, 4, 13, 9 + ($index * 2), 0, 0, 'UTC'));
         }
 
         DB::flushQueryLog();

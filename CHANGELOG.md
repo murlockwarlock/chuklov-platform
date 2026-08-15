@@ -4,6 +4,16 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- Developer workflow remediation — local-light / hosted-heavy verification:
+  - AGENTS.md now defines local development feedback (targeted tests, lint, formatting) vs authoritative hosted CI (full `make quality`, integration, Playwright, Docker runtime, privacy/secret scan). Agents must not run heavy verification locally unless the user explicitly requests it.
+  - Added `workflow_dispatch` trigger and branch-level concurrency cancellation to `.github/workflows/ci.yml`.
+  - Added `make check-fast` target for lightweight local feedback (unit + feature + lint + static, no Docker/Playwright/containers).
+  - Updated `docs/testing/strategy.md`, `.agents/skills/testing/SKILL.md`, and `README.md` to reference hosted CI as the authoritative verification path.
+
+- CI bug fixes:
+  - Fixed `docker/php/entrypoint.sh` shebang from `#!/bin/sh` to `#!/bin/bash` (`wait -n` requires bash, not available in dash on Debian bookworm).
+  - Fixed `PerformanceBoundedQueryTest` booking time spacing to avoid `bookings_no_specialist_overlap` exclusion constraint (60-min duration + 15-min buffer = 75-min blocking range requires > 1-hour spacing).
+
 - CRM Performance & Staging Runtime Remediation:
   - Enabled Filament SPA mode (`->spa()`) with binary attachment and receipt download URL exceptions in `AdminPanelProvider`.
   - Replaced single-threaded PHP CLI built-in web server with production-like concurrent `php:8.5.9-fpm-bookworm` + Nginx container runtime on port 8000 with clean PHP 8.5 OPcache configuration and a fail-fast PID 1 process supervisor.
