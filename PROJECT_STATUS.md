@@ -3,7 +3,7 @@
 - Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 5B implementation candidate — Scenario families and product integration
-- Status: M5B_IMPLEMENTATION_IN_PROGRESS — awaiting fresh independent acceptance; M5A remains CLOSED / ACCEPTED
+- Status: M5B_IMPLEMENTATION_READY_FOR_INDEPENDENT_ACCEPTANCE — M5A remains CLOSED / ACCEPTED
 
 ## Milestone 5B implementation candidate — 2026-08-15
 
@@ -12,7 +12,11 @@
 - Re-engagement consumes the internal `ClientOnboarding` progress record only; the removed visible Portal wizard, surveys/tests, AI prompts, communication-preference model, and all M6+ behavior remain out of scope.
 - Retention counts only future `REQUESTED` or `CONFIRMED` bookings within the configured rule window. Materialization and execution both evaluate the typed condition; action template, condition, recipient, channel, render, sequence, and repeat values remain immutable snapshots.
 - OQ-014 records the still-unconfirmed business/clinical meaning of the conditional +72h follow-up. The seed uses only a neutral typed completed-booking guard until the owner decides otherwise.
-- Focused M5B Feature coverage passes 11 tests/42 assertions; focused M5A regression coverage passes 54 tests/202 assertions; PostgreSQL integration coverage passes 46 tests/104 assertions; focused scenario Playwright passes 2/2 desktop/mobile. `make quality` passes with 27 Unit tests/49 assertions and 215 Feature tests/1,323 assertions; `make ci` passes with healthy PostgreSQL/Redis and the same 46 PostgreSQL integration tests/104 assertions. Hosted exact-SHA CI, staging deployment, and independent acceptance remain pending for this implementation candidate.
+- Focused M5B Feature coverage passes 11 tests/42 assertions; focused M5A regression coverage passes 54 tests/202 assertions; PostgreSQL integration coverage passes 46 tests/104 assertions; focused scenario Playwright passes 2/2 desktop/mobile. `make quality` passes with 27 Unit tests/49 assertions and 215 Feature tests/1,323 assertions; `make ci` passes with healthy PostgreSQL/Redis and the same 46 PostgreSQL integration tests/104 assertions.
+- Hosted exact-SHA CI run `31844393385` is green for `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457`: Quality and integration `94907770561`, Privacy and secret scan `94907770571`, Docker build/runtime health `94907770625`, and Playwright desktop/mobile `94907770772`.
+- Guarded staging deployment from the accepted deployed baseline `a487f5c216b43e687b26d6916e6af5032fbe4429` succeeded for exact implementation candidate `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457`. The M5B migration is applied; application health reports database, pgvector, Redis, and private storage healthy; Horizon is running; the scheduler lists `scenarios:run`; app, Horizon, scheduler, and Telegram containers are running; the application-level scenarios queue depth and failed scenario-job count are both zero.
+- Staging M5B smoke ran the idempotent notification seeder twice, resulting in two localized `post-session-follow-up` templates, six +24h/+48h/conditional +72h rules, and no actions or client records created by the seed. Authenticated CRM browser smoke confirmed the business-labeled rules page, seeded delays/triggers, rule detail/template projection, and scenario-history empty state with zero browser errors. The temporary owner-scoped smoke account was removed. No external Telegram delivery was attempted.
+- Independent Sol Max acceptance is still pending; M5B is not marked accepted and the full M5 exit criteria are not marked complete.
 
 ## Client Portal booking acceptance remediation — 2026-08-15
 

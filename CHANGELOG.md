@@ -7,6 +7,7 @@ All notable implementation changes are recorded here. Requirement changes belong
 ### Added
 
 - M5B scenario-family integration on the accepted M5A engine: configurable post-session +24h/+48h/conditional +72h seeds, internal onboarding re-engagement via typed `onboarding.started` state, configurable retention/no-next-booking conditions, bounded repeat action snapshots, verified internal member/role recipients, and safe CRM scenario/history projections. The exact +72h business condition remains OQ-014; no survey, AI, broadcast, payment, or later-milestone behavior was added.
+- M5B implementation candidate `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457` passed hosted CI and guarded staging verification, including the additive migration, idempotent twice-run seed, healthy Horizon/scheduler/Telegram runtime, and authenticated CRM configuration/history smoke without external delivery.
 - Authenticated CHUKLOV Client Portal home, branded desktop/mobile shell, reusable booking/service/profile components, direct Profile destination, and RU/EN locale switching with persisted client preference.
 - Organization-scoped direct Profile consent presentation that retains immutable exact-version legal evidence without exposing a mandatory onboarding wizard.
 - Ordinary-browser Telegram authentication through a short-lived, single-use, browser-bound bot deep link, resolving the same verified organization-scoped Client as the Mini App while retaining passwordless email as an alternative.
