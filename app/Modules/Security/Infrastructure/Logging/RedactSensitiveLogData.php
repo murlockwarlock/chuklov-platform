@@ -9,11 +9,11 @@ use Throwable;
 
 class RedactSensitiveLogData implements ProcessorInterface
 {
-    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer/i';
+    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer/i';
 
     private const AUTHORIZATION_MESSAGE_PATTERN = '/\b(authorization|proxy-authorization)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
 
-    private const SENSITIVE_MESSAGE_PATTERN = '/\b(x-api-key|api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|password|token|secret|credential|cookie|session|medical|payment)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
+    private const SENSITIVE_MESSAGE_PATTERN = '/\b(x-api-key|api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|password|token|secret|credential|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
 
     private const AUTH_SCHEME_PATTERN = '/\b(Bearer|Basic)\s+[^\r\n}\]]+/i';
 

@@ -4,9 +4,20 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
-### Added
-
-- M5 is recorded as CLOSED / ACCEPTED at implementation checkpoint `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457`; OQ-014 remains OPEN and M5 production behavior was not changed during M6 remediation.
+- M7A Medical Profile + Medical Encryption + Private Attachment Security Foundation implementation candidate:
+  - ADR-017 accepted and recorded.
+  - Forward-only additive PostgreSQL migrations for `medical_profiles` and `medical_attachments` with composite foreign keys `(organization_id, client_id)` referencing `clients(organization_id, id)` and `(organization_id, uploaded_by_user_id)` referencing `organization_memberships(organization_id, user_id)`.
+  - Dedicated versioned medical encryption secret `MEDICAL_ENCRYPTION_KEY_V1` outside database/APP_KEY dependency, with `MedicalKeyResolverInterface` / `AppKeyMedicalKeyResolver` and `MedicalEncryptorInterface` / `MedicalDataEncryptor` supporting key versioning and rotation.
+  - Class C sensitive clinical fields (`anamnesis`, `complaints_goals`, `operations_injuries`, `medicines`, `supplements`) encrypted at rest with AES-256-CBC and HMAC-SHA256 authenticated envelopes.
+  - Application actions `GetMedicalProfile` and `UpdateMedicalProfile` with strict organization authorization and length validation (<= 10,000 chars per field).
+  - Private attachment storage on disk `private` under UUID-named paths `medical/attachments/{organization_id}/{uuid}.{ext}` via `AttachmentStorageInterface` / `PrivateMedicalAttachmentStorage` with configurable file size limit (`MEDICAL_ATTACHMENT_MAX_BYTES`, default 20 MB recorded in ASM-008).
+  - Server-side MIME sniffing (`finfo`), explicit raw DICOM rejection (magic bytes `DICM` at offset 128, MIME, and extension), and SHA-256 checksum tracking.
+  - Attachment taxonomy restricted to confirmed types: `MedicalReport` ('medical_report') and `PosturePhoto` ('posture_photo').
+  - Fail-closed runtime scanner `FailClosedAttachmentScanner` quarantining unconfigured uploads; deterministic scanner `LocalDeterministicAttachmentScanner` retained solely as a test fake.
+  - Authorized temporary signed download URL generation `GetTemporaryAttachmentUrl` and controller `AdminMedicalAttachmentController` (`GET /admin/attachments/{uuid}`) requiring valid signatures, staff authorization, and cleared scan status without exposing storage paths.
+  - Clean client save boundary in CRM: ordinary client profile editing never touches medical ciphertext; medical profiles are managed via dedicated modal action and explicit application service.
+  - Security allowlists updated in `RecordAuditEvent` (`medical.profile.created`, `medical.profile.updated`, `attachment.uploaded`, `attachment.downloaded`); Monolog log redactor `RedactSensitiveLogData` updated to mask medical field names; scan metadata sanitized to allowlist keys.
+  - Comprehensive unit, feature, PostgreSQL integration, and Playwright tests. M7B Session Cockpit and M8+ remain unstarted.
 
 - M6 is recorded as CLOSED / ACCEPTED after independent remediation re-review returned GO FOR M6 CLOSEOUT. Accepted application SHA `72b4987124c4897bb6fe34bd74443848f6f85eea`, hosted exact-SHA CI run `31884758963`, and staging SHA `72b4987124c4897bb6fe34bd74443848f6f85eea` match; the rollout/currency configuration and mixed-FX open-balance blockers are CLOSED. `REQ-CURRENCY-001`–`REQ-CURRENCY-003` and `REQ-PAYMENT-001`–`REQ-PAYMENT-005` are accepted for M6; `REQ-PAYMENT-006`/OQ-005 remain future M13 work, OQ-014 remains OPEN, and M7+ are NOT STARTED.
 

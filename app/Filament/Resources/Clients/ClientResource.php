@@ -9,8 +9,12 @@ use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\Schemas\ClientForm;
 use App\Filament\Resources\Clients\Tables\ClientsTable;
 use App\Filament\Support\TimezoneOptions;
+use App\Models\User;
+use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
@@ -64,6 +68,66 @@ class ClientResource extends Resource
                 TextEntry::make('activeBookingRestriction.reason')
                     ->label('Ограничение самостоятельной записи')
                     ->placeholder('Ограничений нет'),
+                TextEntry::make('anamnesis')
+                    ->label('Анамнез')
+                    ->state(fn (Client $record): ?string => ($actor = auth()->user()) instanceof User ? app(GetMedicalProfile::class)->handle($actor, $record)?->anamnesis : null)
+                    ->placeholder('Не указан')
+                    ->columnSpanFull(),
+                TextEntry::make('complaints_goals')
+                    ->label('Жалобы и цели')
+                    ->state(fn (Client $record): ?string => ($actor = auth()->user()) instanceof User ? app(GetMedicalProfile::class)->handle($actor, $record)?->complaintsGoals : null)
+                    ->placeholder('Не указаны')
+                    ->columnSpanFull(),
+                TextEntry::make('operations_injuries')
+                    ->label('Операции и травмы')
+                    ->state(fn (Client $record): ?string => ($actor = auth()->user()) instanceof User ? app(GetMedicalProfile::class)->handle($actor, $record)?->operationsInjuries : null)
+                    ->placeholder('Не указаны')
+                    ->columnSpanFull(),
+                TextEntry::make('medicines')
+                    ->label('Лекарственные препараты')
+                    ->state(fn (Client $record): ?string => ($actor = auth()->user()) instanceof User ? app(GetMedicalProfile::class)->handle($actor, $record)?->medicines : null)
+                    ->placeholder('Не указаны')
+                    ->columnSpanFull(),
+                TextEntry::make('supplements')
+                    ->label('Биологически активные добавки')
+                    ->state(fn (Client $record): ?string => ($actor = auth()->user()) instanceof User ? app(GetMedicalProfile::class)->handle($actor, $record)?->supplements : null)
+                    ->placeholder('Не указаны')
+                    ->columnSpanFull(),
+                TextEntry::make('medical_attachments_summary')
+                    ->label('Медицинские документы и файлы')
+                    ->state(function (Client $record): string {
+                        $actor = auth()->user();
+                        if (! $actor instanceof User) {
+                            return 'Требуется авторизация';
+                        }
+
+                        $attachments = MedicalAttachment::query()
+                            ->where('organization_id', $record->organization_id)
+                            ->where('client_id', $record->getKey())
+                            ->orderByDesc('id')
+                            ->get();
+
+                        if ($attachments->isEmpty()) {
+                            return 'Документов пока нет';
+                        }
+
+                        return $attachments->map(function (MedicalAttachment $att) use ($actor): string {
+                            $baseInfo = $att->original_filename.' ('.$att->attachment_type->label().', '.round($att->size_bytes / 1024).' КБ) — '.$att->scan_status->label();
+
+                            if ($att->isAvailable()) {
+                                try {
+                                    $url = app(GetTemporaryAttachmentUrl::class)->handle($actor, $att, 15);
+
+                                    return $baseInfo."\n  Временная ссылка: ".$url;
+                                } catch (\Throwable) {
+                                    return $baseInfo;
+                                }
+                            }
+
+                            return $baseInfo;
+                        })->implode("\n\n");
+                    })
+                    ->columnSpanFull(),
             ]);
     }
 

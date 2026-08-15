@@ -2,6 +2,8 @@
 
 namespace App\Modules\Identity\Domain\Models;
 
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Database\Factories\ClientFactory;
@@ -56,6 +58,18 @@ class Client extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    /** @return HasOne<MedicalProfile, $this> */
+    public function medicalProfile(): HasOne
+    {
+        return $this->hasOne(MedicalProfile::class);
+    }
+
+    /** @return HasMany<MedicalAttachment, $this> */
+    public function medicalAttachments(): HasMany
+    {
+        return $this->hasMany(MedicalAttachment::class);
     }
 
     protected static function newFactory(): ClientFactory

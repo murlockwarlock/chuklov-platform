@@ -64,6 +64,10 @@ class RecordAuditEvent
         'finance.gateway.initiated' => ['gateway', 'currency', 'source'],
         'finance.gateway.settled' => ['gateway', 'source', 'currency'],
         'finance.gateway.reconciled' => ['gateway', 'status', 'consistent'],
+        'medical.profile.created' => ['source', 'key_version', 'updated_fields'],
+        'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],
+        'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
+        'attachment.downloaded' => ['source'],
     ];
 
     /** @param array<array-key, mixed> $metadata */

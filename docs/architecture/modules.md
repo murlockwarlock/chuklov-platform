@@ -16,5 +16,7 @@ Current Phase 1 modules:
 - Conversations: organization/client-scoped normalized conversation and message persistence.
 - Channels: capability-aware `MessagingChannel` boundary, Nutgram verification/menu adapter, and no business logic in handlers.
 - Scenarios: durable organization-scoped scenario events, typed rules/conditions, versioned notification templates, recipient/channel resolution, scheduled actions, delivery attempts, and CRM configuration/history.
+- MedicalProfiles: encrypted Class C medical data at rest, key resolver seam, authenticated envelopes, application actions, and strict organization authorization boundary.
+- Attachments: private storage boundary, server-side MIME sniffing, raw DICOM rejection, deterministic scanner/quarantine lifecycle, streaming downloads, and organization ownership enforcement.
 
 Planned bounded contexts are those listed in the master plan. Add a module only with relevant REQ IDs. Cross-module writes go through Application actions; do not reach through another module’s infrastructure.

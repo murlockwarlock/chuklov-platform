@@ -2,6 +2,11 @@
 
 namespace App\Providers;
 
+use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
+use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Attachments\Infrastructure\Scanning\FailClosedAttachmentScanner;
+use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
@@ -17,6 +22,10 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
+use App\Modules\MedicalProfiles\Infrastructure\Encryption\AppKeyMedicalKeyResolver;
+use App\Modules\MedicalProfiles\Infrastructure\Encryption\MedicalDataEncryptor;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
@@ -48,6 +57,7 @@ use App\Policies\ClientPolicy;
 use App\Policies\ContentSectionPolicy;
 use App\Policies\FinancialObligationPolicy;
 use App\Policies\FinancialReceiptPolicy;
+use App\Policies\MedicalAttachmentPolicy;
 use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
@@ -90,6 +100,10 @@ class AppServiceProvider extends ServiceProvider
         );
         $this->app->bind(PaymentGateway::class, FakePaymentGateway::class);
         $this->app->bind(ReceiptStorage::class, PrivateReceiptStorage::class);
+        $this->app->bind(MedicalKeyResolverInterface::class, AppKeyMedicalKeyResolver::class);
+        $this->app->bind(MedicalEncryptorInterface::class, MedicalDataEncryptor::class);
+        $this->app->bind(AttachmentStorageInterface::class, PrivateMedicalAttachmentStorage::class);
+        $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);
         $this->app->bind(NotificationTemplateRenderer::class, ScenarioTemplateRenderer::class);
     }
@@ -123,5 +137,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ContentSection::class, ContentSectionPolicy::class);
         Gate::policy(FinancialObligation::class, FinancialObligationPolicy::class);
         Gate::policy(FinancialReceipt::class, FinancialReceiptPolicy::class);
+        Gate::policy(MedicalAttachment::class, MedicalAttachmentPolicy::class);
     }
 }

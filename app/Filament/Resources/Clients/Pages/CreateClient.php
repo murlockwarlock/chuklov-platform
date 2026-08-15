@@ -12,6 +12,7 @@ class CreateClient extends CreateRecord
 {
     protected static string $resource = ClientResource::class;
 
+    /** @param array<string, mixed> $data */
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

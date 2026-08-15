@@ -13,6 +13,7 @@ class EditClient extends EditRecord
 {
     protected static string $resource = ClientResource::class;
 
+    /** @param array<string, mixed> $data */
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof Client, 404);

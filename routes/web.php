@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminFinanceReceiptController;
+use App\Http\Controllers\AdminMedicalAttachmentController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\BookingController;
@@ -27,6 +28,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')
         ->whereNumber('receiptId')
         ->name('admin.finance.receipt');
+    Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
+        ->middleware('auth')
+        ->name('admin.attachments.download');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
