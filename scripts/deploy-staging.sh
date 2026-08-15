@@ -70,7 +70,7 @@ scp "${ssh_options[@]}" "$archive" "$remote:$remote_archive"
 
 ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$revision" \
-    "$expected_revision" \
+    "${expected_revision:-none}" \
     "$STAGING_ROOT" \
     "$STAGING_PROJECT" \
     "$STAGING_HEALTH_URL" \
@@ -88,6 +88,9 @@ trap 'report_preflight_failure "$LINENO"' ERR
 
 revision="$1"
 expected_revision="$2"
+if [[ "$expected_revision" == "none" ]]; then
+    expected_revision=""
+fi
 root="$3"
 project="$4"
 health_url="$5"
