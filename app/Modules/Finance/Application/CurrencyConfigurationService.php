@@ -11,6 +11,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Finance\Domain\ValueObjects\MoneyConversionSnapshot;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Services\Domain\Models\Service;
+use Brick\Math\BigDecimal;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -107,14 +108,17 @@ final class CurrencyConfigurationService
             throw (new ModelNotFoundException)->setModel(OrganizationExchangeRate::class);
         }
 
-        $converted = $source->convert($target, (string) $rate->getRawOriginal('rate'), $roundingMode);
+        $rateValue = BigDecimal::of((string) $rate->getRawOriginal('rate'))
+            ->strippedOfTrailingZeros()
+            ->__toString();
+        $converted = $source->convert($target, $rateValue, $roundingMode);
 
         return new MoneyConversionSnapshot(
             sourceAmountMinor: $source->minorUnitsString(),
             sourceCurrency: $source->currency(),
             targetAmountMinor: $converted->minorUnitsString(),
             targetCurrency: $target,
-            rate: (string) $rate->getRawOriginal('rate'),
+            rate: $rateValue,
             rateId: (int) $rate->getKey(),
             rateVersion: (int) $rate->version,
             effectiveAt: CarbonImmutable::parse($rate->effective_at->toIso8601String()),
