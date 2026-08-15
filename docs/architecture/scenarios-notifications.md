@@ -26,4 +26,8 @@ Repeat plans are materialized as generic `ScenarioAction` rows. A successful del
 
 The evaluation boundaries are explicit: rule conditions are evaluated against the event at materialization (with the configured action instant available for retention-window checks); an action re-evaluates its immutable condition snapshot and current live rule enablement at execution; template revision, recipient snapshot, channel order, render context, repeat plan, and schedule are immutable action snapshots. Template edits therefore never rewrite history.
 
+## M6 finance integration
+
+The Finance module publishes the allowlisted `finance.obligation.created` event through the same transactional Scenario event boundary. Its payload contains only organization/client/obligation identifiers and derived, non-sensitive financial totals needed for condition evaluation; it excludes notes, receipt content, provider evidence, credentials, and internal idempotency keys. `finance.has_outstanding_debt` rechecks the current reconciled obligation before execution, so a settled obligation does not produce a stale debt reminder. Delays, templates, channels, delivery idempotency, and history remain the existing M5 configuration and delivery responsibilities; Finance adds no parallel reminder subsystem.
+
 See REQ-NOTIFY-*, REQ-CHANNEL-*, REQ-CONVERSATION-001, ADR-009, ADR-012, and ADR-004.

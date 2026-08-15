@@ -2,12 +2,25 @@
 
 - Last updated: 2026-08-15
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 5B implementation candidate — Scenario families and product integration
-- Status: M5B_IMPLEMENTATION_READY_FOR_INDEPENDENT_ACCEPTANCE — M5A remains CLOSED / ACCEPTED
+- Current milestone: Milestone 6 implementation candidate — Finance / Multi-Currency
+- Status: M6_IMPLEMENTATION_READY_FOR_INDEPENDENT_ACCEPTANCE — M5B remains IMPLEMENTATION_READY_FOR_INDEPENDENT_ACCEPTANCE; M5A remains CLOSED / ACCEPTED
+
+## Milestone 6 implementation candidate — 2026-08-15
+
+- M6 implementation started from the M5B documentation closeout HEAD `9d1e50acf22580bd8dacd9c9ad9720e8bfb024d5`. The M5B application checkpoint remains `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457`; M5B was not reviewed, accepted, redesigned, or semantically changed.
+- Corrected the M5B starting-SHA documentation typo from `7e8a7f7f87fab3b4ed17d2e4fceec0c5e77f579a1` to `7e8a7f7f87fab3b4ed17d2e4fceec0c5e77f579a`.
+- M6 application implementation SHA is `b0bacaf4130f192f95dea07744f8560ebaf4b611`. It adds exact non-float Money and a controlled currency catalogue, organization currency/rate configuration, historical conversion snapshots, completed-booking obligations, append-only ledger/corrections, manual and partial payments, private receipts, derived receivables, a deterministic fake PaymentGateway, reconciliation, CRM finance surfaces, Portal finance projections, and a typed debt event/condition through the existing Scenario Engine.
+- Financial obligations are created idempotently only for priced bookings after the existing `CompleteBooking` application action reaches `COMPLETED`; cancelled, rejected, pending-review, no-show, and unpriced bookings receive no invented financial consequence. Fixed Service prices take precedence over conversion.
+- Forward-only migrations `2026_08_15_100000_create_finance_tables` and `2026_08_15_100001_add_finance_scenario_trigger_support` are applied in staging. PostgreSQL integer minor-unit amounts, exact `NUMERIC(38,18)` manual rates, composite organization ownership, idempotency uniqueness, checks, and ledger immutability triggers protect the financial boundary.
+- Final focused M6/M5 regression coverage passes 60 tests/261 assertions; focused PostgreSQL M6 coverage passes 10 tests/62 assertions. Final local `make quality`, `make privacy`, and integration checks pass; the final exact-SHA hosted CI run is recorded below.
+- Hosted exact-SHA CI run `31877550150` is green for `b0bacaf4130f192f95dea07744f8560ebaf4b611`: Quality/integration `94995400797`, Privacy/secret scan `94995400742`, Docker/runtime health `94995400760`, and Playwright desktop/mobile `94995400751`.
+- Guarded staging deployment succeeded for exact M6 application SHA `b0bacaf4130f192f95dea07744f8560ebaf4b611` from expected M5B deployed SHA `736a78b5fbd5b51e5c9f9b6c5b50ff974a510457`. Health, PostgreSQL/pgvector, Redis, private storage, Horizon, scheduler, Telegram, and the Scenario runtime are healthy; no failed jobs were reported.
+- Controlled transaction-scoped finance smoke verified configuration/rate, completed obligation, partial payment, correction, settlement, fake gateway, reconciliation, and Scenario event publication, then rolled back all temporary records. CRM authenticated smoke verified currency configuration and receivables pages. Portal smoke verified the finance destination and no horizontal overflow at desktop, 390px, 360px, and 320px.
+- M6 remains an implementation candidate ready for independent acceptance. REQ-PAYMENT-006 and OQ-005 remain unresolved for M13; OQ-014 remains unresolved and M6 does not depend on it. M7+ were not started.
 
 ## Milestone 5B implementation candidate — 2026-08-15
 
-- Implementation started from repository HEAD `7e8a7f7f87fab3b4ed17d2e4fceec0c5e77f579a1`; the accepted deployed baseline remains `a487f5c216b43e687b26d6916e6af5032fbe4429`.
+- Implementation started from repository HEAD `7e8a7f7f87fab3b4ed17d2e4fceec0c5e77f579a`; the accepted deployed baseline remains `a487f5c216b43e687b26d6916e6af5032fbe4429`.
 - M5B extends the accepted M5A engine with typed `onboarding.started` events, configurable bounded repeat sequences, post-session +24h/+48h/conditional +72h seed rules, typed onboarding/consent/qualifying-next-booking conditions, configurable retention windows, and same-organization member/role recipient validation with verified-channel revalidation.
 - Re-engagement consumes the internal `ClientOnboarding` progress record only; the removed visible Portal wizard, surveys/tests, AI prompts, communication-preference model, and all M6+ behavior remain out of scope.
 - Retention counts only future `REQUESTED` or `CONFIRMED` bookings within the configured rule window. Materialization and execution both evaluate the typed condition; action template, condition, recipient, channel, render, sequence, and repeat values remain immutable snapshots.

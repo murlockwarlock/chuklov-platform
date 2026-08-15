@@ -19,5 +19,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 013 | Authentication approach | Proposed |
 | 014 | Atomic deployment | Accepted |
 | 015 | Security and data protection | Accepted |
+| 016 | Finance and multi-currency core | Accepted |
 
 Use `000-template.md` for new significant decisions.

@@ -1,5 +1,13 @@
 # Requirements Changelog
 
+## 2026-08-15 — M6 finance / multi-currency implementation traceability
+
+- Implemented `REQ-CURRENCY-001`–`REQ-CURRENCY-003`: financial records retain explicit base, display, payment, and settlement currency roles; organization settings control supported currencies, manual conversion, deterministic rounding, and force-single-currency behavior; fixed supported Service prices take precedence over conversion; and applied rate/rounding snapshots remain historical.
+- Implemented `REQ-PAYMENT-001`–`REQ-PAYMENT-003`: Money uses exact integer minor units and centralized currency precision; obligations and an append-only auditable ledger derive balance/status; authorized CRM staff can record full, partial, and corrected manual payments with typed methods, timestamps, actor, notes, and private receipt metadata.
+- Implemented `REQ-PAYMENT-004`: priced completed bookings create idempotent obligations, outstanding receivables reconcile to ledger entries, CRM and Client Portal expose organization/client-scoped debt, and debt reminders use the existing Scenario Engine with a rechecked outstanding-debt condition.
+- Implemented `REQ-PAYMENT-005`: the provider-neutral `PaymentGateway` boundary proves server-calculated amounts, trusted normalized settlement evidence, provider-event verification/deduplication, idempotency, and reconciliation through a deterministic fake adapter only.
+- Requirement statuses are unchanged pending repository acceptance convention. `REQ-PAYMENT-006` and OQ-005 remain open for M13; no real payment provider, checkout, provider signature algorithm, or refund API was added.
+
 ## 2026-08-15 — M5B scenario-family implementation traceability
 
 - Implemented `REQ-NOTIFY-001`–`REQ-NOTIFY-007` on the accepted M5A engine: CRM-configured delays and bounded repeats, typed `booking.completed`/`onboarding.started` rules, immutable action snapshots, idempotent sequence materialization and delivery, RU/EN version-pinned templates, consent-aware onboarding re-engagement boundaries, configured no-next-booking retention evaluation, and organization-scoped internal member/role recipients with verified-channel revalidation.
