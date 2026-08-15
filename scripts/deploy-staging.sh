@@ -289,6 +289,26 @@ mv -Tf "$root/current.next" "$root/current"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan migrate --force < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan optimize < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan filament:optimize < /dev/null
+
+prepare_runtime_ownership() {
+    local runtime_path
+
+    for runtime_path in \
+        "$root/shared/storage/app/private" \
+        "$root/shared/storage/app/public" \
+        "$root/shared/storage/framework/cache/data" \
+        "$root/shared/storage/framework/sessions" \
+        "$root/shared/storage/framework/views" \
+        "$root/shared/storage/inertia-devtools" \
+        "$root/shared/storage/logs" \
+        "$root/shared/bootstrap-cache"; do
+        install -d -m 0770 -o 33 -g 33 "$runtime_path"
+    done
+
+    chown -R 33:33 "$root/shared/storage" "$root/shared/bootstrap-cache"
+}
+
+prepare_runtime_ownership
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d postgres redis < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait < /dev/null

@@ -16,13 +16,20 @@ mkdir -p \
     /app/storage/logs \
     /app/bootstrap/cache
 
-chown -R www-data:www-data \
-    /app/storage/app/private \
-    /app/storage/app/public \
-    /app/storage/framework \
-    /app/storage/inertia-devtools \
-    /app/storage/logs \
-    /app/bootstrap/cache
+ensure_runtime_ownership() {
+    runtime_path="$1"
+
+    if find "$runtime_path" \( ! -user www-data -o ! -group www-data \) -print -quit | grep -q .; then
+        chown -R www-data:www-data "$runtime_path"
+    fi
+}
+
+ensure_runtime_ownership /app/storage/app/private
+ensure_runtime_ownership /app/storage/app/public
+ensure_runtime_ownership /app/storage/framework
+ensure_runtime_ownership /app/storage/inertia-devtools
+ensure_runtime_ownership /app/storage/logs
+ensure_runtime_ownership /app/bootstrap/cache
 
 # Start PHP-FPM in foreground mode as background job with PID tracking
 php-fpm -F &
