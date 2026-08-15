@@ -185,6 +185,7 @@ jobs:
             sleep 2
           done
           echo 'Health response body:'
+          head -c 4000 /tmp/health-response 2>/dev/null || true
           tail -c 4000 /tmp/health-response 2>/dev/null || true
           exit 1
       - name: Verify Horizon runtime
