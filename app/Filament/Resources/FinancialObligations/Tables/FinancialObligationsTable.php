@@ -50,7 +50,7 @@ final class FinancialObligationsTable
                             ->handle((int) $record->organization_id, (int) $record->getKey())
                             ->outstanding;
 
-                        return Money::ofMinor(max(0, $outstanding->minorUnits()), $outstanding->currency())->toDecimalString()
+                        return Money::ofMinor($outstanding->minorUnits(), $outstanding->currency())->toDecimalString()
                             .' '.$outstanding->currency()->value;
                     }),
                 TextColumn::make('created_at')->label('Создано')->dateTime('d.m.Y H:i')->sortable(),

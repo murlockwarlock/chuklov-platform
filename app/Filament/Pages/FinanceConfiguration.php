@@ -6,12 +6,12 @@ use App\Models\User;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
-use App\Modules\Finance\Application\SaveExchangeRate;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\Models\OrganizationExchangeRate;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -66,19 +66,51 @@ final class FinanceConfiguration extends Page
     {
         $organizationId = app(OrganizationContext::class)->id();
         $configuration = app(CurrencyConfigurationService::class);
+        $catalog = app(CurrencyCatalog::class);
         $model = OrganizationCurrencyConfiguration::query()
             ->where('organization_id', $organizationId)
             ->first();
-        $allowed = $model === null ? ['RUB'] : array_map(
+        $defaultAllowed = [];
+        $defaultBase = null;
+        $defaultDisplay = null;
+        $defaultForceSingle = false;
+
+        if ($model === null) {
+            foreach (Service::query()
+                ->where('organization_id', $organizationId)
+                ->whereNotNull('price_currency')
+                ->distinct()
+                ->pluck('price_currency') as $currency) {
+                try {
+                    $code = $catalog->code($currency)->value;
+                } catch (\InvalidArgumentException) {
+                    continue;
+                }
+
+                if (! in_array($code, $defaultAllowed, true)) {
+                    $defaultAllowed[] = $code;
+                }
+            }
+
+            sort($defaultAllowed);
+
+            if (count($defaultAllowed) === 1) {
+                $defaultBase = $defaultAllowed[0];
+                $defaultDisplay = $defaultAllowed[0];
+                $defaultForceSingle = true;
+            }
+        }
+
+        $allowed = $model === null ? $defaultAllowed : array_map(
             static fn ($currency): string => $currency->value,
             $configuration->allowedCurrencies($organizationId),
         );
 
         $this->form->fill([
-            'base_currency' => $model === null ? 'RUB' : $model->base_currency->value,
-            'display_currency' => $model === null ? 'RUB' : $model->display_currency->value,
+            'base_currency' => $model === null ? $defaultBase : $model->base_currency->value,
+            'display_currency' => $model === null ? $defaultDisplay : $model->display_currency->value,
             'allowed_currencies' => $allowed,
-            'force_single_currency' => $model === null ? true : $model->force_single_currency,
+            'force_single_currency' => $model === null ? $defaultForceSingle : $model->force_single_currency,
             'rounding_mode' => $model === null ? FinancialRoundingMode::HalfUp->value : $model->rounding_mode->value,
             'rates' => OrganizationExchangeRate::query()
                 ->where('organization_id', $organizationId)
@@ -177,14 +209,6 @@ final class FinanceConfiguration extends Page
 
         try {
             app(SaveCurrencyConfiguration::class)->handle($actor, $data);
-            foreach ($data['rates'] ?? [] as $rate) {
-                app(SaveExchangeRate::class)->handle(
-                    actor: $actor,
-                    sourceCurrency: (string) $rate['source_currency'],
-                    targetCurrency: (string) $rate['target_currency'],
-                    rate: (string) $rate['rate'],
-                );
-            }
         } catch (ValidationException $exception) {
             throw $exception;
         }

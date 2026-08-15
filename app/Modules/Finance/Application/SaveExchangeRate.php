@@ -4,6 +4,7 @@ namespace App\Modules\Finance\Application;
 
 use App\Models\User;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
+use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\Models\OrganizationExchangeRate;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Brick\Math\BigDecimal;
@@ -42,6 +43,11 @@ final class SaveExchangeRate
         }
 
         return DB::transaction(function () use ($actor, $organization, $source, $target, $rate): OrganizationExchangeRate {
+            $currentConfiguration = OrganizationCurrencyConfiguration::query()
+                ->where('organization_id', $organization->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $existing = OrganizationExchangeRate::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('source_currency', $source->value)
@@ -64,6 +70,24 @@ final class SaveExchangeRate
                     'updated_at' => now(),
                     'created_at' => $existing === null ? now() : $existing->created_at,
                 ],
+            );
+
+            $rates = [];
+
+            foreach (OrganizationExchangeRate::query()
+                ->where('organization_id', $organization->getKey())
+                ->get(['source_currency', 'target_currency', 'rate']) as $savedRate) {
+                $savedSource = $this->configuration->assertAllowed($organization, $savedRate->source_currency);
+                $savedTarget = $this->configuration->assertAllowed($organization, $savedRate->target_currency);
+                $rates[$this->configuration->rateKey($savedSource, $savedTarget)] = (string) $savedRate->getRawOriginal('rate');
+            }
+            $this->configuration->assertConfiguration(
+                organization: $organization,
+                base: $currentConfiguration->base_currency,
+                display: $currentConfiguration->display_currency,
+                forceSingle: $currentConfiguration->force_single_currency,
+                allowed: $this->configuration->allowedCurrencies($organization),
+                rates: $rates,
             );
 
             $saved = OrganizationExchangeRate::query()

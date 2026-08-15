@@ -15,6 +15,7 @@ use App\Modules\Finance\Application\SettleFakePayment;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
 use App\Modules\Finance\Infrastructure\Fake\FakePaymentGateway;
 use App\Modules\Identity\Domain\Models\Client;
@@ -22,12 +23,14 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Application\ScenarioContextFactory;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -73,6 +76,171 @@ final class MilestoneSixFinanceTest extends TestCase
 
         self::assertSame($obligation->getKey(), app(CreateFinancialObligation::class)->handle($admin, $booking)?->getKey());
         self::assertSame(1, FinancialObligation::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_currency_configuration_rejects_missing_directed_rates_atomically_and_allows_same_currency(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+
+        try {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'RUB',
+                'display_currency' => 'RUB',
+                'allowed_currencies' => ['RUB', 'USD'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_up',
+            ]);
+            self::fail('A missing USD to RUB rate must reject the configuration.');
+        } catch (ValidationException) {
+            self::assertDatabaseMissing('organization_currency_configurations', ['organization_id' => $organization->getKey()]);
+            self::assertDatabaseMissing('organization_allowed_currencies', ['organization_id' => $organization->getKey()]);
+        }
+
+        $configuration = app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'RUB',
+            'allowed_currencies' => ['RUB'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+        ]);
+        self::assertSame('RUB', $configuration->base_currency->value);
+        self::assertSame(1, DB::table('organization_allowed_currencies')->where('organization_id', $organization->getKey())->count());
+
+        try {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'RUB',
+                'display_currency' => 'RUB',
+                'allowed_currencies' => ['RUB', 'USD'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_up',
+            ]);
+            self::fail('Adding a currency without its required directed rate must reject atomically.');
+        } catch (ValidationException) {
+            self::assertSame('RUB', OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->firstOrFail()->base_currency->value);
+            self::assertSame(['RUB'], DB::table('organization_allowed_currencies')->where('organization_id', $organization->getKey())->pluck('currency')->all());
+        }
+    }
+
+    public function test_open_balance_uses_obligation_snapshot_after_rate_change_and_reaches_zero(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000, 'RUB');
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+
+        app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '200');
+        $payment = app(RecordManualPayment::class)->handle($admin, $obligation, '50.00', 'USD', 'cash', now(), null, null, 'rate-change-partial');
+        $reconciliation = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+
+        self::assertSame(5000, $reconciliation->outstanding->minorUnits());
+        self::assertSame(450000, $reconciliation->displayOutstanding->minorUnits());
+        self::assertSame(450000, $reconciliation->baseOutstanding->minorUnits());
+        self::assertGreaterThan(0, $reconciliation->displayOutstanding->minorUnits());
+        self::assertSame('200', $payment->conversion_snapshot['display']['rate']);
+        self::assertSame('90', $obligation->conversion_snapshots['display']['rate']);
+
+        $portal = $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'));
+        $portal->assertOk()->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('obligations.0.outstandingMinor', 450000)
+            ->where('totals.0.amountMinor', 450000)
+            ->where('totals.0.currency', 'RUB'));
+
+        $event = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'finance.obligation.created')
+            ->firstOrFail();
+        $scenarioFactory = app(ScenarioContextFactory::class);
+        $scenarioContext = $scenarioFactory->evaluationContext($event);
+        self::assertTrue($scenarioFactory->financeDebtIsCurrent($scenarioContext));
+        self::assertSame(450000, $scenarioFactory->renderContext(
+            $scenarioContext,
+            new ScenarioRecipient('client', $client->getKey(), null, 'en'),
+        )['finance']['outstanding_amount']);
+
+        $this->actingAs($admin)
+            ->get(route('filament.admin.resources.financial-obligations.index'))
+            ->assertOk()
+            ->assertSee('50.00 USD');
+
+        app(RecordManualPayment::class)->handle($admin, $obligation, '50.00', 'USD', 'bank_transfer', now(), null, null, 'rate-change-final');
+        $settled = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+        self::assertSame(0, $settled->outstanding->minorUnits());
+        self::assertSame(0, $settled->displayOutstanding->minorUnits());
+        self::assertTrue($settled->isSettled());
+        self::assertFalse($scenarioFactory->financeDebtIsCurrent($scenarioContext));
+    }
+
+    public function test_multiple_partial_payments_and_correction_keep_snapshot_valuation_stable(): void
+    {
+        [$organization, $admin, , $booking] = $this->pricedCompletedBooking('USD', 10000, 'RUB');
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+
+        app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '200');
+        $first = app(RecordManualPayment::class)->handle($admin, $obligation, '25.00', 'USD', 'cash', now(), null, null, 'multi-rate-one');
+        app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '150');
+        $second = app(RecordManualPayment::class)->handle($admin, $obligation, '25.00', 'USD', 'cash', now(), null, null, 'multi-rate-two');
+
+        $partial = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+        self::assertSame(5000, $partial->outstanding->minorUnits());
+        self::assertSame(450000, $partial->displayOutstanding->minorUnits());
+        self::assertSame('200', $first->conversion_snapshot['display']['rate']);
+        self::assertSame('150', $second->conversion_snapshot['display']['rate']);
+        self::assertSame('90', $obligation->fresh()->conversion_snapshots['display']['rate']);
+
+        $correction = app(CorrectFinancialPayment::class)->handle($admin, $first, 'Корректировка после изменения курса.', 'multi-rate-correction');
+        $corrected = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+        self::assertSame(7500, $corrected->outstanding->minorUnits());
+        self::assertSame(675000, $corrected->displayOutstanding->minorUnits());
+        self::assertSame(-2500, $correction->settlement_amount_minor);
+        self::assertSame('correction', $correction->entry_type->value);
+    }
+
+    public function test_client_debt_totals_keep_unlike_display_currencies_separate(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000, 'RUB');
+        $specialist = Specialist::query()->where('organization_id', $organization->getKey())->firstOrFail();
+        $service = Service::query()->where('organization_id', $organization->getKey())->firstOrFail();
+
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['RUB', 'USD'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+        ]);
+        $secondBooking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => now()->subHours(5),
+                'ends_at' => now()->subHours(4),
+                'blocking_ends_at' => now()->subHours(4),
+            ]);
+        app(CompleteBooking::class)->handle($admin, $secondBooking);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->has('totals', 2)
+                ->where('totals.0.currency', 'RUB')
+                ->where('totals.0.amountMinor', 900000)
+                ->where('totals.1.currency', 'USD')
+                ->where('totals.1.amountMinor', 10000));
+    }
+
+    public function test_inconsistent_obligation_valuation_fails_reconciliation_instead_of_being_clamped(): void
+    {
+        [$organization, , , $booking] = $this->pricedCompletedBooking('USD', 10000, 'RUB');
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        $snapshots = $obligation->conversion_snapshots;
+        $snapshots['display']['rate'] = '200';
+        $obligation->forceFill(['conversion_snapshots' => $snapshots])->save();
+
+        $this->expectException(\UnexpectedValueException::class);
+        app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
     }
 
     public function test_manual_partial_payments_reconcile_and_idempotency_prevent_overpayment(): void
@@ -319,7 +487,7 @@ final class MilestoneSixFinanceTest extends TestCase
     }
 
     /** @return array{Organization, User, Client, Booking} */
-    private function pricedCompletedBooking(string $currency, int $priceMinor): array
+    private function pricedCompletedBooking(string $currency, int $priceMinor, string $displayCurrency = 'USD'): array
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
@@ -340,12 +508,18 @@ final class MilestoneSixFinanceTest extends TestCase
             ]);
         $this->setOrganization($organization);
 
+        $rates = [
+            ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '90'],
+            ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.011111111111111111'],
+        ];
+
         app(SaveCurrencyConfiguration::class)->handle($admin, [
             'base_currency' => 'RUB',
-            'display_currency' => 'USD',
+            'display_currency' => $displayCurrency,
             'allowed_currencies' => ['RUB', 'USD'],
             'force_single_currency' => false,
             'rounding_mode' => 'half_up',
+            'rates' => $rates,
         ]);
         app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
 

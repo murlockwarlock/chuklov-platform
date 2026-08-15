@@ -73,7 +73,7 @@ final class ListClientFinance
             'completedAt' => $obligation->booking?->endsAtUtc()->setTimezone($timezone)->format('d.m.Y H:i'),
             'obligationMinor' => (int) $obligation->display_amount_minor,
             'paidMinor' => $displayApplied->minorUnits(),
-            'outstandingMinor' => max(0, $displayOutstanding->minorUnits()),
+            'outstandingMinor' => $displayOutstanding->minorUnits(),
             'displayCurrency' => $obligation->display_currency->value,
             'originalCurrency' => $obligation->currency->value,
             'status' => $reconciliation->status->value,

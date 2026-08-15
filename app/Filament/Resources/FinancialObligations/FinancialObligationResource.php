@@ -58,7 +58,7 @@ final class FinancialObligationResource extends Resource
                 ->state(function (FinancialObligation $record): string {
                     $reconciliation = app(ReconcileFinancialObligation::class)->handle((int) $record->organization_id, (int) $record->getKey());
 
-                    return Money::ofMinor(max(0, $reconciliation->outstanding->minorUnits()), $reconciliation->outstanding->currency())->toDecimalString()
+                    return Money::ofMinor($reconciliation->outstanding->minorUnits(), $reconciliation->outstanding->currency())->toDecimalString()
                         .' '.$reconciliation->outstanding->currency()->value;
                 }),
             TextEntry::make('receipt_summary')

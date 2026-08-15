@@ -68,7 +68,7 @@ final class ScenarioContextFactory
             $renderContext['finance'] = [
                 'amount' => $context->obligation->display_amount_minor,
                 'currency' => $context->obligation->display_currency->value,
-                'outstanding_amount' => max(0, $reconciliation->displayOutstanding->minorUnits()),
+                'outstanding_amount' => $reconciliation->displayOutstanding->minorUnits(),
                 'status' => $reconciliation->status->value,
             ];
         }

@@ -207,6 +207,10 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
             'allowed_currencies' => ['RUB', 'USD'],
             'force_single_currency' => false,
             'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '90'],
+                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.011111111111111111'],
+            ],
         ]);
         app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
         $obligation = $includeObligation
