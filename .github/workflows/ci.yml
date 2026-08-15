@@ -178,17 +178,11 @@ jobs:
       - name: Verify application health
         run: |
           for attempt in $(seq 1 30); do
-            health_status="$(curl --silent --show-error --header 'Accept: application/json' --output /tmp/health-response --write-out '%{http_code}' http://127.0.0.1:8000/health || true)"
-            if [ "$health_status" = "200" ]; then
+            if curl --fail --silent --show-error http://127.0.0.1:8000/health > /dev/null; then
               exit 0
             fi
             sleep 2
           done
-          echo 'Health response body:'
-          echo 'Health error markers:'
-          grep -Eio 'tempnam\(\)[^<]*|permission denied|failed to open stream|file_put_contents\([^<]{0,300}|rename\([^<]{0,300}|[A-Za-z_\\]+Exception[^<]{0,200}|500 Internal Server Error' /tmp/health-response | head -40 || true
-          head -c 4000 /tmp/health-response 2>/dev/null || true
-          tail -c 4000 /tmp/health-response 2>/dev/null || true
           exit 1
       - name: Verify Horizon runtime
         run: docker compose exec -T app php artisan horizon:status

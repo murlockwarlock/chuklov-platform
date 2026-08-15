@@ -12,6 +12,7 @@ mkdir -p \
     /app/storage/framework/cache/data \
     /app/storage/framework/sessions \
     /app/storage/framework/views \
+    /app/storage/inertia-devtools \
     /app/storage/logs \
     /app/bootstrap/cache
 
@@ -19,6 +20,7 @@ chown -R www-data:www-data \
     /app/storage/app/private \
     /app/storage/app/public \
     /app/storage/framework \
+    /app/storage/inertia-devtools \
     /app/storage/logs \
     /app/bootstrap/cache
 
