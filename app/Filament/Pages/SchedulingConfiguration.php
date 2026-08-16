@@ -46,7 +46,7 @@ class SchedulingConfiguration extends Page
 
     protected static string|UnitEnum|null $navigationGroup = 'Записи';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 2;
 
     /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
     public ?array $data = null;

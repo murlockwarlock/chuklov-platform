@@ -20,5 +20,6 @@ Current Phase 1 modules:
 - Sessions: organization-scoped specialist-confirmed medical Session persistence, create/read/update actions, bounded client history and current/previous dynamics projection, and explicit same-client links to existing medical attachments. Filament remains an orchestration layer; there is no Session delete or AI behavior.
 - Attachments: private storage boundary, server-side MIME sniffing, raw DICOM rejection, deterministic scanner/quarantine lifecycle, streaming downloads, and organization ownership enforcement.
 - Surveys: organization-scoped versioned declarative definitions, encrypted immutable attempts/results/reports, deterministic scoring and compatible repeat comparison, structured CRM management, shared Portal flow, and typed Scenario events. It contains no AI behavior.
+- Knowledge: organization-scoped authored/private-upload sources, immutable revisions, durable idempotent ingestion runs, deterministic chunking, provider-neutral embeddings, PostgreSQL/pgvector retrieval through `KnowledgeRetriever`, structured provenance, and untrusted-content boundaries. It contains no end-user AI answer generation.
 
 Planned bounded contexts are those listed in the master plan. Add a module only with relevant REQ IDs. Cross-module writes go through Application actions; do not reach through another module’s infrastructure.

@@ -34,13 +34,13 @@ use UnitEnum;
 /** @property-read Schema $form */
 final class FinanceConfiguration extends Page
 {
-    protected static ?string $navigationLabel = 'Финансы';
+    protected static ?string $navigationLabel = 'Настройки финансов';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Организация';
+    protected static string|UnitEnum|null $navigationGroup = 'Финансы';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 1;
 
     /** @var array<string, mixed>|null */
     public ?array $data = null;

@@ -22,6 +22,11 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Infrastructure\Mail\LaravelEmailVerificationCodeSender;
+use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
+use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Infrastructure\LaravelEmbeddingGenerator;
+use App\Modules\Knowledge\Infrastructure\PgvectorKnowledgeRetriever;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
@@ -62,6 +67,7 @@ use App\Policies\ClientPolicy;
 use App\Policies\ContentSectionPolicy;
 use App\Policies\FinancialObligationPolicy;
 use App\Policies\FinancialReceiptPolicy;
+use App\Policies\KnowledgeSourcePolicy;
 use App\Policies\MedicalAttachmentPolicy;
 use App\Policies\MedicalSessionPolicy;
 use App\Policies\OrganizationCredentialPolicy;
@@ -114,6 +120,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(MedicalEncryptorInterface::class, MedicalDataEncryptor::class);
         $this->app->bind(AttachmentStorageInterface::class, PrivateMedicalAttachmentStorage::class);
         $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
+        $this->app->bind(EmbeddingGenerator::class, LaravelEmbeddingGenerator::class);
+        $this->app->bind(KnowledgeRetriever::class, PgvectorKnowledgeRetriever::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);
         $this->app->bind(NotificationTemplateRenderer::class, ScenarioTemplateRenderer::class);
     }
@@ -151,5 +159,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(MedicalSession::class, MedicalSessionPolicy::class);
         Gate::policy(SurveyDefinition::class, SurveyDefinitionPolicy::class);
         Gate::policy(SurveyAttempt::class, SurveyAttemptPolicy::class);
+        Gate::policy(KnowledgeSource::class, KnowledgeSourcePolicy::class);
     }
 }

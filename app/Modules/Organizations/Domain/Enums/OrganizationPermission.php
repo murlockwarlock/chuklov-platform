@@ -23,6 +23,8 @@ enum OrganizationPermission: string
     case ManageScenarios = 'manage_scenarios';
     case ViewSurveys = 'view_surveys';
     case ManageSurveys = 'manage_surveys';
+    case ViewKnowledge = 'view_knowledge';
+    case ManageKnowledge = 'manage_knowledge';
     case ViewFinance = 'view_finance';
     case ManageFinance = 'manage_finance';
 }

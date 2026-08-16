@@ -31,6 +31,10 @@ final class NotificationTemplateResource extends Resource
 
     protected static ?string $navigationLabel = 'Сообщения';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Коммуникации';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $modelLabel = 'сообщение';
 
     protected static ?string $pluralModelLabel = 'сообщения';

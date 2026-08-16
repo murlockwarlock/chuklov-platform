@@ -1,5 +1,14 @@
 # Project Status
 
+## 2026-08-17 - M9 controlled organization knowledge retrieval - IMPLEMENTATION CANDIDATE
+
+- Implemented the organization-only Knowledge module for `REQ-RAG-001` through `REQ-RAG-004`: authored Markdown/plain text and private TXT/Markdown uploads, immutable revisions, durable ingestion runs, deterministic normalized-character chunking, provider-neutral embeddings, pgvector retrieval through `KnowledgeRetriever`, and stable source/revision/chunk/run provenance. OQ-008 remains open, so no platform-shared method library exists; medical/client records, Sessions, attachments, conversations, and survey answers are not automatically ingested.
+- Every source, revision, run, chunk, job, query, filter, and result is Organization-scoped. Composite PostgreSQL foreign keys and unique run/chunk identities back the Application boundary; source filters are revalidated against server-derived `OrganizationContext`. Retrieval applies tenant/availability/configuration predicates before exact cosine ordering and fails closed on incompatible embedding provenance.
+- Ingestion jobs carry identifiers only. PostgreSQL row locks, configuration identity, processing-lease recovery, partial-chunk cleanup, deterministic upsert, and an atomic ready/active transition cover duplicate requests, retries, competing workers, late old revisions, and re-embedding. Partial/failed/retired/stale content is not retrievable.
+- Added explicit `ViewKnowledge`/`ManageKnowledge` permissions, allowlisted structural audit metadata, private upload validation and size bounds, sanitized provider failure messages, Filament source/version/status management, retirement/reactivation, and a bounded retrieval inspection page without raw embeddings. The CRM sidebar is grouped by business task, with knowledge management and inspection together under `Контент и знания`. Retrieved commands, URLs, code, templates, and prompt-like instructions remain inert data; M9 builds no final AI answer.
+- Deterministic local evidence: focused PHPUnit passes 16 tests / 87 assertions; narrow production Larastan passes with 0 errors; Pint and `git diff --check` pass; Composer audit reports no advisories; npm audit reports 0 vulnerabilities; the scoped secret-pattern scan is clean. PostgreSQL/pgvector/composite-FK/two-process claim tests were added but not run locally under the no-local-integration policy and remain for the hosted candidate gate.
+- Status: M9 is `IN_PROGRESS` as an implementation candidate pending exact-SHA hosted CI. M8 remains content-blocked by OQ-015. M10 remains `NOT_STARTED`.
+
 ## 2026-08-16 - M8 Surveys / Road Map implementation candidate - CONTENT BLOCKED
 
 - Implemented organization-scoped draft/published/retired survey definitions, immutable published versions, exact-version attempts, encrypted definition/answer/scoring/result/report/comparison snapshots, deterministic typed conditions/scoring/thresholds/tags, non-AI reports, and compatibility-keyed repeat comparison.
@@ -15,10 +24,10 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-16
+- Last updated: 2026-08-17
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 8 — Surveys / Road Map (CONTENT BLOCKED implementation candidate)
-- Status: M0–M7 are CLOSED / ACCEPTED. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources. M9–M10 remain NOT_STARTED.
+- Current milestone: Milestone 9 — controlled organization knowledge retrieval (IMPLEMENTATION CANDIDATE)
+- Status: M0–M7 are CLOSED / ACCEPTED. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources. M9 awaits candidate CI; M10 remains NOT_STARTED.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

@@ -25,6 +25,10 @@ final class SurveyAttemptResource extends Resource
 
     protected static ?string $navigationLabel = 'Результаты тестов';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Клиенты';
+
+    protected static ?int $navigationSort = 2;
+
     protected static ?string $modelLabel = 'результат теста';
 
     protected static ?string $pluralModelLabel = 'результаты тестов';

@@ -26,6 +26,10 @@ class ContentSectionResource extends Resource
 
     protected static ?string $navigationLabel = 'Разделы контента';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Контент и знания';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $modelLabel = 'раздел';
 
     protected static ?string $pluralModelLabel = 'разделы контента';

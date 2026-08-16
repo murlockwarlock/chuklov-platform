@@ -9,6 +9,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | {.dockerignore,docker/**,scripts/check-docker-context.sh}, {Makefile,composer.json,scripts/initialize-app-key.sh,scripts/check-app-key-idempotence.sh} | .ai/rules/general.md |
 | {app/Filament/**,app/Http/Controllers/Portal/**,resources/js/**,resources/views/**} | .ai/rules/js-views.md |
 | resources/js/** | .ai/rules/js.md |
+| app/Modules/Knowledge/** | .ai/rules/knowledge.md |
 | app/Http/Controllers/Portal/** | .ai/rules/portal.md |
 | app/Modules/Scenarios/** | .ai/rules/scenarios.md |
 | resources/views/** | .ai/rules/views.md |
