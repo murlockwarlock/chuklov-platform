@@ -20,6 +20,7 @@ enum OrganizationRole: string
                 OrganizationPermission::ViewSpecialists,
                 OrganizationPermission::ViewScheduling,
                 OrganizationPermission::ViewScenarios,
+                OrganizationPermission::ViewSurveys,
                 OrganizationPermission::ViewFinance,
             ], true),
         };

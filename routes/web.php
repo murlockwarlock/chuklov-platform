@@ -14,6 +14,7 @@ use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
+use App\Http\Controllers\Portal\SurveyController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
@@ -59,6 +60,12 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
+            Route::post('/portal/surveys/{definitionId}/start', [SurveyController::class, 'start'])->whereNumber('definitionId')->name('portal.surveys.start');
+            Route::get('/portal/survey-attempts/{attemptId}', [SurveyController::class, 'show'])->whereNumber('attemptId')->name('portal.surveys.show');
+            Route::post('/portal/survey-attempts/{attemptId}/save', [SurveyController::class, 'save'])->whereNumber('attemptId')->name('portal.surveys.save');
+            Route::post('/portal/survey-attempts/{attemptId}/complete', [SurveyController::class, 'complete'])->whereNumber('attemptId')->name('portal.surveys.complete');
+            Route::get('/portal/survey-reports/{reportId}', [SurveyController::class, 'report'])->whereNumber('reportId')->name('portal.surveys.report');
             Route::get('/portal/finance/receipts/{receiptId}', FinanceReceiptController::class)
                 ->whereNumber('receiptId')
                 ->name('portal.finance.receipt');

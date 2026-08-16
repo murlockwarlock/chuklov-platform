@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use InvalidArgumentException;
@@ -23,6 +24,7 @@ final class ScenarioContextFactory
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
+            ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
         };
     }
 
@@ -73,7 +75,15 @@ final class ScenarioContextFactory
             ];
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance'])) {
+        if ($context->surveyAttempt !== null) {
+            $renderContext['survey'] = [
+                'title' => $context->surveyAttempt->surveyVersion->title,
+                'version' => $context->surveyAttempt->surveyVersion->version,
+                'completed_at' => $context->surveyAttempt->completed_at?->toIso8601String(),
+            ];
+        }
+
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey'])) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -122,6 +132,26 @@ final class ScenarioContextFactory
             client: $obligation?->client,
             evaluationEndsAt: $evaluationEndsAt,
             obligation: $obligation,
+        );
+    }
+
+    private function surveyContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $attempt = SurveyAttempt::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($this->payloadId($event, 'attempt_id'))
+            ->with(['client', 'surveyVersion'])
+            ->first();
+        if (! $attempt instanceof SurveyAttempt) {
+            $attempt = null;
+        }
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $attempt?->client,
+            evaluationEndsAt: $evaluationEndsAt,
+            surveyAttempt: $attempt,
         );
     }
 

@@ -1,9 +1,24 @@
 # Project Status
 
+## 2026-08-16 - M8 Surveys / Road Map implementation candidate - CONTENT BLOCKED
+
+- Implemented organization-scoped draft/published/retired survey definitions, immutable published versions, exact-version attempts, encrypted definition/answer/scoring/result/report/comparison snapshots, deterministic typed conditions/scoring/thresholds/tags, non-AI reports, and compatibility-keyed repeat comparison.
+- Completion materializes one report and one idempotent `survey.completed` Scenario event in one transaction. Compatible configured repeat metrics can create one idempotent `TEST_STAGNATION_DETECTED`; incompatible versions remain explicitly non-comparable. Recipients, channels, delays, templates, and tone remain Scenario configuration.
+- Added structured Filament management and bounded attempt history plus responsive Inertia Portal list/start/resume/save/complete/report flows. Reports expose configured metrics and threshold text only, with no diagnosis, treatment recommendation, or AI output.
+- Added `surveys:import` for validated definition JSON. The approved local v2.2 source names “9 systems” and MSQ but says their full questionnaires were moved to separate documents that are absent locally. No questions, scores, thresholds, or interpretation were fabricated. See OQ-015.
+- Focused local evidence so far: M8 PHPUnit passes 9 tests / 60 assertions; the affected M6 Scenario regression file also passes 15 tests / 122 assertions; narrow Larastan passes with 0 errors using a 512 MB local limit; Pint, ESLint, `vue-tsc`, and Vite build pass; `git diff --check` passes. PostgreSQL composite-FK integration coverage was added but not run locally; privacy, Docker/runtime, full quality, PostgreSQL integration, and hosted candidate CI are not yet claimed.
+- Status: M8 is `BLOCKED` on source-backed 9-systems and MSQ content and remains unaccepted pending candidate CI. M9 and M10 remain `NOT_STARTED`; M8 contains no LLM or generative AI implementation.
+
+## 2026-08-16 - Candidate-only hosted CI policy
+
+- Heavy `CI` is manual `workflow_dispatch` only; automatic `push` and `pull_request` triggers are removed without changing its quality/integration, privacy/secret, or Docker/runtime jobs.
+- Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
+- Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
+
 - Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (CLOSED / ACCEPTED); M8 is NOT STARTED
-- Status: M0–M7 are CLOSED / ACCEPTED. The accepted M7 SHA is `e003a7056ce14c4ef55ea69b2e48c866f3156c36`; post-merge hosted CI run `31957913038` succeeded for that exact SHA. M8–M10 remain NOT STARTED.
+- Current milestone: Milestone 8 — Surveys / Road Map (CONTENT BLOCKED implementation candidate)
+- Status: M0–M7 are CLOSED / ACCEPTED. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources. M9–M10 remain NOT_STARTED.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

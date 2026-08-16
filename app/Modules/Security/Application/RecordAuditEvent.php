@@ -70,6 +70,10 @@ class RecordAuditEvent
         'medical.session.updated' => ['source', 'key_version', 'updated_fields'],
         'medical.session.attachment.linked' => ['attachment_id'],
         'medical.session.attachment.unlinked' => ['attachment_id'],
+        'survey.definition.created' => ['definition_key', 'version', 'source_present'],
+        'survey.definition.updated' => ['definition_key', 'version'],
+        'survey.version.published' => ['definition_key', 'version'],
+        'survey.attempt.completed' => ['definition_key', 'version', 'tag_count', 'metric_count'],
         'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
         'attachment.downloaded' => ['source'],
     ];

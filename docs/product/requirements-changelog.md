@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-08-16 - M8 survey source provenance blocker
+
+- Verified that the approved local v2.2 specification and changelog require “9 systems” and MSQ but do not contain their full questions, answer options, scoring, thresholds, tags, or result text; the changelog says the long questionnaires were moved to separate documents that are not present locally.
+- Added OQ-015. Generic engine, deterministic report, repeat comparison, Scenario, CRM, Portal, tenant, and privacy work can proceed, but REQ-SURVEY-002 and M8 completion remain blocked until source-backed definition material is supplied. No medical questionnaire content is inferred or fabricated.
+
 ## 2026-08-16 - Owner-confirmed M10 AI product and architecture contract
 
 - Added `REQ-AI-008` to define M10 as a controlled organization-scoped AI platform rather than a single provider/model integration. Ordinary supported agents, prompts, provider/model selection, context policies, safe tools, operational limits, and release controls must be manageable from authorized CRM surfaces within typed application-defined boundaries.

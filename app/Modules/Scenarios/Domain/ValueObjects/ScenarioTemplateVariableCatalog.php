@@ -19,6 +19,9 @@ final class ScenarioTemplateVariableCatalog
         'booking.completed_at',
         'onboarding.stage',
         'onboarding.completed',
+        'survey.title',
+        'survey.version',
+        'survey.completed_at',
     ];
 
     /** @return list<string> */
@@ -42,6 +45,9 @@ final class ScenarioTemplateVariableCatalog
             'booking.completed_at' => 'Время завершения визита',
             'onboarding.stage' => 'Текущий этап заполнения',
             'onboarding.completed' => 'Заполнение завершено',
+            'survey.title' => 'Название теста',
+            'survey.version' => 'Версия теста',
+            'survey.completed_at' => 'Время завершения теста',
         ];
     }
 

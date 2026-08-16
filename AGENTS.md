@@ -117,18 +117,20 @@ Allowed local checks: targeted unit or feature test files/filters, lint/static a
 
 ### Hosted CI Is Authoritative
 
+Heavy hosted CI is a manually triggered candidate gate. Agents may make multiple local commits without hosted CI while building a coherent vertical slice; CI is not a save button or per-fix feedback loop.
+
 For candidate application code:
 
-1. Create a cohesive candidate commit.
+1. Finish the coherent candidate with focused local feedback and understood documentation/status.
 2. Push the candidate SHA or branch.
-3. Allow GitHub Actions to run the blocking CI suite.
+3. Manually dispatch the blocking CI workflow for that candidate ref.
 4. Inspect the exact-SHA hosted CI result.
-5. If red, inspect hosted logs, fix locally, and push a new candidate.
-6. Repeat until green.
+5. If it finds a real defect, batch the related remediation and dispatch one new candidate.
+6. Another candidate run is justified when high-risk tenant, security, encryption, migration, or concurrency behavior changes.
 
 Do not claim full verification from local checks alone. Report the exact candidate SHA, hosted CI run ID, job statuses, and staging SHA if deployment was performed.
 
-Required PR/main checks: PHPUnit unit/feature/integration, Pint, Larastan, ESLint, `vue-tsc`, Vite build, Composer audit, npm audit, Docker build/runtime health, and privacy/secret scan.
+The manually dispatched candidate workflow runs PHPUnit unit/feature/integration, Pint, Larastan, ESLint, `vue-tsc`, Vite build, Composer audit, npm audit, Docker build/runtime health, and privacy/secret scan.
 
 The full Playwright suite runs through the separate scheduled/manual E2E workflow until it is stable enough to return as a blocking smoke gate. Scheduled E2E failures are investigated separately and do not automatically block unrelated feature work.
 

@@ -53,6 +53,8 @@ final class ScenarioRulesTable
             ScenarioEventType::BookingCompleted->value => 'После визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
             ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
+            ScenarioEventType::SurveyCompleted->value => 'После теста',
+            ScenarioEventType::TestStagnationDetected->value => 'Нет снижения показателей',
             default => 'Событие',
         };
     }

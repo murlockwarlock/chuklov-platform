@@ -169,6 +169,8 @@ final class ScenarioRuleResource extends Resource
             ScenarioEventType::BookingCompleted->value => 'После завершения визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
             ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
+            ScenarioEventType::SurveyCompleted->value => 'После завершения теста',
+            ScenarioEventType::TestStagnationDetected->value => 'При отсутствии снижения показателей',
             default => 'Событие',
         };
     }
