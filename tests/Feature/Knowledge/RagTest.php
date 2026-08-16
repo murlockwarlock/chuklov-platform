@@ -40,6 +40,7 @@ final class RagTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('queue.default', 'sync');
         $this->bindDeterministicEmbeddings();
     }
 
@@ -272,6 +273,7 @@ final class RagTest extends TestCase
     {
         $organization = $this->organization();
         $actor = User::factory()->forOrganization($organization)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $actor];
