@@ -68,6 +68,8 @@ class RecordAuditEvent
         'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],
         'medical.session.created' => ['source', 'key_version', 'booking_id', 'client_id', 'specialist_id'],
         'medical.session.updated' => ['source', 'key_version', 'updated_fields'],
+        'medical.session.attachment.linked' => ['attachment_id'],
+        'medical.session.attachment.unlinked' => ['attachment_id'],
         'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
         'attachment.downloaded' => ['source'],
     ];

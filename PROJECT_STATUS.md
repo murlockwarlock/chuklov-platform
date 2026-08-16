@@ -2,8 +2,16 @@
 
 - Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
-- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B.1 Session Foundation implementation candidate; M7B.2 Session Cockpit UI / client-scoped history is an implementation candidate; M7B overall remains incomplete)
+- Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (FINAL VERIFICATION CANDIDATE)
+- Status: M0–M6 are CLOSED / ACCEPTED; M7 implementation is complete and is a candidate for final closeout verification. M7B.2 is merged and its post-merge CI is green; the final Session files/dynamics slice awaits exact-SHA hosted CI before M7 closeout.
+
+## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — IMPLEMENTATION COMPLETE / FINAL VERIFICATION CANDIDATE — 2026-08-16
+
+- Added `medical_session_attachments`, an explicit organization/client-owned association between existing `medical_sessions` and `medical_attachments`. Composite foreign keys require both sides to share the same Organization and Client; linking copies no bytes, and unlinking deletes only the association.
+- Added Application actions for bounded same-client attachment search, link/unlink, linked metadata projection, and current-versus-immediately-previous Session dynamics. Attachment management reuses existing authorization, scan/quarantine, private storage, and temporary signed-download boundaries. Only cleared linked files receive a download URL.
+- Session detail now presents structural facts, the six specialist-confirmed clinical fields for current and immediately previous Sessions, linked file metadata, authorized downloads, link/unlink actions, Edit, and return to Session history. Dynamics adds no score, diagnosis, automated judgement, or AI and decrypts only the two explicitly displayed Sessions.
+- Focused local verification: Session attachment, cockpit, and Medical Session PHPUnit suites pass (59 tests, 255 assertions); narrow Larastan on changed application paths, focused E2E ESLint, Pint, and `git diff --check` pass. PostgreSQL integration, desktop/mobile Playwright, privacy, Docker/runtime, and full quality remain hosted-CI-only under repository policy.
+- Status: M7 is implementation-complete and ready to enter final closeout verification once the exact candidate SHA passes all required hosted jobs. M8–M10 and real AI remain NOT STARTED.
 
 ## Milestone 7B.1 — Durable Medical Session Foundation — IMPLEMENTATION CANDIDATE — 2026-08-16
 

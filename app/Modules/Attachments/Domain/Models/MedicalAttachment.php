@@ -7,9 +7,12 @@ use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -33,6 +36,7 @@ use Illuminate\Support\Carbon;
  * @property-read Organization $organization
  * @property-read Client|null $client
  * @property-read User|null $uploadedBy
+ * @property-read Collection<int, MedicalSessionAttachment> $sessionLinks
  */
 #[Fillable([
     'uuid',
@@ -68,6 +72,12 @@ class MedicalAttachment extends Model
     public function uploadedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
+    }
+
+    /** @return HasMany<MedicalSessionAttachment, $this> */
+    public function sessionLinks(): HasMany
+    {
+        return $this->hasMany(MedicalSessionAttachment::class, 'medical_attachment_id');
     }
 
     public function isAvailable(): bool

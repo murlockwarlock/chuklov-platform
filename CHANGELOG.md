@@ -4,6 +4,12 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- M7 final product slice — Session files and longitudinal dynamics:
+  - Added the `medical_session_attachments` association with composite Organization/Client foreign keys to both Sessions and existing medical attachments. The relation preserves historical file records, copies no bytes, and unlinking removes only the association.
+  - Added authorized Application actions for bounded client-attachment search, link/unlink, linked metadata with existing temporary download URLs, and deterministic current-versus-immediately-previous Session dynamics.
+  - Extended Session detail with linked file metadata/download availability, bounded specialist-confirmed longitudinal comparison, file association actions, and direct return to client Session history. No AI, diagnosis, scoring, or automated clinical judgement was added.
+  - Added focused feature, PostgreSQL constraint, and desktop/mobile CRM Playwright coverage. M7 is implementation-complete and a candidate for final closeout verification; hosted exact-SHA CI remains authoritative.
+
 - Developer workflow remediation — local-light / hosted-heavy verification:
   - AGENTS.md now defines local development feedback (targeted tests, lint, formatting) vs authoritative hosted CI (full `make quality`, integration, Playwright, Docker runtime, privacy/secret scan). Agents must not run heavy verification locally unless the user explicitly requests it.
   - Added `workflow_dispatch` trigger and branch-level concurrency cancellation to `.github/workflows/ci.yml`.
