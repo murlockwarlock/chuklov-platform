@@ -24,11 +24,16 @@ final readonly class CreateSurveyVersion
         $this->validator->validate($data['definition'], $data['scoring']);
 
         return DB::transaction(function () use ($actor, $organization, $definition, $data): SurveyVersion {
-            $version = (int) $definition->versions()->lockForUpdate()->max('version') + 1;
+            $lockedDefinition = SurveyDefinition::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($definition->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $version = (int) $lockedDefinition->versions()->max('version') + 1;
 
             return SurveyVersion::query()->create([
                 'organization_id' => $organization->getKey(),
-                'survey_definition_id' => $definition->getKey(),
+                'survey_definition_id' => $lockedDefinition->getKey(),
                 'version' => $version,
                 'status' => SurveyVersionStatus::Draft,
                 'title' => $data['title'],
