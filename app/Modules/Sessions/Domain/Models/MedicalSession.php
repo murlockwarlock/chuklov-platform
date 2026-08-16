@@ -7,8 +7,10 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -31,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property-read Client $client
  * @property-read Specialist $specialist
  * @property-read Booking|null $booking
+ * @property-read Collection<int, MedicalSessionAttachment> $attachmentLinks
  */
 #[Fillable(['pain', 'tests', 'observations', 'root_cause_hypothesis', 'protocol', 'result', 'encryption_key_version'])]
 class MedicalSession extends Model
@@ -57,6 +60,12 @@ class MedicalSession extends Model
     public function booking(): BelongsTo
     {
         return $this->belongsTo(Booking::class);
+    }
+
+    /** @return HasMany<MedicalSessionAttachment, $this> */
+    public function attachmentLinks(): HasMany
+    {
+        return $this->hasMany(MedicalSessionAttachment::class, 'medical_session_id');
     }
 
     protected function casts(): array

@@ -5,11 +5,13 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
-use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
-use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\GetSessionDynamics;
+use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Carbon;
 
@@ -43,47 +45,68 @@ final class SessionInfolist
                                 return $parts ? implode(' · ', $parts) : '#'.$booking->getKey();
                             }),
                     ])->columns(3),
-                Section::make('Клинические заметки')
+                Section::make('Динамика подтверждённых фактов')
                     ->schema([
-                        TextEntry::make('pain')->label('Боль')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->pain)
-                            ->placeholder('Не заполнено')
+                        RepeatableEntry::make('comparison')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('period')->label('Период')->columnSpanFull(),
+                                TextEntry::make('occurred_at')->label('Дата'),
+                                TextEntry::make('specialist')->label('Специалист'),
+                                TextEntry::make('booking')->label('Запись на приём')->columnSpanFull(),
+                                TextEntry::make('pain')->label('Боль')->placeholder('Не заполнено'),
+                                TextEntry::make('tests')->label('Тесты')->placeholder('Не заполнено'),
+                                TextEntry::make('observations')->label('Наблюдения')->placeholder('Не заполнено'),
+                                TextEntry::make('root_cause_hypothesis')->label('Первопричина')->placeholder('Не заполнено'),
+                                TextEntry::make('protocol')->label('Протокол')->placeholder('Не заполнено'),
+                                TextEntry::make('result')->label('Результат')->placeholder('Не заполнено'),
+                            ])
+                            ->columns(2)
+                            ->state(function (MedicalSession $record, RepeatableEntry $entry): array {
+                                $actor = auth()->user();
+                                $livewire = $entry->getLivewire();
+                                $parent = method_exists($livewire, 'getParentRecord') ? $livewire->getParentRecord() : null;
+
+                                if (! $actor instanceof User || ! $parent instanceof Client) {
+                                    return [];
+                                }
+
+                                return app(GetSessionDynamics::class)->handle($actor, $record, $parent)->comparison();
+                            })
                             ->columnSpanFull(),
-                        TextEntry::make('tests')->label('Тесты')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->tests)
-                            ->placeholder('Не заполнено')
-                            ->columnSpanFull(),
-                        TextEntry::make('observations')->label('Наблюдения')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->observations)
-                            ->placeholder('Не заполнено')
-                            ->columnSpanFull(),
-                        TextEntry::make('root_cause_hypothesis')->label('Гипотеза первопричины')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->rootCauseHypothesis)
-                            ->placeholder('Не заполнено')
-                            ->columnSpanFull(),
-                        TextEntry::make('protocol')->label('Протокол')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->protocol)
-                            ->placeholder('Не заполнено')
-                            ->columnSpanFull(),
-                        TextEntry::make('result')->label('Результат')
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::dto($record, $entry)?->result)
-                            ->placeholder('Не заполнено')
+                    ]),
+                Section::make('Файлы сеанса')
+                    ->schema([
+                        RepeatableEntry::make('attachments')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('filename')
+                                    ->label('Файл')
+                                    ->url(fn (Get $get): ?string => $get('download_url'))
+                                    ->openUrlInNewTab()
+                                    ->columnSpanFull(),
+                                TextEntry::make('type')->label('Тип'),
+                                TextEntry::make('size')->label('Размер'),
+                                TextEntry::make('status')->label('Состояние'),
+                            ])
+                            ->columns(2)
+                            ->state(function (MedicalSession $record, RepeatableEntry $entry): array {
+                                $actor = auth()->user();
+                                $livewire = $entry->getLivewire();
+                                $parent = method_exists($livewire, 'getParentRecord') ? $livewire->getParentRecord() : null;
+
+                                if (! $actor instanceof User || ! $parent instanceof Client) {
+                                    return [];
+                                }
+
+                                return array_map(
+                                    static fn ($attachment): array => $attachment->toArray(),
+                                    app(ListSessionAttachments::class)->handle($actor, $record, $parent),
+                                );
+                            })
                             ->columnSpanFull(),
                     ]),
             ]);
-    }
-
-    private static function dto(MedicalSession $record, TextEntry $entry): ?MedicalSessionData
-    {
-        $actor = auth()->user();
-        $livewire = $entry->getLivewire();
-        $parent = method_exists($livewire, 'getParentRecord') ? $livewire->getParentRecord() : null;
-
-        if (! $actor instanceof User) {
-            return null;
-        }
-
-        return app(GetSession::class)->handle($actor, $record, $parent instanceof Client ? $parent : null);
     }
 
     private static function statusLabel(BookingStatus $status): string

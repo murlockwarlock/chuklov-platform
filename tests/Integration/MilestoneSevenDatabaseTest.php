@@ -14,6 +14,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -258,5 +259,52 @@ final class MilestoneSevenDatabaseTest extends TestCase
 
         $this->expectException(QueryException::class);
         $session->save();
+    }
+
+    public function test_postgresql_session_attachment_link_cannot_cross_client_or_organization(): void
+    {
+        $organizationA = Organization::factory()->create();
+        $organizationB = Organization::factory()->create();
+        $clientA = Client::factory()->forOrganization($organizationA)->create();
+        $clientB = Client::factory()->forOrganization($organizationB)->create();
+        $specialistA = Specialist::factory()->forOrganization($organizationA)->create();
+        $userB = User::factory()->forOrganization($organizationB, OrganizationRole::Administrator)->create();
+
+        $session = new MedicalSession;
+        $session->forceFill([
+            'organization_id' => $organizationA->getKey(),
+            'client_id' => $clientA->getKey(),
+            'specialist_id' => $specialistA->getKey(),
+            'pain' => 'encrypted_pain',
+            'encryption_key_version' => 1,
+            'occurred_at' => Carbon::now('UTC'),
+        ]);
+        $session->save();
+
+        $attachment = new MedicalAttachment;
+        $attachment->forceFill([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $organizationB->getKey(),
+            'client_id' => $clientB->getKey(),
+            'uploaded_by_user_id' => $userB->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$organizationB->getKey().'/test.pdf',
+            'original_filename' => 'test.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 1024,
+            'sha256_checksum' => 'session-link-checksum',
+            'scan_status' => AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
+        $attachment->save();
+
+        $this->expectException(QueryException::class);
+        MedicalSessionAttachment::query()->create([
+            'organization_id' => $organizationA->getKey(),
+            'client_id' => $clientA->getKey(),
+            'medical_session_id' => $session->getKey(),
+            'medical_attachment_id' => $attachment->getKey(),
+        ]);
     }
 }

@@ -13,6 +13,7 @@ type CrmFixture = {
     specialistName: string;
     contentSectionId: number;
     contentSectionTitle: string;
+    attachmentFilename: string;
 };
 
 function createCrmFixture(): CrmFixture {
@@ -22,6 +23,7 @@ function createCrmFixture(): CrmFixture {
         $email = 'playwright-crm-'.$suffix.'@example.test';
         $password = 'password';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
         \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1('Filament\\Auth\\Pages\\Login|authenticate|127.0.0.1'));
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
@@ -67,6 +69,33 @@ function createCrmFixture(): CrmFixture {
                     'end_time' => '23:59',
                 ]);
         }
+        config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+        app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+            $admin,
+            $client,
+            new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                specialistId: $specialist->getKey(),
+                occurredAt: \\Illuminate\\Support\\Carbon::parse('2026-08-10 09:00:00', 'UTC'),
+                pain: 'Предыдущая запись о боли',
+                result: 'Предыдущий подтверждённый результат',
+            ),
+        );
+        $attachmentFilename = 'Заключение '.$suffix.'.pdf';
+        \\App\\Modules\\Attachments\\Domain\\Models\\MedicalAttachment::query()->create([
+            'uuid' => (string) \\Illuminate\\Support\\Str::uuid(),
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'uploaded_by_user_id' => $admin->getKey(),
+            'attachment_type' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$organization->getKey().'/'.\\Illuminate\\Support\\Str::uuid().'.pdf',
+            'original_filename' => $attachmentFilename,
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 2048,
+            'sha256_checksum' => hash('sha256', $suffix),
+            'scan_status' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
         echo json_encode([
             'email' => $email,
             'password' => $password,
@@ -78,6 +107,7 @@ function createCrmFixture(): CrmFixture {
             'specialistName' => $specialist->display_name,
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
+            'attachmentFilename' => $attachmentFilename,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -244,18 +274,32 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
-    const sessionRow = page.getByRole('row').filter({ hasText: fixture.specialistName });
+    const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
     await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
     await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
+    await page.getByLabel('Файл клиента').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.attachmentFilename);
+    await page.getByText(new RegExp(fixture.attachmentFilename), { exact: false }).click();
+    await page.getByRole('button', { name: 'Связать', exact: true }).click();
+    await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+    await expect(page.getByText('Проверен', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Боль').fill('Обновлённая запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
-    await page.getByRole('row').filter({ hasText: fixture.specialistName }).getByRole('link', { name: 'Открыть', exact: true }).click();
+    await page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click();
     await expect(page.getByText('Обновлённая запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
