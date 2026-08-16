@@ -116,16 +116,27 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
 }
 
 async function searchTableFor(page: Page, query: string): Promise<void> {
-    const searchInput = page.getByRole('searchbox', { name: 'Поиск' }).first();
+    const searchInput = page.getByRole('searchbox', {
+        name: 'Поиск',
+        exact: true,
+    });
+
     await expect(searchInput).toBeVisible();
     await searchInput.fill(query);
     await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
 }
 
-function entryValueByLabel(page: Page, label: string): ReturnType<Page['locator']> {
-    const term = page.getByRole('term', { name: label, exact: true });
+async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
+    const main = page.getByRole('main');
 
-    return term.locator('xpath=following-sibling::*[1][self::dd or @role="definition"]');
+    const term = main.getByRole('term', { name: label, exact: true });
+    const definition = main.getByRole('definition', { name: value, exact: true });
+
+    await expect(term).toHaveCount(1);
+    await expect(term).toBeVisible();
+    await expect(definition).toHaveCount(1);
+    await expect(definition).toBeVisible();
+    await expect(definition).toHaveText(value);
 }
 
 test('staff can create a booking without technical inputs', async ({ page }) => {
@@ -175,9 +186,7 @@ test('staff sees business labels for client and content settings', async ({ page
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
 
-    const clientTimezoneDefinition = entryValueByLabel(page, 'Часовой пояс');
-    await expect(clientTimezoneDefinition).toBeVisible();
-    await expect(clientTimezoneDefinition).toHaveText('Всемирное время');
+    await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 
     await page.goto('/admin/content-sections');
     await expect(page.getByRole('heading', { name: 'Разделы контента' })).toBeVisible();
@@ -192,13 +201,8 @@ test('staff sees business labels for client and content settings', async ({ page
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}`);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.contentSectionTitle }).first()).toBeVisible();
 
-    const sectionKeyDefinition = entryValueByLabel(page, 'Раздел');
-    await expect(sectionKeyDefinition).toBeVisible();
-    await expect(sectionKeyDefinition).toHaveText('Об академии');
-
-    const localeDefinition = entryValueByLabel(page, 'Язык');
-    await expect(localeDefinition).toBeVisible();
-    await expect(localeDefinition).toHaveText('Русский');
+    await assertBusinessField(page, 'Раздел', 'Об академии');
+    await assertBusinessField(page, 'Язык', 'Русский');
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
