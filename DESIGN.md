@@ -1,6 +1,6 @@
 # Chuklov Platform — Visual Design System & UI Contract
 
-> **Document Status**: DESIGN FREEZE CANDIDATE (Milestone 10 AI UI Baseline)  
+> **Document Status**: DESIGN FREEZE (Milestone 10 AI UI Baseline)  
 > **Target Audience**: Full-Stack Engineers, AI Agents, UI Specialists  
 > **Reference Screens (Stitch Project `10400861802131455607`)**:
 > - Desktop Reference: `958dc4b3f4244f3cbfc981352b344ed2` (*Client CRM - Final Refined Architecture*)
@@ -44,7 +44,7 @@ The color palette is strictly calibrated for sustained daily clinical work under
 ### 2.3 Typography & Text Roles
 | Token | Hex | Tailwind / CSS Equivalent | Functional Role |
 | :--- | :--- | :--- | :--- |
-| `text-primary` | `#0F172A` | `text-slate-900` | Primary data values, headers, patient names, diagnoses |
+| `text-primary` | `#0F172A` | `text-slate-900` | Primary data values, headers, patient names, clinical values |
 | `text-secondary` | `#475569` | `text-slate-600` | Clinical notes, paragraph anamnesis, body copy |
 | `text-muted` | `#64748B` | `text-slate-500` | Micro-labels, metadata captions, timestamps, column headers |
 | `text-inverse` | `#F8FAFC` | `text-slate-50` | Text on dark surfaces (sidebar, primary buttons) |
@@ -58,7 +58,7 @@ The color palette is strictly calibrated for sustained daily clinical work under
 ### 2.5 Clinical & Operational Semantic States
 | Semantic State | Background | Border | Text | Usage Context |
 | :--- | :--- | :--- | :--- | :--- |
-| **Confirmed Fact / Success** | `#F0FDF4` (`emerald-50`) | `#BBF7D0` (`emerald-200`) | `#166534` (`emerald-800`) | Verified channel, clean file scan, completed session, active patient |
+| **Recorded Specialist Data / Success** | `#F0FDF4` (`emerald-50`) | `#BBF7D0` (`emerald-200`) | `#166534` (`emerald-800`) | Verified channel, clean file scan, completed session, active patient |
 | **Specialist Hypothesis** | `#FFFBEB` (`amber-50`) | `#FDE68A` (`amber-200`) | `#92400E` (`amber-800`) | Working clinical hypothesis, provisional etiology (must remain distinct from fact) |
 | **Warning / Attention** | `#FFFBEB` (`amber-50`) | `#FCD34D` (`amber-300`) | `#B45309` (`amber-700`) | Unverified channel, booking restriction active, pending review |
 | **Critical / Error** | `#FEF2F2` (`rose-50`) | `#FECACA` (`rose-200`) | `#991B1B` (`rose-800`) | Quarantined file, payment dispute, failed verification |
@@ -69,8 +69,8 @@ The color palette is strictly calibrated for sustained daily clinical work under
 ## 3. Typography Architecture
 
 ### 3.1 Font Stack
-- **Primary Interface Font**: `Inter`, `Geist Sans`, or system `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`. Clean grotesque sans-serif with high x-height and exceptional legibility at 11–13px.
-- **Monospace Font**: `JetBrains Mono`, `Geist Mono`, or `ui-monospace, SFMono-Regular, Menlo, monospace`. Strictly reserved for operational identifiers, phone numbers, referral codes, timestamps, and cryptographic hashes.
+- **Canonical Primary Interface Font**: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`. Strict grotesque sans-serif with high x-height, matching Chuklov frontend tokens and reference screens.
+- **Canonical Monospace Font**: `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`. Strictly reserved for operational identifiers, phone numbers, referral codes, timestamps, and cryptographic hashes.
 
 ### 3.2 Typographic Hierarchy
 | Hierarchy Level | Size | Weight | Line Height | Tracking | Application |
@@ -197,8 +197,8 @@ A fundamental invariant of the Chuklov platform is maintaining absolute clarity 
 +--------------------------------------------------------------------------------------------------+
 | CLINICAL RECORD HIERARCHY                                                                        |
 |                                                                                                  |
-| [1. RECORDED SPECIALIST FACTS]      Pain, Tests, Observations, Protocol, Direct Result           |
-|                                     -> Solid factual presentation, authoritative neutral slate   |
+| [1. RECORDED SPECIALIST DATA]       Pain, Tests, Observations, Protocol, Direct Result           |
+|                                     -> Authoritative specialist entries, crisp neutral slate     |
 |                                                                                                  |
 | [2. SPECIALIST HYPOTHESIS]          root_cause_hypothesis                                        |
 |                                     -> Explicitly styled in Amber hypothesis box with disclaimer |
@@ -206,16 +206,17 @@ A fundamental invariant of the Chuklov platform is maintaining absolute clarity 
 |                                                                                                  |
 | [3. CLIENT-REPORTED DATA]           Intake complaints, subjective VAS rating, patient goals      |
 |                                     -> Labeled as client subjective report                       |
+|                                     -> "Со слов клиента"                                         |
 |                                                                                                  |
 | [4. FUTURE AI PROPOSALS (M10)]      AI draft summary, pattern detection, suggested protocols     |
 |                                     -> Strict AI badge, non-blocking, specialist confirmation req |
 +--------------------------------------------------------------------------------------------------+
 ```
 
-### 7.1 Separation of Facts from Hypotheses
-1. **Confirmed / Recorded Specialist Facts**:
+### 7.1 Separation of Recorded Data from Hypotheses
+1. **Recorded Specialist-Authored Clinical Data**:
    - Fields: `pain`, `tests`, `observations`, `protocol`, `result`.
-   - Visual Treatment: Standard crisp neutral presentation. Treated as confirmed clinical records authored by the treating specialist.
+   - Visual Treatment: Standard crisp neutral presentation. Treated as authoritative clinical records authored by the specialist in the system (without asserting that every entry is an objectively verified external medical fact).
 2. **Specialist Hypothesis (`root_cause_hypothesis`)**:
    - Invariant: `root_cause_hypothesis` is **NEVER** presented as an established medical fact or verified diagnosis.
    - Visual Treatment: Encapsulated in a dedicated Specialist Hypothesis block (`bg-amber-50/50 border border-amber-200/80 rounded-[4px] p-3`).
