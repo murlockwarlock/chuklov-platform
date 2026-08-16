@@ -297,6 +297,55 @@ final class SessionCockpitTest extends TestCase
         self::assertSame(30, $records->total());
     }
 
+    public function test_history_navigation_authorization_is_bounded_and_view_only_hides_edit(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $session = $this->createSession($admin, $client, $specialist);
+        $renderHistory = function () use ($admin, $client): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+
+            try {
+                $component = Livewire::actingAs($admin)
+                    ->test(ManageClientSessions::class, ['record' => $client->getKey()]);
+                $component->instance()->getTableRecords();
+                $component->assertSee('Открыть')->assertSee('Редактировать');
+
+                return collect(DB::getQueryLog())
+                    ->filter(fn (array $query): bool => str_contains(strtolower((string) $query['query']), 'organization_memberships'))
+                    ->count();
+            } finally {
+                DB::disableQueryLog();
+            }
+        };
+
+        $smallPageMembershipQueries = $renderHistory();
+
+        for ($index = 0; $index < 24; $index++) {
+            $this->createSession($admin, $client, $specialist);
+        }
+
+        $largePageMembershipQueries = $renderHistory();
+
+        self::assertGreaterThan(0, $smallPageMembershipQueries);
+        self::assertSame($smallPageMembershipQueries, $largePageMembershipQueries);
+
+        Gate::before(static fn (User $user, string $ability): ?bool => in_array($ability, ['create', 'update'], true) ? false : null);
+
+        $viewOnlyHistory = Livewire::actingAs($admin)
+            ->test(ManageClientSessions::class, ['record' => $client->getKey()]);
+        $viewOnlyHistory->assertSee('Открыть')->assertDontSee('Редактировать');
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(EditMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertForbidden();
+    }
+
     public function test_filament_detail_page_decrypts_the_opened_session_once(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

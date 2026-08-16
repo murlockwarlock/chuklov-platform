@@ -5,8 +5,6 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Tables;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use Filament\Actions\Action;
-use Filament\Actions\EditAction;
-use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Carbon;
@@ -15,6 +13,9 @@ class SessionsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewSessions = MedicalSessionResource::canViewAny();
+        $canManageSessions = MedicalSessionResource::canCreate();
+
         return $table
             ->paginated([25, 50])
             ->columns([
@@ -36,11 +37,13 @@ class SessionsTable
                     ->placeholder('—'),
             ])
             ->recordActions([
-                ViewAction::make()
+                Action::make('view')
                     ->label('Открыть')
+                    ->visible($canViewSessions)
                     ->url(fn ($record): string => MedicalSessionResource::getUrl('view', ['record' => $record], shouldGuessMissingParameters: true)),
-                EditAction::make()
+                Action::make('edit')
                     ->label('Редактировать')
+                    ->visible($canManageSessions)
                     ->url(fn ($record): string => MedicalSessionResource::getUrl('edit', ['record' => $record], shouldGuessMissingParameters: true)),
             ])
             ->toolbarActions([
@@ -48,7 +51,7 @@ class SessionsTable
                     ->label('Новый сеанс')
                     ->icon('heroicon-o-plus')
                     ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
-                    ->visible(fn (): bool => MedicalSessionResource::canCreate()),
+                    ->visible($canManageSessions),
             ]);
     }
 
