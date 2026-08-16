@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-16 - Candidate-only hosted CI policy
+
+- Heavy `CI` is manual `workflow_dispatch` only; automatic `push` and `pull_request` triggers are removed without changing its quality/integration, privacy/secret, or Docker/runtime jobs.
+- Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
+- Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
+
 - Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (CLOSED / ACCEPTED); M8 is NOT STARTED

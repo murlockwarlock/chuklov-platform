@@ -1,5 +1,7 @@
 # Changelog
 
+- CI policy now uses a manually dispatched heavy candidate gate instead of automatic `push` and `pull_request` runs. Quality/integration, privacy/secret scanning, and Docker/runtime job contents are unchanged; Playwright remains separate, nightly/manual, and non-blocking.
+
 All notable implementation changes are recorded here. Requirement changes belong in `docs/product/requirements-changelog.md`; architectural rationale belongs in ADRs.
 
 ## [Unreleased]
