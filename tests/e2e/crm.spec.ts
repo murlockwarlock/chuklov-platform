@@ -129,11 +129,16 @@ async function searchTableFor(page: Page, query: string): Promise<void> {
 async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
     const main = page.getByRole('main');
 
-    const term = main.getByRole('term', { name: label, exact: true });
-    const definition = main.getByRole('definition', { name: value, exact: true });
+    const term = main
+        .locator('dt, [role="term"]')
+        .filter({ hasText: label });
+    const definition = main
+        .locator('dd, [role="definition"]')
+        .filter({ hasText: value });
 
     await expect(term).toHaveCount(1);
     await expect(term).toBeVisible();
+    await expect(term).toHaveText(label);
     await expect(definition).toHaveCount(1);
     await expect(definition).toBeVisible();
     await expect(definition).toHaveText(value);
