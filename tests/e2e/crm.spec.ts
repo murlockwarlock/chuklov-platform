@@ -69,7 +69,7 @@ function createCrmFixture(): CrmFixture {
                     'end_time' => '23:59',
                 ]);
         }
-        config()->set('medical.keys.1', 'base64:3q2+7wEUbtpvZxFlEb9EaA3Lu7x9wL4PvhJb7q7gV1I=');
+        config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
         app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
             $admin,
             $client,

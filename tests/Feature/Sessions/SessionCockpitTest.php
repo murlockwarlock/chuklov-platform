@@ -369,6 +369,38 @@ final class SessionCockpitTest extends TestCase
         }
     }
 
+    public function test_filament_detail_http_page_renders_current_and_previous_session_facts(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $this->createSession(
+            $admin,
+            $client,
+            $specialist,
+            occurredAt: Carbon::parse('2026-08-10 10:00:00', 'UTC'),
+            pain: 'Предыдущая запись о боли',
+        );
+        $current = $this->createSession(
+            $admin,
+            $client,
+            $specialist,
+            occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
+            pain: 'Первичная запись о боли',
+        );
+
+        $this
+            ->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $current,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Первичная запись о боли')
+            ->assertSee('Предыдущая запись о боли')
+            ->assertSee('Файлы сеанса');
+    }
+
     public function test_filament_detail_page_exposes_authorized_nested_edit_navigation(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
