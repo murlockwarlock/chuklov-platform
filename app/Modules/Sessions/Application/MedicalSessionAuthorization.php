@@ -33,19 +33,30 @@ final class MedicalSessionAuthorization
         return $organization;
     }
 
-    public function authorizeView(User $actor, MedicalSession $session): Organization
+    public function authorizeViewClient(User $actor, Client $client): Organization
     {
         $organization = $this->organization();
-        $this->assertSessionOwned($session, $organization);
+        $this->assertClientOwned($client, $organization);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
 
         return $organization;
     }
 
-    public function authorizeManageSession(User $actor, MedicalSession $session): Organization
+    public function authorizeView(User $actor, MedicalSession $session, ?Client $expectedClient = null): Organization
     {
         $organization = $this->organization();
         $this->assertSessionOwned($session, $organization);
+        $this->assertSessionBelongsToClient($session, $expectedClient);
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+
+        return $organization;
+    }
+
+    public function authorizeManageSession(User $actor, MedicalSession $session, ?Client $expectedClient = null): Organization
+    {
+        $organization = $this->organization();
+        $this->assertSessionOwned($session, $organization);
+        $this->assertSessionBelongsToClient($session, $expectedClient);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
 
         return $organization;
@@ -66,6 +77,17 @@ final class MedicalSessionAuthorization
 
         if ((int) $session->organization_id !== $orgId) {
             throw new AuthorizationException('The medical session is outside the current organization.');
+        }
+    }
+
+    public function assertSessionBelongsToClient(MedicalSession $session, ?Client $expectedClient = null): void
+    {
+        if ($expectedClient === null) {
+            return;
+        }
+
+        if ((int) $session->client_id !== (int) $expectedClient->getKey()) {
+            throw new AuthorizationException('The medical session does not belong to the expected client.');
         }
     }
 

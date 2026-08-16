@@ -210,6 +210,48 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Язык', 'Русский');
 });
 
+test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+
+    await page.goto('/admin/clients');
+    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await searchTableFor(page, fixture.clientName);
+
+    const clientRow = page.getByRole('row').filter({ hasText: fixture.clientName });
+    await clientRow.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
+
+    await page.getByRole('link', { name: 'Сеансы', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+
+    await page.getByLabel('Дата и время сеанса').fill('2026-08-18T09:00');
+    await page.getByLabel('Специалист').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+    await page.getByLabel('Боль').fill('Первичная запись о боли');
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    const sessionRow = page.getByRole('row').filter({ hasText: fixture.specialistName });
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    await page.getByLabel('Боль').fill('Обновлённая запись о боли');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    await page.getByRole('row').filter({ hasText: fixture.specialistName }).getByRole('link', { name: 'Открыть', exact: true }).click();
+    await expect(page.getByText('Обновлённая запись о боли', { exact: true })).toBeVisible();
+});
+
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
     const fixture = createCrmFixture();
 

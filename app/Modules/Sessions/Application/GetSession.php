@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -17,9 +18,9 @@ final class GetSession
         private readonly MedicalEncryptorInterface $encryptor,
     ) {}
 
-    public function handle(User $actor, MedicalSession $session): ?MedicalSessionData
+    public function handle(User $actor, MedicalSession $session, ?Client $expectedClient = null): ?MedicalSessionData
     {
-        $organization = $this->authorization->authorizeView($actor, $session);
+        $organization = $this->authorization->authorizeView($actor, $session, $expectedClient);
         $orgId = (int) $organization->getKey();
         $cacheKey = $actor->getKey().':'.$orgId.':'.$session->getKey();
 

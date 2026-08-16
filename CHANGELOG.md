@@ -10,6 +10,11 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added `make check-fast` target for lightweight local feedback (unit + feature + lint + static, no Docker/Playwright/containers).
   - Updated `docs/testing/strategy.md`, `.agents/skills/testing/SKILL.md`, and `README.md` to reference hosted CI as the authoritative verification path.
 
+- M7B.2 — CRM Session Cockpit UI + client-scoped Session history (implementation / verification candidate):
+  - Added the Client → Sessions history, create, detail, and edit CRM flow using the existing `CreateSession`, `GetSession`, and `UpdateSession` application actions and nested Filament resources.
+  - History uses the `ListClientSessions` application boundary through the real Client relationship, selecting structural metadata only, eager-loading specialist/booking display metadata, enforcing fixed-client organization scope, SQL pagination, and deterministic newest-first ordering.
+  - Specialist and optional Booking selectors use bounded server-side searches with organization, client, and selected-specialist boundaries; invalid identifiers become validation failures. M7 remains IN_PROGRESS; M7B and `REQ-MEDICAL-001` remain incomplete pending independent review and hosted CI.
+
 - M7B.1 — Durable Medical Session Foundation (implementation candidate):
   - Added `medical_sessions` PostgreSQL table with composite-tenant identity `(organization_id, id)` and composite foreign keys to `clients`, `specialists`, and an optional nullable composite foreign key to `bookings`, mirroring the M7A `medical_profiles` and M4 `bookings` patterns. `specialist_id` is NOT NULL (responsible practitioner); `booking_id` is nullable (optional origin reference). Added justified index `(organization_id, client_id, occurred_at, id)` for future chronological client history.
   - Session-specific Class C clinical columns (`pain`, `tests`, `observations`, `root_cause_hypothesis`, `protocol`, `result`) are encrypted at rest via the existing dedicated `MedicalEncryptorInterface` / `MedicalKeyResolverInterface` primitives (`encryptField` / `decryptField`), reusing ADR-017's key/version boundary independently of `APP_KEY`. No anamnesis column is added to `medical_sessions` — longitudinal anamnesis remains owned by M7A `medical_profiles`.

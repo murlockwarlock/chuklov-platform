@@ -21,7 +21,6 @@ use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -195,7 +194,7 @@ final class MedicalSessionTest extends TestCase
             pain: 'Попытка использовать чужого специалиста.',
         );
 
-        $this->expectException(ModelNotFoundException::class);
+        $this->expectException(ValidationException::class);
         app(CreateSession::class)->handle($adminA, $clientA, $command);
     }
 

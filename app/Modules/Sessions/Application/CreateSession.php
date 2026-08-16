@@ -37,7 +37,13 @@ final readonly class CreateSession
         $specialist = Specialist::query()
             ->where('organization_id', $orgId)
             ->where('id', $command->specialistId)
-            ->firstOrFail();
+            ->first();
+
+        if ($specialist === null) {
+            throw ValidationException::withMessages([
+                'specialist_id' => 'Выбранный специалист недоступен.',
+            ]);
+        }
 
         $booking = $this->resolveBooking($orgId, $command, $client, $specialist);
 
