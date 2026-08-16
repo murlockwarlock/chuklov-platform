@@ -9,7 +9,7 @@ use Throwable;
 
 class RedactSensitiveLogData implements ProcessorInterface
 {
-    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer/i';
+    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer|prompt|retrieved_content|rag_chunk|tool_payload/i';
 
     private const SESSION_CLINICAL_KEY_PATTERN = '/^(pain|tests|observations|root_cause_hypothesis|protocol|result)$/i';
 

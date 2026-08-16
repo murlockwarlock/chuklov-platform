@@ -23,6 +23,9 @@ enum OrganizationRole: string
                 OrganizationPermission::ViewSurveys,
                 OrganizationPermission::ViewKnowledge,
                 OrganizationPermission::ViewFinance,
+                OrganizationPermission::ViewAiRuns,
+                OrganizationPermission::ReviewAiProposals,
+                OrganizationPermission::UseAiPlayground,
             ], true),
         };
     }

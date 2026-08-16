@@ -17,9 +17,10 @@ use Illuminate\Support\Carbon;
  * @property-read Organization $organization
  * @property array<string, mixed> $credentials
  * @property CredentialStatus $status
+ * @property string|null $revision_id
  * @property Carbon|null $last_rotated_at
  */
-#[Fillable(['provider', 'credential_name'])]
+#[Fillable(['provider', 'credential_name', 'revision_id'])]
 #[Hidden(['credentials'])]
 class OrganizationCredential extends Model
 {

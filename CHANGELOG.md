@@ -6,7 +6,15 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
-- M9 controlled organization knowledge retrieval implementation candidate:
+- M10 AI Components & Control Plane implementation candidate:
+  - Added provider-neutral AI engine, prompt studio, versioning, evaluation suites, human review workflows, and RAG/tool slice for `REQ-AI-001` through `REQ-AI-008`.
+  - Implemented protected Class C trace separation (`ai_run_payloads` encrypted via `MedicalEncryptorInterface`) so that `ai_runs` stores strictly operational, non-sensitive provenance metadata with no plaintext medical leakage.
+  - Implemented exact credential revision tracking (`revision_id` UUID on `OrganizationCredential` and rotation snapshots in `AiRunAttempt`).
+  - Implemented concurrency-safe atomic daily spend budget reservation and settlement in `AtomicAiSafetyBudgetManager` with pessimistic row-level locking (`SELECT ... FOR UPDATE`), fail-closed threshold enforcement, and conservative charging on uncertain timeouts.
+  - Implemented async worker fencing with TTL lease checks preventing runaway background execution.
+  - Implemented Prompt Studio with drafting, activation, retirement, rollback, playground execution, and JSON bundle export/import.
+  - Implemented Filament Clinical Cockpit CRM control plane under `Искусственный интеллект`: Monitoring & Kill-Switch Overview, AI Runs with Infolists & Review Actions, Prompts & Versions, Providers & Model Releases, and synthetic Evals testing suites.
+  - Added feature tests covering workflow execution, protected trace encryption, atomic budget reservation, prompt version lifecycles, human reviews, and evaluation suites.
   - Added organization-scoped authored/private-upload sources, immutable revisions, durable retry-safe ingestion runs, deterministic versioned chunking, provider-neutral embedding generation, and PostgreSQL/pgvector exact cosine retrieval behind `KnowledgeRetriever`.
   - Added composite tenant constraints, configuration provenance, active-ready atomic exposure, retirement/reactivation, sanitized structural audits, explicit knowledge permissions, and fail-closed embedding compatibility.
   - Added Filament source/version/ingestion management and a bounded retrieval inspection page. Retrieved instruction-like content remains inert data; M9 creates no AI answer, prompt studio, agent, or `AiRun` behavior.

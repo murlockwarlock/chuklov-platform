@@ -27,4 +27,11 @@ enum OrganizationPermission: string
     case ManageKnowledge = 'manage_knowledge';
     case ViewFinance = 'view_finance';
     case ManageFinance = 'manage_finance';
+    case ViewAiRuns = 'view_ai_runs';
+    case ViewAiTrace = 'view_ai_trace';
+    case ReviewAiProposals = 'review_ai_proposals';
+    case ManageAiPrompts = 'manage_ai_prompts';
+    case ActivateAiReleases = 'activate_ai_releases';
+    case ManageAiProviders = 'manage_ai_providers';
+    case UseAiPlayground = 'use_ai_playground';
 }
