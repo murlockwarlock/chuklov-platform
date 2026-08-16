@@ -11,5 +11,5 @@ description: Select and execute Chuklov unit, feature, integration, frontend, an
 4. Prefer behavior assertions over implementation coupling.
 5. Include tenant-isolation and failure-path coverage for organization-owned behavior.
 6. Run the narrowest useful checks locally while iterating (targeted test file or filter, `vendor/bin/pint --dirty`). Do not run `make ci`, `make test-integration`, Playwright, Docker builds, or full integration stacks locally unless the user explicitly requests it.
-7. For full verification, push the candidate SHA and let GitHub Actions hosted CI run `make quality`, `make test-integration`, Playwright, Docker runtime health, and privacy/secret scan. Inspect hosted CI logs to diagnose failures.
+7. Push the candidate SHA and let blocking PR/main CI run quality, integration, Docker runtime, and privacy checks. The full Playwright suite runs through the scheduled/manual E2E workflow until it is stable enough to return as a blocking smoke gate; investigate its failures separately from unrelated feature work.
 8. Report only commands actually run, with pass, fail, or skipped reasons.
