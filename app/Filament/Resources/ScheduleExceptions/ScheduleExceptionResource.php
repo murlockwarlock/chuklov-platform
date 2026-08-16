@@ -23,6 +23,10 @@ class ScheduleExceptionResource extends Resource
 
     protected static ?string $navigationLabel = 'Изменения расписания';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Записи';
+
+    protected static ?int $navigationSort = 4;
+
     protected static ?string $modelLabel = 'изменение расписания';
 
     protected static ?string $pluralModelLabel = 'изменения расписания';

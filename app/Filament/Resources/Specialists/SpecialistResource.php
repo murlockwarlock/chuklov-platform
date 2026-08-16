@@ -27,6 +27,10 @@ class SpecialistResource extends Resource
 
     protected static ?string $navigationLabel = 'Специалисты';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Команда и услуги';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $modelLabel = 'специалист';
 
     protected static ?string $pluralModelLabel = 'специалисты';

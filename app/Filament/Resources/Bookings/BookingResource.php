@@ -28,6 +28,10 @@ class BookingResource extends Resource
 
     protected static ?string $navigationLabel = 'Записи';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Записи';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $modelLabel = 'запись';
 
     protected static ?string $pluralModelLabel = 'записи';

@@ -24,6 +24,10 @@ class ServiceResource extends Resource
 
     protected static ?string $navigationLabel = 'Услуги';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Команда и услуги';
+
+    protected static ?int $navigationSort = 2;
+
     protected static ?string $modelLabel = 'услуга';
 
     protected static ?string $pluralModelLabel = 'услуги';

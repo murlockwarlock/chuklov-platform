@@ -33,6 +33,10 @@ final class ScenarioRuleResource extends Resource
 
     protected static ?string $navigationLabel = 'Правила сообщений';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Коммуникации';
+
+    protected static ?int $navigationSort = 2;
+
     protected static ?string $modelLabel = 'правило';
 
     protected static ?string $pluralModelLabel = 'правила сообщений';

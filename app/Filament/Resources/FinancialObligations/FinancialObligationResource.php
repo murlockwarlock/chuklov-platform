@@ -35,6 +35,8 @@ final class FinancialObligationResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Финансы';
 
+    protected static ?int $navigationSort = 2;
+
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([

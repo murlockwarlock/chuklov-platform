@@ -34,6 +34,10 @@ class ClientResource extends Resource
 
     protected static ?string $navigationLabel = 'Клиенты';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Клиенты';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $modelLabel = 'клиент';
 
     protected static ?string $pluralModelLabel = 'клиенты';

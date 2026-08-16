@@ -74,6 +74,12 @@ class RecordAuditEvent
         'survey.definition.updated' => ['definition_key', 'version'],
         'survey.version.published' => ['definition_key', 'version'],
         'survey.attempt.completed' => ['definition_key', 'version', 'tag_count', 'metric_count'],
+        'knowledge.source.created' => ['source_type'],
+        'knowledge.revision.created' => ['source_id', 'version'],
+        'knowledge.ingestion.completed' => ['source_id', 'revision_id', 'chunk_count'],
+        'knowledge.ingestion.failed' => ['source_id', 'revision_id', 'error_code'],
+        'knowledge.source.retired' => ['active_revision_id'],
+        'knowledge.source.reactivated' => ['active_revision_id'],
         'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
         'attachment.downloaded' => ['source'],
     ];

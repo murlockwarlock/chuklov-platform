@@ -26,6 +26,10 @@ final class SurveyDefinitionResource extends Resource
 
     protected static ?string $navigationLabel = 'Тесты';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Контент и знания';
+
+    protected static ?int $navigationSort = 2;
+
     protected static ?string $modelLabel = 'тест';
 
     protected static ?string $pluralModelLabel = 'тесты';

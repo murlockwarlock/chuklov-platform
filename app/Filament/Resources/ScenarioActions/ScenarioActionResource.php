@@ -32,6 +32,10 @@ final class ScenarioActionResource extends Resource
 
     protected static ?string $navigationLabel = 'История сообщений';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Коммуникации';
+
+    protected static ?int $navigationSort = 3;
+
     protected static ?string $modelLabel = 'отправка';
 
     protected static ?string $pluralModelLabel = 'история сообщений';

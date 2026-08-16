@@ -23,6 +23,10 @@ class UnavailablePeriodResource extends Resource
 
     protected static ?string $navigationLabel = 'Недоступное время';
 
+    protected static string|\UnitEnum|null $navigationGroup = 'Записи';
+
+    protected static ?int $navigationSort = 3;
+
     protected static ?string $modelLabel = 'период недоступности';
 
     protected static ?string $pluralModelLabel = 'периоды недоступности';

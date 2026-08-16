@@ -21,6 +21,7 @@ enum OrganizationRole: string
                 OrganizationPermission::ViewScheduling,
                 OrganizationPermission::ViewScenarios,
                 OrganizationPermission::ViewSurveys,
+                OrganizationPermission::ViewKnowledge,
                 OrganizationPermission::ViewFinance,
             ], true),
         };
