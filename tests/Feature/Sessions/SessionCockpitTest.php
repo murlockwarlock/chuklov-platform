@@ -3,6 +3,7 @@
 namespace Tests\Feature\Sessions;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\CreateMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\EditMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
@@ -27,6 +28,7 @@ use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -34,6 +36,7 @@ use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -315,6 +318,44 @@ final class SessionCockpitTest extends TestCase
             app()->forgetScopedInstances();
             app()->instance(MedicalEncryptorInterface::class, $original);
         }
+    }
+
+    public function test_filament_detail_page_exposes_authorized_nested_edit_navigation(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $session = $this->createSession($admin, $client, $specialist);
+        $component = Livewire::actingAs($admin)
+            ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        $action = collect($component->instance()->getCachedHeaderActions())
+            ->first(fn (Action $action): bool => $action->getName() === 'edit');
+
+        self::assertInstanceOf(Action::class, $action);
+        self::assertTrue($action->isVisible());
+        self::assertSame(MedicalSessionResource::getUrl('edit', [
+            'client' => $client,
+            'record' => $session,
+        ]), $action->getUrl());
+        $component->assertSee('Редактировать');
+    }
+
+    public function test_filament_detail_page_hides_edit_navigation_when_update_is_denied(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $session = $this->createSession($admin, $client, $specialist);
+        Gate::before(static fn (User $user, string $ability): ?bool => $ability === 'update' ? false : null);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        $action = collect($component->instance()->getCachedHeaderActions())
+            ->first(fn (Action $action): bool => $action->getName() === 'edit');
+
+        self::assertInstanceOf(Action::class, $action);
+        self::assertFalse($action->isVisible());
+        $component->assertDontSee('Редактировать');
     }
 
     public function test_filament_create_session_over_livewire_creates_for_fixed_parent_client_and_encrypts_clinical_fields(): void
