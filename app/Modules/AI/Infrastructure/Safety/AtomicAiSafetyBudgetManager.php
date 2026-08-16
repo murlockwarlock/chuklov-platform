@@ -258,7 +258,7 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
             }
 
             $lockedAttempt->update([
-                'budget_reservation_status' => BudgetReservationStatus::Settled,
+                'budget_reservation_status' => BudgetReservationStatus::ConservativelyCharged,
                 'settled_estimated_cost_minor_units' => $reserved,
             ]);
         });

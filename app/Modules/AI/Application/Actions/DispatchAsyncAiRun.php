@@ -150,7 +150,7 @@ class DispatchAsyncAiRun
                     'knowledge_chunk_id' => $ragChunk->chunkId,
                     'chunk_index' => $ragChunk->chunkIndex,
                     'similarity_score' => $ragChunk->similarity,
-                    'configuration_key' => 'default',
+                    'configuration_key' => $ragChunk->embeddingConfigurationKey,
                 ]);
             }
 

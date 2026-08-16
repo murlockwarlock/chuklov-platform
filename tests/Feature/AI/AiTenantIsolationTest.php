@@ -9,13 +9,18 @@ use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Policies\AiPromptPolicy;
 use App\Policies\AiRunPolicy;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AiTenantIsolationTest extends TestCase
@@ -116,5 +121,64 @@ class AiTenantIsolationTest extends TestCase
             evalSuiteId: $suiteB->id,
             promptVersionId: $versionB->id,
         );
+    }
+
+    public function test_cross_organization_client_reference_cannot_be_persisted_in_ai_run(): void
+    {
+        $clientB = new Client(['full_name' => 'Client Org B']);
+        $clientB->organization_id = max(0, (int) $this->organizationB->id);
+        $clientB->save();
+
+        if (config('database.default') === 'pgsql') {
+            $this->expectException(QueryException::class);
+        }
+
+        try {
+            AiRun::create([
+                'organization_id' => $this->organizationA->id,
+                'capability' => AiCapability::ClientCompanion,
+                'workflow_key' => 'cross_client_test',
+                'client_id' => $clientB->id, // Org B client in Org A run!
+                'status' => AiRunStatus::Queued,
+                'input_references' => [],
+                'context_provenance' => [],
+                'token_usage' => [],
+            ]);
+            if (config('database.default') === 'pgsql') {
+                $this->fail('Expected foreign key violation for cross-org client reference');
+            }
+        } catch (QueryException $e) {
+            $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
+        }
+    }
+
+    public function test_cross_organization_credential_cannot_be_bound_to_ai_provider_configuration(): void
+    {
+        $credentialB = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'Org B Secret',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credentialB->organization_id = max(0, (int) $this->organizationB->id);
+        $credentialB->credentials = ['api_key' => 'sk-org-b'];
+        $credentialB->save();
+
+        if (config('database.default') === 'pgsql') {
+            $this->expectException(QueryException::class);
+        }
+
+        try {
+            AiProviderConfiguration::create([
+                'organization_id' => $this->organizationA->id,
+                'provider_name' => 'openai_org_a',
+                'display_name' => 'OpenAI Org A',
+                'credential_id' => $credentialB->id, // Org B credential in Org A provider!
+            ]);
+            if (config('database.default') === 'pgsql') {
+                $this->fail('Expected foreign key violation for cross-org credential reference');
+            }
+        } catch (QueryException $e) {
+            $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
+        }
     }
 }

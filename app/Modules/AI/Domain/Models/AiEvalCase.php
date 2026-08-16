@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'organization_id',
     'eval_suite_id',
     'name',
+    'is_synthetic',
+    'is_deidentified',
     'test_inputs',
     'expected_output_schema',
     'expected_assertions',
@@ -64,6 +66,8 @@ class AiEvalCase extends Model
     protected function casts(): array
     {
         return [
+            'is_synthetic' => 'boolean',
+            'is_deidentified' => 'boolean',
             'test_inputs' => 'array',
             'expected_output_schema' => 'array',
             'expected_assertions' => 'array',

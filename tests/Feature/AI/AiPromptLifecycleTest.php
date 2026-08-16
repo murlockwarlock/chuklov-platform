@@ -102,7 +102,7 @@ class AiPromptLifecycleTest extends TestCase
             'organization_id' => $this->organization->id,
             'key' => 'qa_prompt',
             'name' => 'Вопрос-ответ',
-            'capability' => AiCapability::KnowledgeRetrievalQa,
+            'capability' => AiCapability::GeneralAssistant,
         ]);
 
         $version = AiPromptVersion::create([

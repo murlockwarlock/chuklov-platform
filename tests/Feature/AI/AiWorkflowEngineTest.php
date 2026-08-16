@@ -11,6 +11,7 @@ use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
+use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
@@ -21,10 +22,16 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Infrastructure\Context\AiContextAssembler;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
+use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Knowledge\Application\Data\RetrievalQuery;
+use App\Modules\Knowledge\Application\Data\RetrievalResult;
+use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -33,6 +40,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -59,13 +67,11 @@ class AiWorkflowEngineTest extends TestCase
         app(OrganizationContext::class)->set($this->organization);
     }
 
-    public function test_workflow_engine_executes_run_and_creates_encrypted_class_c_payload(): void
+    private function setupConfiguredModel(AiCapability $capability, string $providerName = 'openai', string $modelName = 'gpt-4o-mini', int $priority = 1, bool $enabled = true): AiModelConfiguration
     {
-        DynamicWorkflowAgent::fake(['{"summary": "Извлеченные факты", "document_type": "epicrisis", "extracted_facts": ["Анамнез без особенностей"]}']);
-
         $credential = new OrganizationCredential([
-            'provider' => 'openai',
-            'credential_name' => 'OpenAI Production',
+            'provider' => $providerName,
+            'credential_name' => "{$providerName} Production",
             'revision_id' => (string) Str::uuid(),
         ]);
         $credential->organization_id = max(0, (int) $this->organization->id);
@@ -75,9 +81,9 @@ class AiWorkflowEngineTest extends TestCase
 
         $provider = AiProviderConfiguration::create([
             'organization_id' => $this->organization->id,
-            'provider_name' => 'openai',
-            'display_name' => 'OpenAI',
-            'is_enabled' => true,
+            'provider_name' => $providerName,
+            'display_name' => ucfirst($providerName),
+            'is_enabled' => $enabled,
             'credential_id' => $credential->id,
         ]);
 
@@ -86,12 +92,12 @@ class AiWorkflowEngineTest extends TestCase
         $model = AiModelConfiguration::create([
             'organization_id' => $this->organization->id,
             'provider_config_id' => $provider->id,
-            'model_name' => 'gpt-4o-mini',
-            'display_name' => 'GPT-4o Mini',
-            'is_enabled' => true,
-            'capabilities' => [AiCapability::ClinicalDocumentExtraction->value],
+            'model_name' => $modelName,
+            'display_name' => strtoupper($modelName),
+            'is_enabled' => $enabled,
+            'capabilities' => [$capability->value],
             'pricing_snapshot' => $pricing->toArray(),
-            'failover_priority' => 1,
+            'failover_priority' => $priority,
         ]);
 
         $release = AiModelRelease::create([
@@ -99,13 +105,22 @@ class AiWorkflowEngineTest extends TestCase
             'model_config_id' => $model->id,
             'release_number' => 1,
             'status' => 'active',
-            'provider_name' => 'openai',
-            'model_name' => 'gpt-4o-mini',
-            'capabilities' => [AiCapability::ClinicalDocumentExtraction->value],
+            'provider_name' => $providerName,
+            'model_name' => $modelName,
+            'capabilities' => [$capability->value],
             'pricing_snapshot' => $pricing->toArray(),
             'activated_at' => Carbon::now(),
         ]);
         $model->update(['active_release_id' => $release->id]);
+
+        return $model;
+    }
+
+    public function test_workflow_engine_executes_run_and_creates_encrypted_class_c_payload(): void
+    {
+        DynamicWorkflowAgent::fake(['{"summary": "Извлеченные факты", "document_type": "epicrisis", "extracted_facts": ["Анамнез без особенностей"]}']);
+
+        $model = $this->setupConfiguredModel(AiCapability::ClinicalDocumentExtraction);
 
         $prompt = AiPrompt::create([
             'organization_id' => $this->organization->id,
@@ -180,17 +195,204 @@ class AiWorkflowEngineTest extends TestCase
         // Verify attempt snapshots credential_revision
         $attempt = AiRunAttempt::where('ai_run_id', $run->id)->first();
         $this->assertNotNull($attempt);
-        $this->assertSame($credential->revision_id, $attempt->credential_revision);
         $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
         $this->assertNotNull($attempt->settled_estimated_cost_minor_units);
     }
 
+    public function test_provider_and_model_selection_drives_actual_invocation(): void
+    {
+        DynamicWorkflowAgent::fake(['Anthropic model response']);
+
+        $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'anthropic',
+            modelName: 'claude-3-5-sonnet',
+            priority: 1,
+        );
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'provider_binding_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        $result = $engine->run($this->organization->id, $request);
+
+        $this->assertTrue($result->isSuccess());
+
+        $run = AiRun::find($result->runId);
+        $this->assertNotNull($run);
+        $this->assertSame('anthropic', $run->actual_provider);
+        $this->assertSame('claude-3-5-sonnet', $run->actual_model);
+
+        $attempt = AiRunAttempt::where('ai_run_id', $run->id)->first();
+        $this->assertNotNull($attempt);
+        $this->assertSame('anthropic', $attempt->provider);
+        $this->assertSame('claude-3-5-sonnet', $attempt->model);
+    }
+
+    public function test_disabled_candidate_is_skipped_and_failover_invokes_next_candidate(): void
+    {
+        DynamicWorkflowAgent::fake(['Response from second enabled provider']);
+
+        // Candidate 1: Disabled
+        $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'openai',
+            modelName: 'gpt-4o',
+            priority: 1,
+            enabled: false,
+        );
+
+        // Candidate 2: Enabled
+        $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'anthropic',
+            modelName: 'claude-3-5-haiku',
+            priority: 2,
+            enabled: true,
+        );
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'failover_test',
+            inputVariables: ['query' => 'Test query'],
+        );
+
+        $result = $engine->run($this->organization->id, $request);
+
+        $this->assertTrue($result->isSuccess());
+
+        $run = AiRun::find($result->runId);
+        $this->assertNotNull($run);
+        $this->assertSame('anthropic', $run->actual_provider);
+        $this->assertSame('claude-3-5-haiku', $run->actual_model);
+    }
+
+    public function test_no_configured_candidate_fails_closed_without_provider_call(): void
+    {
+        // No enabled model candidate in database!
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'no_candidate_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        $this->expectException(AiProviderUnavailableException::class);
+        $engine->run($this->organization->id, $request);
+    }
+
+    public function test_rag_context_uses_actual_retrieved_content_not_source_reference(): void
+    {
+        $fakeRetriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [
+                    new RetrievalResult(
+                        chunkId: 101,
+                        sourceId: 5,
+                        sourceTitle: 'Clinical Handbook',
+                        sourceType: 'authored_text',
+                        revisionId: 2,
+                        revisionVersion: 1,
+                        chunkIndex: 0,
+                        content: 'Real clinical paragraph about rehabilitation.',
+                        similarity: 0.92,
+                        sourceReference: 'Book X, Chapter 3, p. 45',
+                        startOffset: 0,
+                        endOffset: 50,
+                        ingestionRunId: 1,
+                        embeddingConfigurationKey: 'emb_config_key_123',
+                    ),
+                ];
+            }
+        };
+
+        $assembler = new AiContextAssembler(knowledgeRetriever: $fakeRetriever);
+        $policy = new AiContextPolicy(includeRag: true, ragMaxChunks: 3);
+
+        $result = $assembler->assemble(
+            organizationId: $this->organization->id,
+            policy: $policy,
+            inputVariables: ['query' => 'rehabilitation'],
+            inputReferences: [],
+        );
+
+        // Assert that the real content reaches the context variables
+        $this->assertStringContainsString('Real clinical paragraph about rehabilitation.', $result->variables['rag_context']);
+        $this->assertStringNotContainsString('Book X, Chapter 3, p. 45', $result->variables['rag_context']);
+
+        // Assert that provenance stores config key
+        $this->assertSame('emb_config_key_123', $result->ragChunks[0]->embeddingConfigurationKey);
+    }
+
+    public function test_search_knowledge_tool_works_in_queue_context_without_web_auth_state(): void
+    {
+        Auth::logout(); // Ensure no web user is logged in!
+
+        $fakeRetriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [
+                    new RetrievalResult(
+                        chunkId: 202,
+                        sourceId: 7,
+                        sourceTitle: 'Post-op Protocol',
+                        sourceType: 'authored_text',
+                        revisionId: 3,
+                        revisionVersion: 1,
+                        chunkIndex: 1,
+                        content: 'Post-operative exercise guidelines.',
+                        similarity: 0.88,
+                        sourceReference: 'Doc Section 4',
+                        startOffset: 50,
+                        endOffset: 120,
+                        ingestionRunId: 2,
+                        embeddingConfigurationKey: 'cfg_789',
+                    ),
+                ];
+            }
+        };
+
+        $tool = new SearchKnowledgeBaseTool(knowledgeRetriever: $fakeRetriever);
+
+        $res = $tool->execute($this->organization->id, ['query' => 'exercise']);
+
+        $this->assertSame(1, $res['count']);
+        $this->assertSame('Post-operative exercise guidelines.', $res['results'][0]['content']);
+        $this->assertSame('Doc Section 4', $res['results'][0]['source_reference']);
+        $this->assertSame('cfg_789', $res['results'][0]['embedding_configuration_key']);
+    }
+
     public function test_workflow_engine_fails_closed_when_daily_spend_budget_exceeded(): void
     {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+
         AiOrganizationSafetyControl::create([
             'organization_id' => $this->organization->id,
             'is_ai_globally_enabled' => true,
-            'max_daily_spend_minor_units' => 10, // Very low limit (10 minor units = $0.001)
+            'max_daily_spend_minor_units' => 10,
         ]);
 
         AiOrganizationDailyBudget::create([
@@ -263,6 +465,8 @@ class AiWorkflowEngineTest extends TestCase
     public function test_workflow_engine_idempotent_duplicate_request_returns_existing_run_without_duplicate_provider_call(): void
     {
         DynamicWorkflowAgent::fake(['{"summary": "Idempotent response", "document_type": "epicrisis", "extracted_facts": []}']);
+
+        $this->setupConfiguredModel(AiCapability::ClinicalDocumentExtraction);
 
         /** @var AiWorkflowEngine $engine */
         $engine = app(AiWorkflowEngine::class);

@@ -102,26 +102,6 @@ class AiCapabilityRegistry
                     defaultMaxTokens: 2048,
                     requiresHumanReview: false,
                 ),
-                AiCapability::KnowledgeRetrievalQa->value => new AiCapabilityDefinition(
-                    capability: AiCapability::KnowledgeRetrievalQa,
-                    displayName: 'Вопрос-ответ по базе знаний',
-                    description: 'Поиск и генерация ответов исключительно на основе верифицированных источников базы знаний M9.',
-                    allowedInputReferenceTypes: ['knowledge_source'],
-                    supportsRag: true,
-                    allowedTools: ['search_knowledge_base'],
-                    defaultTimeoutSeconds: 30,
-                    maxTimeoutSeconds: 60,
-                    defaultMaxTokens: 2048,
-                    requiresHumanReview: false,
-                    defaultOutputSchema: [
-                        'type' => 'object',
-                        'properties' => [
-                            'answer' => ['type' => 'string'],
-                            'citations' => ['type' => 'array', 'items' => ['type' => 'string']],
-                        ],
-                        'required' => ['answer'],
-                    ],
-                ),
             ];
         }
 

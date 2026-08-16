@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\AI;
 
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
+use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -44,5 +46,19 @@ class AiLogRedactionTest extends TestCase
         $this->assertSame('[REDACTED]', $redacted->context['retrieved_content']);
         $this->assertSame('[REDACTED]', $redacted->context['tool_payload']);
         $this->assertSame('[REDACTED]', $redacted->context['api_key']);
+    }
+
+    public function test_error_sanitizer_masks_sensitive_provider_exception_text_and_api_keys(): void
+    {
+        $sensitiveException = new \RuntimeException('Failed to call https://api.openai.com with key sk-live-secret-12345 for patient John Doe medical report');
+
+        $sanitized = AiErrorSanitizer::sanitize($sensitiveException);
+
+        $this->assertSame(AiErrorCategory::InternalError, $sanitized['category']);
+        // Must NOT leak prompt, patient name, API key, or provider URL
+        $this->assertStringNotContainsString('sk-live-secret-12345', $sanitized['message']);
+        $this->assertStringNotContainsString('John Doe', $sanitized['message']);
+        $this->assertStringNotContainsString('medical report', $sanitized['message']);
+        $this->assertSame('An internal error occurred during AI execution.', $sanitized['message']);
     }
 }

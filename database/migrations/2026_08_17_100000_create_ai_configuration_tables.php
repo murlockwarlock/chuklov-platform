@@ -24,6 +24,7 @@ return new class extends Migration
 
             Schema::table('organization_credentials', function (Blueprint $table): void {
                 $table->uuid('revision_id')->nullable(false)->change();
+                $table->unique(['organization_id', 'id']);
             });
         }
 
@@ -106,13 +107,15 @@ return new class extends Migration
             $table->string('display_name', 200);
             $table->boolean('is_enabled')->default(true);
             $table->string('health_status', 32)->default('healthy');
-            $table->foreignId('credential_id')->nullable()->constrained('organization_credentials')->nullOnDelete();
+            $table->foreignId('credential_id')->nullable();
             $table->json('options');
             $table->timestampTz('last_checked_at')->nullable();
             $table->text('last_health_error')->nullable();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'provider_name']);
+            $table->foreign(['organization_id', 'credential_id'])
+                ->references(['organization_id', 'id'])->on('organization_credentials')->nullOnDelete();
         });
 
         Schema::create('ai_model_configurations', function (Blueprint $table): void {

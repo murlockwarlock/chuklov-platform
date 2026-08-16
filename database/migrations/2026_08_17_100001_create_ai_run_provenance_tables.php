@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('workflow_key', 80);
             $table->string('origin', 32)->default('user');
             $table->foreignId('initiated_by_user_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->foreignId('client_id')->nullable()->constrained('clients')->nullOnDelete();
+            $table->foreignId('client_id')->nullable();
             $table->string('status', 32)->default('queued');
             $table->string('execution_mode', 32)->default('sync');
             $table->foreignId('prompt_id')->nullable();
@@ -50,8 +50,14 @@ return new class extends Migration
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'idempotency_key']);
+            $table->foreign(['organization_id', 'client_id'])
+                ->references(['organization_id', 'id'])->on('clients')->nullOnDelete();
+            $table->foreign(['organization_id', 'prompt_id'])
+                ->references(['organization_id', 'id'])->on('ai_prompts')->nullOnDelete();
             $table->foreign(['organization_id', 'prompt_version_id'])
                 ->references(['organization_id', 'id'])->on('ai_prompt_versions')->nullOnDelete();
+            $table->foreign(['organization_id', 'model_config_id'])
+                ->references(['organization_id', 'id'])->on('ai_model_configurations')->nullOnDelete();
             $table->foreign(['organization_id', 'model_release_id'])
                 ->references(['organization_id', 'id'])->on('ai_model_releases')->nullOnDelete();
             $table->index(['organization_id', 'status', 'created_at']);
@@ -106,6 +112,10 @@ return new class extends Migration
             $table->unique(['organization_id', 'ai_run_id', 'attempt_number']);
             $table->foreign(['organization_id', 'ai_run_id'])
                 ->references(['organization_id', 'id'])->on('ai_runs')->cascadeOnDelete();
+            $table->foreign(['organization_id', 'model_release_id'])
+                ->references(['organization_id', 'id'])->on('ai_model_releases')->nullOnDelete();
+            $table->foreign(['organization_id', 'credential_id'])
+                ->references(['organization_id', 'id'])->on('organization_credentials')->nullOnDelete();
             $table->index(['organization_id', 'budget_usage_date', 'budget_reservation_status']);
         });
 
@@ -143,6 +153,12 @@ return new class extends Migration
             $table->unique(['organization_id', 'ai_run_id', 'reference_index']);
             $table->foreign(['organization_id', 'ai_run_id'])
                 ->references(['organization_id', 'id'])->on('ai_runs')->cascadeOnDelete();
+            $table->foreign(['organization_id', 'knowledge_source_id'])
+                ->references(['organization_id', 'id'])->on('knowledge_sources')->cascadeOnDelete();
+            $table->foreign(['organization_id', 'knowledge_revision_id'])
+                ->references(['organization_id', 'id'])->on('knowledge_revisions')->cascadeOnDelete();
+            $table->foreign(['organization_id', 'knowledge_chunk_id'])
+                ->references(['organization_id', 'id'])->on('knowledge_chunks')->cascadeOnDelete();
         });
 
         Schema::create('ai_run_human_reviews', function (Blueprint $table): void {

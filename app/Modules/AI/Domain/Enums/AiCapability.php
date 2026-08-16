@@ -9,7 +9,6 @@ enum AiCapability: string
     case ClinicalSynthesizer = 'clinical_synthesizer';
     case ClientCompanion = 'client_companion';
     case GeneralAssistant = 'general_assistant';
-    case KnowledgeRetrievalQa = 'knowledge_retrieval_qa';
 
     public function label(): string
     {
@@ -19,7 +18,6 @@ enum AiCapability: string
             self::ClinicalSynthesizer => 'Клинический синтезатор и динамика',
             self::ClientCompanion => 'Клиентский компаньон',
             self::GeneralAssistant => 'Общий ассистент',
-            self::KnowledgeRetrievalQa => 'Вопрос-ответ по базе знаний',
         };
     }
 }

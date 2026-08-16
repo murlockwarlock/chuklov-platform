@@ -30,6 +30,13 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
     {
         $organization = $this->context->organization();
         $this->authorization->authorizeView($actor, $organization);
+
+        return $this->retrieveForOrganization((int) $organization->getKey(), $query);
+    }
+
+    public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+    {
+        $orgId = (int) $organizationId;
         $configuration = EmbeddingConfiguration::active();
 
         if ($query->sourceType !== null && ! KnowledgeSourceType::tryFrom($query->sourceType)) {
@@ -37,13 +44,13 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         }
 
         if ($query->sourceIds !== []) {
-            $count = KnowledgeSource::query()->where('organization_id', $organization->getKey())->whereIn('id', $query->sourceIds)->count();
+            $count = KnowledgeSource::query()->where('organization_id', $orgId)->whereIn('id', $query->sourceIds)->count();
             if ($count !== count(array_unique($query->sourceIds))) {
                 throw new AuthorizationException('The requested knowledge source is not available.');
             }
         }
 
-        $activeSources = $this->activeSourceQuery($organization->getKey(), $query);
+        $activeSources = $this->activeSourceQuery($orgId, $query);
         if (! (clone $activeSources)->exists()) {
             return [];
         }
@@ -83,8 +90,8 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
                 $join->on('knowledge_ingestion_runs.id', '=', 'knowledge_chunks.knowledge_ingestion_run_id')
                     ->on('knowledge_ingestion_runs.organization_id', '=', 'knowledge_chunks.organization_id');
             })
-            ->where('knowledge_chunks.organization_id', $organization->getKey())
-            ->where('knowledge_sources.organization_id', $organization->getKey())
+            ->where('knowledge_chunks.organization_id', $orgId)
+            ->where('knowledge_sources.organization_id', $orgId)
             ->where('knowledge_sources.status', 'active')
             ->whereColumn('knowledge_sources.active_revision_id', 'knowledge_chunks.knowledge_revision_id')
             ->where('knowledge_revisions.status', 'ready')

@@ -18,6 +18,8 @@ class DynamicWorkflowAgent implements Agent, Conversational, HasTools
     public function __construct(
         public string $instructionsText = '',
         public iterable $agentTools = [],
+        public ?string $defaultProvider = null,
+        public ?string $defaultModel = null,
     ) {}
 
     public function instructions(): Stringable|string

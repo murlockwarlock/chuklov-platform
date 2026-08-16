@@ -2,13 +2,18 @@
 
 namespace Tests\Feature\AI;
 
+use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
+use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -114,6 +119,9 @@ class AiBudgetSafetyTest extends TestCase
         $this->assertSame(50, $row->spent_minor_units);
         $this->assertSame(0, $row->reserved_minor_units);
 
+        $attempt->refresh();
+        $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
+
         // Repeated settlement on same attempt (must be a NO-OP)
         $this->budgetManager->settleAttemptBudget($attempt, 50);
 
@@ -162,6 +170,9 @@ class AiBudgetSafetyTest extends TestCase
         $this->assertSame(0, $row->spent_minor_units);
         $this->assertSame(0, $row->reserved_minor_units);
 
+        $attempt->refresh();
+        $this->assertSame(BudgetReservationStatus::Released, $attempt->budget_reservation_status);
+
         // Repeat release (no-op)
         $this->budgetManager->releaseAttemptBudget($attempt);
 
@@ -170,7 +181,7 @@ class AiBudgetSafetyTest extends TestCase
         $this->assertSame(0, $row->reserved_minor_units);
     }
 
-    public function test_conservative_charge_transfers_reserved_to_spent(): void
+    public function test_conservative_charge_transfers_reserved_to_spent_and_sets_status(): void
     {
         $today = Carbon::now()->toDateString();
         $this->budgetManager->reserveBudget($this->organization->id, 400);
@@ -208,5 +219,80 @@ class AiBudgetSafetyTest extends TestCase
         $this->assertNotNull($row);
         $this->assertSame(400, $row->spent_minor_units);
         $this->assertSame(0, $row->reserved_minor_units);
+
+        $attempt->refresh();
+        $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+    }
+
+    public function test_reclaim_reconciles_stale_attempt_reserved_budget_without_double_charging(): void
+    {
+        $today = Carbon::now()->toDateString();
+
+        // 1. Create daily budget with 500 reserved
+        $budget = AiOrganizationDailyBudget::create([
+            'organization_id' => $this->organization->id,
+            'usage_date' => $today,
+            'spent_minor_units' => 100,
+            'reserved_minor_units' => 500,
+        ]);
+
+        // 2. Create expired running run with stale attempt
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => 'client_companion',
+            'workflow_key' => 'reclaim_budget_test',
+            'status' => 'running',
+            'worker_lease_token' => 'old-lease-token',
+            'worker_lease_expires_at' => Carbon::now()->subMinutes(10), // Expired!
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+
+        $attempt = AiRunAttempt::create([
+            'organization_id' => $this->organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'status' => 'running',
+            'reserved_cost_minor_units' => 500,
+            'budget_usage_date' => $today,
+            'budget_reservation_status' => BudgetReservationStatus::Reserved,
+            'pricing_snapshot' => [],
+            'token_usage' => [],
+        ]);
+
+        // 3. ProcessAiRunJob reclaims expired run
+        $job = new ProcessAiRunJob($this->organization->id, $run->id);
+        $fakeEngine = new class implements AiWorkflowEngine
+        {
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                return new AiRunResult(runId: 0, status: AiRunStatus::Succeeded);
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                return new AiRunResult(runId: $runId, status: AiRunStatus::Succeeded);
+            }
+        };
+
+        $job->handle($fakeEngine, $this->budgetManager);
+
+        // 4. Assert budget row was reconciled conservatively
+        $budget->refresh();
+        $this->assertSame(600, $budget->spent_minor_units); // 100 + 500
+        $this->assertSame(0, $budget->reserved_minor_units);
+
+        $attempt->refresh();
+        $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+        $this->assertSame('failed', $attempt->status);
+        $this->assertSame('Lease expired and reclaimed by new worker.', $attempt->retry_or_failover_reason);
+
+        // 5. Repeated handle (must not double-charge)
+        $this->budgetManager->chargeAttemptConservatively($attempt);
+        $budget->refresh();
+        $this->assertSame(600, $budget->spent_minor_units);
     }
 }

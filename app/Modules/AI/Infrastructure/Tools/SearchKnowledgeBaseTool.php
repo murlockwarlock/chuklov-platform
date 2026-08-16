@@ -2,11 +2,9 @@
 
 namespace App\Modules\AI\Infrastructure\Tools;
 
-use App\Models\User;
 use App\Modules\AI\Domain\Contracts\AiToolInterface;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
-use Illuminate\Support\Facades\Auth;
 
 class SearchKnowledgeBaseTool implements AiToolInterface
 {
@@ -65,18 +63,13 @@ class SearchKnowledgeBaseTool implements AiToolInterface
             ? array_values(array_map('intval', (array) $input['knowledge_source_ids']))
             : [];
 
-        $actor = Auth::user();
-        if (! $actor instanceof User) {
-            return ['results' => [], 'count' => 0];
-        }
-
         try {
             $retrievalQuery = new RetrievalQuery(
                 text: $query,
                 topK: $limit,
                 sourceIds: $sourceIds,
             );
-            $results = $this->knowledgeRetriever->retrieve($actor, $retrievalQuery);
+            $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
         } catch (\Throwable) {
             return ['results' => [], 'count' => 0];
         }
@@ -89,7 +82,9 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 'source_title' => $result->sourceTitle,
                 'source_type' => $result->sourceType,
                 'similarity' => round($result->similarity, 4),
-                'content' => $result->sourceReference,
+                'content' => $result->content,
+                'source_reference' => $result->sourceReference,
+                'embedding_configuration_key' => $result->embeddingConfigurationKey,
             ];
         }
 

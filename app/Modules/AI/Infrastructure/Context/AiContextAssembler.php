@@ -93,25 +93,22 @@ class AiContextAssembler implements AiContextAssemblerInterface
         if ($policy->includeRag) {
             $query = (string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? '');
             if ($query !== '') {
-                $actor = Auth::user();
-                if ($actor instanceof User) {
-                    try {
-                        $retrievalQuery = new RetrievalQuery(
-                            text: $query,
-                            topK: min(20, max(1, $policy->ragMaxChunks)),
-                            sourceIds: $policy->ragKnowledgeSourceIds,
-                        );
-                        $results = $this->knowledgeRetriever->retrieve($actor, $retrievalQuery);
+                try {
+                    $retrievalQuery = new RetrievalQuery(
+                        text: $query,
+                        topK: min(20, max(1, $policy->ragMaxChunks)),
+                        sourceIds: $policy->ragKnowledgeSourceIds,
+                    );
+                    $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
 
-                        $ragChunks = $results;
-                        $ragContexts = [];
-                        foreach ($results as $result) {
-                            $ragContexts[] = "[Источник: {$result->sourceTitle}] {$result->sourceReference}";
-                        }
-                        $variables['rag_context'] = implode("\n\n", $ragContexts);
-                        $provenanceSummary['rag_chunks_count'] = count($results);
-                    } catch (\Throwable) {
+                    $ragChunks = $results;
+                    $ragContexts = [];
+                    foreach ($results as $result) {
+                        $ragContexts[] = "[Источник: {$result->sourceTitle}] {$result->content}";
                     }
+                    $variables['rag_context'] = implode("\n\n", $ragContexts);
+                    $provenanceSummary['rag_chunks_count'] = count($results);
+                } catch (\Throwable) {
                 }
             }
         }
