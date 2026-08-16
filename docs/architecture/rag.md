@@ -12,6 +12,8 @@ Phase 1 supports CRM-authored Markdown/plain text and approved private `.txt`, `
 
 The queue job carries Organization, source, and revision identifiers only. `ClaimKnowledgeIngestionRun` serializes competing workers with a PostgreSQL row lock and a unique `(organization_id, knowledge_revision_id, configuration_key)` identity. A processing lease may be reclaimed after 30 minutes. Failed retries delete only that run's partial chunks and rebuild deterministically; partial and failed runs are never retrieval-visible.
 
+Each embedding batch is persisted in a short transaction that locks the revision and ingestion run, then rechecks the claimed attempt and `processing` status before writing. Reclaim and final publication use the same run fence, so a stale worker cannot create or mutate chunks after ownership changes or the run becomes ready; embedding provider calls remain outside the transaction.
+
 The normalized-character-window `v1` chunker normalizes line endings/whitespace, targets 1,200 characters, caps chunks at 1,600 characters, overlaps 160 characters, and preserves stable index, offsets, checksum, and source reference. Embeddings use the provider-neutral `EmbeddingGenerator` boundary. Each run records provider configuration name, model, dimension, configuration version, and chunk configuration without secrets. A complete run becomes ready and activates the revision in one transaction; a newer ready revision cannot be replaced by a late older worker.
 
 ## Retrieval and trust

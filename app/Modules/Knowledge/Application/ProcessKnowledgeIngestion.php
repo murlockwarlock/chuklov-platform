@@ -8,6 +8,7 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Domain\ValueObjects\ChunkData;
 use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -57,20 +58,8 @@ final class ProcessKnowledgeIngestion
 
             foreach (array_chunk($chunks, 50) as $chunkBatch) {
                 $vectors = $this->embeddings->generate(array_map(static fn ($chunk): string => $chunk->content, $chunkBatch), $embeddingConfiguration);
-                foreach ($chunkBatch as $index => $chunk) {
-                    KnowledgeChunk::query()->updateOrCreate(
-                        ['organization_id' => $organizationId, 'knowledge_ingestion_run_id' => $run->getKey(), 'chunk_index' => $chunk->index],
-                        [
-                            'knowledge_source_id' => $sourceId,
-                            'knowledge_revision_id' => $revisionId,
-                            'start_offset' => $chunk->startOffset,
-                            'end_offset' => $chunk->endOffset,
-                            'source_reference' => $chunk->sourceReference,
-                            'content_checksum' => hash('sha256', $chunk->content),
-                            'content' => $chunk->content,
-                            'embedding' => $vectors[$index],
-                        ],
-                    );
+                if (! $this->persistChunkBatch($organizationId, $sourceId, $revisionId, $run->getKey(), $claimedAttempt, $chunkBatch, $vectors)) {
+                    return;
                 }
             }
 
@@ -141,5 +130,57 @@ final class ProcessKnowledgeIngestion
         return in_array($message, ['invalid_source_content', 'source_text_too_large', 'empty_source_content'], true)
             ? $message
             : 'embedding_or_persistence_failed';
+    }
+
+    /**
+     * @param  list<ChunkData>  $chunks
+     * @param  list<list<float>>  $vectors
+     */
+    private function persistChunkBatch(
+        int $organizationId,
+        int $sourceId,
+        int $revisionId,
+        int $runId,
+        int $claimedAttempt,
+        array $chunks,
+        array $vectors,
+    ): bool {
+        return DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $runId, $claimedAttempt, $chunks, $vectors): bool {
+            KnowledgeRevision::query()
+                ->where('organization_id', $organizationId)
+                ->where('knowledge_source_id', $sourceId)
+                ->whereKey($revisionId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedRun = KnowledgeIngestionRun::query()
+                ->where('organization_id', $organizationId)
+                ->where('knowledge_source_id', $sourceId)
+                ->where('knowledge_revision_id', $revisionId)
+                ->whereKey($runId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedRun->attempts !== $claimedAttempt || $lockedRun->status->value !== 'processing') {
+                return false;
+            }
+
+            foreach ($chunks as $index => $chunk) {
+                KnowledgeChunk::query()->updateOrCreate(
+                    ['organization_id' => $organizationId, 'knowledge_ingestion_run_id' => $runId, 'chunk_index' => $chunk->index],
+                    [
+                        'knowledge_source_id' => $sourceId,
+                        'knowledge_revision_id' => $revisionId,
+                        'start_offset' => $chunk->startOffset,
+                        'end_offset' => $chunk->endOffset,
+                        'source_reference' => $chunk->sourceReference,
+                        'content_checksum' => hash('sha256', $chunk->content),
+                        'content' => $chunk->content,
+                        'embedding' => $vectors[$index],
+                    ],
+                );
+            }
+
+            return true;
+        });
     }
 }

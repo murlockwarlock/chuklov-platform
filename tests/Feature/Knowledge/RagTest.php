@@ -14,13 +14,13 @@ use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
-use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -174,32 +174,87 @@ final class RagTest extends TestCase
         app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5));
     }
 
-    public function test_reclaimed_ingestion_attempt_cannot_publish_from_a_stale_worker(): void
+    public function test_reclaimed_ingestion_attempt_cannot_mutate_ready_chunks_from_a_stale_worker(): void
     {
         [, $actor] = $this->fixture();
         Queue::fake();
         $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Lease guide', 'type' => 'authored_text', 'content' => 'booking lease content']);
         $revision = $source->revisions()->sole();
-        $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
+        $authoritativeState = new \ArrayObject(['chunks' => []]);
+        $chunkState = static fn (int $revisionId): array => KnowledgeChunk::query()
+            ->where('knowledge_revision_id', $revisionId)
+            ->orderBy('chunk_index')
+            ->get()
+            ->map(static fn (KnowledgeChunk $chunk): array => [
+                ...$chunk->only([
+                    'id',
+                    'organization_id',
+                    'knowledge_source_id',
+                    'knowledge_revision_id',
+                    'knowledge_ingestion_run_id',
+                    'chunk_index',
+                    'start_offset',
+                    'end_offset',
+                    'source_reference',
+                    'content_checksum',
+                    'content',
+                    'embedding',
+                ]),
+                'created_at' => $chunk->created_at?->toISOString(),
+                'updated_at' => $chunk->updated_at?->toISOString(),
+            ])
+            ->all();
+        $this->app->bind(EmbeddingGenerator::class, fn (): EmbeddingGenerator => new class($this->app, $authoritativeState, $chunkState, $source->organization_id, $source->getKey(), $revision->getKey()) implements EmbeddingGenerator
         {
+            public function __construct(
+                private readonly Container $container,
+                private readonly \ArrayObject $authoritativeState,
+                private readonly \Closure $chunkState,
+                private readonly int $organizationId,
+                private readonly int $sourceId,
+                private readonly int $revisionId,
+            ) {}
+
             public function generate(array $inputs, EmbeddingConfiguration $configuration): array
             {
-                KnowledgeIngestionRun::query()->where('knowledge_revision_id', KnowledgeRevision::query()->sole()->getKey())->increment('attempts');
+                KnowledgeIngestionRun::query()
+                    ->where('knowledge_revision_id', $this->revisionId)
+                    ->update(['processing_started_at' => now()->subHour()]);
+                $this->container->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
+                {
+                    public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+                    {
+                        return array_map(static function () use ($configuration): array {
+                            $vector = array_fill(0, $configuration->dimensions, 0.0);
+                            $vector[0] = 1.0;
+
+                            return array_values($vector);
+                        }, $inputs);
+                    }
+                });
+                $this->container->make(ProcessKnowledgeIngestion::class)->handle(
+                    $this->organizationId,
+                    $this->sourceId,
+                    $this->revisionId,
+                );
+                $this->authoritativeState['chunks'] = ($this->chunkState)($this->revisionId);
 
                 return array_map(static function () use ($configuration): array {
                     $vector = array_fill(0, $configuration->dimensions, 0.0);
-                    $vector[0] = 1.0;
+                    $vector[2] = 1.0;
 
-                    return $vector;
+                    return array_values($vector);
                 }, $inputs);
             }
         });
 
         app(ProcessKnowledgeIngestion::class)->handle($source->organization_id, $source->getKey(), $revision->getKey());
 
-        self::assertNull($source->fresh()->active_revision_id);
-        self::assertSame('processing', $revision->fresh()->status->value);
-        self::assertSame('processing', $revision->ingestionRuns()->sole()->status->value);
+        self::assertNotEmpty($authoritativeState['chunks']);
+        self::assertSame($authoritativeState['chunks'], $chunkState($revision->getKey()));
+        self::assertSame($revision->getKey(), $source->fresh()->active_revision_id);
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame('ready', $revision->ingestionRuns()->sole()->status->value);
         self::assertSame(2, $revision->ingestionRuns()->sole()->attempts);
     }
 
