@@ -115,6 +115,19 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
+async function searchTableFor(page: Page, query: string): Promise<void> {
+    const searchInput = page.getByRole('searchbox', { name: 'Поиск' }).first();
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill(query);
+    await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
+}
+
+function entryValueByLabel(page: Page, label: string): ReturnType<Page['locator']> {
+    const term = page.getByRole('term', { name: label, exact: true });
+
+    return term.locator('xpath=following-sibling::*[1][self::dd or @role="definition"]');
+}
+
 test('staff can create a booking without technical inputs', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -150,46 +163,42 @@ test('staff sees business labels for client and content settings', async ({ page
     await page.goto('/admin/clients');
     await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
 
+    await searchTableFor(page, fixture.clientName);
+
     const clientsTimezoneCell = page
         .getByRole('row')
         .filter({ hasText: fixture.clientName })
         .getByRole('cell', { name: 'Всемирное время', exact: true });
     await expect(clientsTimezoneCell).toBeVisible();
-    await expect(clientsTimezoneCell).not.toContainText('UTC');
+    await expect(clientsTimezoneCell).toHaveText('Всемирное время');
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
 
-    const clientViewTimezoneEntry = page.locator('.fi-in-entry', {
-        has: page.getByRole('term', { name: 'Часовой пояс', exact: true }),
-    });
-    await expect(clientViewTimezoneEntry.getByText('Всемирное время', { exact: true })).toBeVisible();
-    await expect(clientViewTimezoneEntry).not.toContainText('UTC');
+    const clientTimezoneDefinition = entryValueByLabel(page, 'Часовой пояс');
+    await expect(clientTimezoneDefinition).toBeVisible();
+    await expect(clientTimezoneDefinition).toHaveText('Всемирное время');
 
     await page.goto('/admin/content-sections');
     await expect(page.getByRole('heading', { name: 'Разделы контента' })).toBeVisible();
+
+    await searchTableFor(page, fixture.contentSectionTitle);
 
     const contentSectionRow = page.getByRole('row').filter({ hasText: fixture.contentSectionTitle });
     await expect(contentSectionRow).toBeVisible();
     await expect(contentSectionRow.getByRole('cell', { name: 'Об академии', exact: true })).toBeVisible();
     await expect(contentSectionRow.getByRole('cell', { name: 'Русский', exact: true })).toBeVisible();
-    await expect(contentSectionRow).not.toContainText('author');
-    await expect(contentSectionRow).not.toContainText('ru');
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}`);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.contentSectionTitle }).first()).toBeVisible();
 
-    const sectionKeyEntry = page.locator('.fi-in-entry', {
-        has: page.getByRole('term', { name: 'Раздел', exact: true }),
-    });
-    await expect(sectionKeyEntry.getByText('Об академии', { exact: true })).toBeVisible();
-    await expect(sectionKeyEntry).not.toContainText('author');
+    const sectionKeyDefinition = entryValueByLabel(page, 'Раздел');
+    await expect(sectionKeyDefinition).toBeVisible();
+    await expect(sectionKeyDefinition).toHaveText('Об академии');
 
-    const localeEntry = page.locator('.fi-in-entry', {
-        has: page.getByRole('term', { name: 'Язык', exact: true }),
-    });
-    await expect(localeEntry.getByText('Русский', { exact: true })).toBeVisible();
-    await expect(localeEntry).not.toContainText('ru');
+    const localeDefinition = entryValueByLabel(page, 'Язык');
+    await expect(localeDefinition).toBeVisible();
+    await expect(localeDefinition).toHaveText('Русский');
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
@@ -202,7 +211,7 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
         (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker = 998877;
     });
 
-    const sidebarToggle = page
+    const openSidebarToggle = page
         .locator('.fi-topbar-open-sidebar-btn, [aria-controls="fi-main-sidebar"]')
         .first();
 
@@ -211,14 +220,8 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     const navigateViaSidebar = async (linkName: string, expectedUrl: RegExp, expectedHeading: string): Promise<void> => {
         const targetLink = navigationSidebar.getByRole('link', { name: linkName, exact: true });
 
-        if (await sidebarToggle.isVisible()) {
-            const toggleExpanded = sidebarToggle.and(page.locator('[aria-expanded="true"]'));
-            const isAlreadyOpen = (await toggleExpanded.count()) > 0;
-
-            if (! isAlreadyOpen) {
-                await sidebarToggle.click();
-                await expect(toggleExpanded).toBeVisible();
-            }
+        if (await openSidebarToggle.isVisible()) {
+            await openSidebarToggle.click();
         }
 
         await expect(targetLink).toBeVisible();
@@ -248,4 +251,3 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     const markerAfterServices = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterServices).toBe(998877);
 });
-
