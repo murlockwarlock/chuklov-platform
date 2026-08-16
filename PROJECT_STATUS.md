@@ -3,7 +3,7 @@
 - Last updated: 2026-08-16
 - Current phase: Phase 1 foundation
 - Current milestone: Milestone 7 — Medical Profiles / Sessions / Attachments (IN_PROGRESS)
-- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B.1 Session Foundation implementation candidate; M7B Session Cockpit UI / history / AI / attachments-link remain NOT STARTED)
+- Status: M0–M6 are CLOSED / ACCEPTED; M7 is IN_PROGRESS (M7A implementation candidate in verification; M7B.1 Session Foundation implementation candidate; M7B.2 Session Cockpit UI / client-scoped history is an implementation candidate; M7B overall remains incomplete)
 
 ## Milestone 7B.1 — Durable Medical Session Foundation — IMPLEMENTATION CANDIDATE — 2026-08-16
 
@@ -14,7 +14,13 @@
 - Registered `medical.session.created` and `medical.session.updated` audit actions with allowlisted metadata only (`source`, `key_version`, `booking_id`, `client_id`, `specialist_id` for create; `source`, `key_version`, `updated_fields` for update serialized as `implode(',', $names)`; no array metadata values; no clinical plaintext). Extended log redaction with a dedicated narrow Session-clinical matcher: exact context-key match for `pain`/`tests`/`observations`/`root_cause_hypothesis`/`protocol`/`result`, plus a defense-in-depth message-text matcher that redacts ONLY explicitly namespaced clinical labels (`medical_session.<field>=...`, `medical_session.<field>: ...`, `clinical.<field>=...`, `clinical.<field>: ...`). Bare operational labels (`Result:`, `test:`, `tests=`, `protocol:`, etc.) are deliberately NOT classified; the general sensitive-key pattern was not broadened with `test`/`result`/`session`/`protocol`/`clinical` operational terms.
 - UpdateSession uses full clinical snapshot semantics: `UpdateSessionCommand::fromArray()` requires all six clinical field keys explicitly (each value may itself be null to clear that field); missing keys are rejected as validation errors. UpdateSession persists the full supplied snapshot and records `updated_fields` from actual on-disk decrypted value differences (including explicit clears). `CreateSessionCommand::fromArray()` rejects missing/empty `occurred_at` rather than defaulting to current time; the authorized `Client` argument remains the sole client authority (`clientId` removed from `CreateSessionCommand`). `occurred_at` and structural ids remain immutable in `UpdateSession`.
 - Local verification (does NOT include PostgreSQL integration tests): focused PHPUnit feature tests under `tests/Feature/Sessions/MedicalSessionTest.php` pass locally under sqlite; M7A MedicalProfile regression and M1 security redaction regression pass locally; Larastan clean on changed `app/` paths; Pint clean on changed files. PostgreSQL composite-FK rejection integration tests under `tests/Integration/MilestoneSevenDatabaseTest.php` were added and are executed only by hosted CI; they were NOT run locally.
-- Status: M7 remains IN_PROGRESS; M7B Session Cockpit UI is next and NOT STARTED; REQ-MEDICAL-001 remains incomplete; OQ-013 remains OPEN. M7A status is unchanged. The previous hosted CI run is NOT verification for the remediation candidate; hosted CI must pass on the exact remediation SHA before any acceptance.
+- Status: M7 remains IN_PROGRESS; M7B.2 Session Cockpit UI / client history is an implementation candidate, while M7B and REQ-MEDICAL-001 remain incomplete; OQ-013 remains OPEN. M7A status is unchanged. Hosted CI must pass on the exact candidate SHA before any acceptance.
+
+## Milestone 7B.2 — CRM Session Cockpit UI + Client-Scoped Session History — IMPLEMENTATION / VERIFICATION CANDIDATE — 2026-08-16
+
+- Added the CRM Client → Sessions history, create, detail, and edit flow using the existing `CreateSession`, `GetSession`, and `UpdateSession` application boundaries. History is fixed-client and organization scoped, structurally projected, SQL paginated at 25 or 50 rows, ordered by `occurred_at DESC, id DESC`, and eager-loads only specialist and booking display metadata.
+- Added bounded organization-safe Specialist search and bounded organization/client/specialist-safe optional Booking search. Invalid or tampered identifiers are rejected as form validation errors; Booking lifecycle is unchanged.
+- Focused local verification: Session cockpit and Medical Session PHPUnit tests pass (49 tests, 221 assertions); narrow Larastan on changed application paths passes; Pint and `git diff --check` pass; the focused Playwright flow is listed for desktop and mobile but browser execution awaits hosted CI. M7 remains IN_PROGRESS; M7B and `REQ-MEDICAL-001` remain incomplete; hosted CI is not yet verification for this candidate.
 
 ## CRM Performance & Staging Runtime Remediation — DEPLOYED / HOSTED CI GREEN — 2026-08-15
 
@@ -28,7 +34,7 @@
 
 ## Milestone 7A — IMPLEMENTATION CANDIDATE — 2026-08-15
 
-- Implemented M7A scope (`REQ-CLIENT-002`, `REQ-MEDICAL-SEC-001`, `REQ-ATTACHMENT-001`, `REQ-ATTACHMENT-002`, ADR-017). M7B Session Cockpit and M8+ remain unstarted.
+- Implemented M7A scope (`REQ-CLIENT-002`, `REQ-MEDICAL-SEC-001`, `REQ-ATTACHMENT-001`, `REQ-ATTACHMENT-002`, ADR-017). M7B.2 is now an implementation candidate; M7B overall and M8+ remain incomplete.
 - ADR-017 accepted: Class C clinical fields (`anamnesis`, `complaints_goals`, `operations_injuries`, `medicines`, `supplements`) are encrypted at rest with AES-256-CBC and HMAC-SHA256 authenticated envelopes using `Illuminate\Encryption\Encrypter` behind `MedicalEncryptorInterface` and `MedicalKeyResolverInterface`. Database models store raw ciphertext with an explicit `encryption_key_version` and rotation seam.
 - Dedicated medical encryption secret configured outside the database via medical configuration (`config/medical.php`), decoupling medical encryption from application key rotation.
 - Forward-only additive PostgreSQL migrations created: `2026_08_15_140000_create_medical_profiles_table.php` (composite foreign key `(organization_id, client_id)` referencing `clients(organization_id, id)` and unique `[organization_id, client_id]`) and `2026_08_15_140001_create_medical_attachments_table.php` (not-null client ownership and composite foreign keys to `clients` and `organization_memberships` with restrict-on-delete semantics).
@@ -42,7 +48,7 @@
 - Local verification: 34 Unit tests (61 assertions) and 252 Feature tests (1549 assertions) pass; 61 PostgreSQL integration tests (151 assertions) pass; 24 Playwright e2e tests pass; Pint, ESLint, Larastan (0 errors), vue-tsc (0 errors), Vite build, Composer audit (0 advisories), and npm audit (0 vulnerabilities) pass. Local `make quality`, `make privacy`, and `make ci` pass.
 - Hosted exact-SHA CI run `31895042962` is green for `48c12884ff86adc9c33691ba05964b0ec87935e1`: Quality/integration `95036954471`, Privacy/secret scan `95036954456`, Docker/runtime health `95036954441`, Playwright desktop/mobile `95036954586`.
 - Guarded staging now runs exact application SHA `48c12884ff86adc9c33691ba05964b0ec87935e1` at `https://crm.psysoldatov.ru`; forward migrations applied without database reset; dedicated medical encryption configuration verified; staging smoke verified encryption at rest, cross-org isolation, fail-closed runtime scanner quarantine, quarantined download blocking, and temporary signed URLs.
-- Status: M7 remains IN_PROGRESS; M7B Session Cockpit is next and NOT STARTED; OQ-013 remains OPEN.
+- Status: M7 remains IN_PROGRESS; M7B.2 is an implementation candidate; M7B overall remains incomplete; OQ-013 remains OPEN.
 
 ## Milestone 6 — CLOSED / ACCEPTED — 2026-08-15
 

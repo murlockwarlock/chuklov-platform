@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -25,9 +26,9 @@ final readonly class UpdateSession
         private GetSession $getSession,
     ) {}
 
-    public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command): MedicalSessionData
+    public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
     {
-        $organization = $this->authorization->authorizeManageSession($actor, $session);
+        $organization = $this->authorization->authorizeManageSession($actor, $session, $expectedClient);
         $orgId = (int) $organization->getKey();
 
         $this->validateCommand($command);

@@ -5,6 +5,12 @@ export default defineConfig({
     reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
     webServer: {
         command: 'php artisan serve --host=127.0.0.1 --port=8000',
+        env: {
+            ...process.env,
+            MEDICAL_ENCRYPTION_KEY_V1:
+                process.env.MEDICAL_ENCRYPTION_KEY_V1 ??
+                'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+        },
         url: 'http://127.0.0.1:8000/health',
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

@@ -6,6 +6,7 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -70,6 +71,12 @@ class Client extends Model
     public function medicalAttachments(): HasMany
     {
         return $this->hasMany(MedicalAttachment::class);
+    }
+
+    /** @return HasMany<MedicalSession, $this> */
+    public function sessions(): HasMany
+    {
+        return $this->hasMany(MedicalSession::class);
     }
 
     protected static function newFactory(): ClientFactory

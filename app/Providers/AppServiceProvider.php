@@ -49,6 +49,8 @@ use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Policies\AuditEventPolicy;
 use App\Policies\BookingPolicy;
@@ -59,6 +61,7 @@ use App\Policies\ContentSectionPolicy;
 use App\Policies\FinancialObligationPolicy;
 use App\Policies\FinancialReceiptPolicy;
 use App\Policies\MedicalAttachmentPolicy;
+use App\Policies\MedicalSessionPolicy;
 use App\Policies\OrganizationCredentialPolicy;
 use App\Policies\OrganizationFeatureFlagPolicy;
 use App\Policies\OrganizationSettingPolicy;
@@ -81,6 +84,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
         $this->app->scoped(GetMedicalProfile::class);
+        $this->app->scoped(GetSession::class);
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
         $this->app->singleton(
             NotificationChannelRegistry::class,
@@ -140,5 +144,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(FinancialObligation::class, FinancialObligationPolicy::class);
         Gate::policy(FinancialReceipt::class, FinancialReceiptPolicy::class);
         Gate::policy(MedicalAttachment::class, MedicalAttachmentPolicy::class);
+        Gate::policy(MedicalSession::class, MedicalSessionPolicy::class);
     }
 }

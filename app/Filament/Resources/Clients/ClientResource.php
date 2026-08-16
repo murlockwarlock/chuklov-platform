@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\Pages\CreateClient;
 use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
+use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
 use App\Filament\Resources\Clients\Schemas\ClientForm;
 use App\Filament\Resources\Clients\Tables\ClientsTable;
 use App\Filament\Support\TimezoneOptions;
@@ -18,6 +19,7 @@ use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -141,6 +143,15 @@ class ClientResource extends Resource
         return [];
     }
 
+    public static function getRecordSubNavigation(Page $page): array
+    {
+        return $page->generateNavigationItems([
+            ViewClient::class,
+            EditClient::class,
+            ManageClientSessions::class,
+        ]);
+    }
+
     private static function channelLabel(ClientChannelIdentity $identity): string
     {
         $channel = match ($identity->channel) {
@@ -173,6 +184,7 @@ class ClientResource extends Resource
             'create' => CreateClient::route('/create'),
             'view' => ViewClient::route('/{record}'),
             'edit' => EditClient::route('/{record}/edit'),
+            'sessions' => ManageClientSessions::route('/{record}/sessions'),
         ];
     }
 }
