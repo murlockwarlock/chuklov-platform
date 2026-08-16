@@ -220,7 +220,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await searchTableFor(page, fixture.clientName);
 
     const clientRow = page.getByRole('row').filter({ hasText: fixture.clientName });
-    await clientRow.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await clientRow.getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
     await page.getByRole('link', { name: 'Сеансы', exact: true }).click();

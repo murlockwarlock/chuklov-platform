@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Sessions;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\CreateMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\EditMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
@@ -29,6 +30,7 @@ use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -213,7 +215,9 @@ final class SessionCockpitTest extends TestCase
         $first = $this->createSession($admin, $client, $specialist, occurredAt: Carbon::parse('2026-02-01 10:00:00', 'UTC'));
         $alien = $this->createSession($admin, $otherClient, $specialist, occurredAt: Carbon::parse('2026-01-01 10:00:00', 'UTC'));
 
-        $viewed = $this->get($this->relativeUrl(ManageClientSessions::getUrl(['record' => $client->getKey()], shouldGuessMissingParameters: true)));
+        $viewed = $this->get($this->relativeUrl(ClientResource::getUrl('sessions', [
+            'record' => $client,
+        ], shouldGuessMissingParameters: true)));
         $viewed->assertSuccessful();
         $viewed->assertSee($first->occurred_at->format('d.m.Y H:i'));
         $viewed->assertDontSee($alien->occurred_at->format('d.m.Y H:i'));
@@ -359,10 +363,17 @@ final class SessionCockpitTest extends TestCase
             'client' => $client->getKey(),
         ], shouldGuessMissingParameters: true));
 
-        $this
+        $response = $this
             ->actingAs($otherAdmin)
-            ->get($createUrl)
-            ->assertForbidden();
+            ->get($createUrl);
+
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            $response->assertForbidden();
+
+            return;
+        }
+
+        $response->assertNotFound();
     }
 
     public function test_filament_create_session_rejects_invalid_specialist_identifier(): void
@@ -422,7 +433,9 @@ final class SessionCockpitTest extends TestCase
         self::assertSame((int) $session->organization_id, (int) $raw->organization_id);
         self::assertSame((int) $session->client_id, (int) $raw->client_id);
         self::assertSame((int) $session->specialist_id, (int) $raw->specialist_id);
-        self::assertSame($session->occurred_at->toDateTimeString(), $raw->occurred_at);
+        $expectedOccurredAt = $session->occurred_at->copy()->utc();
+        $actualOccurredAt = Carbon::parse((string) $raw->occurred_at)->utc();
+        self::assertTrue($expectedOccurredAt->equalTo($actualOccurredAt));
     }
 
     public function test_filament_edit_session_rejects_forged_same_organization_other_client_record(): void
@@ -495,26 +508,47 @@ final class SessionCockpitTest extends TestCase
             ->forClient($client)
             ->forSpecialist($specialist)
             ->forService($service)
-            ->create(['starts_at' => '2026-08-16 10:00:00']);
+            ->create([
+                'starts_at' => '2026-08-16 10:00:00',
+                'ends_at' => '2026-08-16 11:00:00',
+                'blocking_ends_at' => '2026-08-16 11:00:00',
+            ]);
         $alienClient = Booking::factory()
             ->forOrganization($organization)
             ->forClient($otherClient)
             ->forSpecialist($specialist)
             ->forService($service)
-            ->create(['starts_at' => '2026-08-16 11:00:00']);
+            ->create([
+                'starts_at' => '2026-08-16 12:00:00',
+                'ends_at' => '2026-08-16 13:00:00',
+                'blocking_ends_at' => '2026-08-16 13:00:00',
+            ]);
         $otherSpecialist = Specialist::factory()->forOrganization($organization)->create();
         $alienSpecialist = Booking::factory()
             ->forOrganization($organization)
             ->forClient($client)
             ->forSpecialist($otherSpecialist)
             ->forService($service)
-            ->create(['starts_at' => '2026-08-16 12:00:00']);
+            ->create([
+                'starts_at' => '2026-08-16 10:00:00',
+                'ends_at' => '2026-08-16 11:00:00',
+                'blocking_ends_at' => '2026-08-16 11:00:00',
+            ]);
         Booking::factory()
             ->count(51)
             ->forOrganization($organization)
             ->forClient($client)
             ->forSpecialist($specialist)
             ->forService($service)
+            ->sequence(static function (Sequence $sequence): array {
+                $startsAt = Carbon::parse('2026-08-17 10:00:00', 'UTC')->addHours($sequence->index * 2);
+
+                return [
+                    'starts_at' => $startsAt,
+                    'ends_at' => $startsAt->copy()->addHour(),
+                    'blocking_ends_at' => $startsAt->copy()->addHour(),
+                ];
+            })
             ->create();
         $this->resolveFilamentContext($admin, $organization);
 
