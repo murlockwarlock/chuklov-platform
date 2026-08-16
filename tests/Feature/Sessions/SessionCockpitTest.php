@@ -367,12 +367,6 @@ final class SessionCockpitTest extends TestCase
             ->actingAs($otherAdmin)
             ->get($createUrl);
 
-        if (DB::connection()->getDriverName() === 'sqlite') {
-            $response->assertForbidden();
-
-            return;
-        }
-
         $response->assertNotFound();
     }
 
@@ -594,6 +588,7 @@ final class SessionCockpitTest extends TestCase
     {
         $this->actingAs($user);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
     }
 

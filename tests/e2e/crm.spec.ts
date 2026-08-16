@@ -223,7 +223,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await clientRow.getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
-    await page.getByRole('link', { name: 'Сеансы', exact: true }).click();
+    const sessionsLink = page.getByRole('link', { name: 'Сеансы', exact: true });
+
+    if (!(await sessionsLink.isVisible())) {
+        await page.getByRole('button', { name: 'Просмотр', exact: true }).click();
+    }
+
+    await sessionsLink.click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
 
