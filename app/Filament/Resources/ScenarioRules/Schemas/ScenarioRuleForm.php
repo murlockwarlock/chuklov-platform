@@ -35,6 +35,8 @@ final class ScenarioRuleForm
                         ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
                         ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
                         ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',
+                        ScenarioEventType::SurveyCompleted->value => 'Клиент завершил тест',
+                        ScenarioEventType::TestStagnationDetected->value => 'В повторном тесте нет снижения показателей',
                     ])
                     ->required(),
                 Toggle::make('is_enabled')

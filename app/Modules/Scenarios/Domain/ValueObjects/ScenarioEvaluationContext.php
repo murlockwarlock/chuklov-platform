@@ -7,6 +7,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Carbon\CarbonImmutable;
 
 final readonly class ScenarioEvaluationContext
@@ -18,6 +19,7 @@ final readonly class ScenarioEvaluationContext
         public ?ClientOnboarding $onboarding = null,
         public ?CarbonImmutable $evaluationEndsAt = null,
         public ?FinancialObligation $obligation = null,
+        public ?SurveyAttempt $surveyAttempt = null,
     ) {}
 
     public function withEvaluationEndsAt(?CarbonImmutable $evaluationEndsAt): self
@@ -29,6 +31,7 @@ final readonly class ScenarioEvaluationContext
             onboarding: $this->onboarding,
             evaluationEndsAt: $evaluationEndsAt,
             obligation: $this->obligation,
+            surveyAttempt: $this->surveyAttempt,
         );
     }
 }

@@ -8,4 +8,6 @@ Portal visual tokens and reusable shell/component classes are centralized in res
 
 Client-facing RU/EN shell copy is centralized in resources/js/locales/portal.ts; the selected locale is stored in the authenticated Client language preference and in the pre-auth session. Localized organization content is projected through Application presenters with safe fallback.
 
+M8 adds the authenticated Tests destination with available definitions, bounded attempt history, start/resume, dynamic sections and supported typed fields, server validation, explicit completion, and deterministic result display. Attempts and reports are resolved from the server-side Client context; another Client's identifiers return not found. Unrelated Portal destinations are never gated by an optional survey.
+
 Portal dates use the shared PortalDateTime component and centralized date/time utilities. See REQ-PORTAL-001 through REQ-PORTAL-005, REQ-EMAIL-001, REQ-LEGAL-001, REQ-TIME-001, ADR-003, ADR-013, and the client-portal skill.

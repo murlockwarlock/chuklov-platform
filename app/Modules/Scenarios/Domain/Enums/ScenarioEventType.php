@@ -7,4 +7,6 @@ enum ScenarioEventType: string
     case BookingCompleted = 'booking.completed';
     case OnboardingStarted = 'onboarding.started';
     case FinancialObligationCreated = 'finance.obligation.created';
+    case SurveyCompleted = 'survey.completed';
+    case TestStagnationDetected = 'TEST_STAGNATION_DETECTED';
 }

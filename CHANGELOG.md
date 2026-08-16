@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- M8 Surveys / Road Map implementation candidate:
+  - Added organization-scoped versioned definitions, immutable exact-version attempts, encrypted sensitive snapshots, typed fail-closed conditions/scoring, deterministic thresholds/tags, non-AI reports, compatibility-gated comparison, and idempotent Scenario events for completion and configured stagnation.
+  - Added structured Filament definition/version publication and attempt history, responsive Inertia Portal flows, and the validated `surveys:import` path.
+  - The approved local source omits the full 9-systems and MSQ questionnaires/scoring and refers to absent separate documents. No clinical content was fabricated; M8 remains content-blocked by OQ-015.
+
 - M7 final product slice — Session files and longitudinal dynamics:
   - Added the `medical_session_attachments` association with composite Organization/Client foreign keys to both Sessions and existing medical attachments. The relation preserves historical file records, copies no bytes, and unlinking removes only the association.
   - Added authorized Application actions for bounded client-attachment search, link/unlink, linked metadata with existing temporary download URLs, and deterministic current-versus-immediately-previous Session dynamics.

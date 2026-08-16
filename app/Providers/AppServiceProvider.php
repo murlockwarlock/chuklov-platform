@@ -52,6 +52,8 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Policies\AuditEventPolicy;
 use App\Policies\BookingPolicy;
 use App\Policies\ClientChannelIdentityPolicy;
@@ -69,6 +71,8 @@ use App\Policies\ScheduleExceptionPolicy;
 use App\Policies\ServicePolicy;
 use App\Policies\SpecialistPolicy;
 use App\Policies\SpecialistServiceAssignmentPolicy;
+use App\Policies\SurveyAttemptPolicy;
+use App\Policies\SurveyDefinitionPolicy;
 use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Foundation\Application;
@@ -145,5 +149,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(FinancialReceipt::class, FinancialReceiptPolicy::class);
         Gate::policy(MedicalAttachment::class, MedicalAttachmentPolicy::class);
         Gate::policy(MedicalSession::class, MedicalSessionPolicy::class);
+        Gate::policy(SurveyDefinition::class, SurveyDefinitionPolicy::class);
+        Gate::policy(SurveyAttempt::class, SurveyAttemptPolicy::class);
     }
 }

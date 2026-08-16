@@ -9,11 +9,58 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEventData;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyReport;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class RecordScenarioEvent
 {
+    public function surveyCompleted(SurveyAttempt $attempt, SurveyReport $report, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::SurveyCompleted,
+            aggregateType: SurveyAttempt::class,
+            aggregateId: (string) $attempt->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'attempt_id' => (int) $attempt->getKey(),
+                'report_id' => (int) $report->getKey(),
+                'client_id' => (int) $attempt->client_id,
+                'survey_definition_id' => (int) $attempt->survey_definition_id,
+                'survey_version_id' => (int) $attempt->survey_version_id,
+                'completed_at' => $occurredAt->utc()->toIso8601String(),
+            ],
+            idempotencyKey: 'survey.completed:'.$attempt->organization_id.':'.$attempt->getKey(),
+            correlationId: 'survey:attempt:'.$attempt->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $attempt->organization_id, $data);
+    }
+
+    public function testStagnationDetected(SurveyAttempt $current, SurveyAttempt $previous, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::TestStagnationDetected,
+            aggregateType: SurveyAttempt::class,
+            aggregateId: (string) $current->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'attempt_id' => (int) $current->getKey(),
+                'previous_attempt_id' => (int) $previous->getKey(),
+                'client_id' => (int) $current->client_id,
+                'survey_definition_id' => (int) $current->survey_definition_id,
+                'survey_version_id' => (int) $current->survey_version_id,
+            ],
+            idempotencyKey: 'TEST_STAGNATION_DETECTED:'.$current->organization_id.':'.$current->getKey(),
+            correlationId: 'survey:attempt:'.$current->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $current->organization_id, $data);
+    }
+
     public function bookingCompleted(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $booking->loadMissing(['client']);

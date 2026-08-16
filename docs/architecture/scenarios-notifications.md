@@ -31,3 +31,7 @@ The evaluation boundaries are explicit: rule conditions are evaluated against th
 The Finance module publishes the allowlisted `finance.obligation.created` event through the same transactional Scenario event boundary. Its payload contains only organization/client/obligation identifiers and derived, non-sensitive financial totals needed for condition evaluation; it excludes notes, receipt content, provider evidence, credentials, and internal idempotency keys. `finance.has_outstanding_debt` rechecks the current reconciled obligation before execution, so a settled obligation does not produce a stale debt reminder. Delays, templates, channels, delivery idempotency, and history remain the existing M5 configuration and delivery responsibilities; Finance adds no parallel reminder subsystem.
 
 See REQ-NOTIFY-*, REQ-CHANNEL-*, REQ-CONVERSATION-001, ADR-009, ADR-012, and ADR-004.
+
+## M8 survey integration
+
+Survey completion atomically materializes its deterministic report and one `survey.completed` ScenarioEvent containing identifiers and structural timestamps only. Compatible configured repeat metrics may create one `TEST_STAGNATION_DETECTED` event; incompatible metric schemas create no stagnation event. Scenario configuration remains responsible for optional client/internal recipients, templates, tone, delay, and channel priority. Queue and Scenario payloads do not contain answers, result plaintext, or unrestricted medical content.
