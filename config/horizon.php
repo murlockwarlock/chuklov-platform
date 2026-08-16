@@ -221,6 +221,14 @@ return [
             ],
         ],
 
+        'staging' => [
+            'supervisor-1' => [
+                'maxProcesses' => 2,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+        ],
+
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,

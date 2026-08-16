@@ -13,7 +13,8 @@ class StagingDeploymentScriptTest extends TestCase
         $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
 
         self::assertIsString($script);
-        self::assertStringContainsString('git merge-base --is-ancestor "$revision" origin/main', $script);
+        self::assertStringContainsString('deployment_ref="${STAGING_DEPLOY_REF:-origin/main}"', $script);
+        self::assertStringContainsString('git merge-base --is-ancestor "$revision" "$deployment_ref"', $script);
         self::assertStringContainsString('--project-name "$project"', $script);
         self::assertStringContainsString('pg_dump', $script);
         self::assertStringContainsString("-Fc' < /dev/null >", $script);
@@ -26,7 +27,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image and .user == \"33:33\")'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
         self::assertStringContainsString('trap \'rollback "$LINENO" "$?"\' ERR', $script);
-        self::assertStringContainsString('Horizon did not report a running supervisor', $script);
+        self::assertStringContainsString('horizon:supervisors --no-ansi', $script);
+        self::assertStringContainsString('Horizon did not report an active supervisor with workers', $script);
         self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
@@ -55,5 +57,26 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertIsString($gitignore);
         self::assertStringContainsString('.env.staging-deploy', $gitignore);
         self::assertFileExists(base_path('.env.staging-deploy.example'));
+    }
+
+    #[Test]
+    public function staging_smoke_uses_the_guarded_environment_and_read_only_container_contract(): void
+    {
+        $shell = file_get_contents(base_path('scripts/staging-smoke.sh'));
+        $php = file_get_contents(base_path('scripts/staging-smoke.php'));
+        $example = file_get_contents(base_path('.env.staging-deploy.example'));
+
+        self::assertIsString($shell);
+        self::assertIsString($php);
+        self::assertIsString($example);
+        self::assertStringContainsString('STAGING_SMOKE_USER_ID', $shell);
+        self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID', $shell);
+        self::assertStringContainsString('< "$repository_root/scripts/staging-smoke.php"', $shell);
+        self::assertStringNotContainsString('docker cp', $shell);
+        self::assertStringContainsString('--deep', $shell);
+        self::assertStringContainsString('app(SupervisorRepository::class)->all()', $php);
+        self::assertStringContainsString('app(RetireKnowledgeSource::class)->handle', $php);
+        self::assertStringContainsString('STAGING_SMOKE_USER_ID=', $example);
+        self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);
     }
 }

@@ -23,6 +23,7 @@ set +a
 
 revision="${1:-}"
 expected_revision="${2:-}"
+deployment_ref="${STAGING_DEPLOY_REF:-origin/main}"
 
 if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
     echo "Usage: scripts/deploy-staging.sh <40-character-revision> [expected-current-revision]" >&2
@@ -42,8 +43,13 @@ if [[ "$resolved_revision" != "$revision" ]]; then
     exit 1
 fi
 
-if ! git merge-base --is-ancestor "$revision" origin/main; then
-    echo "Revision is not reachable from origin/main." >&2
+if [[ ! "$deployment_ref" =~ ^origin/[A-Za-z0-9._/-]+$ ]] || ! git rev-parse --verify "$deployment_ref^{commit}" > /dev/null 2>&1; then
+    echo "STAGING_DEPLOY_REF must identify an existing origin remote branch." >&2
+    exit 1
+fi
+
+if ! git merge-base --is-ancestor "$revision" "$deployment_ref"; then
+    echo "Revision is not reachable from $deployment_ref." >&2
     exit 1
 fi
 
@@ -375,12 +381,16 @@ docker compose --project-name "$project" --env-file "$environment" -f "$compose"
 echo "Runtime containers refreshed; verifying application health."
 curl --noproxy '*' --fail --silent --show-error --retry 15 --retry-delay 2 "$health_url"
 for attempt in $(seq 1 15); do
-    if docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status < /dev/null; then
+    horizon_status="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status --no-ansi < /dev/null 2>&1 || true)"
+    horizon_supervisors="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:supervisors --no-ansi < /dev/null 2>&1 || true)"
+    if grep -Fq 'Horizon is running.' <<< "$horizon_status" \
+        && grep -Fq 'supervisor-1' <<< "$horizon_supervisors" \
+        && grep -Eq '\([1-9][0-9]*\)' <<< "$horizon_supervisors"; then
         break
     fi
 
     if [[ "$attempt" -eq 15 ]]; then
-        echo "Horizon did not report a running supervisor before the verification deadline." >&2
+        echo "Horizon did not report an active supervisor with workers before the verification deadline." >&2
         false
     fi
 

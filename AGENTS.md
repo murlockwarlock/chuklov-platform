@@ -140,6 +140,8 @@ Never claim a check passed unless it was executed. Record exact results and skip
 
 Never use persistent staging as a replacement for isolated CI. Do not run destructive or full automated test suites against staging. Deploy to staging only after the exact candidate SHA has passed all required hosted CI jobs. Staging may then be used for guarded deployment verification, synthetic smoke tests, real browser performance measurements, and environment-specific checks that cannot be meaningfully reproduced in GitHub Actions.
 
+After a staging deployment, run `./scripts/staging-smoke.sh`. Use `./scripts/staging-smoke.sh --deep` when the milestone requires reversible domain verification. Extend this repository-owned harness when a new staging check is needed; do not create ad-hoc staging smoke scripts while the harness can own the check. The app container root filesystem is read-only, so smoke PHP is streamed through stdin and must not rely on `docker cp` or container-local temporary files.
+
 ### Performance & Runtime Quality Gate
 
 - Correctness tests alone do not prove acceptable runtime characteristics; list/collection/hot read paths must consider per-record DB/I/O/decryption, bounded query and payload/memory growth, relevant indexes, and cache/invalidation.
