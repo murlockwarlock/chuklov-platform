@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-08-16 - Owner-confirmed M10 AI product and architecture contract
+
+- Added `REQ-AI-008` to define M10 as a controlled organization-scoped AI platform rather than a single provider/model integration. Ordinary supported agents, prompts, provider/model selection, context policies, safe tools, operational limits, and release controls must be manageable from authorized CRM surfaces within typed application-defined boundaries.
+- Expanded `docs/architecture/ai.md` as the normative M10 contract for provider capabilities and credentials, immutable configuration provenance, prompt import/export and variables, bounded inspectable context, RAG/tool/output safety, durable runs and step traces, retry/idempotency/failover, usage/cost/budgets, playground/evaluations, monitoring/errors, human review, medical privacy, retention, streaming, replay, permissions, and completion criteria.
+- M10 remains `NOT_STARTED`. This clarification adds no AI production code, provider calls, migrations, CRM resources, or M7 scope/status changes.
+
 ## 2026-08-15 — M6 finance / multi-currency acceptance traceability
 
 - Implemented `REQ-CURRENCY-001`–`REQ-CURRENCY-003`: financial records retain explicit base, display, payment, and settlement currency roles; organization settings control supported currencies, manual conversion, deterministic rounding, and force-single-currency behavior; fixed supported Service prices take precedence over conversion; and applied rate/rounding snapshots remain historical.
