@@ -282,7 +282,12 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
     await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
+    const profileResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
+    );
     await page.getByRole('link', { name: 'Profile' }).last().click();
+    await profileResponse;
+    await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
 });
