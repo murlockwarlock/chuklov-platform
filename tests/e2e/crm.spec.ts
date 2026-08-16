@@ -12,6 +12,7 @@ type CrmFixture = {
     serviceName: string;
     specialistName: string;
     contentSectionId: number;
+    contentSectionTitle: string;
 };
 
 function createCrmFixture(): CrmFixture {
@@ -76,6 +77,7 @@ function createCrmFixture(): CrmFixture {
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
             'contentSectionId' => $contentSection->getKey(),
+            'contentSectionTitle' => $contentSection->title,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -113,6 +115,35 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
+async function searchTableFor(page: Page, query: string): Promise<void> {
+    const searchInput = page.getByRole('searchbox', {
+        name: 'Поиск',
+        exact: true,
+    });
+
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill(query);
+    await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
+}
+
+async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
+    const main = page.getByRole('main');
+
+    const term = main
+        .locator('dt, [role="term"]')
+        .filter({ hasText: label });
+    const definition = main
+        .locator('dd, [role="definition"]')
+        .filter({ hasText: value });
+
+    await expect(term).toHaveCount(1);
+    await expect(term).toBeVisible();
+    await expect(term).toHaveText(label);
+    await expect(definition).toHaveCount(1);
+    await expect(definition).toBeVisible();
+    await expect(definition).toHaveText(value);
+}
+
 test('staff can create a booking without technical inputs', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -147,22 +178,36 @@ test('staff sees business labels for client and content settings', async ({ page
 
     await page.goto('/admin/clients');
     await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
-    await expect(page.getByText('Всемирное время', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('UTC');
+
+    await searchTableFor(page, fixture.clientName);
+
+    const clientsTimezoneCell = page
+        .getByRole('row')
+        .filter({ hasText: fixture.clientName })
+        .getByRole('cell', { name: 'Всемирное время', exact: true });
+    await expect(clientsTimezoneCell).toBeVisible();
+    await expect(clientsTimezoneCell).toHaveText('Всемирное время');
+
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
-    await expect(page.getByText('Всемирное время', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('UTC');
+
+    await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 
     await page.goto('/admin/content-sections');
     await expect(page.getByRole('heading', { name: 'Разделы контента' })).toBeVisible();
-    await expect(page.getByText('Об академии', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('author');
-    await expect(page.locator('body')).not.toContainText('ru');
+
+    await searchTableFor(page, fixture.contentSectionTitle);
+
+    const contentSectionRow = page.getByRole('row').filter({ hasText: fixture.contentSectionTitle });
+    await expect(contentSectionRow).toBeVisible();
+    await expect(contentSectionRow.getByRole('cell', { name: 'Об академии', exact: true })).toBeVisible();
+    await expect(contentSectionRow.getByRole('cell', { name: 'Русский', exact: true })).toBeVisible();
+
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}`);
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: 'Об академии' }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('author');
-    await expect(page.locator('body')).not.toContainText('ru');
+    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.contentSectionTitle }).first()).toBeVisible();
+
+    await assertBusinessField(page, 'Раздел', 'Об академии');
+    await assertBusinessField(page, 'Язык', 'Русский');
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
@@ -175,40 +220,43 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
         (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker = 998877;
     });
 
-    const openSidebarIfMobile = async () => {
-        const toggle = page.locator('.fi-topbar-open-sidebar-btn, button[aria-label*="sidebar"], [x-on\\:click*="sidebar.open"]').first();
-        if (await toggle.isVisible()) {
-            await toggle.click();
-            await page.waitForTimeout(300);
+    const openSidebarToggle = page
+        .locator('.fi-topbar-open-sidebar-btn, [aria-controls="fi-main-sidebar"]')
+        .first();
+
+    const navigationSidebar = page.locator('#fi-main-sidebar');
+
+    const navigateViaSidebar = async (linkName: string, expectedUrl: RegExp, expectedHeading: string): Promise<void> => {
+        const targetLink = navigationSidebar.getByRole('link', { name: linkName, exact: true });
+
+        if (await openSidebarToggle.isVisible()) {
+            await openSidebarToggle.click();
         }
+
+        await expect(targetLink).toBeVisible();
+        await expect(targetLink).toBeEnabled();
+        await targetLink.click();
+
+        await expect(page).toHaveURL(expectedUrl);
+        await expect(page.getByRole('heading', { name: expectedHeading })).toBeVisible();
     };
 
     // Navigate to Clients via sidebar link
-    await openSidebarIfMobile();
-    await page.getByRole('link', { name: 'Клиенты', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/clients$/);
-    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await navigateViaSidebar('Клиенты', /\/admin\/clients$/, 'Клиенты');
 
     // Verify window marker persists (no full page reload)
     const markerAfterClients = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterClients).toBe(998877);
 
     // Navigate to Content Sections via sidebar link
-    await openSidebarIfMobile();
-    await page.getByRole('link', { name: 'Разделы контента', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/content-sections$/);
-    await expect(page.getByRole('heading', { name: 'Разделы контента' })).toBeVisible();
+    await navigateViaSidebar('Разделы контента', /\/admin\/content-sections$/, 'Разделы контента');
 
     const markerAfterContent = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterContent).toBe(998877);
 
     // Navigate to Services via sidebar link
-    await openSidebarIfMobile();
-    await page.getByRole('link', { name: 'Услуги', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/services$/);
-    await expect(page.getByRole('heading', { name: 'Услуги' })).toBeVisible();
+    await navigateViaSidebar('Услуги', /\/admin\/services$/, 'Услуги');
 
     const markerAfterServices = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterServices).toBe(998877);
 });
-
