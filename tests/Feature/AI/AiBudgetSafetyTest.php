@@ -130,6 +130,52 @@ class AiBudgetSafetyTest extends TestCase
         $this->assertSame(0, $row->reserved_minor_units);
     }
 
+    public function test_provider_usage_anomaly_is_conservatively_accounted_without_exceeding_daily_cap(): void
+    {
+        AiOrganizationSafetyControl::create([
+            'organization_id' => $this->organization->id,
+            'max_daily_spend_minor_units' => 100,
+        ]);
+        $today = Carbon::now()->toDateString();
+        $this->budgetManager->reserveBudget($this->organization->id, 10);
+
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => 'client_companion',
+            'workflow_key' => 'settlement_anomaly_test',
+            'status' => 'running',
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $attempt = AiRunAttempt::create([
+            'organization_id' => $this->organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'status' => 'running',
+            'reserved_cost_minor_units' => 10,
+            'budget_usage_date' => $today,
+            'budget_reservation_status' => BudgetReservationStatus::Reserved,
+            'pricing_snapshot' => [],
+            'token_usage' => [],
+        ]);
+
+        $accounted = $this->budgetManager->settleAttemptBudget($attempt, 200);
+
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $this->organization->id)
+            ->whereDate('usage_date', $today)
+            ->firstOrFail();
+        $attempt->refresh();
+
+        $this->assertSame(100, $accounted);
+        $this->assertSame(100, $budget->spent_minor_units);
+        $this->assertSame(0, $budget->reserved_minor_units);
+        $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+    }
+
     public function test_attempt_release_is_idempotent(): void
     {
         $today = Carbon::now()->toDateString();

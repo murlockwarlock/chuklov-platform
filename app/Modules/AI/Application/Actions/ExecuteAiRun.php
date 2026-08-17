@@ -26,6 +26,6 @@ class ExecuteAiRun
             $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
         }
 
-        return $this->workflowEngine->run($organization->getKey(), $request);
+        return $this->workflowEngine->run($organization->getKey(), $request->withActor($actor));
     }
 }

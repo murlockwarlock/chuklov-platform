@@ -3,10 +3,12 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreateEvalCase;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Application\Actions\UpdateEvalCase;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
@@ -14,6 +16,7 @@ use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\Identity\Domain\Models\Client;
@@ -23,6 +26,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -35,6 +39,8 @@ class AiEvaluationSuiteTest extends TestCase
     private Organization $organization;
 
     private User $user;
+
+    private AiModelConfiguration $modelConfiguration;
 
     protected function setUp(): void
     {
@@ -50,10 +56,10 @@ class AiEvaluationSuiteTest extends TestCase
         config()->set('tenancy.default_organization_id', $this->organization->id);
         app(OrganizationContext::class)->set($this->organization);
 
-        $this->setupConfiguredModel(AiCapability::PostureAnalysis);
+        $this->modelConfiguration = $this->setupConfiguredModel(AiCapability::PostureAnalysis);
     }
 
-    private function setupConfiguredModel(AiCapability $capability, string $providerName = 'openai', string $modelName = 'gpt-4o-mini'): void
+    private function setupConfiguredModel(AiCapability $capability, string $providerName = 'openai', string $modelName = 'gpt-4o-mini'): AiModelConfiguration
     {
         $credential = new OrganizationCredential([
             'provider' => $providerName,
@@ -70,6 +76,7 @@ class AiEvaluationSuiteTest extends TestCase
             'provider_name' => $providerName,
             'display_name' => ucfirst($providerName),
             'is_enabled' => true,
+            'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
         ]);
 
@@ -98,6 +105,8 @@ class AiEvaluationSuiteTest extends TestCase
             'activated_at' => Carbon::now(),
         ]);
         $model->update(['active_release_id' => $release->id]);
+
+        return $model;
     }
 
     public function test_run_evaluation_suite_executes_cases_and_checks_assertions(): void
@@ -138,6 +147,7 @@ class AiEvaluationSuiteTest extends TestCase
             'eval_suite_id' => $suite->id,
             'name' => 'Кейс 1: Симметрия',
             'is_synthetic' => true,
+            'is_deidentified' => false,
             'test_inputs' => ['query' => 'Оценка симметрии'],
             'expected_assertions' => ['contains_text' => 'симметрия'],
             'is_active' => true,
@@ -148,6 +158,7 @@ class AiEvaluationSuiteTest extends TestCase
             'eval_suite_id' => $suite->id,
             'name' => 'Кейс 2: Сколиоз',
             'is_synthetic' => true,
+            'is_deidentified' => false,
             'test_inputs' => ['query' => 'Оценка сколиоза'],
             'expected_assertions' => ['contains_text' => 'сколиоз'],
             'is_active' => true,
@@ -160,6 +171,7 @@ class AiEvaluationSuiteTest extends TestCase
             actor: $this->user,
             evalSuiteId: $suite->id,
             promptVersionId: $version->id,
+            modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
         );
 
         $this->assertSame(2, $evalRun->total_cases);
@@ -196,7 +208,7 @@ class AiEvaluationSuiteTest extends TestCase
             );
             $this->fail('Expected exception for unclassified eval case');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('must be explicitly classified', $e->getMessage());
+            $this->assertStringContainsString('must be exactly one', $e->getMessage());
         }
 
         // 2. Rejects real client ID reference
@@ -212,7 +224,22 @@ class AiEvaluationSuiteTest extends TestCase
             );
             $this->fail('Expected exception for real client ID in eval case');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Real production client IDs are prohibited', $e->getMessage());
+            $this->assertStringContainsString('Production reference', $e->getMessage());
+        }
+
+        try {
+            $action->execute(
+                actor: $this->user,
+                organization: $this->organization,
+                suiteId: $suite->id,
+                name: 'Nested Patient Reference Case',
+                testInputs: ['fixture' => ['patient' => ['client_id' => $client->id]]],
+                expectedAssertions: [],
+                isSynthetic: true,
+            );
+            $this->fail('Expected nested production reference to be rejected.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Production reference', $e->getMessage());
         }
 
         // 3. Rejects real email pattern
@@ -228,7 +255,7 @@ class AiEvaluationSuiteTest extends TestCase
             );
             $this->fail('Expected exception for real email in eval case');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Real email addresses detected', $e->getMessage());
+            $this->assertStringContainsString('Real email addresses', $e->getMessage());
         }
 
         // 4. Rejects direct import of protected AI run traces
@@ -244,7 +271,7 @@ class AiEvaluationSuiteTest extends TestCase
             );
             $this->fail('Expected exception for protected trace import in eval case');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('Direct import of protected production AI run traces', $e->getMessage());
+            $this->assertStringContainsString('Production reference', $e->getMessage());
         }
     }
 
@@ -266,6 +293,7 @@ class AiEvaluationSuiteTest extends TestCase
             'eval_suite_id' => $suite->id,
             'name' => 'Валидный кейс',
             'is_synthetic' => true,
+            'is_deidentified' => false,
             'test_inputs' => ['query' => 'Синтетический запрос'],
             'expected_assertions' => ['contains_text' => 'тест'],
             'is_active' => true,
@@ -276,12 +304,216 @@ class AiEvaluationSuiteTest extends TestCase
 
         // Update with forbidden client reference
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Real production client IDs are prohibited');
+        $this->expectExceptionMessage('Production reference');
 
         $action->execute($this->user, $case, [
             'name' => 'Попытка обновления с реальным пациентом',
             'test_inputs' => ['client_id' => $client->id],
             'is_synthetic' => true,
+            'is_deidentified' => false,
         ]);
+    }
+
+    public function test_evaluation_revalidates_nested_privacy_before_execution_after_direct_database_write(): void
+    {
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'legacy_privacy_prompt',
+            'name' => 'Legacy privacy prompt',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Evaluate posture.',
+            'user_prompt_template' => '{{query}}',
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'legacy_privacy_suite',
+            'name' => 'Legacy privacy suite',
+            'capability' => AiCapability::PostureAnalysis,
+            'prompt_id' => $prompt->id,
+        ]);
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Legacy nested reference',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['fixture' => ['patient' => ['medical_session_id' => 42]]],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+
+        try {
+            app(RunEvaluationSuite::class)->handle(
+                actor: $this->user,
+                evalSuiteId: $suite->id,
+                promptVersionId: $version->id,
+                modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
+            );
+            $this->fail('Expected legacy nested production reference to be rejected before execution.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Production reference', $e->getMessage());
+        }
+
+        $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+    }
+
+    public function test_evaluation_revalidates_case_classification_before_execution(): void
+    {
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'legacy_classification_prompt',
+            'name' => 'Legacy classification prompt',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Evaluate posture.',
+            'user_prompt_template' => '{{query}}',
+            'activated_at' => Carbon::now(),
+        ]);
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'legacy_classification_suite',
+            'name' => 'Legacy classification suite',
+            'capability' => AiCapability::PostureAnalysis,
+            'prompt_id' => $prompt->id,
+        ]);
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Unclassified legacy case',
+            'is_synthetic' => false,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic query'],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be exactly one');
+
+        app(RunEvaluationSuite::class)->handle(
+            actor: $this->user,
+            evalSuiteId: $suite->id,
+            promptVersionId: $version->id,
+            modelReleaseId: $this->modelConfiguration->active_release_id,
+        );
+    }
+
+    public function test_eval_suite_composite_prompt_foreign_key_rejects_cross_organization_prompt(): void
+    {
+        $otherOrganization = Organization::factory()->create();
+        $otherPrompt = AiPrompt::create([
+            'organization_id' => $otherOrganization->id,
+            'key' => 'other_org_prompt',
+            'name' => 'Other organization prompt',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+
+        $this->expectException(QueryException::class);
+
+        AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'cross_org_prompt_suite',
+            'name' => 'Cross organization prompt suite',
+            'capability' => AiCapability::PostureAnalysis,
+            'prompt_id' => $otherPrompt->id,
+        ]);
+    }
+
+    public function test_evaluation_pins_release_a_when_release_b_is_active(): void
+    {
+        DynamicWorkflowAgent::fake([
+            '{"symmetry_observations": [], "posture_type": "normal"}',
+            '{"symmetry_observations": [], "posture_type": "normal"}',
+        ]);
+
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'pinned_eval_prompt',
+            'name' => 'Pinned eval prompt',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Evaluate posture.',
+            'user_prompt_template' => 'Input: {{query}}',
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'pinned_release_suite',
+            'name' => 'Pinned release suite',
+            'capability' => AiCapability::PostureAnalysis,
+            'prompt_id' => $prompt->id,
+        ]);
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Pinned case one',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic one'],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Pinned case two',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic two'],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+
+        $releaseA = AiModelRelease::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('model_config_id', $this->modelConfiguration->id)
+            ->firstOrFail();
+        $releaseB = app(CreateAndActivateModelRelease::class)->handle($this->user, $this->modelConfiguration, [
+            'model_name' => 'gpt-4o',
+            'display_name' => 'GPT-4o',
+            'capabilities' => [AiCapability::PostureAnalysis->value],
+            'input_cost_per_million' => 250,
+            'output_cost_per_million' => 1000,
+        ]);
+
+        $this->assertSame('retired', $releaseA->refresh()->status);
+        $this->assertSame('active', $releaseB->status);
+
+        $evalRun = app(RunEvaluationSuite::class)->handle(
+            actor: $this->user,
+            evalSuiteId: $suite->id,
+            promptVersionId: $version->id,
+            modelReleaseId: $releaseA->id,
+        );
+
+        $this->assertSame($releaseA->id, $evalRun->model_release_id);
+        $this->assertSame('openai', $evalRun->provider);
+        $this->assertSame('gpt-4o-mini', $evalRun->model);
+        $runs = AiRun::query()->where('organization_id', $this->organization->id)->get();
+        $this->assertCount(2, $runs);
+        $this->assertSame([$releaseA->id, $releaseA->id], $runs->pluck('model_release_id')->sort()->values()->all());
+        $this->assertSame(['openai', 'openai'], $runs->pluck('actual_provider')->all());
+        $this->assertSame(['gpt-4o-mini', 'gpt-4o-mini'], $runs->pluck('actual_model')->all());
+        $this->assertSame($releaseA->id, $evalRun->results_payload['cases'][0]['model_release_id']);
+        $this->assertSame($releaseA->id, $evalRun->results_payload['cases'][1]['model_release_id']);
     }
 }

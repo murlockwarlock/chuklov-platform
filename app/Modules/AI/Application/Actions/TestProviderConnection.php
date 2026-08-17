@@ -4,6 +4,7 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
+use App\Modules\AI\Domain\Exceptions\AiProviderProbeUnsupportedException;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
@@ -47,7 +48,7 @@ class TestProviderConnection
         }
 
         try {
-            $this->providerFactory->testConnectivity($providerConfig->provider_name, $credential);
+            $this->providerFactory->testConnectivity($providerConfig->provider_name, $credential, $providerConfig->options ?? []);
 
             $providerConfig->update([
                 'health_status' => ProviderHealthStatus::Healthy,
@@ -58,6 +59,17 @@ class TestProviderConnection
             return [
                 'success' => true,
                 'message' => 'Connection to provider succeeded.',
+            ];
+        } catch (AiProviderProbeUnsupportedException) {
+            $providerConfig->update([
+                'health_status' => ProviderHealthStatus::Unknown,
+                'last_checked_at' => Carbon::now(),
+                'last_health_error' => 'A safe authenticated connectivity probe is not supported for this provider.',
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'A safe authenticated connectivity probe is not supported for this provider.',
             ];
         } catch (\Throwable $e) {
             $sanitized = AiErrorSanitizer::sanitize($e);

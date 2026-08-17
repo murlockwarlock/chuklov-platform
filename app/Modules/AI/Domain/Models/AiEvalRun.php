@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $organization_id
  * @property int $eval_suite_id
  * @property int $prompt_version_id
+ * @property int $model_release_id
  * @property string $provider
  * @property string $model
  * @property int $total_cases
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'organization_id',
     'eval_suite_id',
     'prompt_version_id',
+    'model_release_id',
     'provider',
     'model',
     'total_cases',
@@ -56,6 +58,12 @@ class AiEvalRun extends Model
     public function promptVersion(): BelongsTo
     {
         return $this->belongsTo(AiPromptVersion::class, 'prompt_version_id');
+    }
+
+    /** @return BelongsTo<AiModelRelease, $this> */
+    public function modelRelease(): BelongsTo
+    {
+        return $this->belongsTo(AiModelRelease::class, 'model_release_id');
     }
 
     /** @return BelongsTo<User, $this> */

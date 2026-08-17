@@ -2,6 +2,9 @@
 
 namespace App\Modules\AI\Domain\ValueObjects;
 
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use InvalidArgumentException;
+
 final readonly class AiContextPolicy
 {
     /**
@@ -19,7 +22,29 @@ final readonly class AiContextPolicy
         public array $allowedContextTypes = [],
         public bool $requireGroundedRag = false,
         public bool $allowRagDegradation = false,
-    ) {}
+    ) {
+        if ($this->ragMaxChunks < 1 || $this->ragMaxChunks > AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS) {
+            throw new InvalidArgumentException('RAG chunk limit is outside the platform safety bounds.');
+        }
+
+        if ($this->includeRecentSessionsCount < 0 || $this->includeRecentSessionsCount > AiRuntimeLimits::PLATFORM_MAX_CONTEXT_SESSIONS) {
+            throw new InvalidArgumentException('Recent session context limit is outside the platform safety bounds.');
+        }
+
+        if ($this->ragMinSimilarity < 0.0 || $this->ragMinSimilarity > 1.0) {
+            throw new InvalidArgumentException('RAG similarity threshold must be between zero and one.');
+        }
+
+        $knownTypes = ['client_profile', 'medical_summary', 'recent_sessions', 'rag'];
+        if (array_diff($this->allowedContextTypes, $knownTypes) !== []) {
+            throw new InvalidArgumentException('Context policy contains an unsupported context type.');
+        }
+    }
+
+    public function allows(string $contextType): bool
+    {
+        return $this->allowedContextTypes === [] || in_array($contextType, $this->allowedContextTypes, true);
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self

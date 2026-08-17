@@ -3,8 +3,11 @@
 namespace App\Modules\AI\Infrastructure\Tools;
 
 use App\Modules\AI\Domain\Contracts\AiToolInterface;
+use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use Illuminate\Auth\Access\AuthorizationException;
+use InvalidArgumentException;
 
 class SearchKnowledgeBaseTool implements AiToolInterface
 {
@@ -70,8 +73,23 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 sourceIds: $sourceIds,
             );
             $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
-        } catch (\Throwable) {
-            return ['results' => [], 'count' => 0];
+        } catch (AuthorizationException $e) {
+            throw new AiRagRetrievalException('Knowledge scope is not authorized.', reason: 'scope', previous: $e);
+        } catch (InvalidArgumentException $e) {
+            throw new AiRagRetrievalException('Knowledge retrieval configuration is invalid.', reason: 'configuration', previous: $e);
+        } catch (AiRagRetrievalException $e) {
+            throw $e;
+        } catch (\RuntimeException $e) {
+            $reason = str_contains(strtolower($e->getMessage()), 'incompatible')
+                ? 'configuration'
+                : 'infrastructure';
+            $message = $reason === 'configuration'
+                ? 'Knowledge retrieval configuration is invalid.'
+                : 'Knowledge retrieval infrastructure is unavailable.';
+
+            throw new AiRagRetrievalException($message, reason: $reason, previous: $e);
+        } catch (\Throwable $e) {
+            throw new AiRagRetrievalException('Knowledge retrieval infrastructure is unavailable.', reason: 'infrastructure', previous: $e);
         }
 
         $formatted = [];

@@ -23,6 +23,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class AiProviderCredentialTest extends TestCase
@@ -117,6 +118,7 @@ class AiProviderCredentialTest extends TestCase
             'provider_name' => 'openai',
             'display_name' => 'OpenAI',
             'is_enabled' => true,
+            'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
         ]);
 
@@ -199,6 +201,10 @@ class AiProviderCredentialTest extends TestCase
 
     public function test_provider_connection_test_action_updates_health_status(): void
     {
+        Http::fake([
+            'https://api.openai.com/v1/models' => Http::response(['data' => []], 200),
+        ]);
+
         $credential = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'OpenAI Health Test',
@@ -229,5 +235,67 @@ class AiProviderCredentialTest extends TestCase
         $this->assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
         $this->assertNotNull($provider->last_checked_at);
         $this->assertNull($provider->last_health_error);
+    }
+
+    public function test_unsupported_probe_remains_unknown_instead_of_false_healthy(): void
+    {
+        $credential = new OrganizationCredential([
+            'provider' => 'ollama',
+            'credential_name' => 'Ollama Health Test',
+            'revision_id' => 'rev-ollama-1',
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'local-secret'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'ollama',
+            'display_name' => 'Ollama',
+            'is_enabled' => true,
+            'credential_id' => $credential->id,
+        ]);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        $provider->refresh();
+        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        $this->assertStringContainsString('not supported', strtolower((string) $provider->last_health_error));
+    }
+
+    public function test_failed_authenticated_probe_is_degraded_with_sanitized_error(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/models' => Http::response(['error' => 'secret provider response'], 401),
+        ]);
+
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Failed Health Test',
+            'revision_id' => 'rev-health-2',
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-secret-health'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI Failed Test',
+            'is_enabled' => true,
+            'credential_id' => $credential->id,
+        ]);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        $provider->refresh();
+        $this->assertSame(ProviderHealthStatus::Degraded, $provider->health_status);
+        $this->assertSame('An internal error occurred during AI execution.', $provider->last_health_error);
+        $this->assertStringNotContainsString('sk-secret-health', (string) $provider->last_health_error);
+        $this->assertStringNotContainsString('secret provider response', (string) $provider->last_health_error);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Modules\AI\Application\Actions\UpdateAiSafetyControl;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
@@ -108,14 +109,12 @@ class AiMonitoringOverview extends Page
             return;
         }
 
-        $orgId = $context->id();
-        $safety = AiOrganizationSafetyControl::query()->firstOrCreate(
-            ['organization_id' => $orgId],
-            ['is_ai_globally_enabled' => true, 'max_daily_spend_minor_units' => 5000]
-        );
-
-        $safety->update([
-            'is_ai_globally_enabled' => ! $safety->is_ai_globally_enabled,
+        $safety = AiOrganizationSafetyControl::query()
+            ->where('organization_id', $context->id())
+            ->first();
+        $enabled = $safety === null || ! $safety->is_ai_globally_enabled;
+        $safety = app(UpdateAiSafetyControl::class)->handle($user, [
+            'is_ai_globally_enabled' => $enabled,
         ]);
 
         Notification::make()

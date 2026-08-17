@@ -6,19 +6,23 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Auth\Access\AuthorizationException;
+use InvalidArgumentException;
 
 class AiContextAssembler implements AiContextAssemblerInterface
 {
     public function __construct(
         private readonly KnowledgeRetriever $knowledgeRetriever,
         private readonly ?GetMedicalProfile $getMedicalProfile = null,
+        private readonly ?MedicalSessionAuthorization $sessionAuthorization = null,
     ) {}
 
     public function assemble(
@@ -47,6 +51,14 @@ class AiContextAssembler implements AiContextAssemblerInterface
         }
 
         if ($clientId !== null && ($policy->includeClientProfile || $policy->includeMedicalSummary)) {
+            if ($policy->includeClientProfile && ! $policy->allows('client_profile')) {
+                throw new InvalidArgumentException('Client profile is not allowed by the context policy.');
+            }
+
+            if ($policy->includeMedicalSummary && ! $policy->allows('medical_summary')) {
+                throw new InvalidArgumentException('Medical summary is not allowed by the context policy.');
+            }
+
             $client = Client::query()
                 ->where('organization_id', $organizationId)
                 ->where('id', $clientId)
@@ -59,22 +71,37 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     $provenanceSummary['client_included'] = true;
                 }
 
-                $effectiveActor = $actor ?? Auth::user();
-                if ($policy->includeMedicalSummary && $this->getMedicalProfile !== null && $effectiveActor instanceof User) {
-                    try {
-                        $profile = $this->getMedicalProfile->handle($effectiveActor, $client);
-                        if ($profile !== null) {
-                            $variables['anamnesis'] = $profile->anamnesis ?? '';
-                            $variables['complaints_goals'] = $profile->complaintsGoals ?? '';
-                            $provenanceSummary['medical_summary_included'] = true;
-                        }
-                    } catch (\Throwable) {
+                if ($policy->includeMedicalSummary) {
+                    if (! $actor instanceof User || $this->getMedicalProfile === null) {
+                        throw new InvalidArgumentException('An explicit authorized actor is required for protected medical context.');
+                    }
+
+                    $profile = $this->getMedicalProfile->handle($actor, $client);
+                    if ($profile !== null) {
+                        $variables['anamnesis'] = $profile->anamnesis ?? '';
+                        $variables['complaints_goals'] = $profile->complaintsGoals ?? '';
+                        $provenanceSummary['medical_summary_included'] = true;
                     }
                 }
             }
         }
 
         if ($clientId !== null && $policy->includeRecentSessionsCount > 0) {
+            if (! $policy->allows('recent_sessions')) {
+                throw new InvalidArgumentException('Recent session context is not allowed by the context policy.');
+            }
+
+            if (! $actor instanceof User) {
+                throw new InvalidArgumentException('An explicit authorized actor is required for protected session context.');
+            }
+
+            $sessionAuthorization = $this->sessionAuthorization ?? app(MedicalSessionAuthorization::class);
+            $client = Client::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($clientId)
+                ->first()
+                ?? throw new InvalidArgumentException('Client context was not found for recent session assembly.');
+
             $sessions = MedicalSession::query()
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $clientId)
@@ -84,6 +111,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
 
             $sessionsData = [];
             foreach ($sessions as $session) {
+                $sessionAuthorization->authorizeView($actor, $session, $client);
                 $sessionsData[] = [
                     'session_id' => $session->id,
                     'occurred_at' => $session->occurred_at->toDateString(),
@@ -94,6 +122,10 @@ class AiContextAssembler implements AiContextAssemblerInterface
         }
 
         if ($policy->includeRag) {
+            if (! $policy->allows('rag')) {
+                throw new InvalidArgumentException('RAG context is not allowed by the context policy.');
+            }
+
             $query = (string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? '');
             if ($query !== '') {
                 try {
@@ -104,24 +136,66 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     );
                     $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
 
+                    $results = array_values(array_filter(
+                        $results,
+                        static fn ($result): bool => $result->similarity >= $policy->ragMinSimilarity,
+                    ));
+
                     $ragChunks = $results;
                     $ragContexts = [];
                     foreach ($results as $result) {
                         $ragContexts[] = "[Источник: {$result->sourceTitle}] {$result->content}";
                     }
-                    $variables['rag_context'] = implode("\n\n", $ragContexts);
+
+                    $ragContext = implode("\n\n", $ragContexts);
+                    if (AiRuntimeLimits::upperBoundTokenCount($ragContext) > AiRuntimeLimits::PLATFORM_MAX_RAG_CONTEXT_TOKENS) {
+                        throw new AiRagRetrievalException(
+                            'RAG context exceeds the bounded context limit.',
+                            reason: 'context_limit',
+                        );
+                    }
+
+                    if ($results === [] && $policy->requireGroundedRag) {
+                        throw new AiRagRetrievalException(
+                            'Grounded RAG policy requires a qualifying knowledge result.',
+                            reason: 'no_grounding',
+                        );
+                    }
+
+                    $variables['rag_context'] = $ragContext;
                     $provenanceSummary['rag_chunks_count'] = count($results);
+                } catch (AiRagRetrievalException $e) {
+                    if ($policy->requireGroundedRag
+                        || ! $policy->allowRagDegradation
+                        || in_array($e->reason, ['scope', 'configuration', 'context_limit'], true)) {
+                        throw $e;
+                    }
+
+                    $provenanceSummary['rag_degraded'] = true;
+                    $variables['rag_context'] = '';
+                } catch (AuthorizationException $e) {
+                    throw new AiRagRetrievalException('Knowledge scope is not authorized.', reason: 'scope', previous: $e);
+                } catch (InvalidArgumentException $e) {
+                    throw new AiRagRetrievalException('Knowledge retrieval configuration is invalid.', reason: 'configuration', previous: $e);
                 } catch (\Throwable $e) {
-                    if ($policy->requireGroundedRag) {
-                        throw new AiRagRetrievalException('Grounding RAG knowledge retrieval failed.', previous: $e);
+                    $ragFailure = new AiRagRetrievalException(
+                        'Knowledge retrieval infrastructure is unavailable.',
+                        reason: 'infrastructure',
+                        previous: $e,
+                    );
+
+                    if ($policy->requireGroundedRag || ! $policy->allowRagDegradation) {
+                        throw $ragFailure;
                     }
-                    if ($policy->allowRagDegradation) {
-                        $provenanceSummary['rag_degraded'] = true;
-                        $variables['rag_context'] = '';
-                    } else {
-                        throw new AiRagRetrievalException('RAG retrieval failed and degradation is not permitted by policy.', previous: $e);
-                    }
+
+                    $provenanceSummary['rag_degraded'] = true;
+                    $variables['rag_context'] = '';
                 }
+            } elseif ($policy->requireGroundedRag) {
+                throw new AiRagRetrievalException(
+                    'Grounded RAG policy requires a retrieval query.',
+                    reason: 'missing_query',
+                );
             }
         }
 

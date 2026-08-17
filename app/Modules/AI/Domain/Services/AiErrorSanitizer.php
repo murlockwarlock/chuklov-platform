@@ -7,7 +7,10 @@ use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
 use App\Modules\AI\Domain\Exceptions\AiOutputValidationException;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
+use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\Exceptions\AiRateLimitException;
+use App\Modules\AI\Domain\Exceptions\AiToolExecutionFencedException;
+use App\Modules\AI\Domain\Exceptions\AiToolLimitExceededException;
 use Throwable;
 
 final class AiErrorSanitizer
@@ -49,6 +52,33 @@ final class AiErrorSanitizer
             return [
                 'category' => AiErrorCategory::ProviderUnavailable,
                 'message' => 'Configured AI provider is unavailable or not configured.',
+            ];
+        }
+
+        if ($throwable instanceof AiRagRetrievalException) {
+            return [
+                'category' => AiErrorCategory::InternalError,
+                'message' => match ($throwable->reason) {
+                    'scope' => 'Knowledge scope is not authorized for this organization.',
+                    'configuration' => 'Knowledge retrieval configuration is incompatible.',
+                    'context_limit' => 'Knowledge context exceeded the bounded runtime limit.',
+                    'no_grounding', 'missing_query' => 'Required knowledge grounding was unavailable.',
+                    default => 'Knowledge retrieval failed safely.',
+                },
+            ];
+        }
+
+        if ($throwable instanceof AiToolLimitExceededException) {
+            return [
+                'category' => AiErrorCategory::InternalError,
+                'message' => 'AI tool-call limit was reached for this run.',
+            ];
+        }
+
+        if ($throwable instanceof AiToolExecutionFencedException) {
+            return [
+                'category' => AiErrorCategory::InternalError,
+                'message' => 'AI tool execution was fenced after worker ownership changed.',
             ];
         }
 

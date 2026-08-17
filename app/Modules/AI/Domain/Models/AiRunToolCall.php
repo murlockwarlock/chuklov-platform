@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $organization_id
  * @property int $ai_run_id
+ * @property string $worker_lease_token
  * @property int $call_index
  * @property string $tool_name
  * @property bool $is_read_only
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'organization_id',
     'ai_run_id',
+    'worker_lease_token',
     'call_index',
     'tool_name',
     'is_read_only',

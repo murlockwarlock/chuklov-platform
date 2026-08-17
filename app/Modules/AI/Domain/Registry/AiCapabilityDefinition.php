@@ -21,6 +21,11 @@ final readonly class AiCapabilityDefinition
         public int $defaultTimeoutSeconds,
         public int $maxTimeoutSeconds,
         public int $defaultMaxTokens,
+        public int $maxInputTokens,
+        public int $maxRagContextTokens,
+        public int $maxOutputTokens,
+        public int $maxToolCalls,
+        public int $maxProviderSteps,
         public bool $requiresHumanReview,
         public ?array $defaultOutputSchema = null,
     ) {}

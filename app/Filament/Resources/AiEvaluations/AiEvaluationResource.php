@@ -10,10 +10,13 @@ use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
+use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -65,28 +68,42 @@ final class AiEvaluationResource extends Resource
                     ->icon(Heroicon::OutlinedPlay)
                     ->requiresConfirmation()
                     ->modalHeading('Запуск набора тестов')
-                    ->modalDescription('Будут последовательно выполнены все активные синтетические тест-кейсы.')
-                    ->action(function (AiEvalSuite $record, RunEvaluationSuite $runner) {
+                    ->modalDescription('Будут последовательно выполнены все активные тест-кейсы с повторной privacy-проверкой.')
+                    ->form([
+                        Select::make('prompt_version_id')
+                            ->label('Точная версия промпта')
+                            ->options(fn (AiEvalSuite $record): array => AiPromptVersion::query()
+                                ->where('organization_id', $record->organization_id)
+                                ->where('prompt_id', $record->prompt_id)
+                                ->whereIn('status', ['active', 'retired'])
+                                ->orderByDesc('version')
+                                ->get()
+                                ->mapWithKeys(fn (AiPromptVersion $version): array => [$version->id => "v{$version->version}"])
+                                ->all())
+                            ->required(),
+                        Select::make('model_release_id')
+                            ->label('Точный выпуск модели')
+                            ->options(fn (AiEvalSuite $record): array => AiModelRelease::query()
+                                ->where('organization_id', $record->organization_id)
+                                ->whereIn('status', ['active', 'retired'])
+                                ->whereJsonContains('capabilities', $record->capability->value)
+                                ->orderByDesc('id')
+                                ->get()
+                                ->mapWithKeys(fn (AiModelRelease $release): array => [$release->id => "{$release->provider_name} / {$release->model_name} / r{$release->release_number}"])
+                                ->all())
+                            ->required(),
+                    ])
+                    ->action(function (AiEvalSuite $record, array $data, RunEvaluationSuite $runner) {
                         $user = Auth::user();
                         if (! $user) {
-                            return;
-                        }
-
-                        $prompt = $record->prompt;
-                        $promptVersionId = $prompt !== null
-                            ? ($prompt->active_version_id ?? $prompt->versions()->latest('version')->value('id'))
-                            : null;
-
-                        if (! $promptVersionId) {
-                            Notification::make()->title('У связанного промпта нет активных версий')->danger()->send();
-
                             return;
                         }
 
                         $evalRun = $runner->handle(
                             actor: $user,
                             evalSuiteId: $record->id,
-                            promptVersionId: $promptVersionId,
+                            promptVersionId: (int) $data['prompt_version_id'],
+                            modelReleaseId: (int) $data['model_release_id'],
                         );
 
                         Notification::make()

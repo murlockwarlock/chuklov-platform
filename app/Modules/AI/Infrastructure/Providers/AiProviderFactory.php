@@ -28,6 +28,7 @@ class AiProviderFactory
 {
     public function __construct(
         private readonly Dispatcher $events,
+        private readonly AiProviderConnectivityProbe $connectivityProbe,
     ) {}
 
     /**
@@ -90,7 +91,8 @@ class AiProviderFactory
     /**
      * Perform the smallest supported connectivity check using the credential.
      */
-    public function testConnectivity(string $providerName, OrganizationCredential $credential): void
+    /** @param array<string, mixed> $options */
+    public function testConnectivity(string $providerName, OrganizationCredential $credential, array $options = []): void
     {
         $driver = strtolower($providerName);
         $secret = $this->resolveSecret($credential);
@@ -99,10 +101,7 @@ class AiProviderFactory
             throw new InvalidArgumentException('Credential secret is empty.');
         }
 
-        // Validate basic driver support
-        if (! in_array($driver, ['openai', 'anthropic', 'gemini', 'groq', 'deepseek', 'mistral', 'xai', 'openrouter'], true)) {
-            throw new InvalidArgumentException("Provider [{$providerName}] does not support automated connection test.");
-        }
+        $this->connectivityProbe->probe($driver, $secret, $options);
     }
 
     private function resolveSecret(OrganizationCredential $credential): string

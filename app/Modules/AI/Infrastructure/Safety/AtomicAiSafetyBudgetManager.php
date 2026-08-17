@@ -15,6 +15,10 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
 {
     public function reserveBudget(int $organizationId, int $requestedMinorUnits): void
     {
+        if ($requestedMinorUnits < 0) {
+            throw new AiBudgetExceededException('Budget reservation cannot be negative.');
+        }
+
         $safetyControls = AiOrganizationSafetyControl::query()
             ->where('organization_id', $organizationId)
             ->first();
@@ -79,7 +83,9 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
 
             if ($budget) {
                 $newReserved = max(0, (int) $budget->reserved_minor_units - $reservedMinorUnits);
-                $newSpent = (int) $budget->spent_minor_units + $settledMinorUnits;
+                $maxDailyLimit = $this->dailyLimit($organizationId);
+                $remaining = max(0, $maxDailyLimit - (int) $budget->spent_minor_units);
+                $newSpent = (int) $budget->spent_minor_units + min($remaining, max(0, $settledMinorUnits));
 
                 DB::table('ai_organization_daily_budgets')
                     ->where('id', $budget->id)
@@ -125,7 +131,9 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
 
             if ($budget) {
                 $newReserved = max(0, (int) $budget->reserved_minor_units - $reservedMinorUnits);
-                $newSpent = (int) $budget->spent_minor_units + $reservedMinorUnits;
+                $maxDailyLimit = $this->dailyLimit($organizationId);
+                $remaining = max(0, $maxDailyLimit - (int) $budget->spent_minor_units);
+                $newSpent = (int) $budget->spent_minor_units + min($remaining, max(0, $reservedMinorUnits));
 
                 DB::table('ai_organization_daily_budgets')
                     ->where('id', $budget->id)
@@ -138,9 +146,9 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
         });
     }
 
-    public function settleAttemptBudget(AiRunAttempt $attempt, int $settledMinorUnits): void
+    public function settleAttemptBudget(AiRunAttempt $attempt, int $settledMinorUnits): int
     {
-        DB::transaction(function () use ($attempt, $settledMinorUnits) {
+        return (int) DB::transaction(function () use ($attempt, $settledMinorUnits): int {
             /** @var AiRunAttempt|null $lockedAttempt */
             $lockedAttempt = AiRunAttempt::query()
                 ->where('organization_id', $attempt->organization_id)
@@ -149,7 +157,7 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
                 ->first();
 
             if ($lockedAttempt === null || $lockedAttempt->budget_reservation_status !== BudgetReservationStatus::Reserved) {
-                return;
+                return 0;
             }
 
             $reserved = (int) $lockedAttempt->reserved_cost_minor_units;
@@ -161,9 +169,18 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
                 ->lockForUpdate()
                 ->first();
 
+            $anomaly = false;
+            $charge = 0;
+
             if ($budget) {
+                $maxDailyLimit = $this->dailyLimit((int) $lockedAttempt->organization_id);
+                $spent = (int) $budget->spent_minor_units;
+                $actual = max(0, $settledMinorUnits);
+                $anomaly = $actual > $reserved || $spent + $actual > $maxDailyLimit;
+                $charge = $anomaly ? max($reserved, $actual) : $actual;
+                $charge = min(max(0, $maxDailyLimit - $spent), $charge);
                 $newReserved = max(0, (int) $budget->reserved_minor_units - $reserved);
-                $newSpent = (int) $budget->spent_minor_units + $settledMinorUnits;
+                $newSpent = $spent + $charge;
 
                 DB::table('ai_organization_daily_budgets')
                     ->where('id', $budget->id)
@@ -175,9 +192,13 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
             }
 
             $lockedAttempt->update([
-                'budget_reservation_status' => BudgetReservationStatus::Settled,
-                'settled_estimated_cost_minor_units' => $settledMinorUnits,
+                'budget_reservation_status' => $anomaly
+                    ? BudgetReservationStatus::ConservativelyCharged
+                    : BudgetReservationStatus::Settled,
+                'settled_estimated_cost_minor_units' => $charge,
             ]);
+
+            return $charge;
         });
     }
 
@@ -245,8 +266,12 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
                 ->first();
 
             if ($budget) {
+                $maxDailyLimit = $this->dailyLimit((int) $lockedAttempt->organization_id);
                 $newReserved = max(0, (int) $budget->reserved_minor_units - $reserved);
-                $newSpent = (int) $budget->spent_minor_units + $reserved;
+                $newSpent = (int) $budget->spent_minor_units + min(
+                    max(0, $maxDailyLimit - (int) $budget->spent_minor_units),
+                    $reserved,
+                );
 
                 DB::table('ai_organization_daily_budgets')
                     ->where('id', $budget->id)
@@ -262,5 +287,12 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
                 'settled_estimated_cost_minor_units' => $reserved,
             ]);
         });
+    }
+
+    private function dailyLimit(int $organizationId): int
+    {
+        return max(0, (int) (AiOrganizationSafetyControl::query()
+            ->where('organization_id', $organizationId)
+            ->value('max_daily_spend_minor_units') ?? 5000));
     }
 }

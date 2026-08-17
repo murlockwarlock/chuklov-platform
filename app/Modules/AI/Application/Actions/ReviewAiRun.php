@@ -4,6 +4,7 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunHumanReview;
@@ -47,9 +48,16 @@ class ReviewAiRun
             throw new InvalidArgumentException('AI Run not found.');
         }
 
+        $reasonCode = $safeReasonCode === null
+            ? null
+            : HumanReviewReasonCode::tryFrom($safeReasonCode);
+        if ($safeReasonCode !== null && $reasonCode === null) {
+            throw new InvalidArgumentException('Unsupported human review reason code.');
+        }
+
         $keyVersion = (int) Config::get('medical.key_version', 1);
 
-        return DB::transaction(function () use ($organization, $actor, $run, $decision, $safeReasonCode, $notes, $editedOutput, $keyVersion) {
+        return DB::transaction(function () use ($organization, $actor, $run, $decision, $reasonCode, $notes, $editedOutput, $keyVersion) {
             $latestStep = AiRunHumanReview::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('ai_run_id', $run->id)
@@ -61,7 +69,7 @@ class ReviewAiRun
                 'review_step' => $latestStep + 1,
                 'decision' => $decision,
                 'reviewer_user_id' => $actor->getKey(),
-                'safe_reason_code' => $safeReasonCode,
+                'safe_reason_code' => $reasonCode?->value,
                 'reviewed_at' => Carbon::now(),
             ]);
             $review->save();
@@ -103,7 +111,7 @@ class ReviewAiRun
                 metadata: [
                     'ai_run_id' => (string) $run->id,
                     'decision' => $decision->value,
-                    'safe_reason_code' => $safeReasonCode,
+                    'safe_reason_code' => $reasonCode?->value,
                 ],
             );
 

@@ -26,17 +26,14 @@ class UpdateEvalCase
             throw new AuthorizationException('Unauthorized to manage evaluation test cases.');
         }
 
-        $isSynthetic = (bool) ($data['is_synthetic'] ?? $case->is_synthetic);
-        $isDeidentified = (bool) ($data['is_deidentified'] ?? $case->is_deidentified);
-
-        if (! $isSynthetic && ! $isDeidentified) {
-            throw new InvalidArgumentException('Evaluation cases must be explicitly classified as synthetic or de-identified.');
+        if (! array_key_exists('is_synthetic', $data) || ! array_key_exists('is_deidentified', $data)) {
+            throw new InvalidArgumentException('Evaluation case classification must be explicitly submitted on every update.');
         }
 
-        if ($isSynthetic && $isDeidentified) {
-            throw new InvalidArgumentException('Evaluation case classification must be exactly one: either synthetic or de-identified.');
-        }
+        $isSynthetic = (bool) $data['is_synthetic'];
+        $isDeidentified = (bool) $data['is_deidentified'];
 
+        $this->createAction->validateClassification($isSynthetic, $isDeidentified);
         $testInputs = isset($data['test_inputs'])
             ? (is_string($data['test_inputs']) ? (json_decode($data['test_inputs'], true) ?: ['query' => $data['test_inputs']]) : (array) $data['test_inputs'])
             : (array) $case->test_inputs;

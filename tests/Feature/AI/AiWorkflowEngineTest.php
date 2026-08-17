@@ -11,9 +11,11 @@ use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
+use App\Modules\AI\Domain\Exceptions\AiToolExecutionFencedException;
 use App\Modules\AI\Domain\Exceptions\AiToolLimitExceededException;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -29,6 +31,7 @@ use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\AI\Infrastructure\Context\AiContextAssembler;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
@@ -51,6 +54,9 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\Request;
 use Tests\TestCase;
 
@@ -94,6 +100,7 @@ class AiWorkflowEngineTest extends TestCase
             'provider_name' => $providerName,
             'display_name' => ucfirst($providerName),
             'is_enabled' => $enabled,
+            'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
         ]);
 
@@ -207,6 +214,61 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($attempt);
         $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
         $this->assertNotNull($attempt->settled_estimated_cost_minor_units);
+    }
+
+    public function test_provider_reported_usage_and_immutable_pricing_drive_persisted_provenance(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $release = $model->activeRelease;
+        $this->assertNotNull($release);
+        $pricing = new AiPricingSnapshot(
+            currency: 'USD',
+            inputCostPerMillionMinorUnits: 10000,
+            outputCostPerMillionMinorUnits: 10000,
+        );
+        $release->update(['pricing_snapshot' => $pricing->toArray()]);
+
+        DynamicWorkflowAgent::fake([
+            new TextResponse(
+                text: 'A short provider response',
+                usage: new Usage(
+                    promptTokens: 123,
+                    completionTokens: 45,
+                    cacheWriteInputTokens: 7,
+                    cacheReadInputTokens: 8,
+                    reasoningTokens: 9,
+                ),
+                meta: new Meta('openai', 'provider-reported-model'),
+            ),
+        ]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'provider_usage_provenance_test',
+            inputVariables: ['query' => 'short'],
+        ));
+
+        $this->assertTrue($result->isSuccess());
+        $this->assertSame(123, $result->tokenUsage->promptTokens);
+        $this->assertSame(45, $result->tokenUsage->completionTokens);
+        $this->assertSame(176, $result->tokenUsage->totalTokens);
+        $this->assertSame(7, $result->tokenUsage->cacheWriteInputTokens);
+        $this->assertSame(8, $result->tokenUsage->cacheReadInputTokens);
+        $this->assertSame(9, $result->tokenUsage->reasoningTokens);
+        $this->assertSame('provider_reported', $result->tokenUsage->usageSource);
+
+        $run = AiRun::query()->findOrFail($result->runId);
+        $this->assertSame('openai', $run->actual_provider);
+        $this->assertSame('provider-reported-model', $run->actual_model);
+        $attempt = AiRunAttempt::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $expectedCost = $pricing->calculateCostMinorUnits(123, 45);
+        $this->assertSame($expectedCost, $run->settled_estimated_cost_minor_units);
+        $this->assertSame($expectedCost, $attempt->settled_estimated_cost_minor_units);
+        $this->assertNull($run->provider_cost_minor_units);
+        $this->assertNull($attempt->provider_cost_minor_units);
+        $this->assertSame('provider_reported', $run->getTokenUsage()->usageSource);
     }
 
     public function test_provider_and_model_selection_drives_actual_invocation(): void
@@ -351,6 +413,21 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertSame('emb_config_key_123', $result->ragChunks[0]->embeddingConfigurationKey);
     }
 
+    public function test_protected_medical_context_requires_an_explicit_actor(): void
+    {
+        $client = Client::factory()->forOrganization($this->organization)->create();
+        $assembler = new AiContextAssembler(knowledgeRetriever: app(KnowledgeRetriever::class));
+
+        $this->expectException(InvalidArgumentException::class);
+        $assembler->assemble(
+            organizationId: $this->organization->id,
+            policy: new AiContextPolicy(includeMedicalSummary: true),
+            inputVariables: [],
+            inputReferences: [new AiInputReference('client', $client->id)],
+            actor: null,
+        );
+    }
+
     public function test_search_knowledge_tool_works_in_queue_context_without_web_auth_state(): void
     {
         Auth::logout(); // Ensure no web user is logged in!
@@ -395,6 +472,79 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertSame('cfg_789', $res['results'][0]['embedding_configuration_key']);
     }
 
+    public function test_sdk_knowledge_tool_filters_results_below_the_context_similarity_threshold(): void
+    {
+        $fakeRetriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [
+                    new RetrievalResult(1, 1, 'High match', 'authored_text', 1, 1, 0, 'Keep this result.', 0.91, null, 0, 16, 1, 'cfg'),
+                    new RetrievalResult(2, 1, 'Low match', 'authored_text', 1, 1, 1, 'Filter this result.', 0.42, null, 16, 32, 1, 'cfg'),
+                ];
+            }
+        };
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'tool_similarity_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext(
+                organizationId: $this->organization->id,
+                aiRunId: $run->id,
+                workerLeaseToken: $run->worker_lease_token,
+            ),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $fakeRetriever),
+            maxToolCalls: 2,
+            minimumSimilarity: 0.65,
+        );
+
+        $response = (string) $tool->handle(new Request(['query' => 'threshold']));
+
+        $this->assertStringContainsString('Keep this result.', $response);
+        $this->assertStringNotContainsString('Filter this result.', $response);
+        $this->assertSame(1, AiRunToolCall::query()->where('ai_run_id', $run->id)->firstOrFail()->call_index);
+    }
+
+    public function test_incompatible_knowledge_embedding_is_a_typed_configuration_failure(): void
+    {
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                throw new \RuntimeException('Active embedding configuration is incompatible.');
+            }
+        };
+
+        try {
+            (new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever))->execute(
+                $this->organization->id,
+                ['query' => 'configuration'],
+            );
+            $this->fail('Expected an incompatible embedding configuration failure.');
+        } catch (AiRagRetrievalException $exception) {
+            $this->assertSame('configuration', $exception->reason);
+            $this->assertStringNotContainsString('incompatible', strtolower($exception->getMessage()));
+        }
+    }
+
     public function test_real_sdk_tool_execution_creates_durable_ai_run_tool_call(): void
     {
         $fakeRetriever = new class implements KnowledgeRetriever
@@ -434,14 +584,19 @@ class AiWorkflowEngineTest extends TestCase
             'capability' => AiCapability::ClientCompanion,
             'workflow_key' => 'tool_test',
             'status' => AiRunStatus::Running,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
         ]);
 
         $sdkTool = new SearchKnowledgeBaseSdkTool(
-            organizationId: $this->organization->id,
-            runId: $run->id,
+            executionContext: new AiRunExecutionContext(
+                organizationId: $this->organization->id,
+                aiRunId: $run->id,
+                workerLeaseToken: $run->worker_lease_token,
+            ),
             domainTool: $domainTool,
             maxToolCalls: 5,
         );
@@ -483,14 +638,19 @@ class AiWorkflowEngineTest extends TestCase
             'capability' => AiCapability::ClientCompanion,
             'workflow_key' => 'tool_limit_test',
             'status' => AiRunStatus::Running,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
         ]);
 
         $sdkTool = new SearchKnowledgeBaseSdkTool(
-            organizationId: $this->organization->id,
-            runId: $run->id,
+            executionContext: new AiRunExecutionContext(
+                organizationId: $this->organization->id,
+                aiRunId: $run->id,
+                workerLeaseToken: $run->worker_lease_token,
+            ),
             domainTool: $domainTool,
             maxToolCalls: 1, // Limit = 1
         );
@@ -502,9 +662,161 @@ class AiWorkflowEngineTest extends TestCase
         $this->expectException(AiToolLimitExceededException::class);
         $sdkTool->handle(new Request(['query' => 'q2']));
 
-        $failedCall = AiRunToolCall::where('ai_run_id', $run->id)->where('call_index', 2)->first();
-        $this->assertNotNull($failedCall);
-        $this->assertSame('failed', $failedCall->execution_status);
+        $this->assertSame(1, AiRunToolCall::where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_reclaimed_worker_continues_durable_tool_index_and_cannot_bypass_limit(): void
+    {
+        $emptyRetriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [];
+            }
+        };
+        $domainTool = new SearchKnowledgeBaseTool(knowledgeRetriever: $emptyRetriever);
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'durable_tool_index_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $tokenA,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+
+        $firstWorker = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $tokenA),
+            domainTool: $domainTool,
+            maxToolCalls: 2,
+        );
+        $firstWorker->handle(new Request(['query' => 'first']));
+
+        $run->update(['worker_lease_token' => $tokenB]);
+        $secondWorker = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $tokenB),
+            domainTool: $domainTool,
+            maxToolCalls: 2,
+        );
+        $secondWorker->handle(new Request(['query' => 'second']));
+
+        $calls = AiRunToolCall::query()->where('ai_run_id', $run->id)->orderBy('call_index')->get();
+        $this->assertSame([1, 2], $calls->pluck('call_index')->all());
+
+        try {
+            $secondWorker->handle(new Request(['query' => 'third']));
+            $this->fail('Expected the durable tool-call limit to be enforced after reclaim.');
+        } catch (AiToolLimitExceededException) {
+            $this->assertTrue(true);
+        }
+
+        $this->assertSame(2, AiRunToolCall::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_stale_worker_cannot_finalize_tool_provenance_after_lease_loss(): void
+    {
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'stale_tool_provenance_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $tokenA,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $retriever = new class($run->id, $tokenB) implements KnowledgeRetriever
+        {
+            public function __construct(private readonly int $runId, private readonly string $newToken) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                AiRun::query()->whereKey($this->runId)->update(['worker_lease_token' => $this->newToken]);
+
+                return [];
+            }
+        };
+
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $tokenA),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever),
+            maxToolCalls: 2,
+        );
+
+        try {
+            $tool->handle(new Request(['query' => 'lease loss']));
+            $this->fail('Expected stale tool execution to be fenced.');
+        } catch (AiToolExecutionFencedException) {
+            $this->assertTrue(true);
+        }
+
+        $call = AiRunToolCall::query()->where('ai_run_id', $run->id)->first();
+        $this->assertNotNull($call);
+        $this->assertSame('running', $call->execution_status);
+        $this->assertNull($call->error_sanitized);
+    }
+
+    public function test_failed_tool_persists_safe_error_in_error_sanitized_column(): void
+    {
+        $token = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'failed_tool_error_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $token,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                throw new \RuntimeException('raw vector database password leaked');
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                throw new \RuntimeException('raw vector database password leaked');
+            }
+        };
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $token),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever),
+            maxToolCalls: 2,
+        );
+
+        try {
+            $tool->handle(new Request(['query' => 'failure']));
+            $this->fail('Expected the retrieval failure to be raised.');
+        } catch (AiRagRetrievalException) {
+            $this->assertTrue(true);
+        }
+
+        $call = AiRunToolCall::query()->where('ai_run_id', $run->id)->first();
+        $this->assertNotNull($call);
+        $this->assertSame('failed', $call->execution_status);
+        $this->assertSame('Knowledge retrieval failed safely.', $call->error_sanitized);
+        $this->assertStringNotContainsString('password', (string) $call->error_sanitized);
     }
 
     public function test_capability_tool_allowlist_enforcement(): void
@@ -663,6 +975,76 @@ class AiWorkflowEngineTest extends TestCase
 
         $this->assertTrue($result->provenanceSummary['rag_degraded']);
         $this->assertSame('', $result->variables['rag_context'] ?? '');
+    }
+
+    public function test_workflow_rejects_prompt_input_that_exceeds_the_bounded_input_limit_before_persistence(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClinicalDocumentExtraction);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+
+        try {
+            $engine->run($this->organization->id, new AiRunRequest(
+                capability: AiCapability::ClinicalDocumentExtraction,
+                workflowKey: 'oversized_prompt_test',
+                inputVariables: ['query' => str_repeat('x', 40000)],
+            ));
+            $this->fail('Expected an oversized rendered prompt to be rejected.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('bounded input limit', $e->getMessage());
+        }
+
+        $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+    }
+
+    public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $largeRetriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [new RetrievalResult(
+                    chunkId: 900,
+                    sourceId: 900,
+                    sourceTitle: 'Oversized context',
+                    sourceType: 'authored_text',
+                    revisionId: 900,
+                    revisionVersion: 1,
+                    chunkIndex: 0,
+                    content: str_repeat('large context ', 20000),
+                    similarity: 0.99,
+                    sourceReference: null,
+                    startOffset: 0,
+                    endOffset: 20000,
+                    ingestionRunId: 900,
+                    embeddingConfigurationKey: 'bounded-test',
+                )];
+            }
+        };
+        app()->instance(KnowledgeRetriever::class, $largeRetriever);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+
+        try {
+            $engine->run($this->organization->id, new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'oversized_rag_test',
+                inputVariables: ['query' => 'bounded context'],
+            ));
+            $this->fail('Expected oversized RAG context to be rejected.');
+        } catch (AiRagRetrievalException $e) {
+            $this->assertSame('context_limit', $e->reason);
+        }
+
+        $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
     }
 
     public function test_async_idempotency_returns_existing_run_without_duplicate_job(): void

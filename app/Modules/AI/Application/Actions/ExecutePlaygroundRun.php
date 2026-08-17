@@ -41,6 +41,7 @@ class ExecutePlaygroundRun
             initiatedByUserId: $actor->getKey(),
             promptVersionId: $promptVersionId,
             inputVariables: $inputVariables,
+            actor: $actor,
         );
 
         return $this->workflowEngine->run($organization->getKey(), $request);

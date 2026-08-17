@@ -48,17 +48,14 @@ class CasesRelationManager extends RelationManager
                         'deidentified' => 'Реальные данные, полностью очищенные от прямых и косвенных персональных идентификаторов.',
                     ])
                     ->required()
-                    ->helperText('⚠️ Использование реальных данных пациентов, сессий, номеров телефонов и персональных email строго запрещено.')
-                    ->default('synthetic'),
+                    ->helperText('⚠️ Использование реальных данных пациентов, сессий, номеров телефонов и персональных email строго запрещено.'),
                 Textarea::make('test_inputs')
                     ->label('Входные параметры (JSON)')
                     ->rows(4)
-                    ->default('{"query": "Синтетический тестовый запрос"}')
                     ->required(),
                 Textarea::make('expected_assertions')
                     ->label('Ожидаемые проверки (JSON, например: {"contains_text": "..."})')
                     ->rows(4)
-                    ->default('{"contains_text": ""}')
                     ->required(),
                 Toggle::make('is_active')
                     ->label('Тест-кейс активен')
@@ -106,7 +103,11 @@ class CasesRelationManager extends RelationManager
                             $assertions = $data['expected_assertions'];
                         }
 
-                        $classification = (string) ($data['classification'] ?? 'synthetic');
+                        if (! array_key_exists('classification', $data)) {
+                            throw new \InvalidArgumentException('Evaluation case classification is required.');
+                        }
+
+                        $classification = (string) $data['classification'];
                         $isSynthetic = $classification === 'synthetic';
                         $isDeidentified = $classification === 'deidentified';
 
@@ -141,7 +142,11 @@ class CasesRelationManager extends RelationManager
                             ? (json_decode($data['expected_assertions'], true) ?: [])
                             : (array) ($data['expected_assertions'] ?? []);
 
-                        $classification = (string) ($data['classification'] ?? ($record->is_synthetic ? 'synthetic' : 'deidentified'));
+                        if (! array_key_exists('classification', $data)) {
+                            throw new \InvalidArgumentException('Evaluation case classification is required.');
+                        }
+
+                        $classification = (string) $data['classification'];
                         $isSynthetic = $classification === 'synthetic';
                         $isDeidentified = $classification === 'deidentified';
 

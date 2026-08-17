@@ -22,6 +22,7 @@ class DynamicWorkflowAgent implements Agent, Conversational, HasTools
         public ?string $defaultProvider = null,
         public ?string $defaultModel = null,
         public ?int $resolvedMaxTokens = null,
+        public ?int $resolvedMaxSteps = null,
     ) {}
 
     public function instructions(): Stringable|string
@@ -66,5 +67,18 @@ class DynamicWorkflowAgent implements Agent, Conversational, HasTools
     public function maxTokens(): ?int
     {
         return $this->resolvedMaxTokens;
+    }
+
+    public function withMaxSteps(?int $maxSteps): static
+    {
+        $clone = clone $this;
+        $clone->resolvedMaxSteps = $maxSteps;
+
+        return $clone;
+    }
+
+    public function maxSteps(): ?int
+    {
+        return $this->resolvedMaxSteps;
     }
 }

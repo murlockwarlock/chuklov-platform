@@ -4,14 +4,17 @@ namespace Tests\Feature\AI;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
+use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
@@ -27,6 +30,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -72,6 +76,7 @@ class AiWorkerFencingTest extends TestCase
             'provider_name' => $providerName,
             'display_name' => ucfirst($providerName),
             'is_enabled' => true,
+            'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
         ]);
 
@@ -364,5 +369,87 @@ class AiWorkerFencingTest extends TestCase
         // Verify dangling attempt was reconciled
         $oldAttempt = AiRunAttempt::where('ai_run_id', $run->id)->where('attempt_number', 1)->first();
         $this->assertSame('failed', $oldAttempt?->status);
+    }
+
+    public function test_scheduled_reclaimer_claims_expired_work_once_and_reconciles_old_reservation(): void
+    {
+        Queue::fake();
+        $oldToken = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'scheduled_reclaim_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $oldToken,
+            'worker_lease_expires_at' => Carbon::now()->subMinutes(10),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $today = Carbon::now()->toDateString();
+        AiOrganizationDailyBudget::create([
+            'organization_id' => $this->organization->id,
+            'usage_date' => $today,
+            'spent_minor_units' => 10,
+            'reserved_minor_units' => 100,
+        ]);
+        $attempt = AiRunAttempt::create([
+            'organization_id' => $this->organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'worker_lease_token' => $oldToken,
+            'status' => 'running',
+            'reserved_cost_minor_units' => 100,
+            'budget_usage_date' => $today,
+            'budget_reservation_status' => 'reserved',
+            'pricing_snapshot' => [],
+            'token_usage' => [],
+        ]);
+
+        $firstPass = app(ReclaimExpiredAiRuns::class)->handle(10);
+
+        $this->assertSame(['reclaimed' => 1, 'dispatched' => 1], $firstPass);
+        Queue::assertPushed(ProcessAiRunJob::class, 1);
+        $run->refresh();
+        $this->assertSame(AiRunStatus::Queued, $run->status);
+        $this->assertNotSame($oldToken, $run->worker_lease_token);
+        $attempt->refresh();
+        $this->assertSame('failed', $attempt->status);
+        $this->assertSame('conservatively_charged', $attempt->budget_reservation_status->value);
+
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $this->organization->id)
+            ->whereDate('usage_date', $today)
+            ->first();
+        $this->assertNotNull($budget);
+        $this->assertSame(110, $budget->spent_minor_units);
+        $this->assertSame(0, $budget->reserved_minor_units);
+
+        $secondPass = app(ReclaimExpiredAiRuns::class)->handle(10);
+        $this->assertSame(['reclaimed' => 0, 'dispatched' => 0], $secondPass);
+        Queue::assertPushed(ProcessAiRunJob::class, 1);
+    }
+
+    public function test_scheduled_reclaimer_never_redispatches_terminal_runs(): void
+    {
+        Queue::fake();
+        AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'terminal_reclaim_test',
+            'status' => AiRunStatus::Succeeded,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->subMinutes(10),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+
+        $result = app(ReclaimExpiredAiRuns::class)->handle();
+
+        $this->assertSame(['reclaimed' => 0, 'dispatched' => 0], $result);
+        Queue::assertNothingPushed();
     }
 }

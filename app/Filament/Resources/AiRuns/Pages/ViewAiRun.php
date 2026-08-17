@@ -6,11 +6,12 @@ use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Resources\AiRuns\Schemas\AiRunInfolist;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
@@ -54,9 +55,9 @@ class ViewAiRun extends ViewRecord
                 ->color('danger')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
-                    TextInput::make('reason_code')
+                    Select::make('reason_code')
                         ->label('Код причины')
-                        ->default('specialist_rejected')
+                        ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()]))
                         ->required(),
                     Textarea::make('notes')
                         ->label('Заметки специалиста (будут зашифрованы)')

@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scheduling\Application\PruneBookingIdempotencyKeys;
 use Illuminate\Support\Facades\Artisan;
@@ -11,6 +12,14 @@ Artisan::command('bookings:prune-idempotency', function (PruneBookingIdempotency
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 Schedule::command('bookings:prune-idempotency')->daily();
+
+Artisan::command('ai:runs-reclaim', function (ReclaimExpiredAiRuns $reclaimer): void {
+    $result = $reclaimer->handle();
+
+    $this->info("Reclaimed {$result['reclaimed']} expired AI run(s) and dispatched {$result['dispatched']} identifier-only job(s).");
+})->purpose('Reclaim expired AI run leases and safely requeue stranded work.');
+
+Schedule::command('ai:runs-reclaim')->everyMinute()->withoutOverlapping()->onOneServer();
 
 Artisan::command('scenarios:run', function (ScheduleScenarioWork $scheduler): void {
     $result = $scheduler->handle();

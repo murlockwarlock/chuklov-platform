@@ -18,8 +18,12 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added organization-scoped authored/private-upload sources, immutable revisions, durable retry-safe ingestion runs, deterministic versioned chunking, provider-neutral embedding generation, and PostgreSQL/pgvector exact cosine retrieval behind `KnowledgeRetriever`.
   - Added composite tenant constraints, configuration provenance, active-ready atomic exposure, retirement/reactivation, sanitized structural audits, explicit knowledge permissions, and fail-closed embedding compatibility.
   - Added Filament source/version/ingestion management and a bounded retrieval inspection page. Retrieved instruction-like content remains inert data; M9 creates no AI answer, prompt studio, agent, or `AiRun` behavior.
-  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015 and M10 remains not started.
+  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015 and M10 remains IN_PROGRESS.
   - Reorganized the Filament sidebar into business groups and placed knowledge management and retrieval inspection together under `Контент и знания`.
+
+- M10 high-risk remediation candidate:
+  - Centralized organization-owned typed input-reference validation, bounded prompt/RAG/tool-loop admission, immutable release pricing reservations, conservative fenced settlement, durable tool provenance, scheduled lease reclamation, fixed human-review reason codes, real provider connectivity semantics, exact evaluation release pinning, fail-closed eval privacy, PostgreSQL-safe async idempotency, activation permission separation, RAG failure/context controls, provider-reported usage provenance, tenant-safe eval prompt ownership, explicit medical actors, and platform-clamped organization safety limits.
+  - M9 remains CLOSED / ACCEPTED. M10 remains IN_PROGRESS pending independent remediation re-review, candidate hosted CI, and final acceptance; PostgreSQL concurrency coverage is present but is not claimed as locally executed.
 
 - M8 Surveys / Road Map implementation candidate:
   - Added organization-scoped versioned definitions, immutable exact-version attempts, encrypted sensitive snapshots, typed fail-closed conditions/scoring, deterministic thresholds/tags, non-AI reports, compatibility-gated comparison, and idempotent Scenario events for completion and configured stagnation.

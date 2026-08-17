@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $model_release_id
  * @property int|null $credential_id
  * @property string|null $credential_revision
+ * @property string|null $worker_lease_token
  * @property string $status
  * @property string|null $retry_or_failover_reason
  * @property int $latency_ms
@@ -52,6 +53,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'model_release_id',
     'credential_id',
     'credential_revision',
+    'worker_lease_token',
     'status',
     'retry_or_failover_reason',
     'latency_ms',

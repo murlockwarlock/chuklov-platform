@@ -2,21 +2,18 @@
 
 namespace App\Filament\Resources\AiProviders\RelationManagers;
 
+use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
+use App\Modules\AI\Application\Actions\CreateModelConfiguration;
 use App\Modules\AI\Domain\Enums\AiCapability;
-use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
-use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
-use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
-use Carbon\Carbon;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -63,9 +60,6 @@ class ModelsRelationManager extends RelationManager
                     ->label('Поддерживаемые возможности AI')
                     ->options(collect(AiCapability::cases())->mapWithKeys(fn ($c) => [$c->value => $c->label()]))
                     ->columnSpanFull(),
-                Toggle::make('is_enabled')
-                    ->label('Модель активна')
-                    ->default(true),
             ]);
     }
 
@@ -87,55 +81,25 @@ class ModelsRelationManager extends RelationManager
                 CreateAction::make()
                     ->label('Добавить модель')
                     ->using(function (array $data): AiModelConfiguration {
-                        $orgId = app(OrganizationContext::class)->id();
+                        $actor = Auth::user();
+                        if (! $actor instanceof User) {
+                            throw new \LogicException('Authenticated user required.');
+                        }
                         /** @var AiProviderConfiguration $provider */
                         $provider = $this->getOwnerRecord();
 
-                        $pricing = new AiPricingSnapshot(
-                            currency: 'USD',
-                            inputCostPerMillionMinorUnits: (int) ($data['input_cost_per_million'] ?? 15),
-                            outputCostPerMillionMinorUnits: (int) ($data['output_cost_per_million'] ?? 60),
-                        );
-
-                        $model = new AiModelConfiguration([
-                            'organization_id' => $orgId,
-                            'provider_config_id' => $provider->id,
-                            'model_name' => (string) $data['model_name'],
-                            'display_name' => (string) $data['display_name'],
-                            'is_enabled' => (bool) ($data['is_enabled'] ?? true),
-                            'lifecycle_status' => ModelLifecycleStatus::Active,
-                            'capabilities' => array_values(array_map('strval', (array) ($data['capabilities'] ?? []))),
-                            'pricing_snapshot' => $pricing->toArray(),
-                            'failover_priority' => (int) ($data['failover_priority'] ?? 1),
-                        ]);
-                        $model->save();
-
-                        $release = new AiModelRelease([
-                            'organization_id' => $orgId,
-                            'model_config_id' => $model->id,
-                            'release_number' => 1,
-                            'status' => 'active',
-                            'provider_name' => $provider->provider_name,
-                            'model_name' => $model->model_name,
-                            'capabilities' => $model->capabilities,
-                            'pricing_snapshot' => $pricing->toArray(),
-                            'activated_at' => Carbon::now(),
-                            'activated_by_user_id' => Auth::id(),
-                        ]);
-                        $release->save();
-
-                        $model->update(['active_release_id' => $release->id]);
-
-                        return $model;
+                        return app(CreateModelConfiguration::class)->handle($actor, $provider, $data);
                     }),
             ])
             ->recordActions([
                 EditAction::make()
                     ->using(function (AiModelConfiguration $record, array $data): AiModelConfiguration {
                         $actor = Auth::user();
-                        if ($actor !== null) {
-                            app(CreateAndActivateModelRelease::class)->handle($actor, $record, $data);
+                        if (! $actor instanceof User) {
+                            throw new \LogicException('Authenticated user required.');
                         }
+
+                        app(CreateAndActivateModelRelease::class)->handle($actor, $record, $data);
 
                         return $record->fresh() ?? $record;
                     }),

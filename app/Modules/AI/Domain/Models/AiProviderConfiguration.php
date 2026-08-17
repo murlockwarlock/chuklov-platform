@@ -42,7 +42,7 @@ class AiProviderConfiguration extends Model
 {
     protected $attributes = [
         'is_enabled' => true,
-        'health_status' => 'healthy',
+        'health_status' => 'unknown',
         'options' => '[]',
     ];
 

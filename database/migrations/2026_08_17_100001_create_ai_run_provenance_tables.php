@@ -93,6 +93,7 @@ return new class extends Migration
             $table->foreignId('model_release_id')->nullable();
             $table->foreignId('credential_id')->nullable();
             $table->uuid('credential_revision')->nullable();
+            $table->string('worker_lease_token', 64)->nullable();
             $table->string('status', 32);
             $table->string('retry_or_failover_reason', 200)->nullable();
             $table->unsignedInteger('latency_ms')->default(0);
@@ -124,6 +125,7 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('ai_run_id');
             $table->unsignedInteger('call_index');
+            $table->string('worker_lease_token', 64);
             $table->string('tool_name', 80);
             $table->boolean('is_read_only')->default(true);
             $table->char('input_digest', 64);

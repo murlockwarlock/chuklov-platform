@@ -18,10 +18,13 @@ final readonly class AiInputReference
     public function __construct(
         public string $type,
         public int $id,
-        public ?string $description = null,
     ) {
         if (! in_array($this->type, self::ALLOWED_TYPES, true)) {
             throw new InvalidArgumentException("Invalid input reference type: {$this->type}");
+        }
+
+        if ($this->id < 1) {
+            throw new InvalidArgumentException('Input reference ID must be positive.');
         }
     }
 
@@ -31,7 +34,6 @@ final readonly class AiInputReference
         return new self(
             type: (string) ($data['type'] ?? ''),
             id: (int) ($data['id'] ?? 0),
-            description: isset($data['description']) ? (string) $data['description'] : null,
         );
     }
 
@@ -41,7 +43,6 @@ final readonly class AiInputReference
         return [
             'type' => $this->type,
             'id' => $this->id,
-            'description' => $this->description,
         ];
     }
 }

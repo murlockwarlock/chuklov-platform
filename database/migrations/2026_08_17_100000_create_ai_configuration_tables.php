@@ -107,7 +107,7 @@ return new class extends Migration
             $table->string('provider_name', 64);
             $table->string('display_name', 200);
             $table->boolean('is_enabled')->default(true);
-            $table->string('health_status', 32)->default('healthy');
+            $table->string('health_status', 32)->default('unknown');
             $table->foreignId('credential_id')->nullable();
             $table->json('options');
             $table->timestampTz('last_checked_at')->nullable();
@@ -168,7 +168,7 @@ return new class extends Migration
 
         if (DB::getDriverName() === 'pgsql') {
             DB::statement("ALTER TABLE ai_prompt_versions ADD CONSTRAINT ai_prompt_versions_status_check CHECK (status IN ('draft', 'active', 'retired'))");
-            DB::statement("ALTER TABLE ai_provider_configurations ADD CONSTRAINT ai_provider_configurations_health_check CHECK (health_status IN ('healthy', 'degraded', 'unavailable'))");
+            DB::statement("ALTER TABLE ai_provider_configurations ADD CONSTRAINT ai_provider_configurations_health_check CHECK (health_status IN ('unknown', 'healthy', 'degraded', 'unavailable'))");
             DB::statement("ALTER TABLE ai_model_configurations ADD CONSTRAINT ai_model_configurations_lifecycle_check CHECK (lifecycle_status IN ('active', 'preview', 'deprecated'))");
             DB::statement('ALTER TABLE ai_organization_daily_budgets ADD CONSTRAINT ai_daily_budgets_non_negative_check CHECK (spent_minor_units >= 0 AND reserved_minor_units >= 0)');
         }

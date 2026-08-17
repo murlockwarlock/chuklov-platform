@@ -19,7 +19,7 @@ interface AiSafetyBudgetManagerInterface
 
     public function chargeConservatively(int $organizationId, string $usageDate, int $reservedMinorUnits): void;
 
-    public function settleAttemptBudget(AiRunAttempt $attempt, int $settledMinorUnits): void;
+    public function settleAttemptBudget(AiRunAttempt $attempt, int $settledMinorUnits): int;
 
     public function releaseAttemptBudget(AiRunAttempt $attempt): void;
 

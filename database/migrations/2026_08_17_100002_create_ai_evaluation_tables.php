@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -19,6 +20,8 @@ return new class extends Migration
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'key']);
+            $table->foreign(['organization_id', 'prompt_id'])
+                ->references(['organization_id', 'id'])->on('ai_prompts')->nullOnDelete();
         });
 
         Schema::create('ai_eval_cases', function (Blueprint $table): void {
@@ -26,8 +29,8 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('eval_suite_id');
             $table->string('name', 200);
-            $table->boolean('is_synthetic')->default(false);
-            $table->boolean('is_deidentified')->default(false);
+            $table->boolean('is_synthetic');
+            $table->boolean('is_deidentified');
             $table->json('test_inputs');
             $table->json('expected_output_schema')->nullable();
             $table->json('expected_assertions');
@@ -38,11 +41,16 @@ return new class extends Migration
                 ->references(['organization_id', 'id'])->on('ai_eval_suites')->cascadeOnDelete();
         });
 
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE ai_eval_cases ADD CONSTRAINT ai_eval_cases_classification_check CHECK ((is_synthetic AND NOT is_deidentified) OR (NOT is_synthetic AND is_deidentified))');
+        }
+
         Schema::create('ai_eval_runs', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('eval_suite_id');
             $table->foreignId('prompt_version_id');
+            $table->foreignId('model_release_id');
             $table->string('provider', 64);
             $table->string('model', 120);
             $table->unsignedInteger('total_cases')->default(0);
@@ -56,6 +64,8 @@ return new class extends Migration
                 ->references(['organization_id', 'id'])->on('ai_eval_suites')->cascadeOnDelete();
             $table->foreign(['organization_id', 'prompt_version_id'])
                 ->references(['organization_id', 'id'])->on('ai_prompt_versions')->cascadeOnDelete();
+            $table->foreign(['organization_id', 'model_release_id'])
+                ->references(['organization_id', 'id'])->on('ai_model_releases')->restrictOnDelete();
         });
     }
 
