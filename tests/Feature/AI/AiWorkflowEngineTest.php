@@ -145,6 +145,10 @@ class AiWorkflowEngineTest extends TestCase
             'ready_at' => Carbon::now(),
         ]);
         $source->update(['active_revision_id' => $revision->id]);
+        $embeddingDimensions = (int) config('rag.embedding.dimensions');
+        $embedding = array_fill(0, $embeddingDimensions, 0.0);
+        $embedding[0] = 1.0;
+
         $ingestionRun = KnowledgeIngestionRun::create([
             'organization_id' => $this->organization->id,
             'knowledge_source_id' => $source->id,
@@ -158,7 +162,7 @@ class AiWorkflowEngineTest extends TestCase
             'chunk_overlap_characters' => 0,
             'embedding_provider' => 'test',
             'embedding_model' => 'test',
-            'embedding_dimensions' => 1536,
+            'embedding_dimensions' => $embeddingDimensions,
             'embedding_configuration_version' => 'v1',
             'attempts' => 1,
             'completed_at' => Carbon::now(),
@@ -174,7 +178,7 @@ class AiWorkflowEngineTest extends TestCase
             'source_reference' => 'test section',
             'content_checksum' => hash('sha256', $content),
             'content' => $content,
-            'embedding' => [],
+            'embedding' => $embedding,
         ]);
 
         return [

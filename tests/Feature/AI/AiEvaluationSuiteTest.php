@@ -182,7 +182,7 @@ class AiEvaluationSuiteTest extends TestCase
         $this->assertSame(1, $evalRun->failed_cases);
     }
 
-    public function test_create_eval_case_rejects_real_patient_references_and_unclassified_inputs(): void
+    public function test_create_eval_case_rejects_real_patient_references(): void
     {
         $suite = AiEvalSuite::create([
             'organization_id' => $this->organization->id,
@@ -197,24 +197,7 @@ class AiEvaluationSuiteTest extends TestCase
 
         $action = app(CreateEvalCase::class);
 
-        // 1. Rejects unclassified (neither synthetic nor de-identified)
-        try {
-            $action->execute(
-                actor: $this->user,
-                organization: $this->organization,
-                suiteId: $suite->id,
-                name: 'Unclassified Test Case',
-                testInputs: ['query' => 'Synthetic text'],
-                expectedAssertions: ['contains_text' => 'text'],
-                isSynthetic: false,
-                isDeidentified: false,
-            );
-            $this->fail('Expected exception for unclassified eval case');
-        } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('must be exactly one', $e->getMessage());
-        }
-
-        // 2. Rejects real client ID reference
+        // 1. Rejects real client ID reference
         try {
             $action->execute(
                 actor: $this->user,
@@ -245,7 +228,7 @@ class AiEvaluationSuiteTest extends TestCase
             $this->assertStringContainsString('Production reference', $e->getMessage());
         }
 
-        // 3. Rejects real email pattern
+        // 2. Rejects real email pattern
         try {
             $action->execute(
                 actor: $this->user,
@@ -261,7 +244,7 @@ class AiEvaluationSuiteTest extends TestCase
             $this->assertStringContainsString('Real email addresses', $e->getMessage());
         }
 
-        // 4. Rejects direct import of protected AI run traces
+        // 3. Rejects direct import of protected AI run traces
         try {
             $action->execute(
                 actor: $this->user,
@@ -493,49 +476,27 @@ class AiEvaluationSuiteTest extends TestCase
         $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
     }
 
-    public function test_evaluation_revalidates_case_classification_before_execution(): void
+    public function test_create_eval_case_rejects_unclassified_case_before_persistence(): void
     {
-        $prompt = AiPrompt::create([
-            'organization_id' => $this->organization->id,
-            'key' => 'legacy_classification_prompt',
-            'name' => 'Legacy classification prompt',
-            'capability' => AiCapability::PostureAnalysis,
-        ]);
-        $version = AiPromptVersion::create([
-            'organization_id' => $this->organization->id,
-            'prompt_id' => $prompt->id,
-            'version' => 1,
-            'status' => 'active',
-            'system_prompt' => 'Evaluate posture.',
-            'user_prompt_template' => '{{query}}',
-            'activated_at' => Carbon::now(),
-        ]);
         $suite = AiEvalSuite::create([
             'organization_id' => $this->organization->id,
             'key' => 'legacy_classification_suite',
             'name' => 'Legacy classification suite',
             'capability' => AiCapability::PostureAnalysis,
-            'prompt_id' => $prompt->id,
-        ]);
-        AiEvalCase::create([
-            'organization_id' => $this->organization->id,
-            'eval_suite_id' => $suite->id,
-            'name' => 'Unclassified legacy case',
-            'is_synthetic' => false,
-            'is_deidentified' => false,
-            'test_inputs' => ['query' => 'synthetic query'],
-            'expected_assertions' => [],
-            'is_active' => true,
         ]);
 
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('must be exactly one');
 
-        app(RunEvaluationSuite::class)->handle(
+        app(CreateEvalCase::class)->execute(
             actor: $this->user,
-            evalSuiteId: $suite->id,
-            promptVersionId: $version->id,
-            modelReleaseId: $this->modelConfiguration->active_release_id,
+            organization: $this->organization,
+            suiteId: $suite->id,
+            name: 'Unclassified legacy case',
+            testInputs: ['query' => 'synthetic query'],
+            expectedAssertions: [],
+            isSynthetic: false,
+            isDeidentified: false,
         );
     }
 

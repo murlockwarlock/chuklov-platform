@@ -1,4 +1,6 @@
 7f9b2052c3a6e3cc7d5218d34fd65a59c74af7ca:.agents/skills/laravel-best-practices/rules/config.md:generic-api-key:30
+# Synthetic log-redaction fixture, not a credential.
+6c655b18dbab7e2b8b750f6cbfc14e9f2605acf4:tests/Feature/AI/AiLogRedactionTest.php:generic-api-key:29
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:156
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:235
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:323

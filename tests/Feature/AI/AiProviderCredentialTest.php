@@ -86,7 +86,7 @@ class AiProviderCredentialTest extends TestCase
         $credA = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'Org A Key',
-            'revision_id' => 'rev-a-1111',
+            'revision_id' => '00000000-0000-4000-8000-000000000001',
         ]);
         $credA->organization_id = max(0, (int) $this->organizationA->id);
         $credA->credentials = ['api_key' => 'sk-org-a-secret-key'];
@@ -96,7 +96,7 @@ class AiProviderCredentialTest extends TestCase
         $credB = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'Org B Key',
-            'revision_id' => 'rev-b-2222',
+            'revision_id' => '00000000-0000-4000-8000-000000000002',
         ]);
         $credB->organization_id = max(0, (int) $this->organizationB->id);
         $credB->credentials = ['api_key' => 'sk-org-b-secret-key'];
@@ -131,7 +131,7 @@ class AiProviderCredentialTest extends TestCase
         $credential = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'OpenAI Prod',
-            'revision_id' => 'rev-001',
+            'revision_id' => '00000000-0000-4000-8000-000000000010',
         ]);
         $credential->organization_id = max(0, (int) $this->organizationA->id);
         $credential->credentials = ['api_key' => 'sk-test'];
@@ -235,7 +235,7 @@ class AiProviderCredentialTest extends TestCase
         $credential = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'OpenAI Health Test',
-            'revision_id' => 'rev-health-1',
+            'revision_id' => '00000000-0000-4000-8000-000000000020',
         ]);
         $credential->organization_id = max(0, (int) $this->organizationA->id);
         $credential->credentials = ['api_key' => 'sk-valid-key'];
@@ -457,7 +457,7 @@ class AiProviderCredentialTest extends TestCase
         $credential = new OrganizationCredential([
             'provider' => 'ollama',
             'credential_name' => 'Ollama Health Test',
-            'revision_id' => 'rev-ollama-1',
+            'revision_id' => '00000000-0000-4000-8000-000000000030',
         ]);
         $credential->organization_id = $this->organizationA->id;
         $credential->credentials = ['api_key' => 'local-secret'];
@@ -489,7 +489,7 @@ class AiProviderCredentialTest extends TestCase
         $credential = new OrganizationCredential([
             'provider' => 'openai',
             'credential_name' => 'OpenAI Failed Health Test',
-            'revision_id' => 'rev-health-2',
+            'revision_id' => '00000000-0000-4000-8000-000000000040',
         ]);
         $credential->organization_id = $this->organizationA->id;
         $credential->credentials = ['api_key' => 'sk-secret-health'];

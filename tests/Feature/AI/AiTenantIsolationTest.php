@@ -129,26 +129,27 @@ class AiTenantIsolationTest extends TestCase
         $clientB->organization_id = max(0, (int) $this->organizationB->id);
         $clientB->save();
 
+        $attributes = [
+            'organization_id' => $this->organizationA->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'cross_client_test',
+            'client_id' => $clientB->id,
+            'status' => AiRunStatus::Queued,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ];
+
         if (config('database.default') === 'pgsql') {
             $this->expectException(QueryException::class);
-        }
-
-        try {
-            AiRun::create([
-                'organization_id' => $this->organizationA->id,
-                'capability' => AiCapability::ClientCompanion,
-                'workflow_key' => 'cross_client_test',
-                'client_id' => $clientB->id, // Org B client in Org A run!
-                'status' => AiRunStatus::Queued,
-                'input_references' => [],
-                'context_provenance' => [],
-                'token_usage' => [],
-            ]);
-            if (config('database.default') === 'pgsql') {
-                $this->fail('Expected foreign key violation for cross-org client reference');
+            AiRun::create($attributes);
+        } else {
+            try {
+                $run = AiRun::create($attributes);
+                $this->assertSame($clientB->id, $run->client_id);
+            } catch (QueryException $e) {
+                $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
             }
-        } catch (QueryException $e) {
-            $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
         }
     }
 
@@ -163,22 +164,23 @@ class AiTenantIsolationTest extends TestCase
         $credentialB->credentials = ['api_key' => 'sk-org-b'];
         $credentialB->save();
 
+        $attributes = [
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai_org_a',
+            'display_name' => 'OpenAI Org A',
+            'credential_id' => $credentialB->id,
+        ];
+
         if (config('database.default') === 'pgsql') {
             $this->expectException(QueryException::class);
-        }
-
-        try {
-            AiProviderConfiguration::create([
-                'organization_id' => $this->organizationA->id,
-                'provider_name' => 'openai_org_a',
-                'display_name' => 'OpenAI Org A',
-                'credential_id' => $credentialB->id, // Org B credential in Org A provider!
-            ]);
-            if (config('database.default') === 'pgsql') {
-                $this->fail('Expected foreign key violation for cross-org credential reference');
+            AiProviderConfiguration::create($attributes);
+        } else {
+            try {
+                $provider = AiProviderConfiguration::create($attributes);
+                $this->assertSame($credentialB->id, $provider->credential_id);
+            } catch (QueryException $e) {
+                $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
             }
-        } catch (QueryException $e) {
-            $this->assertStringContainsString('foreign key constraint', strtolower($e->getMessage()));
         }
     }
 }
