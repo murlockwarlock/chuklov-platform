@@ -13,7 +13,6 @@ use Laravel\Ai\Gateway\Gemini\GeminiGateway;
 use Laravel\Ai\Gateway\OpenAi\OpenAiGateway;
 use Laravel\Ai\Providers\AnthropicProvider;
 use Laravel\Ai\Providers\AzureOpenAiProvider;
-use Laravel\Ai\Providers\BedrockProvider;
 use Laravel\Ai\Providers\DeepSeekProvider;
 use Laravel\Ai\Providers\GeminiProvider;
 use Laravel\Ai\Providers\GroqProvider;
@@ -74,7 +73,7 @@ class AiProviderFactory
             'openrouter' => new OpenRouterProvider($config, $this->events),
             'ollama' => new OllamaProvider($config, $this->events),
             'azure' => new AzureOpenAiProvider($config, $this->events),
-            'bedrock' => new BedrockProvider($config, $this->events),
+            'bedrock' => new BoundedBedrockProvider($config, $this->events),
             'openai_compatible' => new OpenAiCompatibleProvider($config, $this->events),
             default => throw new InvalidArgumentException("AI Provider [{$providerName}] is not supported for text generation."),
         };

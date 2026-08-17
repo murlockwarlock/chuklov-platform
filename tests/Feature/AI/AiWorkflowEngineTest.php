@@ -54,6 +54,7 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -679,7 +680,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $tool = new SearchKnowledgeBaseSdkTool(
@@ -729,7 +730,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $tool = new SearchKnowledgeBaseSdkTool(
@@ -801,7 +802,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $tool = new SearchKnowledgeBaseSdkTool(
@@ -900,7 +901,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
 
@@ -966,7 +967,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
 
@@ -1016,7 +1017,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
 
@@ -1061,7 +1062,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $retriever = new class($run->id, $tokenB) implements KnowledgeRetriever
@@ -1125,7 +1126,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
             'started_at' => Carbon::now(),
         ]);
@@ -1201,7 +1202,7 @@ class AiWorkflowEngineTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $retriever = new class implements KnowledgeRetriever

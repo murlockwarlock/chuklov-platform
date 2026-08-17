@@ -8,6 +8,7 @@ use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
@@ -59,20 +60,29 @@ final class PgvectorStatementTimeoutTest extends TestCase
         $actor = User::factory()->forOrganization($organization)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
-        app(CreateKnowledgeSource::class)->handle($actor, [
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
             'title' => 'Statement timeout guide',
             'type' => 'authored_text',
             'content' => 'Booking retrieval timeout verification.',
         ]);
 
+        $startedAt = Carbon::now();
         $timeouts = [];
-        DB::listen(static function (QueryExecuted $event) use (&$timeouts): void {
-            if (str_contains(strtolower($event->sql), "set_config('statement_timeout'")) {
+        $metadataQueries = 0;
+        DB::listen(static function (QueryExecuted $event) use (&$timeouts, &$metadataQueries, $startedAt): void {
+            $sql = strtolower($event->sql);
+            if (str_contains($sql, "set_config('statement_timeout'")) {
                 $timeouts[] = (int) ($event->bindings[0] ?? 0);
+            }
+
+            if (str_contains($sql, 'knowledge_sources')
+                && ! str_contains($sql, 'knowledge_chunks')
+                && $metadataQueries < 3) {
+                $metadataQueries++;
+                Carbon::setTestNow($startedAt->copy()->addSeconds($metadataQueries));
             }
         });
 
-        $startedAt = Carbon::now();
         $embedding->startedAt = $startedAt;
         $embedding->advanceClock = true;
 
@@ -82,20 +92,25 @@ final class PgvectorStatementTimeoutTest extends TestCase
                 new RetrievalQuery(
                     text: 'booking',
                     topK: 5,
+                    sourceIds: [(int) $source->getKey()],
                     executionDeadlineAt: $startedAt->copy()->addSeconds(30),
                     executionTimeoutSeconds: 30,
+                    embeddingSnapshot: EmbeddingExecutionSnapshot::active(),
                 ),
             );
         } finally {
             Carbon::setTestNow();
         }
 
-        self::assertGreaterThanOrEqual(2, count($timeouts));
+        self::assertSame(3, $metadataQueries);
+        self::assertGreaterThanOrEqual(4, count($timeouts));
         foreach ($timeouts as $timeoutMilliseconds) {
             self::assertGreaterThan(0, $timeoutMilliseconds);
             self::assertLessThanOrEqual(30_000, $timeoutMilliseconds);
         }
-        self::assertLessThan($timeouts[0], $timeouts[array_key_last($timeouts)]);
+        self::assertGreaterThan($timeouts[0], $timeouts[1]);
+        self::assertGreaterThan($timeouts[1], $timeouts[2]);
+        self::assertGreaterThan($timeouts[2], $timeouts[3]);
         self::assertLessThanOrEqual(25_000, $timeouts[array_key_last($timeouts)]);
     }
 }

@@ -14,8 +14,7 @@ use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiTokenUsage;
-use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
-use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -97,6 +96,7 @@ final class PrepareAiRun
                             'reserved_query_count' => $retrievalReservation['query_count'],
                             'maximum_cost_minor_units' => $retrievalReservation['maximum_cost_minor_units'],
                             'estimated_cost_minor_units' => 0,
+                            'configuration_snapshot' => $retrievalReservation['configuration_snapshot'],
                             'pricing_snapshot' => $retrievalReservation['pricing_snapshot'],
                         ],
                     ],
@@ -210,6 +210,7 @@ final class PrepareAiRun
                 : [];
             $assembledEmbedding['reserved_query_count'] = (int) ($reservationEmbedding['reserved_query_count'] ?? 0);
             $assembledEmbedding['maximum_cost_minor_units'] = (int) ($reservationEmbedding['maximum_cost_minor_units'] ?? 0);
+            $assembledEmbedding['configuration_snapshot'] = $reservationEmbedding['configuration_snapshot'] ?? [];
             $assembledEmbedding['pricing_snapshot'] = $reservationEmbedding['pricing_snapshot'] ?? [];
             $assembledProvenance['retrieval_embedding'] = $assembledEmbedding;
 
@@ -253,7 +254,7 @@ final class PrepareAiRun
         });
     }
 
-    /** @return array{query_count: int, maximum_cost_minor_units: int, pricing_snapshot: array<string, mixed>} */
+    /** @return array{query_count: int, maximum_cost_minor_units: int, configuration_snapshot: array<string, mixed>, pricing_snapshot: array<string, mixed>} */
     private function retrievalReservation(
         AiRunRequest $request,
         AiContextPolicy $contextPolicy,
@@ -264,17 +265,21 @@ final class PrepareAiRun
         $toolQueryCount = min(AiRuntimeLimits::PLATFORM_MAX_TOOL_CALLS, max(0, $maxToolCalls));
         $queryCount = $initialQueryCount + $toolQueryCount;
         if ($queryCount === 0) {
-            return ['query_count' => 0, 'maximum_cost_minor_units' => 0, 'pricing_snapshot' => []];
+            return [
+                'query_count' => 0,
+                'maximum_cost_minor_units' => 0,
+                'configuration_snapshot' => [],
+                'pricing_snapshot' => [],
+            ];
         }
 
-        $configuration = EmbeddingConfiguration::active();
-        $pricing = EmbeddingPricingPolicy::active();
-        $pricing->assertCompatible($configuration);
+        $snapshot = EmbeddingExecutionSnapshot::active();
 
         return [
             'query_count' => $queryCount,
-            'maximum_cost_minor_units' => $queryCount * $pricing->maximumQueryCost(),
-            'pricing_snapshot' => $pricing->toArray(),
+            'maximum_cost_minor_units' => $queryCount * $snapshot->pricing->maximumQueryCost(),
+            'configuration_snapshot' => $snapshot->configuration->toArray(),
+            'pricing_snapshot' => $snapshot->pricing->toArray(),
         ];
     }
 }

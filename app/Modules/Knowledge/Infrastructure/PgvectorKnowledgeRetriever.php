@@ -12,9 +12,9 @@ use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
-use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Carbon\CarbonInterface;
+use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -40,22 +40,28 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
     public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
     {
         $orgId = (int) $organizationId;
-        $configuration = EmbeddingConfiguration::active();
+        $bounded = $query->executionDeadlineAt !== null || $query->executionTimeoutSeconds !== null;
+        $embeddingSnapshot = $query->embeddingSnapshot;
+        if ($bounded && $embeddingSnapshot === null) {
+            throw new RuntimeException('AI retrieval requires an immutable embedding snapshot.');
+        }
+        $embeddingSnapshot?->assertCurrent();
+        $configuration = $embeddingSnapshot === null
+            ? EmbeddingConfiguration::active()
+            : $embeddingSnapshot->configuration;
 
         if ($query->sourceType !== null && ! KnowledgeSourceType::tryFrom($query->sourceType)) {
             throw new AuthorizationException('The requested knowledge scope is not available.');
         }
 
-        $bounded = $query->executionDeadlineAt !== null || $query->executionTimeoutSeconds !== null;
-        $hasActiveSources = $this->runMetadataChecks($orgId, $query, $configuration, $bounded);
+        $hasActiveSources = $this->runMetadataChecks($orgId, $query, $configuration);
         if (! $hasActiveSources) {
             return [];
         }
 
         $embeddingConfiguration = $this->boundedEmbeddingConfiguration($configuration, $query);
-        if ($bounded) {
-            EmbeddingPricingPolicy::active()->assertCompatible($configuration);
-        }
+        $embeddingSnapshot?->assertCurrent();
+        $embeddingSnapshot?->pricing->assertCompatible($configuration);
 
         $vector = $this->embeddings->generate([$query->text], $embeddingConfiguration)[0] ?? [];
         $this->assertDeadlineRemaining($query->executionDeadlineAt);
@@ -91,7 +97,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
             ->when($query->category !== null, fn (Builder $builder): Builder => $builder->where('knowledge_sources.category', $query->category));
 
         if (DB::getDriverName() === 'pgsql') {
-            return $this->retrieveWithPgvector($base, $vector, $query->topK, $configuration, $this->retrievalTimeoutSeconds($query));
+            return $this->retrieveWithPgvector($base, $vector, $query->topK, $configuration, $query);
         }
 
         return $this->retrieveWithFallback($base, $vector, $query->topK, $configuration);
@@ -101,37 +107,46 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         int $organizationId,
         RetrievalQuery $query,
         EmbeddingConfiguration $configuration,
-        bool $bounded,
     ): bool {
         $check = function () use ($organizationId, $query, $configuration): bool {
             if ($query->sourceIds !== []) {
-                $count = KnowledgeSource::query()
-                    ->where('organization_id', $organizationId)
-                    ->whereIn('id', $query->sourceIds)
-                    ->count();
+                $count = (int) $this->executeWithStatementDeadline(
+                    $query,
+                    fn (): int => (int) KnowledgeSource::query()
+                        ->where('organization_id', $organizationId)
+                        ->whereIn('id', $query->sourceIds)
+                        ->count(),
+                );
                 if ($count !== count(array_unique($query->sourceIds))) {
                     throw new AuthorizationException('The requested knowledge source is not available.');
                 }
             }
 
             $activeSources = $this->activeSourceQuery($organizationId, $query);
-            if (! (clone $activeSources)->exists()) {
+            $hasActiveSources = (bool) $this->executeWithStatementDeadline(
+                $query,
+                fn (): bool => (clone $activeSources)->exists(),
+            );
+            if (! $hasActiveSources) {
                 return false;
             }
 
-            $hasIncompatibleSource = (clone $activeSources)
-                ->whereNotExists(function (QueryBuilder $builder) use ($configuration): void {
-                    $builder->selectRaw('1')
-                        ->from('knowledge_ingestion_runs')
-                        ->whereColumn('knowledge_ingestion_runs.organization_id', 'knowledge_sources.organization_id')
-                        ->whereColumn('knowledge_ingestion_runs.knowledge_revision_id', 'knowledge_sources.active_revision_id')
-                        ->where('knowledge_ingestion_runs.status', 'ready')
-                        ->where('knowledge_ingestion_runs.embedding_provider', $configuration->provider)
-                        ->where('knowledge_ingestion_runs.embedding_model', $configuration->model)
-                        ->where('knowledge_ingestion_runs.embedding_dimensions', $configuration->dimensions)
-                        ->where('knowledge_ingestion_runs.embedding_configuration_version', $configuration->version);
-                })
-                ->exists();
+            $hasIncompatibleSource = (bool) $this->executeWithStatementDeadline(
+                $query,
+                fn (): bool => (clone $activeSources)
+                    ->whereNotExists(function (QueryBuilder $builder) use ($configuration): void {
+                        $builder->selectRaw('1')
+                            ->from('knowledge_ingestion_runs')
+                            ->whereColumn('knowledge_ingestion_runs.organization_id', 'knowledge_sources.organization_id')
+                            ->whereColumn('knowledge_ingestion_runs.knowledge_revision_id', 'knowledge_sources.active_revision_id')
+                            ->where('knowledge_ingestion_runs.status', 'ready')
+                            ->where('knowledge_ingestion_runs.embedding_provider', $configuration->provider)
+                            ->where('knowledge_ingestion_runs.embedding_model', $configuration->model)
+                            ->where('knowledge_ingestion_runs.embedding_dimensions', $configuration->dimensions)
+                            ->where('knowledge_ingestion_runs.embedding_configuration_version', $configuration->version);
+                    })
+                    ->exists(),
+            );
             if ($hasIncompatibleSource) {
                 throw new RuntimeException('Active embedding configuration is incompatible.');
             }
@@ -139,17 +154,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
             return true;
         };
 
-        if (! $bounded || DB::getDriverName() !== 'pgsql') {
-            return $check();
-        }
-
-        $timeoutSeconds = $this->retrievalTimeoutSeconds($query) ?? EmbeddingConfiguration::MAX_RUNTIME_TIMEOUT_SECONDS;
-
-        return (bool) DB::transaction(function () use ($check, $timeoutSeconds): bool {
-            $this->setLocalStatementTimeout($timeoutSeconds);
-
-            return $check();
-        });
+        return $check();
     }
 
     /** @return Builder<KnowledgeSource> */
@@ -180,7 +185,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         array $vector,
         int $topK,
         EmbeddingConfiguration $configuration,
-        ?int $timeoutSeconds = null,
+        RetrievalQuery $query,
     ): array {
         $retrieve = function () use ($base, $vector, $topK, $configuration): array {
             $rows = $base
@@ -202,15 +207,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
             return array_values($rows->map(fn (KnowledgeChunk $row): RetrievalResult => $this->result($row, 1.0 - $row->distance, $configuration))->all());
         };
 
-        if ($timeoutSeconds === null) {
-            return $retrieve();
-        }
-
-        return DB::transaction(function () use ($retrieve, $timeoutSeconds): array {
-            $this->setLocalStatementTimeout($timeoutSeconds);
-
-            return $retrieve();
-        });
+        return $this->executeWithStatementDeadline($query, $retrieve);
     }
 
     private function boundedEmbeddingConfiguration(EmbeddingConfiguration $configuration, RetrievalQuery $query): EmbeddingConfiguration
@@ -232,12 +229,8 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         return $configuration->withTimeoutSeconds($timeout);
     }
 
-    private function retrievalTimeoutSeconds(RetrievalQuery $query): ?int
+    private function statementTimeoutSeconds(RetrievalQuery $query): int
     {
-        if ($query->executionDeadlineAt === null && $query->executionTimeoutSeconds === null) {
-            return null;
-        }
-
         $timeout = min(
             EmbeddingConfiguration::MAX_RUNTIME_TIMEOUT_SECONDS,
             $query->executionTimeoutSeconds ?? EmbeddingConfiguration::MAX_RUNTIME_TIMEOUT_SECONDS,
@@ -245,10 +238,26 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         );
 
         if ($timeout < 1) {
-            throw new RuntimeException('AI execution deadline expired before vector retrieval.');
+            throw new RuntimeException('AI execution deadline expired before PostgreSQL retrieval statement.');
         }
 
         return $timeout;
+    }
+
+    private function executeWithStatementDeadline(RetrievalQuery $query, Closure $statement): mixed
+    {
+        if ((
+            $query->executionDeadlineAt === null
+            && $query->executionTimeoutSeconds === null
+        ) || DB::getDriverName() !== 'pgsql') {
+            return $statement();
+        }
+
+        return DB::transaction(function () use ($query, $statement): mixed {
+            $this->setLocalStatementTimeout($this->statementTimeoutSeconds($query));
+
+            return $statement();
+        });
     }
 
     private function remainingExecutionSeconds(?CarbonInterface $deadline): int

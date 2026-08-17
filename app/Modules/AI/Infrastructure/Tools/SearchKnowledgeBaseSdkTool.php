@@ -10,13 +10,13 @@ use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
-use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
-use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 use Stringable;
@@ -88,6 +88,8 @@ class SearchKnowledgeBaseSdkTool implements Tool
             $effectiveArguments = $this->applyPolicy($arguments);
             $retrievalPerformed = ! $this->isEmptySourceIntersection($arguments)
                 && trim((string) ($effectiveArguments['query'] ?? '')) !== '';
+            $embeddingSnapshot = $retrievalPerformed ? $this->embeddingSnapshot() : null;
+            $embeddingSnapshot?->assertCurrent();
             $executionTimeoutSeconds = min(
                 AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS,
                 AiRuntimeLimits::remainingExecutionSeconds($toolDeadline),
@@ -105,6 +107,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                     input: $effectiveArguments,
                     executionDeadlineAt: $toolDeadline,
                     executionTimeoutSeconds: $executionTimeoutSeconds,
+                    embeddingSnapshot: $embeddingSnapshot,
                 );
             if (! AiRuntimeLimits::deadlineIsActive($toolDeadline)) {
                 throw new AiRagRetrievalException(
@@ -173,8 +176,10 @@ class SearchKnowledgeBaseSdkTool implements Tool
             }
 
             throw new AiRagRetrievalException(
-                'Knowledge retrieval failed safely.',
-                reason: 'infrastructure',
+                $e instanceof InvalidArgumentException
+                    ? 'Knowledge retrieval configuration is invalid.'
+                    : 'Knowledge retrieval failed safely.',
+                reason: $e instanceof InvalidArgumentException ? 'configuration' : 'infrastructure',
                 previous: $e,
             );
         }
@@ -373,17 +378,16 @@ class SearchKnowledgeBaseSdkTool implements Tool
             }
 
             if ($retrievalQuery !== null) {
-                $provenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
+                $provenance = $this->provenanceFromRaw($run->context_provenance ?? null);
                 $embedding = is_array($provenance['retrieval_embedding'] ?? null)
                     ? $provenance['retrieval_embedding']
                     : [];
                 if ($status === 'succeeded') {
-                    $pricing = EmbeddingPricingPolicy::active();
-                    $pricing->assertCompatible(EmbeddingConfiguration::active());
+                    $snapshot = EmbeddingExecutionSnapshot::fromArray($embedding);
                     $embedding['tool_query_count'] = (int) ($embedding['tool_query_count'] ?? 0) + 1;
                     $embedding['tool_query_characters'] = (int) ($embedding['tool_query_characters'] ?? 0) + mb_strlen($retrievalQuery);
                     $embedding['estimated_cost_minor_units'] = (int) ($embedding['estimated_cost_minor_units'] ?? 0)
-                        + $pricing->estimateCostForQuery($retrievalQuery);
+                        + $snapshot->pricing->estimateCostForQuery($retrievalQuery);
                 } else {
                     $embedding['requires_conservative_settlement'] = true;
                 }
@@ -427,5 +431,40 @@ class SearchKnowledgeBaseSdkTool implements Tool
 
             return true;
         });
+    }
+
+    private function embeddingSnapshot(): EmbeddingExecutionSnapshot
+    {
+        $rawProvenance = DB::table('ai_runs')
+            ->where('organization_id', $this->executionContext->organizationId)
+            ->where('id', $this->executionContext->aiRunId)
+            ->value('context_provenance');
+        $provenance = $this->provenanceFromRaw($rawProvenance);
+        $embedding = $provenance['retrieval_embedding'] ?? null;
+
+        if (! is_array($embedding)) {
+            throw new AiRagRetrievalException(
+                'Knowledge retrieval configuration snapshot is unavailable.',
+                reason: 'configuration',
+            );
+        }
+
+        return EmbeddingExecutionSnapshot::fromArray($embedding);
+    }
+
+    /** @return array<string, mixed> */
+    private function provenanceFromRaw(mixed $rawProvenance): array
+    {
+        if (is_array($rawProvenance)) {
+            return $rawProvenance;
+        }
+
+        if (! is_string($rawProvenance) || trim($rawProvenance) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($rawProvenance, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

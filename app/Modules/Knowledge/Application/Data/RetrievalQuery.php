@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application\Data;
 
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use Carbon\CarbonInterface;
 use InvalidArgumentException;
 
@@ -24,6 +25,7 @@ final readonly class RetrievalQuery
         public ?string $category = null,
         public ?CarbonInterface $executionDeadlineAt = null,
         public ?int $executionTimeoutSeconds = null,
+        public ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
     ) {
         $maximumTopK = (int) config('rag.retrieval.maximum_top_k', 20);
 

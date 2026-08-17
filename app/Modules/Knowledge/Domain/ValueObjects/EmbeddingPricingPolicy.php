@@ -32,6 +32,35 @@ final readonly class EmbeddingPricingPolicy
         );
     }
 
+    /** @param array<string, mixed> $snapshot */
+    public static function fromArray(array $snapshot): self
+    {
+        $provider = $snapshot['provider'] ?? null;
+        $model = $snapshot['model'] ?? null;
+        $configurationVersion = $snapshot['configuration_version'] ?? null;
+        $currency = $snapshot['currency'] ?? null;
+        $inputCost = $snapshot['input_cost_per_million_minor_units'] ?? null;
+        $zeroCostLocal = $snapshot['zero_cost_local'] ?? null;
+
+        if (! is_string($provider)
+            || ! is_string($model)
+            || ! is_string($configurationVersion)
+            || ! is_string($currency)
+            || ($inputCost !== null && ! is_int($inputCost))
+            || ! is_bool($zeroCostLocal)) {
+            throw new InvalidArgumentException('Embedding pricing snapshot is invalid.');
+        }
+
+        return new self(
+            provider: $provider,
+            model: $model,
+            configurationVersion: $configurationVersion,
+            currency: $currency,
+            inputCostPerMillionMinorUnits: $inputCost,
+            zeroCostLocal: $zeroCostLocal,
+        );
+    }
+
     public function assertCompatible(EmbeddingConfiguration $configuration): void
     {
         if ($this->provider !== $configuration->provider
@@ -42,6 +71,13 @@ final readonly class EmbeddingPricingPolicy
             || ($this->zeroCostLocal && $this->inputCostPerMillionMinorUnits !== null && $this->inputCostPerMillionMinorUnits > 0)
             || ($this->inputCostPerMillionMinorUnits !== null && $this->inputCostPerMillionMinorUnits < 0)) {
             throw new InvalidArgumentException('Embedding pricing policy is unavailable for the active configuration.');
+        }
+    }
+
+    public function assertSame(self $pricing): void
+    {
+        if ($this->toArray() !== $pricing->toArray()) {
+            throw new InvalidArgumentException('Embedding pricing changed after AI run preparation.');
         }
     }
 

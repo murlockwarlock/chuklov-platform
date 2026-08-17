@@ -21,6 +21,7 @@ use App\Modules\AI\Infrastructure\Engine\LaravelAiWorkflowEngine;
 use App\Modules\AI\Infrastructure\Output\JsonSchemaOutputValidator;
 use App\Modules\AI\Infrastructure\Pricing\DefaultAiPricingCalculator;
 use App\Modules\AI\Infrastructure\Prompt\SafePromptRenderer;
+use App\Modules\AI\Infrastructure\Providers\BoundedBedrockProvider;
 use App\Modules\AI\Infrastructure\Safety\AtomicAiSafetyBudgetManager;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
@@ -110,17 +111,28 @@ use App\Policies\SurveyAttemptPolicy;
 use App\Policies\SurveyDefinitionPolicy;
 use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Ai\AiManager;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->afterResolving(AiManager::class, static function (AiManager $manager, Application $app): void {
+            $manager->extend(
+                'bedrock',
+                fn (Application $application, array $config): BoundedBedrockProvider => new BoundedBedrockProvider(
+                    $config,
+                    $application->make(Dispatcher::class),
+                ),
+            );
+        });
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
         $this->app->scoped(GetMedicalProfile::class);

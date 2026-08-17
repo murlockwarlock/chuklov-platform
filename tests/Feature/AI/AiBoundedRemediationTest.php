@@ -22,6 +22,7 @@ use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -240,6 +241,16 @@ final class AiBoundedRemediationTest extends TestCase
         self::assertSame('reserved', $run->retrieval_embedding_budget_status);
         self::assertSame(96, AiOrganizationDailyBudget::query()->where('organization_id', $organization->id)->value('reserved_minor_units'));
         self::assertSame(96, data_get($run->context_provenance, 'retrieval_embedding.maximum_cost_minor_units'));
+        self::assertSame(config('rag.embedding.provider'), data_get($run->context_provenance, 'retrieval_embedding.configuration_snapshot.provider'));
+        self::assertSame(
+            hash('sha256', implode('|', [
+                config('rag.embedding.provider'),
+                config('rag.embedding.model'),
+                config('rag.embedding.dimensions'),
+                config('rag.embedding.configuration_version'),
+            ])),
+            data_get($run->context_provenance, 'retrieval_embedding.configuration_snapshot.configuration_key'),
+        );
 
         $toolOnlyClaim = app(PrepareAiRun::class)->claim(
             organizationId: $organization->id,
@@ -273,7 +284,7 @@ final class AiBoundedRemediationTest extends TestCase
             'worker_lease_expires_at' => $runDeadline,
             'execution_deadline_at' => $runDeadline,
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $captured = null;
@@ -329,7 +340,7 @@ final class AiBoundedRemediationTest extends TestCase
             'worker_lease_expires_at' => $runDeadline,
             'execution_deadline_at' => $runDeadline,
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $captured = null;
@@ -385,7 +396,7 @@ final class AiBoundedRemediationTest extends TestCase
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
             'execution_deadline_at' => $deadline,
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
         ]);
         $retriever = new class($deadline) implements KnowledgeRetriever
@@ -417,5 +428,160 @@ final class AiBoundedRemediationTest extends TestCase
         }
 
         self::assertSame(0, $run->fresh()->ragReferences()->count());
+    }
+
+    public function test_tool_fails_closed_when_active_embedding_snapshot_changes_after_preparation(): void
+    {
+        $this->configureEmbeddingProfile('embedding-a', 'model-a', 'v1', 1000);
+        $organization = Organization::factory()->create();
+        $run = $this->prepareToolRun($organization, 'snapshot_mismatch');
+        $this->configureEmbeddingProfile('embedding-b', 'model-b', 'v2', 2000);
+        $calls = 0;
+        $retriever = new class($calls) implements KnowledgeRetriever
+        {
+            public function __construct(private int &$calls) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->calls++;
+
+                return [];
+            }
+        };
+
+        try {
+            (new SearchKnowledgeBaseSdkTool(
+                executionContext: new AiRunExecutionContext(
+                    organizationId: $organization->id,
+                    aiRunId: $run->id,
+                    workerLeaseToken: (string) $run->worker_lease_token,
+                    executionDeadlineAt: $run->execution_deadline_at,
+                ),
+                domainTool: new SearchKnowledgeBaseTool($retriever),
+                maxToolCalls: 1,
+            ))->handle(new Request(['query' => 'snapshot mismatch']));
+            self::fail('Expected changed embedding configuration to fail closed.');
+        } catch (AiRagRetrievalException $exception) {
+            self::assertSame('configuration', $exception->reason);
+        } finally {
+            self::assertSame(0, $calls);
+        }
+
+        self::assertTrue((bool) data_get($run->refresh()->context_provenance, 'retrieval_embedding.requires_conservative_settlement'));
+    }
+
+    public function test_successful_tool_settlement_uses_the_preparation_pricing_snapshot(): void
+    {
+        $this->configureEmbeddingProfile('embedding-a', 'model-a', 'v1', 1000);
+        $organization = Organization::factory()->create();
+        $run = $this->prepareToolRun($organization, 'snapshot_settlement');
+        $snapshot = EmbeddingExecutionSnapshot::fromArray(
+            data_get($run->context_provenance, 'retrieval_embedding', []),
+        );
+        $query = 'immutable settlement';
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                config()->set('rag.embedding.provider', 'embedding-b');
+                config()->set('rag.embedding.model', 'model-b');
+                config()->set('rag.embedding.configuration_version', 'v2');
+                config()->set('rag.embedding.pricing', [
+                    'provider' => 'embedding-b',
+                    'model' => 'model-b',
+                    'configuration_version' => 'v2',
+                    'currency' => 'USD',
+                    'input_cost_per_million_minor_units' => 10_000_000,
+                    'zero_cost_local' => false,
+                ]);
+
+                return [];
+            }
+        };
+
+        $response = (string) (new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext(
+                organizationId: $organization->id,
+                aiRunId: $run->id,
+                workerLeaseToken: (string) $run->worker_lease_token,
+                executionDeadlineAt: $run->execution_deadline_at,
+            ),
+            domainTool: new SearchKnowledgeBaseTool($retriever),
+            maxToolCalls: 1,
+        ))->handle(new Request(['query' => $query]));
+
+        self::assertSame('No relevant knowledge base records found.', $response);
+        $run->refresh();
+        self::assertSame(
+            $snapshot->pricing->estimateCostForQuery($query),
+            data_get($run->context_provenance, 'retrieval_embedding.estimated_cost_minor_units'),
+        );
+        self::assertNotSame(10_000_000, data_get($run->context_provenance, 'retrieval_embedding.estimated_cost_minor_units'));
+    }
+
+    private function configureEmbeddingProfile(string $provider, string $model, string $version, int $inputCost): void
+    {
+        config()->set('rag.embedding.provider', $provider);
+        config()->set('rag.embedding.model', $model);
+        config()->set('rag.embedding.configuration_version', $version);
+        config()->set('rag.embedding.pricing', [
+            'provider' => $provider,
+            'model' => $model,
+            'configuration_version' => $version,
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => $inputCost,
+            'zero_cost_local' => false,
+        ]);
+    }
+
+    private function prepareToolRun(Organization $organization, string $workflowKey): AiRun
+    {
+        $prompt = AiPrompt::query()->create([
+            'organization_id' => $organization->id,
+            'key' => $workflowKey,
+            'name' => $workflowKey,
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::query()->create([
+            'organization_id' => $organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Bounded instructions',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => false],
+            'allowed_tools' => ['search_knowledge_base'],
+            'activated_at' => Carbon::now(),
+        ]);
+        $claim = app(PrepareAiRun::class)->claim(
+            organizationId: $organization->id,
+            request: new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: $workflowKey,
+                inputVariables: [],
+            ),
+            promptVersion: $version,
+            contextPolicy: new AiContextPolicy(includeRag: false),
+            executionDeadlineAt: Carbon::now()->addSeconds(60),
+            maxToolCalls: 1,
+        );
+
+        $run = $claim['run'];
+        $run->update([
+            'status' => AiRunStatus::Running,
+            'started_at' => Carbon::now(),
+        ]);
+
+        return $run->refresh();
     }
 }

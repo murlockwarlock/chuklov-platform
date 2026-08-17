@@ -40,6 +40,7 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
@@ -212,6 +213,14 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         try {
+            $embeddingSnapshot = null;
+            if (($contextPolicy->includeRag && AiRuntimeLimits::ragQuery($request->inputVariables) !== '') || $maxToolCallsForReservation > 0) {
+                $provenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
+                $embedding = is_array($provenance['retrieval_embedding'] ?? null)
+                    ? $provenance['retrieval_embedding']
+                    : [];
+                $embeddingSnapshot = EmbeddingExecutionSnapshot::fromArray($embedding);
+            }
             $contextAssembly = $this->contextAssembler->assemble(
                 organizationId: $organizationId,
                 policy: $contextPolicy,
@@ -219,6 +228,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 inputReferences: $request->inputReferences,
                 actor: $request->actor,
                 executionDeadlineAt: $executionDeadlineAt,
+                embeddingSnapshot: $embeddingSnapshot,
             );
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
             $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);

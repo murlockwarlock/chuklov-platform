@@ -35,6 +35,7 @@ use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -102,6 +103,7 @@ final class CountingInitialRagContextAssembler implements AiContextAssemblerInte
         array $inputReferences,
         ?User $actor = null,
         ?CarbonInterface $executionDeadlineAt = null,
+        ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
     ): ContextAssemblyResult {
         DB::table('audit_events')->insert([
             'organization_id' => $this->organizationId,
@@ -120,6 +122,7 @@ final class CountingInitialRagContextAssembler implements AiContextAssemblerInte
             inputReferences: $inputReferences,
             actor: $actor,
             executionDeadlineAt: $executionDeadlineAt,
+            embeddingSnapshot: $embeddingSnapshot,
         );
     }
 }
@@ -406,7 +409,7 @@ final class MilestoneTenConcurrencyTest extends TestCase
             'workflow_key' => 'pg_tool_claim_index',
             'status' => AiRunStatus::Running,
             'input_references' => [],
-            'context_provenance' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
             'token_usage' => [],
             'worker_lease_token' => $token,
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),

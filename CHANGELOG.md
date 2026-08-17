@@ -29,6 +29,11 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added a whole-run deadline/lease/queue timeout contract, accumulated multi-step provider exposure reservation, ownership-independent stale-attempt reconciliation, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval execution, fixed-scope tool RAG, durable tool-chunk provenance with retention-safe foreign keys, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
   - M10 remains IN_PROGRESS; PostgreSQL concurrency coverage is present and is not claimed as locally executed, and hosted CI/final acceptance remain outstanding.
 
+- M10 final three targeted remediations:
+  - Recomputed the immutable retrieval deadline before every bounded PostgreSQL metadata/vector statement and added cumulative timeout regression coverage.
+  - Added application-owned Bedrock text/embedding gateways with AWS SDK transport retries disabled for one-invocation/one-attempt billing safety.
+  - Persisted immutable embedding runtime/pricing snapshots through AiRun preparation, initial/tool RAG execution, fail-closed compatibility checks, and tool settlement. The PostgreSQL regression is present but not run locally under the SQLite local-light environment.
+
 - M10 bounded execution and cost-boundary remediation:
   - Established durable preparing claims before asynchronous context/RAG work, one immutable whole-run deadline from preparation through finalization, request-scoped embedding timeouts, PostgreSQL-local retrieval statement timeouts, strict post-deadline tool provenance fencing, and bounded RAG query input.
   - Added immutable supported text billing meters (input, output, cache read/write, reasoning, and fixed request), explicit unsupported-meter fail-closed activation, organization-daily-budget reservations for initial/tool retrieval embeddings, and separate retrieval settlement provenance.

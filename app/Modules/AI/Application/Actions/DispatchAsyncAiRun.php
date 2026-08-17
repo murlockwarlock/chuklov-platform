@@ -17,6 +17,7 @@ use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -122,6 +123,14 @@ class DispatchAsyncAiRun
         }
 
         try {
+            $embeddingSnapshot = null;
+            if (($contextPolicy->includeRag && AiRuntimeLimits::ragQuery($request->inputVariables) !== '') || $maxToolCalls > 0) {
+                $provenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
+                $embedding = is_array($provenance['retrieval_embedding'] ?? null)
+                    ? $provenance['retrieval_embedding']
+                    : [];
+                $embeddingSnapshot = EmbeddingExecutionSnapshot::fromArray($embedding);
+            }
             $contextAssembly = $this->contextAssembler->assemble(
                 organizationId: (int) $organization->getKey(),
                 policy: $contextPolicy,
@@ -129,6 +138,7 @@ class DispatchAsyncAiRun
                 inputReferences: $request->inputReferences,
                 actor: $actor,
                 executionDeadlineAt: $executionDeadlineAt,
+                embeddingSnapshot: $embeddingSnapshot,
             );
 
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);

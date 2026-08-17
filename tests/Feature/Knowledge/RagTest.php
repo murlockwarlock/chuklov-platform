@@ -15,6 +15,7 @@ use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
@@ -180,6 +181,7 @@ final class RagTest extends TestCase
                 topK: 5,
                 executionDeadlineAt: $deadline,
                 executionTimeoutSeconds: 30,
+                embeddingSnapshot: EmbeddingExecutionSnapshot::active(),
             ),
         );
 
