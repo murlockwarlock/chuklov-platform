@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiProviders\RelationManagers;
 
+use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
@@ -131,22 +132,12 @@ class ModelsRelationManager extends RelationManager
             ->recordActions([
                 EditAction::make()
                     ->using(function (AiModelConfiguration $record, array $data): AiModelConfiguration {
-                        $pricing = new AiPricingSnapshot(
-                            currency: 'USD',
-                            inputCostPerMillionMinorUnits: (int) ($data['input_cost_per_million'] ?? 15),
-                            outputCostPerMillionMinorUnits: (int) ($data['output_cost_per_million'] ?? 60),
-                        );
+                        $actor = Auth::user();
+                        if ($actor !== null) {
+                            app(CreateAndActivateModelRelease::class)->handle($actor, $record, $data);
+                        }
 
-                        $record->update([
-                            'model_name' => (string) $data['model_name'],
-                            'display_name' => (string) $data['display_name'],
-                            'is_enabled' => (bool) ($data['is_enabled'] ?? true),
-                            'capabilities' => array_values(array_map('strval', (array) ($data['capabilities'] ?? []))),
-                            'pricing_snapshot' => $pricing->toArray(),
-                            'failover_priority' => (int) ($data['failover_priority'] ?? 1),
-                        ]);
-
-                        return $record;
+                        return $record->fresh() ?? $record;
                     }),
             ]);
     }

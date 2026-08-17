@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool $is_ai_globally_enabled
  * @property list<string> $disabled_capabilities
  * @property list<string> $disabled_providers
+ * @property list<string> $disabled_tools
  * @property int $max_tokens_per_run
  * @property int $max_daily_spend_minor_units
  * @property int $max_runs_per_minute
@@ -27,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'is_ai_globally_enabled',
     'disabled_capabilities',
     'disabled_providers',
+    'disabled_tools',
     'max_tokens_per_run',
     'max_daily_spend_minor_units',
     'max_runs_per_minute',
@@ -40,6 +42,7 @@ class AiOrganizationSafetyControl extends Model
         'is_ai_globally_enabled' => true,
         'disabled_capabilities' => '[]',
         'disabled_providers' => '[]',
+        'disabled_tools' => '[]',
         'max_tokens_per_run' => 8192,
         'max_daily_spend_minor_units' => 5000,
         'max_runs_per_minute' => 60,
@@ -72,6 +75,15 @@ class AiOrganizationSafetyControl extends Model
         return ! in_array($provider, $this->disabled_providers ?? [], true);
     }
 
+    public function isToolEnabled(string $tool): bool
+    {
+        if (! $this->is_ai_globally_enabled) {
+            return false;
+        }
+
+        return ! in_array($tool, $this->disabled_tools ?? [], true);
+    }
+
     /**
      * @param  Builder<$this>  $query
      * @return Builder<$this>
@@ -87,6 +99,7 @@ class AiOrganizationSafetyControl extends Model
             'is_ai_globally_enabled' => 'boolean',
             'disabled_capabilities' => 'array',
             'disabled_providers' => 'array',
+            'disabled_tools' => 'array',
             'max_tokens_per_run' => 'integer',
             'max_daily_spend_minor_units' => 'integer',
             'max_runs_per_minute' => 'integer',

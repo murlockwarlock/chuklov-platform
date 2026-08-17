@@ -12,6 +12,7 @@ use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
@@ -179,6 +180,86 @@ class AiWorkerFencingTest extends TestCase
         // Verify payload was NOT updated by worker A
         $payload = AiRunPayload::where('ai_run_id', $run->id)->first();
         $this->assertNull($payload?->encrypted_output_text);
+    }
+
+    public function test_stale_worker_on_kill_switch_cannot_overwrite_new_owner_state(): void
+    {
+        AiOrganizationSafetyControl::create([
+            'organization_id' => $this->organization->id,
+            'is_ai_globally_enabled' => false,
+        ]);
+
+        $engine = app(AiWorkflowEngine::class);
+
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'kill_switch_fencing_test',
+            'status' => AiRunStatus::Running,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'worker_lease_token' => $tokenB, // Reclaimed by Worker B
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'started_at' => Carbon::now(),
+        ]);
+
+        // Stale Worker A invokes executeRun with token A
+        $result = $engine->executeRun(
+            organizationId: $this->organization->id,
+            runId: $run->id,
+            workerLeaseToken: $tokenA,
+        );
+
+        $this->assertFalse($result->isSuccess());
+
+        $run->refresh();
+        // Run must remain in Running state under token B, not corrupted to Failed by Worker A
+        $this->assertSame(AiRunStatus::Running, $run->status);
+        $this->assertSame($tokenB, $run->worker_lease_token);
+    }
+
+    public function test_stale_worker_on_disabled_capability_cannot_overwrite_new_owner_state(): void
+    {
+        AiOrganizationSafetyControl::create([
+            'organization_id' => $this->organization->id,
+            'is_ai_globally_enabled' => true,
+            'disabled_capabilities' => [AiCapability::ClientCompanion->value],
+        ]);
+
+        $engine = app(AiWorkflowEngine::class);
+
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'cap_disabled_fencing_test',
+            'status' => AiRunStatus::Running,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'worker_lease_token' => $tokenB, // Reclaimed by Worker B
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'started_at' => Carbon::now(),
+        ]);
+
+        // Stale Worker A invokes executeRun with token A
+        $result = $engine->executeRun(
+            organizationId: $this->organization->id,
+            runId: $run->id,
+            workerLeaseToken: $tokenA,
+        );
+
+        $this->assertFalse($result->isSuccess());
+
+        $run->refresh();
+        $this->assertSame(AiRunStatus::Running, $run->status);
+        $this->assertSame($tokenB, $run->worker_lease_token);
     }
 
     public function test_stale_worker_reaching_provider_exhaustion_cannot_overwrite_new_owner_state(): void

@@ -22,6 +22,8 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -42,6 +44,17 @@ class DispatchAsyncAiRun
 
         if ($actor !== null) {
             $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
+        }
+
+        if ($request->idempotencyKey !== null) {
+            $existing = AiRun::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('idempotency_key', $request->idempotencyKey)
+                ->first();
+
+            if ($existing !== null) {
+                return $existing;
+            }
         }
 
         $capabilityDef = AiCapabilityRegistry::get($request->capability);
@@ -78,6 +91,7 @@ class DispatchAsyncAiRun
             policy: $contextPolicy,
             inputVariables: $request->inputVariables,
             inputReferences: $request->inputReferences,
+            actor: $actor,
         );
 
         $systemPromptTemplate = $promptVersion !== null
@@ -106,6 +120,17 @@ class DispatchAsyncAiRun
             $renderedSystemPrompt,
             $renderedUserPrompt,
         ): AiRun {
+            if ($request->idempotencyKey !== null) {
+                $existing = AiRun::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('idempotency_key', $request->idempotencyKey)
+                    ->first();
+
+                if ($existing !== null) {
+                    return $existing;
+                }
+            }
+
             $run = new AiRun([
                 'organization_id' => $organization->getKey(),
                 'capability' => $request->capability,
@@ -129,7 +154,23 @@ class DispatchAsyncAiRun
                 'worker_lease_expires_at' => Carbon::now()->addSeconds($leaseTtl),
                 'queued_at' => Carbon::now(),
             ]);
-            $run->save();
+
+            try {
+                $run->save();
+            } catch (UniqueConstraintViolationException|QueryException $e) {
+                if ($request->idempotencyKey !== null) {
+                    $existing = AiRun::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('idempotency_key', $request->idempotencyKey)
+                        ->first();
+
+                    if ($existing !== null) {
+                        return $existing;
+                    }
+                }
+
+                throw $e;
+            }
 
             $payload = new AiRunPayload([
                 'organization_id' => $organization->getKey(),
@@ -157,10 +198,12 @@ class DispatchAsyncAiRun
             return $run;
         });
 
-        ProcessAiRunJob::dispatch(
-            organizationId: $organization->getKey(),
-            runId: $run->id,
-        );
+        if ($run->wasRecentlyCreated) {
+            ProcessAiRunJob::dispatch(
+                organizationId: $organization->getKey(),
+                runId: $run->id,
+            );
+        }
 
         return $run;
     }

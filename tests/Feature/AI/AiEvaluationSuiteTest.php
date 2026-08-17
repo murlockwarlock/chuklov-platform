@@ -5,6 +5,7 @@ namespace Tests\Feature\AI;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateEvalCase;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
+use App\Modules\AI\Application\Actions\UpdateEvalCase;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
@@ -229,5 +230,58 @@ class AiEvaluationSuiteTest extends TestCase
         } catch (InvalidArgumentException $e) {
             $this->assertStringContainsString('Real email addresses detected', $e->getMessage());
         }
+
+        // 4. Rejects direct import of protected AI run traces
+        try {
+            $action->execute(
+                actor: $this->user,
+                organization: $this->organization,
+                suiteId: $suite->id,
+                name: 'Protected Trace Case',
+                testInputs: ['encrypted_output_text' => 'raw_cipher_text'],
+                expectedAssertions: ['contains_text' => 'text'],
+                isSynthetic: true,
+            );
+            $this->fail('Expected exception for protected trace import in eval case');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Direct import of protected production AI run traces', $e->getMessage());
+        }
+    }
+
+    public function test_update_eval_case_revalidates_privacy_and_rejects_patient_references(): void
+    {
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'update_privacy_suite',
+            'name' => 'Сьют проверки обновления',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+
+        $client = new Client(['full_name' => 'Пациент Проверка']);
+        $client->organization_id = max(0, (int) $this->organization->id);
+        $client->save();
+
+        $case = AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Валидный кейс',
+            'is_synthetic' => true,
+            'test_inputs' => ['query' => 'Синтетический запрос'],
+            'expected_assertions' => ['contains_text' => 'тест'],
+            'is_active' => true,
+        ]);
+
+        /** @var UpdateEvalCase $action */
+        $action = app(UpdateEvalCase::class);
+
+        // Update with forbidden client reference
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Real production client IDs are prohibited');
+
+        $action->execute($this->user, $case, [
+            'name' => 'Попытка обновления с реальным пациентом',
+            'test_inputs' => ['client_id' => $client->id],
+            'is_synthetic' => true,
+        ]);
     }
 }

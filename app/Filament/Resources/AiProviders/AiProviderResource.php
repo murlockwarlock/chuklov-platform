@@ -7,17 +7,21 @@ use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
 use App\Filament\Resources\AiProviders\Pages\ListAiProviders;
 use App\Filament\Resources\AiProviders\RelationManagers\ModelsRelationManager;
 use App\Filament\Resources\AiProviders\Schemas\AiProviderForm;
+use App\Modules\AI\Application\Actions\TestProviderConnection;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 final class AiProviderResource extends Resource
 {
@@ -62,6 +66,28 @@ final class AiProviderResource extends Resource
                 TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->recordActions([
+                Action::make('test_connection')
+                    ->label('Проверить связь')
+                    ->icon(Heroicon::OutlinedSignal)
+                    ->color('gray')
+                    ->action(function (AiProviderConfiguration $record): void {
+                        $actor = Auth::user();
+                        if ($actor !== null) {
+                            $result = app(TestProviderConnection::class)->handle($actor, $record->id);
+                            if ($result['success']) {
+                                Notification::make()
+                                    ->title('Связь проверена успешно')
+                                    ->success()
+                                    ->send();
+                            } else {
+                                Notification::make()
+                                    ->title('Ошибка проверки связи')
+                                    ->body($result['message'])
+                                    ->danger()
+                                    ->send();
+                            }
+                        }
+                    }),
                 EditAction::make(),
             ])
             ->defaultSort('updated_at', 'desc');

@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Domain\Contracts;
 
+use App\Models\User;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
@@ -17,5 +18,6 @@ interface AiContextAssemblerInterface
         AiContextPolicy $policy,
         array $inputVariables,
         array $inputReferences,
+        ?User $actor = null,
     ): ContextAssemblyResult;
 }

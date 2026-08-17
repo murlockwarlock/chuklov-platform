@@ -32,7 +32,7 @@ class CreateEvalCase
         array $testInputs,
         array $expectedAssertions,
         ?array $expectedOutputSchema = null,
-        bool $isSynthetic = true,
+        bool $isSynthetic = false,
         bool $isDeidentified = false,
     ): AiEvalCase {
         if (! $this->authorizer->allows($actor, $organization, OrganizationPermission::ManageAiPrompts)) {
@@ -41,6 +41,10 @@ class CreateEvalCase
 
         if (! $isSynthetic && ! $isDeidentified) {
             throw new InvalidArgumentException('Evaluation cases must be explicitly classified as synthetic or de-identified.');
+        }
+
+        if ($isSynthetic && $isDeidentified) {
+            throw new InvalidArgumentException('Evaluation case classification must be exactly one: either synthetic or de-identified.');
         }
 
         // Validate that test_inputs does not contain references to real production patient records
@@ -67,7 +71,7 @@ class CreateEvalCase
     /**
      * @param  array<string, mixed>  $testInputs
      */
-    private function assertNoProductionPatientReferences(int $organizationId, array $testInputs): void
+    public function assertNoProductionPatientReferences(int $organizationId, array $testInputs): void
     {
         // 1. Direct client_id check
         if (isset($testInputs['client_id'])) {
@@ -85,7 +89,12 @@ class CreateEvalCase
             }
         }
 
-        // 3. Scan string fields for obvious raw emails / phone patterns
+        // 3. Prohibit direct raw protected AI run trace payloads
+        if (isset($testInputs['encrypted_output_text']) || isset($testInputs['protected_trace']) || isset($testInputs['ai_run_payload_id'])) {
+            throw new InvalidArgumentException('Direct import of protected production AI run traces into evaluation cases is prohibited.');
+        }
+
+        // 4. Scan string fields for obvious raw emails / phone patterns
         $encoded = json_encode($testInputs) ?: '';
         if (preg_match('/[a-zA-Z0-9._%+-]+@(?!example\.com|test\.com|synthetic\.org)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', $encoded) === 1) {
             throw new InvalidArgumentException('Real email addresses detected in evaluation input. Use synthetic domains (e.g. @example.com).');

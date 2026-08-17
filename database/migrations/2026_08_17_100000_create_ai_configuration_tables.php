@@ -34,6 +34,7 @@ return new class extends Migration
             $table->boolean('is_ai_globally_enabled')->default(true);
             $table->json('disabled_capabilities');
             $table->json('disabled_providers');
+            $table->json('disabled_tools');
             $table->unsignedInteger('max_tokens_per_run')->default(8192);
             $table->unsignedBigInteger('max_daily_spend_minor_units')->default(5000);
             $table->unsignedInteger('max_runs_per_minute')->default(60);

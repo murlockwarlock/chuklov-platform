@@ -5,6 +5,7 @@ namespace App\Modules\AI\Infrastructure\Context;
 use App\Models\User;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
+use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
@@ -25,6 +26,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
         AiContextPolicy $policy,
         array $inputVariables,
         array $inputReferences,
+        ?User $actor = null,
     ): ContextAssemblyResult {
         $variables = $inputVariables;
         $ragChunks = [];
@@ -33,6 +35,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
             'medical_summary_included' => false,
             'sessions_count' => 0,
             'rag_chunks_count' => 0,
+            'rag_degraded' => false,
         ];
 
         $clientId = null;
@@ -56,10 +59,10 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     $provenanceSummary['client_included'] = true;
                 }
 
-                $actor = Auth::user();
-                if ($policy->includeMedicalSummary && $this->getMedicalProfile !== null && $actor instanceof User) {
+                $effectiveActor = $actor ?? Auth::user();
+                if ($policy->includeMedicalSummary && $this->getMedicalProfile !== null && $effectiveActor instanceof User) {
                     try {
-                        $profile = $this->getMedicalProfile->handle($actor, $client);
+                        $profile = $this->getMedicalProfile->handle($effectiveActor, $client);
                         if ($profile !== null) {
                             $variables['anamnesis'] = $profile->anamnesis ?? '';
                             $variables['complaints_goals'] = $profile->complaintsGoals ?? '';
@@ -108,7 +111,16 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     }
                     $variables['rag_context'] = implode("\n\n", $ragContexts);
                     $provenanceSummary['rag_chunks_count'] = count($results);
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
+                    if ($policy->requireGroundedRag) {
+                        throw new AiRagRetrievalException('Grounding RAG knowledge retrieval failed.', previous: $e);
+                    }
+                    if ($policy->allowRagDegradation) {
+                        $provenanceSummary['rag_degraded'] = true;
+                        $variables['rag_context'] = '';
+                    } else {
+                        throw new AiRagRetrievalException('RAG retrieval failed and degradation is not permitted by policy.', previous: $e);
+                    }
                 }
             }
         }

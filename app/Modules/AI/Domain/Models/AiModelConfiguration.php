@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $failover_priority
  * @property int|null $active_release_id
  * @property-read Organization $organization
- * @property-read AiProviderConfiguration $providerConfiguration
+ * @property-read AiProviderConfiguration|null $providerConfiguration
  * @property-read AiModelRelease|null $activeRelease
  * @property-read HasMany<AiModelRelease, $this> $releases
  */

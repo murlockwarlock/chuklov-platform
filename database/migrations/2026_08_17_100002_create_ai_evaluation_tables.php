@@ -26,7 +26,7 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('eval_suite_id');
             $table->string('name', 200);
-            $table->boolean('is_synthetic')->default(true);
+            $table->boolean('is_synthetic')->default(false);
             $table->boolean('is_deidentified')->default(false);
             $table->json('test_inputs');
             $table->json('expected_output_schema')->nullable();

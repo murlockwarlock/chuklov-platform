@@ -17,6 +17,8 @@ final readonly class AiContextPolicy
         public int $ragMaxChunks = 3,
         public float $ragMinSimilarity = 0.65,
         public array $allowedContextTypes = [],
+        public bool $requireGroundedRag = false,
+        public bool $allowRagDegradation = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -31,6 +33,8 @@ final readonly class AiContextPolicy
             ragMaxChunks: (int) ($data['rag_max_chunks'] ?? 3),
             ragMinSimilarity: (float) ($data['rag_min_similarity'] ?? 0.65),
             allowedContextTypes: array_values(array_map('strval', (array) ($data['allowed_context_types'] ?? []))),
+            requireGroundedRag: (bool) ($data['require_grounded_rag'] ?? false),
+            allowRagDegradation: (bool) ($data['allow_rag_degradation'] ?? false),
         );
     }
 
@@ -46,6 +50,8 @@ final readonly class AiContextPolicy
             'rag_max_chunks' => $this->ragMaxChunks,
             'rag_min_similarity' => $this->ragMinSimilarity,
             'allowed_context_types' => $this->allowedContextTypes,
+            'require_grounded_rag' => $this->requireGroundedRag,
+            'allow_rag_degradation' => $this->allowRagDegradation,
         ];
     }
 }
