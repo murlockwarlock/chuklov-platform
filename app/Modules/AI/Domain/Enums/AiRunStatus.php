@@ -4,6 +4,7 @@ namespace App\Modules\AI\Domain\Enums;
 
 enum AiRunStatus: string
 {
+    case Preparing = 'preparing';
     case Queued = 'queued';
     case Running = 'running';
     case Succeeded = 'succeeded';
@@ -26,6 +27,7 @@ enum AiRunStatus: string
     public function label(): string
     {
         return match ($this) {
+            self::Preparing => 'Подготавливается',
             self::Queued => 'В очереди',
             self::Running => 'Выполняется',
             self::Succeeded => 'Завершен успешно',

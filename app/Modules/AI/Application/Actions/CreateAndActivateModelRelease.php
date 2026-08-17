@@ -33,6 +33,12 @@ final class CreateAndActivateModelRelease
             'pricing_snapshot',
             'input_cost_per_million',
             'output_cost_per_million',
+            'cache_read_input_cost_per_million',
+            'cache_write_input_cost_per_million',
+            'reasoning_cost_per_million',
+            'fixed_request_cost_applicable',
+            'fixed_request_cost_minor_units',
+            'unsupported_meters',
             'failover_priority',
             'is_enabled',
         ];
@@ -60,13 +66,49 @@ final class CreateAndActivateModelRelease
             $pricing = isset($data['pricing_snapshot']) && is_array($data['pricing_snapshot'])
                 ? $data['pricing_snapshot']
                 : (array) $lockedConfig->pricing_snapshot;
-            if (array_key_exists('input_cost_per_million', $data) || array_key_exists('output_cost_per_million', $data)) {
+            if (array_intersect([
+                'input_cost_per_million',
+                'output_cost_per_million',
+                'cache_read_input_cost_per_million',
+                'cache_write_input_cost_per_million',
+                'reasoning_cost_per_million',
+                'fixed_request_cost_applicable',
+                'fixed_request_cost_minor_units',
+                'unsupported_meters',
+            ], array_keys($data)) !== []) {
+                $existingPricing = AiPricingSnapshot::fromArray($pricing);
                 $pricing = (new AiPricingSnapshot(
-                    currency: 'USD',
-                    inputCostPerMillionMinorUnits: max(0, (int) ($data['input_cost_per_million'] ?? 0)),
-                    outputCostPerMillionMinorUnits: max(0, (int) ($data['output_cost_per_million'] ?? 0)),
+                    currency: $existingPricing->currency,
+                    inputCostPerMillionMinorUnits: array_key_exists('input_cost_per_million', $data)
+                        ? max(0, (int) $data['input_cost_per_million'])
+                        : $existingPricing->inputCostPerMillionMinorUnits,
+                    outputCostPerMillionMinorUnits: array_key_exists('output_cost_per_million', $data)
+                        ? max(0, (int) $data['output_cost_per_million'])
+                        : $existingPricing->outputCostPerMillionMinorUnits,
+                    cacheReadInputCostPerMillionMinorUnits: array_key_exists('cache_read_input_cost_per_million', $data)
+                        ? self::optionalCost($data, 'cache_read_input_cost_per_million')
+                        : $existingPricing->cacheReadInputCostPerMillionMinorUnits,
+                    cacheWriteInputCostPerMillionMinorUnits: array_key_exists('cache_write_input_cost_per_million', $data)
+                        ? self::optionalCost($data, 'cache_write_input_cost_per_million')
+                        : $existingPricing->cacheWriteInputCostPerMillionMinorUnits,
+                    reasoningCostPerMillionMinorUnits: array_key_exists('reasoning_cost_per_million', $data)
+                        ? self::optionalCost($data, 'reasoning_cost_per_million')
+                        : $existingPricing->reasoningCostPerMillionMinorUnits,
+                    fixedRequestCostApplicable: array_key_exists('fixed_request_cost_applicable', $data)
+                        ? (bool) $data['fixed_request_cost_applicable']
+                        : $existingPricing->fixedRequestCostApplicable,
+                    fixedRequestCostMinorUnits: array_key_exists('fixed_request_cost_minor_units', $data)
+                        ? self::optionalCost($data, 'fixed_request_cost_minor_units')
+                        : $existingPricing->fixedRequestCostMinorUnits,
+                    unsupportedMeters: array_key_exists('unsupported_meters', $data)
+                        ? self::unsupportedMeters($data['unsupported_meters'])
+                        : $existingPricing->unsupportedMeters,
                 ))->toArray();
             }
+
+            $pricingSnapshot = AiPricingSnapshot::fromArray($pricing);
+            $pricingSnapshot->assertComplete();
+            $pricing = $pricingSnapshot->toArray();
 
             $modelName = (string) ($data['model_name'] ?? $lockedConfig->model_name);
             $capabilities = array_values(array_map('strval', (array) ($data['capabilities'] ?? $lockedConfig->capabilities ?? [])));
@@ -125,5 +167,24 @@ final class CreateAndActivateModelRelease
 
             return $release;
         });
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function optionalCost(array $data, string $key, ?int $default = null): ?int
+    {
+        return array_key_exists($key, $data) ? max(0, (int) $data[$key]) : $default;
+    }
+
+    /** @return list<string> */
+    private static function unsupportedMeters(mixed $value): array
+    {
+        $values = is_array($value)
+            ? $value
+            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
+
+        return array_values(array_unique(array_filter(
+            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
+            static fn (string $meter): bool => $meter !== '',
+        )));
     }
 }

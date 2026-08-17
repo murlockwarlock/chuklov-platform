@@ -39,8 +39,13 @@ final class CreateModelConfiguration
             currency: 'USD',
             inputCostPerMillionMinorUnits: max(0, (int) ($data['input_cost_per_million'] ?? 0)),
             outputCostPerMillionMinorUnits: max(0, (int) ($data['output_cost_per_million'] ?? 0)),
+            cacheReadInputCostPerMillionMinorUnits: self::optionalCost($data, 'cache_read_input_cost_per_million'),
+            cacheWriteInputCostPerMillionMinorUnits: self::optionalCost($data, 'cache_write_input_cost_per_million'),
+            reasoningCostPerMillionMinorUnits: self::optionalCost($data, 'reasoning_cost_per_million'),
+            fixedRequestCostApplicable: (bool) ($data['fixed_request_cost_applicable'] ?? false),
+            fixedRequestCostMinorUnits: self::optionalCost($data, 'fixed_request_cost_minor_units', 0),
+            unsupportedMeters: self::unsupportedMeters($data['unsupported_meters'] ?? []),
         );
-
         $model = AiModelConfiguration::create([
             'organization_id' => $organization->getKey(),
             'provider_config_id' => $provider->getKey(),
@@ -66,5 +71,24 @@ final class CreateModelConfiguration
         );
 
         return $model;
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function optionalCost(array $data, string $key, ?int $default = null): ?int
+    {
+        return array_key_exists($key, $data) ? max(0, (int) $data[$key]) : $default;
+    }
+
+    /** @return list<string> */
+    private static function unsupportedMeters(mixed $value): array
+    {
+        $values = is_array($value)
+            ? $value
+            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
+
+        return array_values(array_unique(array_filter(
+            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
+            static fn (string $meter): bool => $meter !== '',
+        )));
     }
 }

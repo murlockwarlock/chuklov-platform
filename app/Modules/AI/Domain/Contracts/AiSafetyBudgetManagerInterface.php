@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Domain\Contracts;
 
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 
 interface AiSafetyBudgetManagerInterface
@@ -24,4 +25,10 @@ interface AiSafetyBudgetManagerInterface
     public function releaseAttemptBudget(AiRunAttempt $attempt): void;
 
     public function chargeAttemptConservatively(AiRunAttempt $attempt): void;
+
+    public function settleRetrievalEmbeddingBudget(AiRun $run, int $settledMinorUnits): int;
+
+    public function releaseRetrievalEmbeddingBudget(AiRun $run): void;
+
+    public function chargeRetrievalEmbeddingConservatively(AiRun $run): void;
 }

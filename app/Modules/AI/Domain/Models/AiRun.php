@@ -46,6 +46,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property array<string, mixed> $token_usage
  * @property int|null $provider_cost_minor_units
  * @property int|null $settled_estimated_cost_minor_units
+ * @property int $retrieval_embedding_reserved_cost_minor_units
+ * @property CarbonInterface|null $retrieval_embedding_usage_date
+ * @property string $retrieval_embedding_budget_status
+ * @property int|null $retrieval_embedding_settled_cost_minor_units
+ * @property array<string, mixed>|null $retrieval_embedding_pricing_snapshot
  * @property string $cost_currency
  * @property int $latency_ms
  * @property int $attempt_count
@@ -96,6 +101,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'token_usage',
     'provider_cost_minor_units',
     'settled_estimated_cost_minor_units',
+    'retrieval_embedding_reserved_cost_minor_units',
+    'retrieval_embedding_usage_date',
+    'retrieval_embedding_budget_status',
+    'retrieval_embedding_settled_cost_minor_units',
+    'retrieval_embedding_pricing_snapshot',
     'cost_currency',
     'latency_ms',
     'attempt_count',
@@ -119,6 +129,8 @@ class AiRun extends Model
         'input_references' => '[]',
         'context_provenance' => '[]',
         'token_usage' => '[]',
+        'retrieval_embedding_budget_status' => 'none',
+        'retrieval_embedding_reserved_cost_minor_units' => 0,
         'structured_output_valid' => true,
         'cost_currency' => 'USD',
         'latency_ms' => 0,
@@ -218,6 +230,10 @@ class AiRun extends Model
             'input_references' => 'array',
             'context_provenance' => 'array',
             'token_usage' => 'array',
+            'retrieval_embedding_reserved_cost_minor_units' => 'integer',
+            'retrieval_embedding_usage_date' => 'date',
+            'retrieval_embedding_settled_cost_minor_units' => 'integer',
+            'retrieval_embedding_pricing_snapshot' => 'array',
             'structured_output_valid' => 'boolean',
             'worker_lease_expires_at' => 'datetime',
             'execution_deadline_at' => 'datetime',

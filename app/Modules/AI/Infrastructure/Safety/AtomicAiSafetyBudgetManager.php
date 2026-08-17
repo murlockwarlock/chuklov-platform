@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use Carbon\Carbon;
@@ -288,6 +289,117 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
                 'settled_estimated_cost_minor_units' => $reserved,
             ]);
         });
+    }
+
+    public function settleRetrievalEmbeddingBudget(AiRun $run, int $settledMinorUnits): int
+    {
+        return (int) DB::transaction(function () use ($run, $settledMinorUnits): int {
+            $lockedRun = $this->lockedRun($run);
+            if ($lockedRun === null || $lockedRun->retrieval_embedding_budget_status !== 'reserved') {
+                return 0;
+            }
+
+            $reserved = (int) $lockedRun->retrieval_embedding_reserved_cost_minor_units;
+            $usageDate = $lockedRun->retrieval_embedding_usage_date?->toDateString();
+            $budget = $usageDate === null ? null : DB::table('ai_organization_daily_budgets')
+                ->where('organization_id', $lockedRun->organization_id)
+                ->whereDate('usage_date', $usageDate)
+                ->lockForUpdate()
+                ->first();
+
+            $actual = max(0, $settledMinorUnits);
+            $anomaly = $actual > $reserved;
+            $charge = $actual;
+            if ($budget !== null) {
+                $maxDailyLimit = $this->dailyLimit((int) $lockedRun->organization_id);
+                $spent = (int) $budget->spent_minor_units;
+                $anomaly = $anomaly || $spent + $actual > $maxDailyLimit;
+                $charge = $anomaly ? max($reserved, $actual) : $actual;
+                $charge = min(max(0, $maxDailyLimit - $spent), $charge);
+                DB::table('ai_organization_daily_budgets')
+                    ->where('id', $budget->id)
+                    ->update([
+                        'spent_minor_units' => $spent + $charge,
+                        'reserved_minor_units' => max(0, (int) $budget->reserved_minor_units - $reserved),
+                        'updated_at' => Carbon::now(),
+                    ]);
+            }
+
+            $lockedRun->update([
+                'retrieval_embedding_budget_status' => $anomaly ? 'conservatively_charged' : 'settled',
+                'retrieval_embedding_settled_cost_minor_units' => $charge,
+            ]);
+
+            return $charge;
+        });
+    }
+
+    public function releaseRetrievalEmbeddingBudget(AiRun $run): void
+    {
+        DB::transaction(function () use ($run): void {
+            $lockedRun = $this->lockedRun($run);
+            if ($lockedRun === null || $lockedRun->retrieval_embedding_budget_status !== 'reserved') {
+                return;
+            }
+
+            $this->changeRetrievalReservation($lockedRun, charge: 0);
+            $lockedRun->update(['retrieval_embedding_budget_status' => 'released']);
+        });
+    }
+
+    public function chargeRetrievalEmbeddingConservatively(AiRun $run): void
+    {
+        DB::transaction(function () use ($run): void {
+            $lockedRun = $this->lockedRun($run);
+            if ($lockedRun === null || $lockedRun->retrieval_embedding_budget_status !== 'reserved') {
+                return;
+            }
+
+            $reserved = (int) $lockedRun->retrieval_embedding_reserved_cost_minor_units;
+            $this->changeRetrievalReservation($lockedRun, charge: $reserved);
+            $lockedRun->update([
+                'retrieval_embedding_budget_status' => 'conservatively_charged',
+                'retrieval_embedding_settled_cost_minor_units' => $reserved,
+            ]);
+        });
+    }
+
+    private function lockedRun(AiRun $run): ?AiRun
+    {
+        return AiRun::query()
+            ->where('organization_id', $run->organization_id)
+            ->whereKey($run->id)
+            ->lockForUpdate()
+            ->first();
+    }
+
+    private function changeRetrievalReservation(AiRun $run, int $charge): void
+    {
+        $reserved = (int) $run->retrieval_embedding_reserved_cost_minor_units;
+        $usageDate = $run->retrieval_embedding_usage_date?->toDateString();
+        if ($usageDate === null) {
+            return;
+        }
+
+        $budget = DB::table('ai_organization_daily_budgets')
+            ->where('organization_id', $run->organization_id)
+            ->whereDate('usage_date', $usageDate)
+            ->lockForUpdate()
+            ->first();
+        if ($budget === null) {
+            return;
+        }
+
+        $maxDailyLimit = $this->dailyLimit((int) $run->organization_id);
+        $spent = (int) $budget->spent_minor_units;
+        $actualCharge = min(max(0, $maxDailyLimit - $spent), max(0, $charge));
+        DB::table('ai_organization_daily_budgets')
+            ->where('id', $budget->id)
+            ->update([
+                'spent_minor_units' => $spent + $actualCharge,
+                'reserved_minor_units' => max(0, (int) $budget->reserved_minor_units - $reserved),
+                'updated_at' => Carbon::now(),
+            ]);
     }
 
     private function dailyLimit(int $organizationId): int

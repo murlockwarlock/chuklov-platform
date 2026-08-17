@@ -612,6 +612,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => (string) Str::uuid(),
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -661,6 +662,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => (string) Str::uuid(),
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -732,6 +734,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => (string) Str::uuid(),
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -830,6 +833,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => (string) Str::uuid(),
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -895,6 +899,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => (string) Str::uuid(),
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -944,6 +949,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => $tokenA,
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -988,6 +994,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => $tokenA,
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -1127,6 +1134,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => AiRunStatus::Running,
             'worker_lease_token' => $token,
             'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -1339,7 +1347,8 @@ class AiWorkflowEngineTest extends TestCase
             $this->assertStringContainsString('bounded input limit', $e->getMessage());
         }
 
-        $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+        $run = AiRun::query()->where('organization_id', $this->organization->id)->sole();
+        $this->assertSame(AiRunStatus::Failed, $run->status);
     }
 
     public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void
@@ -1388,7 +1397,8 @@ class AiWorkflowEngineTest extends TestCase
             $this->assertSame('context_limit', $e->reason);
         }
 
-        $this->assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+        $run = AiRun::query()->where('organization_id', $this->organization->id)->sole();
+        $this->assertSame(AiRunStatus::Failed, $run->status);
     }
 
     public function test_async_idempotency_returns_existing_run_without_duplicate_job(): void

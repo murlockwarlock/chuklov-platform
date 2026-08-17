@@ -14,6 +14,7 @@ use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -56,6 +57,33 @@ class ModelsRelationManager extends RelationManager
                     ->numeric()
                     ->default(60)
                     ->required(),
+                TextInput::make('cache_read_input_cost_per_million')
+                    ->label('Цена cache-read за 1M токенов')
+                    ->numeric()
+                    ->default(0)
+                    ->required(),
+                TextInput::make('cache_write_input_cost_per_million')
+                    ->label('Цена cache-write за 1M токенов')
+                    ->numeric()
+                    ->default(0)
+                    ->required(),
+                TextInput::make('reasoning_cost_per_million')
+                    ->label('Цена reasoning за 1M токенов')
+                    ->numeric()
+                    ->default(0)
+                    ->required(),
+                Toggle::make('fixed_request_cost_applicable')
+                    ->label('Есть фиксированная цена за запрос')
+                    ->default(false),
+                TextInput::make('fixed_request_cost_minor_units')
+                    ->label('Фиксированная цена запроса (minor units)')
+                    ->numeric()
+                    ->default(0)
+                    ->required(),
+                TextInput::make('unsupported_meters')
+                    ->label('Неподдерживаемые биллинговые метры')
+                    ->helperText('Перечислите через запятую: активация такой версии будет запрещена.')
+                    ->placeholder('например: image_input, provider_surcharge'),
                 CheckboxList::make('capabilities')
                     ->label('Поддерживаемые возможности AI')
                     ->options(collect(AiCapability::cases())->mapWithKeys(fn ($c) => [$c->value => $c->label()]))

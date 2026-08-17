@@ -8,6 +8,8 @@ use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\ContextAssemblyResult;
+use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -23,17 +25,21 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunToolCall;
+use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
+use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
@@ -41,6 +47,82 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Ai\Tools\Request;
 use Tests\TestCase;
+
+final class CountingInitialRagEmbeddingGenerator implements EmbeddingGenerator
+{
+    public function __construct(private readonly int $organizationId) {}
+
+    public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+    {
+        DB::table('audit_events')->insert([
+            'organization_id' => $this->organizationId,
+            'action' => 'test.initial_rag_embedding',
+            'target_type' => null,
+            'target_id' => null,
+            'metadata' => json_encode(['kind' => 'initial_rag_embedding'], JSON_THROW_ON_ERROR),
+            'occurred_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        return array_map(
+            static fn (): array => array_fill(0, $configuration->dimensions, 0.0),
+            $inputs,
+        );
+    }
+}
+
+final class CountingInitialRagRetriever implements KnowledgeRetriever
+{
+    public function __construct(private readonly EmbeddingGenerator $embeddings) {}
+
+    public function retrieve(User $actor, RetrievalQuery $query): array
+    {
+        return $this->retrieveForOrganization((int) $actor->organization_id, $query);
+    }
+
+    public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+    {
+        $this->embeddings->generate([$query->text], EmbeddingConfiguration::active());
+
+        return [];
+    }
+}
+
+final class CountingInitialRagContextAssembler implements AiContextAssemblerInterface
+{
+    public function __construct(
+        private readonly AiContextAssemblerInterface $delegate,
+        private readonly int $organizationId,
+    ) {}
+
+    public function assemble(
+        int $organizationId,
+        AiContextPolicy $policy,
+        array $inputVariables,
+        array $inputReferences,
+        ?User $actor = null,
+        ?CarbonInterface $executionDeadlineAt = null,
+    ): ContextAssemblyResult {
+        DB::table('audit_events')->insert([
+            'organization_id' => $this->organizationId,
+            'action' => 'test.initial_rag_context_preparation',
+            'target_type' => null,
+            'target_id' => null,
+            'metadata' => json_encode(['kind' => 'initial_rag_context_preparation'], JSON_THROW_ON_ERROR),
+            'occurred_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        return $this->delegate->assemble(
+            organizationId: $organizationId,
+            policy: $policy,
+            inputVariables: $inputVariables,
+            inputReferences: $inputReferences,
+            actor: $actor,
+            executionDeadlineAt: $executionDeadlineAt,
+        );
+    }
+}
 
 final class MilestoneTenConcurrencyTest extends TestCase
 {
@@ -86,7 +168,7 @@ final class MilestoneTenConcurrencyTest extends TestCase
         self::assertSame(80, (int) $budget->reserved_minor_units);
     }
 
-    public function test_concurrent_async_idempotency_creates_one_run_and_one_logical_queue_dispatch(): void
+    public function test_concurrent_async_idempotency_claims_before_initial_rag_and_dispatches_once(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped('Async idempotency concurrency requires PostgreSQL unique-violation semantics.');
@@ -108,7 +190,7 @@ final class MilestoneTenConcurrencyTest extends TestCase
             'status' => 'active',
             'system_prompt' => 'Use the versioned concurrent test instructions.',
             'user_prompt_template' => '{{query}}',
-            'context_policy' => [],
+            'context_policy' => ['include_rag' => true],
             'allowed_tools' => [],
             'activated_at' => Carbon::now(),
         ]);
@@ -127,6 +209,18 @@ final class MilestoneTenConcurrencyTest extends TestCase
         self::assertCount(1, array_filter($results, static fn (array $result): bool => $result['queued_jobs'] === 1));
         self::assertCount(1, array_filter($results, static fn (array $result): bool => $result['queued_jobs'] === 0));
         self::assertSame($results[0]['run_id'], $results[1]['run_id']);
+
+        $run = AiRun::query()->where('organization_id', $organization->id)->where('idempotency_key', $key)->sole();
+        self::assertSame(AiRunStatus::Queued, $run->status);
+        self::assertNotNull($run->payload()->first());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'test.initial_rag_embedding')
+            ->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'test.initial_rag_context_preparation')
+            ->count());
     }
 
     public function test_concurrent_release_activation_serializes_release_numbers_and_active_state(): void
@@ -339,11 +433,27 @@ final class MilestoneTenConcurrencyTest extends TestCase
         Queue::fake();
         $organization = Organization::query()->findOrFail($organizationId);
         config()->set('tenancy.default_organization_id', $organizationId);
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
         app(OrganizationContext::class)->set($organization);
+        $embeddingGenerator = new CountingInitialRagEmbeddingGenerator($organizationId);
+        app()->instance(EmbeddingGenerator::class, $embeddingGenerator);
+        app()->instance(KnowledgeRetriever::class, new CountingInitialRagRetriever($embeddingGenerator));
+        app()->instance(
+            AiContextAssemblerInterface::class,
+            new CountingInitialRagContextAssembler(app(AiContextAssemblerInterface::class), $organizationId),
+        );
         $user = User::query()->findOrFail($userId);
         $run = app(DispatchAsyncAiRun::class)->handle($user, new AiRunRequest(
             capability: AiCapability::ClientCompanion,
             workflowKey: 'concurrent_async_idempotency',
+            inputVariables: ['query' => 'concurrent retrieval'],
             idempotencyKey: $idempotencyKey,
         ));
 

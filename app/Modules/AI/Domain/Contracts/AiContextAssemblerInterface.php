@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
+use Carbon\CarbonInterface;
 
 interface AiContextAssemblerInterface
 {
@@ -19,5 +20,6 @@ interface AiContextAssemblerInterface
         array $inputVariables,
         array $inputReferences,
         ?User $actor = null,
+        ?CarbonInterface $executionDeadlineAt = null,
     ): ContextAssemblyResult;
 }

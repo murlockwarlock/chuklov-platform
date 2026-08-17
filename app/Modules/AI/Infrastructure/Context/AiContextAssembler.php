@@ -11,9 +11,12 @@ use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
 
@@ -31,6 +34,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
         array $inputVariables,
         array $inputReferences,
         ?User $actor = null,
+        ?CarbonInterface $executionDeadlineAt = null,
     ): ContextAssemblyResult {
         $variables = $inputVariables;
         $ragChunks = [];
@@ -40,6 +44,11 @@ class AiContextAssembler implements AiContextAssemblerInterface
             'sessions_count' => 0,
             'rag_chunks_count' => 0,
             'rag_degraded' => false,
+            'retrieval_embedding' => [
+                'initial_query_count' => 0,
+                'initial_query_characters' => 0,
+                'estimated_cost_minor_units' => 0,
+            ],
         ];
 
         $clientId = null;
@@ -126,13 +135,39 @@ class AiContextAssembler implements AiContextAssemblerInterface
                 throw new InvalidArgumentException('RAG context is not allowed by the context policy.');
             }
 
-            $query = (string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? '');
+            $query = AiRuntimeLimits::ragQuery($inputVariables);
             if ($query !== '') {
                 try {
+                    $executionTimeoutSeconds = null;
+                    $embeddingCost = 0;
+                    if ($executionDeadlineAt !== null) {
+                        $executionTimeoutSeconds = min(
+                            AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS,
+                            AiRuntimeLimits::remainingExecutionSeconds($executionDeadlineAt),
+                        );
+                        if ($executionTimeoutSeconds < 1) {
+                            throw new AiRagRetrievalException(
+                                'AI execution deadline expired before knowledge retrieval.',
+                                reason: 'timeout',
+                            );
+                        }
+
+                        $embeddingPricing = EmbeddingPricingPolicy::active();
+                        $embeddingPricing->assertCompatible(EmbeddingConfiguration::active());
+                        $embeddingCost = $embeddingPricing->estimateCostForQuery($query);
+                        $provenanceSummary['retrieval_embedding'] = [
+                            'initial_query_count' => 1,
+                            'initial_query_characters' => mb_strlen($query),
+                            'estimated_cost_minor_units' => $embeddingCost,
+                        ];
+                    }
+
                     $retrievalQuery = new RetrievalQuery(
                         text: $query,
                         topK: min(20, max(1, $policy->ragMaxChunks)),
                         sourceIds: $policy->ragKnowledgeSourceIds,
+                        executionDeadlineAt: $executionDeadlineAt,
+                        executionTimeoutSeconds: $executionTimeoutSeconds,
                     );
                     $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
 

@@ -10,6 +10,10 @@ use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Contracts\Tool;
@@ -55,6 +59,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
             'query' => $schema
                 ->string()
                 ->description('Поисковый запрос по материалам базы знаний.')
+                ->max(AiRuntimeLimits::PLATFORM_MAX_RAG_QUERY_CHARACTERS)
                 ->required(),
             'max_results' => $schema
                 ->integer()
@@ -71,12 +76,32 @@ class SearchKnowledgeBaseSdkTool implements Tool
         $arguments = $request->all();
         $call = $this->claimProvenance($arguments);
         $startTime = hrtime(true);
+        $effectiveArguments = $arguments;
+        $retrievalPerformed = false;
 
         try {
             $effectiveArguments = $this->applyPolicy($arguments);
+            $retrievalPerformed = ! $this->isEmptySourceIntersection($arguments)
+                && trim((string) ($effectiveArguments['query'] ?? '')) !== '';
+            $executionDeadlineAt = $this->authoritativeExecutionDeadline();
+            $executionTimeoutSeconds = min(
+                AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS,
+                AiRuntimeLimits::remainingExecutionSeconds($executionDeadlineAt),
+            );
+            if ($executionTimeoutSeconds < 1) {
+                throw new AiRagRetrievalException(
+                    'Knowledge retrieval reached the whole-run execution deadline.',
+                    reason: 'timeout',
+                );
+            }
             $result = $this->isEmptySourceIntersection($arguments)
                 ? ['results' => [], 'count' => 0]
-                : $this->domainTool->execute($this->executionContext->organizationId, $effectiveArguments);
+                : $this->domainTool->execute(
+                    organizationId: $this->executionContext->organizationId,
+                    input: $effectiveArguments,
+                    executionDeadlineAt: $executionDeadlineAt,
+                    executionTimeoutSeconds: $executionTimeoutSeconds,
+                );
             if ((hrtime(true) - $startTime) > AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS * 1_000_000_000) {
                 throw new AiRagRetrievalException(
                     'Knowledge retrieval exceeded the bounded tool execution time.',
@@ -95,7 +120,14 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 );
             }
 
-            if (! $this->finalizeProvenance($call, 'succeeded', $latencyMs, null, $result)) {
+            if (! $this->finalizeProvenance(
+                call: $call,
+                status: 'succeeded',
+                latencyMs: $latencyMs,
+                sanitizedError: null,
+                result: $result,
+                retrievalQuery: $retrievalPerformed ? (string) ($effectiveArguments['query'] ?? '') : null,
+            )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool provenance finalization.');
             }
 
@@ -108,7 +140,13 @@ class SearchKnowledgeBaseSdkTool implements Tool
             $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
             $sanitized = AiErrorSanitizer::sanitize($e);
 
-            if (! $this->finalizeProvenance($call, 'failed', $latencyMs, $sanitized['message'])) {
+            if (! $this->finalizeProvenance(
+                call: $call,
+                status: 'failed',
+                latencyMs: $latencyMs,
+                sanitizedError: $sanitized['message'],
+                retrievalQuery: isset($effectiveArguments['query']) ? (string) $effectiveArguments['query'] : null,
+            )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool failure provenance finalization.');
             }
 
@@ -117,7 +155,13 @@ class SearchKnowledgeBaseSdkTool implements Tool
             $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
             $sanitized = AiErrorSanitizer::sanitize($e);
 
-            if (! $this->finalizeProvenance($call, 'failed', $latencyMs, $sanitized['message'])) {
+            if (! $this->finalizeProvenance(
+                call: $call,
+                status: 'failed',
+                latencyMs: $latencyMs,
+                sanitizedError: $sanitized['message'],
+                retrievalQuery: isset($effectiveArguments['query']) ? (string) $effectiveArguments['query'] : null,
+            )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool failure provenance finalization.');
             }
 
@@ -230,7 +274,9 @@ class SearchKnowledgeBaseSdkTool implements Tool
 
             if ($run === null
                 || $run->status !== 'running'
-                || $run->worker_lease_token !== $this->executionContext->workerLeaseToken) {
+                || $run->worker_lease_token !== $this->executionContext->workerLeaseToken
+                || $run->execution_deadline_at === null
+                || now()->greaterThanOrEqualTo($run->execution_deadline_at)) {
                 throw new AiToolExecutionFencedException('Worker lease is no longer valid for tool execution.');
             }
 
@@ -256,6 +302,24 @@ class SearchKnowledgeBaseSdkTool implements Tool
         });
     }
 
+    private function authoritativeExecutionDeadline(): CarbonInterface
+    {
+        $deadline = DB::table('ai_runs')
+            ->where('organization_id', $this->executionContext->organizationId)
+            ->where('id', $this->executionContext->aiRunId)
+            ->value('execution_deadline_at');
+
+        if ($deadline instanceof CarbonInterface) {
+            return $deadline;
+        }
+
+        if (! is_string($deadline) || trim($deadline) === '') {
+            throw new AiToolExecutionFencedException('AI run has no immutable execution deadline.');
+        }
+
+        return Carbon::parse($deadline);
+    }
+
     /**
      * @param  array<string, mixed>|null  $result
      */
@@ -265,8 +329,9 @@ class SearchKnowledgeBaseSdkTool implements Tool
         int $latencyMs,
         ?string $sanitizedError,
         ?array $result = null,
+        ?string $retrievalQuery = null,
     ): bool {
-        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError, $result): bool {
+        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError, $result, $retrievalQuery): bool {
             $run = DB::table('ai_runs')
                 ->where('organization_id', $this->executionContext->organizationId)
                 ->where('id', $this->executionContext->aiRunId)
@@ -275,7 +340,9 @@ class SearchKnowledgeBaseSdkTool implements Tool
 
             if ($run === null
                 || $run->status !== 'running'
-                || $run->worker_lease_token !== $this->executionContext->workerLeaseToken) {
+                || $run->worker_lease_token !== $this->executionContext->workerLeaseToken
+                || $run->execution_deadline_at === null
+                || now()->greaterThanOrEqualTo($run->execution_deadline_at)) {
                 return false;
             }
 
@@ -291,8 +358,34 @@ class SearchKnowledgeBaseSdkTool implements Tool
                     'updated_at' => now(),
                 ]) === 1;
 
-            if (! $updated || $status !== 'succeeded' || ! is_array($result)) {
+            if (! $updated) {
                 return $updated;
+            }
+
+            if ($retrievalQuery !== null) {
+                $provenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
+                $embedding = is_array($provenance['retrieval_embedding'] ?? null)
+                    ? $provenance['retrieval_embedding']
+                    : [];
+                if ($status === 'succeeded') {
+                    $pricing = EmbeddingPricingPolicy::active();
+                    $pricing->assertCompatible(EmbeddingConfiguration::active());
+                    $embedding['tool_query_count'] = (int) ($embedding['tool_query_count'] ?? 0) + 1;
+                    $embedding['tool_query_characters'] = (int) ($embedding['tool_query_characters'] ?? 0) + mb_strlen($retrievalQuery);
+                    $embedding['estimated_cost_minor_units'] = (int) ($embedding['estimated_cost_minor_units'] ?? 0)
+                        + $pricing->estimateCostForQuery($retrievalQuery);
+                } else {
+                    $embedding['requires_conservative_settlement'] = true;
+                }
+                $provenance['retrieval_embedding'] = $embedding;
+                DB::table('ai_runs')
+                    ->where('organization_id', $this->executionContext->organizationId)
+                    ->where('id', $this->executionContext->aiRunId)
+                    ->update(['context_provenance' => json_encode($provenance), 'updated_at' => now()]);
+            }
+
+            if ($status !== 'succeeded' || ! is_array($result)) {
+                return true;
             }
 
             $nextReferenceIndex = (int) (AiRunRagReference::query()

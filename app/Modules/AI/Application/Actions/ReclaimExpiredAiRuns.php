@@ -26,7 +26,7 @@ final class ReclaimExpiredAiRuns
 
         $claims = DB::transaction(function () use ($batchSize, $now): array {
             $query = AiRun::query()
-                ->whereIn('status', [AiRunStatus::Queued, AiRunStatus::Running])
+                ->whereIn('status', [AiRunStatus::Preparing, AiRunStatus::Queued, AiRunStatus::Running])
                 ->whereNotNull('worker_lease_expires_at')
                 ->where('worker_lease_expires_at', '<=', $now)
                 ->orderBy('id')
@@ -43,7 +43,7 @@ final class ReclaimExpiredAiRuns
                     $deadline = $now->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
                 }
 
-                if ($deadline->isPast()) {
+                if (! AiRuntimeLimits::deadlineIsActive($deadline)) {
                     $this->reconciler->handle($run, 'Whole-run execution deadline expired and was reconciled.');
                     $run->update([
                         'status' => AiRunStatus::TimedOut,
@@ -51,6 +51,19 @@ final class ReclaimExpiredAiRuns
                         'worker_lease_expires_at' => $now,
                         'finished_at' => $now,
                         'error_message_sanitized' => 'Whole-run execution deadline expired.',
+                    ]);
+
+                    continue;
+                }
+
+                if ($run->status === AiRunStatus::Preparing) {
+                    $this->reconciler->handle($run, 'Preparation lease expired before a complete executable payload was established.');
+                    $run->update([
+                        'status' => AiRunStatus::Failed,
+                        'execution_deadline_at' => $deadline,
+                        'worker_lease_expires_at' => $now,
+                        'finished_at' => $now,
+                        'error_message_sanitized' => 'AI run preparation lease expired.',
                     ]);
 
                     continue;

@@ -42,7 +42,12 @@ class ProcessAiRunJob implements ShouldQueue
                 ->lockForUpdate()
                 ->first();
 
-            if ($run === null || $run->status->isTerminal()) {
+            if ($run === null || $run->status->isTerminal() || $run->status === AiRunStatus::Preparing) {
+                return ['claimed' => false, 'expired' => false];
+            }
+
+            if ($run->status !== AiRunStatus::Queued
+                && $run->status !== AiRunStatus::Running) {
                 return ['claimed' => false, 'expired' => false];
             }
 
@@ -52,13 +57,13 @@ class ProcessAiRunJob implements ShouldQueue
                 return ['claimed' => false, 'expired' => false];
             }
 
-            $deadline = $run->execution_deadline_at ?? $run->created_at?->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+            $deadline = $run->execution_deadline_at
+                ?? $run->created_at?->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
             if ($deadline === null) {
                 $deadline = Carbon::now()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
-                $run->execution_deadline_at = $deadline;
             }
 
-            if ($deadline->isPast()) {
+            if (! AiRuntimeLimits::deadlineIsActive($deadline)) {
                 $reconciler->handle($run, 'Whole-run execution deadline expired and was reconciled.');
                 $run->update([
                     'status' => AiRunStatus::TimedOut,

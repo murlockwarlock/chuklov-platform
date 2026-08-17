@@ -17,6 +17,8 @@ final class ReconcileExpiredAiRun
 
     public function handle(AiRun $run, string $reason): void
     {
+        $this->budgetManager->chargeRetrievalEmbeddingConservatively($run);
+
         $attempts = AiRunAttempt::query()
             ->where('organization_id', $run->organization_id)
             ->where('ai_run_id', $run->id)

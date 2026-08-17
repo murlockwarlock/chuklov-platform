@@ -3,6 +3,7 @@
 namespace App\Modules\AI\Domain\Services;
 
 use App\Modules\AI\Domain\Registry\AiCapabilityDefinition;
+use Carbon\CarbonInterface;
 use InvalidArgumentException;
 
 final class AiRuntimeLimits
@@ -34,6 +35,8 @@ final class AiRuntimeLimits
     public const int PLATFORM_MAX_TOOL_RESULT_TOKENS = 1024;
 
     public const int PLATFORM_MAX_RAG_CHUNKS = 20;
+
+    public const int PLATFORM_MAX_RAG_QUERY_CHARACTERS = 4000;
 
     public const int PLATFORM_MAX_CONTEXT_SESSIONS = 20;
 
@@ -144,13 +147,31 @@ final class AiRuntimeLimits
         ));
     }
 
+    public static function remainingExecutionSeconds(CarbonInterface $executionDeadlineAt): int
+    {
+        $remainingMicroseconds = $executionDeadlineAt->getPreciseTimestamp(6) - now()->getPreciseTimestamp(6);
+
+        return max(0, (int) floor($remainingMicroseconds / 1_000_000));
+    }
+
+    public static function deadlineIsActive(CarbonInterface $executionDeadlineAt): bool
+    {
+        return $executionDeadlineAt->getPreciseTimestamp(6) > now()->getPreciseTimestamp(6);
+    }
+
+    /** @param array<string, mixed> $inputVariables */
+    public static function ragQuery(array $inputVariables): string
+    {
+        return trim((string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? ''));
+    }
+
     public static function providerSteps(int $maxToolCalls): int
     {
         return min(self::PLATFORM_MAX_PROVIDER_STEPS, max(1, $maxToolCalls + 1));
     }
 
     /**
-     * @return array{input_tokens: int, output_tokens: int, total_tokens: int}
+     * @return array{input_tokens: int, output_tokens: int, cache_read_input_tokens: int, cache_write_input_tokens: int, reasoning_tokens: int, provider_requests: int, total_tokens: int}
      */
     public static function worstCaseProviderExposure(
         int $maxInputTokens,
@@ -179,10 +200,19 @@ final class AiRuntimeLimits
             + ($boundedToolCalls * self::PLATFORM_MAX_TOOL_RESULT_TOKENS * $steps)
             + ($boundedToolSchemaTokens * $steps);
         $outputTokens = $boundedOutputTokens * $steps;
+        $retrievalSafeInputTokens = $inputTokens + $outputTokens;
+        $reasoningTokens = $outputTokens;
+        $cacheReadInputTokens = $retrievalSafeInputTokens;
+        $cacheWriteInputTokens = $retrievalSafeInputTokens;
+        $providerRequests = $steps;
 
         return [
             'input_tokens' => $inputTokens,
             'output_tokens' => $outputTokens,
+            'cache_read_input_tokens' => $cacheReadInputTokens,
+            'cache_write_input_tokens' => $cacheWriteInputTokens,
+            'reasoning_tokens' => $reasoningTokens,
+            'provider_requests' => $providerRequests,
             'total_tokens' => $inputTokens + $outputTokens,
         ];
     }

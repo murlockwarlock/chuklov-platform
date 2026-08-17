@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
 
@@ -39,6 +40,7 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 'query' => [
                     'type' => 'string',
                     'description' => 'Поисковый запрос по материалам базы знаний.',
+                    'maxLength' => AiRuntimeLimits::PLATFORM_MAX_RAG_QUERY_CHARACTERS,
                 ],
                 'max_results' => [
                     'type' => 'integer',
@@ -55,8 +57,12 @@ class SearchKnowledgeBaseTool implements AiToolInterface
         ];
     }
 
-    public function execute(int $organizationId, array $input): array
-    {
+    public function execute(
+        int $organizationId,
+        array $input,
+        ?CarbonInterface $executionDeadlineAt = null,
+        ?int $executionTimeoutSeconds = null,
+    ): array {
         $query = trim((string) ($input['query'] ?? ''));
         if ($query === '') {
             return ['results' => [], 'count' => 0];
@@ -72,6 +78,8 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 text: $query,
                 topK: $limit,
                 sourceIds: $sourceIds,
+                executionDeadlineAt: $executionDeadlineAt,
+                executionTimeoutSeconds: $executionTimeoutSeconds,
             );
             $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
         } catch (AuthorizationException $e) {
@@ -81,12 +89,17 @@ class SearchKnowledgeBaseTool implements AiToolInterface
         } catch (AiRagRetrievalException $e) {
             throw $e;
         } catch (\RuntimeException $e) {
-            $reason = str_contains(strtolower($e->getMessage()), 'incompatible')
+            $message = strtolower($e->getMessage());
+            $reason = str_contains($message, 'incompatible')
                 ? 'configuration'
-                : 'infrastructure';
+                : (str_contains($message, 'deadline') || str_contains($message, 'timeout')
+                    ? 'timeout'
+                    : 'infrastructure');
             $message = $reason === 'configuration'
                 ? 'Knowledge retrieval configuration is invalid.'
-                : 'Knowledge retrieval infrastructure is unavailable.';
+                : ($reason === 'timeout'
+                    ? 'Knowledge retrieval exceeded its bounded execution time.'
+                    : 'Knowledge retrieval infrastructure is unavailable.');
 
             throw new AiRagRetrievalException($message, reason: $reason, previous: $e);
         } catch (\Throwable $e) {

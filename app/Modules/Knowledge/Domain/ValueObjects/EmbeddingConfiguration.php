@@ -6,6 +6,12 @@ use InvalidArgumentException;
 
 final readonly class EmbeddingConfiguration
 {
+    public const int MAX_QUERY_CHARACTERS = 4000;
+
+    public const int MAX_QUERY_BYTES = self::MAX_QUERY_CHARACTERS * 4;
+
+    public const int MAX_RUNTIME_TIMEOUT_SECONDS = 30;
+
     public function __construct(
         public string $provider,
         public string $model,
@@ -32,5 +38,16 @@ final readonly class EmbeddingConfiguration
     public function key(): string
     {
         return hash('sha256', implode('|', [$this->provider, $this->model, $this->dimensions, $this->version]));
+    }
+
+    public function withTimeoutSeconds(int $timeoutSeconds): self
+    {
+        return new self(
+            provider: $this->provider,
+            model: $this->model,
+            dimensions: $this->dimensions,
+            version: $this->version,
+            timeoutSeconds: $timeoutSeconds,
+        );
     }
 }
