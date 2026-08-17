@@ -537,6 +537,15 @@ final class MilestoneTenConcurrencyTest extends TestCase
 
     private static function executeConcurrentEmptyKnowledgeTool(int $organizationId, int $runId, string $workerLeaseToken, string $query): int
     {
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
+
         $retriever = new class implements KnowledgeRetriever
         {
             public function retrieve(User $actor, RetrievalQuery $query): array

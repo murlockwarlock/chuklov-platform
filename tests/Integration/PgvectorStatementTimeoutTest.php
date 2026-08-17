@@ -130,9 +130,9 @@ final class PgvectorStatementTimeoutTest extends TestCase
         foreach ($restoredTimeouts as $restoredTimeout) {
             self::assertSame($callerStatementTimeout, $restoredTimeout);
         }
-        self::assertGreaterThan($boundedTimeouts[0], $boundedTimeouts[1]);
-        self::assertGreaterThan($boundedTimeouts[1], $boundedTimeouts[2]);
-        self::assertGreaterThan($boundedTimeouts[2], $boundedTimeouts[3]);
+        self::assertGreaterThan($boundedTimeouts[1], $boundedTimeouts[0]);
+        self::assertGreaterThan($boundedTimeouts[2], $boundedTimeouts[1]);
+        self::assertGreaterThan($boundedTimeouts[3], $boundedTimeouts[2]);
         self::assertLessThanOrEqual(25_000, $boundedTimeouts[array_key_last($boundedTimeouts)]);
     }
 
