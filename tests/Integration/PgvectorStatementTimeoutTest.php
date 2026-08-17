@@ -67,12 +67,28 @@ final class PgvectorStatementTimeoutTest extends TestCase
         ]);
 
         $startedAt = Carbon::now();
-        $timeouts = [];
+        $boundedTimeouts = [];
+        $restoredTimeouts = [];
+        $expectingBoundedTimeout = true;
+        $callerStatementTimeout = (string) DB::scalar("select current_setting('statement_timeout')");
         $metadataQueries = 0;
-        DB::listen(static function (QueryExecuted $event) use (&$timeouts, &$metadataQueries, $startedAt): void {
+        DB::listen(static function (QueryExecuted $event) use (
+            &$boundedTimeouts,
+            &$restoredTimeouts,
+            &$expectingBoundedTimeout,
+            &$metadataQueries,
+            $startedAt,
+        ): void {
             $sql = strtolower($event->sql);
             if (str_contains($sql, "set_config('statement_timeout'")) {
-                $timeouts[] = (int) ($event->bindings[0] ?? 0);
+                $timeout = (string) ($event->bindings[0] ?? '');
+                if ($expectingBoundedTimeout) {
+                    $boundedTimeouts[] = (int) $timeout;
+                    $expectingBoundedTimeout = false;
+                } else {
+                    $restoredTimeouts[] = $timeout;
+                    $expectingBoundedTimeout = true;
+                }
             }
 
             if (str_contains($sql, 'knowledge_sources')
@@ -103,15 +119,20 @@ final class PgvectorStatementTimeoutTest extends TestCase
         }
 
         self::assertSame(3, $metadataQueries);
-        self::assertGreaterThanOrEqual(4, count($timeouts));
-        foreach ($timeouts as $timeoutMilliseconds) {
+        self::assertGreaterThanOrEqual(4, count($boundedTimeouts));
+        self::assertCount(count($boundedTimeouts), $restoredTimeouts);
+        self::assertTrue($expectingBoundedTimeout);
+        foreach ($boundedTimeouts as $timeoutMilliseconds) {
             self::assertGreaterThan(0, $timeoutMilliseconds);
             self::assertLessThanOrEqual(30_000, $timeoutMilliseconds);
         }
-        self::assertGreaterThan($timeouts[0], $timeouts[1]);
-        self::assertGreaterThan($timeouts[1], $timeouts[2]);
-        self::assertGreaterThan($timeouts[2], $timeouts[3]);
-        self::assertLessThanOrEqual(25_000, $timeouts[array_key_last($timeouts)]);
+        foreach ($restoredTimeouts as $restoredTimeout) {
+            self::assertSame($callerStatementTimeout, $restoredTimeout);
+        }
+        self::assertGreaterThan($boundedTimeouts[0], $boundedTimeouts[1]);
+        self::assertGreaterThan($boundedTimeouts[1], $boundedTimeouts[2]);
+        self::assertGreaterThan($boundedTimeouts[2], $boundedTimeouts[3]);
+        self::assertLessThanOrEqual(25_000, $boundedTimeouts[array_key_last($boundedTimeouts)]);
     }
 
     public function test_bounded_pgvector_retrieval_restores_outer_transaction_statement_timeout(): void
