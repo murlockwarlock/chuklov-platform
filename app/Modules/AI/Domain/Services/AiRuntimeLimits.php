@@ -20,6 +20,8 @@ final class AiRuntimeLimits
 
     public const int PLATFORM_MAX_FAILOVER_ATTEMPTS = 3;
 
+    public const int PLATFORM_MAX_MODEL_CONFIGURATION_SCAN = 100;
+
     public const int PLATFORM_MAX_RUNS_PER_MINUTE = 60;
 
     public const int PLATFORM_MAX_TIMEOUT_SECONDS = 120;

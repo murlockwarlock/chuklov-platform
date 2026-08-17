@@ -456,11 +456,15 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->with(['providerConfiguration.credential', 'activeRelease'])
                 ->orderBy('failover_priority', 'asc')
                 ->orderBy('id', 'asc')
-                ->limit($maxAttempts)
+                ->limit(AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN)
                 ->get();
         }
 
         foreach ($modelConfigs as $config) {
+            if (count($candidates) >= $maxAttempts) {
+                break;
+            }
+
             $release = $run->model_release_id !== null
                 ? ($exactRelease ?? null)
                 : $config->activeRelease;

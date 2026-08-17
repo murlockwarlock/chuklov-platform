@@ -564,9 +564,51 @@ class AiWorkflowEngineTest extends TestCase
         self::assertTrue($result->isSuccess());
         self::assertNotEmpty($candidateQueries);
         self::assertStringContainsString(
-            'limit '.AiRuntimeLimits::PLATFORM_MAX_FAILOVER_ATTEMPTS,
+            'limit '.AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN,
             strtolower($candidateQueries[0]->sql),
         );
+    }
+
+    public function test_invalid_scanned_candidates_do_not_hide_a_later_executable_candidate(): void
+    {
+        DynamicWorkflowAgent::fake(['Later valid candidate response']);
+
+        foreach ([
+            ['openai', 'invalid-model-1', 1],
+            ['anthropic', 'invalid-model-2', 2],
+            ['groq', 'invalid-model-3', 3],
+        ] as [$providerName, $modelName, $priority]) {
+            $model = $this->setupConfiguredModel(
+                capability: AiCapability::ClinicalDocumentExtraction,
+                providerName: $providerName,
+                modelName: $modelName,
+                priority: $priority,
+            );
+
+            AiProviderConfiguration::query()
+                ->whereKey($model->provider_config_id)
+                ->update(['options' => ['unsupported_execution_option' => true]]);
+        }
+
+        $this->setupConfiguredModel(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            providerName: 'deepseek',
+            modelName: 'valid-model-4',
+            priority: 4,
+        );
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'bounded_candidate_scan_skips_invalid_rows',
+            inputVariables: ['document_text' => 'Synthetic document'],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertSame('deepseek', $run->actual_provider);
+        self::assertSame('valid-model-4', $run->actual_model);
     }
 
     public function test_real_actor_overrides_spoofed_initiator_for_sync_and_async_runs(): void
