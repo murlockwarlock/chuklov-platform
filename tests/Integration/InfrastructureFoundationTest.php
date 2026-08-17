@@ -26,13 +26,21 @@ class InfrastructureFoundationTest extends TestCase
     public function test_redis_and_queue_worker_process_a_safe_payload(): void
     {
         $probeId = (string) Str::uuid();
+        $queue = 'foundation-probe';
+        config()->set([
+            'cache.default' => 'redis',
+            'queue.default' => 'redis',
+        ]);
+
         Redis::set("integration:{$probeId}", 'ok', 'EX', 60);
         self::assertSame('ok', Redis::get("integration:{$probeId}"));
 
-        RecordFoundationProbe::dispatch($probeId);
-        Artisan::call('queue:work', ['connection' => 'redis', '--once' => true, '--queue' => 'default']);
+        RecordFoundationProbe::dispatch($probeId)
+            ->onConnection('redis')
+            ->onQueue($queue);
+        self::assertSame(0, Artisan::call('queue:work', ['connection' => 'redis', '--once' => true, '--queue' => $queue]));
 
-        self::assertTrue(Cache::get("foundation-probe:{$probeId}"));
+        self::assertTrue(Cache::store('redis')->get("foundation-probe:{$probeId}"));
     }
 
     public function test_health_endpoint_verifies_foundation_dependencies(): void

@@ -8,10 +8,10 @@ use Throwable;
 class AiRagRetrievalException extends RuntimeException
 {
     public function __construct(
-        string $message,
+        public readonly string $errorMessage,
         public readonly string $reason = 'infrastructure',
         ?Throwable $previous = null,
     ) {
-        parent::__construct($message, 0, $previous);
+        parent::__construct($errorMessage, 0, $previous);
     }
 }

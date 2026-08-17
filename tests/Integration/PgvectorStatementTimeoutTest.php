@@ -101,6 +101,7 @@ final class PgvectorStatementTimeoutTest extends TestCase
 
         $embedding->startedAt = $startedAt;
         $embedding->advanceClock = true;
+        Carbon::setTestNow($startedAt);
 
         try {
             app(KnowledgeRetriever::class)->retrieve(
