@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingPricingPolicy;
 use Carbon\Carbon;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Support\Facades\DB;
@@ -74,8 +75,12 @@ class SearchKnowledgeBaseSdkTool implements Tool
     public function handle(Request $request): Stringable|string
     {
         $arguments = $request->all();
-        $call = $this->claimProvenance($arguments);
         $startTime = hrtime(true);
+        $toolStartedAt = CarbonImmutable::now();
+        $runDeadline = CarbonImmutable::instance($this->authoritativeExecutionDeadline());
+        $toolWindowDeadline = $toolStartedAt->addSeconds(AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS);
+        $toolDeadline = $runDeadline->lessThan($toolWindowDeadline) ? $runDeadline : $toolWindowDeadline;
+        $call = $this->claimProvenance($arguments, $toolDeadline);
         $effectiveArguments = $arguments;
         $retrievalPerformed = false;
 
@@ -83,14 +88,13 @@ class SearchKnowledgeBaseSdkTool implements Tool
             $effectiveArguments = $this->applyPolicy($arguments);
             $retrievalPerformed = ! $this->isEmptySourceIntersection($arguments)
                 && trim((string) ($effectiveArguments['query'] ?? '')) !== '';
-            $executionDeadlineAt = $this->authoritativeExecutionDeadline();
             $executionTimeoutSeconds = min(
                 AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS,
-                AiRuntimeLimits::remainingExecutionSeconds($executionDeadlineAt),
+                AiRuntimeLimits::remainingExecutionSeconds($toolDeadline),
             );
             if ($executionTimeoutSeconds < 1) {
                 throw new AiRagRetrievalException(
-                    'Knowledge retrieval reached the whole-run execution deadline.',
+                    'Knowledge retrieval reached its bounded tool execution deadline.',
                     reason: 'timeout',
                 );
             }
@@ -99,10 +103,10 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 : $this->domainTool->execute(
                     organizationId: $this->executionContext->organizationId,
                     input: $effectiveArguments,
-                    executionDeadlineAt: $executionDeadlineAt,
+                    executionDeadlineAt: $toolDeadline,
                     executionTimeoutSeconds: $executionTimeoutSeconds,
                 );
-            if ((hrtime(true) - $startTime) > AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS * 1_000_000_000) {
+            if (! AiRuntimeLimits::deadlineIsActive($toolDeadline)) {
                 throw new AiRagRetrievalException(
                     'Knowledge retrieval exceeded the bounded tool execution time.',
                     reason: 'timeout',
@@ -127,6 +131,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 sanitizedError: null,
                 result: $result,
                 retrievalQuery: $retrievalPerformed ? (string) ($effectiveArguments['query'] ?? '') : null,
+                toolDeadline: $toolDeadline,
             )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool provenance finalization.');
             }
@@ -146,6 +151,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 latencyMs: $latencyMs,
                 sanitizedError: $sanitized['message'],
                 retrievalQuery: isset($effectiveArguments['query']) ? (string) $effectiveArguments['query'] : null,
+                toolDeadline: $toolDeadline,
             )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool failure provenance finalization.');
             }
@@ -161,6 +167,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 latencyMs: $latencyMs,
                 sanitizedError: $sanitized['message'],
                 retrievalQuery: isset($effectiveArguments['query']) ? (string) $effectiveArguments['query'] : null,
+                toolDeadline: $toolDeadline,
             )) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool failure provenance finalization.');
             }
@@ -263,9 +270,9 @@ class SearchKnowledgeBaseSdkTool implements Tool
     }
 
     /** @param array<string, mixed> $arguments */
-    private function claimProvenance(array $arguments): AiRunToolCall
+    private function claimProvenance(array $arguments, CarbonInterface $toolDeadline): AiRunToolCall
     {
-        return DB::transaction(function () use ($arguments): AiRunToolCall {
+        return DB::transaction(function () use ($arguments, $toolDeadline): AiRunToolCall {
             $run = DB::table('ai_runs')
                 ->where('organization_id', $this->executionContext->organizationId)
                 ->where('id', $this->executionContext->aiRunId)
@@ -276,7 +283,8 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 || $run->status !== 'running'
                 || $run->worker_lease_token !== $this->executionContext->workerLeaseToken
                 || $run->execution_deadline_at === null
-                || now()->greaterThanOrEqualTo($run->execution_deadline_at)) {
+                || now()->greaterThanOrEqualTo($run->execution_deadline_at)
+                || ! AiRuntimeLimits::deadlineIsActive($toolDeadline)) {
                 throw new AiToolExecutionFencedException('Worker lease is no longer valid for tool execution.');
             }
 
@@ -328,10 +336,11 @@ class SearchKnowledgeBaseSdkTool implements Tool
         string $status,
         int $latencyMs,
         ?string $sanitizedError,
+        CarbonInterface $toolDeadline,
         ?array $result = null,
         ?string $retrievalQuery = null,
     ): bool {
-        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError, $result, $retrievalQuery): bool {
+        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError, $result, $retrievalQuery, $toolDeadline): bool {
             $run = DB::table('ai_runs')
                 ->where('organization_id', $this->executionContext->organizationId)
                 ->where('id', $this->executionContext->aiRunId)
@@ -342,7 +351,8 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 || $run->status !== 'running'
                 || $run->worker_lease_token !== $this->executionContext->workerLeaseToken
                 || $run->execution_deadline_at === null
-                || now()->greaterThanOrEqualTo($run->execution_deadline_at)) {
+                || now()->greaterThanOrEqualTo($run->execution_deadline_at)
+                || ! AiRuntimeLimits::deadlineIsActive($toolDeadline)) {
                 return false;
             }
 

@@ -7,6 +7,8 @@ use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
+use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
@@ -41,6 +43,7 @@ use App\Modules\AI\Infrastructure\Context\AiContextAssembler;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
+use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Identity\Domain\Models\Client;
@@ -66,6 +69,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\TextResponse;
 use Laravel\Ai\Tools\Request;
@@ -381,6 +385,67 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNull($run->provider_cost_minor_units);
         $this->assertNull($attempt->provider_cost_minor_units);
         $this->assertSame('provider_reported', $run->getTokenUsage()->usageSource);
+    }
+
+    public function test_multi_step_tool_loop_settles_each_actual_provider_request_fixed_cost(): void
+    {
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [];
+            }
+        };
+        $this->app->instance(
+            AiContextAssemblerInterface::class,
+            new AiContextAssembler($retriever),
+        );
+        $this->app->instance(
+            AiToolRegistryInterface::class,
+            new AiToolRegistry([new SearchKnowledgeBaseTool($retriever)]),
+        );
+
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $release = $model->activeRelease;
+        $this->assertNotNull($release);
+        $pricing = new AiPricingSnapshot(
+            currency: 'USD',
+            inputCostPerMillionMinorUnits: 0,
+            outputCostPerMillionMinorUnits: 0,
+            cacheReadInputCostPerMillionMinorUnits: 0,
+            cacheWriteInputCostPerMillionMinorUnits: 0,
+            reasoningCostPerMillionMinorUnits: 0,
+            fixedRequestCostApplicable: true,
+            fixedRequestCostMinorUnits: 11,
+        );
+        $release->update(['pricing_snapshot' => $pricing->toArray()]);
+
+        DynamicWorkflowAgent::fake([
+            new ToolCall('tool-call-1', 'SearchKnowledgeBaseSdkTool', ['query' => 'bounded loop']),
+            'Final response after the tool loop',
+        ]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'fixed_request_tool_loop_test',
+            inputVariables: ['query' => 'bounded loop'],
+        ));
+
+        $this->assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        $attempt = AiRunAttempt::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $this->assertSame(2, $result->tokenUsage->providerRequests);
+        $this->assertSame(2, $run->getTokenUsage()->providerRequests);
+        $this->assertSame(2, $attempt->getTokenUsage()->providerRequests);
+        $this->assertSame(22, $attempt->settled_estimated_cost_minor_units);
+        $this->assertNotSame(11, $attempt->settled_estimated_cost_minor_units);
     }
 
     public function test_provider_and_model_selection_drives_actual_invocation(): void

@@ -49,6 +49,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\TextResponse;
 use Throwable;
 
 class LaravelAiWorkflowEngine implements AiWorkflowEngine
@@ -742,12 +743,17 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 $actualModel = $this->responseMetadataValue($response, 'model', $candidate['model'], 120);
 
                 $elapsedMs = (int) round((microtime(true) - $startTime) * 1000);
+                $providerRequests = $this->providerRequestCountForSettlement(
+                    response: $response,
+                    reservedProviderRequests: $worstCaseExposure['provider_requests'],
+                );
 
                 $tokenUsage = $this->resolveTokenUsage(
                     response: $response,
                     systemPrompt: $decryptedSystemPrompt ?: '',
                     userPrompt: $decryptedUserPrompt ?: '',
                     outputText: $outputText,
+                    providerRequests: $providerRequests,
                 );
 
                 $settledCost = $this->pricingCalculator->calculateEstimatedCost(
@@ -757,7 +763,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     cacheReadInputTokens: $tokenUsage->cacheReadInputTokens,
                     cacheWriteInputTokens: $tokenUsage->cacheWriteInputTokens,
                     reasoningTokens: $tokenUsage->reasoningTokens,
-                    providerRequests: 1,
+                    providerRequests: $tokenUsage->providerRequests,
                 );
 
                 $outputPayload = null;
@@ -936,6 +942,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         string $systemPrompt,
         string $userPrompt,
         string $outputText,
+        int $providerRequests,
     ): AiTokenUsage {
         $usage = is_object($response) ? ($response->usage ?? null) : null;
         if ($usage instanceof Usage) {
@@ -953,6 +960,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     cacheWriteInputTokens: $usage->cacheWriteInputTokens,
                     cacheReadInputTokens: $usage->cacheReadInputTokens,
                     reasoningTokens: $usage->reasoningTokens,
+                    providerRequests: $providerRequests,
                     usageSource: 'provider_reported',
                 );
             }
@@ -965,8 +973,18 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             promptTokens: $promptTokens,
             completionTokens: $completionTokens,
             totalTokens: $promptTokens + $completionTokens,
+            providerRequests: $providerRequests,
             usageSource: 'estimated',
         );
+    }
+
+    private function providerRequestCountForSettlement(mixed $response, int $reservedProviderRequests): int
+    {
+        if ($response instanceof TextResponse && $response->steps->isNotEmpty()) {
+            return $response->steps->count();
+        }
+
+        return $reservedProviderRequests;
     }
 
     private function responseMetadataValue(mixed $response, string $field, string $fallback, int $maxLength): string

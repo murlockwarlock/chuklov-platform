@@ -10,6 +10,7 @@ use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\Carbon;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
@@ -34,16 +35,25 @@ final class PgvectorStatementTimeoutTest extends TestCase
             'input_cost_per_million_minor_units' => 0,
             'zero_cost_local' => true,
         ]);
-        $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
+        $embedding = new class implements EmbeddingGenerator
         {
+            public bool $advanceClock = false;
+
+            public ?Carbon $startedAt = null;
+
             public function generate(array $inputs, EmbeddingConfiguration $configuration): array
             {
+                if ($this->advanceClock && $this->startedAt !== null) {
+                    Carbon::setTestNow($this->startedAt->copy()->addSeconds(5));
+                }
+
                 return array_map(
                     static fn (): array => array_fill(0, $configuration->dimensions, 0.0),
                     $inputs,
                 );
             }
-        });
+        };
+        $this->app->instance(EmbeddingGenerator::class, $embedding);
 
         $organization = Organization::factory()->create();
         $actor = User::factory()->forOrganization($organization)->create();
@@ -62,20 +72,30 @@ final class PgvectorStatementTimeoutTest extends TestCase
             }
         });
 
-        app(KnowledgeRetriever::class)->retrieve(
-            $actor,
-            new RetrievalQuery(
-                text: 'booking',
-                topK: 5,
-                executionDeadlineAt: now()->addSeconds(10),
-                executionTimeoutSeconds: 30,
-            ),
-        );
+        $startedAt = Carbon::now();
+        $embedding->startedAt = $startedAt;
+        $embedding->advanceClock = true;
+
+        try {
+            app(KnowledgeRetriever::class)->retrieve(
+                $actor,
+                new RetrievalQuery(
+                    text: 'booking',
+                    topK: 5,
+                    executionDeadlineAt: $startedAt->copy()->addSeconds(30),
+                    executionTimeoutSeconds: 30,
+                ),
+            );
+        } finally {
+            Carbon::setTestNow();
+        }
 
         self::assertGreaterThanOrEqual(2, count($timeouts));
         foreach ($timeouts as $timeoutMilliseconds) {
             self::assertGreaterThan(0, $timeoutMilliseconds);
             self::assertLessThanOrEqual(30_000, $timeoutMilliseconds);
         }
+        self::assertLessThan($timeouts[0], $timeouts[array_key_last($timeouts)]);
+        self::assertLessThanOrEqual(25_000, $timeouts[array_key_last($timeouts)]);
     }
 }

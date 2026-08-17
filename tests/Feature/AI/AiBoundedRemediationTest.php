@@ -257,6 +257,120 @@ final class AiBoundedRemediationTest extends TestCase
         self::assertSame(80, $toolOnlyClaim['run']->retrieval_embedding_reserved_cost_minor_units);
     }
 
+    public function test_tool_passes_one_deadline_of_at_most_thirty_seconds_to_retrieval(): void
+    {
+        $startedAt = Carbon::parse('2030-01-01 00:00:00.000000');
+        Carbon::setTestNow($startedAt);
+        $organization = Organization::factory()->create();
+        $token = (string) Str::uuid();
+        $runDeadline = $startedAt->copy()->addSeconds(60);
+        $run = AiRun::query()->create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'shared_tool_deadline',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $token,
+            'worker_lease_expires_at' => $runDeadline,
+            'execution_deadline_at' => $runDeadline,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $captured = null;
+        $retriever = new class($captured) implements KnowledgeRetriever
+        {
+            public function __construct(private mixed &$captured) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->captured = $query;
+
+                return [];
+            }
+        };
+
+        try {
+            $response = (string) (new SearchKnowledgeBaseSdkTool(
+                executionContext: new AiRunExecutionContext($organization->id, $run->id, $token, $runDeadline),
+                domainTool: new SearchKnowledgeBaseTool($retriever),
+                maxToolCalls: 1,
+            ))->handle(new Request(['query' => 'shared deadline']));
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        self::assertSame('No relevant knowledge base records found.', $response);
+        Assert::assertInstanceOf(RetrievalQuery::class, $captured);
+        self::assertSame(
+            $startedAt->copy()->addSeconds(30)->getPreciseTimestamp(6),
+            $captured->executionDeadlineAt?->getPreciseTimestamp(6),
+        );
+        self::assertSame(30, $captured->executionTimeoutSeconds);
+    }
+
+    public function test_tool_cannot_consume_two_independent_thirty_second_windows(): void
+    {
+        $startedAt = Carbon::parse('2030-01-01 00:00:00.000000');
+        Carbon::setTestNow($startedAt);
+        $organization = Organization::factory()->create();
+        $token = (string) Str::uuid();
+        $runDeadline = $startedAt->copy()->addSeconds(60);
+        $run = AiRun::query()->create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'single_tool_window',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => $token,
+            'worker_lease_expires_at' => $runDeadline,
+            'execution_deadline_at' => $runDeadline,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $captured = null;
+        $retriever = new class($captured, $startedAt) implements KnowledgeRetriever
+        {
+            public function __construct(private mixed &$captured, private Carbon $startedAt) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->captured = $query;
+                Carbon::setTestNow($this->startedAt->copy()->addSeconds(31));
+
+                return [];
+            }
+        };
+
+        try {
+            $this->expectException(AiToolExecutionFencedException::class);
+            (new SearchKnowledgeBaseSdkTool(
+                executionContext: new AiRunExecutionContext($organization->id, $run->id, $token, $runDeadline),
+                domainTool: new SearchKnowledgeBaseTool($retriever),
+                maxToolCalls: 1,
+            ))->handle(new Request(['query' => 'embedding then database']));
+        } finally {
+            Carbon::setTestNow();
+        }
+
+        Assert::assertInstanceOf(RetrievalQuery::class, $captured);
+        self::assertSame(
+            $startedAt->copy()->addSeconds(30)->getPreciseTimestamp(6),
+            $captured->executionDeadlineAt?->getPreciseTimestamp(6),
+        );
+        self::assertSame(0, $run->fresh()->ragReferences()->count());
+        self::assertNotSame('succeeded', $run->toolCalls()->firstOrFail()->execution_status);
+    }
+
     public function test_tool_cannot_finalize_successful_retrieval_after_absolute_deadline(): void
     {
         $organization = Organization::factory()->create();

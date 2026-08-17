@@ -11,6 +11,7 @@ final readonly class AiTokenUsage
         public int $cacheWriteInputTokens = 0,
         public int $cacheReadInputTokens = 0,
         public int $reasoningTokens = 0,
+        public int $providerRequests = 0,
         public string $usageSource = 'estimated',
     ) {}
 
@@ -33,6 +34,7 @@ final readonly class AiTokenUsage
             cacheWriteInputTokens: max(0, (int) ($data['cache_write_input_tokens'] ?? 0)),
             cacheReadInputTokens: max(0, (int) ($data['cache_read_input_tokens'] ?? 0)),
             reasoningTokens: max(0, (int) ($data['reasoning_tokens'] ?? 0)),
+            providerRequests: max(0, (int) ($data['provider_requests'] ?? 0)),
             usageSource: $usageSource,
         );
     }
@@ -47,6 +49,7 @@ final readonly class AiTokenUsage
             'cache_write_input_tokens' => $this->cacheWriteInputTokens,
             'cache_read_input_tokens' => $this->cacheReadInputTokens,
             'reasoning_tokens' => $this->reasoningTokens,
+            'provider_requests' => $this->providerRequests,
             'usage_source' => $this->usageSource,
         ];
     }
