@@ -111,6 +111,7 @@ final class CountingInitialRagContextAssembler implements AiContextAssemblerInte
         ?User $actor = null,
         ?CarbonInterface $executionDeadlineAt = null,
         ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        ?AiCapability $capability = null,
     ): ContextAssemblyResult {
         DB::table('audit_events')->insert([
             'organization_id' => $this->organizationId,
@@ -130,6 +131,7 @@ final class CountingInitialRagContextAssembler implements AiContextAssemblerInte
             actor: $actor,
             executionDeadlineAt: $executionDeadlineAt,
             embeddingSnapshot: $embeddingSnapshot,
+            capability: $capability,
         );
     }
 }

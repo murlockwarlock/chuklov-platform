@@ -30,6 +30,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Laravel\Ai\Prompts\AgentPrompt;
 use Tests\TestCase;
 
 class AiProviderCredentialTest extends TestCase
@@ -119,6 +120,62 @@ class AiProviderCredentialTest extends TestCase
         // Ensure global config was NOT mutated
         $this->assertNotSame('sk-org-a-secret-key', config('ai.providers.openai.key'));
         $this->assertNotSame('sk-org-b-secret-key', config('ai.providers.openai.key'));
+    }
+
+    public function test_openai_responses_request_is_forced_stateless_even_when_extra_configuration_requests_storage(): void
+    {
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Stateless',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-stateless-test'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $requestBody = null;
+        Http::fake([
+            'https://api.openai.com/v1/responses' => function ($request) use (&$requestBody) {
+                $requestBody = $request->data();
+
+                return Http::response([
+                    'id' => 'resp_stateless_test',
+                    'model' => 'gpt-4o-mini',
+                    'status' => 'completed',
+                    'output' => [[
+                        'type' => 'message',
+                        'role' => 'assistant',
+                        'status' => 'completed',
+                        'content' => [[
+                            'type' => 'output_text',
+                            'text' => 'safe response',
+                            'annotations' => [],
+                        ]],
+                    ]],
+                    'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+                ]);
+            },
+        ]);
+
+        $agent = new DynamicWorkflowAgent(instructionsText: 'Answer safely.');
+        $provider = app(AiProviderFactory::class)->createTextProvider(
+            providerName: 'openai',
+            credential: $credential,
+            agent: $agent,
+            extraConfig: ['store' => true],
+        );
+        $provider->prompt(new AgentPrompt(
+            agent: $agent,
+            prompt: 'Protected request',
+            attachments: [],
+            provider: $provider,
+            model: 'gpt-4o-mini',
+        ));
+
+        $this->assertIsArray($requestBody);
+        $this->assertFalse($requestBody['store']);
+        Http::assertSentCount(1);
     }
 
     public function test_immutable_model_release_regression_preserves_historical_provenance(): void

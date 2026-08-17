@@ -3,8 +3,10 @@
 namespace App\Modules\AI\Infrastructure\Context;
 
 use App\Models\User;
+use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
@@ -25,6 +27,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
         private readonly KnowledgeRetriever $knowledgeRetriever,
         private readonly ?GetMedicalProfile $getMedicalProfile = null,
         private readonly ?MedicalSessionAuthorization $sessionAuthorization = null,
+        private readonly ?AiAttachmentResolver $attachmentResolver = null,
     ) {}
 
     public function assemble(
@@ -35,9 +38,11 @@ class AiContextAssembler implements AiContextAssemblerInterface
         ?User $actor = null,
         ?CarbonInterface $executionDeadlineAt = null,
         ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        ?AiCapability $capability = null,
     ): ContextAssemblyResult {
         $variables = $inputVariables;
         $ragChunks = [];
+        $attachmentProvenance = [];
         $provenanceSummary = [
             'client_included' => false,
             'medical_summary_included' => false,
@@ -57,6 +62,20 @@ class AiContextAssembler implements AiContextAssemblerInterface
                 $clientId = $ref->id;
                 break;
             }
+        }
+
+        if (array_filter($inputReferences, static fn ($reference): bool => $reference->type === 'medical_attachment') !== []) {
+            if ($capability === null) {
+                throw new InvalidArgumentException('AI attachment context requires a capability.');
+            }
+
+            $resolver = $this->attachmentResolver ?? app(AiAttachmentResolver::class);
+            $attachmentProvenance = $resolver->describe(
+                organizationId: $organizationId,
+                capability: $capability,
+                references: $inputReferences,
+                actor: $actor,
+            );
         }
 
         if ($clientId !== null && ($policy->includeClientProfile || $policy->includeMedicalSummary)) {
@@ -241,6 +260,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
             variables: $variables,
             ragChunks: $ragChunks,
             provenanceSummary: $provenanceSummary,
+            attachmentProvenance: $attachmentProvenance,
         );
     }
 }

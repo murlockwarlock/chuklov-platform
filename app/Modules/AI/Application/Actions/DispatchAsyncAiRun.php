@@ -139,6 +139,7 @@ class DispatchAsyncAiRun
                 actor: $actor,
                 executionDeadlineAt: $executionDeadlineAt,
                 embeddingSnapshot: $embeddingSnapshot,
+                capability: $request->capability,
             );
 
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);

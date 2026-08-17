@@ -116,7 +116,7 @@ class AiMonitoringOverview extends Page
         $safety = AiOrganizationSafetyControl::query()
             ->where('organization_id', $context->id())
             ->first();
-        $enabled = $safety === null || ! $safety->is_ai_globally_enabled;
+        $enabled = ! ($safety === null ? true : (bool) $safety->is_ai_globally_enabled);
         $safety = app(UpdateAiSafetyControl::class)->handle($user, [
             'is_ai_globally_enabled' => $enabled,
         ]);

@@ -7,6 +7,7 @@ use App\Modules\AI\Application\Data\ContextAssemblyResult;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
@@ -28,6 +29,7 @@ final class PrepareAiRun
     public function __construct(
         private readonly AiSafetyBudgetManagerInterface $budgetManager,
         private readonly MedicalEncryptorInterface $medicalEncryptor,
+        private readonly ResolveAiExecutionCandidates $candidateResolver,
     ) {}
 
     /**
@@ -45,6 +47,19 @@ final class PrepareAiRun
     ): array {
         $workerLeaseToken = (string) Str::uuid();
         $retrievalReservation = $this->retrievalReservation($request, $contextPolicy, $maxToolCalls);
+        $effectiveExecutionMode = $executionMode ?? $request->executionMode;
+        $candidateSnapshot = [];
+        if ($effectiveExecutionMode === AiExecutionMode::Async) {
+            $safetyControls = AiOrganizationSafetyControl::query()
+                ->where('organization_id', $organizationId)
+                ->first();
+            $candidateSnapshot = $this->candidateResolver->snapshot(
+                organizationId: $organizationId,
+                request: $request,
+                safetyControls: $safetyControls,
+            );
+        }
+        $primaryCandidate = $candidateSnapshot[0] ?? [];
         $keyVersion = (int) Config::get('medical.key_version', 1);
         $created = false;
 
@@ -57,7 +72,9 @@ final class PrepareAiRun
                 $executionDeadlineAt,
                 $workerLeaseToken,
                 $retrievalReservation,
-                $executionMode,
+                $candidateSnapshot,
+                $primaryCandidate,
+                $effectiveExecutionMode,
                 $initiatedByUserId,
             ): AiRun {
                 if ($request->idempotencyKey !== null) {
@@ -86,11 +103,15 @@ final class PrepareAiRun
                     'initiated_by_user_id' => $request->actor?->getKey() ?? $initiatedByUserId ?? $request->initiatedByUserId,
                     'client_id' => $request->clientId,
                     'status' => AiRunStatus::Preparing,
-                    'execution_mode' => $executionMode ?? $request->executionMode,
+                    'execution_mode' => $effectiveExecutionMode,
                     'prompt_id' => $promptVersion->prompt_id,
                     'prompt_version_id' => $promptVersion->id,
-                    'model_release_id' => $request->modelReleaseId,
+                    'model_config_id' => $primaryCandidate['model_config_id'] ?? null,
+                    'model_release_id' => $request->modelReleaseId ?? ($primaryCandidate['model_release_id'] ?? null),
+                    'requested_provider' => $primaryCandidate['provider'] ?? null,
+                    'requested_model' => $primaryCandidate['model'] ?? null,
                     'input_references' => array_map(static fn ($reference): array => $reference->toArray(), $request->inputReferences),
+                    'execution_candidate_snapshot' => $candidateSnapshot,
                     'context_provenance' => [
                         'retrieval_embedding' => [
                             'reserved_query_count' => $retrievalReservation['query_count'],
@@ -213,6 +234,9 @@ final class PrepareAiRun
             $assembledEmbedding['configuration_snapshot'] = $reservationEmbedding['configuration_snapshot'] ?? [];
             $assembledEmbedding['pricing_snapshot'] = $reservationEmbedding['pricing_snapshot'] ?? [];
             $assembledProvenance['retrieval_embedding'] = $assembledEmbedding;
+            if ($contextAssembly->attachmentProvenance !== []) {
+                $assembledProvenance['attachments'] = $contextAssembly->attachmentProvenance;
+            }
 
             $status = $lockedRun->execution_mode === AiExecutionMode::Async
                 ? AiRunStatus::Queued

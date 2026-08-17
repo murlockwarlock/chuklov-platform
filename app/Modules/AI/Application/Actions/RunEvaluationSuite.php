@@ -100,7 +100,9 @@ class RunEvaluationSuite
             || $providerConfiguration->health_status !== ProviderHealthStatus::Healthy
             || $credential === null
             || $credential->provider !== $providerConfiguration->provider_name
-            || $credential->status !== CredentialStatus::Active) {
+            || $credential->status !== CredentialStatus::Active
+            || $credential->revision_id === null
+            || $providerConfiguration->tested_credential_revision === null) {
             throw new InvalidArgumentException('Pinned evaluation model release is not backed by a valid executable provider configuration.');
         }
 

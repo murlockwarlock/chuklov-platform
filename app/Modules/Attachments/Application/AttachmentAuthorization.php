@@ -47,6 +47,12 @@ final class AttachmentAuthorization
         return $organization;
     }
 
+    public function authorizeAiProcessing(User $actor, MedicalAttachment $attachment, Organization $organization): void
+    {
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $this->assertAttachmentOwned($attachment, $organization);
+    }
+
     public function allowsDownload(User $actor, MedicalAttachment $attachment): bool
     {
         try {

@@ -4,6 +4,7 @@ namespace App\Modules\AI\Domain\Contracts;
 
 use App\Models\User;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
@@ -23,5 +24,6 @@ interface AiContextAssemblerInterface
         ?User $actor = null,
         ?CarbonInterface $executionDeadlineAt = null,
         ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        ?AiCapability $capability = null,
     ): ContextAssemblyResult;
 }

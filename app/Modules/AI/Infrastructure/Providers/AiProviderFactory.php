@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Infrastructure\Providers;
 
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Contracts\Events\Dispatcher;
 use InvalidArgumentException;
@@ -25,6 +26,37 @@ use Laravel\Ai\Providers\XaiProvider;
 
 class AiProviderFactory
 {
+    public static function supportsAttachments(
+        string $providerName,
+        string $model,
+        AiCapability $capability,
+        bool $requiresDocument = false,
+    ): bool {
+        if (! in_array($capability, [
+            AiCapability::ClinicalDocumentExtraction,
+            AiCapability::PostureAnalysis,
+            AiCapability::ClinicalSynthesizer,
+        ], true)) {
+            return true;
+        }
+
+        $driver = strtolower($providerName);
+        if (! in_array($driver, ['openai', 'azure', 'openai_compatible', 'anthropic', 'gemini', 'bedrock', 'openrouter', 'xai'], true)) {
+            return false;
+        }
+
+        if ($requiresDocument && in_array($driver, ['openai_compatible'], true)) {
+            return false;
+        }
+
+        $normalizedModel = strtolower($model);
+        if (preg_match('/embedding|moderation|whisper|tts|text[-_ ]only/', $normalizedModel) === 1) {
+            return false;
+        }
+
+        return preg_match('/gpt-(4o|4\.1|4-(?:turbo|vision)|5)|o[134]|claude-(3|4)|gemini-(1\.5|2|2\.5)|pixtral|vision/', $normalizedModel) === 1;
+    }
+
     public function __construct(
         private readonly Dispatcher $events,
         private readonly AiProviderConnectivityProbe $connectivityProbe,
@@ -49,6 +81,10 @@ class AiProviderFactory
             'key' => $secret,
             'name' => $providerName,
         ], $extraConfig);
+
+        if ($driver === 'openai') {
+            $config['store'] = false;
+        }
 
         $provider = match ($driver) {
             'openai' => new OpenAiProvider(

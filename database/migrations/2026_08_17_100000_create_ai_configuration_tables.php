@@ -4,7 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 
 return new class extends Migration
 {
@@ -16,32 +15,17 @@ return new class extends Migration
             });
         }
 
-        if (DB::getDriverName() === 'pgsql') {
-            DB::table('organization_credentials')
-                ->whereNull('revision_id')
-                ->update(['revision_id' => DB::raw('gen_random_uuid()')]);
-        } else {
-            DB::table('organization_credentials')
-                ->whereNull('revision_id')
-                ->orderBy('id')
-                ->chunkById(500, function ($credentials): void {
-                    $updates = [];
-                    foreach ($credentials as $credential) {
-                        $updates[] = [
-                            'id' => $credential->id,
-                            'revision_id' => (string) Str::uuid(),
-                        ];
-                    }
-
-                    DB::table('organization_credentials')->upsert($updates, ['id'], ['revision_id']);
-                });
+        if (! Schema::hasIndex('organization_credentials', 'organization_credentials_revision_id_unique')) {
+            Schema::table('organization_credentials', function (Blueprint $table): void {
+                $table->unique('revision_id');
+            });
         }
 
-        Schema::table('organization_credentials', function (Blueprint $table): void {
-            $table->uuid('revision_id')->nullable(false)->change();
-            $table->unique('revision_id');
-            $table->unique(['organization_id', 'id']);
-        });
+        if (! Schema::hasIndex('organization_credentials', 'organization_credentials_organization_id_id_unique')) {
+            Schema::table('organization_credentials', function (Blueprint $table): void {
+                $table->unique(['organization_id', 'id']);
+            });
+        }
 
         Schema::create('ai_organization_safety_controls', function (Blueprint $table): void {
             $table->id();

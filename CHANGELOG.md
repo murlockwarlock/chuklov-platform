@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- M10 Terra remediation:
+  - Persisted immutable asynchronous candidate/failover snapshots with credential-revision, provider-configuration, and pricing provenance, plus fenced pre-I/O revalidation.
+  - Forced OpenAI Responses executions to `store=false`, corrected the first Kill-Switch transition, and completed private cleared medical attachment execution for documents and three-photo posture analysis.
+  - Replaced the credential revision migration backfill with a bounded resumable command and fail-closed legacy-null runtime handling; the final NOT NULL contract remains a later rollout step after backfill completion.
+
 - M10 AI Components & Control Plane implementation candidate:
   - Added provider-neutral AI engine, prompt studio, versioning, evaluation suites, human review workflows, and RAG/tool slice for `REQ-AI-001` through `REQ-AI-008`.
   - Implemented protected Class C trace separation (`ai_run_payloads` encrypted via `MedicalEncryptorInterface`) so that `ai_runs` stores strictly operational, non-sensitive provenance metadata with no plaintext medical leakage.

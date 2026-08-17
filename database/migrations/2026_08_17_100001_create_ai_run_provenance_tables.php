@@ -28,6 +28,7 @@ return new class extends Migration
             $table->string('actual_provider', 64)->nullable();
             $table->string('actual_model', 120)->nullable();
             $table->json('input_references');
+            $table->json('execution_candidate_snapshot')->nullable();
             $table->char('rendered_prompt_digest', 64)->nullable();
             $table->json('context_provenance');
             $table->string('structured_output_schema_version', 64)->nullable();
@@ -95,6 +96,8 @@ return new class extends Migration
             $table->foreignId('model_release_id')->nullable();
             $table->foreignId('credential_id')->nullable();
             $table->uuid('credential_revision')->nullable();
+            $table->foreignId('provider_configuration_id')->nullable();
+            $table->char('provider_configuration_digest', 64)->nullable();
             $table->string('worker_lease_token', 64)->nullable();
             $table->string('status', 32);
             $table->string('retry_or_failover_reason', 200)->nullable();
@@ -119,6 +122,8 @@ return new class extends Migration
                 ->references(['organization_id', 'id'])->on('ai_model_releases')->restrictOnDelete();
             $table->foreign(['organization_id', 'credential_id'])
                 ->references(['organization_id', 'id'])->on('organization_credentials')->restrictOnDelete();
+            $table->foreign(['organization_id', 'provider_configuration_id'])
+                ->references(['organization_id', 'id'])->on('ai_provider_configurations')->restrictOnDelete();
             $table->index(['organization_id', 'budget_usage_date', 'budget_reservation_status']);
             $table->index(['organization_id', 'ai_run_id', 'budget_reservation_status']);
         });

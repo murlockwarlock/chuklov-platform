@@ -2,7 +2,10 @@
 
 namespace App\Modules\AI\Infrastructure\Engine;
 
+use App\Models\User;
 use App\Modules\AI\Application\Actions\PrepareAiRun;
+use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
+use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Application\Validation\AiInputReferenceValidator;
@@ -13,6 +16,7 @@ use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -33,6 +37,7 @@ use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\AI\Domain\ValueObjects\AiTokenUsage;
@@ -49,6 +54,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
+use Laravel\Ai\Files\StoredDocument;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\TextResponse;
@@ -67,6 +73,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         private readonly AiProviderFactory $providerFactory,
         private readonly AiInputReferenceValidator $inputReferenceValidator,
         private readonly PrepareAiRun $prepareAiRun,
+        private readonly ResolveAiExecutionCandidates $candidateResolver,
+        private readonly AiAttachmentResolver $attachmentResolver,
     ) {}
 
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
@@ -230,6 +238,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 actor: $request->actor,
                 executionDeadlineAt: $executionDeadlineAt,
                 embeddingSnapshot: $embeddingSnapshot,
+                capability: $request->capability,
             );
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
             $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
@@ -414,10 +423,62 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
         $contextPolicy = $promptVersion->getContextPolicy();
 
-        $candidates = [];
+        $inputReferences = array_values(array_map(
+            static fn (mixed $reference): AiInputReference => $reference instanceof AiInputReference
+                ? $reference
+                : AiInputReference::fromArray((array) $reference),
+            (array) $run->input_references,
+        ));
+        $attachmentResolution = ['files' => [], 'provenance' => []];
+        $attachmentActor = null;
+        if (($run->capability === AiCapability::PostureAnalysis && $run->execution_mode !== AiExecutionMode::Evaluation)
+            || array_filter($inputReferences, static fn (AiInputReference $reference): bool => $reference->type === 'medical_attachment') !== []) {
+            try {
+                $attachmentActor = $run->initiated_by_user_id !== null
+                    ? User::query()->whereKey($run->initiated_by_user_id)->first()
+                    : null;
+                $attachmentResolution = $this->attachmentResolver->resolve(
+                    organizationId: $organizationId,
+                    capability: $run->capability,
+                    references: $inputReferences,
+                    actor: $attachmentActor,
+                );
+
+                $runProvenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
+                $acceptedProvenance = is_array($runProvenance['attachments'] ?? null)
+                    ? $runProvenance['attachments']
+                    : null;
+                if ($inputReferences !== []
+                    && $attachmentResolution['provenance'] !== []
+                    && $acceptedProvenance !== $attachmentResolution['provenance']) {
+                    throw new InvalidArgumentException('Accepted medical attachment provenance no longer matches the source.');
+                }
+            } catch (Throwable) {
+                $this->fencedTerminalRunTransition(
+                    $organizationId,
+                    $runId,
+                    $workerLeaseToken,
+                    AiRunStatus::Failed,
+                    AiErrorCategory::ProviderUnavailable,
+                    'Protected attachment input is unavailable or unauthorized.',
+                );
+
+                return new AiRunResult(
+                    runId: $run->id,
+                    status: AiRunStatus::Failed,
+                    errorCategory: AiErrorCategory::ProviderUnavailable,
+                    errorMessageSanitized: 'Protected attachment input is unavailable or unauthorized.',
+                );
+            }
+        }
+
         $maxAttempts = AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts);
-        $exactRelease = null;
-        if ($run->model_release_id !== null) {
+        $candidates = $run->execution_mode === AiExecutionMode::Async
+            ? $this->candidateResolver->resolveSnapshot($organizationId, $run, $safetyControls)
+            : [];
+
+        if ($run->execution_mode !== AiExecutionMode::Async && $run->model_release_id !== null) {
+            $exactRelease = null;
             $exactRelease = AiModelRelease::query()
                 ->where('organization_id', $organizationId)
                 ->whereKey($run->model_release_id)
@@ -427,7 +488,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             $modelConfigs = $exactRelease?->modelConfiguration !== null
                 ? collect([$exactRelease->modelConfiguration])
                 : collect();
-        } else {
+        } elseif ($run->execution_mode !== AiExecutionMode::Async) {
             $modelConfigs = AiModelConfiguration::query()
                 ->where('organization_id', $organizationId)
                 ->where('is_enabled', true)
@@ -460,7 +521,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->get();
         }
 
-        foreach ($modelConfigs as $config) {
+        foreach ($run->execution_mode !== AiExecutionMode::Async ? $modelConfigs : [] as $config) {
             if (count($candidates) >= $maxAttempts) {
                 break;
             }
@@ -492,7 +553,9 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             $credential = $providerConfig->credential;
             if ($credential === null
                 || $credential->provider !== $providerConfig->provider_name
-                || $credential->status !== CredentialStatus::Active) {
+                || $credential->status !== CredentialStatus::Active
+                || $credential->revision_id === null
+                || $providerConfig->tested_credential_revision === null) {
                 continue;
             }
 
@@ -522,9 +585,24 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 'credential' => $credential,
                 'credential_id' => $credential->id,
                 'credential_revision' => $credential->revision_id,
+                'provider_configuration_id' => $providerConfig->id,
+                'provider_configuration_digest' => $configurationDigest,
                 'pricing' => $pricing,
                 'failover_priority' => $config->failover_priority,
             ];
+        }
+
+        if ($attachmentResolution['files'] !== []) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                fn (array $candidate): bool => AiProviderFactory::supportsAttachments(
+                    providerName: (string) $candidate['provider'],
+                    model: (string) $candidate['model'],
+                    capability: $run->capability,
+                    requiresDocument: (bool) collect($attachmentResolution['files'])
+                        ->contains(static fn (mixed $file): bool => $file instanceof StoredDocument),
+                ),
+            ));
         }
 
         // Fail closed if no valid immutable candidate exists
@@ -698,6 +776,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         'model_release_id' => $release->id,
                         'credential_id' => $candidate['credential_id'],
                         'credential_revision' => $candidate['credential_revision'],
+                        'provider_configuration_id' => $candidate['provider_configuration_id'] ?? null,
+                        'provider_configuration_digest' => $candidate['provider_configuration_digest'] ?? null,
                         'worker_lease_token' => $workerLeaseToken,
                         'status' => 'running',
                         'reserved_cost_minor_units' => $worstCaseEstimatedCost,
@@ -746,6 +826,71 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 continue;
             }
 
+            if ($run->execution_mode === AiExecutionMode::Async) {
+                $freshCandidate = $this->candidateResolver->refreshSnapshotCandidate(
+                    organizationId: $organizationId,
+                    run: $run,
+                    position: (int) ($candidate['snapshot_position'] ?? -1),
+                );
+                if ($freshCandidate === null) {
+                    $attemptOwned = $this->fencedAttemptFailure(
+                        organizationId: $organizationId,
+                        runId: $runId,
+                        attemptId: $attempt->id,
+                        workerLeaseToken: $workerLeaseToken,
+                        latencyMs: 0,
+                        errorCategory: AiErrorCategory::ProviderUnavailable,
+                        errorMessage: 'Accepted provider configuration is no longer compatible.',
+                    );
+                    if (! $attemptOwned) {
+                        break;
+                    }
+
+                    $lastErrorCategory = AiErrorCategory::ProviderUnavailable;
+                    $lastErrorMessage = 'Accepted provider configuration is no longer compatible.';
+
+                    continue;
+                }
+
+                $candidate = $freshCandidate;
+                $release = $candidate['release'];
+                $pricing = $candidate['pricing'];
+            }
+
+            if ($attachmentResolution['files'] !== []) {
+                try {
+                    $freshAttachments = $this->attachmentResolver->resolve(
+                        organizationId: $organizationId,
+                        capability: $run->capability,
+                        references: $inputReferences,
+                        actor: $attachmentActor,
+                    );
+                    if ($freshAttachments['provenance'] !== $attachmentResolution['provenance']) {
+                        throw new InvalidArgumentException('Protected attachment provenance changed before provider execution.');
+                    }
+                    $attachmentResolution = $freshAttachments;
+                } catch (Throwable $e) {
+                    $sanitized = AiErrorSanitizer::sanitize($e);
+                    $attemptOwned = $this->fencedAttemptFailure(
+                        organizationId: $organizationId,
+                        runId: $runId,
+                        attemptId: $attempt->id,
+                        workerLeaseToken: $workerLeaseToken,
+                        latencyMs: 0,
+                        errorCategory: $sanitized['category'],
+                        errorMessage: $sanitized['message'],
+                    );
+                    if (! $attemptOwned) {
+                        break;
+                    }
+
+                    $lastErrorCategory = $sanitized['category'];
+                    $lastErrorMessage = $sanitized['message'];
+
+                    continue;
+                }
+            }
+
             $startTime = microtime(true);
             $outputText = null;
 
@@ -769,7 +914,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 $agentPrompt = new AgentPrompt(
                     agent: $agent,
                     prompt: $decryptedUserPrompt,
-                    attachments: [],
+                    attachments: $attachmentResolution['files'],
                     provider: $textProvider,
                     model: $candidate['model'],
                     timeout: $attemptTimeoutSeconds,
@@ -873,8 +1018,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
                     $attempt->update([
                         'status' => 'succeeded',
-                        'provider' => $actualProvider,
-                        'model' => $actualModel,
                         'latency_ms' => $elapsedMs,
                         'token_usage' => $tokenUsage->toArray(),
                         'finished_at' => Carbon::now(),
