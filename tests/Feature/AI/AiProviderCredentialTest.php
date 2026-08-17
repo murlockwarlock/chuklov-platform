@@ -5,25 +5,31 @@ namespace Tests\Feature\AI;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\TestProviderConnection;
+use App\Modules\AI\Application\Actions\UpdateAiProviderConfiguration;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Application\ReplaceOrganizationCredential;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class AiProviderCredentialTest extends TestCase
@@ -54,6 +60,25 @@ class AiProviderCredentialTest extends TestCase
 
         config()->set('tenancy.default_organization_id', $this->organizationA->id);
         app(OrganizationContext::class)->set($this->organizationA);
+
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organizationA->id,
+            'key' => 'provider_default_prompt',
+            'name' => 'Provider default prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organizationA->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Use the versioned provider instructions.',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => true],
+            'allowed_tools' => ['search_knowledge_base'],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
     }
 
     public function test_organization_credentials_are_isolated_per_tenant_without_global_config_mutation(): void
@@ -120,6 +145,8 @@ class AiProviderCredentialTest extends TestCase
             'is_enabled' => true,
             'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('openai'),
         ]);
 
         $pricing1 = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
@@ -235,6 +262,194 @@ class AiProviderCredentialTest extends TestCase
         $this->assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
         $this->assertNotNull($provider->last_checked_at);
         $this->assertNull($provider->last_health_error);
+        $this->assertSame($credential->revision_id, $provider->tested_credential_revision);
+        $this->assertSame(AiProviderExecutionConfiguration::digest('openai'), $provider->tested_configuration_digest);
+    }
+
+    public function test_credential_rotation_invalidates_provider_health_until_the_new_revision_is_probed(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/models' => Http::response(['data' => []], 200),
+        ]);
+
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Rotating Health',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-revision-a'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI rotating health',
+            'credential_id' => $credential->id,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('openai'),
+        ]);
+
+        $updatedCredential = app(ReplaceOrganizationCredential::class)->handle(
+            actor: $this->userA,
+            provider: 'openai',
+            credentialName: 'OpenAI Rotating Health',
+            credentials: ['api_key' => 'sk-revision-b'],
+        );
+
+        $provider->refresh();
+        $this->assertNotSame($credential->revision_id, $updatedCredential->revision_id);
+        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        $this->assertNull($provider->tested_credential_revision);
+        $this->assertNull($provider->tested_configuration_digest);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertTrue($result['success']);
+        $provider->refresh();
+        $this->assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
+        $this->assertSame($updatedCredential->revision_id, $provider->tested_credential_revision);
+    }
+
+    public function test_provider_credential_reassignment_invalidates_previous_health_provenance(): void
+    {
+        $credentialA = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Assignment A',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credentialA->organization_id = $this->organizationA->id;
+        $credentialA->credentials = ['api_key' => 'sk-assignment-a'];
+        $credentialA->status = CredentialStatus::Active;
+        $credentialA->save();
+
+        $credentialB = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Assignment B',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credentialB->organization_id = $this->organizationA->id;
+        $credentialB->credentials = ['api_key' => 'sk-assignment-b'];
+        $credentialB->status = CredentialStatus::Active;
+        $credentialB->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI assignment',
+            'credential_id' => $credentialA->id,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'tested_credential_revision' => $credentialA->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('openai'),
+        ]);
+
+        app(UpdateAiProviderConfiguration::class)->handle($this->userA, $provider, [
+            'credential_id' => $credentialB->id,
+        ]);
+
+        $provider->refresh();
+        $this->assertSame($credentialB->id, $provider->credential_id);
+        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        $this->assertNull($provider->tested_credential_revision);
+        $this->assertNull($provider->tested_configuration_digest);
+    }
+
+    public function test_custom_provider_probe_endpoint_is_rejected_before_any_request(): void
+    {
+        Http::fake();
+
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Custom Endpoint',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-custom-endpoint'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI custom endpoint',
+            'credential_id' => $credential->id,
+        ]);
+
+        try {
+            app(UpdateAiProviderConfiguration::class)->handle($this->userA, $provider, [
+                'options' => ['base_url' => 'https://attacker.example/v1'],
+            ]);
+            $this->fail('Expected arbitrary custom provider endpoint to be rejected.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Custom provider endpoints', $exception->getMessage());
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_stored_custom_provider_endpoint_is_not_used_for_a_credential_probe(): void
+    {
+        Http::fake();
+
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Stored Custom Endpoint',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-stored-custom-endpoint'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI stored custom endpoint',
+            'credential_id' => $credential->id,
+            'options' => ['url' => 'https://attacker.example/v1'],
+        ]);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        $provider->refresh();
+        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        Http::assertNothingSent();
+    }
+
+    public function test_canonical_probe_does_not_follow_redirects_with_credentials(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/models' => Http::response('', 302, ['Location' => 'https://attacker.example/collect']),
+            '*' => Http::response(['unexpected' => true], 200),
+        ]);
+
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI Redirect Probe',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organizationA->id;
+        $credential->credentials = ['api_key' => 'sk-redirect-secret'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI redirect probe',
+            'credential_id' => $credential->id,
+        ]);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://api.openai.com/v1/models'
+            && $request->hasHeader('Authorization', 'Bearer sk-redirect-secret'));
+        Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'attacker.example'));
     }
 
     public function test_unsupported_probe_remains_unknown_instead_of_false_healthy(): void

@@ -4,6 +4,8 @@ namespace Tests\Feature\AI;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
+use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
@@ -27,7 +29,10 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Models\AiRunToolCall;
+use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
@@ -35,12 +40,17 @@ use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\AI\Infrastructure\Context\AiContextAssembler;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\Data\RetrievalResult;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
+use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
+use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -48,6 +58,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Queue;
@@ -81,6 +92,91 @@ class AiWorkflowEngineTest extends TestCase
 
         config()->set('tenancy.default_organization_id', $this->organization->id);
         app(OrganizationContext::class)->set($this->organization);
+
+        $this->createActivePrompt(AiCapability::ClientCompanion, 'default_client_companion');
+        $this->createActivePrompt(AiCapability::ClinicalDocumentExtraction, 'default_clinical_document');
+    }
+
+    private function createActivePrompt(AiCapability $capability, string $key): void
+    {
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => $key,
+            'name' => $key,
+            'capability' => $capability,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Use the versioned test instructions.',
+            'user_prompt_template' => '{{query}} {{document_text}}',
+            'context_policy' => $capability === AiCapability::ClientCompanion ? ['include_rag' => true] : [],
+            'allowed_tools' => $capability === AiCapability::ClientCompanion ? ['search_knowledge_base'] : [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+    }
+
+    /** @return array{source_id: int, revision_id: int, chunk_id: int} */
+    private function createKnowledgeChunk(string $content, string $title = 'Test knowledge'): array
+    {
+        $source = KnowledgeSource::create([
+            'organization_id' => $this->organization->id,
+            'type' => 'authored_text',
+            'title' => $title,
+            'status' => 'active',
+        ]);
+        $revision = KnowledgeRevision::create([
+            'organization_id' => $this->organization->id,
+            'knowledge_source_id' => $source->id,
+            'version' => 1,
+            'status' => 'ready',
+            'content' => $content,
+            'mime_type' => 'text/plain',
+            'size_bytes' => strlen($content),
+            'content_checksum' => hash('sha256', $content),
+            'ready_at' => Carbon::now(),
+        ]);
+        $source->update(['active_revision_id' => $revision->id]);
+        $ingestionRun = KnowledgeIngestionRun::create([
+            'organization_id' => $this->organization->id,
+            'knowledge_source_id' => $source->id,
+            'knowledge_revision_id' => $revision->id,
+            'configuration_key' => 'test_embedding',
+            'status' => 'ready',
+            'chunk_strategy' => 'fixed',
+            'chunk_version' => 'v1',
+            'chunk_target_characters' => 128,
+            'chunk_maximum_characters' => 256,
+            'chunk_overlap_characters' => 0,
+            'embedding_provider' => 'test',
+            'embedding_model' => 'test',
+            'embedding_dimensions' => 1536,
+            'embedding_configuration_version' => 'v1',
+            'attempts' => 1,
+            'completed_at' => Carbon::now(),
+        ]);
+        $chunk = KnowledgeChunk::create([
+            'organization_id' => $this->organization->id,
+            'knowledge_source_id' => $source->id,
+            'knowledge_revision_id' => $revision->id,
+            'knowledge_ingestion_run_id' => $ingestionRun->id,
+            'chunk_index' => 0,
+            'start_offset' => 0,
+            'end_offset' => strlen($content),
+            'source_reference' => 'test section',
+            'content_checksum' => hash('sha256', $content),
+            'content' => $content,
+            'embedding' => [],
+        ]);
+
+        return [
+            'source_id' => $source->id,
+            'revision_id' => $revision->id,
+            'chunk_id' => $chunk->id,
+        ];
     }
 
     private function setupConfiguredModel(AiCapability $capability, string $providerName = 'openai', string $modelName = 'gpt-4o-mini', int $priority = 1, bool $enabled = true): AiModelConfiguration
@@ -102,6 +198,8 @@ class AiWorkflowEngineTest extends TestCase
             'is_enabled' => $enabled,
             'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest($providerName),
         ]);
 
         $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
@@ -194,6 +292,8 @@ class AiWorkflowEngineTest extends TestCase
         $run = AiRun::find($result->runId);
         $this->assertNotNull($run);
         $this->assertSame(AiRunStatus::Succeeded, $run->status);
+        $this->assertSame($prompt->id, $run->prompt_id);
+        $this->assertSame($version->id, $run->prompt_version_id);
         $this->assertSame(HumanReviewStatus::PendingReview, $run->human_review_status);
         $this->assertSame('openai', $run->actual_provider);
         $this->assertSame('gpt-4o-mini', $run->actual_model);
@@ -266,6 +366,18 @@ class AiWorkflowEngineTest extends TestCase
         $expectedCost = $pricing->calculateCostMinorUnits(123, 45);
         $this->assertSame($expectedCost, $run->settled_estimated_cost_minor_units);
         $this->assertSame($expectedCost, $attempt->settled_estimated_cost_minor_units);
+        $capability = AiCapabilityRegistry::get(AiCapability::ClientCompanion);
+        $exposure = AiRuntimeLimits::worstCaseProviderExposure(
+            maxInputTokens: $capability->maxInputTokens,
+            maxOutputTokens: $capability->defaultMaxTokens,
+            maxToolCalls: $capability->maxToolCalls,
+            maxProviderSteps: $capability->maxProviderSteps,
+            maxRagContextTokens: $capability->maxRagContextTokens,
+        );
+        $this->assertSame(
+            $pricing->calculateCostMinorUnits($exposure['input_tokens'], $exposure['output_tokens']),
+            $attempt->reserved_cost_minor_units,
+        );
         $this->assertNull($run->provider_cost_minor_units);
         $this->assertNull($attempt->provider_cost_minor_units);
         $this->assertSame('provider_reported', $run->getTokenUsage()->usageSource);
@@ -474,8 +586,12 @@ class AiWorkflowEngineTest extends TestCase
 
     public function test_sdk_knowledge_tool_filters_results_below_the_context_similarity_threshold(): void
     {
-        $fakeRetriever = new class implements KnowledgeRetriever
+        $high = $this->createKnowledgeChunk('Keep this result.', 'High match');
+        $low = $this->createKnowledgeChunk('Filter this result.', 'Low match');
+        $fakeRetriever = new class($high, $low) implements KnowledgeRetriever
         {
+            public function __construct(private array $high, private array $low) {}
+
             public function retrieve(User $actor, RetrievalQuery $query): array
             {
                 return $this->retrieveForOrganization(1, $query);
@@ -484,8 +600,8 @@ class AiWorkflowEngineTest extends TestCase
             public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
             {
                 return [
-                    new RetrievalResult(1, 1, 'High match', 'authored_text', 1, 1, 0, 'Keep this result.', 0.91, null, 0, 16, 1, 'cfg'),
-                    new RetrievalResult(2, 1, 'Low match', 'authored_text', 1, 1, 1, 'Filter this result.', 0.42, null, 16, 32, 1, 'cfg'),
+                    new RetrievalResult($this->high['chunk_id'], $this->high['source_id'], 'High match', 'authored_text', $this->high['revision_id'], 1, 0, 'Keep this result.', 0.91, null, 0, 16, 1, 'test_embedding'),
+                    new RetrievalResult($this->low['chunk_id'], $this->low['source_id'], 'Low match', 'authored_text', $this->low['revision_id'], 1, 1, 'Filter this result.', 0.42, null, 16, 32, 1, 'test_embedding'),
                 ];
             }
         };
@@ -509,6 +625,7 @@ class AiWorkflowEngineTest extends TestCase
             domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $fakeRetriever),
             maxToolCalls: 2,
             minimumSimilarity: 0.65,
+            policyMaxResults: 2,
         );
 
         $response = (string) $tool->handle(new Request(['query' => 'threshold']));
@@ -516,6 +633,130 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertStringContainsString('Keep this result.', $response);
         $this->assertStringNotContainsString('Filter this result.', $response);
         $this->assertSame(1, AiRunToolCall::query()->where('ai_run_id', $run->id)->firstOrFail()->call_index);
+        $this->assertSame(1, AiRunRagReference::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_sdk_knowledge_tool_fails_closed_when_model_requests_source_outside_policy_scope(): void
+    {
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public int $calls = 0;
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->calls++;
+
+                return [];
+            }
+        };
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'tool_scope_rejection_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $run->worker_lease_token),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever),
+            maxToolCalls: 2,
+            allowedKnowledgeSourceIds: [101],
+            policyMaxResults: 3,
+        );
+
+        $response = (string) $tool->handle(new Request([
+            'query' => 'outside source',
+            'knowledge_source_ids' => [202],
+            'max_results' => 10,
+        ]));
+
+        $this->assertSame('No relevant knowledge base records found.', $response);
+        $this->assertSame(0, $retriever->calls);
+        $this->assertSame(1, AiRunToolCall::query()->where('ai_run_id', $run->id)->count());
+        $this->assertSame(0, AiRunRagReference::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_sdk_knowledge_tool_intersects_source_scope_and_caps_model_result_count(): void
+    {
+        $allowed = $this->createKnowledgeChunk('Allowed policy content.', 'Allowed policy source');
+        $retriever = new class($allowed) implements KnowledgeRetriever
+        {
+            public ?RetrievalQuery $lastQuery = null;
+
+            public function __construct(private readonly array $allowed) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return $this->retrieveForOrganization(1, $query);
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->lastQuery = $query;
+                $results = [];
+                for ($index = 0; $index < 5; $index++) {
+                    $results[] = new RetrievalResult(
+                        chunkId: $this->allowed['chunk_id'],
+                        sourceId: $this->allowed['source_id'],
+                        sourceTitle: 'Allowed policy source',
+                        sourceType: 'authored_text',
+                        revisionId: $this->allowed['revision_id'],
+                        revisionVersion: 1,
+                        chunkIndex: $index,
+                        content: "Allowed result {$index}.",
+                        similarity: 0.95,
+                        sourceReference: null,
+                        startOffset: $index,
+                        endOffset: $index + 1,
+                        ingestionRunId: 1,
+                        embeddingConfigurationKey: 'test_embedding',
+                    );
+                }
+
+                return $results;
+            }
+        };
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'tool_scope_limit_test',
+            'status' => AiRunStatus::Running,
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($this->organization->id, $run->id, $run->worker_lease_token),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever),
+            maxToolCalls: 2,
+            allowedKnowledgeSourceIds: [$allowed['source_id']],
+            policyMaxResults: 3,
+        );
+
+        $response = json_decode((string) $tool->handle(new Request([
+            'query' => 'bounded source',
+            'knowledge_source_ids' => [$allowed['source_id'], 999999],
+            'max_results' => 10,
+        ])), true);
+
+        $this->assertIsArray($response);
+        $this->assertSame(3, $response['count']);
+        $this->assertCount(3, $response['results']);
+        $this->assertNotNull($retriever->lastQuery);
+        $this->assertSame(3, $retriever->lastQuery->topK);
+        $this->assertSame([$allowed['source_id']], $retriever->lastQuery->sourceIds);
+        $this->assertSame(3, AiRunRagReference::query()->where('ai_run_id', $run->id)->count());
     }
 
     public function test_incompatible_knowledge_embedding_is_a_typed_configuration_failure(): void
@@ -547,8 +788,11 @@ class AiWorkflowEngineTest extends TestCase
 
     public function test_real_sdk_tool_execution_creates_durable_ai_run_tool_call(): void
     {
-        $fakeRetriever = new class implements KnowledgeRetriever
+        $reference = $this->createKnowledgeChunk('Shoulder rehabilitation protocols.', 'Rehab Guidelines');
+        $fakeRetriever = new class($reference) implements KnowledgeRetriever
         {
+            public function __construct(private array $reference) {}
+
             public function retrieve(User $actor, RetrievalQuery $query): array
             {
                 return $this->retrieveForOrganization(1, $query);
@@ -558,11 +802,11 @@ class AiWorkflowEngineTest extends TestCase
             {
                 return [
                     new RetrievalResult(
-                        chunkId: 303,
-                        sourceId: 9,
+                        chunkId: $this->reference['chunk_id'],
+                        sourceId: $this->reference['source_id'],
                         sourceTitle: 'Rehab Guidelines',
                         sourceType: 'authored_text',
-                        revisionId: 1,
+                        revisionId: $this->reference['revision_id'],
                         revisionVersion: 1,
                         chunkIndex: 0,
                         content: 'Shoulder rehabilitation protocols.',
@@ -571,7 +815,7 @@ class AiWorkflowEngineTest extends TestCase
                         startOffset: 0,
                         endOffset: 34,
                         ingestionRunId: 1,
-                        embeddingConfigurationKey: 'key_1',
+                        embeddingConfigurationKey: 'test_embedding',
                     ),
                 ];
             }
@@ -614,6 +858,17 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertTrue($call->is_read_only);
         $this->assertSame('succeeded', $call->execution_status);
         $this->assertSame(hash('sha256', (string) json_encode(['query' => 'shoulder'])), $call->input_digest);
+
+        $ragReference = AiRunRagReference::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $this->assertSame($call->id, $ragReference->ai_run_tool_call_id);
+        $this->assertSame('tool', $ragReference->retrieval_type);
+        $this->assertSame($reference['source_id'], $ragReference->knowledge_source_id);
+        $this->assertSame($reference['revision_id'], $ragReference->knowledge_revision_id);
+        $this->assertSame($reference['chunk_id'], $ragReference->knowledge_chunk_id);
+        $this->assertArrayNotHasKey('content', $ragReference->getAttributes());
+
+        $this->expectException(QueryException::class);
+        KnowledgeChunk::query()->whereKey($reference['chunk_id'])->delete();
     }
 
     public function test_max_tool_calls_per_run_fails_closed_and_persists_failure_provenance(): void
@@ -771,6 +1026,95 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($call);
         $this->assertSame('running', $call->execution_status);
         $this->assertNull($call->error_sanitized);
+    }
+
+    public function test_provider_worker_losing_lease_during_call_cannot_write_attempt_outcome_and_reclaimer_charges_once(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('capability', AiCapability::ClientCompanion)
+            ->firstOrFail();
+        $promptVersion = AiPromptVersion::query()
+            ->where('organization_id', $this->organization->id)
+            ->whereKey($prompt->active_version_id)
+            ->firstOrFail();
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'stale_provider_attempt_test',
+            'status' => AiRunStatus::Running,
+            'prompt_id' => $prompt->id,
+            'prompt_version_id' => $promptVersion->id,
+            'worker_lease_token' => $tokenA,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'started_at' => Carbon::now(),
+        ]);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->id,
+            'ai_run_id' => $run->id,
+            'encryption_key_version' => 1,
+            'encrypted_system_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'Use the versioned test instructions.', 1),
+            'encrypted_user_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'provider call held open', 1),
+        ]);
+
+        DynamicWorkflowAgent::fake(function () use ($run, $tokenB): string {
+            AiRun::query()
+                ->where('organization_id', $run->organization_id)
+                ->whereKey($run->id)
+                ->update([
+                    'worker_lease_token' => $tokenB,
+                    'worker_lease_expires_at' => Carbon::now()->subSecond(),
+                ]);
+
+            return 'Provider response returned after lease transfer.';
+        });
+
+        $result = app(AiWorkflowEngine::class)->executeRun(
+            organizationId: $this->organization->id,
+            runId: $run->id,
+            workerLeaseToken: $tokenA,
+        );
+
+        $this->assertFalse($result->isSuccess());
+        $run->refresh();
+        $this->assertSame(AiRunStatus::Running, $run->status);
+        $this->assertSame($tokenB, $run->worker_lease_token);
+
+        $attempt = AiRunAttempt::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $this->assertSame('running', $attempt->status);
+        $this->assertSame(BudgetReservationStatus::Reserved, $attempt->budget_reservation_status);
+        $this->assertNull($attempt->retry_or_failover_reason);
+        $this->assertNull($attempt->error_message_sanitized);
+        $this->assertNull($attempt->finished_at);
+        $reservedCost = $attempt->reserved_cost_minor_units;
+
+        Queue::fake();
+        $reclaimResult = app(ReclaimExpiredAiRuns::class)->handle();
+
+        $this->assertSame(['reclaimed' => 1, 'dispatched' => 1], $reclaimResult);
+        Queue::assertPushed(ProcessAiRunJob::class, 1);
+        $attempt->refresh();
+        $this->assertSame('failed', $attempt->status);
+        $this->assertSame('Expired worker lease was reconciled before reassignment.', $attempt->retry_or_failover_reason);
+        $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $this->organization->id)
+            ->whereDate('usage_date', Carbon::now()->toDateString())
+            ->firstOrFail();
+        $spentAfterFirstReconcile = $budget->spent_minor_units;
+        $this->assertSame($reservedCost, $spentAfterFirstReconcile);
+        $this->assertSame(0, $budget->reserved_minor_units);
+
+        app(ReconcileExpiredAiRun::class)->handle($run->refresh(), 'Repeated reconciliation must be idempotent.');
+        $this->assertSame($spentAfterFirstReconcile, $budget->refresh()->spent_minor_units);
     }
 
     public function test_failed_tool_persists_safe_error_in_error_sanitized_column(): void
@@ -1193,5 +1537,79 @@ class AiWorkflowEngineTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
         $engine->run($this->organization->id, $request);
+    }
+
+    public function test_sync_and_async_execution_fail_closed_without_versioned_prompt_or_with_wrong_org_prompt(): void
+    {
+        $providerCalls = 0;
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
+
+            return 'Provider must not be called.';
+        });
+
+        $organizationWithoutPrompt = Organization::factory()->create();
+        $userWithoutPrompt = User::factory()->forOrganization($organizationWithoutPrompt, OrganizationRole::Administrator)->create();
+
+        try {
+            app(AiWorkflowEngine::class)->run($organizationWithoutPrompt->id, new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'missing_prompt_sync_test',
+                inputVariables: ['query' => 'must fail closed'],
+            ));
+            $this->fail('Synchronous execution without a prompt version must fail closed.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('active prompt version', $exception->getMessage());
+        }
+
+        app(OrganizationContext::class)->set($organizationWithoutPrompt);
+        Queue::fake();
+        try {
+            app(DispatchAsyncAiRun::class)->handle($userWithoutPrompt, new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'missing_prompt_async_test',
+                inputVariables: ['query' => 'must fail closed'],
+            ));
+            $this->fail('Asynchronous execution without a prompt version must fail closed.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('active prompt version', $exception->getMessage());
+        }
+
+        Queue::assertNothingPushed();
+        $this->assertSame(0, AiRun::query()->count());
+
+        $wrongOrganization = Organization::factory()->create();
+        $wrongPrompt = AiPrompt::create([
+            'organization_id' => $wrongOrganization->id,
+            'key' => 'wrong_org_prompt',
+            'name' => 'Wrong organization prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $wrongVersion = AiPromptVersion::create([
+            'organization_id' => $wrongOrganization->id,
+            'prompt_id' => $wrongPrompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Wrong organization instructions.',
+            'user_prompt_template' => '{{query}}',
+            'activated_at' => Carbon::now(),
+        ]);
+        $wrongPrompt->update(['active_version_id' => $wrongVersion->id]);
+
+        app(OrganizationContext::class)->set($this->organization);
+        try {
+            app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'wrong_prompt_org_test',
+                promptVersionId: $wrongVersion->id,
+                inputVariables: ['query' => 'must fail closed'],
+            ));
+            $this->fail('A prompt version from another organization must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('active prompt version', $exception->getMessage());
+        }
+
+        $this->assertSame(0, $providerCalls);
+        $this->assertSame(0, AiRun::query()->count());
     }
 }

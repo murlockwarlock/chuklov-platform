@@ -47,8 +47,8 @@ final class EvalInputPrivacyValidator
 
     public function validateClassification(bool $isSynthetic, bool $isDeidentified): void
     {
-        if ($isSynthetic === $isDeidentified) {
-            throw new InvalidArgumentException('Evaluation case classification must be exactly one: either synthetic or de-identified.');
+        if (! $isSynthetic || $isDeidentified) {
+            throw new InvalidArgumentException('Evaluation case classification must be exactly one: synthetic fixtures only.');
         }
     }
 

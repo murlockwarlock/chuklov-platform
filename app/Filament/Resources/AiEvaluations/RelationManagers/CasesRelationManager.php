@@ -41,14 +41,12 @@ class CasesRelationManager extends RelationManager
                     ->label('Классификация данных (обязательно)')
                     ->options([
                         'synthetic' => 'Синтетические данные (Synthetic)',
-                        'deidentified' => 'Обезличенные данные (De-identified)',
                     ])
                     ->descriptions([
                         'synthetic' => 'Полностью искусственно сгенерированные данные без связи с реальными людьми.',
-                        'deidentified' => 'Реальные данные, полностью очищенные от прямых и косвенных персональных идентификаторов.',
                     ])
                     ->required()
-                    ->helperText('⚠️ Использование реальных данных пациентов, сессий, номеров телефонов и персональных email строго запрещено.'),
+                    ->helperText('В M10 разрешены только синтетические фикстуры; клинический и производственный материал запрещен.'),
                 Textarea::make('test_inputs')
                     ->label('Входные параметры (JSON)')
                     ->rows(4)
@@ -109,7 +107,6 @@ class CasesRelationManager extends RelationManager
 
                         $classification = (string) $data['classification'];
                         $isSynthetic = $classification === 'synthetic';
-                        $isDeidentified = $classification === 'deidentified';
 
                         /** @var CreateEvalCase $action */
                         $action = app(CreateEvalCase::class);
@@ -122,7 +119,7 @@ class CasesRelationManager extends RelationManager
                             testInputs: $inputs,
                             expectedAssertions: $assertions,
                             isSynthetic: $isSynthetic,
-                            isDeidentified: $isDeidentified,
+                            isDeidentified: false,
                         );
                     }),
             ])
@@ -148,7 +145,6 @@ class CasesRelationManager extends RelationManager
 
                         $classification = (string) $data['classification'];
                         $isSynthetic = $classification === 'synthetic';
-                        $isDeidentified = $classification === 'deidentified';
 
                         /** @var UpdateEvalCase $action */
                         $action = app(UpdateEvalCase::class);
@@ -161,7 +157,7 @@ class CasesRelationManager extends RelationManager
                                 'test_inputs' => $inputs,
                                 'expected_assertions' => $assertions,
                                 'is_synthetic' => $isSynthetic,
-                                'is_deidentified' => $isDeidentified,
+                                'is_deidentified' => false,
                                 'is_active' => (bool) ($data['is_active'] ?? true),
                             ],
                         );

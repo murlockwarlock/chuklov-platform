@@ -16,7 +16,6 @@ use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
-use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiTokenUsage;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -67,14 +66,6 @@ class DispatchAsyncAiRun
             }
         }
 
-        $timeoutSeconds = AiRuntimeLimits::effectiveTimeout(
-            requestedTimeout: $request->timeoutSeconds ?? $capabilityDef->defaultTimeoutSeconds,
-            capabilityMaxTimeout: $capabilityDef->maxTimeoutSeconds,
-            organizationTimeout: null,
-        );
-        $leaseTtl = $timeoutSeconds + max(60, $timeoutSeconds);
-        $workerLeaseToken = (string) Str::uuid();
-
         $promptVersion = null;
         if ($request->promptVersionId !== null) {
             $promptVersion = AiPromptVersion::query()
@@ -85,6 +76,8 @@ class DispatchAsyncAiRun
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('capability', $request->capability)
+                ->whereNotNull('active_version_id')
+                ->latest('id')
                 ->first();
 
             if ($prompt !== null && $prompt->active_version_id !== null) {
@@ -95,9 +88,22 @@ class DispatchAsyncAiRun
             }
         }
 
-        $contextPolicy = $promptVersion !== null
-            ? $promptVersion->getContextPolicy()
-            : new AiContextPolicy(includeRag: $capabilityDef->supportsRag);
+        if ($promptVersion === null) {
+            throw new \InvalidArgumentException('Asynchronous AI execution requires a tenant-owned active prompt version.');
+        }
+
+        if ($promptVersion->prompt === null || $promptVersion->prompt->capability !== $request->capability) {
+            throw new \InvalidArgumentException('The selected prompt version does not support this capability.');
+        }
+
+        if ($promptVersion->status->value === 'draft') {
+            throw new \InvalidArgumentException('Draft prompt versions cannot execute asynchronously.');
+        }
+
+        $executionDeadlineAt = Carbon::now()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+        $leaseExpiresAt = $executionDeadlineAt->copy()->addSeconds(AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS);
+        $workerLeaseToken = (string) Str::uuid();
+        $contextPolicy = $promptVersion->getContextPolicy();
 
         $contextAssembly = $this->contextAssembler->assemble(
             organizationId: (int) $organization->getKey(),
@@ -107,12 +113,8 @@ class DispatchAsyncAiRun
             actor: $actor,
         );
 
-        $systemPromptTemplate = $promptVersion !== null
-            ? $promptVersion->system_prompt
-            : 'You are a clinical wellness AI assistant. Provide concise, factual information.';
-        $userPromptTemplate = $promptVersion !== null
-            ? $promptVersion->user_prompt_template
-            : '{{query}}';
+        $systemPromptTemplate = $promptVersion->system_prompt;
+        $userPromptTemplate = $promptVersion->user_prompt_template;
 
         $renderedSystemPrompt = $this->promptRenderer->render($systemPromptTemplate, $contextAssembly->variables);
         $renderedUserPrompt = $this->promptRenderer->render($userPromptTemplate, $contextAssembly->variables);
@@ -131,7 +133,8 @@ class DispatchAsyncAiRun
                 $renderedPromptDigest,
                 $contextAssembly,
                 $workerLeaseToken,
-                $leaseTtl,
+                $executionDeadlineAt,
+                $leaseExpiresAt,
                 $keyVersion,
                 $renderedSystemPrompt,
                 $renderedUserPrompt,
@@ -157,19 +160,20 @@ class DispatchAsyncAiRun
                     'client_id' => $request->clientId,
                     'status' => AiRunStatus::Queued,
                     'execution_mode' => AiExecutionMode::Async,
-                    'prompt_id' => $promptVersion?->prompt_id,
-                    'prompt_version_id' => $promptVersion?->id,
+                    'prompt_id' => $promptVersion->prompt_id,
+                    'prompt_version_id' => $promptVersion->id,
                     'model_release_id' => $request->modelReleaseId,
                     'input_references' => array_map(static fn ($reference): array => $reference->toArray(), $request->inputReferences),
                     'rendered_prompt_digest' => $renderedPromptDigest,
                     'context_provenance' => $contextAssembly->provenanceSummary,
-                    'structured_output_schema_version' => $promptVersion?->output_schema ? 'v1' : null,
+                    'structured_output_schema_version' => $promptVersion->output_schema ? 'v1' : null,
                     'structured_output_valid' => true,
                     'token_usage' => (new AiTokenUsage)->toArray(),
                     'cost_currency' => 'USD',
                     'idempotency_key' => $request->idempotencyKey,
                     'worker_lease_token' => $workerLeaseToken,
-                    'worker_lease_expires_at' => Carbon::now()->addSeconds($leaseTtl),
+                    'worker_lease_expires_at' => $leaseExpiresAt,
+                    'execution_deadline_at' => $executionDeadlineAt,
                     'queued_at' => Carbon::now(),
                 ]);
                 $run->save();
@@ -195,6 +199,7 @@ class DispatchAsyncAiRun
                         'chunk_index' => $ragChunk->chunkIndex,
                         'similarity_score' => $ragChunk->similarity,
                         'configuration_key' => $ragChunk->embeddingConfigurationKey,
+                        'retrieval_type' => 'initial',
                     ]);
                 }
 

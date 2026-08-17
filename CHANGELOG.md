@@ -25,6 +25,10 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Centralized organization-owned typed input-reference validation, bounded prompt/RAG/tool-loop admission, immutable release pricing reservations, conservative fenced settlement, durable tool provenance, scheduled lease reclamation, fixed human-review reason codes, real provider connectivity semantics, exact evaluation release pinning, fail-closed eval privacy, PostgreSQL-safe async idempotency, activation permission separation, RAG failure/context controls, provider-reported usage provenance, tenant-safe eval prompt ownership, explicit medical actors, and platform-clamped organization safety limits.
   - M9 remains CLOSED / ACCEPTED. M10 remains IN_PROGRESS pending independent remediation re-review, candidate hosted CI, and final acceptance; PostgreSQL concurrency coverage is present but is not claimed as locally executed.
 
+- M10 final bounded remediation pass:
+  - Added a whole-run deadline/lease/queue timeout contract, accumulated multi-step provider exposure reservation, ownership-independent stale-attempt reconciliation, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval execution, fixed-scope tool RAG, durable tool-chunk provenance with retention-safe foreign keys, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
+  - M10 remains IN_PROGRESS; PostgreSQL concurrency coverage is present and is not claimed as locally executed, and hosted CI/final acceptance remain outstanding.
+
 - M8 Surveys / Road Map implementation candidate:
   - Added organization-scoped versioned definitions, immutable exact-version attempts, encrypted sensitive snapshots, typed fail-closed conditions/scoring, deterministic thresholds/tags, non-AI reports, compatibility-gated comparison, and idempotent Scenario events for completion and configured stagnation.
   - Added structured Filament definition/version publication and attempt history, responsive Inertia Portal flows, and the validated `surveys:import` path.

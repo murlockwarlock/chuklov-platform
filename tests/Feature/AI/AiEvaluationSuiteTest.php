@@ -19,6 +19,7 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -78,6 +79,8 @@ class AiEvaluationSuiteTest extends TestCase
             'is_enabled' => true,
             'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest($providerName),
         ]);
 
         $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
@@ -275,6 +278,82 @@ class AiEvaluationSuiteTest extends TestCase
         }
     }
 
+    public function test_eval_case_creation_requires_synthetic_fixtures_and_validates_all_payload_sections(): void
+    {
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'strict_eval_payload_suite',
+            'name' => 'Strict eval payload suite',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $action = app(CreateEvalCase::class);
+
+        try {
+            $action->execute(
+                actor: $this->user,
+                organization: $this->organization,
+                suiteId: $suite->id,
+                name: 'Inline deidentified fixture',
+                testInputs: ['query' => 'neutral fixture text'],
+                expectedAssertions: [],
+                isSynthetic: false,
+                isDeidentified: true,
+            );
+            $this->fail('Raw inline deidentified fixtures must not be accepted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('synthetic fixtures only', $exception->getMessage());
+        }
+
+        try {
+            $action->execute(
+                actor: $this->user,
+                organization: $this->organization,
+                suiteId: $suite->id,
+                name: 'Prohibited assertion reference',
+                testInputs: ['query' => 'synthetic fixture text'],
+                expectedAssertions: ['nested' => ['medical_session_id' => 44]],
+                isSynthetic: true,
+                isDeidentified: false,
+            );
+            $this->fail('Expected protected references in assertions to be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Production reference', $exception->getMessage());
+        }
+
+        try {
+            $action->execute(
+                actor: $this->user,
+                organization: $this->organization,
+                suiteId: $suite->id,
+                name: 'Prohibited output schema reference',
+                testInputs: ['query' => 'synthetic fixture text'],
+                expectedAssertions: [],
+                expectedOutputSchema: ['properties' => ['client_id' => ['type' => 'integer']]],
+                isSynthetic: true,
+                isDeidentified: false,
+            );
+            $this->fail('Expected protected references in output schema to be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Production reference', $exception->getMessage());
+        }
+
+        $case = $action->execute(
+            actor: $this->user,
+            organization: $this->organization,
+            suiteId: $suite->id,
+            name: 'Synthetic fixture',
+            testInputs: ['query' => 'synthetic fixture text', 'notes' => 'fictional notes'],
+            expectedAssertions: ['contains_text' => 'fixture'],
+            expectedOutputSchema: ['type' => 'object', 'properties' => ['answer' => ['type' => 'string']]],
+            isSynthetic: true,
+            isDeidentified: false,
+        );
+
+        $this->assertTrue($case->is_synthetic);
+        $this->assertFalse($case->is_deidentified);
+        $this->assertSame('fictional notes', $case->test_inputs['notes']);
+    }
+
     public function test_update_eval_case_revalidates_privacy_and_rejects_patient_references(): void
     {
         $suite = AiEvalSuite::create([
@@ -358,6 +437,55 @@ class AiEvaluationSuiteTest extends TestCase
                 modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
             );
             $this->fail('Expected legacy nested production reference to be rejected before execution.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Production reference', $e->getMessage());
+        }
+
+        AiEvalCase::query()->where('eval_suite_id', $suite->id)->delete();
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Legacy assertion reference',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic query'],
+            'expected_assertions' => ['nested' => ['ai_run_payload_id' => 42]],
+            'is_active' => true,
+        ]);
+
+        try {
+            app(RunEvaluationSuite::class)->handle(
+                actor: $this->user,
+                evalSuiteId: $suite->id,
+                promptVersionId: $version->id,
+                modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
+            );
+            $this->fail('Expected legacy assertion reference to be rejected before execution.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Production reference', $e->getMessage());
+        }
+
+        AiEvalCase::query()->where('eval_suite_id', $suite->id)->delete();
+        AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Legacy output schema reference',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic query'],
+            'expected_assertions' => [],
+            'expected_output_schema' => ['properties' => ['protected_trace_id' => ['type' => 'string']]],
+            'is_active' => true,
+        ]);
+
+        try {
+            app(RunEvaluationSuite::class)->handle(
+                actor: $this->user,
+                evalSuiteId: $suite->id,
+                promptVersionId: $version->id,
+                modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
+            );
+            $this->fail('Expected legacy output schema reference to be rejected before execution.');
         } catch (InvalidArgumentException $e) {
             $this->assertStringContainsString('Production reference', $e->getMessage());
         }

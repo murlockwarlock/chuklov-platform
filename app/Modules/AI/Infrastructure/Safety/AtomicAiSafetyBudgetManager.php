@@ -8,6 +8,7 @@ use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -27,9 +28,9 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
             throw new AiKillSwitchException('AI is globally disabled for this organization.');
         }
 
-        $maxDailyLimit = $safetyControls !== null
-            ? $safetyControls->max_daily_spend_minor_units
-            : 5000;
+        $maxDailyLimit = AiRuntimeLimits::effectiveDailySpendLimit(
+            $safetyControls?->max_daily_spend_minor_units,
+        );
 
         $today = Carbon::now()->toDateString();
 
@@ -291,8 +292,10 @@ class AtomicAiSafetyBudgetManager implements AiSafetyBudgetManagerInterface
 
     private function dailyLimit(int $organizationId): int
     {
-        return max(0, (int) (AiOrganizationSafetyControl::query()
-            ->where('organization_id', $organizationId)
-            ->value('max_daily_spend_minor_units') ?? 5000));
+        return AiRuntimeLimits::effectiveDailySpendLimit(
+            (int) (AiOrganizationSafetyControl::query()
+                ->where('organization_id', $organizationId)
+                ->value('max_daily_spend_minor_units') ?? AiRuntimeLimits::dailySpendCeiling()),
+        );
     }
 }

@@ -15,8 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $eval_suite_id
  * @property int $prompt_version_id
  * @property int $model_release_id
- * @property string $provider
- * @property string $model
+ * @property string|null $provider
+ * @property string|null $model
  * @property int $total_cases
  * @property int $passed_cases
  * @property int $failed_cases

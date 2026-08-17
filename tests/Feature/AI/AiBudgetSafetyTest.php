@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AI;
 
+use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
@@ -324,7 +325,7 @@ class AiBudgetSafetyTest extends TestCase
             }
         };
 
-        $job->handle($fakeEngine, $this->budgetManager);
+        $job->handle($fakeEngine, app(ReconcileExpiredAiRun::class));
 
         // 4. Assert budget row was reconciled conservatively
         $budget->refresh();
@@ -334,7 +335,7 @@ class AiBudgetSafetyTest extends TestCase
         $attempt->refresh();
         $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
         $this->assertSame('failed', $attempt->status);
-        $this->assertSame('Lease expired and reclaimed by new worker.', $attempt->retry_or_failover_reason);
+        $this->assertSame('Expired worker lease was reconciled before reassignment.', $attempt->retry_or_failover_reason);
 
         // 5. Repeated handle (must not double-charge)
         $this->budgetManager->chargeAttemptConservatively($attempt);

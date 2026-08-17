@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -33,10 +34,10 @@ use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
-use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
 use App\Modules\AI\Domain\ValueObjects\AiTokenUsage;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
@@ -55,8 +56,6 @@ use Throwable;
 
 class LaravelAiWorkflowEngine implements AiWorkflowEngine
 {
-    public const int PLATFORM_MAX_TIMEOUT_SECONDS = 180;
-
     public function __construct(
         private readonly AiContextAssemblerInterface $contextAssembler,
         private readonly AiPromptRendererInterface $promptRenderer,
@@ -160,6 +159,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organizationId)
                 ->where('capability', $request->capability)
+                ->whereNotNull('active_version_id')
+                ->latest('id')
                 ->first();
 
             if ($prompt !== null && $prompt->active_version_id !== null) {
@@ -170,9 +171,19 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             }
         }
 
-        $contextPolicy = $promptVersion !== null
-            ? $promptVersion->getContextPolicy()
-            : new AiContextPolicy(includeRag: $capabilityDef->supportsRag);
+        if ($promptVersion === null) {
+            throw new InvalidArgumentException('AI execution requires a tenant-owned active prompt version.');
+        }
+
+        if ($promptVersion->prompt === null || $promptVersion->prompt->capability !== $request->capability) {
+            throw new InvalidArgumentException('The selected prompt version does not support this capability.');
+        }
+
+        if ($promptVersion->status->value === 'draft' && $request->executionMode !== AiExecutionMode::Playground) {
+            throw new InvalidArgumentException('Draft prompt versions are only executable in the playground.');
+        }
+
+        $contextPolicy = $promptVersion->getContextPolicy();
 
         try {
             $contextAssembly = $this->contextAssembler->assemble(
@@ -186,24 +197,17 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             throw $e;
         }
 
-        $systemPromptTemplate = $promptVersion !== null ? $promptVersion->system_prompt : 'You are a clinical wellness assistant.';
-        $userPromptTemplate = $promptVersion !== null ? $promptVersion->user_prompt_template : 'Process the following input: {{ query }}';
+        $systemPromptTemplate = $promptVersion->system_prompt;
+        $userPromptTemplate = $promptVersion->user_prompt_template;
 
         $renderedSystemPrompt = $this->promptRenderer->render($systemPromptTemplate, $contextAssembly->variables);
         $renderedUserPrompt = $this->promptRenderer->render($userPromptTemplate, $contextAssembly->variables);
         AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
         $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
 
-        $configuredTimeout = $promptVersion?->getParameterConfig()->timeoutSeconds ?? $request->timeoutSeconds ?? $capabilityDef->defaultTimeoutSeconds;
-        $attemptTimeout = AiRuntimeLimits::effectiveTimeout(
-            requestedTimeout: $configuredTimeout,
-            capabilityMaxTimeout: $capabilityDef->maxTimeoutSeconds,
-            organizationTimeout: $safetyControls?->default_timeout_seconds,
-        );
-        $leaseTtl = $attemptTimeout + max(30, (int) round($attemptTimeout * 0.5));
-
         $leaseToken = (string) Str::uuid();
-        $leaseExpiresAt = Carbon::now()->addSeconds($leaseTtl);
+        $executionDeadlineAt = Carbon::now()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+        $leaseExpiresAt = $executionDeadlineAt->copy()->addSeconds(AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS);
         $keyVersion = (int) Config::get('medical.key_version', 1);
 
         /** @var AiRun|null $run */
@@ -219,6 +223,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 $contextAssembly,
                 $leaseToken,
                 $leaseExpiresAt,
+                $executionDeadlineAt,
                 $keyVersion,
                 $renderedSystemPrompt,
                 $renderedUserPrompt,
@@ -232,19 +237,20 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     'client_id' => $request->clientId,
                     'status' => AiRunStatus::Running,
                     'execution_mode' => $request->executionMode,
-                    'prompt_id' => $promptVersion?->prompt_id,
-                    'prompt_version_id' => $promptVersion?->id,
+                    'prompt_id' => $promptVersion->prompt_id,
+                    'prompt_version_id' => $promptVersion->id,
                     'model_release_id' => $request->modelReleaseId,
                     'input_references' => array_map(fn ($r) => $r->toArray(), $request->inputReferences),
                     'rendered_prompt_digest' => $renderedPromptDigest,
                     'context_provenance' => $contextAssembly->provenanceSummary,
-                    'structured_output_schema_version' => $promptVersion?->output_schema ? 'v1' : null,
+                    'structured_output_schema_version' => $promptVersion->output_schema ? 'v1' : null,
                     'structured_output_valid' => true,
                     'token_usage' => (new AiTokenUsage)->toArray(),
                     'cost_currency' => 'USD',
                     'idempotency_key' => $request->idempotencyKey,
                     'worker_lease_token' => $leaseToken,
                     'worker_lease_expires_at' => $leaseExpiresAt,
+                    'execution_deadline_at' => $executionDeadlineAt,
                     'started_at' => Carbon::now(),
                 ]);
                 $run->save();
@@ -269,6 +275,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         'chunk_index' => $ragChunk->chunkIndex,
                         'similarity_score' => $ragChunk->similarity,
                         'configuration_key' => $ragChunk->embeddingConfigurationKey,
+                        'retrieval_type' => 'initial',
                     ]);
                 }
             });
@@ -327,6 +334,15 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 latencyMs: $run->latency_ms,
                 errorCategory: $run->error_category,
                 errorMessageSanitized: $run->error_message_sanitized,
+            );
+        }
+
+        if ($run->execution_deadline_at !== null && $run->execution_deadline_at->isPast()) {
+            return new AiRunResult(
+                runId: $run->id,
+                status: AiRunStatus::TimedOut,
+                errorCategory: AiErrorCategory::ProviderUnavailable,
+                errorMessageSanitized: 'Whole-run execution deadline expired before provider execution.',
             );
         }
 
@@ -410,17 +426,40 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
         $decryptedSystemPrompt = $payload?->encrypted_system_prompt !== null
             ? $this->medicalEncryptor->decryptField($organizationId, $payload->encrypted_system_prompt, $keyVersion)
-            : 'You are a clinical wellness assistant.';
+            : null;
         $decryptedUserPrompt = $payload?->encrypted_user_prompt !== null
             ? $this->medicalEncryptor->decryptField($organizationId, $payload->encrypted_user_prompt, $keyVersion)
-            : '';
+            : null;
 
         $promptVersion = $run->prompt_version_id !== null
             ? AiPromptVersion::query()->where('organization_id', $organizationId)->where('id', $run->prompt_version_id)->first()
             : null;
-        $contextPolicy = $promptVersion !== null
-            ? $promptVersion->getContextPolicy()
-            : new AiContextPolicy(includeRag: $capabilityDef->supportsRag);
+        if ($promptVersion === null
+            || $promptVersion->prompt === null
+            || $promptVersion->prompt->capability !== $run->capability
+            || ($promptVersion->status->value === 'draft' && $run->execution_mode !== AiExecutionMode::Playground)
+            || ! is_string($decryptedSystemPrompt)
+            || trim($decryptedSystemPrompt) === ''
+            || ! is_string($decryptedUserPrompt)
+            || $payload === null) {
+            $this->fencedTerminalRunTransition(
+                $organizationId,
+                $runId,
+                $workerLeaseToken,
+                AiRunStatus::Failed,
+                AiErrorCategory::InternalError,
+                'Immutable prompt version or protected prompt payload is unavailable.',
+            );
+
+            return new AiRunResult(
+                runId: $run->id,
+                status: AiRunStatus::Failed,
+                errorCategory: AiErrorCategory::InternalError,
+                errorMessageSanitized: 'Immutable prompt version or protected prompt payload is unavailable.',
+            );
+        }
+
+        $contextPolicy = $promptVersion->getContextPolicy();
 
         $candidates = [];
         $exactRelease = null;
@@ -476,6 +515,20 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 continue;
             }
 
+            try {
+                $configurationDigest = AiProviderExecutionConfiguration::digest(
+                    $providerConfig->provider_name,
+                    $providerConfig->options ?? [],
+                );
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($providerConfig->tested_credential_revision !== $credential->revision_id
+                || $providerConfig->tested_configuration_digest !== $configurationDigest) {
+                continue;
+            }
+
             $candidates[] = [
                 'provider' => $release->provider_name,
                 'model' => $release->model_name,
@@ -511,7 +564,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             throw new AiProviderUnavailableException("No enabled AI provider or model configured for capability '{$run->capability->value}'.");
         }
 
-        $configuredTimeout = $promptVersion?->getParameterConfig()->timeoutSeconds ?? $capabilityDef->defaultTimeoutSeconds;
+        $configuredTimeout = $promptVersion->getParameterConfig()->timeoutSeconds;
         $attemptTimeoutSeconds = AiRuntimeLimits::effectiveTimeout(
             requestedTimeout: $configuredTimeout,
             capabilityMaxTimeout: $capabilityDef->maxTimeoutSeconds,
@@ -520,7 +573,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
         // 5. RESOLVE EFFECTIVE TOOLS (capability allowed ∩ prompt allowed \ safety disabled)
         $capabilityAllowedTools = $capabilityDef->allowedTools;
-        $promptAllowedTools = $promptVersion !== null ? $promptVersion->allowed_tools : $capabilityAllowedTools;
+        $promptAllowedTools = $promptVersion->allowed_tools;
         $safetyDisabledTools = $safetyControls !== null ? $safetyControls->disabled_tools : [];
         $effectiveToolNames = array_values(array_diff(array_intersect($capabilityAllowedTools, $promptAllowedTools), $safetyDisabledTools));
         if (! $contextPolicy->allows('rag')) {
@@ -545,6 +598,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     domainTool: $domainTool,
                     maxToolCalls: $maxToolCalls,
                     minimumSimilarity: $contextPolicy->ragMinSimilarity,
+                    allowedKnowledgeSourceIds: $contextPolicy->ragKnowledgeSourceIds,
+                    policyMaxResults: $contextPolicy->ragMaxChunks,
                 );
             }
         }
@@ -557,7 +612,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         // 6. RESOLVE MAX TOKENS PER RUN
         $tokenCeiling = AiRuntimeLimits::effectiveMaxOutputTokens(
             capability: $capabilityDef,
-            requestedMaxTokens: $promptVersion?->getParameterConfig()->maxTokens,
+            requestedMaxTokens: $promptVersion->getParameterConfig()->maxTokens,
             organizationMaxTokens: $safetyControls?->max_tokens_per_run,
         );
 
@@ -584,12 +639,30 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             /** @var AiPricingSnapshot $pricing */
             $pricing = $candidate['pricing'];
 
+            if ($run->execution_deadline_at !== null
+                && Carbon::now()->addSeconds(
+                    AiRuntimeLimits::providerAttemptSeconds(
+                        providerSteps: $maxProviderSteps,
+                        providerStepTimeout: $attemptTimeoutSeconds,
+                        toolCalls: $maxToolCalls,
+                    ) + AiRuntimeLimits::PLATFORM_EXECUTION_MARGIN_SECONDS,
+                )->isAfter($run->execution_deadline_at)) {
+                $lastErrorCategory = AiErrorCategory::ProviderUnavailable;
+                $lastErrorMessage = 'Whole-run execution window is too short for the bounded provider attempt.';
+
+                break;
+            }
+
+            $worstCaseExposure = AiRuntimeLimits::worstCaseProviderExposure(
+                maxInputTokens: min(AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS, $capabilityDef->maxInputTokens),
+                maxOutputTokens: $tokenCeiling,
+                maxToolCalls: $maxToolCalls,
+                maxProviderSteps: $maxProviderSteps,
+                maxRagContextTokens: $capabilityDef->maxRagContextTokens,
+            );
             $worstCaseEstimatedCost = $pricing->calculateCostMinorUnits(
-                AiRuntimeLimits::worstCaseInputTokens(
-                    min(AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS, $capabilityDef->maxInputTokens),
-                    $maxToolCalls,
-                ),
-                $tokenCeiling * $maxProviderSteps,
+                $worstCaseExposure['input_tokens'],
+                $worstCaseExposure['output_tokens'],
             );
 
             /** @var AiRunAttempt|null $attempt */
@@ -616,7 +689,10 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         ->lockForUpdate()
                         ->first();
 
-                    if ($lockedRun === null || $lockedRun->worker_lease_token !== $workerLeaseToken || $lockedRun->status !== AiRunStatus::Running) {
+                    if ($lockedRun === null
+                        || $lockedRun->worker_lease_token !== $workerLeaseToken
+                        || $lockedRun->status !== AiRunStatus::Running
+                        || ($lockedRun->execution_deadline_at !== null && $lockedRun->execution_deadline_at->isPast())) {
                         throw new InvalidArgumentException('Stale worker lease lost.');
                     }
 
@@ -685,7 +761,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             // 7. ISOLATED PROVIDER INVOCATION WITH EXACT CREDENTIAL & TIMEOUT
             try {
                 $agent = (new DynamicWorkflowAgent(
-                    instructionsText: $decryptedSystemPrompt ?: 'You are a clinical wellness AI assistant.',
+                    instructionsText: $decryptedSystemPrompt,
                     agentTools: $resolvedSdkTools,
                     defaultProvider: $candidate['provider'],
                     defaultModel: $candidate['model'],
@@ -701,7 +777,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
                 $agentPrompt = new AgentPrompt(
                     agent: $agent,
-                    prompt: $decryptedUserPrompt ?: 'Hello',
+                    prompt: $decryptedUserPrompt,
                     attachments: [],
                     provider: $textProvider,
                     model: $candidate['model'],
@@ -729,7 +805,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
 
                 $outputPayload = null;
-                $outputSchema = $promptVersion !== null ? $promptVersion->output_schema : $capabilityDef->defaultOutputSchema;
+                $outputSchema = $promptVersion->output_schema;
                 $isValid = true;
 
                 if ($outputSchema !== null) {
@@ -740,7 +816,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 }
 
                 $encodedPayload = $outputPayload !== null ? json_encode($outputPayload) : null;
-                $humanReviewStatus = ($capabilityDef->requiresHumanReview || ($promptVersion !== null && $promptVersion->output_schema !== null))
+                $humanReviewStatus = ($capabilityDef->requiresHumanReview || $promptVersion->output_schema !== null)
                     ? HumanReviewStatus::PendingReview
                     : HumanReviewStatus::NotRequired;
 
@@ -780,10 +856,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         ->lockForUpdate()
                         ->first();
 
-                    if ($lockedRun === null || $lockedRun->worker_lease_token !== $workerLeaseToken || $lockedRun->status !== AiRunStatus::Running) {
+                    if ($lockedRun === null
+                        || $lockedRun->worker_lease_token !== $workerLeaseToken
+                        || $lockedRun->status !== AiRunStatus::Running
+                        || ($lockedRun->execution_deadline_at !== null && $lockedRun->execution_deadline_at->isPast())) {
                         $staleLoss = true;
-                        $this->budgetManager->chargeAttemptConservatively($attempt);
-                        $this->markAttemptStale($attempt->id, $organizationId, $runId, $workerLeaseToken);
 
                         return;
                     }
@@ -799,14 +876,12 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         'finished_at' => Carbon::now(),
                     ]);
 
-                    if ($payload !== null) {
-                        $payload->update([
-                            'encrypted_output_text' => $this->medicalEncryptor->encryptField($organizationId, $outputText, $keyVersion),
-                            'encrypted_output_payload' => is_string($encodedPayload)
-                                ? $this->medicalEncryptor->encryptField($organizationId, $encodedPayload, $keyVersion)
-                                : null,
-                        ]);
-                    }
+                    $payload->update([
+                        'encrypted_output_text' => $this->medicalEncryptor->encryptField($organizationId, $outputText, $keyVersion),
+                        'encrypted_output_payload' => is_string($encodedPayload)
+                            ? $this->medicalEncryptor->encryptField($organizationId, $encodedPayload, $keyVersion)
+                            : null,
+                    ]);
 
                     $lockedRun->update([
                         'status' => $runStatus,
@@ -850,10 +925,9 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 $lastErrorCategory = $sanitized['category'];
                 $lastErrorMessage = $sanitized['message'];
 
-                // External call started and failed/timed out: charge conservatively
+                // The owner transaction charges and records this attempt together. A stale worker leaves the reservation for reclaim.
                 if ($attempt->status === 'running') {
-                    $this->budgetManager->chargeAttemptConservatively($attempt);
-                    $this->fencedAttemptFailure(
+                    $attemptOwned = $this->fencedAttemptFailure(
                         organizationId: $organizationId,
                         runId: $runId,
                         attemptId: $attempt->id,
@@ -862,6 +936,10 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         errorCategory: $sanitized['category'],
                         errorMessage: $sanitized['message'],
                     );
+
+                    if (! $attemptOwned) {
+                        break;
+                    }
                 }
             }
         }
@@ -953,8 +1031,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         int $latencyMs,
         AiErrorCategory $errorCategory,
         string $errorMessage,
-    ): void {
-        DB::transaction(function () use (
+    ): bool {
+        return (bool) DB::transaction(function () use (
             $organizationId,
             $runId,
             $attemptId,
@@ -962,7 +1040,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             $latencyMs,
             $errorCategory,
             $errorMessage,
-        ): void {
+        ): bool {
             $lockedRun = AiRun::query()
                 ->where('organization_id', $organizationId)
                 ->whereKey($runId)
@@ -970,7 +1048,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->first();
 
             if ($lockedRun === null) {
-                return;
+                return false;
             }
 
             $attemptQuery = AiRunAttempt::query()
@@ -981,16 +1059,24 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->where('status', 'running');
 
             if ($lockedRun->status !== AiRunStatus::Running
+                || ($lockedRun->execution_deadline_at !== null && $lockedRun->execution_deadline_at->isPast())
                 || $lockedRun->worker_lease_token !== $workerLeaseToken) {
-                $attemptQuery->update([
-                    'status' => 'failed',
-                    'retry_or_failover_reason' => 'Worker lease was lost during provider execution.',
-                    'finished_at' => Carbon::now(),
-                    'updated_at' => Carbon::now(),
-                ]);
-
-                return;
+                return false;
             }
+
+            $attempt = AiRunAttempt::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($attemptId)
+                ->where('ai_run_id', $runId)
+                ->where('worker_lease_token', $workerLeaseToken)
+                ->where('status', 'running')
+                ->first();
+
+            if ($attempt === null) {
+                return false;
+            }
+
+            $this->budgetManager->chargeAttemptConservatively($attempt);
 
             $attemptQuery->update([
                 'status' => 'failed',
@@ -1000,23 +1086,9 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 'finished_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ]);
-        });
-    }
 
-    private function markAttemptStale(int $attemptId, int $organizationId, int $runId, string $workerLeaseToken): void
-    {
-        AiRunAttempt::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($attemptId)
-            ->where('ai_run_id', $runId)
-            ->where('worker_lease_token', $workerLeaseToken)
-            ->where('status', 'running')
-            ->update([
-                'status' => 'failed',
-                'retry_or_failover_reason' => 'Worker lease was lost after provider execution.',
-                'finished_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
-            ]);
+            return true;
+        });
     }
 
     private function fencedTerminalRunTransition(
@@ -1034,7 +1106,10 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->lockForUpdate()
                 ->first();
 
-            if ($lockedRun === null || $lockedRun->worker_lease_token !== $workerLeaseToken || $lockedRun->status !== AiRunStatus::Running) {
+            if ($lockedRun === null
+                || $lockedRun->worker_lease_token !== $workerLeaseToken
+                || $lockedRun->status !== AiRunStatus::Running
+                || ($lockedRun->execution_deadline_at !== null && $lockedRun->execution_deadline_at->isPast())) {
                 return false;
             }
 

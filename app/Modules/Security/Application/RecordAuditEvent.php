@@ -18,7 +18,7 @@ class RecordAuditEvent
         'ai.prompt_version.created' => ['prompt_key', 'version'],
         'ai.prompt_version.activated' => ['prompt_key', 'version'],
         'ai.prompt_version.retired' => ['prompt_key', 'version'],
-        'ai.provider_config.updated' => ['provider_name', 'is_enabled'],
+        'ai.provider_config.updated' => ['provider_name', 'is_enabled', 'credential_reassigned'],
         'ai.model_config.updated' => ['model_name', 'is_enabled'],
         'ai.model_config.created' => ['model_name', 'is_enabled'],
         'ai.model_release.activated' => ['model_name', 'release_number'],

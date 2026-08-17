@@ -5,8 +5,9 @@ namespace Tests\Feature\AI;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
-use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
+use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
@@ -16,13 +17,18 @@ use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -56,6 +62,25 @@ class AiWorkerFencingTest extends TestCase
         config()->set('tenancy.default_organization_id', $this->organization->id);
         app(OrganizationContext::class)->set($this->organization);
 
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'worker_default_prompt',
+            'name' => 'Worker default prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Use the versioned worker instructions.',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => true],
+            'allowed_tools' => ['search_knowledge_base'],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+
         $this->setupConfiguredModel(AiCapability::ClientCompanion);
     }
 
@@ -78,6 +103,8 @@ class AiWorkerFencingTest extends TestCase
             'is_enabled' => true,
             'health_status' => ProviderHealthStatus::Healthy,
             'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest($providerName),
         ]);
 
         $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
@@ -128,7 +155,7 @@ class AiWorkerFencingTest extends TestCase
 
         // Process job
         $job = new ProcessAiRunJob($this->organization->id, $run->id);
-        $job->handle(app(AiWorkflowEngine::class), app(AiSafetyBudgetManagerInterface::class));
+        $job->handle(app(AiWorkflowEngine::class), app(ReconcileExpiredAiRun::class));
 
         $run->refresh();
         $this->assertSame(AiRunStatus::Succeeded, $run->status);
@@ -152,6 +179,8 @@ class AiWorkerFencingTest extends TestCase
             'capability' => AiCapability::ClientCompanion,
             'workflow_key' => 'fencing_test',
             'status' => AiRunStatus::Running,
+            'prompt_id' => AiPrompt::query()->where('organization_id', $this->organization->id)->value('id'),
+            'prompt_version_id' => AiPromptVersion::query()->where('organization_id', $this->organization->id)->value('id'),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -296,6 +325,8 @@ class AiWorkerFencingTest extends TestCase
             'organization_id' => $this->organization->id,
             'ai_run_id' => $run->id,
             'encryption_key_version' => 1,
+            'encrypted_system_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'Use the versioned worker instructions.', 1),
+            'encrypted_user_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'reclaim test', 1),
         ]);
 
         // While Worker A is executing, simulate that Worker B reclaims the run
@@ -330,6 +361,8 @@ class AiWorkerFencingTest extends TestCase
             'capability' => AiCapability::ClientCompanion,
             'workflow_key' => 'reclaim_test',
             'status' => AiRunStatus::Running,
+            'prompt_id' => AiPrompt::query()->where('organization_id', $this->organization->id)->value('id'),
+            'prompt_version_id' => AiPromptVersion::query()->where('organization_id', $this->organization->id)->value('id'),
             'input_references' => [],
             'context_provenance' => [],
             'token_usage' => [],
@@ -342,6 +375,8 @@ class AiWorkerFencingTest extends TestCase
             'organization_id' => $this->organization->id,
             'ai_run_id' => $run->id,
             'encryption_key_version' => 1,
+            'encrypted_system_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'Use the versioned worker instructions.', 1),
+            'encrypted_user_prompt' => app(MedicalEncryptorInterface::class)->encryptField($this->organization->id, 'reclaim test', 1),
         ]);
 
         // Old dangling attempt
@@ -360,7 +395,7 @@ class AiWorkerFencingTest extends TestCase
 
         // Process job claims and reclaims expired run
         $job = new ProcessAiRunJob($this->organization->id, $run->id);
-        $job->handle(app(AiWorkflowEngine::class), app(AiSafetyBudgetManagerInterface::class));
+        $job->handle(app(AiWorkflowEngine::class), app(ReconcileExpiredAiRun::class));
 
         $run->refresh();
         $this->assertSame(AiRunStatus::Succeeded, $run->status);
@@ -369,6 +404,96 @@ class AiWorkerFencingTest extends TestCase
         // Verify dangling attempt was reconciled
         $oldAttempt = AiRunAttempt::where('ai_run_id', $run->id)->where('attempt_number', 1)->first();
         $this->assertSame('failed', $oldAttempt?->status);
+    }
+
+    public function test_valid_whole_run_window_is_not_reclaimed_during_delayed_execution(): void
+    {
+        Queue::fake();
+        $startedAt = Carbon::parse('2026-08-17 12:00:00');
+        Carbon::setTestNow($startedAt);
+
+        try {
+            $run = AiRun::create([
+                'organization_id' => $this->organization->id,
+                'capability' => AiCapability::ClientCompanion,
+                'workflow_key' => 'whole_run_window_test',
+                'status' => AiRunStatus::Running,
+                'worker_lease_token' => (string) Str::uuid(),
+                'worker_lease_expires_at' => $startedAt->copy()->subSecond(),
+                'execution_deadline_at' => $startedAt->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds()),
+                'input_references' => [],
+                'context_provenance' => [],
+                'token_usage' => [],
+                'started_at' => $startedAt,
+            ]);
+
+            $reclaimResult = null;
+            $engine = $this->mock(AiWorkflowEngine::class);
+            $engine->shouldReceive('executeRun')
+                ->once()
+                ->andReturnUsing(function (int $organizationId, int $runId, string $workerLeaseToken) use (&$reclaimResult, $startedAt, $run, $engine): AiRunResult {
+                    Carbon::setTestNow($startedAt->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds() - 1));
+                    $reclaimResult = app(ReclaimExpiredAiRuns::class)->handle();
+                    (new ProcessAiRunJob($this->organization->id, $run->id))
+                        ->handle($engine, app(ReconcileExpiredAiRun::class));
+
+                    return new AiRunResult(
+                        runId: $run->id,
+                        status: AiRunStatus::Running,
+                    );
+                });
+
+            $job = new ProcessAiRunJob($this->organization->id, $run->id);
+            $job->handle($engine, app(ReconcileExpiredAiRun::class));
+
+            $this->assertSame(['reclaimed' => 0, 'dispatched' => 0], $reclaimResult);
+            Queue::assertNothingPushed();
+            $run->refresh();
+            $this->assertSame(AiRunStatus::Running, $run->status);
+            $this->assertGreaterThan(
+                Carbon::now(),
+                $run->worker_lease_expires_at,
+            );
+            $this->assertGreaterThanOrEqual(
+                $run->execution_deadline_at,
+                $run->worker_lease_expires_at,
+            );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_expired_whole_run_deadline_is_reconciled_without_redispatch(): void
+    {
+        Queue::fake();
+        $now = Carbon::parse('2026-08-17 12:00:00');
+        Carbon::setTestNow($now);
+
+        try {
+            $run = AiRun::create([
+                'organization_id' => $this->organization->id,
+                'capability' => AiCapability::ClientCompanion,
+                'workflow_key' => 'expired_whole_run_test',
+                'status' => AiRunStatus::Running,
+                'worker_lease_token' => (string) Str::uuid(),
+                'worker_lease_expires_at' => $now->copy()->subMinute(),
+                'execution_deadline_at' => $now->copy()->subSecond(),
+                'input_references' => [],
+                'context_provenance' => [],
+                'token_usage' => [],
+                'started_at' => $now->copy()->subMinutes(15),
+            ]);
+
+            $result = app(ReclaimExpiredAiRuns::class)->handle();
+
+            $this->assertSame(['reclaimed' => 0, 'dispatched' => 0], $result);
+            Queue::assertNothingPushed();
+            $run->refresh();
+            $this->assertSame(AiRunStatus::TimedOut, $run->status);
+            $this->assertSame('Whole-run execution deadline expired.', $run->error_message_sanitized);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     public function test_scheduled_reclaimer_claims_expired_work_once_and_reconciles_old_reservation(): void

@@ -32,6 +32,9 @@ class ExportPromptBundle
         }
 
         $prompt = $version->prompt;
+        if ($prompt === null) {
+            throw new InvalidArgumentException('Prompt version parent prompt not found.');
+        }
 
         return new PromptBundle(
             promptKey: $prompt->key,

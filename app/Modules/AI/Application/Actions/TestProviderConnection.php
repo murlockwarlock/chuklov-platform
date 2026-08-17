@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiProviderProbeUnsupportedException;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -39,6 +40,8 @@ class TestProviderConnection
                 'health_status' => ProviderHealthStatus::Unavailable,
                 'last_checked_at' => Carbon::now(),
                 'last_health_error' => 'No active organization credentials attached.',
+                'tested_credential_revision' => null,
+                'tested_configuration_digest' => null,
             ]);
 
             return [
@@ -50,10 +53,17 @@ class TestProviderConnection
         try {
             $this->providerFactory->testConnectivity($providerConfig->provider_name, $credential, $providerConfig->options ?? []);
 
+            $configurationDigest = AiProviderExecutionConfiguration::digest(
+                $providerConfig->provider_name,
+                $providerConfig->options ?? [],
+            );
+
             $providerConfig->update([
                 'health_status' => ProviderHealthStatus::Healthy,
                 'last_checked_at' => Carbon::now(),
                 'last_health_error' => null,
+                'tested_credential_revision' => $credential->revision_id,
+                'tested_configuration_digest' => $configurationDigest,
             ]);
 
             return [
@@ -65,6 +75,8 @@ class TestProviderConnection
                 'health_status' => ProviderHealthStatus::Unknown,
                 'last_checked_at' => Carbon::now(),
                 'last_health_error' => 'A safe authenticated connectivity probe is not supported for this provider.',
+                'tested_credential_revision' => null,
+                'tested_configuration_digest' => null,
             ]);
 
             return [
@@ -77,6 +89,8 @@ class TestProviderConnection
                 'health_status' => ProviderHealthStatus::Degraded,
                 'last_checked_at' => Carbon::now(),
                 'last_health_error' => $sanitized['message'],
+                'tested_credential_revision' => null,
+                'tested_configuration_digest' => null,
             ]);
 
             return [

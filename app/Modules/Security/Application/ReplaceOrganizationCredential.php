@@ -7,6 +7,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
+use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -69,6 +70,13 @@ class ReplaceOrganizationCredential
                 'rotated_by_user_id' => $actor->getKey(),
             ]);
             $credential->save();
+
+            event(new OrganizationCredentialReplaced(
+                organizationId: (int) $organization->getKey(),
+                provider: $provider,
+                credentialId: (int) $credential->getKey(),
+                revisionId: $newRevisionId,
+            ));
 
             $this->audit->handle(
                 organization: $organization,

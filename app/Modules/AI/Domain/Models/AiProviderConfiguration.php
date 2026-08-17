@@ -23,6 +23,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property array<string, mixed> $options
  * @property CarbonInterface|null $last_checked_at
  * @property string|null $last_health_error
+ * @property string|null $tested_credential_revision
+ * @property string|null $tested_configuration_digest
  * @property-read Organization $organization
  * @property-read OrganizationCredential|null $credential
  * @property-read HasMany<AiModelConfiguration, $this> $models
@@ -37,6 +39,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'options',
     'last_checked_at',
     'last_health_error',
+    'tested_credential_revision',
+    'tested_configuration_digest',
 ])]
 class AiProviderConfiguration extends Model
 {

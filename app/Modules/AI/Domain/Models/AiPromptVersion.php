@@ -30,7 +30,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface|null $activated_at
  * @property int|null $activated_by_user_id
  * @property-read Organization $organization
- * @property-read AiPrompt $prompt
+ * @property-read AiPrompt|null $prompt
  * @property-read User|null $activatedBy
  */
 #[Fillable([

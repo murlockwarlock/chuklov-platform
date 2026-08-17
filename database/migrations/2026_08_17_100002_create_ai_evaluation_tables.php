@@ -51,8 +51,8 @@ return new class extends Migration
             $table->foreignId('eval_suite_id');
             $table->foreignId('prompt_version_id');
             $table->foreignId('model_release_id');
-            $table->string('provider', 64);
-            $table->string('model', 120);
+            $table->string('provider', 64)->nullable();
+            $table->string('model', 120)->nullable();
             $table->unsignedInteger('total_cases')->default(0);
             $table->unsignedInteger('passed_cases')->default(0);
             $table->unsignedInteger('failed_cases')->default(0);

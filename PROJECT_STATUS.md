@@ -4,6 +4,7 @@
 
 - Implementing the organization-scoped AI platform foundation and monitoring/control plane for `REQ-AI-001` through `REQ-AI-008` and `docs/architecture/ai.md`.
 - Provider-neutral AI execution via Laravel AI SDK, prompt versions, model configurations/releases, Class C encrypted trace storage, attempt-level provenance, atomic daily safety budget reservation/settlement, async worker lease fencing, human review workflow, tool allowlist, and Filament CRM control plane.
+- The final bounded remediation pass adds a static whole-run deadline with queue/Horizon/Redis ordering, conservative accumulated-history budget reservation, stale-attempt reconciliation owned by reclaim, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval fixtures, fixed-scope durable tool RAG provenance, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
 - Status: M10 is `IN_PROGRESS`. M0–M7 and M9 are CLOSED / ACCEPTED. M8 remains content-blocked by OQ-015.
 
 ## 2026-08-17 - M9 controlled organization knowledge retrieval - CLOSED / ACCEPTED

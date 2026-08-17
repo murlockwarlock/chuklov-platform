@@ -45,6 +45,26 @@ final class AiSafetyControlLimitsTest extends TestCase
         }
     }
 
+    public function test_application_write_rejects_daily_spend_above_operator_ceiling_and_allows_tighter_value(): void
+    {
+        config()->set('ai.platform.max_daily_spend_minor_units', 250);
+
+        try {
+            app(UpdateAiSafetyControl::class)->handle($this->user, [
+                'max_daily_spend_minor_units' => 251,
+            ]);
+            $this->fail('Expected daily spend above the operator ceiling to be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('max_daily_spend_minor_units must be between', $exception->getMessage());
+        }
+
+        $control = app(UpdateAiSafetyControl::class)->handle($this->user, [
+            'max_daily_spend_minor_units' => 100,
+        ]);
+
+        $this->assertSame(100, $control->max_daily_spend_minor_units);
+    }
+
     public function test_legacy_database_values_are_clamped_at_runtime(): void
     {
         $control = AiOrganizationSafetyControl::create([

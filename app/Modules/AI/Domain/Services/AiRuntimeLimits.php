@@ -21,13 +21,45 @@ final class AiRuntimeLimits
 
     public const int PLATFORM_MAX_RUNS_PER_MINUTE = 60;
 
-    public const int PLATFORM_MAX_TIMEOUT_SECONDS = 180;
+    public const int PLATFORM_MAX_TIMEOUT_SECONDS = 120;
+
+    public const int PLATFORM_MAX_TOOL_EXECUTION_SECONDS = 30;
+
+    public const int PLATFORM_EXECUTION_MARGIN_SECONDS = 30;
+
+    public const int PLATFORM_LEASE_GRACE_SECONDS = 30;
+
+    public const int PLATFORM_MAX_TOOL_SCHEMA_TOKENS = 1024;
 
     public const int PLATFORM_MAX_TOOL_RESULT_TOKENS = 1024;
 
     public const int PLATFORM_MAX_RAG_CHUNKS = 20;
 
     public const int PLATFORM_MAX_CONTEXT_SESSIONS = 20;
+
+    public const int PLATFORM_DEFAULT_MAX_DAILY_SPEND_MINOR_UNITS = 5000;
+
+    public const int PLATFORM_QUEUE_JOB_TIMEOUT_SECONDS = 2640;
+
+    public const int PLATFORM_HORIZON_TIMEOUT_SECONDS = 2670;
+
+    public const int PLATFORM_QUEUE_RETRY_AFTER_SECONDS = 2700;
+
+    public static function wholeRunSeconds(): int
+    {
+        return (self::PLATFORM_MAX_FAILOVER_ATTEMPTS * self::providerAttemptSeconds(
+            self::PLATFORM_MAX_PROVIDER_STEPS,
+            self::PLATFORM_MAX_TIMEOUT_SECONDS,
+            self::PLATFORM_MAX_TOOL_CALLS,
+        ))
+            + self::PLATFORM_EXECUTION_MARGIN_SECONDS;
+    }
+
+    public static function providerAttemptSeconds(int $providerSteps, int $providerStepTimeout, int $toolCalls): int
+    {
+        return (min(self::PLATFORM_MAX_PROVIDER_STEPS, max(1, $providerSteps)) * min(self::PLATFORM_MAX_TIMEOUT_SECONDS, max(1, $providerStepTimeout)))
+            + (min(self::PLATFORM_MAX_TOOL_CALLS, max(0, $toolCalls)) * self::PLATFORM_MAX_TOOL_EXECUTION_SECONDS);
+    }
 
     public static function estimateTokens(string $value): int
     {
@@ -117,13 +149,58 @@ final class AiRuntimeLimits
         return min(self::PLATFORM_MAX_PROVIDER_STEPS, max(1, $maxToolCalls + 1));
     }
 
-    public static function worstCaseInputTokens(int $maxInputTokens, int $maxToolCalls): int
-    {
+    /**
+     * @return array{input_tokens: int, output_tokens: int, total_tokens: int}
+     */
+    public static function worstCaseProviderExposure(
+        int $maxInputTokens,
+        int $maxOutputTokens,
+        int $maxToolCalls,
+        ?int $maxProviderSteps = null,
+        int $maxRagContextTokens = self::PLATFORM_MAX_RAG_CONTEXT_TOKENS,
+        ?int $toolSchemaTokens = null,
+    ): array {
         $boundedInputTokens = min(self::PLATFORM_MAX_INPUT_TOKENS, max(0, $maxInputTokens));
+        $boundedRagContextTokens = min(self::PLATFORM_MAX_RAG_CONTEXT_TOKENS, max(0, $maxRagContextTokens));
+        $boundedOutputTokens = min(self::PLATFORM_MAX_OUTPUT_TOKENS, max(0, $maxOutputTokens));
         $boundedToolCalls = min(self::PLATFORM_MAX_TOOL_CALLS, max(0, $maxToolCalls));
-        $steps = self::providerSteps($boundedToolCalls);
+        $steps = min(
+            self::PLATFORM_MAX_PROVIDER_STEPS,
+            max(1, $maxProviderSteps ?? self::providerSteps($boundedToolCalls)),
+        );
+        $boundedToolSchemaTokens = min(
+            self::PLATFORM_MAX_TOOL_SCHEMA_TOKENS,
+            max(0, $toolSchemaTokens ?? ($boundedToolCalls > 0 ? self::PLATFORM_MAX_TOOL_SCHEMA_TOKENS : 0)),
+        );
 
-        return ($boundedInputTokens * $steps) + ($boundedToolCalls * self::PLATFORM_MAX_TOOL_RESULT_TOKENS);
+        $initialInputTokens = $boundedInputTokens + $boundedRagContextTokens;
+        $inputTokens = ($initialInputTokens * $steps)
+            + (int) ($boundedOutputTokens * $steps * ($steps - 1) / 2)
+            + ($boundedToolCalls * self::PLATFORM_MAX_TOOL_RESULT_TOKENS * $steps)
+            + ($boundedToolSchemaTokens * $steps);
+        $outputTokens = $boundedOutputTokens * $steps;
+
+        return [
+            'input_tokens' => $inputTokens,
+            'output_tokens' => $outputTokens,
+            'total_tokens' => $inputTokens + $outputTokens,
+        ];
+    }
+
+    public static function dailySpendCeiling(): int
+    {
+        return max(1, (int) config(
+            'ai.platform.max_daily_spend_minor_units',
+            self::PLATFORM_DEFAULT_MAX_DAILY_SPEND_MINOR_UNITS,
+        ));
+    }
+
+    public static function effectiveDailySpendLimit(?int $organizationLimit): int
+    {
+        return min(
+            self::dailySpendCeiling(),
+            max(1, $organizationLimit ?? self::dailySpendCeiling()),
+        );
     }
 
     /** @param array<string, mixed> $values */
@@ -135,6 +212,7 @@ final class AiRuntimeLimits
             'max_tool_calls_per_run' => [0, self::PLATFORM_MAX_TOOL_CALLS],
             'default_timeout_seconds' => [1, self::PLATFORM_MAX_TIMEOUT_SECONDS],
             'max_failover_attempts' => [1, self::PLATFORM_MAX_FAILOVER_ATTEMPTS],
+            'max_daily_spend_minor_units' => [1, self::dailySpendCeiling()],
         ];
 
         foreach ($bounds as $key => [$minimum, $maximum]) {

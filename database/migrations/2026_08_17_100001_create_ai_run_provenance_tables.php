@@ -44,6 +44,7 @@ return new class extends Migration
             $table->string('idempotency_key', 120)->nullable();
             $table->string('worker_lease_token', 64)->nullable();
             $table->timestampTz('worker_lease_expires_at')->nullable();
+            $table->timestampTz('execution_deadline_at')->nullable();
             $table->timestampTz('queued_at')->nullable();
             $table->timestampTz('started_at')->nullable();
             $table->timestampTz('finished_at')->nullable();
@@ -61,6 +62,7 @@ return new class extends Migration
             $table->foreign(['organization_id', 'model_release_id'])
                 ->references(['organization_id', 'id'])->on('ai_model_releases')->nullOnDelete();
             $table->index(['organization_id', 'status', 'created_at']);
+            $table->index(['organization_id', 'status', 'worker_lease_expires_at']);
             $table->index(['organization_id', 'capability', 'created_at']);
             $table->index(['organization_id', 'human_review_status', 'created_at']);
         });
@@ -118,6 +120,7 @@ return new class extends Migration
             $table->foreign(['organization_id', 'credential_id'])
                 ->references(['organization_id', 'id'])->on('organization_credentials')->nullOnDelete();
             $table->index(['organization_id', 'budget_usage_date', 'budget_reservation_status']);
+            $table->index(['organization_id', 'ai_run_id', 'budget_reservation_status']);
         });
 
         Schema::create('ai_run_tool_calls', function (Blueprint $table): void {
@@ -147,6 +150,8 @@ return new class extends Migration
             $table->foreignId('knowledge_source_id');
             $table->foreignId('knowledge_revision_id');
             $table->foreignId('knowledge_chunk_id');
+            $table->foreignId('ai_run_tool_call_id')->nullable();
+            $table->string('retrieval_type', 16)->default('initial');
             $table->unsignedInteger('chunk_index');
             $table->float('similarity_score');
             $table->string('configuration_key', 64);
@@ -156,11 +161,14 @@ return new class extends Migration
             $table->foreign(['organization_id', 'ai_run_id'])
                 ->references(['organization_id', 'id'])->on('ai_runs')->cascadeOnDelete();
             $table->foreign(['organization_id', 'knowledge_source_id'])
-                ->references(['organization_id', 'id'])->on('knowledge_sources')->cascadeOnDelete();
+                ->references(['organization_id', 'id'])->on('knowledge_sources')->restrictOnDelete();
             $table->foreign(['organization_id', 'knowledge_revision_id'])
-                ->references(['organization_id', 'id'])->on('knowledge_revisions')->cascadeOnDelete();
+                ->references(['organization_id', 'id'])->on('knowledge_revisions')->restrictOnDelete();
             $table->foreign(['organization_id', 'knowledge_chunk_id'])
-                ->references(['organization_id', 'id'])->on('knowledge_chunks')->cascadeOnDelete();
+                ->references(['organization_id', 'id'])->on('knowledge_chunks')->restrictOnDelete();
+            $table->foreign(['organization_id', 'ai_run_tool_call_id'])
+                ->references(['organization_id', 'id'])->on('ai_run_tool_calls')->restrictOnDelete();
+            $table->index(['organization_id', 'ai_run_id', 'ai_run_tool_call_id']);
         });
 
         Schema::create('ai_run_human_reviews', function (Blueprint $table): void {

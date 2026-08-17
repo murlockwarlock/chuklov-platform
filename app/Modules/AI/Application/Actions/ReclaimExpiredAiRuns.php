@@ -2,12 +2,9 @@
 
 namespace App\Modules\AI\Application\Actions;
 
-use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
-use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Models\AiRun;
-use App\Modules\AI\Domain\Models\AiRunAttempt;
-use App\Modules\AI\Domain\Models\AiRunToolCall;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +15,7 @@ final class ReclaimExpiredAiRuns
     public const int MAX_BATCH_SIZE = 100;
 
     public function __construct(
-        private readonly AiSafetyBudgetManagerInterface $budgetManager,
+        private readonly ReconcileExpiredAiRun $reconciler,
     ) {}
 
     /** @return array{reclaimed: int, dispatched: int} */
@@ -41,28 +38,40 @@ final class ReclaimExpiredAiRuns
             $claims = [];
 
             foreach ($runs as $run) {
-                $newLeaseToken = (string) Str::uuid();
-                $staleAttemptIds = AiRunAttempt::query()
-                    ->where('organization_id', $run->organization_id)
-                    ->where('ai_run_id', $run->id)
-                    ->where('budget_reservation_status', BudgetReservationStatus::Reserved)
-                    ->pluck('id')
-                    ->map(static fn (mixed $id): int => (int) $id)
-                    ->all();
+                $deadline = $run->execution_deadline_at ?? $run->created_at?->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+                if ($deadline === null) {
+                    $deadline = $now->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+                }
 
-                $oldLeaseToken = $run->worker_lease_token;
+                if ($deadline->isPast()) {
+                    $this->reconciler->handle($run, 'Whole-run execution deadline expired and was reconciled.');
+                    $run->update([
+                        'status' => AiRunStatus::TimedOut,
+                        'execution_deadline_at' => $deadline,
+                        'worker_lease_expires_at' => $now,
+                        'finished_at' => $now,
+                        'error_message_sanitized' => 'Whole-run execution deadline expired.',
+                    ]);
+
+                    continue;
+                }
+
+                if ($run->worker_lease_token !== null) {
+                    $this->reconciler->handle($run, 'Expired worker lease was reconciled before reassignment.');
+                }
+
+                $newLeaseToken = (string) Str::uuid();
                 $run->update([
                     'status' => AiRunStatus::Queued,
                     'worker_lease_token' => $newLeaseToken,
-                    'worker_lease_expires_at' => $now->copy()->addMinutes(5),
+                    'execution_deadline_at' => $deadline,
+                    'worker_lease_expires_at' => $deadline->copy()->addSeconds(AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS),
                     'queued_at' => $now,
                 ]);
 
                 $claims[] = [
                     'organization_id' => (int) $run->organization_id,
                     'run_id' => (int) $run->id,
-                    'old_lease_token' => $oldLeaseToken,
-                    'stale_attempt_ids' => $staleAttemptIds,
                 ];
             }
 
@@ -70,48 +79,6 @@ final class ReclaimExpiredAiRuns
         });
 
         foreach ($claims as $claim) {
-            foreach ($claim['stale_attempt_ids'] as $attemptId) {
-                $attempt = AiRunAttempt::query()
-                    ->where('organization_id', $claim['organization_id'])
-                    ->whereKey($attemptId)
-                    ->first();
-
-                if ($attempt === null) {
-                    continue;
-                }
-
-                $this->budgetManager->chargeAttemptConservatively($attempt);
-
-                $query = AiRunAttempt::query()
-                    ->where('organization_id', $claim['organization_id'])
-                    ->whereKey($attemptId)
-                    ->where('ai_run_id', $claim['run_id'])
-                    ->where('status', 'running');
-                if ($claim['old_lease_token'] !== null) {
-                    $query->where(function ($nested) use ($claim): void {
-                        $nested
-                            ->where('worker_lease_token', $claim['old_lease_token'])
-                            ->orWhereNull('worker_lease_token');
-                    });
-                }
-                $query->update([
-                    'status' => 'failed',
-                    'retry_or_failover_reason' => 'Lease expired and was reclaimed by the scheduled reclaimer.',
-                    'finished_at' => Carbon::now(),
-                ]);
-            }
-
-            AiRunToolCall::query()
-                ->where('organization_id', $claim['organization_id'])
-                ->where('ai_run_id', $claim['run_id'])
-                ->where('worker_lease_token', $claim['old_lease_token'])
-                ->where('execution_status', 'running')
-                ->update([
-                    'execution_status' => 'failed',
-                    'error_sanitized' => 'Worker lease expired before tool completion.',
-                    'updated_at' => Carbon::now(),
-                ]);
-
             ProcessAiRunJob::dispatch(
                 organizationId: $claim['organization_id'],
                 runId: $claim['run_id'],

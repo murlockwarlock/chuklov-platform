@@ -5,6 +5,7 @@ namespace App\Modules\AI\Infrastructure\Tools;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\Exceptions\AiToolExecutionFencedException;
 use App\Modules\AI\Domain\Exceptions\AiToolLimitExceededException;
+use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
@@ -17,16 +18,31 @@ use Stringable;
 
 class SearchKnowledgeBaseSdkTool implements Tool
 {
+    private readonly int $maxToolCalls;
+
+    /** @var list<int> */
+    private readonly array $allowedKnowledgeSourceIds;
+
+    private readonly int $policyMaxResults;
+
+    /**
+     * @param  list<int>  $allowedKnowledgeSourceIds
+     */
     public function __construct(
         private readonly AiRunExecutionContext $executionContext,
         private readonly SearchKnowledgeBaseTool $domainTool,
         int $maxToolCalls = 10,
         private readonly float $minimumSimilarity = 0.0,
+        array $allowedKnowledgeSourceIds = [],
+        int $policyMaxResults = AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS,
     ) {
         $this->maxToolCalls = min(AiRuntimeLimits::PLATFORM_MAX_TOOL_CALLS, max(0, $maxToolCalls));
+        $this->allowedKnowledgeSourceIds = array_values(array_unique(array_map('intval', $allowedKnowledgeSourceIds)));
+        $this->policyMaxResults = min(
+            AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS,
+            max(1, $policyMaxResults),
+        );
     }
-
-    private readonly int $maxToolCalls;
 
     public function description(): Stringable|string
     {
@@ -43,6 +59,10 @@ class SearchKnowledgeBaseSdkTool implements Tool
             'max_results' => $schema
                 ->integer()
                 ->description('Максимальное количество фрагментов (1-10).'),
+            'knowledge_source_ids' => $schema
+                ->array()
+                ->items($schema->integer())
+                ->description('Необязательное сужение поиска до разрешенных источников.'),
         ];
     }
 
@@ -53,7 +73,17 @@ class SearchKnowledgeBaseSdkTool implements Tool
         $startTime = hrtime(true);
 
         try {
-            $result = $this->domainTool->execute($this->executionContext->organizationId, $arguments);
+            $effectiveArguments = $this->applyPolicy($arguments);
+            $result = $this->isEmptySourceIntersection($arguments)
+                ? ['results' => [], 'count' => 0]
+                : $this->domainTool->execute($this->executionContext->organizationId, $effectiveArguments);
+            if ((hrtime(true) - $startTime) > AiRuntimeLimits::PLATFORM_MAX_TOOL_EXECUTION_SECONDS * 1_000_000_000) {
+                throw new AiRagRetrievalException(
+                    'Knowledge retrieval exceeded the bounded tool execution time.',
+                    reason: 'timeout',
+                );
+            }
+            $result = $this->filterBySourceScope($result);
             $result = $this->filterBySimilarity($result);
             $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
 
@@ -65,7 +95,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 );
             }
 
-            if (! $this->finalizeProvenance($call, 'succeeded', $latencyMs, null)) {
+            if (! $this->finalizeProvenance($call, 'succeeded', $latencyMs, null, $result)) {
                 throw new AiToolExecutionFencedException('Worker lease was lost before tool provenance finalization.');
             }
 
@@ -103,20 +133,89 @@ class SearchKnowledgeBaseSdkTool implements Tool
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
      */
-    private function filterBySimilarity(array $result): array
+    private function filterBySourceScope(array $result): array
     {
-        if ($this->minimumSimilarity <= 0.0 || ! is_array($result['results'] ?? null)) {
+        if ($this->allowedKnowledgeSourceIds === [] || ! is_array($result['results'] ?? null)) {
             return $result;
         }
 
         $result['results'] = array_values(array_filter(
             $result['results'],
             fn (mixed $item): bool => is_array($item)
-                && (float) ($item['similarity'] ?? 0.0) >= $this->minimumSimilarity,
+                && in_array((int) ($item['source_id'] ?? 0), $this->allowedKnowledgeSourceIds, true),
         ));
         $result['count'] = count($result['results']);
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function filterBySimilarity(array $result): array
+    {
+        if (! is_array($result['results'] ?? null)) {
+            return $result;
+        }
+
+        if ($this->minimumSimilarity > 0.0) {
+            $result['results'] = array_values(array_filter(
+                $result['results'],
+                fn (mixed $item): bool => is_array($item)
+                    && (float) ($item['similarity'] ?? 0.0) >= $this->minimumSimilarity,
+            ));
+        }
+        $result['results'] = array_slice($result['results'], 0, $this->policyMaxResults);
+        $result['count'] = count($result['results']);
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function applyPolicy(array $arguments): array
+    {
+        $requestedSources = $this->sourceIds($arguments['knowledge_source_ids'] ?? null);
+        $effectiveSources = $this->allowedKnowledgeSourceIds === []
+            ? $requestedSources
+            : ($requestedSources === []
+                ? $this->allowedKnowledgeSourceIds
+                : array_values(array_intersect($this->allowedKnowledgeSourceIds, $requestedSources)));
+        $requestedLimit = array_key_exists('max_results', $arguments) ? (int) $arguments['max_results'] : $this->policyMaxResults;
+
+        $arguments['max_results'] = min(
+            $this->policyMaxResults,
+            AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS,
+            max(1, $requestedLimit),
+        );
+        if ($effectiveSources !== []) {
+            $arguments['knowledge_source_ids'] = $effectiveSources;
+        }
+
+        return $arguments;
+    }
+
+    /** @return list<int> */
+    private function sourceIds(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $value)));
+    }
+
+    /** @param array<string, mixed> $arguments */
+    private function isEmptySourceIntersection(array $arguments): bool
+    {
+        $requestedSources = $this->sourceIds($arguments['knowledge_source_ids'] ?? null);
+
+        return $this->allowedKnowledgeSourceIds !== []
+            && $requestedSources !== []
+            && array_intersect($this->allowedKnowledgeSourceIds, $requestedSources) === [];
     }
 
     /** @param array<string, mixed> $arguments */
@@ -157,13 +256,17 @@ class SearchKnowledgeBaseSdkTool implements Tool
         });
     }
 
+    /**
+     * @param  array<string, mixed>|null  $result
+     */
     private function finalizeProvenance(
         AiRunToolCall $call,
         string $status,
         int $latencyMs,
         ?string $sanitizedError,
+        ?array $result = null,
     ): bool {
-        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError): bool {
+        return (bool) DB::transaction(function () use ($call, $status, $latencyMs, $sanitizedError, $result): bool {
             $run = DB::table('ai_runs')
                 ->where('organization_id', $this->executionContext->organizationId)
                 ->where('id', $this->executionContext->aiRunId)
@@ -176,7 +279,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                 return false;
             }
 
-            return AiRunToolCall::query()
+            $updated = AiRunToolCall::query()
                 ->where('organization_id', $this->executionContext->organizationId)
                 ->where('id', $call->id)
                 ->where('worker_lease_token', $this->executionContext->workerLeaseToken)
@@ -187,6 +290,39 @@ class SearchKnowledgeBaseSdkTool implements Tool
                     'error_sanitized' => $sanitizedError,
                     'updated_at' => now(),
                 ]) === 1;
+
+            if (! $updated || $status !== 'succeeded' || ! is_array($result)) {
+                return $updated;
+            }
+
+            $nextReferenceIndex = (int) (AiRunRagReference::query()
+                ->where('organization_id', $this->executionContext->organizationId)
+                ->where('ai_run_id', $this->executionContext->aiRunId)
+                ->max('reference_index') ?? 0);
+
+            foreach ((array) ($result['results'] ?? []) as $reference) {
+                if (! is_array($reference)
+                    || ! isset($reference['source_id'], $reference['revision_id'], $reference['chunk_id'], $reference['chunk_index'], $reference['embedding_configuration_key'])) {
+                    continue;
+                }
+
+                $nextReferenceIndex++;
+                AiRunRagReference::create([
+                    'organization_id' => $this->executionContext->organizationId,
+                    'ai_run_id' => $this->executionContext->aiRunId,
+                    'ai_run_tool_call_id' => $call->id,
+                    'reference_index' => $nextReferenceIndex,
+                    'knowledge_source_id' => (int) $reference['source_id'],
+                    'knowledge_revision_id' => (int) $reference['revision_id'],
+                    'knowledge_chunk_id' => (int) $reference['chunk_id'],
+                    'chunk_index' => (int) $reference['chunk_index'],
+                    'similarity_score' => (float) ($reference['similarity'] ?? 0.0),
+                    'configuration_key' => (string) $reference['embedding_configuration_key'],
+                    'retrieval_type' => 'tool',
+                ]);
+            }
+
+            return true;
         });
     }
 }

@@ -8,6 +8,8 @@ use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Validation\AiInputReferenceValidator;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
@@ -54,6 +56,25 @@ final class AiInputReferenceValidationTest extends TestCase
 
         config()->set('tenancy.default_organization_id', $this->organizationA->id);
         app(OrganizationContext::class)->set($this->organizationA);
+
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organizationA->id,
+            'key' => 'input_reference_default_prompt',
+            'name' => 'Input reference default prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organizationA->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Use the versioned reference instructions.',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => [],
+            'allowed_tools' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
     }
 
     public function test_every_supported_reference_type_is_validated_for_existence_ownership_and_client_context(): void

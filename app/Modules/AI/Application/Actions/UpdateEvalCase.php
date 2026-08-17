@@ -43,6 +43,14 @@ class UpdateEvalCase
         $expectedAssertions = isset($data['expected_assertions'])
             ? (is_string($data['expected_assertions']) ? (json_decode($data['expected_assertions'], true) ?: []) : (array) $data['expected_assertions'])
             : (array) $case->expected_assertions;
+        $this->createAction->assertNoProductionPatientReferences($organization->id, $expectedAssertions);
+
+        $expectedOutputSchema = array_key_exists('expected_output_schema', $data)
+            ? (is_string($data['expected_output_schema']) ? (json_decode($data['expected_output_schema'], true) ?: null) : ($data['expected_output_schema'] === null ? null : (array) $data['expected_output_schema']))
+            : $case->expected_output_schema;
+        if ($expectedOutputSchema !== null) {
+            $this->createAction->assertNoProductionPatientReferences($organization->id, $expectedOutputSchema);
+        }
 
         $case->update([
             'name' => isset($data['name']) ? trim((string) $data['name']) : $case->name,
@@ -50,7 +58,7 @@ class UpdateEvalCase
             'is_deidentified' => $isDeidentified,
             'test_inputs' => $testInputs,
             'expected_assertions' => $expectedAssertions,
-            'expected_output_schema' => $data['expected_output_schema'] ?? $case->expected_output_schema,
+            'expected_output_schema' => $expectedOutputSchema,
             'is_active' => (bool) ($data['is_active'] ?? $case->is_active),
         ]);
 

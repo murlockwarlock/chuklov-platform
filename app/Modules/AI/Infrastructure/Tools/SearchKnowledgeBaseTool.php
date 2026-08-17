@@ -4,6 +4,7 @@ namespace App\Modules\AI\Infrastructure\Tools;
 
 use App\Modules\AI\Domain\Contracts\AiToolInterface;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -61,7 +62,7 @@ class SearchKnowledgeBaseTool implements AiToolInterface
             return ['results' => [], 'count' => 0];
         }
 
-        $limit = min(10, max(1, (int) ($input['max_results'] ?? 3)));
+        $limit = min(AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS, max(1, (int) ($input['max_results'] ?? 3)));
         $sourceIds = ! empty($input['knowledge_source_ids'])
             ? array_values(array_map('intval', (array) $input['knowledge_source_ids']))
             : [];
@@ -99,6 +100,8 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 'source_id' => $result->sourceId,
                 'source_title' => $result->sourceTitle,
                 'source_type' => $result->sourceType,
+                'revision_id' => $result->revisionId,
+                'chunk_index' => $result->chunkIndex,
                 'similarity' => round($result->similarity, 4),
                 'content' => $result->content,
                 'source_reference' => $result->sourceReference,

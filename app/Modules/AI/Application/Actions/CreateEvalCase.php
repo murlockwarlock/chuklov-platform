@@ -40,6 +40,10 @@ class CreateEvalCase
 
         $this->privacyValidator->validateClassification($isSynthetic, $isDeidentified);
         $this->privacyValidator->validate($testInputs);
+        $this->privacyValidator->validate($expectedAssertions);
+        if ($expectedOutputSchema !== null) {
+            $this->privacyValidator->validate($expectedOutputSchema);
+        }
 
         $suite = AiEvalSuite::query()
             ->where('organization_id', $organization->id)

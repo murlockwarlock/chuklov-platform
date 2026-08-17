@@ -55,6 +55,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $idempotency_key
  * @property string|null $worker_lease_token
  * @property CarbonInterface|null $worker_lease_expires_at
+ * @property CarbonInterface|null $execution_deadline_at
  * @property CarbonInterface|null $queued_at
  * @property CarbonInterface|null $started_at
  * @property CarbonInterface|null $finished_at
@@ -104,6 +105,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'idempotency_key',
     'worker_lease_token',
     'worker_lease_expires_at',
+    'execution_deadline_at',
     'queued_at',
     'started_at',
     'finished_at',
@@ -218,6 +220,7 @@ class AiRun extends Model
             'token_usage' => 'array',
             'structured_output_valid' => 'boolean',
             'worker_lease_expires_at' => 'datetime',
+            'execution_deadline_at' => 'datetime',
             'queued_at' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

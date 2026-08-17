@@ -16,20 +16,21 @@ final class AiProviderConnectivityProbe
         }
 
         $driver = strtolower($providerName);
-        $request = Http::acceptJson()->connectTimeout(3)->timeout(5);
+        AiProviderExecutionConfiguration::assertSupportedOptions($options);
+        $request = Http::withoutRedirecting()->acceptJson()->connectTimeout(3)->timeout(5);
 
         $response = match ($driver) {
-            'openai' => $request->withToken($secret)->get($this->url($options, 'https://api.openai.com/v1/models')),
-            'groq' => $request->withToken($secret)->get($this->url($options, 'https://api.groq.com/openai/v1/models')),
-            'deepseek' => $request->withToken($secret)->get($this->url($options, 'https://api.deepseek.com/models')),
-            'mistral' => $request->withToken($secret)->get($this->url($options, 'https://api.mistral.ai/v1/models')),
-            'xai' => $request->withToken($secret)->get($this->url($options, 'https://api.x.ai/v1/models')),
-            'openrouter' => $request->withToken($secret)->get($this->url($options, 'https://openrouter.ai/api/v1/models')),
+            'openai' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
+            'groq' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
+            'deepseek' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
+            'mistral' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
+            'xai' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
+            'openrouter' => $request->withToken($secret)->get($this->canonicalEndpoint($driver)),
             'anthropic' => $request->withHeaders([
                 'x-api-key' => $secret,
                 'anthropic-version' => '2023-06-01',
-            ])->get($this->url($options, 'https://api.anthropic.com/v1/models')),
-            'gemini' => $request->get($this->url($options, 'https://generativelanguage.googleapis.com/v1beta/models'), [
+            ])->get($this->canonicalEndpoint($driver)),
+            'gemini' => $request->get($this->canonicalEndpoint($driver), [
                 'key' => $secret,
             ]),
             default => throw new AiProviderProbeUnsupportedException('This provider does not expose a supported low-impact connectivity probe.'),
@@ -40,19 +41,9 @@ final class AiProviderConnectivityProbe
         }
     }
 
-    /** @param array<string, mixed> $options */
-    private function url(array $options, string $default): string
+    private function canonicalEndpoint(string $providerName): string
     {
-        $configured = $options['base_url'] ?? $options['url'] ?? null;
-        if (! is_string($configured) || trim($configured) === '') {
-            return $default;
-        }
-
-        $configured = rtrim($configured, '/');
-        if (! str_starts_with($configured, 'https://')) {
-            throw new RuntimeException('Provider connectivity probe requires an HTTPS base URL.');
-        }
-
-        return str_ends_with($configured, '/models') ? $configured : $configured.'/models';
+        return AiProviderExecutionConfiguration::canonicalProbeEndpoint($providerName)
+            ?? throw new AiProviderProbeUnsupportedException('This provider does not expose a supported low-impact connectivity probe.');
     }
 }

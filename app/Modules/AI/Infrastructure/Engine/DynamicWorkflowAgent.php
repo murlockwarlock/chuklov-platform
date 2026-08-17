@@ -27,9 +27,7 @@ class DynamicWorkflowAgent implements Agent, Conversational, HasTools
 
     public function instructions(): Stringable|string
     {
-        return $this->instructionsText !== ''
-            ? $this->instructionsText
-            : 'Provide accurate, clinical-grade assistant responses.';
+        return $this->instructionsText;
     }
 
     public function messages(): iterable

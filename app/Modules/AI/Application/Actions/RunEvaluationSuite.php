@@ -14,6 +14,7 @@ use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -62,7 +63,7 @@ class RunEvaluationSuite
             throw new InvalidArgumentException('Prompt version not found.');
         }
 
-        if ($promptVersion->prompt->capability !== $suite->capability) {
+        if ($promptVersion->prompt === null || $promptVersion->prompt->capability !== $suite->capability) {
             throw new InvalidArgumentException('Pinned evaluation prompt version does not support the suite capability.');
         }
 
@@ -103,6 +104,20 @@ class RunEvaluationSuite
             throw new InvalidArgumentException('Pinned evaluation model release is not backed by a valid executable provider configuration.');
         }
 
+        try {
+            $configurationDigest = AiProviderExecutionConfiguration::digest(
+                $providerConfiguration->provider_name,
+                $providerConfiguration->options ?? [],
+            );
+        } catch (\Throwable) {
+            throw new InvalidArgumentException('Pinned evaluation provider configuration has no supported executable configuration.');
+        }
+
+        if ($providerConfiguration->tested_credential_revision !== $credential->revision_id
+            || $providerConfiguration->tested_configuration_digest !== $configurationDigest) {
+            throw new InvalidArgumentException('Pinned evaluation provider configuration requires a probe for the current credential and configuration.');
+        }
+
         $cases = $suite->cases()->where('is_active', true)->get();
         $totalCases = $cases->count();
         $passedCases = 0;
@@ -114,6 +129,10 @@ class RunEvaluationSuite
         foreach ($cases as $case) {
             $this->privacyValidator->validateClassification($case->is_synthetic, $case->is_deidentified);
             $this->privacyValidator->validate((array) $case->test_inputs);
+            $this->privacyValidator->validate((array) $case->expected_assertions);
+            if ($case->expected_output_schema !== null) {
+                $this->privacyValidator->validate((array) $case->expected_output_schema);
+            }
 
             $request = new AiRunRequest(
                 capability: $suite->capability,
@@ -183,8 +202,8 @@ class RunEvaluationSuite
             'eval_suite_id' => $suite->id,
             'prompt_version_id' => $promptVersion->id,
             'model_release_id' => $release->id,
-            'provider' => $actualProvider ?? $release->provider_name,
-            'model' => $actualModel ?? $release->model_name,
+            'provider' => $actualProvider,
+            'model' => $actualModel,
             'total_cases' => $totalCases,
             'passed_cases' => $passedCases,
             'failed_cases' => $failedCases,

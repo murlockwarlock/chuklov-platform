@@ -112,6 +112,8 @@ return new class extends Migration
             $table->json('options');
             $table->timestampTz('last_checked_at')->nullable();
             $table->text('last_health_error')->nullable();
+            $table->uuid('tested_credential_revision')->nullable();
+            $table->char('tested_configuration_digest', 64)->nullable();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'provider_name']);

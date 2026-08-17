@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Modules\AI\Application\Actions\InvalidateAiProviderHealthForCredential;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiOutputValidatorInterface;
 use App\Modules\AI\Domain\Contracts\AiPricingCalculatorInterface;
@@ -72,6 +73,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
+use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
@@ -110,6 +112,7 @@ use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
@@ -167,6 +170,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Event::listen(OrganizationCredentialReplaced::class, static function (OrganizationCredentialReplaced $event): void {
+            app(InvalidateAiProviderHealthForCredential::class)->handle(
+                organizationId: $event->organizationId,
+                provider: $event->provider,
+                credentialId: $event->credentialId,
+            );
+        });
+
         RateLimiter::for('portal-telegram-auth', static fn (Request $request): Limit => Limit::perMinute(20)
             ->by('portal-telegram-auth|'.$request->ip()));
         RateLimiter::for('portal-email-request', static fn (Request $request): Limit => Limit::perMinute(30)
