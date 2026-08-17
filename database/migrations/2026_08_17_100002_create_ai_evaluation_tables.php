@@ -21,7 +21,7 @@ return new class extends Migration
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'key']);
             $table->foreign(['organization_id', 'prompt_id'])
-                ->references(['organization_id', 'id'])->on('ai_prompts')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_prompts')->restrictOnDelete();
         });
 
         Schema::create('ai_eval_cases', function (Blueprint $table): void {

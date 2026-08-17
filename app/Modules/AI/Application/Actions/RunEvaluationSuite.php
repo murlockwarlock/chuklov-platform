@@ -14,6 +14,7 @@ use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -43,7 +44,6 @@ class RunEvaluationSuite
         $suite = AiEvalSuite::query()
             ->where('organization_id', $organization->getKey())
             ->where('id', $evalSuiteId)
-            ->with('cases')
             ->first();
 
         if ($suite === null) {
@@ -118,13 +118,14 @@ class RunEvaluationSuite
             throw new InvalidArgumentException('Pinned evaluation provider configuration requires a probe for the current credential and configuration.');
         }
 
-        $cases = $suite->cases()->where('is_active', true)->get();
-        $totalCases = $cases->count();
-        $passedCases = 0;
-        $failedCases = 0;
-        $caseResults = [];
-        $actualProvider = null;
-        $actualModel = null;
+        $cases = $suite->cases()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->limit(AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES + 1)
+            ->get();
+        if ($cases->count() > AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES) {
+            throw new InvalidArgumentException('Evaluation suite exceeds the platform maximum of '.AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES.' active cases.');
+        }
 
         foreach ($cases as $case) {
             $this->privacyValidator->validateClassification($case->is_synthetic, $case->is_deidentified);
@@ -133,7 +134,16 @@ class RunEvaluationSuite
             if ($case->expected_output_schema !== null) {
                 $this->privacyValidator->validate((array) $case->expected_output_schema);
             }
+        }
 
+        $totalCases = $cases->count();
+        $passedCases = 0;
+        $failedCases = 0;
+        $caseResults = [];
+        $actualProvider = null;
+        $actualModel = null;
+
+        foreach ($cases as $case) {
             $request = new AiRunRequest(
                 capability: $suite->capability,
                 workflowKey: "eval_suite_{$suite->key}_case_{$case->id}",

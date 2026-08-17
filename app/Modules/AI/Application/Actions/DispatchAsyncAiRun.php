@@ -115,7 +115,7 @@ class DispatchAsyncAiRun
             executionDeadlineAt: $executionDeadlineAt,
             maxToolCalls: $maxToolCalls,
             executionMode: AiExecutionMode::Async,
-            initiatedByUserId: $request->initiatedByUserId ?? $actor?->getKey(),
+            initiatedByUserId: $actor?->getKey() ?? $request->initiatedByUserId,
         );
         $run = $claim['run'];
         if (! $claim['created']) {

@@ -35,33 +35,42 @@ class ImportPromptBundle
             $bundle = PromptBundle::fromArray($decoded);
         }
 
-        return DB::transaction(function () use ($organization, $actor, $bundle) {
+        return DB::transaction(function () use ($organization, $actor, $bundle): AiPromptVersion {
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('key', $bundle->promptKey)
+                ->lockForUpdate()
                 ->first();
 
             if ($prompt === null) {
-                $prompt = new AiPrompt([
+                $created = AiPrompt::query()->insertOrIgnore([
                     'organization_id' => $organization->getKey(),
                     'key' => $bundle->promptKey,
                     'name' => $bundle->name,
                     'description' => $bundle->description,
-                    'capability' => $bundle->capability,
+                    'capability' => $bundle->capability->value,
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
-                $prompt->save();
+                $prompt = AiPrompt::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('key', $bundle->promptKey)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-                $this->audit->handle(
-                    organization: $organization,
-                    actor: $actor,
-                    action: 'ai.prompt.created',
-                    targetType: AiPrompt::class,
-                    targetId: (string) $prompt->id,
-                    metadata: [
-                        'prompt_key' => $prompt->key,
-                        'capability' => $prompt->capability->value,
-                    ],
-                );
+                if ((int) $created === 1) {
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'ai.prompt.created',
+                        targetType: AiPrompt::class,
+                        targetId: (string) $prompt->id,
+                        metadata: [
+                            'prompt_key' => $prompt->key,
+                            'capability' => $prompt->capability->value,
+                        ],
+                    );
+                }
             }
 
             $latestVersion = AiPromptVersion::query()

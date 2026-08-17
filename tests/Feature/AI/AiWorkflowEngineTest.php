@@ -4,6 +4,7 @@ namespace Tests\Feature\AI;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
+use App\Modules\AI\Application\Actions\ExecuteAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
@@ -62,9 +63,11 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -527,6 +530,69 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($run);
         $this->assertSame('anthropic', $run->actual_provider);
         $this->assertSame('claude-3-5-haiku', $run->actual_model);
+    }
+
+    public function test_model_configuration_selection_is_limited_to_the_failover_bound(): void
+    {
+        DynamicWorkflowAgent::fake(['Bounded candidate response']);
+
+        foreach (['openai', 'anthropic', 'groq', 'deepseek', 'mistral'] as $priority => $providerName) {
+            $this->setupConfiguredModel(
+                capability: AiCapability::ClinicalDocumentExtraction,
+                providerName: $providerName,
+                modelName: "model-{$priority}",
+                priority: $priority + 1,
+            );
+        }
+
+        $candidateQueries = [];
+        DB::listen(static function (QueryExecuted $query) use (&$candidateQueries): void {
+            $sql = strtolower($query->sql);
+            if (str_contains($sql, 'ai_model_configurations') && str_contains($sql, 'limit')) {
+                $candidateQueries[] = $query;
+            }
+        });
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'bounded_model_selection',
+            inputVariables: ['document_text' => 'Synthetic document'],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        self::assertNotEmpty($candidateQueries);
+        self::assertStringContainsString(
+            'limit '.AiRuntimeLimits::PLATFORM_MAX_FAILOVER_ATTEMPTS,
+            strtolower($candidateQueries[0]->sql),
+        );
+    }
+
+    public function test_real_actor_overrides_spoofed_initiator_for_sync_and_async_runs(): void
+    {
+        DynamicWorkflowAgent::fake(['Actor-authoritative response']);
+        $this->setupConfiguredModel(AiCapability::ClinicalDocumentExtraction);
+        $spoofedUser = User::factory()->forOrganization($this->organization, OrganizationRole::Staff)->create();
+
+        $syncResult = app(ExecuteAiRun::class)->handle($this->user, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'actor_authoritative_sync',
+            initiatedByUserId: $spoofedUser->id,
+            inputVariables: ['document_text' => 'Synthetic document'],
+        ));
+
+        self::assertSame($this->user->id, AiRun::query()->whereKey($syncResult->runId)->value('initiated_by_user_id'));
+
+        Queue::fake();
+        $asyncRun = app(DispatchAsyncAiRun::class)->handle($this->user, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'actor_authoritative_async',
+            initiatedByUserId: $spoofedUser->id,
+            inputVariables: ['document_text' => 'Synthetic document'],
+        ));
+
+        self::assertSame($this->user->id, $asyncRun->initiated_by_user_id);
     }
 
     public function test_no_configured_candidate_fails_closed_without_provider_call(): void

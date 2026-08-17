@@ -19,6 +19,8 @@ use Illuminate\Support\Facades\Auth;
 
 class AiMonitoringOverview extends Page
 {
+    public const int PROVIDER_OVERVIEW_LIMIT = 50;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCpuChip;
 
     protected static ?string $navigationLabel = 'Мониторинг и безопасность';
@@ -82,7 +84,9 @@ class AiMonitoringOverview extends Page
 
         $providers = AiProviderConfiguration::query()
             ->where('organization_id', $orgId)
-            ->with('models')
+            ->withCount('models')
+            ->orderBy('id')
+            ->limit(self::PROVIDER_OVERVIEW_LIMIT)
             ->get();
 
         return [

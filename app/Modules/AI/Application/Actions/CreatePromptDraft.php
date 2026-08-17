@@ -49,7 +49,13 @@ class CreatePromptDraft
             throw new InvalidArgumentException('User prompt template cannot be empty.');
         }
 
-        return DB::transaction(function () use ($organization, $actor, $prompt, $data, $systemPrompt, $userPromptTemplate) {
+        return DB::transaction(function () use ($organization, $actor, $prompt, $data, $systemPrompt, $userPromptTemplate): AiPromptVersion {
+            $prompt = AiPrompt::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($prompt->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $latestVersion = AiPromptVersion::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('prompt_id', $prompt->id)

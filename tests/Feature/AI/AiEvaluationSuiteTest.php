@@ -17,6 +17,7 @@ use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
@@ -180,6 +181,68 @@ class AiEvaluationSuiteTest extends TestCase
         $this->assertSame(2, $evalRun->total_cases);
         $this->assertSame(1, $evalRun->passed_cases); // Case 1 passed, Case 2 failed assertion
         $this->assertSame(1, $evalRun->failed_cases);
+    }
+
+    public function test_oversized_evaluation_suite_is_rejected_before_provider_execution(): void
+    {
+        $providerCalls = 0;
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
+
+            return '{"symmetry_observations": [], "posture_type": "normal"}';
+        });
+
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'oversized_eval_prompt',
+            'name' => 'Oversized evaluation prompt',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Evaluate posture.',
+            'user_prompt_template' => '{{query}}',
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'oversized_eval_suite',
+            'name' => 'Oversized evaluation suite',
+            'capability' => AiCapability::PostureAnalysis,
+            'prompt_id' => $prompt->id,
+        ]);
+
+        for ($caseNumber = 1; $caseNumber <= AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES + 1; $caseNumber++) {
+            AiEvalCase::create([
+                'organization_id' => $this->organization->id,
+                'eval_suite_id' => $suite->id,
+                'name' => "Oversized case {$caseNumber}",
+                'is_synthetic' => true,
+                'is_deidentified' => false,
+                'test_inputs' => ['query' => "Synthetic case {$caseNumber}"],
+                'expected_assertions' => [],
+                'is_active' => true,
+            ]);
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('platform maximum');
+
+        try {
+            app(RunEvaluationSuite::class)->handle(
+                actor: $this->user,
+                evalSuiteId: $suite->id,
+                promptVersionId: $version->id,
+                modelReleaseId: $this->modelConfiguration->active_release_id,
+            );
+        } finally {
+            self::assertSame(0, $providerCalls);
+            self::assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+        }
     }
 
     public function test_create_eval_case_rejects_real_patient_references(): void

@@ -37,7 +37,7 @@ final readonly class AiRunRequest
             workflowKey: $this->workflowKey,
             origin: $this->origin,
             executionMode: $this->executionMode,
-            initiatedByUserId: $this->initiatedByUserId,
+            initiatedByUserId: $actor?->getKey() ?? $this->initiatedByUserId,
             clientId: $this->clientId,
             promptVersionId: $this->promptVersionId,
             modelReleaseId: $this->modelReleaseId,

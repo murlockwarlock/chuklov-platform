@@ -14,19 +14,34 @@ return new class extends Migration
             Schema::table('organization_credentials', function (Blueprint $table): void {
                 $table->uuid('revision_id')->nullable()->after('credential_name');
             });
-
-            $credentials = DB::table('organization_credentials')->get();
-            foreach ($credentials as $credential) {
-                DB::table('organization_credentials')
-                    ->where('id', $credential->id)
-                    ->update(['revision_id' => (string) Str::uuid()]);
-            }
-
-            Schema::table('organization_credentials', function (Blueprint $table): void {
-                $table->uuid('revision_id')->nullable(false)->change();
-                $table->unique(['organization_id', 'id']);
-            });
         }
+
+        if (DB::getDriverName() === 'pgsql') {
+            DB::table('organization_credentials')
+                ->whereNull('revision_id')
+                ->update(['revision_id' => DB::raw('gen_random_uuid()')]);
+        } else {
+            DB::table('organization_credentials')
+                ->whereNull('revision_id')
+                ->orderBy('id')
+                ->chunkById(500, function ($credentials): void {
+                    $updates = [];
+                    foreach ($credentials as $credential) {
+                        $updates[] = [
+                            'id' => $credential->id,
+                            'revision_id' => (string) Str::uuid(),
+                        ];
+                    }
+
+                    DB::table('organization_credentials')->upsert($updates, ['id'], ['revision_id']);
+                });
+        }
+
+        Schema::table('organization_credentials', function (Blueprint $table): void {
+            $table->uuid('revision_id')->nullable(false)->change();
+            $table->unique('revision_id');
+            $table->unique(['organization_id', 'id']);
+        });
 
         Schema::create('ai_organization_safety_controls', function (Blueprint $table): void {
             $table->id();
@@ -98,7 +113,7 @@ return new class extends Migration
         Schema::table('ai_prompts', function (Blueprint $table): void {
             $table->foreign(['organization_id', 'id', 'active_version_id'])
                 ->references(['organization_id', 'prompt_id', 'id'])
-                ->on('ai_prompt_versions')->nullOnDelete();
+                ->on('ai_prompt_versions')->restrictOnDelete();
         });
 
         Schema::create('ai_provider_configurations', function (Blueprint $table): void {
@@ -118,7 +133,7 @@ return new class extends Migration
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'provider_name']);
             $table->foreign(['organization_id', 'credential_id'])
-                ->references(['organization_id', 'id'])->on('organization_credentials')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('organization_credentials')->restrictOnDelete();
         });
 
         Schema::create('ai_model_configurations', function (Blueprint $table): void {
@@ -165,7 +180,7 @@ return new class extends Migration
         Schema::table('ai_model_configurations', function (Blueprint $table): void {
             $table->foreign(['organization_id', 'id', 'active_release_id'])
                 ->references(['organization_id', 'model_config_id', 'id'])
-                ->on('ai_model_releases')->nullOnDelete();
+                ->on('ai_model_releases')->restrictOnDelete();
         });
 
         if (DB::getDriverName() === 'pgsql') {

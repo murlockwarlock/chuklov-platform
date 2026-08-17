@@ -89,7 +89,7 @@
                             <span class="inline-flex h-2.5 w-2.5 rounded-full {{ $provider->is_enabled ? 'bg-emerald-500' : 'bg-slate-400' }}"></span>
                             <div>
                                 <h5 class="text-sm font-medium text-slate-900 dark:text-slate-100">{{ $provider->display_name ?: $provider->provider_name }}</h5>
-                                <p class="text-xs text-slate-500">Моделей: {{ $provider->models->count() }}</p>
+                                <p class="text-xs text-slate-500">Моделей: {{ $provider->models_count }}</p>
                             </div>
                         </div>
                         <div class="flex items-center gap-3">

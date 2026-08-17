@@ -52,15 +52,15 @@ return new class extends Migration
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'idempotency_key']);
             $table->foreign(['organization_id', 'client_id'])
-                ->references(['organization_id', 'id'])->on('clients')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('clients')->restrictOnDelete();
             $table->foreign(['organization_id', 'prompt_id'])
-                ->references(['organization_id', 'id'])->on('ai_prompts')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_prompts')->restrictOnDelete();
             $table->foreign(['organization_id', 'prompt_version_id'])
-                ->references(['organization_id', 'id'])->on('ai_prompt_versions')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_prompt_versions')->restrictOnDelete();
             $table->foreign(['organization_id', 'model_config_id'])
-                ->references(['organization_id', 'id'])->on('ai_model_configurations')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_model_configurations')->restrictOnDelete();
             $table->foreign(['organization_id', 'model_release_id'])
-                ->references(['organization_id', 'id'])->on('ai_model_releases')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_model_releases')->restrictOnDelete();
             $table->index(['organization_id', 'status', 'created_at']);
             $table->index(['organization_id', 'status', 'worker_lease_expires_at']);
             $table->index(['organization_id', 'capability', 'created_at']);
@@ -116,9 +116,9 @@ return new class extends Migration
             $table->foreign(['organization_id', 'ai_run_id'])
                 ->references(['organization_id', 'id'])->on('ai_runs')->cascadeOnDelete();
             $table->foreign(['organization_id', 'model_release_id'])
-                ->references(['organization_id', 'id'])->on('ai_model_releases')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('ai_model_releases')->restrictOnDelete();
             $table->foreign(['organization_id', 'credential_id'])
-                ->references(['organization_id', 'id'])->on('organization_credentials')->nullOnDelete();
+                ->references(['organization_id', 'id'])->on('organization_credentials')->restrictOnDelete();
             $table->index(['organization_id', 'budget_usage_date', 'budget_reservation_status']);
             $table->index(['organization_id', 'ai_run_id', 'budget_reservation_status']);
         });

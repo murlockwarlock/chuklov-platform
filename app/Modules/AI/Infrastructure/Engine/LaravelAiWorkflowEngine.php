@@ -44,6 +44,7 @@ use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
@@ -414,6 +415,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         $contextPolicy = $promptVersion->getContextPolicy();
 
         $candidates = [];
+        $maxAttempts = AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts);
         $exactRelease = null;
         if ($run->model_release_id !== null) {
             $exactRelease = AiModelRelease::query()
@@ -430,8 +432,31 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 ->where('organization_id', $organizationId)
                 ->where('is_enabled', true)
                 ->where('lifecycle_status', 'active')
+                ->whereHas('activeRelease', static function (Builder $query) use ($run): void {
+                    $query
+                        ->where('status', 'active')
+                        ->whereJsonContains('capabilities', $run->capability->value);
+                })
+                ->whereHas('providerConfiguration', static function (Builder $query) use ($safetyControls): void {
+                    $query
+                        ->where('is_enabled', true)
+                        ->where('health_status', ProviderHealthStatus::Healthy->value);
+
+                    if ($safetyControls !== null && $safetyControls->disabled_providers !== []) {
+                        $query->whereNotIn('provider_name', $safetyControls->disabled_providers);
+                    }
+
+                    $query->whereHas('credential', static function (Builder $credentialQuery): void {
+                        $credentialQuery
+                            ->where('status', CredentialStatus::Active->value)
+                            ->whereColumn('organization_credentials.provider', 'ai_provider_configurations.provider_name')
+                            ->whereColumn('organization_credentials.revision_id', 'ai_provider_configurations.tested_credential_revision');
+                    });
+                })
                 ->with(['providerConfiguration.credential', 'activeRelease'])
                 ->orderBy('failover_priority', 'asc')
+                ->orderBy('id', 'asc')
+                ->limit($maxAttempts)
                 ->get();
         }
 
@@ -574,7 +599,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             organizationMaxTokens: $safetyControls?->max_tokens_per_run,
         );
 
-        $maxAttempts = AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts);
         $attemptNumber = (int) AiRunAttempt::query()
             ->where('organization_id', $organizationId)
             ->where('ai_run_id', $runId)

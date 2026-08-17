@@ -43,6 +43,8 @@ Project `.codex/config.toml` contains durable repository MCP configuration only.
 - CRM, responsive web, mobile web, and Telegram Mini App share one application/domain core.
 - Telegram is a channel adapter, not the product core.
 - External integrations use explicit adapters and idempotent Inbox/Outbox when implemented.
+- Durable claims and ownership fences are established in PostgreSQL before external I/O; external calls do not run under long-lived row-locking transactions.
+- Any bounded multi-step operation shares one absolute deadline; provider/SDK retries and queue timeout ordering are part of its safety contract.
 - Business timings and managed content are configuration, not hardcoded behavior.
 - Booking and payment states remain separate.
 - Payments use an auditable ledger and server-side confirmation.
@@ -101,6 +103,7 @@ Consult `docs/architecture/modules.md` before adding a module dependency.
 ## Database and Migration Rules
 
 - PostgreSQL is authoritative; SQLite may be used only for fast isolated tests that do not hide PostgreSQL behavior.
+- PostgreSQL session-state helpers must preserve caller state across outer and nested/savepoint transactions; real PostgreSQL tests are required for locks, savepoints, `SET LOCAL`, pgvector, and races.
 - Production migrations are forward-only by default and must support expand/contract deployment.
 - Use FKs, indexes, uniqueness, checks, and transactions where invariants require them.
 - Never edit an already-deployed migration. Large data migrations are separate operations.
@@ -134,7 +137,7 @@ The manually dispatched candidate workflow runs PHPUnit unit/feature/integration
 
 The full Playwright suite runs through the separate scheduled/manual E2E workflow until it is stable enough to return as a blocking smoke gate. Scheduled E2E failures are investigated separately and do not automatically block unrelated feature work.
 
-Never claim a check passed unless it was executed. Record exact results and skips in `PROJECT_STATUS.md`.
+Never claim a check passed unless it was executed. Record exact results and skips in `PROJECT_STATUS.md`. Use `PASS` only for an executed passing check; use `EXISTS — NOT RUN LOCALLY` for an unexecuted PostgreSQL/integration check.
 
 ### Staging Is Not CI
 

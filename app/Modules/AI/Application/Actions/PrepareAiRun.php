@@ -83,7 +83,7 @@ final class PrepareAiRun
                     'capability' => $request->capability,
                     'workflow_key' => $request->workflowKey,
                     'origin' => $request->origin,
-                    'initiated_by_user_id' => $initiatedByUserId ?? $request->initiatedByUserId,
+                    'initiated_by_user_id' => $request->actor?->getKey() ?? $initiatedByUserId ?? $request->initiatedByUserId,
                     'client_id' => $request->clientId,
                     'status' => AiRunStatus::Preparing,
                     'execution_mode' => $executionMode ?? $request->executionMode,
