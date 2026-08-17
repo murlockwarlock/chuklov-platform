@@ -254,9 +254,14 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         }
 
         return DB::transaction(function () use ($query, $statement): mixed {
-            $this->setLocalStatementTimeout($this->statementTimeoutSeconds($query));
+            $previousStatementTimeout = $this->currentStatementTimeout();
+            $boundedStatementTimeout = $this->statementTimeoutSeconds($query);
+            $this->setLocalStatementTimeout((string) ($boundedStatementTimeout * 1000));
 
-            return $statement();
+            $result = $statement();
+            $this->setLocalStatementTimeout($previousStatementTimeout);
+
+            return $result;
         });
     }
 
@@ -278,9 +283,14 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         }
     }
 
-    private function setLocalStatementTimeout(int $timeoutSeconds): void
+    private function currentStatementTimeout(): string
     {
-        DB::selectOne("select set_config('statement_timeout', ?, true) as statement_timeout", [(string) ($timeoutSeconds * 1000)]);
+        return (string) DB::scalar("select current_setting('statement_timeout')");
+    }
+
+    private function setLocalStatementTimeout(string $timeout): void
+    {
+        DB::selectOne("select set_config('statement_timeout', ?, true) as statement_timeout", [$timeout]);
     }
 
     /**

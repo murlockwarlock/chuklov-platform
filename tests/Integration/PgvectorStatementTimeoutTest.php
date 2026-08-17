@@ -113,4 +113,72 @@ final class PgvectorStatementTimeoutTest extends TestCase
         self::assertGreaterThan($timeouts[2], $timeouts[3]);
         self::assertLessThanOrEqual(25_000, $timeouts[array_key_last($timeouts)]);
     }
+
+    public function test_bounded_pgvector_retrieval_restores_outer_transaction_statement_timeout(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('PostgreSQL statement timeout integration requires the pgvector database.');
+        }
+
+        config()->set('queue.default', 'sync');
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
+        $embedding = new class implements EmbeddingGenerator
+        {
+            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            {
+                return array_map(
+                    static fn (): array => array_fill(0, $configuration->dimensions, 0.0),
+                    $inputs,
+                );
+            }
+        };
+        $this->app->instance(EmbeddingGenerator::class, $embedding);
+
+        $organization = Organization::factory()->create();
+        $actor = User::factory()->forOrganization($organization)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Outer transaction statement timeout guide',
+            'type' => 'authored_text',
+            'content' => 'Outer transaction timeout restoration verification.',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            DB::selectOne("select set_config('statement_timeout', ?, true) as statement_timeout", ['47s']);
+            $callerStatementTimeout = (string) DB::scalar("select current_setting('statement_timeout')");
+
+            app(KnowledgeRetriever::class)->retrieve(
+                $actor,
+                new RetrievalQuery(
+                    text: 'outer transaction',
+                    topK: 5,
+                    sourceIds: [(int) $source->getKey()],
+                    executionDeadlineAt: Carbon::now()->addSeconds(30),
+                    executionTimeoutSeconds: 30,
+                    embeddingSnapshot: EmbeddingExecutionSnapshot::active(),
+                ),
+            );
+
+            self::assertSame(
+                $callerStatementTimeout,
+                (string) DB::scalar("select current_setting('statement_timeout')"),
+            );
+            $unrelatedQuery = DB::selectOne("select current_setting('statement_timeout') as statement_timeout, 1 as result");
+
+            self::assertSame($callerStatementTimeout, (string) $unrelatedQuery->statement_timeout);
+            self::assertSame(1, (int) $unrelatedQuery->result);
+        } finally {
+            DB::rollBack();
+        }
+    }
 }
