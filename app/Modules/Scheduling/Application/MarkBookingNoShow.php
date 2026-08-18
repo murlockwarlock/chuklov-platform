@@ -35,11 +35,11 @@ final class MarkBookingNoShow
                 ->firstOrFail();
 
             if (! in_array($lockedBooking->status, [BookingStatus::Requested, BookingStatus::Confirmed], true)) {
-                throw ValidationException::withMessages(['booking' => 'Only expected or confirmed bookings can be marked no-show.']);
+                throw ValidationException::withMessages(['booking' => 'Неявку можно отметить только для записей, ожидающих подтверждения или подтверждённых.']);
             }
 
             if (CarbonImmutable::instance(now())->utc()->lessThan($lockedBooking->startsAtUtc())) {
-                throw ValidationException::withMessages(['booking' => 'A booking can only be marked no-show after its scheduled start.']);
+                throw ValidationException::withMessages(['booking' => 'Неявку можно отметить только после наступления времени начала записи.']);
             }
 
             $oldValues = $this->events->snapshot($lockedBooking);

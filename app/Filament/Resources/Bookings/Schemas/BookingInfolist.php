@@ -56,7 +56,7 @@ class BookingInfolist
                                 default => 'gray',
                             })
                             ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
-                            ->wrap(),
+                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
                         TextEntry::make('payment_status')
                             ->label('Статус оплаты')
                             ->badge()
@@ -67,7 +67,7 @@ class BookingInfolist
                                 default => 'gray',
                             })
                             ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state))
-                            ->wrap(),
+                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
                         TextEntry::make('payment_requirement')
                             ->label('Условие оплаты')
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))

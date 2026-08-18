@@ -39,11 +39,11 @@ final class CompleteBooking
                 ->firstOrFail();
 
             if ($lockedBooking->status !== BookingStatus::Confirmed) {
-                throw ValidationException::withMessages(['booking' => 'Only confirmed bookings can be completed.']);
+                throw ValidationException::withMessages(['booking' => 'Завершить можно только подтверждённые записи.']);
             }
 
             if (CarbonImmutable::instance(now())->utc()->lessThan($lockedBooking->endsAtUtc())) {
-                throw ValidationException::withMessages(['booking' => 'A booking can only be completed after its scheduled end.']);
+                throw ValidationException::withMessages(['booking' => 'Завершить визит можно только после окончания запланированного времени записи.']);
             }
 
             $oldValues = $this->events->snapshot($lockedBooking);

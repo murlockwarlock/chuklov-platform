@@ -19,12 +19,15 @@ use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Illuminate\Validation\ValidationException;
 
 final class BookingLifecycleActions
 {
@@ -51,7 +54,12 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(ConfirmBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                    try {
+                        app(ConfirmBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('Запись подтверждена')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('approveHomeVisit')
@@ -77,12 +85,17 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(ApproveHomeVisitBooking::class)->handle(
-                        $actor,
-                        $record,
-                        $data['reason'] ?? null,
-                        $data['payment_requirement'] ?? null,
-                    );
+                    try {
+                        app(ApproveHomeVisitBooking::class)->handle(
+                            $actor,
+                            $record,
+                            $data['reason'] ?? null,
+                            $data['payment_requirement'] ?? null,
+                        );
+                        Notification::make()->success()->title('Выезд подтверждён')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('rejectHomeVisit')
@@ -102,7 +115,12 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(RejectHomeVisitBooking::class)->handle($actor, $record, (string) $data['reason']);
+                    try {
+                        app(RejectHomeVisitBooking::class)->handle($actor, $record, (string) $data['reason']);
+                        Notification::make()->success()->title('Заявка на выезд отклонена')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('reschedule')
@@ -120,18 +138,23 @@ final class BookingLifecycleActions
                 ->action(function (Booking $record, array $data): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
-                    $startsAt = $data['starts_at'] instanceof \DateTimeInterface
+                    $startsAt = $data['starts_at'] instanceof DateTimeInterface
                         ? $data['starts_at']
                         : CarbonImmutable::parse((string) $data['starts_at']);
 
-                    app(RescheduleBooking::class)->handle(
-                        actor: $actor,
-                        booking: $record,
-                        newStartsAt: $startsAt,
-                        clientTimezone: null,
-                        reason: $data['reason'] ?? null,
-                        expectedEventVersion: (int) $data['expected_event_version'],
-                    );
+                    try {
+                        app(RescheduleBooking::class)->handle(
+                            actor: $actor,
+                            booking: $record,
+                            newStartsAt: $startsAt,
+                            clientTimezone: null,
+                            reason: $data['reason'] ?? null,
+                            expectedEventVersion: (int) $data['expected_event_version'],
+                        );
+                        Notification::make()->success()->title('Запись успешно перенесена')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('complete')
@@ -144,7 +167,12 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(CompleteBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                    try {
+                        app(CompleteBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('Визит успешно завершён')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('noShow')
@@ -158,7 +186,12 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(MarkBookingNoShow::class)->handle($actor, $record, $data['reason'] ?? null);
+                    try {
+                        app(MarkBookingNoShow::class)->handle($actor, $record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('Запись отмечена как не состоявшаяся')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('meetingUrl')
@@ -176,7 +209,12 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(SetOnlineMeetingUrl::class)->handle($actor, $record, (string) $data['meeting_url'], $data['reason'] ?? null);
+                    try {
+                        app(SetOnlineMeetingUrl::class)->handle($actor, $record, (string) $data['meeting_url'], $data['reason'] ?? null);
+                        Notification::make()->success()->title('Ссылка на встречу обновлена')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
 
             Action::make('cancel')
@@ -190,8 +228,24 @@ final class BookingLifecycleActions
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
-                    app(CancelBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                    try {
+                        app(CancelBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        Notification::make()->success()->title('Запись отменена')->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    }
                 }),
         ];
+    }
+
+    private static function sendErrorNotification(ValidationException $exception): void
+    {
+        $message = collect($exception->errors())->flatten()->first() ?: 'Не удалось выполнить действие.';
+
+        Notification::make()
+            ->danger()
+            ->title('Действие отклонено')
+            ->body($message)
+            ->send();
     }
 }

@@ -13,6 +13,8 @@ class EditAiProvider extends EditRecord
 {
     protected static string $resource = AiProviderResource::class;
 
+    protected static ?string $title = 'Редактировать AI-провайдера';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof AiProviderConfiguration, 404);

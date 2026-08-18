@@ -502,4 +502,47 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertSee('REF123')
             ->assertActionExists('edit');
     }
+
+    public function test_client_search_supports_international_phones_and_telegram_id(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $clientByBy = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Минский Клиент',
+            'phone' => '+375 29 123-45-67',
+        ]);
+        $clientUs = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'US Client',
+            'phone' => '+1 (202) 555-0199',
+        ]);
+        $clientWithTg = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Telegram User',
+            'phone' => '+7 (999) 000-11-22',
+        ]);
+
+        ClientChannelIdentity::forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $clientWithTg->id,
+            'channel' => 'telegram',
+            'external_id' => '987654321',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+
+        $search = app(ClientSearch::class);
+
+        // 1. Partial international search with +
+        $results = $search->query($admin, '+37529')->pluck('id')->all();
+        self::assertContains($clientByBy->id, $results);
+
+        $results = $search->query($admin, '+1 (202)')->pluck('id')->all();
+        self::assertContains($clientUs->id, $results);
+
+        // 2. Search by Telegram ID (pure digits)
+        $results = $search->query($admin, '987654321')->pluck('id')->all();
+        self::assertContains($clientWithTg->id, $results);
+
+        // 3. Search by tg:987654321
+        $results = $search->query($admin, 'tg:987654321')->pluck('id')->all();
+        self::assertContains($clientWithTg->id, $results);
+    }
 }

@@ -63,6 +63,14 @@ final readonly class ClientSearch
                 : $this->bounded($query->whereKey($id));
         }
 
+        if (preg_match('/^(?:tg|telegram):(\d+)$/i', $input, $matches) === 1) {
+            $telegramId = $matches[1];
+
+            return $this->bounded($query->whereHas('channelIdentities', function (Builder $query) use ($telegramId): void {
+                $query->where('channel', 'telegram')->where('external_id', $telegramId);
+            }));
+        }
+
         if (preg_match('/^\d+$/', $input) === 1) {
             $id = $this->exactId($input);
             $phoneKey = ClientPhoneSearchKey::from($input);
@@ -79,7 +87,7 @@ final readonly class ClientSearch
             }
 
             if ($id !== null || $phoneKey !== null || $prefixCandidates !== []) {
-                return $this->bounded($query->where(function (Builder $query) use ($id, $phoneKey, $prefixCandidates): void {
+                return $this->bounded($query->where(function (Builder $query) use ($id, $input, $phoneKey, $prefixCandidates): void {
                     $hasClause = false;
 
                     if ($id !== null) {
@@ -99,6 +107,12 @@ final readonly class ClientSearch
                             $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
                             $hasClause = true;
                         }
+
+                        $method = $hasClause ? 'orWhereHas' : 'whereHas';
+                        $query->{$method}('channelIdentities', function (Builder $query) use ($input): void {
+                            $query->where('external_id', $input);
+                        });
+                        $hasClause = true;
                     }
 
                     if (! $hasClause) {
@@ -111,13 +125,33 @@ final readonly class ClientSearch
         }
 
         if ($this->looksLikePhone($input)) {
+            $digits = preg_replace('/\D+/u', '', $input);
             $phoneKey = ClientPhoneSearchKey::from($input);
 
-            if ($phoneKey === null) {
-                return $this->bounded($query->whereKey(0));
+            if ($phoneKey !== null) {
+                return $this->bounded($query->where('phone_search_key', $phoneKey->value));
             }
 
-            return $this->bounded($query->where('phone_search_key', $phoneKey->value));
+            if (is_string($digits) && strlen($digits) >= 4) {
+                $prefixCandidates = [$digits];
+                if ($digits[0] === '8') {
+                    $prefixCandidates[] = '7'.substr($digits, 1);
+                } elseif ($digits[0] === '7') {
+                    $prefixCandidates[] = '8'.substr($digits, 1);
+                }
+                $prefixCandidates = array_values(array_unique($prefixCandidates));
+
+                return $this->bounded($query->where(function (Builder $query) use ($prefixCandidates): void {
+                    $hasClause = false;
+                    foreach ($prefixCandidates as $prefix) {
+                        $method = $hasClause ? 'orWhere' : 'where';
+                        $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
+                        $hasClause = true;
+                    }
+                }));
+            }
+
+            return $this->bounded($query->whereKey(0));
         }
 
         $terms = $this->terms($input);

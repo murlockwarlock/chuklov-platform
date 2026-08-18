@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\Dashboard;
+use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -14,8 +16,11 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
+use Filament\Widgets\AccountWidget;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class DashboardUpcomingBookingsTest extends TestCase
@@ -122,6 +127,34 @@ final class DashboardUpcomingBookingsTest extends TestCase
         self::assertSame(1, $result->todayCount);
         self::assertCount(1, $result->days[0]->bookings);
         self::assertSame('Confirmed Client', $result->days[0]->bookings->first()->client->full_name);
+    }
+
+    public function test_dashboard_page_has_one_column_and_excludes_account_widget(): void
+    {
+        $dashboard = new Dashboard;
+
+        self::assertSame(1, $dashboard->getColumns());
+        self::assertSame([UpcomingBookingsWidget::class], $dashboard->getWidgets());
+        self::assertNotContains(AccountWidget::class, $dashboard->getWidgets());
+    }
+
+    public function test_dashboard_widget_renders_full_status_and_header(): void
+    {
+        [$org, $admin] = $this->setupOrganizationWithAdmin('Europe/Moscow');
+        app(OrganizationContext::class)->set($org);
+
+        $now = CarbonImmutable::now('Europe/Moscow')->startOfDay()->addHours(10);
+        $this->createBookingForOrg($org, $now, 'Евгений Пронин', BookingStatus::Requested);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+
+        Livewire::test(UpcomingBookingsWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Ближайшие записи')
+            ->assertSee('Евгений Пронин')
+            ->assertSee('Ожидает подтверждения')
+            ->assertSee('Сегодня:');
     }
 
     /** @return array{0: Organization, 1: User} */

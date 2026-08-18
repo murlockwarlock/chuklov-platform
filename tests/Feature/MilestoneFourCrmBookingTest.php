@@ -134,7 +134,33 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertSuccessful()
             ->assertActionExists('confirm')
             ->assertActionExists('reschedule')
-            ->assertActionExists('cancel');
+            ->assertActionExists('cancel')
+            ->assertActionExists('noShow');
+    }
+
+    public function test_view_booking_noshow_action_handles_premature_execution_with_notification(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        // Future booking
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Confirmed,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::now('UTC')->addDays(2),
+            'ends_at' => CarbonImmutable::now('UTC')->addDays(2)->addHour(),
+            'blocking_ends_at' => CarbonImmutable::now('UTC')->addDays(2)->addHour(),
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->callAction('noShow', ['reason' => 'Не пришёл'])
+            ->assertNotified('Действие отклонено');
+
+        self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */
