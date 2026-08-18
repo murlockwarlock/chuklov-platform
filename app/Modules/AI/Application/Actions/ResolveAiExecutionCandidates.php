@@ -26,7 +26,6 @@ final class ResolveAiExecutionCandidates
         AiRunRequest $request,
         ?AiOrganizationSafetyControl $safetyControls,
     ): array {
-        $maxCandidates = $this->maxCandidates($safetyControls);
         $explicitRelease = $request->modelReleaseId !== null
             ? AiModelRelease::query()
                 ->where('organization_id', $organizationId)
@@ -43,7 +42,7 @@ final class ResolveAiExecutionCandidates
         $snapshot = [];
 
         foreach ($modelConfigs as $config) {
-            if (count($snapshot) >= $maxCandidates) {
+            if (count($snapshot) >= AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN) {
                 break;
             }
 
@@ -90,7 +89,12 @@ final class ResolveAiExecutionCandidates
         }
 
         $candidates = [];
-        foreach (array_values($recorded) as $position => $record) {
+        $recorded = array_slice(
+            array_values($recorded),
+            0,
+            AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN,
+        );
+        foreach ($recorded as $position => $record) {
             if (! is_array($record)) {
                 continue;
             }
@@ -140,7 +144,7 @@ final class ResolveAiExecutionCandidates
 
         usort($candidates, static fn (array $left, array $right): int => $left['snapshot_position'] <=> $right['snapshot_position']);
 
-        return array_slice($candidates, 0, $this->maxCandidates($safetyControls));
+        return $candidates;
     }
 
     /** @return array<string, mixed>|null */
@@ -328,13 +332,6 @@ final class ResolveAiExecutionCandidates
             && $record['capabilities'] === $this->releaseCapabilities($release)
             && (int) ($record['credential_id'] ?? 0) === (int) $candidate['credential_id']
             && (string) ($record['credential_revision'] ?? '') === (string) $candidate['credential_revision'];
-    }
-
-    private function maxCandidates(?AiOrganizationSafetyControl $safetyControls): int
-    {
-        return AiRuntimeLimits::effectiveMaxFailoverAttempts(
-            $safetyControls?->max_failover_attempts,
-        );
     }
 
     /** @return list<string> */

@@ -8,6 +8,7 @@ use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
@@ -17,10 +18,15 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
+use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -30,6 +36,7 @@ use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -43,9 +50,12 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
 
     private AiPromptVersion $promptVersion;
 
+    private AiPromptVersion $clinicalPromptVersion;
+
     protected function setUp(): void
     {
         parent::setUp();
+        Storage::fake('private');
 
         $this->organization = Organization::create([
             'name' => 'Snapshot Clinic',
@@ -72,6 +82,25 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
             'activated_at' => now(),
         ]);
         $prompt->update(['active_version_id' => $this->promptVersion->id]);
+
+        $clinicalPrompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'snapshot_clinical_prompt',
+            'name' => 'Snapshot clinical prompt',
+            'capability' => AiCapability::ClinicalDocumentExtraction,
+        ]);
+        $this->clinicalPromptVersion = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $clinicalPrompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Extract safely.',
+            'user_prompt_template' => '{{document_text}}',
+            'context_policy' => ['include_rag' => false],
+            'allowed_tools' => [],
+            'activated_at' => now(),
+        ]);
+        $clinicalPrompt->update(['active_version_id' => $this->clinicalPromptVersion->id]);
     }
 
     public function test_async_worker_uses_release_accepted_before_activation_change(): void
@@ -137,6 +166,77 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
         $this->assertCount(1, $attempts);
         $this->assertSame($firstRelease->id, $attempts->first()->model_release_id);
         $this->assertNotSame($newRelease->id, $attempts->first()->model_release_id);
+    }
+
+    public function test_async_attachment_snapshot_keeps_later_modality_candidate_without_post_dispatch_discovery(): void
+    {
+        [, $firstRelease] = $this->candidateWithCapabilities(
+            providerName: 'openai',
+            credentialName: 'OpenAI text first',
+            modelName: 'text-only-1',
+            priority: 1,
+            capability: AiCapability::ClinicalDocumentExtraction,
+        );
+        $this->candidateWithCapabilities(
+            providerName: 'groq',
+            credentialName: 'Groq text second',
+            modelName: 'text-only-2',
+            priority: 2,
+            capability: AiCapability::ClinicalDocumentExtraction,
+        );
+        $this->candidateWithCapabilities(
+            providerName: 'deepseek',
+            credentialName: 'DeepSeek text third',
+            modelName: 'text-only-3',
+            priority: 3,
+            capability: AiCapability::ClinicalDocumentExtraction,
+        );
+        [, $documentRelease] = $this->candidateWithCapabilities(
+            providerName: 'anthropic',
+            credentialName: 'Anthropic document fourth',
+            modelName: 'document-capable-4',
+            priority: 4,
+            capability: AiCapability::ClinicalDocumentExtraction,
+            modalities: [AiModelModality::DocumentInput],
+        );
+        $attachment = $this->createMedicalReportAttachment();
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'snapshot-document-modality',
+            promptVersionId: $this->clinicalPromptVersion->id,
+            clientId: $attachment->client_id,
+            inputVariables: ['document_text' => 'queued document'],
+            inputReferences: [new AiInputReference('medical_attachment', $attachment->id)],
+        ));
+
+        $snapshot = $run->fresh()->execution_candidate_snapshot;
+        $this->assertCount(4, $snapshot);
+        $this->assertSame($firstRelease->id, $snapshot[0]['model_release_id']);
+        $this->assertSame($documentRelease->id, $snapshot[3]['model_release_id']);
+        $this->assertContains(AiModelModality::DocumentInput->value, $snapshot[3]['capabilities']);
+
+        [, $newRelease] = $this->candidateWithCapabilities(
+            providerName: 'gemini',
+            credentialName: 'Gemini post dispatch',
+            modelName: 'document-capable-created-later',
+            priority: 5,
+            capability: AiCapability::ClinicalDocumentExtraction,
+            modalities: [AiModelModality::DocumentInput],
+        );
+
+        DynamicWorkflowAgent::fake(['snapshot document response']);
+        $this->runQueuedJob($run);
+
+        $attempts = AiRunAttempt::query()
+            ->where('ai_run_id', $run->id)
+            ->orderBy('attempt_number')
+            ->get();
+        $this->assertCount(1, $attempts);
+        $this->assertSame($documentRelease->id, $attempts->first()->model_release_id);
+        $this->assertNotSame($newRelease->id, $attempts->first()->model_release_id);
+        $this->assertLessThanOrEqual(3, $attempts->count());
     }
 
     public function test_async_worker_fails_closed_after_snapshotted_credential_rotation(): void
@@ -207,9 +307,33 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
         $this->assertSame(0, AiRunAttempt::query()->where('ai_run_id', $run->id)->count());
     }
 
-    /** @return array{0: AiModelConfiguration, 1: AiModelRelease} */
-    private function candidate(string $providerName, string $credentialName, string $modelName, int $priority): array
-    {
+    /**
+     * @param  list<AiModelModality>  $modalities
+     * @return array{0: AiModelConfiguration, 1: AiModelRelease}
+     */
+    private function candidateWithCapabilities(
+        string $providerName,
+        string $credentialName,
+        string $modelName,
+        int $priority,
+        AiCapability $capability = AiCapability::ClientCompanion,
+        array $modalities = [],
+    ): array {
+        return $this->candidate($providerName, $credentialName, $modelName, $priority, $capability, $modalities);
+    }
+
+    /**
+     * @param  list<AiModelModality>  $modalities
+     * @return array{0: AiModelConfiguration, 1: AiModelRelease}
+     */
+    private function candidate(
+        string $providerName,
+        string $credentialName,
+        string $modelName,
+        int $priority,
+        AiCapability $capability = AiCapability::ClientCompanion,
+        array $modalities = [],
+    ): array {
         $credential = new OrganizationCredential([
             'provider' => $providerName,
             'credential_name' => $credentialName,
@@ -235,12 +359,16 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
             inputCostPerMillionMinorUnits: 1,
             outputCostPerMillionMinorUnits: 1,
         );
+        $capabilities = array_merge(
+            [$capability->value],
+            array_map(static fn (AiModelModality $modality): string => $modality->value, $modalities),
+        );
         $modelConfig = AiModelConfiguration::create([
             'organization_id' => $this->organization->id,
             'provider_config_id' => $provider->id,
             'model_name' => $modelName,
             'display_name' => $modelName,
-            'capabilities' => [AiCapability::ClientCompanion->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'failover_priority' => $priority,
         ]);
@@ -251,7 +379,7 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
             'status' => 'active',
             'provider_name' => $providerName,
             'model_name' => $modelName,
-            'capabilities' => [AiCapability::ClientCompanion->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'activated_at' => now(),
         ]);
@@ -266,5 +394,30 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
             organizationId: $this->organization->id,
             runId: $run->id,
         ))->handle(app(AiWorkflowEngine::class), app(ReconcileExpiredAiRun::class));
+    }
+
+    private function createMedicalReportAttachment(): MedicalAttachment
+    {
+        $client = Client::factory()->forOrganization($this->organization)->create();
+        $content = '%PDF-1.7 async bounded attachment test';
+        $uuid = (string) Str::uuid();
+        $path = "medical/attachments/{$this->organization->id}/{$uuid}.pdf";
+        Storage::disk('private')->put($path, $content);
+
+        return MedicalAttachment::create([
+            'uuid' => $uuid,
+            'organization_id' => $this->organization->id,
+            'client_id' => $client->id,
+            'uploaded_by_user_id' => $this->admin->id,
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => $path,
+            'original_filename' => 'async-bounded-report.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => strlen($content),
+            'sha256_checksum' => hash('sha256', $content),
+            'scan_status' => AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
     }
 }

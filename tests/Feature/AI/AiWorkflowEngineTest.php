@@ -12,6 +12,7 @@ use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
@@ -47,6 +48,9 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
+use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\Data\RetrievalResult;
@@ -70,6 +74,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\Ai\Responses\Data\Meta;
@@ -191,8 +196,15 @@ class AiWorkflowEngineTest extends TestCase
         ];
     }
 
-    private function setupConfiguredModel(AiCapability $capability, string $providerName = 'openai', string $modelName = 'gpt-4o-mini', int $priority = 1, bool $enabled = true): AiModelConfiguration
-    {
+    /** @param list<AiModelModality> $modalities */
+    private function setupConfiguredModel(
+        AiCapability $capability,
+        string $providerName = 'openai',
+        string $modelName = 'gpt-4o-mini',
+        int $priority = 1,
+        bool $enabled = true,
+        array $modalities = [],
+    ): AiModelConfiguration {
         $credential = new OrganizationCredential([
             'provider' => $providerName,
             'credential_name' => "{$providerName} Production",
@@ -216,13 +228,17 @@ class AiWorkflowEngineTest extends TestCase
 
         $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
 
+        $capabilities = array_merge(
+            [$capability->value],
+            array_map(static fn (AiModelModality $modality): string => $modality->value, $modalities),
+        );
         $model = AiModelConfiguration::create([
             'organization_id' => $this->organization->id,
             'provider_config_id' => $provider->id,
             'model_name' => $modelName,
             'display_name' => strtoupper($modelName),
             'is_enabled' => $enabled,
-            'capabilities' => [$capability->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'failover_priority' => $priority,
         ]);
@@ -234,7 +250,7 @@ class AiWorkflowEngineTest extends TestCase
             'status' => 'active',
             'provider_name' => $providerName,
             'model_name' => $modelName,
-            'capabilities' => [$capability->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'activated_at' => Carbon::now(),
         ]);
@@ -609,6 +625,120 @@ class AiWorkflowEngineTest extends TestCase
         $run = AiRun::query()->findOrFail($result->runId);
         self::assertSame('deepseek', $run->actual_provider);
         self::assertSame('valid-model-4', $run->actual_model);
+    }
+
+    public function test_document_attachment_filters_candidates_before_sync_failover_attempt_limit(): void
+    {
+        Storage::fake('private');
+        DynamicWorkflowAgent::fake(['Later document-capable candidate response']);
+
+        foreach ([
+            ['openai', 'text-only-1', 1, []],
+            ['groq', 'text-only-2', 2, []],
+            ['deepseek', 'text-only-3', 3, []],
+            ['anthropic', 'document-capable-4', 4, [AiModelModality::DocumentInput]],
+        ] as [$providerName, $modelName, $priority, $modalities]) {
+            $this->setupConfiguredModel(
+                capability: AiCapability::ClinicalDocumentExtraction,
+                providerName: $providerName,
+                modelName: $modelName,
+                priority: $priority,
+                modalities: $modalities,
+            );
+        }
+
+        $attachment = $this->createMedicalReportAttachment();
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'document_modality_before_failover_limit',
+            initiatedByUserId: $this->user->id,
+            actor: $this->user,
+            clientId: $attachment->client_id,
+            inputVariables: ['document_text' => 'Attachment-backed document'],
+            inputReferences: [new AiInputReference('medical_attachment', $attachment->id)],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertSame('anthropic', $run->actual_provider);
+        self::assertSame('document-capable-4', $run->actual_model);
+        self::assertCount(1, AiRunAttempt::query()->where('ai_run_id', $run->id)->get());
+    }
+
+    public function test_text_only_execution_still_uses_the_first_priority_candidate(): void
+    {
+        DynamicWorkflowAgent::fake(['Text-only response']);
+        $first = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'openai',
+            modelName: 'text-first',
+            priority: 1,
+        );
+        $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'anthropic',
+            modelName: 'document-capable-fallback',
+            priority: 2,
+            modalities: [AiModelModality::DocumentInput],
+        );
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'text_only_priority_unchanged',
+            inputVariables: ['query' => 'Text-only request'],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertSame($first->activeRelease?->id, $run->model_release_id);
+        self::assertSame('text-first', $run->actual_model);
+    }
+
+    public function test_attachment_provider_attempts_never_exceed_failover_limit(): void
+    {
+        Storage::fake('private');
+        DynamicWorkflowAgent::fake([
+            new \RuntimeException('first provider failed'),
+            new \RuntimeException('second provider failed'),
+            new \RuntimeException('third provider failed'),
+        ]);
+
+        foreach ([
+            ['openai', 'document-capable-1', 1],
+            ['anthropic', 'document-capable-2', 2],
+            ['gemini', 'document-capable-3', 3],
+            ['openrouter', 'document-capable-4', 4],
+        ] as [$providerName, $modelName, $priority]) {
+            $this->setupConfiguredModel(
+                capability: AiCapability::ClinicalDocumentExtraction,
+                providerName: $providerName,
+                modelName: $modelName,
+                priority: $priority,
+                modalities: [AiModelModality::DocumentInput],
+            );
+        }
+
+        $attachment = $this->createMedicalReportAttachment();
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $result = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClinicalDocumentExtraction,
+            workflowKey: 'document_modality_attempt_bound',
+            initiatedByUserId: $this->user->id,
+            actor: $this->user,
+            clientId: $attachment->client_id,
+            inputVariables: ['document_text' => 'Attachment-backed document'],
+            inputReferences: [new AiInputReference('medical_attachment', $attachment->id)],
+        ));
+
+        self::assertFalse($result->isSuccess());
+        $attempts = AiRunAttempt::query()->where('ai_run_id', $result->runId)->get();
+        self::assertCount(3, $attempts);
+        self::assertSame(3, $attempts->max('attempt_number'));
     }
 
     public function test_real_actor_overrides_spoofed_initiator_for_sync_and_async_runs(): void
@@ -1799,5 +1929,30 @@ class AiWorkflowEngineTest extends TestCase
 
         $this->assertSame(0, $providerCalls);
         $this->assertSame(0, AiRun::query()->count());
+    }
+
+    private function createMedicalReportAttachment(): MedicalAttachment
+    {
+        $client = Client::factory()->forOrganization($this->organization)->create();
+        $content = '%PDF-1.7 bounded attachment test';
+        $uuid = (string) Str::uuid();
+        $path = "medical/attachments/{$this->organization->id}/{$uuid}.pdf";
+        Storage::disk('private')->put($path, $content);
+
+        return MedicalAttachment::create([
+            'uuid' => $uuid,
+            'organization_id' => $this->organization->id,
+            'client_id' => $client->id,
+            'uploaded_by_user_id' => $this->user->id,
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => $path,
+            'original_filename' => 'bounded-report.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => strlen($content),
+            'sha256_checksum' => hash('sha256', $content),
+            'scan_status' => AttachmentScanStatus::Cleared,
+            'scanned_at' => now(),
+        ]);
     }
 }

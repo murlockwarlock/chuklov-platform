@@ -473,6 +473,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
             }
         }
+        $requiredModalities = $this->requiredAttachmentModalities($attachmentResolution['files']);
 
         $maxAttempts = AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts);
         $candidates = $run->execution_mode === AiExecutionMode::Async
@@ -524,10 +525,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         foreach ($run->execution_mode !== AiExecutionMode::Async ? $modelConfigs : [] as $config) {
-            if (count($candidates) >= $maxAttempts) {
-                break;
-            }
-
             $release = $run->model_release_id !== null
                 ? ($exactRelease ?? null)
                 : $config->activeRelease;
@@ -580,7 +577,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 continue;
             }
 
-            $candidates[] = [
+            $candidate = [
                 'provider' => $release->provider_name,
                 'model' => $release->model_name,
                 'release' => $release,
@@ -592,37 +589,25 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 'pricing' => $pricing,
                 'failover_priority' => $config->failover_priority,
             ];
+
+            if (! $this->candidateSupportsAttachmentModalities($candidate, $requiredModalities)) {
+                continue;
+            }
+
+            $candidates[] = $candidate;
+            if (count($candidates) >= $maxAttempts) {
+                break;
+            }
         }
 
-        if ($attachmentResolution['files'] !== []) {
-            $requiredModalities = [];
-            foreach ($attachmentResolution['files'] as $file) {
-                $modality = match (true) {
-                    $file instanceof StoredDocument => AiModelModality::DocumentInput,
-                    $file instanceof StoredImage => AiModelModality::ImageInput,
-                    default => null,
-                };
-
-                if ($modality === null) {
-                    $requiredModalities = null;
-                    break;
-                }
-
-                $requiredModalities[$modality->value] = $modality;
-            }
-
-            if ($requiredModalities === null) {
-                $candidates = [];
-            } else {
-                $candidates = array_values(array_filter(
-                    $candidates,
-                    fn (array $candidate): bool => AiProviderFactory::supportsAttachments(
-                        providerName: (string) $candidate['provider'],
-                        release: $candidate['release'],
-                        requiredModalities: array_values($requiredModalities),
-                    ),
-                ));
-            }
+        if ($run->execution_mode === AiExecutionMode::Async) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                fn (array $candidate): bool => $this->candidateSupportsAttachmentModalities(
+                    $candidate,
+                    $requiredModalities,
+                ),
+            ));
         }
 
         // Fail closed if no valid immutable candidate exists
@@ -1186,6 +1171,52 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         return $reservedProviderRequests;
+    }
+
+    /**
+     * @param  list<mixed>  $files
+     * @return list<AiModelModality>|null
+     */
+    private function requiredAttachmentModalities(array $files): ?array
+    {
+        $modalities = [];
+        foreach ($files as $file) {
+            $modality = match (true) {
+                $file instanceof StoredDocument => AiModelModality::DocumentInput,
+                $file instanceof StoredImage => AiModelModality::ImageInput,
+                default => null,
+            };
+
+            if ($modality === null) {
+                return null;
+            }
+
+            $modalities[$modality->value] = $modality;
+        }
+
+        return array_values($modalities);
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     * @param  list<AiModelModality>|null  $requiredModalities
+     */
+    private function candidateSupportsAttachmentModalities(array $candidate, ?array $requiredModalities): bool
+    {
+        if ($requiredModalities === null) {
+            return false;
+        }
+
+        if ($requiredModalities === []) {
+            return true;
+        }
+
+        return $candidate['release'] instanceof AiModelRelease
+            && AiProviderFactory::supportsAttachments(
+                providerName: (string) $candidate['provider'],
+                release: $candidate['release'],
+                requiredModalities: $requiredModalities,
+            );
     }
 
     private function responseMetadataValue(mixed $response, string $field, string $fallback, int $maxLength): string
