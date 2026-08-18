@@ -71,7 +71,58 @@ jobs:
       - run: php artisan migrate --seed --force
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - run: >-
+          npx playwright test tests/e2e/crm.spec.ts
+          --project=desktop
+          --grep "staff can use the client cockpit for medical profile and private files"
+      - name: Capture Livewire upload server diagnostics
+        if: always()
+        run: |
+          {
+            echo '=== Livewire upload runtime configuration ==='
+            php artisan tinker --execute '
+              $effectiveDisk = \Livewire\Features\SupportFileUploads\FileUploadConfiguration::disk();
+              $effectiveDirectory = \Livewire\Features\SupportFileUploads\FileUploadConfiguration::directory();
+              $diskConfig = config("filesystems.disks.".$effectiveDisk);
+              $root = is_array($diskConfig) ? ($diskConfig["root"] ?? null) : null;
+              $effectivePath = $root === null ? null : rtrim($root, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$effectiveDirectory;
+              $tempFiles = [];
+              if ($effectivePath !== null && is_dir($effectivePath)) {
+                  foreach (new \FilesystemIterator($effectivePath) as $file) {
+                      if ($file->isFile()) {
+                          $tempFiles[] = ["name" => $file->getFilename(), "size" => $file->getSize()];
+                      }
+                  }
+              }
+              echo json_encode([
+                  "filesystems.default" => config("filesystems.default"),
+                  "livewire.temporary_file_upload.disk" => config("livewire.temporary_file_upload.disk"),
+                  "livewire.effective_disk" => $effectiveDisk,
+                  "livewire.temporary_file_upload.directory" => config("livewire.temporary_file_upload.directory"),
+                  "livewire.effective_directory" => $effectiveDirectory,
+                  "livewire.temporary_file_upload.rules" => config("livewire.temporary_file_upload.rules"),
+                  "livewire.effective_rules" => \Livewire\Features\SupportFileUploads\FileUploadConfiguration::rules(),
+                  "livewire.effective_path" => $effectivePath,
+                  "livewire.temp_directory_exists" => $effectivePath !== null && is_dir($effectivePath),
+                  "livewire.temp_files" => $tempFiles,
+              ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR).PHP_EOL;
+            '
+            echo '=== PHP upload settings ==='
+            php -r 'foreach (["file_uploads", "upload_max_filesize", "post_max_size", "upload_tmp_dir"] as $key) { echo $key."=".var_export(ini_get($key), true).PHP_EOL; }'
+            echo '=== Relevant Laravel log tail ==='
+            if [ -f storage/logs/laravel.log ]; then
+              if tail -n 400 storage/logs/laravel.log | grep -Eiq 'livewire|upload|temporary|exception|error|failed|throwable'; then
+                tail -n 400 storage/logs/laravel.log | grep -Ei 'livewire|upload|temporary|exception|error|failed|throwable' | tail -n 160
+              else
+                echo 'No relevant Laravel log lines found.'
+              fi
+            else
+              echo 'storage/logs/laravel.log is absent.'
+            fi
+          } | sed -E \
+              -e 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[EMAIL_REDACTED]/g' \
+              -e 's/(password|token|signature|authorization|cookie|csrf[^ =]*|anamnesis|pain|result|original_filename)[^,[:space:]]*/\1=[REDACTED]/Ig' \
+            | tee livewire-upload-server-diagnostics.txt
       - if: failure()
         uses: actions/upload-artifact@v6
         with:
@@ -79,5 +130,6 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            livewire-upload-server-diagnostics.txt
           if-no-files-found: ignore
           retention-days: 7
