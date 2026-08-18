@@ -1,0 +1,804 @@
+<?php
+
+namespace Tests\Integration;
+
+use App\Models\User;
+use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
+use App\Modules\AI\Application\Actions\CreatePromptDraft;
+use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
+use App\Modules\AI\Application\Actions\ImportPromptBundle;
+use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
+use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\ContextAssemblyResult;
+use App\Modules\AI\Application\Data\PromptBundle;
+use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
+use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
+use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
+use App\Modules\AI\Domain\Models\AiEvalSuite;
+use App\Modules\AI\Domain\Models\AiModelConfiguration;
+use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
+use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Domain\Models\AiRunToolCall;
+use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
+use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
+use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
+use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
+use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Knowledge\Application\Data\RetrievalQuery;
+use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
+use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
+use Laravel\Ai\Tools\Request;
+use Tests\TestCase;
+
+final class CountingInitialRagEmbeddingGenerator implements EmbeddingGenerator
+{
+    public function __construct(private readonly int $organizationId) {}
+
+    public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+    {
+        DB::table('audit_events')->insert([
+            'organization_id' => $this->organizationId,
+            'action' => 'test.initial_rag_embedding',
+            'target_type' => null,
+            'target_id' => null,
+            'metadata' => json_encode(['kind' => 'initial_rag_embedding'], JSON_THROW_ON_ERROR),
+            'occurred_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        return array_map(
+            static fn (): array => array_fill(0, $configuration->dimensions, 0.0),
+            $inputs,
+        );
+    }
+}
+
+final class CountingInitialRagRetriever implements KnowledgeRetriever
+{
+    public function __construct(private readonly EmbeddingGenerator $embeddings) {}
+
+    public function retrieve(User $actor, RetrievalQuery $query): array
+    {
+        return $this->retrieveForOrganization((int) $actor->organization_id, $query);
+    }
+
+    public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+    {
+        $this->embeddings->generate([$query->text], EmbeddingConfiguration::active());
+
+        return [];
+    }
+}
+
+final class CountingInitialRagContextAssembler implements AiContextAssemblerInterface
+{
+    public function __construct(
+        private readonly AiContextAssemblerInterface $delegate,
+        private readonly int $organizationId,
+    ) {}
+
+    public function assemble(
+        int $organizationId,
+        AiContextPolicy $policy,
+        array $inputVariables,
+        array $inputReferences,
+        ?User $actor = null,
+        ?CarbonInterface $executionDeadlineAt = null,
+        ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        ?AiCapability $capability = null,
+    ): ContextAssemblyResult {
+        DB::table('audit_events')->insert([
+            'organization_id' => $this->organizationId,
+            'action' => 'test.initial_rag_context_preparation',
+            'target_type' => null,
+            'target_id' => null,
+            'metadata' => json_encode(['kind' => 'initial_rag_context_preparation'], JSON_THROW_ON_ERROR),
+            'occurred_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        return $this->delegate->assemble(
+            organizationId: $organizationId,
+            policy: $policy,
+            inputVariables: $inputVariables,
+            inputReferences: $inputReferences,
+            actor: $actor,
+            executionDeadlineAt: $executionDeadlineAt,
+            embeddingSnapshot: $embeddingSnapshot,
+            capability: $capability,
+        );
+    }
+}
+
+final class MilestoneTenConcurrencyTest extends TestCase
+{
+    use DatabaseTruncation;
+
+    protected function tearDown(): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            $this->truncateTablesForAllConnections();
+        }
+
+        parent::tearDown();
+    }
+
+    public function test_concurrent_budget_reservations_respect_maximum_limit(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Budget reservation concurrency requires PostgreSQL row locks.');
+        }
+
+        $organization = Organization::factory()->create();
+        AiOrganizationSafetyControl::query()->create([
+            'organization_id' => $organization->id,
+            'max_daily_spend_minor_units' => 100,
+        ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::reserve($organization->id, 80),
+            static fn (): string => self::reserve($organization->id, 80),
+        ]);
+
+        // One must succeed ('reserved') and the other must fail ('exceeded')
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'reserved')));
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'exceeded')));
+
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $organization->id)
+            ->whereDate('usage_date', Carbon::now()->toDateString())
+            ->first();
+
+        self::assertNotNull($budget);
+        self::assertLessThanOrEqual(100, $budget->spent_minor_units + $budget->reserved_minor_units);
+        self::assertSame(80, (int) $budget->reserved_minor_units);
+    }
+
+    public function test_concurrent_async_idempotency_claims_before_initial_rag_and_dispatches_once(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Async idempotency concurrency requires PostgreSQL unique-violation semantics.');
+        }
+
+        $organization = Organization::factory()->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $key = 'pg-concurrent-'.Str::uuid();
+        $prompt = AiPrompt::query()->create([
+            'organization_id' => $organization->id,
+            'key' => 'concurrent_async_prompt',
+            'name' => 'Concurrent async prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::query()->create([
+            'organization_id' => $organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Use the versioned concurrent test instructions.',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => true],
+            'allowed_tools' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): array => self::dispatchDuplicateAsyncRun($organization->id, $user->id, $key),
+            static fn (): array => self::dispatchDuplicateAsyncRun($organization->id, $user->id, $key),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertSame(1, AiRun::query()
+            ->where('organization_id', $organization->id)
+            ->where('idempotency_key', $key)
+            ->count());
+        self::assertCount(1, array_filter($results, static fn (array $result): bool => $result['queued_jobs'] === 1));
+        self::assertCount(1, array_filter($results, static fn (array $result): bool => $result['queued_jobs'] === 0));
+        self::assertSame($results[0]['run_id'], $results[1]['run_id']);
+
+        $run = AiRun::query()->where('organization_id', $organization->id)->where('idempotency_key', $key)->sole();
+        self::assertSame(AiRunStatus::Queued, $run->status);
+        self::assertNotNull($run->payload()->first());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'test.initial_rag_embedding')
+            ->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'test.initial_rag_context_preparation')
+            ->count());
+    }
+
+    public function test_concurrent_release_activation_serializes_release_numbers_and_active_state(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Release activation concurrency requires PostgreSQL row locks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'is_enabled' => true,
+        ]);
+        $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
+        $model = AiModelConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'gpt-4o-mini',
+            'display_name' => 'GPT-4o Mini',
+            'is_enabled' => false,
+            'lifecycle_status' => 'preview',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+            'failover_priority' => 1,
+        ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): array => self::activateRelease($organization->id, $user->id, $model->id),
+            static fn (): array => self::activateRelease($organization->id, $user->id, $model->id),
+        ]);
+
+        self::assertSame([], array_filter($results, static fn (array $result): bool => isset($result['error'])));
+        self::assertSame([1, 2], collect($results)->pluck('release_number')->sort()->values()->all());
+        self::assertSame(1, AiModelRelease::query()
+            ->where('organization_id', $organization->id)
+            ->where('model_config_id', $model->id)
+            ->where('status', 'active')
+            ->count());
+    }
+
+    public function test_concurrent_prompt_draft_and_import_versions_are_serialized(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Prompt version concurrency requires PostgreSQL row locks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $prompt = AiPrompt::create([
+            'organization_id' => $organization->id,
+            'key' => 'concurrent_draft_prompt',
+            'name' => 'Concurrent draft prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+
+        $draftResults = Concurrency::driver('process')->run([
+            static fn (): array => self::createPromptDraftInProcess($organization->id, $user->id, $prompt->id),
+            static fn (): array => self::createPromptDraftInProcess($organization->id, $user->id, $prompt->id),
+        ]);
+
+        self::assertSame([], array_filter($draftResults, static fn (array $result): bool => isset($result['error'])));
+        self::assertSame([1, 2], collect($draftResults)->pluck('version')->sort()->values()->all());
+
+        $bundle = [
+            'prompt_key' => 'concurrent_import_prompt',
+            'name' => 'Concurrent import prompt',
+            'description' => null,
+            'capability' => AiCapability::ClientCompanion->value,
+            'version' => 1,
+            'system_prompt' => 'Imported concurrent instructions.',
+            'user_prompt_template' => '{{query}}',
+            'variables_schema' => [],
+            'parameter_config' => [],
+            'context_policy' => [],
+            'output_schema' => null,
+            'allowed_tools' => [],
+            'change_notes' => 'Concurrent import test',
+        ];
+        $importResults = Concurrency::driver('process')->run([
+            static fn (): array => self::importPromptBundleInProcess($organization->id, $user->id, $bundle),
+            static fn (): array => self::importPromptBundleInProcess($organization->id, $user->id, $bundle),
+        ]);
+
+        self::assertSame([], array_filter($importResults, static fn (array $result): bool => isset($result['error'])));
+        self::assertSame([1, 2], collect($importResults)->pluck('version')->sort()->values()->all());
+        self::assertSame(1, AiPrompt::query()
+            ->where('organization_id', $organization->id)
+            ->where('key', 'concurrent_import_prompt')
+            ->count());
+    }
+
+    public function test_ai_composite_foreign_keys_restrict_parent_deletes_without_clearing_tenant_id(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Composite AI foreign-key lifecycle requires PostgreSQL semantics.');
+        }
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'FK test credential',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $organization->id;
+        $credential->credentials = ['api_key' => 'fk-test'];
+        $credential->save();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'credential_id' => $credential->id,
+        ]);
+        $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
+        $model = AiModelConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'gpt-fk-test',
+            'display_name' => 'FK model',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+        ]);
+        $release = AiModelRelease::create([
+            'organization_id' => $organization->id,
+            'model_config_id' => $model->id,
+            'release_number' => 1,
+            'provider_name' => 'openai',
+            'model_name' => 'gpt-fk-test',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+        ]);
+        $model->update(['active_release_id' => $release->id]);
+        $prompt = AiPrompt::create([
+            'organization_id' => $organization->id,
+            'key' => 'fk_prompt',
+            'name' => 'FK prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::create([
+            'organization_id' => $organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'FK test instructions.',
+            'user_prompt_template' => '{{query}}',
+        ]);
+        $prompt->update(['active_version_id' => $version->id]);
+        $run = AiRun::create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'fk_parent_delete',
+            'initiated_by_user_id' => $user->id,
+            'client_id' => $client->id,
+            'prompt_id' => $prompt->id,
+            'prompt_version_id' => $version->id,
+            'model_config_id' => $model->id,
+            'model_release_id' => $release->id,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        AiRunAttempt::create([
+            'organization_id' => $organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-fk-test',
+            'model_release_id' => $release->id,
+            'credential_id' => $credential->id,
+            'status' => 'running',
+            'budget_usage_date' => Carbon::now()->toDateString(),
+            'pricing_snapshot' => $pricing->toArray(),
+            'token_usage' => [],
+        ]);
+        AiEvalSuite::create([
+            'organization_id' => $organization->id,
+            'key' => 'fk_suite',
+            'name' => 'FK suite',
+            'capability' => AiCapability::ClientCompanion,
+            'prompt_id' => $prompt->id,
+        ]);
+
+        $assertRestricted = static function (callable $delete): void {
+            try {
+                $delete();
+                self::fail('Expected the composite foreign key to restrict parent deletion.');
+            } catch (QueryException) {
+                self::assertTrue(true);
+            }
+        };
+
+        $assertRestricted(static fn (): int => DB::table('organization_credentials')->where('id', $credential->id)->delete());
+        $assertRestricted(static fn (): int => DB::table('clients')->where('id', $client->id)->delete());
+        $assertRestricted(static fn (): int => DB::table('ai_model_releases')->where('id', $release->id)->delete());
+        $assertRestricted(static fn (): int => DB::table('ai_model_configurations')->where('id', $model->id)->delete());
+        $assertRestricted(static fn (): int => DB::table('ai_prompt_versions')->where('id', $version->id)->delete());
+        $assertRestricted(static fn (): int => DB::table('ai_prompts')->where('id', $prompt->id)->delete());
+
+        self::assertSame($organization->id, DB::table('ai_runs')->where('id', $run->id)->value('organization_id'));
+        self::assertSame($client->id, DB::table('ai_runs')->where('id', $run->id)->value('client_id'));
+        self::assertSame($credential->id, DB::table('ai_run_attempts')->where('ai_run_id', $run->id)->value('credential_id'));
+    }
+
+    public function test_concurrent_scheduled_reclaim_claims_one_expired_run_and_dispatches_one_job(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Scheduled reclaim locking requires PostgreSQL row locks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $run = AiRun::create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'concurrent_reclaim',
+            'status' => AiRunStatus::Running,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'worker_lease_token' => (string) Str::uuid(),
+            'worker_lease_expires_at' => Carbon::now()->subMinute(),
+        ]);
+        $today = Carbon::now()->toDateString();
+        AiOrganizationDailyBudget::create([
+            'organization_id' => $organization->id,
+            'usage_date' => $today,
+            'spent_minor_units' => 0,
+            'reserved_minor_units' => 80,
+        ]);
+        $attempt = AiRunAttempt::create([
+            'organization_id' => $organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'worker_lease_token' => $run->worker_lease_token,
+            'status' => 'running',
+            'reserved_cost_minor_units' => 80,
+            'budget_usage_date' => $today,
+            'budget_reservation_status' => BudgetReservationStatus::Reserved,
+            'pricing_snapshot' => [],
+            'token_usage' => [],
+        ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): array => self::reclaimExpiredRun(1),
+            static fn (): array => self::reclaimExpiredRun(1),
+        ]);
+
+        self::assertSame([0, 1], collect($results)->pluck('reclaimed')->sort()->values()->all());
+        self::assertSame(1, AiRun::query()->whereKey($run->id)->where('status', 'queued')->count());
+        self::assertNotSame($run->worker_lease_token, AiRun::query()->whereKey($run->id)->value('worker_lease_token'));
+        self::assertSame(1, array_sum(array_map(static fn (array $result): int => $result['queued_jobs'], $results)));
+        self::assertSame('failed', $attempt->refresh()->status);
+        self::assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $organization->id)
+            ->whereDate('usage_date', $today)
+            ->firstOrFail();
+        self::assertSame(80, $budget->spent_minor_units);
+        self::assertSame(0, $budget->reserved_minor_units);
+    }
+
+    public function test_lease_transfer_during_simulated_blocked_provider_fences_stale_attempt_then_reconciles_once(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Lease-transfer fencing requires PostgreSQL process isolation.');
+        }
+
+        $organization = Organization::factory()->create();
+        $tokenA = (string) Str::uuid();
+        $tokenB = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'pg_lease_transfer_fence',
+            'status' => AiRunStatus::Running,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'worker_lease_token' => $tokenA,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
+        ]);
+        $today = Carbon::now()->toDateString();
+        AiOrganizationDailyBudget::create([
+            'organization_id' => $organization->id,
+            'usage_date' => $today,
+            'spent_minor_units' => 0,
+            'reserved_minor_units' => 40,
+        ]);
+        $attempt = AiRunAttempt::create([
+            'organization_id' => $organization->id,
+            'ai_run_id' => $run->id,
+            'attempt_number' => 1,
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'worker_lease_token' => $tokenA,
+            'status' => 'running',
+            'reserved_cost_minor_units' => 40,
+            'budget_usage_date' => $today,
+            'budget_reservation_status' => BudgetReservationStatus::Reserved,
+            'pricing_snapshot' => [],
+            'token_usage' => [],
+        ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::simulateStaleProviderAttemptCommit($run->id, $organization->id, $tokenA),
+            static fn (): string => self::transferLeaseDuringProviderExecution($run->id, $organization->id, $tokenB),
+        ]);
+
+        self::assertContains('fenced', $results);
+        self::assertContains('transferred', $results);
+        self::assertSame('running', $attempt->refresh()->status);
+        self::assertSame(BudgetReservationStatus::Reserved, $attempt->budget_reservation_status);
+
+        Queue::fake();
+        $reclaim = app(ReclaimExpiredAiRuns::class)->handle();
+        self::assertSame(['reclaimed' => 1, 'dispatched' => 1], $reclaim);
+        self::assertSame('failed', $attempt->refresh()->status);
+        self::assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+        $budget = AiOrganizationDailyBudget::query()
+            ->where('organization_id', $organization->id)
+            ->whereDate('usage_date', $today)
+            ->firstOrFail();
+        self::assertSame(40, $budget->spent_minor_units);
+        self::assertSame(0, $budget->reserved_minor_units);
+
+        app(ReconcileExpiredAiRun::class)->handle($run->refresh(), 'Repeated PostgreSQL reconciliation.');
+        self::assertSame(40, $budget->refresh()->spent_minor_units);
+    }
+
+    public function test_concurrent_tool_claims_use_durable_fenced_call_indexes(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Tool provenance locking requires PostgreSQL process isolation.');
+        }
+
+        $organization = Organization::factory()->create();
+        $token = (string) Str::uuid();
+        $run = AiRun::create([
+            'organization_id' => $organization->id,
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'pg_tool_claim_index',
+            'status' => AiRunStatus::Running,
+            'input_references' => [],
+            'context_provenance' => ['retrieval_embedding' => EmbeddingExecutionSnapshot::active()->toArray()],
+            'token_usage' => [],
+            'worker_lease_token' => $token,
+            'worker_lease_expires_at' => Carbon::now()->addMinutes(5),
+            'execution_deadline_at' => Carbon::now()->addMinutes(10),
+        ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): int => self::executeConcurrentEmptyKnowledgeTool($organization->id, $run->id, $token, 'one'),
+            static fn (): int => self::executeConcurrentEmptyKnowledgeTool($organization->id, $run->id, $token, 'two'),
+        ]);
+
+        self::assertSame([1, 2], collect($results)->sort()->values()->all());
+        self::assertSame([1, 2], AiRunToolCall::query()
+            ->where('organization_id', $organization->id)
+            ->where('ai_run_id', $run->id)
+            ->orderBy('call_index')
+            ->pluck('call_index')
+            ->all());
+    }
+
+    /** @return array{run_id: int, queued_jobs: int} */
+    private static function dispatchDuplicateAsyncRun(int $organizationId, int $userId, string $idempotencyKey): array
+    {
+        Queue::fake();
+        $organization = Organization::query()->findOrFail($organizationId);
+        config()->set('tenancy.default_organization_id', $organizationId);
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        $embeddingGenerator = new CountingInitialRagEmbeddingGenerator($organizationId);
+        app()->instance(EmbeddingGenerator::class, $embeddingGenerator);
+        app()->instance(KnowledgeRetriever::class, new CountingInitialRagRetriever($embeddingGenerator));
+        app()->instance(
+            AiContextAssemblerInterface::class,
+            new CountingInitialRagContextAssembler(app(AiContextAssemblerInterface::class), $organizationId),
+        );
+        $user = User::query()->findOrFail($userId);
+        $run = app(DispatchAsyncAiRun::class)->handle($user, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'concurrent_async_idempotency',
+            inputVariables: ['query' => 'concurrent retrieval'],
+            idempotencyKey: $idempotencyKey,
+        ));
+
+        $queuedJobs = Queue::pushedJobs()[ProcessAiRunJob::class] ?? [];
+
+        return ['run_id' => $run->id, 'queued_jobs' => count($queuedJobs)];
+    }
+
+    /** @return array{version: int}|array{error: string} */
+    private static function createPromptDraftInProcess(int $organizationId, int $userId, int $promptId): array
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            config()->set('tenancy.default_organization_id', $organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $version = app(CreatePromptDraft::class)->handle(
+                User::query()->findOrFail($userId),
+                $promptId,
+                [
+                    'system_prompt' => 'Concurrent draft instructions.',
+                    'user_prompt_template' => '{{query}}',
+                ],
+            );
+
+            return ['version' => $version->version];
+        } catch (\Throwable $exception) {
+            return ['error' => $exception::class];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $bundle
+     * @return array{version: int}|array{error: string}
+     */
+    private static function importPromptBundleInProcess(int $organizationId, int $userId, array $bundle): array
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            config()->set('tenancy.default_organization_id', $organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $version = app(ImportPromptBundle::class)->handle(
+                User::query()->findOrFail($userId),
+                PromptBundle::fromArray($bundle),
+            );
+
+            return ['version' => $version->version];
+        } catch (\Throwable $exception) {
+            return ['error' => $exception::class];
+        }
+    }
+
+    /** @return array{release_number: int}|array{error: string} */
+    private static function activateRelease(int $organizationId, int $userId, int $modelConfigurationId): array
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            config()->set('tenancy.default_organization_id', $organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $release = app(CreateAndActivateModelRelease::class)->handle(
+                User::query()->findOrFail($userId),
+                AiModelConfiguration::query()->findOrFail($modelConfigurationId),
+                [],
+            );
+
+            return ['release_number' => $release->release_number];
+        } catch (\Throwable $exception) {
+            return ['error' => $exception::class];
+        }
+    }
+
+    /** @return array{reclaimed: int, queued_jobs: int} */
+    private static function reclaimExpiredRun(int $batchSize): array
+    {
+        Queue::fake();
+        $result = app(ReclaimExpiredAiRuns::class)->handle($batchSize);
+        $queuedJobs = Queue::pushedJobs()[ProcessAiRunJob::class] ?? [];
+
+        return [
+            'reclaimed' => $result['reclaimed'],
+            'queued_jobs' => count($queuedJobs),
+        ];
+    }
+
+    private static function simulateStaleProviderAttemptCommit(int $runId, int $organizationId, string $workerLeaseToken): string
+    {
+        usleep(250000);
+
+        return DB::transaction(function () use ($runId, $organizationId, $workerLeaseToken): string {
+            $run = AiRun::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($runId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($run->worker_lease_token !== $workerLeaseToken) {
+                return 'fenced';
+            }
+
+            AiRunAttempt::query()
+                ->where('organization_id', $organizationId)
+                ->where('ai_run_id', $runId)
+                ->where('worker_lease_token', $workerLeaseToken)
+                ->update(['status' => 'succeeded']);
+
+            return 'committed';
+        });
+    }
+
+    private static function transferLeaseDuringProviderExecution(int $runId, int $organizationId, string $newWorkerLeaseToken): string
+    {
+        AiRun::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($runId)
+            ->update([
+                'worker_lease_token' => $newWorkerLeaseToken,
+                'worker_lease_expires_at' => Carbon::now()->subSecond(),
+            ]);
+
+        return 'transferred';
+    }
+
+    private static function executeConcurrentEmptyKnowledgeTool(int $organizationId, int $runId, string $workerLeaseToken, string $query): int
+    {
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
+
+        $retriever = new class implements KnowledgeRetriever
+        {
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                return [];
+            }
+        };
+        $tool = new SearchKnowledgeBaseSdkTool(
+            executionContext: new AiRunExecutionContext($organizationId, $runId, $workerLeaseToken),
+            domainTool: new SearchKnowledgeBaseTool(knowledgeRetriever: $retriever),
+            maxToolCalls: 2,
+        );
+
+        $tool->handle(new Request(['query' => $query]));
+
+        return (int) AiRunToolCall::query()
+            ->where('organization_id', $organizationId)
+            ->where('ai_run_id', $runId)
+            ->where('input_digest', hash('sha256', json_encode(['query' => $query])))
+            ->value('call_index');
+    }
+
+    private static function reserve(int $organizationId, int $amount): string
+    {
+        try {
+            app(AiSafetyBudgetManagerInterface::class)->reserveBudget($organizationId, $amount);
+
+            return 'reserved';
+        } catch (AiBudgetExceededException) {
+            return 'exceeded';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception);
+        }
+    }
+}

@@ -15,9 +15,11 @@ use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
+use Carbon\Carbon;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
@@ -136,6 +138,56 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame(1, KnowledgeChunk::query()->where('knowledge_revision_id', $revision->getKey())->count());
         self::assertSame(2, KnowledgeIngestionRun::query()->where('knowledge_revision_id', $revision->getKey())->value('attempts'));
+    }
+
+    public function test_bounded_retrieval_clamps_embedding_timeout_to_platform_and_remaining_deadline(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $observedTimeouts = new \ArrayObject;
+        $this->app->bind(EmbeddingGenerator::class, fn (): EmbeddingGenerator => new class($observedTimeouts) implements EmbeddingGenerator
+        {
+            public function __construct(private \ArrayObject $observedTimeouts) {}
+
+            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            {
+                $this->observedTimeouts->append($configuration->timeoutSeconds);
+
+                return array_map(static function () use ($configuration): array {
+                    return array_fill(0, $configuration->dimensions, 0.0);
+                }, $inputs);
+            }
+        });
+        config()->set('rag.embedding.timeout_seconds', 120);
+        config()->set('rag.embedding.pricing', [
+            'provider' => config('rag.embedding.provider'),
+            'model' => config('rag.embedding.model'),
+            'configuration_version' => config('rag.embedding.configuration_version'),
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 0,
+            'zero_cost_local' => true,
+        ]);
+
+        app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Bounded timeout guide',
+            'type' => 'authored_text',
+            'content' => 'booking timeout content',
+        ]);
+
+        $deadline = Carbon::now()->addSeconds(7);
+        app(KnowledgeRetriever::class)->retrieve(
+            $actor,
+            new RetrievalQuery(
+                text: 'booking',
+                topK: 5,
+                executionDeadlineAt: $deadline,
+                executionTimeoutSeconds: 30,
+                embeddingSnapshot: EmbeddingExecutionSnapshot::active(),
+            ),
+        );
+
+        self::assertSame(120, $observedTimeouts[0]);
+        self::assertLessThanOrEqual(30, $observedTimeouts[1]);
+        self::assertLessThanOrEqual(7, $observedTimeouts[1]);
     }
 
     public function test_retired_source_wrong_organization_filter_and_incompatible_configuration_fail_closed(): void

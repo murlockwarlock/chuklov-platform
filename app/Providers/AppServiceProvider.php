@@ -2,6 +2,29 @@
 
 namespace App\Providers;
 
+use App\Modules\AI\Application\Actions\InvalidateAiProviderHealthForCredential;
+use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
+use App\Modules\AI\Domain\Contracts\AiOutputValidatorInterface;
+use App\Modules\AI\Domain\Contracts\AiPricingCalculatorInterface;
+use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
+use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
+use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
+use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Models\AiEvalSuite;
+use App\Modules\AI\Domain\Models\AiModelConfiguration;
+use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Infrastructure\Context\AiContextAssembler;
+use App\Modules\AI\Infrastructure\Engine\LaravelAiWorkflowEngine;
+use App\Modules\AI\Infrastructure\Output\JsonSchemaOutputValidator;
+use App\Modules\AI\Infrastructure\Pricing\DefaultAiPricingCalculator;
+use App\Modules\AI\Infrastructure\Prompt\SafePromptRenderer;
+use App\Modules\AI\Infrastructure\Providers\BoundedBedrockProvider;
+use App\Modules\AI\Infrastructure\Safety\AtomicAiSafetyBudgetManager;
+use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
+use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
@@ -51,6 +74,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
+use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
@@ -59,6 +83,12 @@ use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Policies\AiEvalSuitePolicy;
+use App\Policies\AiModelConfigurationPolicy;
+use App\Policies\AiOrganizationSafetyControlPolicy;
+use App\Policies\AiPromptPolicy;
+use App\Policies\AiProviderConfigurationPolicy;
+use App\Policies\AiRunPolicy;
 use App\Policies\AuditEventPolicy;
 use App\Policies\BookingPolicy;
 use App\Policies\ClientChannelIdentityPolicy;
@@ -81,16 +111,28 @@ use App\Policies\SurveyAttemptPolicy;
 use App\Policies\SurveyDefinitionPolicy;
 use App\Policies\UnavailablePeriodPolicy;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Ai\AiManager;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->afterResolving(AiManager::class, static function (AiManager $manager, Application $app): void {
+            $manager->extend(
+                'bedrock',
+                fn (Application $application, array $config): BoundedBedrockProvider => new BoundedBedrockProvider(
+                    $config,
+                    $application->make(Dispatcher::class),
+                ),
+            );
+        });
         $this->app->scoped(OrganizationContext::class);
         $this->app->scoped(ClientPortalContext::class);
         $this->app->scoped(GetMedicalProfile::class);
@@ -124,10 +166,30 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(KnowledgeRetriever::class, PgvectorKnowledgeRetriever::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);
         $this->app->bind(NotificationTemplateRenderer::class, ScenarioTemplateRenderer::class);
+        $this->app->bind(AiWorkflowEngine::class, LaravelAiWorkflowEngine::class);
+        $this->app->bind(AiPricingCalculatorInterface::class, DefaultAiPricingCalculator::class);
+        $this->app->bind(AiPromptRendererInterface::class, SafePromptRenderer::class);
+        $this->app->bind(AiOutputValidatorInterface::class, JsonSchemaOutputValidator::class);
+        $this->app->bind(AiSafetyBudgetManagerInterface::class, AtomicAiSafetyBudgetManager::class);
+        $this->app->bind(AiContextAssemblerInterface::class, AiContextAssembler::class);
+        $this->app->singleton(
+            AiToolRegistryInterface::class,
+            fn (Application $app): AiToolRegistry => new AiToolRegistry([
+                $app->make(SearchKnowledgeBaseTool::class),
+            ]),
+        );
     }
 
     public function boot(): void
     {
+        Event::listen(OrganizationCredentialReplaced::class, static function (OrganizationCredentialReplaced $event): void {
+            app(InvalidateAiProviderHealthForCredential::class)->handle(
+                organizationId: $event->organizationId,
+                provider: $event->provider,
+                credentialId: $event->credentialId,
+            );
+        });
+
         RateLimiter::for('portal-telegram-auth', static fn (Request $request): Limit => Limit::perMinute(20)
             ->by('portal-telegram-auth|'.$request->ip()));
         RateLimiter::for('portal-email-request', static fn (Request $request): Limit => Limit::perMinute(30)
@@ -160,5 +222,11 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(SurveyDefinition::class, SurveyDefinitionPolicy::class);
         Gate::policy(SurveyAttempt::class, SurveyAttemptPolicy::class);
         Gate::policy(KnowledgeSource::class, KnowledgeSourcePolicy::class);
+        Gate::policy(AiRun::class, AiRunPolicy::class);
+        Gate::policy(AiPrompt::class, AiPromptPolicy::class);
+        Gate::policy(AiProviderConfiguration::class, AiProviderConfigurationPolicy::class);
+        Gate::policy(AiModelConfiguration::class, AiModelConfigurationPolicy::class);
+        Gate::policy(AiEvalSuite::class, AiEvalSuitePolicy::class);
+        Gate::policy(AiOrganizationSafetyControl::class, AiOrganizationSafetyControlPolicy::class);
     }
 }

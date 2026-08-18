@@ -7,8 +7,10 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
+use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class ReplaceOrganizationCredential
@@ -53,16 +55,28 @@ class ReplaceOrganizationCredential
                 ->where('provider', $provider)
                 ->where('credential_name', $credentialName)
                 ->first() ?? new OrganizationCredential;
+
+            $oldRevisionId = $credential->revision_id;
+            $newRevisionId = (string) Str::uuid();
+
             $credential->forceFill([
                 'organization_id' => $organization->getKey(),
                 'provider' => $provider,
                 'credential_name' => $credentialName,
                 'credentials' => $credentials,
                 'status' => $status,
+                'revision_id' => $newRevisionId,
                 'last_rotated_at' => now(),
                 'rotated_by_user_id' => $actor->getKey(),
             ]);
             $credential->save();
+
+            event(new OrganizationCredentialReplaced(
+                organizationId: (int) $organization->getKey(),
+                provider: $provider,
+                credentialId: (int) $credential->getKey(),
+                revisionId: $newRevisionId,
+            ));
 
             $this->audit->handle(
                 organization: $organization,
@@ -74,6 +88,8 @@ class ReplaceOrganizationCredential
                     'provider' => $provider,
                     'credential_name' => $credentialName,
                     'status' => $status->value,
+                    'old_revision_id' => $oldRevisionId,
+                    'new_revision_id' => $newRevisionId,
                 ],
             );
 

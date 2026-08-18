@@ -2,9 +2,24 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Hosted CI scope
+        required: false
+        default: full
+        type: choice
+        options:
+          - full
+          - quality
+          - integration
+          - integration-foundation
+          - integration-rag
+          - integration-concurrency
+          - privacy
+          - docker
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ inputs.scope || 'full' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -12,7 +27,8 @@ permissions:
 
 jobs:
   quality:
-    name: Quality and integration
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' }}
+    name: Quality
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -58,6 +74,15 @@ jobs:
           php-version: '8.5'
           extensions: intl, pcntl, pdo_pgsql, zip
           coverage: none
+      - name: Resolve Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php-8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php-8.5-
       - uses: actions/setup-node@v5
         with:
           node-version: '24.6.0'
@@ -76,10 +101,197 @@ jobs:
         run: make check-app-key
       - name: Run quality suite
         run: make quality
-      - name: Run PostgreSQL, pgvector, Redis, queue, and health integration tests
-        run: make test-integration
+
+  integration-foundation:
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-foundation' }}
+    name: Integration foundation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: chuklov_test
+          POSTGRES_USER: chuklov
+          POSTGRES_PASSWORD: chuklov_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chuklov -d chuklov_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:8.2.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chuklov_test
+      DB_USERNAME: chuklov
+      DB_PASSWORD: chuklov_local
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      REDIS_CLIENT: predis
+      REDIS_HOST: 127.0.0.1
+      DEFAULT_ORGANIZATION_ID: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pcntl, pdo_pgsql, zip
+          coverage: none
+      - name: Resolve Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php-8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php-8.5-
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Initialize application environment
+        run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
+      - name: Migrate foundation schema
+        run: php artisan migrate --seed --force
+      - name: Verify repeatable key initialization
+        run: make check-app-key
+      - name: Run foundation integration tests
+        run: make test-integration-foundation
+
+  integration-rag:
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-rag' }}
+    name: Integration RAG
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: chuklov_test
+          POSTGRES_USER: chuklov
+          POSTGRES_PASSWORD: chuklov_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chuklov -d chuklov_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chuklov_test
+      DB_USERNAME: chuklov
+      DB_PASSWORD: chuklov_local
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      DEFAULT_ORGANIZATION_ID: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pcntl, pdo_pgsql, zip
+          coverage: none
+      - name: Resolve Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php-8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php-8.5-
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Initialize application environment
+        run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
+      - name: Migrate foundation schema
+        run: php artisan migrate --seed --force
+      - name: Verify repeatable key initialization
+        run: make check-app-key
+      - name: Run RAG integration tests
+        run: make test-integration-rag
+
+  integration-concurrency:
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-concurrency' }}
+    name: Integration concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: chuklov_test
+          POSTGRES_USER: chuklov
+          POSTGRES_PASSWORD: chuklov_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chuklov -d chuklov_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chuklov_test
+      DB_USERNAME: chuklov
+      DB_PASSWORD: chuklov_local
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      DEFAULT_ORGANIZATION_ID: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pcntl, pdo_pgsql, zip
+          coverage: none
+      - name: Resolve Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php-8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php-8.5-
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Initialize application environment
+        run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
+      - name: Migrate foundation schema
+        run: php artisan migrate --seed --force
+      - name: Verify repeatable key initialization
+        run: make check-app-key
+      - name: Run concurrency integration tests
+        run: make test-integration-concurrency
 
   privacy:
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'privacy' }}
     name: Privacy and secret scan
     runs-on: ubuntu-latest
     steps:
@@ -92,6 +304,7 @@ jobs:
         run: make scan-secrets
 
   docker-runtime:
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'docker' }}
     name: Docker build and runtime health
     runs-on: ubuntu-latest
     timeout-minutes: 30

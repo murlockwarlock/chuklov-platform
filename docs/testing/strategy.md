@@ -1,5 +1,15 @@
 # Testing Strategy
 
+## Evidence terminology and PostgreSQL boundary
+
+`PASS` means the command/test was actually executed and passed. `EXISTS — NOT RUN LOCALLY` means coverage is present but was not executed locally; it is never a pass. SQLite is appropriate for fast isolated tests only and cannot prove PostgreSQL locks, `SKIP LOCKED`, transaction isolation, savepoints, session settings, advisory locks, PostgreSQL constraints/extensions, pgvector, or process-level races. Those invariants require real PostgreSQL integration coverage in the hosted candidate gate.
+
+## Durable workflow regression expectations
+
+Persistent or external workflows retain focused regression coverage for durable claim-before-side-effect, duplicate convergence, lease loss during external work, fenced stale-owner finalization, reclaim timing/locking, immutable execution snapshots, bounded provider exposure, conservative budget settlement, tenant isolation, safe provenance, and the next retry/replay/reclaim result. PostgreSQL session-state helpers must be tested with an outer transaction and caller setting X so successful bounded work leaves X visible to subsequent unrelated SQL. Use independent PostgreSQL connections/processes when a race is part of the contract.
+
+Integration fixtures must be organization-unique, create their required active/versioned configuration explicitly, and restore mutable fakes/configuration. A CI shard is only a way to target feedback; a skipped or unexecuted PostgreSQL shard remains `EXISTS — NOT RUN LOCALLY` until hosted execution.
+
 - Unit: pure invariants/value objects/context behavior.
 - Feature: HTTP/Inertia, policies, application actions, Filament foundations, faked external AI/providers.
 - Integration: real PostgreSQL/pgvector, Redis/queues, and private storage.

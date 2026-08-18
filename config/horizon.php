@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use Illuminate\Support\Str;
 
 return [
@@ -207,7 +208,7 @@ return [
             'maxJobs' => 0,
             'memory' => 128,
             'tries' => 1,
-            'timeout' => 60,
+            'timeout' => AiRuntimeLimits::PLATFORM_HORIZON_TIMEOUT_SECONDS,
             'nice' => 0,
         ],
     ],
@@ -216,6 +217,14 @@ return [
         'production' => [
             'supervisor-1' => [
                 'maxProcesses' => 10,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+        ],
+
+        'staging' => [
+            'supervisor-1' => [
+                'maxProcesses' => 2,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],

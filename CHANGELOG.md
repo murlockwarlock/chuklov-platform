@@ -6,12 +6,43 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
-- M9 controlled organization knowledge retrieval implementation candidate:
+- M10 Terra remediation:
+  - Persisted immutable asynchronous candidate/failover snapshots with credential-revision, provider-configuration, and pricing provenance, plus fenced pre-I/O revalidation.
+  - Forced OpenAI Responses executions to `store=false`, corrected the first Kill-Switch transition, and completed private cleared medical attachment execution for documents and three-photo posture analysis.
+  - Replaced the credential revision migration backfill with a bounded resumable command and fail-closed legacy-null runtime handling; the final NOT NULL contract remains a later rollout step after backfill completion.
+
+- M10 AI Components & Control Plane implementation candidate:
+  - Added provider-neutral AI engine, prompt studio, versioning, evaluation suites, human review workflows, and RAG/tool slice for `REQ-AI-001` through `REQ-AI-008`.
+  - Implemented protected Class C trace separation (`ai_run_payloads` encrypted via `MedicalEncryptorInterface`) so that `ai_runs` stores strictly operational, non-sensitive provenance metadata with no plaintext medical leakage.
+  - Implemented exact credential revision tracking (`revision_id` UUID on `OrganizationCredential` and rotation snapshots in `AiRunAttempt`).
+  - Implemented concurrency-safe atomic daily spend budget reservation and settlement in `AtomicAiSafetyBudgetManager` with pessimistic row-level locking (`SELECT ... FOR UPDATE`), fail-closed threshold enforcement, and conservative charging on uncertain timeouts.
+  - Implemented async worker fencing with TTL lease checks preventing runaway background execution.
+  - Implemented Prompt Studio with drafting, activation, retirement, rollback, playground execution, and JSON bundle export/import.
+  - Implemented Filament Clinical Cockpit CRM control plane under `Искусственный интеллект`: Monitoring & Kill-Switch Overview, AI Runs with Infolists & Review Actions, Prompts & Versions, Providers & Model Releases, and synthetic Evals testing suites.
+  - Added feature tests covering workflow execution, protected trace encryption, atomic budget reservation, prompt version lifecycles, human reviews, and evaluation suites.
   - Added organization-scoped authored/private-upload sources, immutable revisions, durable retry-safe ingestion runs, deterministic versioned chunking, provider-neutral embedding generation, and PostgreSQL/pgvector exact cosine retrieval behind `KnowledgeRetriever`.
   - Added composite tenant constraints, configuration provenance, active-ready atomic exposure, retirement/reactivation, sanitized structural audits, explicit knowledge permissions, and fail-closed embedding compatibility.
   - Added Filament source/version/ingestion management and a bounded retrieval inspection page. Retrieved instruction-like content remains inert data; M9 creates no AI answer, prompt studio, agent, or `AiRun` behavior.
-  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015 and M10 remains not started.
+  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015 and M10 remains IN_PROGRESS.
   - Reorganized the Filament sidebar into business groups and placed knowledge management and retrieval inspection together under `Контент и знания`.
+
+- M10 high-risk remediation candidate:
+  - Centralized organization-owned typed input-reference validation, bounded prompt/RAG/tool-loop admission, immutable release pricing reservations, conservative fenced settlement, durable tool provenance, scheduled lease reclamation, fixed human-review reason codes, real provider connectivity semantics, exact evaluation release pinning, fail-closed eval privacy, PostgreSQL-safe async idempotency, activation permission separation, RAG failure/context controls, provider-reported usage provenance, tenant-safe eval prompt ownership, explicit medical actors, and platform-clamped organization safety limits.
+  - M9 remains CLOSED / ACCEPTED. M10 remains IN_PROGRESS pending independent remediation re-review, candidate hosted CI, and final acceptance; PostgreSQL concurrency coverage is present but is not claimed as locally executed.
+
+- M10 final bounded remediation pass:
+  - Added a whole-run deadline/lease/queue timeout contract, accumulated multi-step provider exposure reservation, ownership-independent stale-attempt reconciliation, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval execution, fixed-scope tool RAG, durable tool-chunk provenance with retention-safe foreign keys, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
+  - M10 remains IN_PROGRESS; PostgreSQL concurrency coverage is present and is not claimed as locally executed, and hosted CI/final acceptance remain outstanding.
+
+- M10 final three targeted remediations:
+  - Recomputed the immutable retrieval deadline before every bounded PostgreSQL metadata/vector statement and added cumulative timeout regression coverage.
+  - Added application-owned Bedrock text/embedding gateways with AWS SDK transport retries disabled for one-invocation/one-attempt billing safety.
+  - Persisted immutable embedding runtime/pricing snapshots through AiRun preparation, initial/tool RAG execution, fail-closed compatibility checks, and tool settlement. The PostgreSQL regression is present but not run locally under the SQLite local-light environment.
+
+- M10 bounded execution and cost-boundary remediation:
+  - Established durable preparing claims before asynchronous context/RAG work, one immutable whole-run deadline from preparation through finalization, request-scoped embedding timeouts, PostgreSQL-local retrieval statement timeouts, strict post-deadline tool provenance fencing, and bounded RAG query input.
+  - Added immutable supported text billing meters (input, output, cache read/write, reasoning, and fixed request), explicit unsupported-meter fail-closed activation, organization-daily-budget reservations for initial/tool retrieval embeddings, and separate retrieval settlement provenance.
+  - Added focused AI/Knowledge coverage plus PostgreSQL statement-timeout and duplicate-async-RAG concurrency tests; PostgreSQL tests are present but not run locally under the local-light verification policy.
 
 - M8 Surveys / Road Map implementation candidate:
   - Added organization-scoped versioned definitions, immutable exact-version attempts, encrypted sensitive snapshots, typed fail-closed conditions/scoring, deterministic thresholds/tags, non-AI reports, compatibility-gated comparison, and idempotent Scenario events for completion and configured stagnation.

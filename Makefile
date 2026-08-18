@@ -1,7 +1,7 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-integration-foundation test-integration-rag test-integration-concurrency test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
 
 setup:
 	test -f .env || cp .env.example .env
@@ -35,7 +35,16 @@ test-feature:
 	$(PHP) artisan test tests/Feature
 
 test-integration:
-	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=redis QUEUE_CONNECTION=redis REDIS_CLIENT=predis REDIS_HOST=127.0.0.1 $(PHP) artisan test tests/Integration
+	$(MAKE) test-integration-foundation test-integration-rag test-integration-concurrency
+
+test-integration-foundation:
+	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=redis QUEUE_CONNECTION=redis REDIS_CLIENT=predis REDIS_HOST=127.0.0.1 $(PHP) artisan test tests/Integration/InfrastructureFoundationTest.php tests/Integration/MilestoneOneDatabaseTest.php tests/Integration/MilestoneTwoDatabaseTest.php tests/Integration/MilestoneThreeDatabaseTest.php tests/Integration/MilestoneFourDatabaseTest.php tests/Integration/MilestoneSixFinanceRolloutTest.php tests/Integration/MilestoneSevenDatabaseTest.php tests/Integration/MilestoneEightDatabaseTest.php
+
+test-integration-rag:
+	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/MilestoneNineDatabaseTest.php tests/Integration/PgvectorStatementTimeoutTest.php
+
+test-integration-concurrency:
+	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/MilestoneFourConcurrencyTest.php tests/Integration/MilestoneFiveConcurrencyTest.php tests/Integration/MilestoneSixFinanceConcurrencyTest.php tests/Integration/MilestoneNineConcurrencyTest.php tests/Integration/MilestoneTenConcurrencyTest.php
 
 test-e2e:
 	npm run test:e2e

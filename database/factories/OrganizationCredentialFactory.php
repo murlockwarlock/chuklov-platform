@@ -6,6 +6,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<OrganizationCredential>
@@ -19,12 +20,13 @@ class OrganizationCredentialFactory extends Factory
         return [
             'provider' => 'test-provider',
             'credential_name' => 'default',
+            'revision_id' => (string) Str::uuid(),
             'status' => CredentialStatus::Active->value,
             'last_rotated_at' => now(),
         ];
     }
 
-    protected function configure(): static
+    public function configure(): static
     {
         return $this->afterMaking(fn (OrganizationCredential $credential): OrganizationCredential => $credential->forceFill([
             'credentials' => ['token' => 'test-secret'],

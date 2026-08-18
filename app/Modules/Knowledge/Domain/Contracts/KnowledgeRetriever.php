@@ -10,4 +10,7 @@ interface KnowledgeRetriever
 {
     /** @return list<RetrievalResult> */
     public function retrieve(User $actor, RetrievalQuery $query): array;
+
+    /** @return list<RetrievalResult> */
+    public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array;
 }

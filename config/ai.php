@@ -2,6 +2,13 @@
 
 return [
 
+    'platform' => [
+        'max_daily_spend_minor_units' => (int) env(
+            'AI_PLATFORM_MAX_DAILY_SPEND_MINOR_UNITS',
+            5000,
+        ),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Default AI Provider Names
