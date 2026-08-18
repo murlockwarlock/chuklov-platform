@@ -1,11 +1,14 @@
 # Project Status
 
-## 2026-08-17 - M10 AI Components & Control Plane - IN PROGRESS
+## 2026-08-18 — M10 AI Components & Control Plane — CLOSED / ACCEPTED
 
-- Implementing the organization-scoped AI platform foundation and monitoring/control plane for `REQ-AI-001` through `REQ-AI-008` and `docs/architecture/ai.md`.
-- Provider-neutral AI execution via Laravel AI SDK, prompt versions, model configurations/releases, Class C encrypted trace storage, attempt-level provenance, atomic daily safety budget reservation/settlement, async worker lease fencing, human review workflow, tool allowlist, and Filament CRM control plane.
-- The final bounded remediation pass adds a static whole-run deadline with queue/Horizon/Redis ordering, conservative accumulated-history budget reservation, stale-attempt reconciliation owned by reclaim, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval fixtures, fixed-scope durable tool RAG provenance, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
-- Status: M10 is `IN_PROGRESS`. M0–M7 and M9 are CLOSED / ACCEPTED. M8 remains content-blocked by OQ-015.
+- Accepted main SHA: `a0746bad2d4e0695d80ff8689c49b1c57a24161e`.
+- PR #8 was squash-merged from accepted head `6def6a6c4c2fb591401a10feaea2b3a11f92c549`.
+- The squash main tree is identical to the accepted head tree.
+- Final hosted evidence: Quality run `32112766821` — GREEN; Integration concurrency run `32112766462` — GREEN; 22 tests / 116 assertions.
+- Previously obtained unaffected Foundation/RAG/privacy/Docker evidence remained valid through final remediation under the repository's semantic evidence reuse policy.
+- M10 independent adversarial blockers and follow-up remediation are closed.
+- Status: M10 is `CLOSED / ACCEPTED`. M0–M7 and M9 are CLOSED / ACCEPTED. M8 remains content-blocked by OQ-015.
 
 ## 2026-08-17 - M9 controlled organization knowledge retrieval - CLOSED / ACCEPTED
 
@@ -23,7 +26,7 @@
 - Added structured Filament management and bounded attempt history plus responsive Inertia Portal list/start/resume/save/complete/report flows. Reports expose configured metrics and threshold text only, with no diagnosis, treatment recommendation, or AI output.
 - Added `surveys:import` for validated definition JSON. The approved local v2.2 source names “9 systems” and MSQ but says their full questionnaires were moved to separate documents that are absent locally. No questions, scores, thresholds, or interpretation were fabricated. See OQ-015.
 - Focused local evidence so far: M8 PHPUnit passes 9 tests / 60 assertions; the affected M6 Scenario regression file also passes 15 tests / 122 assertions; narrow Larastan passes with 0 errors using a 512 MB local limit; Pint, ESLint, `vue-tsc`, and Vite build pass; `git diff --check` passes. PostgreSQL composite-FK integration coverage was added but not run locally; privacy, Docker/runtime, full quality, PostgreSQL integration, and hosted candidate CI are not yet claimed.
-- Status: M8 is `BLOCKED` on source-backed 9-systems and MSQ content and remains unaccepted pending candidate CI. M9 is CLOSED / ACCEPTED; M10 is `IN_PROGRESS`; M8 contains no LLM or generative AI implementation.
+- Status: M8 is `BLOCKED` on source-backed 9-systems and MSQ content and remains unaccepted pending candidate CI. M9 is CLOSED / ACCEPTED; M10 is CLOSED / ACCEPTED; M8 contains no LLM or generative AI implementation.
 
 ## 2026-08-16 - Candidate-only hosted CI policy
 
@@ -31,10 +34,10 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-17
+- Last updated: 2026-08-18
 - Current phase: Phase 1 foundation
-- Current milestone: Milestone 10 — AI Components & Control Plane (IN PROGRESS)
-- Status: M0–M7 and M9 are CLOSED / ACCEPTED. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources. M10 is IN_PROGRESS.
+- Current milestone: Milestone 10 — AI Components & Control Plane (CLOSED / ACCEPTED)
+- Status: M0–M7 and M9–M10 are CLOSED / ACCEPTED. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

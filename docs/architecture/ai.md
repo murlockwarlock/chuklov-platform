@@ -1,6 +1,6 @@
 # AI
 
-This document is the normative M10 product and architecture contract for `REQ-AI-001` through `REQ-AI-008`. M10 implementation remains `IN_PROGRESS`; normal CI and focused verification use deterministic Laravel AI SDK fakes and make no paid provider call.
+This document is the normative M10 product and architecture contract for `REQ-AI-001` through `REQ-AI-008`. M10 is `CLOSED / ACCEPTED` at main SHA `a0746bad2d4e0695d80ff8689c49b1c57a24161e`; normal CI and focused verification use deterministic Laravel AI SDK fakes and make no paid provider call.
 
 ## Runtime Boundary
 
@@ -146,4 +146,4 @@ M10 is complete only when implemented workflows satisfy `REQ-AI-001` through `RE
 
 Required M10 product surfaces/evidence include durable run provenance and step trace, AI Runs / Monitoring, Prompt Studio, provider/model configuration, generation and context policies, Context Preview/Inspector, Playground, comparison/evaluation, activation/rollback, usage/cost and retry/failover visibility, tenant/security/privacy coverage, medical log-redaction coverage, and adverse failure-path tests.
 
-See ADR-008 and `docs/architecture/ai-data-flow.md`. M10 remains `IN_PROGRESS` pending independent re-review, candidate hosted CI, and final acceptance; none of this expands M7 implementation scope.
+See ADR-008 and `docs/architecture/ai-data-flow.md`. M10 is `CLOSED / ACCEPTED` after independent re-review and final hosted evidence at main SHA `a0746bad2d4e0695d80ff8689c49b1c57a24161e`; none of this expands M7 implementation scope.
