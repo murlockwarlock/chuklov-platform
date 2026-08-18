@@ -35,9 +35,12 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\AI\Domain\Registry\AiCapabilityDefinition;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
+use App\Modules\AI\Domain\ValueObjects\AiExecutionPolicySnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
@@ -196,11 +199,15 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         $contextPolicy = $promptVersion->getContextPolicy();
-        $maxToolCallsForReservation = $contextPolicy->allows('rag')
-            && in_array('search_knowledge_base', array_intersect($capabilityDef->allowedTools, $promptVersion->allowed_tools), true)
-            && ($safetyControls === null || ! in_array('search_knowledge_base', $safetyControls->disabled_tools, true))
-            ? AiRuntimeLimits::effectiveMaxToolCalls($capabilityDef, $safetyControls?->max_tool_calls_per_run)
-            : 0;
+        $effectiveToolNames = AiExecutionPolicySnapshot::effectiveAllowedTools(
+            capabilityAllowedTools: $capabilityDef->allowedTools,
+            promptAllowedTools: $promptVersion->allowed_tools,
+            disabledTools: $safetyControls !== null ? $safetyControls->disabled_tools : [],
+            ragAllowed: $contextPolicy->allows('rag'),
+        );
+        $maxToolCallsForReservation = $effectiveToolNames === []
+            ? 0
+            : AiRuntimeLimits::effectiveMaxToolCalls($capabilityDef, $safetyControls?->max_tool_calls_per_run);
 
         $claim = $this->prepareAiRun->claim(
             organizationId: $organizationId,
@@ -424,6 +431,31 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         $contextPolicy = $promptVersion->getContextPolicy();
+        try {
+            $executionPolicy = $this->executionPolicyForRun(
+                run: $run,
+                capabilityDef: $capabilityDef,
+                promptVersion: $promptVersion,
+                contextPolicy: $contextPolicy,
+                safetyControls: $safetyControls,
+            );
+        } catch (InvalidArgumentException) {
+            $this->fencedTerminalRunTransition(
+                $organizationId,
+                $runId,
+                $workerLeaseToken,
+                AiRunStatus::Failed,
+                AiErrorCategory::InternalError,
+                'Immutable asynchronous execution policy is unavailable.',
+            );
+
+            return new AiRunResult(
+                runId: $run->id,
+                status: AiRunStatus::Failed,
+                errorCategory: AiErrorCategory::InternalError,
+                errorMessageSanitized: 'Immutable asynchronous execution policy is unavailable.',
+            );
+        }
 
         $inputReferences = array_values(array_map(
             static fn (mixed $reference): AiInputReference => $reference instanceof AiInputReference
@@ -475,7 +507,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
         $requiredModalities = $this->requiredAttachmentModalities($attachmentResolution['files']);
 
-        $maxAttempts = AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts);
+        $maxAttempts = $executionPolicy->maxFailoverAttempts;
         $candidates = $run->execution_mode === AiExecutionMode::Async
             ? $this->candidateResolver->resolveSnapshot($organizationId, $run, $safetyControls)
             : [];
@@ -633,26 +665,9 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             throw new AiProviderUnavailableException("No enabled AI provider or model configured for capability '{$run->capability->value}'.");
         }
 
-        $configuredTimeout = $promptVersion->getParameterConfig()->timeoutSeconds;
-        $attemptTimeoutSeconds = AiRuntimeLimits::effectiveTimeout(
-            requestedTimeout: $configuredTimeout,
-            capabilityMaxTimeout: $capabilityDef->maxTimeoutSeconds,
-            organizationTimeout: $safetyControls?->default_timeout_seconds,
-        );
-
-        // 5. RESOLVE EFFECTIVE TOOLS (capability allowed ∩ prompt allowed \ safety disabled)
-        $capabilityAllowedTools = $capabilityDef->allowedTools;
-        $promptAllowedTools = $promptVersion->allowed_tools;
-        $safetyDisabledTools = $safetyControls !== null ? $safetyControls->disabled_tools : [];
-        $effectiveToolNames = array_values(array_diff(array_intersect($capabilityAllowedTools, $promptAllowedTools), $safetyDisabledTools));
-        if (! $contextPolicy->allows('rag')) {
-            $effectiveToolNames = array_values(array_diff($effectiveToolNames, ['search_knowledge_base']));
-        }
-
-        $maxToolCalls = AiRuntimeLimits::effectiveMaxToolCalls(
-            capability: $capabilityDef,
-            organizationMaxToolCalls: $safetyControls?->max_tool_calls_per_run,
-        );
+        $attemptTimeoutSeconds = $executionPolicy->attemptTimeoutSeconds;
+        $effectiveToolNames = $executionPolicy->allowedTools;
+        $maxToolCalls = $executionPolicy->maxToolCalls;
         $resolvedSdkTools = [];
 
         foreach ($effectiveToolNames as $toolName) {
@@ -679,12 +694,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
         $maxProviderSteps = min($capabilityDef->maxProviderSteps, AiRuntimeLimits::providerSteps($maxToolCalls));
 
-        // 6. RESOLVE MAX TOKENS PER RUN
-        $tokenCeiling = AiRuntimeLimits::effectiveMaxOutputTokens(
-            capability: $capabilityDef,
-            requestedMaxTokens: $promptVersion->getParameterConfig()->maxTokens,
-            organizationMaxTokens: $safetyControls?->max_tokens_per_run,
-        );
+        $tokenCeiling = $executionPolicy->maxOutputTokens;
 
         $attemptNumber = (int) AiRunAttempt::query()
             ->where('organization_id', $organizationId)
@@ -1121,6 +1131,44 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             errorCategory: $lastErrorCategory ?? AiErrorCategory::ProviderUnavailable,
             errorMessageSanitized: $lastErrorMessage ?? 'All provider attempts failed or timed out.',
         );
+    }
+
+    private function executionPolicyForRun(
+        AiRun $run,
+        AiCapabilityDefinition $capabilityDef,
+        AiPromptVersion $promptVersion,
+        AiContextPolicy $contextPolicy,
+        ?AiOrganizationSafetyControl $safetyControls,
+    ): AiExecutionPolicySnapshot {
+        $allowedTools = AiExecutionPolicySnapshot::effectiveAllowedTools(
+            capabilityAllowedTools: $capabilityDef->allowedTools,
+            promptAllowedTools: $promptVersion->allowed_tools,
+            disabledTools: $safetyControls !== null ? $safetyControls->disabled_tools : [],
+            ragAllowed: $contextPolicy->allows('rag'),
+        );
+        $current = new AiExecutionPolicySnapshot(
+            maxFailoverAttempts: AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts),
+            maxOutputTokens: AiRuntimeLimits::effectiveMaxOutputTokens(
+                capability: $capabilityDef,
+                requestedMaxTokens: $promptVersion->getParameterConfig()->maxTokens,
+                organizationMaxTokens: $safetyControls?->max_tokens_per_run,
+            ),
+            maxToolCalls: $allowedTools === []
+                ? 0
+                : AiRuntimeLimits::effectiveMaxToolCalls($capabilityDef, $safetyControls?->max_tool_calls_per_run),
+            attemptTimeoutSeconds: AiRuntimeLimits::effectiveTimeout(
+                requestedTimeout: $promptVersion->getParameterConfig()->timeoutSeconds,
+                capabilityMaxTimeout: $capabilityDef->maxTimeoutSeconds,
+                organizationTimeout: $safetyControls?->default_timeout_seconds,
+            ),
+            allowedTools: $allowedTools,
+        );
+
+        if ($run->execution_mode !== AiExecutionMode::Async) {
+            return $current;
+        }
+
+        return AiExecutionPolicySnapshot::fromArray((array) $run->execution_policy_snapshot)->tighten($current);
     }
 
     private function resolveTokenUsage(

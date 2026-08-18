@@ -9,7 +9,6 @@ use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
-use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
@@ -98,14 +97,6 @@ class DispatchAsyncAiRun
         }
 
         $contextPolicy = $promptVersion->getContextPolicy();
-        $safetyControls = AiOrganizationSafetyControl::query()
-            ->where('organization_id', $organization->getKey())
-            ->first();
-        $maxToolCalls = $contextPolicy->allows('rag')
-            && in_array('search_knowledge_base', array_intersect($capabilityDef->allowedTools, $promptVersion->allowed_tools), true)
-            && ($safetyControls === null || ! in_array('search_knowledge_base', $safetyControls->disabled_tools, true))
-            ? AiRuntimeLimits::effectiveMaxToolCalls($capabilityDef, $safetyControls?->max_tool_calls_per_run)
-            : 0;
 
         $claim = $this->prepareAiRun->claim(
             organizationId: (int) $organization->getKey(),
@@ -113,7 +104,7 @@ class DispatchAsyncAiRun
             promptVersion: $promptVersion,
             contextPolicy: $contextPolicy,
             executionDeadlineAt: $executionDeadlineAt,
-            maxToolCalls: $maxToolCalls,
+            maxToolCalls: 0,
             executionMode: AiExecutionMode::Async,
             initiatedByUserId: $actor?->getKey() ?? $request->initiatedByUserId,
         );
@@ -122,9 +113,14 @@ class DispatchAsyncAiRun
             return $run;
         }
 
+        $executionPolicySnapshot = is_array($run->execution_policy_snapshot)
+            ? $run->execution_policy_snapshot
+            : [];
+        $acceptedMaxToolCalls = (int) ($executionPolicySnapshot['max_tool_calls'] ?? 0);
+
         try {
             $embeddingSnapshot = null;
-            if (($contextPolicy->includeRag && AiRuntimeLimits::ragQuery($request->inputVariables) !== '') || $maxToolCalls > 0) {
+            if (($contextPolicy->includeRag && AiRuntimeLimits::ragQuery($request->inputVariables) !== '') || $acceptedMaxToolCalls > 0) {
                 $provenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
                 $embedding = is_array($provenance['retrieval_embedding'] ?? null)
                     ? $provenance['retrieval_embedding']

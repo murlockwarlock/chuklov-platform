@@ -29,6 +29,7 @@ return new class extends Migration
             $table->string('actual_model', 120)->nullable();
             $table->json('input_references');
             $table->json('execution_candidate_snapshot')->nullable();
+            $table->json('execution_policy_snapshot')->nullable();
             $table->char('rendered_prompt_digest', 64)->nullable();
             $table->json('context_provenance');
             $table->string('structured_output_schema_version', 64)->nullable();

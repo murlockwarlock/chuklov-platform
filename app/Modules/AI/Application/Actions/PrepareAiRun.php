@@ -12,8 +12,10 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Models\AiRunRagReference;
+use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
+use App\Modules\AI\Domain\ValueObjects\AiExecutionPolicySnapshot;
 use App\Modules\AI\Domain\ValueObjects\AiTokenUsage;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -46,19 +48,28 @@ final class PrepareAiRun
         ?int $initiatedByUserId = null,
     ): array {
         $workerLeaseToken = (string) Str::uuid();
-        $retrievalReservation = $this->retrievalReservation($request, $contextPolicy, $maxToolCalls);
         $effectiveExecutionMode = $executionMode ?? $request->executionMode;
         $candidateSnapshot = [];
+        $executionPolicySnapshot = [];
+        $safetyControls = null;
         if ($effectiveExecutionMode === AiExecutionMode::Async) {
             $safetyControls = AiOrganizationSafetyControl::query()
                 ->where('organization_id', $organizationId)
                 ->first();
+            $executionPolicySnapshot = $this->executionPolicySnapshot(
+                request: $request,
+                promptVersion: $promptVersion,
+                contextPolicy: $contextPolicy,
+                safetyControls: $safetyControls,
+            )->toArray();
+            $maxToolCalls = $executionPolicySnapshot['max_tool_calls'];
             $candidateSnapshot = $this->candidateResolver->snapshot(
                 organizationId: $organizationId,
                 request: $request,
                 safetyControls: $safetyControls,
             );
         }
+        $retrievalReservation = $this->retrievalReservation($request, $contextPolicy, $maxToolCalls);
         $primaryCandidate = $candidateSnapshot[0] ?? [];
         $keyVersion = (int) Config::get('medical.key_version', 1);
         $created = false;
@@ -76,6 +87,7 @@ final class PrepareAiRun
                 $primaryCandidate,
                 $effectiveExecutionMode,
                 $initiatedByUserId,
+                $executionPolicySnapshot,
             ): AiRun {
                 if ($request->idempotencyKey !== null) {
                     $existing = AiRun::query()
@@ -112,6 +124,7 @@ final class PrepareAiRun
                     'requested_model' => $primaryCandidate['model'] ?? null,
                     'input_references' => array_map(static fn ($reference): array => $reference->toArray(), $request->inputReferences),
                     'execution_candidate_snapshot' => $candidateSnapshot,
+                    'execution_policy_snapshot' => $executionPolicySnapshot,
                     'context_provenance' => [
                         'retrieval_embedding' => [
                             'reserved_query_count' => $retrievalReservation['query_count'],
@@ -156,6 +169,39 @@ final class PrepareAiRun
             'created' => $created,
             'worker_lease_token' => $workerLeaseToken,
         ];
+    }
+
+    private function executionPolicySnapshot(
+        AiRunRequest $request,
+        AiPromptVersion $promptVersion,
+        AiContextPolicy $contextPolicy,
+        ?AiOrganizationSafetyControl $safetyControls,
+    ): AiExecutionPolicySnapshot {
+        $capability = AiCapabilityRegistry::get($request->capability);
+        $allowedTools = AiExecutionPolicySnapshot::effectiveAllowedTools(
+            capabilityAllowedTools: $capability->allowedTools,
+            promptAllowedTools: $promptVersion->allowed_tools,
+            disabledTools: $safetyControls !== null ? $safetyControls->disabled_tools : [],
+            ragAllowed: $contextPolicy->allows('rag'),
+        );
+
+        return new AiExecutionPolicySnapshot(
+            maxFailoverAttempts: AiRuntimeLimits::effectiveMaxFailoverAttempts($safetyControls?->max_failover_attempts),
+            maxOutputTokens: AiRuntimeLimits::effectiveMaxOutputTokens(
+                capability: $capability,
+                requestedMaxTokens: $promptVersion->getParameterConfig()->maxTokens,
+                organizationMaxTokens: $safetyControls?->max_tokens_per_run,
+            ),
+            maxToolCalls: $allowedTools === []
+                ? 0
+                : AiRuntimeLimits::effectiveMaxToolCalls($capability, $safetyControls?->max_tool_calls_per_run),
+            attemptTimeoutSeconds: AiRuntimeLimits::effectiveTimeout(
+                requestedTimeout: $promptVersion->getParameterConfig()->timeoutSeconds,
+                capabilityMaxTimeout: $capability->maxTimeoutSeconds,
+                organizationTimeout: $safetyControls?->default_timeout_seconds,
+            ),
+            allowedTools: $allowedTools,
+        );
     }
 
     public function complete(

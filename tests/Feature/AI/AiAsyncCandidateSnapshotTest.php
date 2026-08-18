@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
@@ -35,9 +36,11 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Laravel\Ai\Events\PromptingAgent;
 use Tests\TestCase;
 
 final class AiAsyncCandidateSnapshotTest extends TestCase
@@ -305,6 +308,208 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
 
         $this->assertSame(AiRunStatus::Failed, $run->fresh()->status);
         $this->assertSame(0, AiRunAttempt::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_async_failover_limit_cannot_expand_after_acceptance(): void
+    {
+        $this->safetyControl(['max_failover_attempts' => 1]);
+        $this->candidate('openai', 'OpenAI first', 'arbitrary-primary', 1);
+        $this->candidate('anthropic', 'Anthropic second', 'arbitrary-secondary', 2);
+        $this->candidate('gemini', 'Gemini third', 'arbitrary-tertiary', 3);
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-failover-expansion',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+
+        $this->assertSame([
+            'version' => 1,
+            'max_failover_attempts' => 1,
+            'max_output_tokens' => 2048,
+            'max_tool_calls' => 0,
+            'attempt_timeout_seconds' => 60,
+            'allowed_tools' => [],
+        ], $run->fresh()->execution_policy_snapshot);
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['max_failover_attempts' => 3]);
+
+        $providerCalls = 0;
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
+            throw new \RuntimeException('bounded provider failure');
+        });
+
+        try {
+            $this->runQueuedJob($run);
+        } catch (\Throwable) {
+        }
+
+        $this->assertSame(1, $providerCalls);
+        $this->assertSame(1, AiRunAttempt::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_async_failover_limit_can_tighten_after_acceptance(): void
+    {
+        $this->safetyControl(['max_failover_attempts' => 3]);
+        $this->candidate('openai', 'OpenAI first', 'arbitrary-primary', 1);
+        $this->candidate('anthropic', 'Anthropic second', 'arbitrary-secondary', 2);
+        $this->candidate('gemini', 'Gemini third', 'arbitrary-tertiary', 3);
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-failover-tightening',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['max_failover_attempts' => 1]);
+
+        $providerCalls = 0;
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
+            throw new \RuntimeException('bounded provider failure');
+        });
+
+        try {
+            $this->runQueuedJob($run);
+        } catch (\Throwable) {
+        }
+
+        $this->assertSame(1, $providerCalls);
+        $this->assertSame(1, AiRunAttempt::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_async_output_token_limit_cannot_expand_after_acceptance(): void
+    {
+        $this->safetyControl(['max_tokens_per_run' => 512]);
+        $this->candidate('openai', 'OpenAI tokens', 'arbitrary-token-model', 1);
+        Queue::fake();
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-token-expansion',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['max_tokens_per_run' => 2048]);
+
+        $observedMaxTokens = null;
+        Event::fake([PromptingAgent::class]);
+        DynamicWorkflowAgent::fake(['policy response']);
+        $this->runQueuedJob($run);
+        Event::assertDispatched(PromptingAgent::class, function (PromptingAgent $event) use (&$observedMaxTokens): bool {
+            $observedMaxTokens = $event->prompt->agent->maxTokens();
+
+            return true;
+        });
+
+        $this->assertSame(512, $observedMaxTokens);
+    }
+
+    public function test_async_tool_access_cannot_expand_after_acceptance(): void
+    {
+        $this->promptVersion->update(['allowed_tools' => ['search_knowledge_base']]);
+        $this->safetyControl(['disabled_tools' => ['search_knowledge_base']]);
+        $this->candidate('openai', 'OpenAI tool expansion', 'arbitrary-tool-model', 1);
+        Queue::fake();
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-tool-expansion',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['disabled_tools' => []]);
+
+        $observedToolCount = null;
+        Event::fake([PromptingAgent::class]);
+        DynamicWorkflowAgent::fake(['policy response']);
+        $this->runQueuedJob($run);
+        Event::assertDispatched(PromptingAgent::class, function (PromptingAgent $event) use (&$observedToolCount): bool {
+            $observedToolCount = count(iterator_to_array($event->prompt->agent->tools()));
+
+            return true;
+        });
+
+        $this->assertSame([], $run->fresh()->execution_policy_snapshot['allowed_tools']);
+        $this->assertSame(0, $observedToolCount);
+    }
+
+    public function test_async_tool_access_can_tighten_after_acceptance(): void
+    {
+        $this->promptVersion->update(['allowed_tools' => ['search_knowledge_base']]);
+        $this->safetyControl();
+        $this->candidate('openai', 'OpenAI tool tightening', 'arbitrary-tool-model', 1);
+        Queue::fake();
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-tool-tightening',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['disabled_tools' => ['search_knowledge_base']]);
+
+        $observedToolCount = null;
+        Event::fake([PromptingAgent::class]);
+        DynamicWorkflowAgent::fake(['policy response']);
+        $this->runQueuedJob($run);
+        Event::assertDispatched(PromptingAgent::class, function (PromptingAgent $event) use (&$observedToolCount): bool {
+            $observedToolCount = count(iterator_to_array($event->prompt->agent->tools()));
+
+            return true;
+        });
+
+        $this->assertSame(['search_knowledge_base'], $run->fresh()->execution_policy_snapshot['allowed_tools']);
+        $this->assertSame(0, $observedToolCount);
+    }
+
+    public function test_async_timeout_cannot_expand_after_acceptance(): void
+    {
+        $this->safetyControl(['default_timeout_seconds' => 10]);
+        $this->candidate('openai', 'OpenAI timeout', 'arbitrary-timeout-model', 1);
+        Queue::fake();
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'policy-timeout-expansion',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+        AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->update(['default_timeout_seconds' => 60]);
+
+        $observedTimeout = null;
+        Event::fake([PromptingAgent::class]);
+        DynamicWorkflowAgent::fake(['policy response']);
+        $this->runQueuedJob($run);
+        Event::assertDispatched(PromptingAgent::class, function (PromptingAgent $event) use (&$observedTimeout): bool {
+            $observedTimeout = $event->prompt->timeout;
+
+            return true;
+        });
+
+        $this->assertSame(10, $observedTimeout);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function safetyControl(array $attributes = []): AiOrganizationSafetyControl
+    {
+        return AiOrganizationSafetyControl::create(array_merge([
+            'organization_id' => $this->organization->id,
+        ], $attributes));
     }
 
     /**

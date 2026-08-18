@@ -40,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $actual_model
  * @property array<string, mixed> $input_references
  * @property array<string, mixed>|null $execution_candidate_snapshot
+ * @property array<string, mixed>|null $execution_policy_snapshot
  * @property string|null $rendered_prompt_digest
  * @property array<string, mixed> $context_provenance
  * @property string|null $structured_output_schema_version
@@ -96,6 +97,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'actual_model',
     'input_references',
     'execution_candidate_snapshot',
+    'execution_policy_snapshot',
     'rendered_prompt_digest',
     'context_provenance',
     'structured_output_schema_version',
@@ -130,6 +132,7 @@ class AiRun extends Model
         'execution_mode' => 'sync',
         'input_references' => '[]',
         'execution_candidate_snapshot' => '[]',
+        'execution_policy_snapshot' => '[]',
         'context_provenance' => '[]',
         'token_usage' => '[]',
         'retrieval_embedding_budget_status' => 'none',
@@ -232,6 +235,7 @@ class AiRun extends Model
             'human_review_status' => HumanReviewStatus::class,
             'input_references' => 'array',
             'execution_candidate_snapshot' => 'array',
+            'execution_policy_snapshot' => 'array',
             'context_provenance' => 'array',
             'token_usage' => 'array',
             'retrieval_embedding_reserved_cost_minor_units' => 'integer',
