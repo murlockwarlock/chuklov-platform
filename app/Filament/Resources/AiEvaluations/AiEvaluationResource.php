@@ -32,7 +32,7 @@ final class AiEvaluationResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBeaker;
 
-    protected static ?string $navigationLabel = 'Тестирование (Evals)';
+    protected static ?string $navigationLabel = 'Наборы тестов AI';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Искусственный интеллект';
 
@@ -41,6 +41,8 @@ final class AiEvaluationResource extends Resource
     protected static ?string $modelLabel = 'набор тестов AI';
 
     protected static ?string $pluralModelLabel = 'наборы тестов AI';
+
+    protected static ?string $breadcrumb = 'Наборы тестов AI';
 
     public static function form(Schema $schema): Schema
     {

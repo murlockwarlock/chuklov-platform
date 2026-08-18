@@ -11,6 +11,13 @@ class ListAiProviders extends ListRecords
 {
     protected static string $resource = AiProviderResource::class;
 
+    protected static ?string $title = 'Провайдеры и модели';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

@@ -37,6 +37,8 @@ class ServicesTable
             ->filters([
                 TernaryFilter::make('is_active')->label('Доступна для записи'),
             ])
+            ->emptyStateHeading('Услуг пока нет')
+            ->emptyStateDescription('Добавьте консультации или процедуры, доступные для записи клиентов.')
             ->recordActions([
                 EditAction::make(),
             ]);

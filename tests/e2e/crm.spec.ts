@@ -14,7 +14,25 @@ type CrmFixture = {
     contentSectionId: number;
     contentSectionTitle: string;
     attachmentFilename: string;
+    bookingStartsAt: string;
 };
+
+function validPdfBuffer(): Buffer {
+    return Buffer.from([
+        '%PDF-1.4',
+        '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 595 842]>>endobj',
+        'xref',
+        '0 4',
+        '0000000000 65535 f',
+        '0000000009 00000 n',
+        '0000000052 00000 n',
+        '0000000101 00000 n',
+        'trailer<</Size 4/Root 1 0 R>>',
+        'startxref',
+        '150',
+        '%%EOF',
+    ].join('\n'));
+}
 
 function createCrmFixture(): CrmFixture {
     const php = `
@@ -69,6 +87,12 @@ function createCrmFixture(): CrmFixture {
                     'end_time' => '23:59',
                 ]);
         }
+        $leadTimeMinutes = (int) (\\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('setting_key', 'booking_lead_time_minutes')
+            ->value('integer_value') ?? 0);
+        $minimumBookingStart = \\Carbon\\CarbonImmutable::now('UTC')->addMinutes($leadTimeMinutes + 60);
+        $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
         config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
         app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
             $admin,
@@ -108,6 +132,7 @@ function createCrmFixture(): CrmFixture {
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
             'attachmentFilename' => $attachmentFilename,
+            'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -183,15 +208,15 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
-    await page.getByLabel('Клиент').click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByText(fixture.clientName, { exact: true }).click();
-    await page.getByLabel('Услуга').click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByText(fixture.serviceName, { exact: true }).click();
-    await page.getByLabel('Специалист').click();
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    await page.getByLabel('Дата и время').fill('2026-08-18T09:00');
+    await page.getByLabel('Дата и время').fill(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
@@ -240,6 +265,53 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Язык', 'Русский');
 });
 
+test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/clients');
+    await searchTableFor(page, fixture.clientName);
+    await page.getByRole('row').filter({ hasText: fixture.clientName }).getByRole('link', { name: fixture.clientName, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
+
+    for (const tabLabel of ['Профиль', 'Сеансы', 'Записи', 'Опросы', 'Файлы']) {
+        await expect(page.getByRole('tab', { name: tabLabel, exact: true })).toBeVisible();
+    }
+
+    await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+    const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
+    await expect(anamnesis).toBeVisible();
+    await anamnesis.fill('Запись из клиентского рабочего места');
+    await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
+
+    await page.getByRole('tab', { name: 'Файлы', exact: true }).click();
+    await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
+    const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
+    const attachmentType = uploadDialog.getByLabel('Тип файла');
+    await expect(attachmentType).toBeVisible();
+    await attachmentType.selectOption('medical_report');
+    await expect(attachmentType).toHaveValue('medical_report');
+    const fileInput = uploadDialog.locator('input[type="file"]');
+    await expect(fileInput).toHaveCount(1);
+    await fileInput.setInputFiles({
+        name: 'ux-a-report.pdf',
+        mimeType: 'application/pdf',
+        buffer: validPdfBuffer(),
+    });
+    const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
+    await expect(uploadSubmit).toBeVisible();
+    await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
+    await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
+    await uploadSubmit.click();
+
+    const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
+    const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
+    await expect(uploadedRow).toBeVisible();
+    await expect(uploadedRow.getByRole('cell', { name: 'ux-a-report.pdf', exact: true })).toBeVisible();
+});
+
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -253,13 +325,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await clientRow.getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
-    const sessionsLink = page.getByRole('link', { name: 'Сеансы', exact: true });
-
-    if (!(await sessionsLink.isVisible())) {
-        await page.getByRole('button', { name: 'Просмотр', exact: true }).click();
-    }
-
-    await sessionsLink.click();
+    await page.goto(`/admin/clients/${fixture.clientId}/sessions`);
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
 

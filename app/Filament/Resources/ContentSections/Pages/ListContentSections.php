@@ -10,6 +10,13 @@ class ListContentSections extends ListRecords
 {
     protected static string $resource = ContentSectionResource::class;
 
+    protected static ?string $title = 'Разделы контента';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

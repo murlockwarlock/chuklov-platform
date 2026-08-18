@@ -33,6 +33,8 @@ final class FinancialObligationResource extends Resource
 
     protected static ?string $pluralModelLabel = 'задолженности';
 
+    protected static ?string $breadcrumb = 'Задолженности';
+
     protected static string|\UnitEnum|null $navigationGroup = 'Финансы';
 
     protected static ?int $navigationSort = 2;

@@ -40,7 +40,9 @@ use UnitEnum;
  */
 class SchedulingConfiguration extends Page
 {
-    protected static ?string $navigationLabel = 'Расписание';
+    protected static ?string $title = 'Настройки расписания';
+
+    protected static ?string $navigationLabel = 'Настройки расписания';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
@@ -107,14 +109,17 @@ class SchedulingConfiguration extends Page
                     ->label('Минимальный срок до записи (минуты)')
                     ->integer()
                     ->minValue(0)
+                    ->helperText('За сколько минут до начала визита клиент может оформить запись.')
                     ->required(),
                 TextInput::make('cancellation_cutoff_minutes')
                     ->label('Срок отмены или переноса (минуты)')
                     ->integer()
                     ->minValue(0)
+                    ->helperText('За сколько минут до визита клиент может бесплатно отменить или перенести запись.')
                     ->required(),
                 TextInput::make('office_location')
                     ->label('Адрес клиники')
+                    ->helperText('Адрес для очных визитов в клинике.')
                     ->maxLength(500),
                 Repeater::make('working_hours')
                     ->label('Рабочие часы')

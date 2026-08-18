@@ -31,6 +31,8 @@ class ScheduleExceptionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'изменения расписания';
 
+    protected static ?string $breadcrumb = 'Изменения расписания';
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()

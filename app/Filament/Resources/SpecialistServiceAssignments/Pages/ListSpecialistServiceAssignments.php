@@ -10,6 +10,13 @@ class ListSpecialistServiceAssignments extends ListRecords
 {
     protected static string $resource = SpecialistServiceAssignmentResource::class;
 
+    protected static ?string $title = 'Специалисты и услуги';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

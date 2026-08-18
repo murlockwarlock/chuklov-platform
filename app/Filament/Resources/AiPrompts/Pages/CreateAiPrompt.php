@@ -10,6 +10,8 @@ class CreateAiPrompt extends CreateRecord
 {
     protected static string $resource = AiPromptResource::class;
 
+    protected static ?string $title = 'Создать промпт';
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['organization_id'] = app(OrganizationContext::class)->id();

@@ -24,7 +24,7 @@ final class SurveyDefinitionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
-    protected static ?string $navigationLabel = 'Тесты';
+    protected static ?string $navigationLabel = 'Опросники и тесты';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Контент и знания';
 
@@ -33,6 +33,8 @@ final class SurveyDefinitionResource extends Resource
     protected static ?string $modelLabel = 'тест';
 
     protected static ?string $pluralModelLabel = 'тесты';
+
+    protected static ?string $breadcrumb = 'Опросники и тесты';
 
     protected static ?string $recordTitleAttribute = 'title';
 
@@ -48,9 +50,12 @@ final class SurveyDefinitionResource extends Resource
             TextColumn::make('activeVersion.version')->label('Опубликованная версия')->placeholder('Нет'),
             TextColumn::make('versions_count')->label('Всего версий'),
             IconColumn::make('is_available')->label('Доступен')->boolean(),
-        ])->recordActions([
-            EditAction::make(),
-        ])->defaultSort('title');
+        ])
+            ->emptyStateHeading('Опросников пока нет')
+            ->emptyStateDescription('Создайте психологический опросник или тест для оценки динамики состояния клиентов.')
+            ->recordActions([
+                EditAction::make(),
+            ])->defaultSort('title');
     }
 
     public static function getEloquentQuery(): Builder

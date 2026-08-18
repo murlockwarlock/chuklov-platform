@@ -16,6 +16,13 @@ class ListAiPrompts extends ListRecords
 {
     protected static string $resource = AiPromptResource::class;
 
+    protected static ?string $title = 'Промпты и версии';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

@@ -14,6 +14,8 @@ class EditAiPrompt extends EditRecord
 {
     protected static string $resource = AiPromptResource::class;
 
+    protected static ?string $title = 'Редактировать промпт';
+
     protected function getHeaderActions(): array
     {
         return [

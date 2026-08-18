@@ -18,6 +18,8 @@ class CreateUnavailablePeriod extends CreateRecord
 {
     protected static string $resource = UnavailablePeriodResource::class;
 
+    protected static ?string $title = 'Создать период недоступности';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

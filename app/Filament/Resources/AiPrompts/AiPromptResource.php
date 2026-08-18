@@ -40,6 +40,8 @@ final class AiPromptResource extends Resource
 
     protected static ?string $pluralModelLabel = 'промпты';
 
+    protected static ?string $breadcrumb = 'Промпты и версии';
+
     public static function form(Schema $schema): Schema
     {
         return AiPromptForm::configure($schema);

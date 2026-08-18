@@ -10,6 +10,13 @@ class ListScheduleExceptions extends ListRecords
 {
     protected static string $resource = ScheduleExceptionResource::class;
 
+    protected static ?string $title = 'Изменения расписания';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

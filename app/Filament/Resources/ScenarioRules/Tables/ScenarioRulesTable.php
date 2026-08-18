@@ -30,6 +30,8 @@ final class ScenarioRulesTable
                 TextColumn::make('max_occurrences')->label('Сообщений')->sortable(),
                 IconColumn::make('is_enabled')->label('Активно')->boolean()->sortable(),
             ])
+            ->emptyStateHeading('Правил отправки пока нет')
+            ->emptyStateDescription('Создайте правило, чтобы определить, когда, кому и какой шаблон отправлять.')
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),

@@ -18,13 +18,15 @@ class SessionsTable
 
         return $table
             ->paginated([25, 50])
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('occurred_at')
                     ->label('Дата сеанса')
                     ->dateTime('d.m.Y H:i'),
                 TextColumn::make('specialist.display_name')
                     ->label('Специалист')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->wrap(),
                 TextColumn::make('booking_starts_at')
                     ->label('Дата записи на приём')
                     ->state(fn ($record): ?string => $record->booking === null
@@ -34,7 +36,8 @@ class SessionsTable
                 TextColumn::make('booking_status')
                     ->label('Статус записи')
                     ->state(fn ($record): ?string => $record->booking === null ? null : self::statusLabel($record->booking->status))
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->wrap(),
             ])
             ->recordActions([
                 Action::make('view')

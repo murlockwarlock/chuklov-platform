@@ -34,6 +34,8 @@ final class NotificationTemplatesTable
                     }),
                 IconColumn::make('is_active')->label('Включён')->boolean()->sortable(),
             ])
+            ->emptyStateHeading('Шаблонов сообщений пока нет')
+            ->emptyStateDescription('Создайте текст сообщения, а затем настройте автоматическую отправку в «Правилах сообщений».')
             ->recordActions([
                 ViewAction::make(),
                 EditAction::make(),

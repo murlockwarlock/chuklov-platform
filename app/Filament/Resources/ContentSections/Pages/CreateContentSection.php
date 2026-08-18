@@ -12,6 +12,8 @@ class CreateContentSection extends CreateRecord
 {
     protected static string $resource = ContentSectionResource::class;
 
+    protected static ?string $title = 'Создать раздел контента';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

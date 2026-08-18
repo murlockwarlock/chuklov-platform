@@ -12,6 +12,8 @@ final class CreateKnowledgeSource extends CreateRecord
 {
     protected static string $resource = KnowledgeSourceResource::class;
 
+    protected static ?string $title = 'Добавить источник знаний';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

@@ -34,6 +34,8 @@ use UnitEnum;
 /** @property-read Schema $form */
 final class FinanceConfiguration extends Page
 {
+    protected static ?string $title = 'Настройки финансов';
+
     protected static ?string $navigationLabel = 'Настройки финансов';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;

@@ -10,6 +10,13 @@ class ListUnavailablePeriods extends ListRecords
 {
     protected static string $resource = UnavailablePeriodResource::class;
 
+    protected static ?string $title = 'Недоступное время';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

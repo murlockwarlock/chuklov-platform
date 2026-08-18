@@ -23,9 +23,13 @@ final readonly class UploadMedicalAttachment
 
     public function handle(User $actor, AttachmentUploadCommand $command): MedicalAttachment
     {
-        $client = Client::query()->findOrFail($command->clientId);
+        $organization = $this->authorization->organization();
+        $client = Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey($command->clientId)
+            ->firstOrFail();
 
-        $organization = $this->authorization->authorizeUpload($actor, $client);
+        $this->authorization->authorizeUpload($actor, $client);
         $orgId = (int) $organization->getKey();
 
         $uuid = (string) Str::uuid();

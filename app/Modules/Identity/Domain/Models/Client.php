@@ -3,10 +3,12 @@
 namespace App\Modules\Identity\Domain\Models;
 
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,12 +20,22 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 /**
  * @property-read Organization $organization
  * @property string|null $full_name
+ * @property string|null $phone_search_key
  */
 #[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'lead_source', 'referral_code'])]
 class Client extends Model
 {
+    protected $hidden = ['phone_search_key'];
+
     /** @use HasFactory<ClientFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $client): void {
+            $client->phone_search_key = ClientPhoneSearchKey::from($client->phone)?->value;
+        });
+    }
 
     /** @return BelongsTo<Organization, $this> */
     public function organization(): BelongsTo
@@ -77,6 +89,12 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<SurveyAttempt, $this> */
+    public function surveyAttempts(): HasMany
+    {
+        return $this->hasMany(SurveyAttempt::class);
     }
 
     protected static function newFactory(): ClientFactory

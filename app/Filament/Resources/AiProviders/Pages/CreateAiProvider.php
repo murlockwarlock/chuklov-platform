@@ -10,6 +10,8 @@ class CreateAiProvider extends CreateRecord
 {
     protected static string $resource = AiProviderResource::class;
 
+    protected static ?string $title = 'Подключить AI-провайдера';
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['organization_id'] = app(OrganizationContext::class)->id();

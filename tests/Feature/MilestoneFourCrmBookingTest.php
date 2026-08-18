@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
+use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -13,6 +14,8 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -108,6 +111,56 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_view_booking_exposes_lifecycle_actions_when_authorized(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->assertSuccessful()
+            ->assertActionExists('confirm')
+            ->assertActionExists('reschedule')
+            ->assertActionExists('cancel')
+            ->assertActionExists('noShow');
+    }
+
+    public function test_view_booking_noshow_action_handles_premature_execution_with_notification(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        // Future booking
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Confirmed,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::now('UTC')->addDays(2),
+            'ends_at' => CarbonImmutable::now('UTC')->addDays(2)->addHour(),
+            'blocking_ends_at' => CarbonImmutable::now('UTC')->addDays(2)->addHour(),
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->callAction('noShow', ['reason' => 'Не пришёл'])
+            ->assertNotified('Действие отклонено');
+
+        self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

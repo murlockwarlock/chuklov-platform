@@ -15,6 +15,8 @@ class EditSpecialist extends EditRecord
 {
     protected static string $resource = SpecialistResource::class;
 
+    protected static ?string $title = 'Редактировать специалиста';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof Specialist, 404);

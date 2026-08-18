@@ -10,6 +10,13 @@ class ListClients extends ListRecords
 {
     protected static string $resource = ClientResource::class;
 
+    protected static ?string $title = 'База клиентов';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

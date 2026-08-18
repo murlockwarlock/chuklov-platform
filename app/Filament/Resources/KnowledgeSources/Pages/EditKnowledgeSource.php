@@ -17,6 +17,8 @@ final class EditKnowledgeSource extends EditRecord
 {
     protected static string $resource = KnowledgeSourceResource::class;
 
+    protected static ?string $title = 'Редактировать источник знаний';
+
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $record = $this->getRecord();

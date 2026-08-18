@@ -13,6 +13,8 @@ class EditContentSection extends EditRecord
 {
     protected static string $resource = ContentSectionResource::class;
 
+    protected static ?string $title = 'Редактировать раздел контента';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof ContentSection, 404);

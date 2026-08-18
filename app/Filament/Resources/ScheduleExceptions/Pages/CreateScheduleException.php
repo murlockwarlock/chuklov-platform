@@ -16,6 +16,8 @@ class CreateScheduleException extends CreateRecord
 {
     protected static string $resource = ScheduleExceptionResource::class;
 
+    protected static ?string $title = 'Добавить исключение расписания';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

@@ -31,6 +31,8 @@ class UnavailablePeriodResource extends Resource
 
     protected static ?string $pluralModelLabel = 'периоды недоступности';
 
+    protected static ?string $breadcrumb = 'Недоступное время';
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()

@@ -34,6 +34,8 @@ final class KnowledgeSourceResource extends Resource
 
     protected static ?string $pluralModelLabel = 'источники знаний';
 
+    protected static ?string $breadcrumb = 'База знаний';
+
     protected static ?string $recordTitleAttribute = 'title';
 
     public static function form(Schema $schema): Schema
@@ -53,9 +55,12 @@ final class KnowledgeSourceResource extends Resource
                 'stale' => 'Предыдущая версия', 'retired' => 'Скрыт', default => 'Нет готовой версии',
             }),
             TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
-        ])->recordActions([
-            EditAction::make(),
-        ])->defaultSort('updated_at', 'desc');
+        ])
+            ->emptyStateHeading('В базе знаний пока нет материалов')
+            ->emptyStateDescription('Добавьте текст или загрузите файл Markdown/TXT, чтобы AI-ассистент мог отвечать на вопросы клиентов на основе ваших данных.')
+            ->recordActions([
+                EditAction::make(),
+            ])->defaultSort('updated_at', 'desc');
     }
 
     public static function getEloquentQuery(): Builder

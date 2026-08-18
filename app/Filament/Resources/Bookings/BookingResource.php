@@ -26,15 +26,17 @@ class BookingResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
-    protected static ?string $navigationLabel = 'Записи';
+    protected static ?string $navigationLabel = 'Записи на приём';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Записи';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $modelLabel = 'запись';
+    protected static ?string $modelLabel = 'запись на приём';
 
-    protected static ?string $pluralModelLabel = 'записи';
+    protected static ?string $pluralModelLabel = 'записи на приём';
+
+    protected static ?string $breadcrumb = 'Записи на приём';
 
     public static function form(Schema $schema): Schema
     {

@@ -36,9 +36,11 @@ final class ScenarioActionResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
-    protected static ?string $modelLabel = 'отправка';
+    protected static ?string $modelLabel = 'сообщение истории';
 
     protected static ?string $pluralModelLabel = 'история сообщений';
+
+    protected static ?string $breadcrumb = 'История сообщений';
 
     public static function infolist(Schema $schema): Schema
     {

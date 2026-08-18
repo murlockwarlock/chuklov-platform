@@ -12,6 +12,8 @@ class CreateSpecialist extends CreateRecord
 {
     protected static string $resource = SpecialistResource::class;
 
+    protected static ?string $title = 'Добавить специалиста';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

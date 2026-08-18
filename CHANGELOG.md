@@ -6,6 +6,13 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- UX-A Client Workspace + ordinary client/global search — implementation candidate:
+  - Added bounded identity-only name, email, exact-ID, and canonical phone search with organization/phone and PostgreSQL fragment indexes plus a resumable legacy phone-key backfill command.
+  - Composed the Filament Client Clinical Cockpit from owning-module Application reads for ordinary profile data, medical profile, Sessions, Bookings, surveys, private attachments, communication status, self-booking restriction, and bounded balance summary.
+  - Removed contextual medical actions from the Clients table, made attachment upload resolution organization-scoped before authorization, and stopped ordinary Client rendering from decrypting repeatedly, loading unbounded attachments, or generating private URLs.
+  - Follow-up responsive remediation fixes the Client Surveys relation query for Filament 5, shortens cockpit tabs, groups booking restriction actions, stacks client tables on mobile, wraps long profile/file values, and reports attachment scan outcomes without bypassing private quarantine. A PDF remains unavailable until the configured security scanner clears it.
+  - UX-A2 medical discovery, public media upload UX, themes, CRM-wide IA cleanup, finance redesign, AI productization, and M11 remain out of scope. Independent acceptance and hosted CI are pending.
+
 - M10 AI Components & Control Plane — CLOSED / ACCEPTED:
   - Accepted main SHA: `a0746bad2d4e0695d80ff8689c49b1c57a24161e`; PR #8 was squash-merged from accepted head `6def6a6c4c2fb591401a10feaea2b3a11f92c549`.
   - Final safety/privacy/concurrency remediation and hosted evidence were accepted: Quality `32112766821` GREEN; Integration concurrency `32112766462` GREEN; 22 tests / 116 assertions.
