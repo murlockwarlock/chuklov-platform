@@ -56,6 +56,7 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame([$client->id], $search->query($admin, 'PETROV@EXAMPLE')->pluck('id')->all(), 'email');
         self::assertSame([$client->id], $search->query($admin, '#'.$client->id)->pluck('id')->all(), 'id');
         self::assertSame([$client->id], $search->query($admin, (string) $client->id)->pluck('id')->all(), 'bare id');
+        self::assertSame([$client->id], $search->query($admin, '+7 999 123 45 67')->pluck('id')->all(), '+7-phone');
         self::assertSame([$client->id], $search->query($admin, '8 999 123 45 67')->pluck('id')->all(), '8-phone');
         self::assertSame([$client->id], $search->query($admin, '7-999-123-45-67')->pluck('id')->all(), '7-phone');
     }
@@ -71,6 +72,30 @@ final class ClientWorkspaceUxATest extends TestCase
             [$client->id],
             app(ClientSearch::class)->query($admin, '1 202 555 0100')->pluck('id')->all(),
         );
+    }
+
+    public function test_explicit_plus_eight_international_phone_is_not_rewritten_to_seven(): void
+    {
+        self::assertSame('84912345678', ClientPhoneSearchKey::from('+84 912 345 678')?->value);
+        self::assertSame('84912345678', ClientPhoneSearchKey::from('(+84) 912 345 678')?->value);
+        self::assertSame('79991234567', ClientPhoneSearchKey::from('8 999 123 45 67')?->value);
+    }
+
+    public function test_generic_search_requires_three_character_terms_and_at_most_five_terms(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Ivan Petrov',
+            'email' => 'ivan.petrov@example.test',
+        ]);
+
+        $search = app(ClientSearch::class);
+
+        self::assertCount(0, $search->query($admin, 'Iv')->get());
+        self::assertCount(0, $search->query($admin, 'Ivan Petrov Extra Words Beyond Limit')->get());
+        self::assertCount(1, $search->query($admin, 'Petrov')->get());
+        self::assertCount(1, $search->query($admin, 'PETROV@EXAMPLE')->get());
+        self::assertCount(1, $search->query($admin, 'Ivan Petrov')->get());
     }
 
     public function test_client_search_is_tenant_scoped_and_bounded(): void
@@ -188,6 +213,7 @@ final class ClientWorkspaceUxATest extends TestCase
     {
         [$organization, $admin] = $this->organizationWithAdmin();
         $client = Client::factory()->forOrganization($organization)->create();
+        $unrelatedClient = Client::factory()->forOrganization($organization)->create();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create();
         $booking = Booking::factory()
@@ -241,6 +267,32 @@ final class ClientWorkspaceUxATest extends TestCase
         ]);
         $entry->save();
 
+        for ($index = 0; $index < 25; $index++) {
+            $this->createOutstandingBalanceFixture(
+                organization: $organization,
+                client: $unrelatedClient,
+                specialist: $specialist,
+                service: $service,
+                index: $index,
+                amountMinor: 1000,
+                paidMinor: 100,
+            );
+        }
+
+        $otherOrganization = Organization::factory()->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create();
+        $otherSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create();
+        $otherService = Service::factory()->forOrganization($otherOrganization)->create();
+        $this->createOutstandingBalanceFixture(
+            organization: $otherOrganization,
+            client: $otherClient,
+            specialist: $otherSpecialist,
+            service: $otherService,
+            index: 100,
+            amountMinor: 10000,
+            paidMinor: 100,
+        );
+
         self::assertSame([
             ['currency' => 'USD', 'outstandingMinor' => '8000'],
         ], app(GetClientBalanceSummary::class)->handle($admin, $client));
@@ -276,5 +328,71 @@ final class ClientWorkspaceUxATest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin];
+    }
+
+    private function createOutstandingBalanceFixture(
+        Organization $organization,
+        Client $client,
+        Specialist $specialist,
+        Service $service,
+        int $index,
+        int $amountMinor,
+        int $paidMinor,
+    ): void {
+        $startsAt = now()->addDays(20 + $index)->setTime(10, 0);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => $startsAt,
+                'ends_at' => $startsAt->copy()->addHour(),
+                'blocking_ends_at' => $startsAt->copy()->addHour(),
+            ]);
+
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->id,
+            'client_id' => $client->id,
+            'booking_id' => $booking->id,
+            'service_id' => $service->id,
+            'amount_minor' => $amountMinor,
+            'currency' => 'USD',
+            'base_amount_minor' => $amountMinor,
+            'base_currency' => 'USD',
+            'display_amount_minor' => $amountMinor,
+            'display_currency' => 'USD',
+            'payment_amount_minor' => $amountMinor,
+            'payment_currency' => 'USD',
+            'settlement_amount_minor' => $amountMinor,
+            'settlement_currency' => 'USD',
+            'price_snapshot' => ['amount_minor' => $amountMinor],
+            'conversion_snapshots' => [],
+            'creation_key' => 'ux-a-balance-'.$organization->id.'-'.$client->id.'-'.$index,
+        ]);
+        $obligation->save();
+
+        $entry = new FinancialLedgerEntry;
+        $entry->forceFill([
+            'organization_id' => $organization->id,
+            'obligation_id' => $obligation->id,
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => $paidMinor,
+            'currency' => 'USD',
+            'payment_amount_minor' => $paidMinor,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => $paidMinor,
+            'base_currency' => 'USD',
+            'display_amount_minor' => $paidMinor,
+            'display_currency' => 'USD',
+            'settlement_amount_minor' => $paidMinor,
+            'settlement_currency' => 'USD',
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'actor_user_id' => null,
+            'idempotency_key' => 'ux-a-balance-payment-'.$organization->id.'-'.$client->id.'-'.$index,
+        ]);
+        $entry->save();
     }
 }

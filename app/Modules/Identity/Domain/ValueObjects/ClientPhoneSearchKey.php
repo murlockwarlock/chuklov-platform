@@ -14,13 +14,15 @@ final readonly class ClientPhoneSearchKey
             return null;
         }
 
-        $digits = preg_replace('/\D+/u', '', trim($phone));
+        $formattedPhone = trim($phone);
+        $hasExplicitInternationalPrefix = preg_match('/^[^0-9]*\+/', $formattedPhone) === 1;
+        $digits = preg_replace('/\D+/u', '', $formattedPhone);
 
         if (! is_string($digits) || $digits === '' || strlen($digits) < 7 || strlen($digits) > 15) {
             return null;
         }
 
-        if (strlen($digits) === 11 && $digits[0] === '8') {
+        if (! $hasExplicitInternationalPrefix && strlen($digits) === 11 && $digits[0] === '8') {
             $digits = '7'.substr($digits, 1);
         }
 

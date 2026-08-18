@@ -103,7 +103,6 @@ class ClientResource extends Resource
         return $page->generateNavigationItems([
             ViewClient::class,
             EditClient::class,
-            ManageClientSessions::class,
         ]);
     }
 

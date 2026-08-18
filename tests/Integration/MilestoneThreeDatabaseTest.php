@@ -4,9 +4,13 @@ namespace Tests\Integration;
 
 use App\Models\User;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\QueryException;
@@ -17,6 +21,48 @@ use Tests\TestCase;
 class MilestoneThreeDatabaseTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_postgresql_client_search_uses_trigram_extension_indexes_and_case_insensitive_fragments(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The client trigram search assertion requires PostgreSQL.');
+        }
+
+        self::assertSame(
+            'pg_trgm',
+            DB::table('pg_extension')->where('extname', 'pg_trgm')->value('extname'),
+        );
+
+        $indexNames = DB::table('pg_indexes')
+            ->where('tablename', 'clients')
+            ->whereIn('indexname', ['clients_full_name_trgm_idx', 'clients_email_trgm_idx'])
+            ->pluck('indexname')
+            ->sort()
+            ->values()
+            ->all();
+
+        self::assertSame([
+            'clients_email_trgm_idx',
+            'clients_full_name_trgm_idx',
+        ], $indexNames);
+
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Ivan Petrov',
+            'email' => 'ivan.petrov@example.test',
+        ]);
+
+        self::assertSame(
+            [$client->id],
+            app(ClientSearch::class)->query($admin, 'PETROV')->pluck('id')->all(),
+        );
+    }
 
     public function test_specialist_staff_link_composite_foreign_key_rejects_cross_organization_user(): void
     {

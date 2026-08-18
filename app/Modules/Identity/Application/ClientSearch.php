@@ -16,6 +16,10 @@ final readonly class ClientSearch
 {
     private const MAX_INPUT_LENGTH = 160;
 
+    private const MIN_GENERIC_TERM_LENGTH = 3;
+
+    private const MAX_GENERIC_TERMS = 5;
+
     public const MAX_RESULTS = 50;
 
     public function __construct(
@@ -93,6 +97,14 @@ final readonly class ClientSearch
         $terms = $this->terms($input);
 
         if ($terms === []) {
+            return $this->bounded($query->whereKey(0));
+        }
+
+        if (count($terms) > self::MAX_GENERIC_TERMS
+            || count(array_filter(
+                $terms,
+                static fn (string $term): bool => mb_strlen($term) < self::MIN_GENERIC_TERM_LENGTH,
+            )) > 0) {
             return $this->bounded($query->whereKey(0));
         }
 

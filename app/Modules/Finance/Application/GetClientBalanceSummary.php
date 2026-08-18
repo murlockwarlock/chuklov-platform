@@ -19,14 +19,21 @@ final readonly class GetClientBalanceSummary
         $organization = $this->authorization->authorizeView($actor);
         $this->authorization->assertClientOwned($client);
 
-        $applied = DB::table('financial_ledger_entries')
+        $applied = DB::table('financial_ledger_entries as ledger_entries')
+            ->join('financial_obligations as applied_obligations', function (JoinClause $join): void {
+                $join
+                    ->on('ledger_entries.organization_id', '=', 'applied_obligations.organization_id')
+                    ->on('ledger_entries.obligation_id', '=', 'applied_obligations.id');
+            })
             ->select([
-                'organization_id',
-                'obligation_id',
-                DB::raw('SUM(settlement_amount_minor) AS applied_minor'),
+                'ledger_entries.organization_id',
+                'ledger_entries.obligation_id',
+                DB::raw('SUM(ledger_entries.settlement_amount_minor) AS applied_minor'),
             ])
-            ->where('organization_id', $organization->getKey())
-            ->groupBy('organization_id', 'obligation_id');
+            ->where('ledger_entries.organization_id', $organization->getKey())
+            ->where('applied_obligations.organization_id', $organization->getKey())
+            ->where('applied_obligations.client_id', $client->getKey())
+            ->groupBy('ledger_entries.organization_id', 'ledger_entries.obligation_id');
         $summary = DB::query()
             ->from('financial_obligations')
             ->leftJoinSub($applied, 'ledger', function (JoinClause $join): void {
