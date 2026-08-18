@@ -183,13 +183,13 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
-    await page.getByLabel('Клиент').click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByText(fixture.clientName, { exact: true }).click();
-    await page.getByLabel('Услуга').click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByText(fixture.serviceName, { exact: true }).click();
-    await page.getByLabel('Специалист').click();
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
     await page.getByLabel('Дата и время').fill('2026-08-18T09:00');
     await page.getByLabel('Формат визита').selectOption('office');
@@ -254,20 +254,24 @@ test('staff can use the client cockpit for medical profile and private files', a
     }
 
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
-    await page.getByLabel('Анамнез').fill('Запись из клиентского рабочего места');
-    await page.getByRole('button', { name: 'Подтвердить', exact: true }).last().click();
+    const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    await expect(medicalDialog).toBeVisible();
+    await medicalDialog.getByLabel('Анамнез').fill('Запись из клиентского рабочего места');
+    await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
     await page.getByText('Файлы и МРТ', { exact: true }).last().click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
-    await page.getByLabel('Тип файла').click();
-    await page.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
-    await page.locator('input[type="file"]').setInputFiles({
+    const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
+    await expect(uploadDialog).toBeVisible();
+    await uploadDialog.getByLabel('Тип файла').click();
+    await uploadDialog.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
+    await uploadDialog.locator('input[type="file"]').setInputFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
         buffer: Buffer.from('%PDF-1.4\nUX-A'),
     });
-    await page.getByRole('button', { name: 'Подтвердить', exact: true }).last().click();
+    await uploadDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('ux-a-report.pdf', { exact: true })).toBeVisible();
 });
 
