@@ -8,8 +8,10 @@ use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -384,6 +386,67 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
 
         $this->assertSame(1, $providerCalls);
         $this->assertSame(1, AiRunAttempt::query()->where('ai_run_id', $run->id)->count());
+    }
+
+    public function test_async_worker_rechecks_capability_before_provider_io(): void
+    {
+        $this->safetyControl();
+        $this->candidate('openai', 'OpenAI capability boundary', 'arbitrary-capability-model', 1);
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'capability-boundary-race',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+
+        $this->assertTrue(AiOrganizationSafetyControl::query()
+            ->where('organization_id', $this->organization->id)
+            ->firstOrFail()
+            ->isCapabilityEnabled(AiCapability::ClientCompanion->value));
+
+        $capabilityDisabled = false;
+        $raceListenerActive = true;
+        AiRunAttempt::created(function (AiRunAttempt $attempt) use (&$capabilityDisabled, &$raceListenerActive, $run): void {
+            if (! $raceListenerActive || $capabilityDisabled || (int) $attempt->ai_run_id !== (int) $run->id) {
+                return;
+            }
+
+            AiOrganizationSafetyControl::query()
+                ->where('organization_id', $this->organization->id)
+                ->firstOrFail()
+                ->update(['disabled_capabilities' => [AiCapability::ClientCompanion->value]]);
+            $capabilityDisabled = true;
+        });
+
+        $providerCalls = 0;
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
+
+            return 'must not be sent';
+        });
+
+        try {
+            $this->runQueuedJob($run);
+        } finally {
+            $raceListenerActive = false;
+        }
+
+        $attempt = AiRunAttempt::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $run = AiRun::query()->whereKey($run->id)->firstOrFail();
+
+        $this->assertTrue($capabilityDisabled);
+        $this->assertSame(0, $providerCalls);
+        $this->assertSame(AiRunStatus::Failed, $run->status);
+        $this->assertSame(AiErrorCategory::SafetyKillSwitchActive, $run->error_category);
+        $this->assertSame('failed', $attempt->status);
+        $this->assertSame(AiErrorCategory::SafetyKillSwitchActive, $attempt->error_category);
+        $this->assertSame(BudgetReservationStatus::ConservativelyCharged, $attempt->budget_reservation_status);
+        $this->assertSame(0, (int) DB::table('ai_organization_daily_budgets')
+            ->where('organization_id', $this->organization->id)
+            ->whereDate('usage_date', now()->toDateString())
+            ->value('reserved_minor_units'));
     }
 
     public function test_async_output_token_limit_cannot_expand_after_acceptance(): void

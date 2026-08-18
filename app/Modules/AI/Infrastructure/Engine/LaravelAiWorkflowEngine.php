@@ -465,7 +465,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         ));
         $attachmentResolution = ['files' => [], 'provenance' => []];
         $attachmentActor = null;
-        if (($run->capability === AiCapability::PostureAnalysis && $run->execution_mode !== AiExecutionMode::Evaluation)
+        if ($run->capability === AiCapability::PostureAnalysis
             || array_filter($inputReferences, static fn (AiInputReference $reference): bool => $reference->type === 'medical_attachment') !== []) {
             try {
                 $attachmentActor = $run->initiated_by_user_id !== null
@@ -903,6 +903,33 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     $lastErrorMessage = $sanitized['message'];
 
                     continue;
+                }
+            }
+
+            if ($run->execution_mode === AiExecutionMode::Async) {
+                $currentSafetyControls = AiOrganizationSafetyControl::query()
+                    ->where('organization_id', $organizationId)
+                    ->first();
+
+                if ($currentSafetyControls !== null
+                    && ! $currentSafetyControls->isCapabilityEnabled($run->capability->value)) {
+                    $attemptOwned = $this->fencedAttemptFailure(
+                        organizationId: $organizationId,
+                        runId: $runId,
+                        attemptId: $attempt->id,
+                        workerLeaseToken: $workerLeaseToken,
+                        latencyMs: 0,
+                        errorCategory: AiErrorCategory::SafetyKillSwitchActive,
+                        errorMessage: "Capability {$run->capability->value} is disabled for organization.",
+                    );
+                    if (! $attemptOwned) {
+                        break;
+                    }
+
+                    $lastErrorCategory = AiErrorCategory::SafetyKillSwitchActive;
+                    $lastErrorMessage = "Capability {$run->capability->value} is disabled for organization.";
+
+                    break;
                 }
             }
 

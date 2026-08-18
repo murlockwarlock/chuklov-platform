@@ -113,12 +113,9 @@ class AiEvaluationSuiteTest extends TestCase
         return $model;
     }
 
-    public function test_run_evaluation_suite_executes_cases_and_checks_assertions(): void
+    public function test_posture_evaluation_suite_requires_a_controlled_three_photo_fixture(): void
     {
-        DynamicWorkflowAgent::fake([
-            '{"symmetry_observations": ["Правильная осанка и симметрия"], "posture_type": "норма", "recommendations": "Продолжать упражнения"}',
-            '{"symmetry_observations": ["Без совпадений"], "posture_type": "кифоз", "recommendations": ""}',
-        ]);
+        $providerCalls = 0;
 
         $prompt = AiPrompt::create([
             'organization_id' => $this->organization->id,
@@ -168,19 +165,26 @@ class AiEvaluationSuiteTest extends TestCase
             'is_active' => true,
         ]);
 
-        /** @var RunEvaluationSuite $runner */
-        $runner = app(RunEvaluationSuite::class);
+        DynamicWorkflowAgent::fake(function () use (&$providerCalls): string {
+            $providerCalls++;
 
-        $evalRun = $runner->handle(
-            actor: $this->user,
-            evalSuiteId: $suite->id,
-            promptVersionId: $version->id,
-            modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
-        );
+            return '{"posture_type":"normal"}';
+        });
 
-        $this->assertSame(2, $evalRun->total_cases);
-        $this->assertSame(1, $evalRun->passed_cases); // Case 1 passed, Case 2 failed assertion
-        $this->assertSame(1, $evalRun->failed_cases);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('controlled three-photo fixture');
+
+        try {
+            app(RunEvaluationSuite::class)->handle(
+                actor: $this->user,
+                evalSuiteId: $suite->id,
+                promptVersionId: $version->id,
+                modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
+            );
+        } finally {
+            self::assertSame(0, $providerCalls);
+            self::assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
+        }
     }
 
     public function test_oversized_evaluation_suite_is_rejected_before_provider_execution(): void
@@ -591,11 +595,16 @@ class AiEvaluationSuiteTest extends TestCase
             '{"symmetry_observations": [], "posture_type": "normal"}',
         ]);
 
+        $clientModelConfiguration = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'anthropic',
+        );
+
         $prompt = AiPrompt::create([
             'organization_id' => $this->organization->id,
             'key' => 'pinned_eval_prompt',
             'name' => 'Pinned eval prompt',
-            'capability' => AiCapability::PostureAnalysis,
+            'capability' => AiCapability::ClientCompanion,
         ]);
         $version = AiPromptVersion::create([
             'organization_id' => $this->organization->id,
@@ -611,7 +620,7 @@ class AiEvaluationSuiteTest extends TestCase
             'organization_id' => $this->organization->id,
             'key' => 'pinned_release_suite',
             'name' => 'Pinned release suite',
-            'capability' => AiCapability::PostureAnalysis,
+            'capability' => AiCapability::ClientCompanion,
             'prompt_id' => $prompt->id,
         ]);
         AiEvalCase::create([
@@ -637,12 +646,12 @@ class AiEvaluationSuiteTest extends TestCase
 
         $releaseA = AiModelRelease::query()
             ->where('organization_id', $this->organization->id)
-            ->where('model_config_id', $this->modelConfiguration->id)
+            ->where('model_config_id', $clientModelConfiguration->id)
             ->firstOrFail();
-        $releaseB = app(CreateAndActivateModelRelease::class)->handle($this->user, $this->modelConfiguration, [
+        $releaseB = app(CreateAndActivateModelRelease::class)->handle($this->user, $clientModelConfiguration, [
             'model_name' => 'gpt-4o',
             'display_name' => 'GPT-4o',
-            'capabilities' => [AiCapability::PostureAnalysis->value],
+            'capabilities' => [AiCapability::ClientCompanion->value],
             'input_cost_per_million' => 250,
             'output_cost_per_million' => 1000,
         ]);
@@ -658,12 +667,12 @@ class AiEvaluationSuiteTest extends TestCase
         );
 
         $this->assertSame($releaseA->id, $evalRun->model_release_id);
-        $this->assertSame('openai', $evalRun->provider);
+        $this->assertSame('anthropic', $evalRun->provider);
         $this->assertSame('gpt-4o-mini', $evalRun->model);
         $runs = AiRun::query()->where('organization_id', $this->organization->id)->get();
         $this->assertCount(2, $runs);
         $this->assertSame([$releaseA->id, $releaseA->id], $runs->pluck('model_release_id')->sort()->values()->all());
-        $this->assertSame(['openai', 'openai'], $runs->pluck('actual_provider')->all());
+        $this->assertSame(['anthropic', 'anthropic'], $runs->pluck('actual_provider')->all());
         $this->assertSame(['gpt-4o-mini', 'gpt-4o-mini'], $runs->pluck('actual_model')->all());
         $this->assertSame($releaseA->id, $evalRun->results_payload['cases'][0]['model_release_id']);
         $this->assertSame($releaseA->id, $evalRun->results_payload['cases'][1]['model_release_id']);

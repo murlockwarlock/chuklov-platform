@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
@@ -136,6 +137,10 @@ class RunEvaluationSuite
             if ($case->expected_output_schema !== null) {
                 $this->privacyValidator->validate((array) $case->expected_output_schema);
             }
+        }
+
+        if ($suite->capability === AiCapability::PostureAnalysis) {
+            throw new InvalidArgumentException('PostureAnalysis evaluation requires a controlled three-photo fixture.');
         }
 
         $totalCases = $cases->count();
