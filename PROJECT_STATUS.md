@@ -1,5 +1,12 @@
 # Project Status
 
+## UX-A — Client Workspace + ordinary client/global search — IMPLEMENTATION CANDIDATE — 2026-08-18
+
+- Candidate branch: `ux-a-client-workspace-search`, based exactly on `90ceb3c5da1dd970315f2d82512e1cf6a11119e9`.
+- Implemented the bounded identity-only search path, canonical phone key/index/backfill, and composed Client Clinical Cockpit without adding an `app/Modules/CRM` business layer.
+- Focused PHPUnit, Larastan, Pint, PHP syntax, `git diff --check`, and Playwright `--list` checks pass locally. PostgreSQL integration, hosted CI, and full browser execution have not been run under the requested local-light policy.
+- UX-A remains an implementation candidate pending independent acceptance. UX-A2 medical discovery, UX-B media/theme work, UX-C cleanup, and M11 remain incomplete and unchanged.
+
 ## 2026-08-18 — M10 AI Components & Control Plane — CLOSED / ACCEPTED
 
 - Accepted main SHA: `a0746bad2d4e0695d80ff8689c49b1c57a24161e`.

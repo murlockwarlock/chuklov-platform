@@ -93,6 +93,32 @@ class PerformanceBoundedQueryTest extends TestCase
         self::assertLessThanOrEqual(1, $largeFeatureFlagsCount, 'Feature flags query repeated once per row, indicating an N+1 leak in policy checks.');
     }
 
+    public function test_client_list_does_not_read_medical_profiles_or_attachments(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->resolveFilamentContext($admin, $organization);
+
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        Livewire::actingAs($admin)
+            ->test(ListClients::class)
+            ->assertSuccessful();
+
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        self::assertCount(0, array_filter($queries, fn (array $query): bool => str_contains($query['query'], 'medical_profiles')));
+        self::assertCount(0, array_filter($queries, fn (array $query): bool => str_contains($query['query'], 'medical_attachments')));
+    }
+
     public function test_booking_list_query_families_do_not_grow_linearly_with_row_count(): void
     {
         [$organization, $admin, $specialist, $service] = $this->schedulingFixture();
@@ -181,8 +207,15 @@ class PerformanceBoundedQueryTest extends TestCase
             fn (array $query): bool => str_contains($query['query'], 'medical_profiles')
         );
 
-        // Even though infolist has 5 separate medical text entries, medical_profiles table must be queried at most once
+        // The explicit client workspace must read the protected profile at most once.
         self::assertLessThanOrEqual(1, count($medicalProfileQueries), 'medical_profiles table was queried repeatedly during single infolist render.');
+
+        $attachmentQueries = array_filter(
+            $queries,
+            fn (array $query): bool => str_contains($query['query'], 'medical_attachments')
+        );
+
+        self::assertCount(0, $attachmentQueries, 'The normal client overview must not load all medical attachments.');
     }
 
     public function test_medical_profile_update_invalidates_request_scoped_cache(): void

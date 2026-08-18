@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Bookings\Tables;
 
+use App\Filament\Resources\Bookings\BookingResource;
 use App\Models\User;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\BookingNeedsAttention;
@@ -29,28 +30,37 @@ use Filament\Tables\Table;
 
 class BookingsTable
 {
-    public static function configure(Table $table): Table
+    public static function configure(Table $table, bool $includeAttention = true, bool $includeClient = true): Table
     {
+        $canManageScheduling = BookingResource::canCreate();
+        $columns = [
+            TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+            TextColumn::make('service.name')->label('Услуга')->sortable(),
+            TextColumn::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i')->sortable(),
+            TextColumn::make('visit_format')
+                ->label('Формат')
+                ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
+            TextColumn::make('status')
+                ->label('Статус')
+                ->badge()
+                ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
+                ->sortable(),
+        ];
+
+        if ($includeClient) {
+            array_unshift($columns, TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable());
+        }
+
+        if ($includeAttention) {
+            $columns[] = TextColumn::make('needs_attention')
+                ->label('Проверка времени')
+                ->badge()
+                ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? 'Требует внимания' : 'В порядке')
+                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success');
+        }
+
         return $table
-            ->columns([
-                TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable(),
-                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
-                TextColumn::make('service.name')->label('Услуга')->sortable(),
-                TextColumn::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i')->sortable(),
-                TextColumn::make('visit_format')
-                    ->label('Формат')
-                    ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
-                TextColumn::make('status')
-                    ->label('Статус')
-                    ->badge()
-                    ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
-                    ->sortable(),
-                TextColumn::make('needs_attention')
-                    ->label('Проверка времени')
-                    ->badge()
-                    ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? 'Требует внимания' : 'В порядке')
-                    ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success'),
-            ])
+            ->columns($columns)
             ->recordActions([
                 ViewAction::make()->label('Открыть'),
                 Action::make('approveHomeVisit')
@@ -68,7 +78,8 @@ class BookingsTable
                             ])
                             ->nullable(),
                     ])
-                    ->visible(fn (Booking $record): bool => $record->status === BookingStatus::PendingReview
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && $record->status === BookingStatus::PendingReview
                         && $record->visit_format === VisitFormat::HomeVisit)
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
@@ -90,7 +101,8 @@ class BookingsTable
                             ->required()
                             ->maxLength(500),
                     ])
-                    ->visible(fn (Booking $record): bool => $record->status === BookingStatus::PendingReview
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && $record->status === BookingStatus::PendingReview
                         && $record->visit_format === VisitFormat::HomeVisit)
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
@@ -102,7 +114,8 @@ class BookingsTable
                     ->label('Подтвердить запись')
                     ->color('success')
                     ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
-                    ->visible(fn (Booking $record): bool => $record->status === BookingStatus::Requested
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && $record->status === BookingStatus::Requested
                         && in_array($record->visit_format, [VisitFormat::Office, VisitFormat::Online], true))
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
@@ -114,7 +127,8 @@ class BookingsTable
                     ->label('Отменить')
                     ->color('danger')
                     ->schema([Textarea::make('reason')->label('Причина')->maxLength(500)])
-                    ->visible(fn (Booking $record): bool => ! in_array($record->status->value, BookingStatus::terminalValues(), true))
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && ! in_array($record->status->value, BookingStatus::terminalValues(), true))
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
@@ -130,7 +144,8 @@ class BookingsTable
                             ->required(),
                         Textarea::make('reason')->label('Причина')->maxLength(500),
                     ])
-                    ->visible(fn (Booking $record): bool => ! in_array($record->status->value, BookingStatus::terminalValues(), true))
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && ! in_array($record->status->value, BookingStatus::terminalValues(), true))
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
@@ -151,7 +166,7 @@ class BookingsTable
                     ->label('Завершить визит')
                     ->color('success')
                     ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
-                    ->visible(fn (Booking $record): bool => $record->status === BookingStatus::Confirmed)
+                    ->visible(fn (Booking $record): bool => $canManageScheduling && $record->status === BookingStatus::Confirmed)
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
@@ -162,7 +177,8 @@ class BookingsTable
                     ->label('Отметить неявку')
                     ->color('danger')
                     ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
-                    ->visible(fn (Booking $record): bool => in_array($record->status, [BookingStatus::Requested, BookingStatus::Confirmed], true))
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && in_array($record->status, [BookingStatus::Requested, BookingStatus::Confirmed], true))
                     ->action(function (Booking $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
@@ -175,7 +191,8 @@ class BookingsTable
                         TextInput::make('meeting_url')->label('Ссылка на встречу')->url()->required()->maxLength(2000),
                         Textarea::make('reason')->label('Комментарий')->maxLength(500),
                     ])
-                    ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::Online
+                    ->visible(fn (Booking $record): bool => $canManageScheduling
+                        && $record->visit_format === VisitFormat::Online
                         && $record->meeting_link_mode?->value === 'manual'
                         && in_array($record->status, [BookingStatus::Requested, BookingStatus::Confirmed], true))
                     ->action(function (Booking $record, array $data): void {

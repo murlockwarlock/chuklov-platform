@@ -11,6 +11,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use Illuminate\Auth\Access\AuthorizationException;
+use LogicException;
 
 final class SurveyAuthorization
 {
@@ -33,6 +34,18 @@ final class SurveyAuthorization
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewSurveys);
 
         return $organization;
+    }
+
+    public function allowsView(User $actor, Client $client): bool
+    {
+        try {
+            $organization = $this->context->organization();
+
+            return (int) $client->organization_id === (int) $organization->getKey()
+                && $this->authorizer->allows($actor, $organization, OrganizationPermission::ViewSurveys);
+        } catch (LogicException) {
+            return false;
+        }
     }
 
     public function assertDefinition(SurveyDefinition $definition): void

@@ -240,6 +240,37 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Язык', 'Русский');
 });
 
+test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/clients');
+    await searchTableFor(page, fixture.clientName);
+    await page.getByRole('row').filter({ hasText: fixture.clientName }).getByRole('link', { name: fixture.clientName, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
+
+    for (const tabLabel of ['Клинический профиль', 'Сеансы', 'Записи на приём', 'Опросы и отчёты', 'Файлы и МРТ']) {
+        await expect(page.getByText(tabLabel, { exact: true }).last()).toBeVisible();
+    }
+
+    await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+    await page.getByLabel('Анамнез').fill('Запись из клиентского рабочего места');
+    await page.getByRole('button', { name: 'Подтвердить', exact: true }).last().click();
+    await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
+
+    await page.getByText('Файлы и МРТ', { exact: true }).last().click();
+    await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
+    await page.getByLabel('Тип файла').click();
+    await page.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+        name: 'ux-a-report.pdf',
+        mimeType: 'application/pdf',
+        buffer: Buffer.from('%PDF-1.4\nUX-A'),
+    });
+    await page.getByRole('button', { name: 'Подтвердить', exact: true }).last().click();
+    await expect(page.getByText('ux-a-report.pdf', { exact: true })).toBeVisible();
+});
+
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
     const fixture = createCrmFixture();
 

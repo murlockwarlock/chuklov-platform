@@ -36,4 +36,14 @@ final class BookingAuthorization
             throw new AuthorizationException('The client may only manage its own booking.');
         }
     }
+
+    public function authorizeViewClient(User $actor, Client $client): void
+    {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
+
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
+            throw new AuthorizationException('The client is outside the current organization.');
+        }
+    }
 }

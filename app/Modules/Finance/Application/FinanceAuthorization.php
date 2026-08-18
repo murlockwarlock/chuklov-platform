@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -37,6 +38,13 @@ final class FinanceAuthorization
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageFinance);
 
         return $organization;
+    }
+
+    public function assertClientOwned(Client $client): void
+    {
+        if ((int) $client->organization_id !== (int) $this->organization()->getKey()) {
+            throw new AuthorizationException('The client is outside the current organization.');
+        }
     }
 
     public function allowsView(User $actor): bool

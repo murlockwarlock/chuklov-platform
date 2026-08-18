@@ -29,6 +29,15 @@ final class AttachmentAuthorization
         return $this->authorizeManage($actor, $client);
     }
 
+    public function authorizeView(User $actor, Client $client): Organization
+    {
+        $organization = $this->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $this->assertClientOwned($client, $organization);
+
+        return $organization;
+    }
+
     public function authorizeManage(User $actor, Client $client): Organization
     {
         $organization = $this->organization();
@@ -59,6 +68,18 @@ final class AttachmentAuthorization
             $organization = $this->organization();
 
             return (int) $attachment->organization_id === (int) $organization->getKey()
+                && $this->authorizer->allows($actor, $organization, OrganizationPermission::ViewClients);
+        } catch (LogicException) {
+            return false;
+        }
+    }
+
+    public function allowsView(User $actor, Client $client): bool
+    {
+        try {
+            $organization = $this->organization();
+
+            return (int) $client->organization_id === (int) $organization->getKey()
                 && $this->authorizer->allows($actor, $organization, OrganizationPermission::ViewClients);
         } catch (LogicException) {
             return false;
