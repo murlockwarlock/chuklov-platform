@@ -10,4 +10,9 @@ class ListBookings extends ListRecords
     protected static string $resource = BookingResource::class;
 
     protected static ?string $title = 'Записи на приём';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
 }

@@ -34,6 +34,8 @@ final class SurveyAttemptResource extends Resource
 
     protected static ?string $pluralModelLabel = 'результаты тестов';
 
+    protected static ?string $breadcrumb = 'Результаты тестов';
+
     public static function canCreate(): bool
     {
         return false;

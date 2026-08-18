@@ -32,6 +32,8 @@ class ServiceResource extends Resource
 
     protected static ?string $pluralModelLabel = 'услуги';
 
+    protected static ?string $breadcrumb = 'Каталог услуг';
+
     protected static ?string $recordTitleAttribute = 'name';
 
     public static function form(Schema $schema): Schema

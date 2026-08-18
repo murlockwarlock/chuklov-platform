@@ -36,6 +36,8 @@ class BookingResource extends Resource
 
     protected static ?string $pluralModelLabel = 'записи на приём';
 
+    protected static ?string $breadcrumb = 'Записи на приём';
+
     public static function form(Schema $schema): Schema
     {
         return BookingForm::configure($schema);

@@ -8,4 +8,6 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewContentSection extends ViewRecord
 {
     protected static string $resource = ContentSectionResource::class;
+
+    protected static ?string $title = 'Раздел контента';
 }

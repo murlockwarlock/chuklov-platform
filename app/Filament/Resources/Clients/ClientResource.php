@@ -43,6 +43,8 @@ class ClientResource extends Resource
 
     protected static ?string $pluralModelLabel = 'клиенты';
 
+    protected static ?string $breadcrumb = 'База клиентов';
+
     protected static ?string $recordTitleAttribute = 'full_name';
 
     protected static int $globalSearchResultsLimit = 20;

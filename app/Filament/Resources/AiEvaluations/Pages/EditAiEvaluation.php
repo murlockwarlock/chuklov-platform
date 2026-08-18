@@ -12,6 +12,8 @@ class EditAiEvaluation extends EditRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
+    protected static ?string $title = 'Редактировать набор тестов AI';
+
     protected function mutateFormDataBeforeSave(array $data): array
     {
         $organizationId = app(OrganizationContext::class)->id();

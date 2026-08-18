@@ -12,6 +12,11 @@ class ListServices extends ListRecords
 
     protected static ?string $title = 'Каталог услуг';
 
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [

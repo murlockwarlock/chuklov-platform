@@ -49,16 +49,31 @@ class BookingInfolist
                         TextEntry::make('status')
                             ->label('Статус записи')
                             ->badge()
-                            ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state)),
+                            ->color(fn (BookingStatus|string $state): string => match ($state instanceof BookingStatus ? $state : BookingStatus::tryFrom($state)) {
+                                BookingStatus::Confirmed => 'success',
+                                BookingStatus::Requested, BookingStatus::PendingReview => 'warning',
+                                BookingStatus::Cancelled, BookingStatus::Rejected, BookingStatus::NoShow => 'danger',
+                                default => 'gray',
+                            })
+                            ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
+                            ->wrap(),
                         TextEntry::make('payment_status')
                             ->label('Статус оплаты')
                             ->badge()
-                            ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state)),
+                            ->color(fn (PaymentStatus|string $state): string => match ($state instanceof PaymentStatus ? $state : PaymentStatus::tryFrom($state)) {
+                                PaymentStatus::Paid => 'success',
+                                PaymentStatus::PartiallyPaid, PaymentStatus::Pending => 'warning',
+                                PaymentStatus::Refunded => 'danger',
+                                default => 'gray',
+                            })
+                            ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state))
+                            ->wrap(),
                         TextEntry::make('payment_requirement')
                             ->label('Условие оплаты')
-                            ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state)),
+                            ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
+                            ->wrap(),
                     ])
-                    ->columns(3),
+                    ->columns(['default' => 1, 'sm' => 2, 'lg' => 3]),
 
                 Section::make('История событий')
                     ->schema([

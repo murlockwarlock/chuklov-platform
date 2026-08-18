@@ -34,6 +34,8 @@ final class KnowledgeSourceResource extends Resource
 
     protected static ?string $pluralModelLabel = 'источники знаний';
 
+    protected static ?string $breadcrumb = 'База знаний';
+
     protected static ?string $recordTitleAttribute = 'title';
 
     public static function form(Schema $schema): Schema

@@ -40,7 +40,9 @@ use UnitEnum;
  */
 class SchedulingConfiguration extends Page
 {
-    protected static ?string $navigationLabel = 'Расписание';
+    protected static ?string $title = 'Настройки расписания';
+
+    protected static ?string $navigationLabel = 'Настройки расписания';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 

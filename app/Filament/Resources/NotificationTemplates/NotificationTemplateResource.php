@@ -29,15 +29,17 @@ final class NotificationTemplateResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentText;
 
-    protected static ?string $navigationLabel = 'Сообщения';
+    protected static ?string $navigationLabel = 'Шаблоны сообщений';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Коммуникации';
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $modelLabel = 'сообщение';
+    protected static ?string $modelLabel = 'шаблон сообщения';
 
-    protected static ?string $pluralModelLabel = 'сообщения';
+    protected static ?string $pluralModelLabel = 'шаблоны сообщений';
+
+    protected static ?string $breadcrumb = 'Шаблоны сообщений';
 
     public static function form(Schema $schema): Schema
     {

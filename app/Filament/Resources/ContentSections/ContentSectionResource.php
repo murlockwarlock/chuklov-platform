@@ -30,9 +30,11 @@ class ContentSectionResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
-    protected static ?string $modelLabel = 'раздел';
+    protected static ?string $modelLabel = 'раздел контента';
 
     protected static ?string $pluralModelLabel = 'разделы контента';
+
+    protected static ?string $breadcrumb = 'Разделы контента';
 
     protected static ?string $recordTitleAttribute = 'title';
 

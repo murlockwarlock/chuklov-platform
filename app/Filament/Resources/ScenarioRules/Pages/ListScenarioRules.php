@@ -10,6 +10,13 @@ final class ListScenarioRules extends ListRecords
 {
     protected static string $resource = ScenarioRuleResource::class;
 
+    protected static ?string $title = 'Правила сообщений';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

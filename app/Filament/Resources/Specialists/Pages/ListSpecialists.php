@@ -12,6 +12,11 @@ class ListSpecialists extends ListRecords
 
     protected static ?string $title = 'Специалисты';
 
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

@@ -8,4 +8,11 @@ use Filament\Resources\Pages\ListRecords;
 final class ListScenarioActions extends ListRecords
 {
     protected static string $resource = ScenarioActionResource::class;
+
+    protected static ?string $title = 'История сообщений';
+
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
 }

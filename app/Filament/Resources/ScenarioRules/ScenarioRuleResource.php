@@ -37,9 +37,11 @@ final class ScenarioRuleResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    protected static ?string $modelLabel = 'правило';
+    protected static ?string $modelLabel = 'правило сообщений';
 
     protected static ?string $pluralModelLabel = 'правила сообщений';
+
+    protected static ?string $breadcrumb = 'Правила сообщений';
 
     public static function form(Schema $schema): Schema
     {

@@ -34,6 +34,8 @@ final class AiRunResource extends Resource
 
     protected static ?string $pluralModelLabel = 'запуски AI';
 
+    protected static ?string $breadcrumb = 'История запусков';
+
     public static function table(Table $table): Table
     {
         return $table

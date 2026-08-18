@@ -12,6 +12,11 @@ final class ListSurveyDefinitions extends ListRecords
 
     protected static ?string $title = 'Опросники и тесты';
 
+    public function getBreadcrumbs(): array
+    {
+        return [];
+    }
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

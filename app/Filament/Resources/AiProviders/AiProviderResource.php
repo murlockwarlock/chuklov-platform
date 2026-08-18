@@ -39,6 +39,8 @@ final class AiProviderResource extends Resource
 
     protected static ?string $pluralModelLabel = 'провайдеры AI';
 
+    protected static ?string $breadcrumb = 'Провайдеры и модели';
+
     public static function form(Schema $schema): Schema
     {
         return AiProviderForm::configure($schema);

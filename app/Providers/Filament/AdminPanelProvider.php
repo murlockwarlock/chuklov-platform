@@ -2,7 +2,6 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\ResolveOrganization;
 use App\Http\Middleware\SetAdminLocale;
 use Filament\Http\Middleware\Authenticate;
@@ -33,6 +32,7 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Amber,
             ])
+            ->viteTheme('resources/css/filament/admin/theme.css')
             ->spa()
             ->spaUrlExceptions([
                 '*/admin/attachments/*',
@@ -40,9 +40,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
-            ->pages([
-                Dashboard::class,
-            ])
+            ->pages([])
             ->navigationGroups([
                 'Клиенты',
                 'Записи',

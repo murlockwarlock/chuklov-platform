@@ -22,7 +22,6 @@ final class ClientWorkspaceInfolist
         return $schema
             ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start'])
             ->components([
-                // 1. Left Operational Rail (~320px)
                 Group::make([
                     Section::make('Операционные данные и связь')
                         ->schema([
@@ -98,7 +97,6 @@ final class ClientWorkspaceInfolist
                         ->columns(1),
                 ])->extraAttributes(['class' => 'w-full']),
 
-                // 2. Right Clinical Workspace (min-w-0)
                 Group::make([
                     Section::make('Клинический профиль')
                         ->description('Защищённые данные (Class C)')

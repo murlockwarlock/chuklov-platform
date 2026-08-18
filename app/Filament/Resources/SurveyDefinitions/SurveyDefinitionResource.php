@@ -34,6 +34,8 @@ final class SurveyDefinitionResource extends Resource
 
     protected static ?string $pluralModelLabel = 'тесты';
 
+    protected static ?string $breadcrumb = 'Опросники и тесты';
+
     protected static ?string $recordTitleAttribute = 'title';
 
     public static function form(Schema $schema): Schema

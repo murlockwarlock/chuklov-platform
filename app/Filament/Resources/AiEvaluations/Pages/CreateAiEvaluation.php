@@ -12,6 +12,8 @@ class CreateAiEvaluation extends CreateRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
+    protected static ?string $title = 'Создать набор тестов AI';
+
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['organization_id'] = app(OrganizationContext::class)->id();

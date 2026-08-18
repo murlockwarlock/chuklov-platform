@@ -31,6 +31,8 @@ class SpecialistServiceAssignmentResource extends Resource
 
     protected static ?string $pluralModelLabel = 'услуги специалистов';
 
+    protected static ?string $breadcrumb = 'Специалисты и услуги';
+
     public static function form(Schema $schema): Schema
     {
         return SpecialistServiceAssignmentForm::configure($schema);

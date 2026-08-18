@@ -35,6 +35,8 @@ class SpecialistResource extends Resource
 
     protected static ?string $pluralModelLabel = 'специалисты';
 
+    protected static ?string $breadcrumb = 'Специалисты';
+
     protected static ?string $recordTitleAttribute = 'display_name';
 
     public static function form(Schema $schema): Schema
