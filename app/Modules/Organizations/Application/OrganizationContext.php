@@ -11,9 +11,12 @@ class OrganizationContext
 {
     private ?Organization $organization = null;
 
+    private ?string $defaultTimezone = null;
+
     public function set(Organization $organization): void
     {
         $this->organization = $organization;
+        $this->defaultTimezone = null;
         OrganizationFeatureGate::invalidate();
         GetBookingLeadTime::invalidate();
         SpecialistServiceAssignmentEligibility::invalidate();
@@ -27,5 +30,15 @@ class OrganizationContext
     public function id(): int
     {
         return $this->organization()->getKey();
+    }
+
+    public function defaultTimezone(): string
+    {
+        return $this->defaultTimezone ??= $this->organization()->defaultTimezone();
+    }
+
+    public function invalidateDefaultTimezone(): void
+    {
+        $this->defaultTimezone = null;
     }
 }
