@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
     testDir: 'tests/e2e',
+    workers: 1,
     reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
     webServer: {
         command: 'php artisan serve --host=127.0.0.1 --port=8000',
