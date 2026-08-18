@@ -4,6 +4,7 @@
 
 - Candidate branch: `ux-a-client-workspace-search`, based exactly on `90ceb3c5da1dd970315f2d82512e1cf6a11119e9`.
 - Implemented the bounded identity-only search path, canonical phone key/index/backfill, and composed Client Clinical Cockpit without adding an `app/Modules/CRM` business layer.
+- Staging acceptance feedback produced a focused follow-up: the Surveys relation now uses a Filament-compatible Eloquent relation with bounded authorized Application constraints; cockpit actions, tabs, profile text, and client tables are responsive; attachment scan/quarantine state is explicit to the user without weakening fail-closed private storage.
 - Focused PHPUnit, Larastan, Pint, PHP syntax, `git diff --check`, and Playwright `--list` checks pass locally. PostgreSQL integration, hosted CI, and full browser execution have not been run under the requested local-light policy.
 - UX-A remains an implementation candidate pending independent acceptance. UX-A2 medical discovery, UX-B media/theme work, UX-C cleanup, and M11 remain incomplete and unchanged.
 

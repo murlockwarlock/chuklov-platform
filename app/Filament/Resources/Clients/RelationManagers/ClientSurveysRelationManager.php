@@ -20,7 +20,7 @@ final class ClientSurveysRelationManager extends RelationManager
 {
     protected static string $relationship = 'surveyAttempts';
 
-    protected static ?string $title = 'Опросы и отчёты';
+    protected static ?string $title = 'Опросы';
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
@@ -31,8 +31,7 @@ final class ClientSurveysRelationManager extends RelationManager
             && app(SurveyAuthorization::class)->allowsView($actor, $ownerRecord);
     }
 
-    /** @return Builder<SurveyAttempt> */
-    public function getRelationship(): Builder
+    public function table(Table $table): Table
     {
         $actor = auth()->user();
         $client = $this->getOwnerRecord();
@@ -40,15 +39,18 @@ final class ClientSurveysRelationManager extends RelationManager
         abort_unless($actor instanceof User, 403);
         abort_unless($client instanceof Client, 404);
 
-        return app(ListClientSurveyAttemptsForCrm::class)->query($actor, $client);
-    }
-
-    public function table(Table $table): Table
-    {
         return $table
+            ->heading('Опросы и отчёты')
+            ->stackedOnMobile()
+            ->modifyQueryUsing(
+                fn (Builder $query): Builder => app(ListClientSurveyAttemptsForCrm::class)->apply($actor, $client, $query),
+            )
             ->columns([
-                TextColumn::make('surveyDefinition.title')->label('Опрос')->placeholder('Без названия'),
-                TextColumn::make('surveyVersion.version')->label('Версия'),
+                TextColumn::make('surveyDefinition.title')
+                    ->label('Опрос')
+                    ->placeholder('Без названия')
+                    ->wrap(),
+                TextColumn::make('surveyVersion.version')->label('Версия')->visibleFrom('sm'),
                 TextColumn::make('status')
                     ->label('Статус')
                     ->badge()
@@ -56,8 +58,15 @@ final class ClientSurveysRelationManager extends RelationManager
                         ? 'Завершён'
                         : 'Не завершён'),
                 TextColumn::make('started_at')->label('Начат')->dateTime('d.m.Y H:i'),
-                TextColumn::make('completed_at')->label('Завершён')->dateTime('d.m.Y H:i')->placeholder('—'),
-                TextColumn::make('report.title')->label('Отчёт')->placeholder('Не сформирован'),
+                TextColumn::make('completed_at')
+                    ->label('Завершён')
+                    ->dateTime('d.m.Y H:i')
+                    ->placeholder('—')
+                    ->visibleFrom('sm'),
+                TextColumn::make('report.title')
+                    ->label('Отчёт')
+                    ->placeholder('Не сформирован')
+                    ->wrap(),
             ])
             ->recordActions([
                 Action::make('open')

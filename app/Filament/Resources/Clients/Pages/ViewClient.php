@@ -12,6 +12,7 @@ use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\ViewRecord;
@@ -28,7 +29,7 @@ class ViewClient extends ViewRecord
 
     public function getContentTabLabel(): ?string
     {
-        return 'Клинический профиль';
+        return 'Профиль';
     }
 
     public function infolist(Schema $schema): Schema
@@ -80,43 +81,59 @@ class ViewClient extends ViewRecord
                 ->icon('heroicon-o-plus')
                 ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
                 ->visible(fn (): bool => MedicalSessionResource::canCreate()),
-            Action::make('blockSelfBooking')
-                ->label('Запретить самостоятельную запись')
-                ->color('danger')
-                ->requiresConfirmation()
-                ->schema([
-                    Textarea::make('reason')
-                        ->label('Причина ограничения')
-                        ->required()
-                        ->maxLength(500),
-                ])
-                ->visible(fn (): bool => $this->clientRecord()->activeBookingRestriction === null
-                    && ClientResource::canEdit($this->clientRecord()))
-                ->action(function (array $data): void {
-                    $actor = auth()->user();
-                    $client = $this->clientRecord();
-
-                    abort_unless($actor instanceof User, 403);
-
-                    app(BlockClientSelfBooking::class)->handle($actor, $client, (string) $data['reason']);
-                    $client->load('activeBookingRestriction');
-                }),
-            Action::make('unblockSelfBooking')
-                ->label('Разрешить самостоятельную запись')
-                ->color('success')
-                ->requiresConfirmation()
-                ->visible(fn (): bool => $this->clientRecord()->activeBookingRestriction !== null
-                    && ClientResource::canEdit($this->clientRecord()))
-                ->action(function (): void {
-                    $actor = auth()->user();
-                    $client = $this->clientRecord();
-
-                    abort_unless($actor instanceof User, 403);
-
-                    app(UnblockClientSelfBooking::class)->handle($actor, $client);
-                    $client->load('activeBookingRestriction');
-                }),
+            ActionGroup::make([
+                $this->blockSelfBookingAction(),
+                $this->unblockSelfBookingAction(),
+            ])
+                ->label('Доступ к записи')
+                ->icon('heroicon-o-lock-closed')
+                ->button()
+                ->color('gray'),
         ];
+    }
+
+    private function blockSelfBookingAction(): Action
+    {
+        return Action::make('blockSelfBooking')
+            ->label('Запретить самостоятельную запись')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->schema([
+                Textarea::make('reason')
+                    ->label('Причина ограничения')
+                    ->required()
+                    ->maxLength(500),
+            ])
+            ->visible(fn (): bool => $this->clientRecord()->activeBookingRestriction === null
+                && ClientResource::canEdit($this->clientRecord()))
+            ->action(function (array $data): void {
+                $actor = auth()->user();
+                $client = $this->clientRecord();
+
+                abort_unless($actor instanceof User, 403);
+
+                app(BlockClientSelfBooking::class)->handle($actor, $client, (string) $data['reason']);
+                $client->load('activeBookingRestriction');
+            });
+    }
+
+    private function unblockSelfBookingAction(): Action
+    {
+        return Action::make('unblockSelfBooking')
+            ->label('Разрешить самостоятельную запись')
+            ->color('success')
+            ->requiresConfirmation()
+            ->visible(fn (): bool => $this->clientRecord()->activeBookingRestriction !== null
+                && ClientResource::canEdit($this->clientRecord()))
+            ->action(function (): void {
+                $actor = auth()->user();
+                $client = $this->clientRecord();
+
+                abort_unless($actor instanceof User, 403);
+
+                app(UnblockClientSelfBooking::class)->handle($actor, $client);
+                $client->load('activeBookingRestriction');
+            });
     }
 
     /** @return array<Textarea> */

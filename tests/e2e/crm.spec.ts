@@ -274,7 +274,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await page.getByRole('row').filter({ hasText: fixture.clientName }).getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
-    for (const tabLabel of ['Клинический профиль', 'Сеансы', 'Записи на приём', 'Опросы и отчёты', 'Файлы и МРТ']) {
+    for (const tabLabel of ['Профиль', 'Сеансы', 'Записи', 'Опросы', 'Файлы']) {
         await expect(page.getByRole('tab', { name: tabLabel, exact: true })).toBeVisible();
     }
 
@@ -286,7 +286,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
+    await page.getByRole('tab', { name: 'Файлы', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     const attachmentType = uploadDialog.getByLabel('Тип файла');

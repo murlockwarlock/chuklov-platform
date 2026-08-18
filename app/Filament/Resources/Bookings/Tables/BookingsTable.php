@@ -34,8 +34,8 @@ class BookingsTable
     {
         $canManageScheduling = BookingResource::canCreate();
         $columns = [
-            TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
-            TextColumn::make('service.name')->label('Услуга')->sortable(),
+            TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
+            TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
             TextColumn::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i')->sortable(),
             TextColumn::make('visit_format')
                 ->label('Формат')
@@ -44,11 +44,12 @@ class BookingsTable
                 ->label('Статус')
                 ->badge()
                 ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
-                ->sortable(),
+                ->sortable()
+                ->wrap(),
         ];
 
         if ($includeClient) {
-            array_unshift($columns, TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable());
+            array_unshift($columns, TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable()->wrap());
         }
 
         if ($includeAttention) {
@@ -60,6 +61,7 @@ class BookingsTable
         }
 
         return $table
+            ->stackedOnMobile()
             ->columns($columns)
             ->recordActions([
                 ViewAction::make()->label('Открыть'),

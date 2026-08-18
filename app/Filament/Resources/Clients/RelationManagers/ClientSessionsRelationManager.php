@@ -25,6 +25,7 @@ final class ClientSessionsRelationManager extends RelationManager
         abort_unless($client instanceof Client, 404);
 
         return SessionsTable::configure($table)
+            ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientSessions::class)->apply($actor, $client, $query),
             )

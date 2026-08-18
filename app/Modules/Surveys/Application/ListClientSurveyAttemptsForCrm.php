@@ -14,10 +14,19 @@ final readonly class ListClientSurveyAttemptsForCrm
     /** @return Builder<SurveyAttempt> */
     public function query(User $actor, Client $client): Builder
     {
+        return $this->apply($actor, $client, SurveyAttempt::query());
+    }
+
+    /**
+     * @param  Builder<SurveyAttempt>  $query
+     * @return Builder<SurveyAttempt>
+     */
+    public function apply(User $actor, Client $client, Builder $query): Builder
+    {
         $organization = $this->authorization->view($actor);
         $this->authorization->assertClient($client);
 
-        return SurveyAttempt::query()
+        return $query
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->select([

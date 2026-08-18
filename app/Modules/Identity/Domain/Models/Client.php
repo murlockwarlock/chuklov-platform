@@ -8,6 +8,7 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -88,6 +89,12 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<SurveyAttempt, $this> */
+    public function surveyAttempts(): HasMany
+    {
+        return $this->hasMany(SurveyAttempt::class);
     }
 
     protected static function newFactory(): ClientFactory

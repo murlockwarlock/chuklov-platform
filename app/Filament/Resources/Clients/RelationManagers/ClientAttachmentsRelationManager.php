@@ -15,6 +15,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -26,7 +27,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
 {
     protected static string $relationship = 'medicalAttachments';
 
-    protected static ?string $title = 'Файлы и МРТ';
+    protected static ?string $title = 'Файлы';
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
@@ -46,27 +47,34 @@ final class ClientAttachmentsRelationManager extends RelationManager
         abort_unless($client instanceof Client, 404);
 
         return $table
+            ->heading('Файлы и МРТ')
+            ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientAttachments::class)->query($actor, $client),
             )
             ->columns([
-                TextColumn::make('original_filename')->label('Файл')->limit(60),
+                TextColumn::make('original_filename')->label('Файл')->limit(48)->wrap(),
                 TextColumn::make('attachment_type')
                     ->label('Тип')
                     ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
                         ? $state->label()
-                        : (AttachmentType::tryFrom($state)?->label() ?? 'Файл')),
-                TextColumn::make('mime_type')->label('Формат'),
+                        : (AttachmentType::tryFrom($state)?->label() ?? 'Файл'))
+                    ->wrap(),
+                TextColumn::make('mime_type')->label('Формат')->visibleFrom('sm'),
                 TextColumn::make('size_bytes')
                     ->label('Размер')
-                    ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state)),
+                    ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
+                    ->visibleFrom('sm'),
                 TextColumn::make('scan_status')
                     ->label('Проверка')
                     ->badge()
                     ->formatStateUsing(fn (AttachmentScanStatus|string $state): string => $state instanceof AttachmentScanStatus
                         ? $state->label()
-                        : (AttachmentScanStatus::tryFrom($state)?->label() ?? 'Неизвестно')),
-                TextColumn::make('created_at')->label('Загружен')->dateTime('d.m.Y H:i'),
+                        : (AttachmentScanStatus::tryFrom($state)?->label() ?? 'Неизвестно'))
+                    ->color(fn (AttachmentScanStatus|string $state): string => self::scanStatusColor($state))
+                    ->description(fn (AttachmentScanStatus|string $state): string => self::scanStatusDescription($state))
+                    ->wrap(),
+                TextColumn::make('created_at')->label('Загружен')->dateTime('d.m.Y H:i')->visibleFrom('sm'),
             ])
             ->headerActions([
                 Action::make('upload')
@@ -96,7 +104,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->action(function (array $data) use ($actor, $client): void {
                         abort_unless($data['file'] instanceof UploadedFile, 422);
 
-                        app(UploadMedicalAttachment::class)->handle(
+                        $attachment = app(UploadMedicalAttachment::class)->handle(
                             actor: $actor,
                             command: new AttachmentUploadCommand(
                                 file: $data['file'],
@@ -104,6 +112,8 @@ final class ClientAttachmentsRelationManager extends RelationManager
                                 clientId: (int) $client->getKey(),
                             ),
                         );
+
+                        self::sendUploadNotification($attachment);
                     })
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),
             ])
@@ -131,5 +141,51 @@ final class ClientAttachmentsRelationManager extends RelationManager
         }
 
         return round($bytes / (1024 * 1024), 1).' МБ';
+    }
+
+    private static function scanStatus(AttachmentScanStatus|string $status): AttachmentScanStatus
+    {
+        return $status instanceof AttachmentScanStatus
+            ? $status
+            : (AttachmentScanStatus::tryFrom($status) ?? AttachmentScanStatus::Pending);
+    }
+
+    private static function scanStatusColor(AttachmentScanStatus|string $status): string
+    {
+        return match (self::scanStatus($status)) {
+            AttachmentScanStatus::Cleared => 'success',
+            AttachmentScanStatus::Rejected => 'danger',
+            AttachmentScanStatus::Pending, AttachmentScanStatus::Quarantined => 'warning',
+        };
+    }
+
+    private static function scanStatusDescription(AttachmentScanStatus|string $status): string
+    {
+        return match (self::scanStatus($status)) {
+            AttachmentScanStatus::Cleared => 'Доступен для открытия.',
+            AttachmentScanStatus::Pending => 'Ожидает проверки.',
+            AttachmentScanStatus::Quarantined => 'Доступ закрыт до проверки.',
+            AttachmentScanStatus::Rejected => 'Заблокирован после проверки.',
+        };
+    }
+
+    private static function sendUploadNotification(MedicalAttachment $attachment): void
+    {
+        $notification = Notification::make()
+            ->title(match ($attachment->scan_status) {
+                AttachmentScanStatus::Cleared => 'Файл загружен',
+                AttachmentScanStatus::Pending => 'Файл принят на проверку',
+                AttachmentScanStatus::Quarantined => 'Файл помещён на карантин',
+                AttachmentScanStatus::Rejected => 'Файл отклонён',
+            })
+            ->body(self::scanStatusDescription($attachment->scan_status));
+
+        match ($attachment->scan_status) {
+            AttachmentScanStatus::Cleared => $notification->success(),
+            AttachmentScanStatus::Rejected => $notification->danger(),
+            AttachmentScanStatus::Pending, AttachmentScanStatus::Quarantined => $notification->warning(),
+        };
+
+        $notification->send();
     }
 }

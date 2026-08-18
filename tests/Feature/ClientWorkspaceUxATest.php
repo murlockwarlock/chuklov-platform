@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Pages\ViewClient;
+use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\ListClientAttachments;
@@ -23,6 +25,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -33,6 +36,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class ClientWorkspaceUxATest extends TestCase
@@ -144,6 +148,21 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame('Global Search Client', $results->first()->title);
         self::assertStringNotContainsString('medical', strtolower(serialize($results->first())));
         self::assertStringContainsString((string) $client->id, $results->first()->url);
+    }
+
+    public function test_client_surveys_workspace_tab_mounts_through_filament_relation(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ClientSurveysRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+
+        $component->assertSuccessful();
+        self::assertCount(0, $component->instance()->getTableRecords());
     }
 
     public function test_cross_organization_attachment_upload_id_fails_closed_before_storage(): void

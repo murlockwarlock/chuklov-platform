@@ -10,7 +10,6 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Application\GetClientCommunicationStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
-use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -23,22 +22,28 @@ final class ClientWorkspaceInfolist
             ->components([
                 Section::make('Клиент')
                     ->schema([
-                        TextEntry::make('full_name')->label('Имя и фамилия')->weight('bold'),
+                        TextEntry::make('full_name')->label('Имя и фамилия')->weight('bold')->wrap(),
                         TextEntry::make('id')
                             ->label('ID клиента')
                             ->formatStateUsing(fn (int|string $state): string => '#'.$state),
-                        TextEntry::make('email')->label('Email')->placeholder('Не указан'),
-                        TextEntry::make('phone')->label('Телефон')->placeholder('Не указан'),
+                        TextEntry::make('email')->label('Email')->placeholder('Не указан')->wrap(),
+                        TextEntry::make('phone')->label('Телефон')->placeholder('Не указан')->wrap(),
                         TextEntry::make('language')
                             ->label('Язык')
-                            ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                            ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                            ->wrap(),
                         TextEntry::make('timezone')
                             ->label('Часовой пояс')
-                            ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state)),
-                        TextEntry::make('lead_source')->label('Источник обращения')->placeholder('Не указан'),
-                        TextEntry::make('referral_code')->label('Код рекомендации')->placeholder('Не указан'),
+                            ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
+                            ->wrap(),
+                        TextEntry::make('lead_source')->label('Источник обращения')->placeholder('Не указан')->wrap(),
+                        TextEntry::make('referral_code')->label('Код рекомендации')->placeholder('Не указан')->wrap(),
                     ])
-                    ->columns(4),
+                    ->columns([
+                        'default' => 1,
+                        'sm' => 2,
+                        'xl' => 4,
+                    ]),
                 Section::make('Связь и запись')
                     ->schema([
                         TextEntry::make('communication_status')
@@ -52,11 +57,13 @@ final class ClientWorkspaceInfolist
 
                                 return implode(', ', app(GetClientCommunicationStatus::class)->handle($actor, $record));
                             })
-                            ->placeholder('Каналы не подключены'),
+                            ->placeholder('Каналы не подключены')
+                            ->wrap(),
                         TextEntry::make('activeBookingRestriction.reason')
                             ->label('Самостоятельная запись')
                             ->formatStateUsing(fn (?string $state): string => $state === null ? 'Разрешена' : 'Ограничена: '.$state)
-                            ->placeholder('Разрешена'),
+                            ->placeholder('Разрешена')
+                            ->wrap(),
                         TextEntry::make('balance_summary')
                             ->label('Открытый баланс')
                             ->state(function (Client $record): string {
@@ -76,35 +83,42 @@ final class ClientWorkspaceInfolist
                                     ->map(fn (array $item): string => Money::ofMinor($item['outstandingMinor'], $item['currency'])->toDecimalString().' '.$item['currency'])
                                     ->implode(', ');
                             })
-                            ->placeholder('Нет данных'),
+                            ->placeholder('Нет данных')
+                            ->wrap(),
                     ])
-                    ->columns(3),
+                    ->columns([
+                        'default' => 1,
+                        'sm' => 2,
+                        'xl' => 3,
+                    ]),
                 Section::make('Медицинский профиль')
                     ->description('Защищённые данные доступны только в контексте открытого клиента.')
                     ->schema([
-                        KeyValueEntry::make('medical_profile')
+                        TextEntry::make('medical_profile')
                             ->label('Профиль')
                             ->state(function (Client $record): array {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return ['Статус' => 'Требуется авторизация'];
+                                    return ['Статус: Требуется авторизация'];
                                 }
 
                                 $profile = app(GetMedicalProfile::class)->handle($actor, $record);
 
                                 if ($profile === null) {
-                                    return ['Статус' => 'Профиль не заполнен'];
+                                    return ['Статус: Профиль не заполнен'];
                                 }
 
                                 return [
-                                    'Анамнез' => $profile->anamnesis ?: 'Не заполнен',
-                                    'Жалобы и цели' => $profile->complaintsGoals ?: 'Не указаны',
-                                    'Операции и травмы' => $profile->operationsInjuries ?: 'Не указаны',
-                                    'Лекарственные препараты' => $profile->medicines ?: 'Не указаны',
-                                    'Биологически активные добавки' => $profile->supplements ?: 'Не указаны',
+                                    'Анамнез: '.($profile->anamnesis ?: 'Не заполнен'),
+                                    'Жалобы и цели: '.($profile->complaintsGoals ?: 'Не указаны'),
+                                    'Операции и травмы: '.($profile->operationsInjuries ?: 'Не указаны'),
+                                    'Лекарственные препараты: '.($profile->medicines ?: 'Не указаны'),
+                                    'Биологически активные добавки: '.($profile->supplements ?: 'Не указаны'),
                                 ];
                             })
+                            ->listWithLineBreaks()
+                            ->wrap()
                             ->columnSpanFull(),
                     ])
                     ->collapsible(),

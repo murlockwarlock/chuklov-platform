@@ -14,7 +14,7 @@ final class ClientBookingsRelationManager extends RelationManager
 {
     protected static string $relationship = 'bookings';
 
-    protected static ?string $title = 'Записи на приём';
+    protected static ?string $title = 'Записи';
 
     public function table(Table $table): Table
     {
@@ -25,6 +25,8 @@ final class ClientBookingsRelationManager extends RelationManager
         abort_unless($client instanceof Client, 404);
 
         return BookingsTable::configure($table, includeAttention: false, includeClient: false)
+            ->heading('Записи на приём')
+            ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientBookingsForCrm::class)->apply($actor, $client, $query),
             )
