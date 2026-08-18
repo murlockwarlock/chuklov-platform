@@ -274,8 +274,8 @@ test('staff can use the client cockpit for medical profile and private files', a
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     const attachmentType = uploadDialog.getByLabel('Тип файла');
     await expect(attachmentType).toBeVisible();
-    await attachmentType.click();
-    await page.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
+    await attachmentType.selectOption('medical_report');
+    await expect(attachmentType).toHaveValue('medical_report');
     const fileInput = uploadDialog.locator('input[type="file"]');
     await expect(fileInput).toHaveCount(1);
     await fileInput.setInputFiles({
