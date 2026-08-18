@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page, type Request, type Response, type TestInfo } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -32,148 +32,6 @@ function validPdfBuffer(): Buffer {
         '150',
         '%%EOF',
     ].join('\n'));
-}
-
-type LivewireUploadDiagnosticEvent = {
-    sequence: number;
-    type: 'request' | 'response' | 'requestfailed';
-    method: string;
-    pathname: string;
-    status?: number;
-    contentType?: string;
-    body?: string;
-    failureText?: string;
-};
-
-type LivewireUploadDiagnostics = {
-    flush(testInfo: TestInfo): Promise<void>;
-};
-
-function isLivewireUploadPath(pathname: string): boolean {
-    return /^\/livewire(?:-[^/]+)?\/upload-file$/.test(pathname);
-}
-
-function redactDiagnosticText(value: string): string {
-    return value
-        .replace(/\s+/g, ' ')
-        .trim()
-        .replace(/([?&](?:signature|expires|token|csrf_token|xsrf-token)=)[^&\s]+/gi, '$1[REDACTED]')
-        .replace(/((?:signature|expires|token|csrf_token|xsrf-token|authorization)\s*[:=]\s*)([^,\s}]+)/gi, '$1[REDACTED]')
-        .slice(0, 2000);
-}
-
-function installLivewireUploadDiagnostics(page: Page): LivewireUploadDiagnostics {
-    const events: LivewireUploadDiagnosticEvent[] = [];
-    const pendingBodies: Promise<void>[] = [];
-    let sequence = 0;
-
-    const record = (event: Omit<LivewireUploadDiagnosticEvent, 'sequence'>): LivewireUploadDiagnosticEvent => {
-        const recordedEvent = { sequence: ++sequence, ...event };
-        events.push(recordedEvent);
-
-        const status = recordedEvent.status === undefined ? '' : ` status=${recordedEvent.status}`;
-        const contentType = recordedEvent.contentType === undefined ? '' : ` contentType=${recordedEvent.contentType}`;
-        const failureText = recordedEvent.failureText === undefined ? '' : ` failure=${recordedEvent.failureText}`;
-        console.log(`[livewire-upload] #${recordedEvent.sequence} ${recordedEvent.type} method=${recordedEvent.method} pathname=${recordedEvent.pathname}${status}${contentType}${failureText}`);
-
-        return recordedEvent;
-    };
-
-    const handleRequest = (request: Request): void => {
-        const pathname = new URL(request.url()).pathname;
-
-        if (isLivewireUploadPath(pathname)) {
-            record({
-                type: 'request',
-                method: request.method(),
-                pathname,
-            });
-        }
-    };
-
-    const handleResponse = (response: Response): void => {
-        const request = response.request();
-        const pathname = new URL(request.url()).pathname;
-
-        if (!isLivewireUploadPath(pathname)) {
-            return;
-        }
-
-        const contentType = response.headers()['content-type'] ?? '';
-        const event = record({
-            type: 'response',
-            method: request.method(),
-            pathname,
-            status: response.status(),
-            contentType,
-        });
-        const bodyPromise = (async (): Promise<void> => {
-            if (!/(?:json|text|xml|javascript)/i.test(contentType)) {
-                event.body = '[omitted non-text response body]';
-            } else {
-                try {
-                    event.body = redactDiagnosticText(await response.text());
-                } catch (error) {
-                    event.body = `[response body unavailable: ${redactDiagnosticText(String(error))}]`;
-                }
-            }
-
-            console.log(`[livewire-upload] #${event.sequence} body=${event.body}`);
-        })();
-
-        pendingBodies.push(bodyPromise);
-    };
-
-    const handleRequestFailed = (request: Request): void => {
-        const pathname = new URL(request.url()).pathname;
-
-        if (isLivewireUploadPath(pathname)) {
-            record({
-                type: 'requestfailed',
-                method: request.method(),
-                pathname,
-                failureText: redactDiagnosticText(request.failure()?.errorText ?? 'unknown'),
-            });
-        }
-    };
-
-    page.on('request', handleRequest);
-    page.on('response', handleResponse);
-    page.on('requestfailed', handleRequestFailed);
-
-    return {
-        async flush(testInfo: TestInfo): Promise<void> {
-            await Promise.allSettled(pendingBodies);
-
-            const statuses = events
-                .filter((event) => event.type === 'response' && event.status !== undefined)
-                .map((event) => event.status as number);
-            let classification: string;
-
-            if (events.length === 0) {
-                classification = 'A: upload request was never sent';
-            } else if (events.some((event) => event.type === 'requestfailed')) {
-                classification = 'B: browser/network failure';
-            } else if (statuses.some((status) => [401, 403, 419].includes(status))) {
-                classification = 'C: HTTP authorization/CSRF failure';
-            } else if (statuses.some((status) => status === 422)) {
-                classification = 'D: HTTP validation failure';
-            } else if (statuses.some((status) => status >= 500)) {
-                classification = 'E: HTTP server failure';
-            } else if (statuses.length > 0 && statuses.every((status) => status >= 200 && status < 300)) {
-                classification = 'F: upload transport succeeded; inspect later Livewire synchronization';
-            } else {
-                classification = 'B: request outcome was incomplete or unclassified';
-            }
-
-            const report = JSON.stringify({ classification, events }, null, 2);
-            await testInfo.attach('livewire-upload-transport.json', {
-                body: Buffer.from(report),
-                contentType: 'application/json',
-            });
-            console.log(`[livewire-upload] classification=${classification}`);
-        },
-    };
 }
 
 function createCrmFixture(): CrmFixture {
@@ -428,31 +286,25 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
-    const uploadDiagnostics = installLivewireUploadDiagnostics(page);
-
-    try {
-        await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
-        await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
-        const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
-        const attachmentType = uploadDialog.getByLabel('Тип файла');
-        await expect(attachmentType).toBeVisible();
-        await attachmentType.selectOption('medical_report');
-        await expect(attachmentType).toHaveValue('medical_report');
-        const fileInput = uploadDialog.locator('input[type="file"]');
-        await expect(fileInput).toHaveCount(1);
-        await fileInput.setInputFiles({
-            name: 'ux-a-report.pdf',
-            mimeType: 'application/pdf',
-            buffer: validPdfBuffer(),
-        });
-        const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
-        await expect(uploadSubmit).toBeVisible();
-        await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
-        await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
-        await uploadSubmit.click();
-    } finally {
-        await uploadDiagnostics.flush(test.info());
-    }
+    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
+    await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
+    const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
+    const attachmentType = uploadDialog.getByLabel('Тип файла');
+    await expect(attachmentType).toBeVisible();
+    await attachmentType.selectOption('medical_report');
+    await expect(attachmentType).toHaveValue('medical_report');
+    const fileInput = uploadDialog.locator('input[type="file"]');
+    await expect(fileInput).toHaveCount(1);
+    await fileInput.setInputFiles({
+        name: 'ux-a-report.pdf',
+        mimeType: 'application/pdf',
+        buffer: validPdfBuffer(),
+    });
+    const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
+    await expect(uploadSubmit).toBeVisible();
+    await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
+    await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
+    await uploadSubmit.click();
 
     const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
     const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
