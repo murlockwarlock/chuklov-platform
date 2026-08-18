@@ -37,10 +37,10 @@ final readonly class ClientSearch
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
 
-        return $this->apply(
+        return $this->bounded($this->apply(
             Client::query()->where('organization_id', $organization->getKey()),
             $search,
-        );
+        ));
     }
 
     /**
@@ -52,23 +52,23 @@ final readonly class ClientSearch
         $input = trim($search);
 
         if ($input === '' || mb_strlen($input) > self::MAX_INPUT_LENGTH) {
-            return $this->bounded($query->whereKey(0));
+            return $query->whereKey(0);
         }
 
         if (str_starts_with($input, '#')) {
             $id = $this->exactId($input);
 
             return $id === null
-                ? $this->bounded($query->whereKey(0))
-                : $this->bounded($query->whereKey($id));
+                ? $query->whereKey(0)
+                : $query->whereKey($id);
         }
 
         if (preg_match('/^(?:tg|telegram):(\d+)$/i', $input, $matches) === 1) {
             $telegramId = $matches[1];
 
-            return $this->bounded($query->whereHas('channelIdentities', function (Builder $query) use ($telegramId): void {
+            return $query->whereHas('channelIdentities', function (Builder $query) use ($telegramId): void {
                 $query->where('channel', 'telegram')->where('external_id', $telegramId);
-            }));
+            });
         }
 
         if (preg_match('/^\d+$/', $input) === 1) {
@@ -87,7 +87,7 @@ final readonly class ClientSearch
             }
 
             if ($id !== null || $phoneKey !== null || $prefixCandidates !== []) {
-                return $this->bounded($query->where(function (Builder $query) use ($id, $input, $phoneKey, $prefixCandidates): void {
+                $query->where(function (Builder $query) use ($id, $input, $phoneKey, $prefixCandidates): void {
                     $hasClause = false;
 
                     if ($id !== null) {
@@ -108,20 +108,17 @@ final readonly class ClientSearch
                             $hasClause = true;
                         }
 
-                        $method = $hasClause ? 'orWhereHas' : 'whereHas';
-                        $query->{$method}('channelIdentities', function (Builder $query) use ($input): void {
+                        $query->orWhereHas('channelIdentities', function (Builder $query) use ($input): void {
                             $query->where('external_id', $input);
                         });
-                        $hasClause = true;
                     }
 
-                    if (! $hasClause) {
-                        $query->whereKey(0);
-                    }
-                }));
+                });
+
+                return $this->prioritizeExactChannelIdentity($query, $input);
             }
 
-            return $this->bounded($query->whereKey(0));
+            return $query->whereKey(0);
         }
 
         if ($this->looksLikePhone($input)) {
@@ -129,7 +126,7 @@ final readonly class ClientSearch
             $phoneKey = ClientPhoneSearchKey::from($input);
 
             if ($phoneKey !== null) {
-                return $this->bounded($query->where('phone_search_key', $phoneKey->value));
+                return $query->where('phone_search_key', $phoneKey->value);
             }
 
             if (is_string($digits) && strlen($digits) >= 4) {
@@ -141,23 +138,23 @@ final readonly class ClientSearch
                 }
                 $prefixCandidates = array_values(array_unique($prefixCandidates));
 
-                return $this->bounded($query->where(function (Builder $query) use ($prefixCandidates): void {
+                return $query->where(function (Builder $query) use ($prefixCandidates): void {
                     $hasClause = false;
                     foreach ($prefixCandidates as $prefix) {
                         $method = $hasClause ? 'orWhere' : 'where';
                         $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
                         $hasClause = true;
                     }
-                }));
+                });
             }
 
-            return $this->bounded($query->whereKey(0));
+            return $query->whereKey(0);
         }
 
         $terms = $this->terms($input);
 
         if ($terms === []) {
-            return $this->bounded($query->whereKey(0));
+            return $query->whereKey(0);
         }
 
         if (count($terms) > self::MAX_GENERIC_TERMS
@@ -165,10 +162,10 @@ final readonly class ClientSearch
                 $terms,
                 static fn (string $term): bool => mb_strlen($term) < self::MIN_GENERIC_TERM_LENGTH,
             )) > 0) {
-            return $this->bounded($query->whereKey(0));
+            return $query->whereKey(0);
         }
 
-        return $this->bounded($query->where(function (Builder $query) use ($terms): void {
+        return $query->where(function (Builder $query) use ($terms): void {
             $operator = config('database.default') === 'pgsql' ? 'ILIKE' : 'LIKE';
 
             foreach ($terms as $term) {
@@ -180,7 +177,7 @@ final readonly class ClientSearch
                         ->orWhere('email', $operator, $pattern);
                 });
             }
-        }));
+        });
     }
 
     private function exactId(string $input): ?string
@@ -193,6 +190,18 @@ final readonly class ClientSearch
         }
 
         return $candidate;
+    }
+
+    /**
+     * @param  Builder<Client>  $query
+     * @return Builder<Client>
+     */
+    private function prioritizeExactChannelIdentity(Builder $query, string $externalId): Builder
+    {
+        return $query->orderByRaw(
+            'CASE WHEN EXISTS (SELECT 1 FROM client_channel_identities WHERE client_channel_identities.client_id = clients.id AND client_channel_identities.organization_id = clients.organization_id AND client_channel_identities.external_id = ?) THEN 0 ELSE 1 END',
+            [$externalId],
+        );
     }
 
     private function looksLikePhone(string $input): bool

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Models\User;
@@ -150,6 +151,62 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame('Global Search Client', $results->first()->title);
         self::assertStringNotContainsString('medical', strtolower(serialize($results->first())));
         self::assertStringContainsString((string) $client->id, $results->first()->url);
+    }
+
+    public function test_client_table_search_finds_telegram_external_id(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Telegram Table Client',
+        ]);
+
+        ClientChannelIdentity::forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $client->id,
+            'channel' => 'telegram',
+            'external_id' => '806750628',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListClients::class);
+        $component->set('tableSearch', '806750628');
+
+        self::assertTrue($component->instance()->getTableRecords()->contains('id', $client->id));
+    }
+
+    public function test_client_table_search_prioritizes_identity_match_over_phone_prefix_matches(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+
+        for ($index = 0; $index < ClientSearch::MAX_RESULTS + 5; $index++) {
+            Client::factory()->forOrganization($organization)->create([
+                'phone' => '806750628'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Telegram Table Client After Phone Matches',
+        ]);
+
+        ClientChannelIdentity::forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $client->id,
+            'channel' => 'telegram',
+            'external_id' => '806750628',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListClients::class);
+        $component->set('tableSearch', '806750628');
+
+        self::assertCount(ClientSearch::MAX_RESULTS + 6, $component->instance()->getFilteredTableQuery()->get());
+        self::assertTrue($component->instance()->getTableRecords()->contains('id', $client->id));
     }
 
     public function test_client_surveys_workspace_tab_mounts_through_filament_relation(): void
@@ -506,6 +563,7 @@ final class ClientWorkspaceUxATest extends TestCase
     public function test_client_search_supports_international_phones_and_telegram_id(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
+        $otherOrganization = Organization::factory()->create();
         $clientByBy = Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Минский Клиент',
             'phone' => '+375 29 123-45-67',
@@ -518,12 +576,23 @@ final class ClientWorkspaceUxATest extends TestCase
             'full_name' => 'Telegram User',
             'phone' => '+7 (999) 000-11-22',
         ]);
+        $otherTelegramClient = Client::factory()->forOrganization($otherOrganization)->create([
+            'full_name' => 'Other Organization Telegram User',
+        ]);
 
         ClientChannelIdentity::forceCreate([
             'organization_id' => $organization->id,
             'client_id' => $clientWithTg->id,
             'channel' => 'telegram',
-            'external_id' => '987654321',
+            'external_id' => '806750628',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+        ClientChannelIdentity::forceCreate([
+            'organization_id' => $otherOrganization->id,
+            'client_id' => $otherTelegramClient->id,
+            'channel' => 'telegram',
+            'external_id' => '806750628',
             'verification_status' => ChannelIdentityStatus::Verified,
             'verified_at' => now(),
         ]);
@@ -538,11 +607,22 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertContains($clientUs->id, $results);
 
         // 2. Search by Telegram ID (pure digits)
-        $results = $search->query($admin, '987654321')->pluck('id')->all();
+        $results = $search->query($admin, '806750628')->pluck('id')->all();
         self::assertContains($clientWithTg->id, $results);
+        self::assertNotContains($otherTelegramClient->id, $results);
 
-        // 3. Search by tg:987654321
-        $results = $search->query($admin, 'tg:987654321')->pluck('id')->all();
+        // 3. Search by tg:806750628
+        $results = $search->query($admin, 'tg:806750628')->pluck('id')->all();
         self::assertContains($clientWithTg->id, $results);
+        self::assertNotContains($otherTelegramClient->id, $results);
+
+        // 4. Search by telegram:806750628 and global Client search
+        $results = $search->query($admin, 'telegram:806750628')->pluck('id')->all();
+        self::assertSame([$clientWithTg->id], $results);
+
+        $this->actingAs($admin);
+        $globalResults = ClientResource::getGlobalSearchResults('806750628');
+        self::assertCount(1, $globalResults);
+        self::assertStringContainsString((string) $clientWithTg->id, $globalResults->first()->url);
     }
 }
