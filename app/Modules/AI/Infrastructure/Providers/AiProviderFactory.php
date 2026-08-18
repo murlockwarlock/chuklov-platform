@@ -2,7 +2,8 @@
 
 namespace App\Modules\AI\Infrastructure\Providers;
 
-use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Contracts\Events\Dispatcher;
 use InvalidArgumentException;
@@ -26,35 +27,43 @@ use Laravel\Ai\Providers\XaiProvider;
 
 class AiProviderFactory
 {
+    /** @var array<string, list<string>> */
+    private const PROVIDER_MODALITIES = [
+        'openai' => ['image_input', 'document_input'],
+        'azure' => ['image_input', 'document_input'],
+        'anthropic' => ['image_input', 'document_input'],
+        'gemini' => ['image_input', 'document_input'],
+        'openrouter' => ['image_input', 'document_input'],
+        'xai' => ['image_input', 'document_input'],
+        'bedrock' => ['image_input', 'document_input'],
+        'openai_compatible' => ['image_input'],
+        'groq' => ['image_input'],
+        'deepseek' => ['image_input'],
+        'ollama' => ['image_input'],
+        'mistral' => ['image_input'],
+    ];
+
+    /** @param list<mixed> $requiredModalities */
     public static function supportsAttachments(
         string $providerName,
-        string $model,
-        AiCapability $capability,
-        bool $requiresDocument = false,
+        AiModelRelease $release,
+        array $requiredModalities,
     ): bool {
-        if (! in_array($capability, [
-            AiCapability::ClinicalDocumentExtraction,
-            AiCapability::PostureAnalysis,
-            AiCapability::ClinicalSynthesizer,
-        ], true)) {
+        if ($requiredModalities === []) {
             return true;
         }
 
-        $driver = strtolower($providerName);
-        if (! in_array($driver, ['openai', 'azure', 'openai_compatible', 'anthropic', 'gemini', 'bedrock', 'openrouter', 'xai'], true)) {
-            return false;
+        $supportedModalities = self::PROVIDER_MODALITIES[strtolower(trim($providerName))] ?? [];
+
+        foreach ($requiredModalities as $modality) {
+            if (! $modality instanceof AiModelModality
+                || ! $release->supportsModality($modality)
+                || ! in_array($modality->value, $supportedModalities, true)) {
+                return false;
+            }
         }
 
-        if ($requiresDocument && in_array($driver, ['openai_compatible'], true)) {
-            return false;
-        }
-
-        $normalizedModel = strtolower($model);
-        if (preg_match('/embedding|moderation|whisper|tts|text[-_ ]only/', $normalizedModel) === 1) {
-            return false;
-        }
-
-        return preg_match('/gpt-(4o|4\.1|4-(?:turbo|vision)|5)|o[134]|claude-(3|4)|gemini-(1\.5|2|2\.5)|pixtral|vision/', $normalizedModel) === 1;
+        return true;
     }
 
     public function __construct(

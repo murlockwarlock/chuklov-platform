@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Domain\Models;
 
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -82,6 +83,14 @@ class AiModelConfiguration extends Model
     public function supportsCapability(string $capability): bool
     {
         return in_array($capability, $this->capabilities ?? [], true);
+    }
+
+    public function supportsModality(AiModelModality $modality): bool
+    {
+        $capabilities = $this->getAttribute('capabilities');
+
+        return is_array($capabilities)
+            && in_array($modality->value, $capabilities, true);
     }
 
     /**

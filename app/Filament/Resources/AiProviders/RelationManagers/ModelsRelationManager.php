@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreateModelConfiguration;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
@@ -86,7 +87,10 @@ class ModelsRelationManager extends RelationManager
                     ->placeholder('например: image_input, provider_surcharge'),
                 CheckboxList::make('capabilities')
                     ->label('Поддерживаемые возможности AI')
-                    ->options(collect(AiCapability::cases())->mapWithKeys(fn ($c) => [$c->value => $c->label()]))
+                    ->options([
+                        ...collect(AiCapability::cases())->mapWithKeys(fn (AiCapability $capability) => [$capability->value => $capability->label()])->all(),
+                        ...collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality) => [$modality->value => $modality->label()])->all(),
+                    ])
                     ->columnSpanFull(),
             ]);
     }

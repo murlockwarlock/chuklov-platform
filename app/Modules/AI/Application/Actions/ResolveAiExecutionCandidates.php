@@ -301,6 +301,7 @@ final class ResolveAiExecutionCandidates
             'provider_configuration_digest' => (string) $candidate['provider_configuration_digest'],
             'provider' => (string) $candidate['provider'],
             'model' => (string) $candidate['model'],
+            'capabilities' => $this->releaseCapabilities($release),
             'credential_id' => (int) $candidate['credential_id'],
             'credential_revision' => (string) $candidate['credential_revision'],
             'pricing_snapshot' => $pricing->toArray(),
@@ -323,6 +324,8 @@ final class ResolveAiExecutionCandidates
             && hash_equals((string) ($record['provider_configuration_digest'] ?? ''), (string) $candidate['provider_configuration_digest'])
             && (string) ($record['provider'] ?? '') === (string) $candidate['provider']
             && (string) ($record['model'] ?? '') === (string) $candidate['model']
+            && is_array($record['capabilities'] ?? null)
+            && $record['capabilities'] === $this->releaseCapabilities($release)
             && (int) ($record['credential_id'] ?? 0) === (int) $candidate['credential_id']
             && (string) ($record['credential_revision'] ?? '') === (string) $candidate['credential_revision'];
     }
@@ -332,5 +335,20 @@ final class ResolveAiExecutionCandidates
         return AiRuntimeLimits::effectiveMaxFailoverAttempts(
             $safetyControls?->max_failover_attempts,
         );
+    }
+
+    /** @return list<string> */
+    private function releaseCapabilities(AiModelRelease $release): array
+    {
+        $capabilities = $release->getAttribute('capabilities');
+
+        if (! is_array($capabilities)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $capabilities,
+            static fn (mixed $capability): bool => is_string($capability),
+        ));
     }
 }

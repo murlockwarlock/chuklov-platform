@@ -36,8 +36,12 @@ final class BackfillCredentialRevisions extends Command
                 ->update(['revision_id' => (string) Str::uuid()]);
         }
 
-        $remaining = OrganizationCredential::query()->whereNull('revision_id')->count();
-        $this->info("Assigned {$updated} credential revision(s); {$remaining} legacy row(s) remain.");
+        $hasRemaining = OrganizationCredential::query()->whereNull('revision_id')->exists();
+        $this->info(sprintf(
+            'Assigned %d credential revision(s); %s.',
+            $updated,
+            $hasRemaining ? 'legacy rows remain' : 'backfill complete',
+        ));
 
         return self::SUCCESS;
     }

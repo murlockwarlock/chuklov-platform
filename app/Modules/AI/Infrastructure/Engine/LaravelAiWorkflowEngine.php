@@ -19,6 +19,7 @@ use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -55,6 +56,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
 use Laravel\Ai\Files\StoredDocument;
+use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\TextResponse;
@@ -593,16 +595,34 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         }
 
         if ($attachmentResolution['files'] !== []) {
-            $candidates = array_values(array_filter(
-                $candidates,
-                fn (array $candidate): bool => AiProviderFactory::supportsAttachments(
-                    providerName: (string) $candidate['provider'],
-                    model: (string) $candidate['model'],
-                    capability: $run->capability,
-                    requiresDocument: (bool) collect($attachmentResolution['files'])
-                        ->contains(static fn (mixed $file): bool => $file instanceof StoredDocument),
-                ),
-            ));
+            $requiredModalities = [];
+            foreach ($attachmentResolution['files'] as $file) {
+                $modality = match (true) {
+                    $file instanceof StoredDocument => AiModelModality::DocumentInput,
+                    $file instanceof StoredImage => AiModelModality::ImageInput,
+                    default => null,
+                };
+
+                if ($modality === null) {
+                    $requiredModalities = null;
+                    break;
+                }
+
+                $requiredModalities[$modality->value] = $modality;
+            }
+
+            if ($requiredModalities === null) {
+                $candidates = [];
+            } else {
+                $candidates = array_values(array_filter(
+                    $candidates,
+                    fn (array $candidate): bool => AiProviderFactory::supportsAttachments(
+                        providerName: (string) $candidate['provider'],
+                        release: $candidate['release'],
+                        requiredModalities: array_values($requiredModalities),
+                    ),
+                ));
+            }
         }
 
         // Fail closed if no valid immutable candidate exists

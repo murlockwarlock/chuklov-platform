@@ -125,6 +125,7 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
         $snapshot = $run->fresh()->execution_candidate_snapshot;
         $this->assertSame($firstRelease->id, $snapshot[0]['model_release_id']);
         $this->assertSame($secondRelease->id, $snapshot[1]['model_release_id']);
+        $this->assertSame([AiCapability::ClientCompanion->value], $snapshot[0]['capabilities']);
 
         [, $newRelease] = $this->candidate('gemini', 'Gemini new', 'gemini-2.0-flash', 0);
         AiModelConfiguration::query()->whereKey($firstRelease->model_config_id)->update(['failover_priority' => 99]);
