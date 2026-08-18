@@ -18,6 +18,8 @@ final class EditSurveyDefinition extends EditRecord
 {
     protected static string $resource = SurveyDefinitionResource::class;
 
+    protected static ?string $title = 'Редактировать тест';
+
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $record = $this->getRecord();

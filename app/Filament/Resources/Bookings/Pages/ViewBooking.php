@@ -8,4 +8,6 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewBooking extends ViewRecord
 {
     protected static string $resource = BookingResource::class;
+
+    protected static ?string $title = 'Запись на приём';
 }

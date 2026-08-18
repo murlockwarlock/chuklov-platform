@@ -10,6 +10,8 @@ final class ListSurveyDefinitions extends ListRecords
 {
     protected static string $resource = SurveyDefinitionResource::class;
 
+    protected static ?string $title = 'Опросники и тесты';
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

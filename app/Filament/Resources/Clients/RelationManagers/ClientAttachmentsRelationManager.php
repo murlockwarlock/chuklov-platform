@@ -27,7 +27,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
 {
     protected static string $relationship = 'medicalAttachments';
 
-    protected static ?string $title = 'Файлы';
+    protected static ?string $title = 'Файлы и МРТ';
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
@@ -53,28 +53,35 @@ final class ClientAttachmentsRelationManager extends RelationManager
                 fn (Builder $query): Builder => app(ListClientAttachments::class)->query($actor, $client),
             )
             ->columns([
-                TextColumn::make('original_filename')->label('Файл')->limit(48)->wrap(),
+                TextColumn::make('original_filename')
+                    ->label('Файл')
+                    ->limit(36)
+                    ->wrap(),
                 TextColumn::make('attachment_type')
                     ->label('Тип')
+                    ->badge()
                     ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
                         ? $state->label()
-                        : (AttachmentType::tryFrom($state)?->label() ?? 'Файл'))
-                    ->wrap(),
-                TextColumn::make('mime_type')->label('Формат')->visibleFrom('sm'),
+                        : (AttachmentType::tryFrom($state)?->label() ?? 'Файл')),
+                TextColumn::make('scan_status')
+                    ->label('Проверка')
+                    ->badge()
+                    ->formatStateUsing(fn (AttachmentScanStatus|string $state): string => match (self::scanStatus($state)) {
+                        AttachmentScanStatus::Cleared => 'Проверен',
+                        AttachmentScanStatus::Pending => 'На проверке',
+                        AttachmentScanStatus::Quarantined => 'На карантине',
+                        AttachmentScanStatus::Rejected => 'Отклонён',
+                    })
+                    ->color(fn (AttachmentScanStatus|string $state): string => self::scanStatusColor($state))
+                    ->tooltip(fn (AttachmentScanStatus|string $state): string => self::scanStatusDescription($state)),
                 TextColumn::make('size_bytes')
                     ->label('Размер')
                     ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
                     ->visibleFrom('sm'),
-                TextColumn::make('scan_status')
-                    ->label('Проверка')
-                    ->badge()
-                    ->formatStateUsing(fn (AttachmentScanStatus|string $state): string => $state instanceof AttachmentScanStatus
-                        ? $state->label()
-                        : (AttachmentScanStatus::tryFrom($state)?->label() ?? 'Неизвестно'))
-                    ->color(fn (AttachmentScanStatus|string $state): string => self::scanStatusColor($state))
-                    ->description(fn (AttachmentScanStatus|string $state): string => self::scanStatusDescription($state))
-                    ->wrap(),
-                TextColumn::make('created_at')->label('Загружен')->dateTime('d.m.Y H:i')->visibleFrom('sm'),
+                TextColumn::make('created_at')
+                    ->label('Загружен')
+                    ->dateTime('d.m.Y H:i')
+                    ->visibleFrom('md'),
             ])
             ->headerActions([
                 Action::make('upload')

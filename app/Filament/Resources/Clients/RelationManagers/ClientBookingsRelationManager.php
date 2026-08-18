@@ -14,7 +14,7 @@ final class ClientBookingsRelationManager extends RelationManager
 {
     protected static string $relationship = 'bookings';
 
-    protected static ?string $title = 'Записи';
+    protected static ?string $title = 'Записи на приём';
 
     public function table(Table $table): Table
     {

@@ -15,6 +15,8 @@ class EditService extends EditRecord
 {
     protected static string $resource = ServiceResource::class;
 
+    protected static ?string $title = 'Редактировать услугу';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof Service, 404);

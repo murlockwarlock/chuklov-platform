@@ -20,7 +20,6 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\GlobalSearch\GlobalSearchResult;
-use Filament\Resources\Pages\Page;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -34,7 +33,7 @@ class ClientResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
 
-    protected static ?string $navigationLabel = 'Клиенты';
+    protected static ?string $navigationLabel = 'База клиентов';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Клиенты';
 
@@ -96,14 +95,6 @@ class ClientResource extends Resource
                     'Телефон' => $client->phone,
                 ]),
             ));
-    }
-
-    public static function getRecordSubNavigation(Page $page): array
-    {
-        return $page->generateNavigationItems([
-            ViewClient::class,
-            EditClient::class,
-        ]);
     }
 
     public static function getEloquentQuery(): Builder

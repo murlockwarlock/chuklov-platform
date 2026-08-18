@@ -8,4 +8,6 @@ use Filament\Resources\Pages\ListRecords;
 final class ListSurveyAttempts extends ListRecords
 {
     protected static string $resource = SurveyAttemptResource::class;
+
+    protected static ?string $title = 'Результаты тестов';
 }

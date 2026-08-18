@@ -12,6 +12,8 @@ final class CreateSurveyDefinition extends CreateRecord
 {
     protected static string $resource = SurveyDefinitionResource::class;
 
+    protected static ?string $title = 'Создать тест';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

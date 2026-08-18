@@ -19,6 +19,8 @@ class CreateBooking extends CreateRecord
 {
     protected static string $resource = BookingResource::class;
 
+    protected static ?string $title = 'Создать запись на приём';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

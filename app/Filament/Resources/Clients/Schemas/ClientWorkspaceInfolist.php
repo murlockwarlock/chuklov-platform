@@ -11,6 +11,7 @@ use App\Modules\Identity\Application\GetClientCommunicationStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -19,109 +20,162 @@ final class ClientWorkspaceInfolist
     public static function configure(Schema $schema): Schema
     {
         return $schema
+            ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start'])
             ->components([
-                Section::make('Клиент')
-                    ->schema([
-                        TextEntry::make('full_name')->label('Имя и фамилия')->weight('bold')->wrap(),
-                        TextEntry::make('id')
-                            ->label('ID клиента')
-                            ->formatStateUsing(fn (int|string $state): string => '#'.$state),
-                        TextEntry::make('email')->label('Email')->placeholder('Не указан')->wrap(),
-                        TextEntry::make('phone')->label('Телефон')->placeholder('Не указан')->wrap(),
-                        TextEntry::make('language')
-                            ->label('Язык')
-                            ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
-                            ->wrap(),
-                        TextEntry::make('timezone')
-                            ->label('Часовой пояс')
-                            ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
-                            ->wrap(),
-                        TextEntry::make('lead_source')->label('Источник обращения')->placeholder('Не указан')->wrap(),
-                        TextEntry::make('referral_code')->label('Код рекомендации')->placeholder('Не указан')->wrap(),
-                    ])
-                    ->columns([
-                        'default' => 1,
-                        'sm' => 2,
-                        'xl' => 4,
-                    ]),
-                Section::make('Связь и запись')
-                    ->schema([
-                        TextEntry::make('communication_status')
-                            ->label('Каналы связи')
-                            ->state(function (Client $record): string {
-                                $actor = auth()->user();
+                // 1. Left Operational Rail (~320px)
+                Group::make([
+                    Section::make('Операционные данные и связь')
+                        ->schema([
+                            TextEntry::make('phone')
+                                ->label('Телефон')
+                                ->placeholder('Не указан')
+                                ->fontFamily('mono')
+                                ->wrap(),
+                            TextEntry::make('email')
+                                ->label('Email')
+                                ->placeholder('Не указан')
+                                ->wrap(),
+                            TextEntry::make('communication_status')
+                                ->label('Каналы связи')
+                                ->state(function (Client $record): string {
+                                    $actor = auth()->user();
 
-                                if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
-                                }
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
 
-                                return implode(', ', app(GetClientCommunicationStatus::class)->handle($actor, $record));
-                            })
-                            ->placeholder('Каналы не подключены')
-                            ->wrap(),
-                        TextEntry::make('activeBookingRestriction.reason')
-                            ->label('Самостоятельная запись')
-                            ->formatStateUsing(fn (?string $state): string => $state === null ? 'Разрешена' : 'Ограничена: '.$state)
-                            ->placeholder('Разрешена')
-                            ->wrap(),
-                        TextEntry::make('balance_summary')
-                            ->label('Открытый баланс')
-                            ->state(function (Client $record): string {
-                                $actor = auth()->user();
+                                    $channels = app(GetClientCommunicationStatus::class)->handle($actor, $record);
 
-                                if (! $actor instanceof User || ! app(FinanceAuthorization::class)->allowsView($actor)) {
-                                    return 'Недоступно';
-                                }
+                                    return $channels === [] ? 'Каналы не подключены' : implode(', ', $channels);
+                                })
+                                ->placeholder('Каналы не подключены')
+                                ->wrap(),
+                            TextEntry::make('timezone')
+                                ->label('Часовой пояс')
+                                ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
+                                ->wrap(),
+                            TextEntry::make('language')
+                                ->label('Язык')
+                                ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                            TextEntry::make('lead_source')
+                                ->label('Источник обращения')
+                                ->placeholder('Не указан')
+                                ->wrap(),
+                            TextEntry::make('referral_code')
+                                ->label('Код рекомендации')
+                                ->fontFamily('mono')
+                                ->placeholder('Не указан')
+                                ->wrap(),
+                            TextEntry::make('booking_restriction_status')
+                                ->label('Самостоятельная запись')
+                                ->state(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Разрешена' : 'Ограничена')
+                                ->badge()
+                                ->color(fn (string $state): string => $state === 'Разрешена' ? 'success' : 'danger')
+                                ->description(fn (Client $record): ?string => $record->activeBookingRestriction?->reason ? 'Причина: '.$record->activeBookingRestriction->reason : null)
+                                ->wrap(),
+                            TextEntry::make('balance_summary')
+                                ->label('Открытый баланс')
+                                ->state(function (Client $record): string {
+                                    $actor = auth()->user();
 
-                                $summary = app(GetClientBalanceSummary::class)->handle($actor, $record);
+                                    if (! $actor instanceof User || ! app(FinanceAuthorization::class)->allowsView($actor)) {
+                                        return 'Недоступно';
+                                    }
 
-                                if ($summary === []) {
-                                    return 'Открытых начислений нет';
-                                }
+                                    $summary = app(GetClientBalanceSummary::class)->handle($actor, $record);
 
-                                return collect($summary)
-                                    ->map(fn (array $item): string => Money::ofMinor($item['outstandingMinor'], $item['currency'])->toDecimalString().' '.$item['currency'])
-                                    ->implode(', ');
-                            })
-                            ->placeholder('Нет данных')
-                            ->wrap(),
-                    ])
-                    ->columns([
-                        'default' => 1,
-                        'sm' => 2,
-                        'xl' => 3,
-                    ]),
-                Section::make('Медицинский профиль')
-                    ->description('Защищённые данные доступны только в контексте открытого клиента.')
-                    ->schema([
-                        TextEntry::make('medical_profile')
-                            ->label('Профиль')
-                            ->state(function (Client $record): array {
-                                $actor = auth()->user();
+                                    if ($summary === []) {
+                                        return 'Открытых начислений нет';
+                                    }
 
-                                if (! $actor instanceof User) {
-                                    return ['Статус: Требуется авторизация'];
-                                }
+                                    return collect($summary)
+                                        ->map(fn (array $item): string => Money::ofMinor($item['outstandingMinor'], $item['currency'])->toDecimalString().' '.$item['currency'])
+                                        ->implode(', ');
+                                })
+                                ->placeholder('Нет данных')
+                                ->wrap(),
+                        ])
+                        ->columns(1),
+                ])->extraAttributes(['class' => 'w-full']),
 
-                                $profile = app(GetMedicalProfile::class)->handle($actor, $record);
+                // 2. Right Clinical Workspace (min-w-0)
+                Group::make([
+                    Section::make('Клинический профиль')
+                        ->description('Защищённые данные (Class C)')
+                        ->schema([
+                            TextEntry::make('anamnesis')
+                                ->label('Клинический анамнез')
+                                ->state(function (Client $record): ?string {
+                                    $actor = auth()->user();
 
-                                if ($profile === null) {
-                                    return ['Статус: Профиль не заполнен'];
-                                }
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
 
-                                return [
-                                    'Анамнез: '.($profile->anamnesis ?: 'Не заполнен'),
-                                    'Жалобы и цели: '.($profile->complaintsGoals ?: 'Не указаны'),
-                                    'Операции и травмы: '.($profile->operationsInjuries ?: 'Не указаны'),
-                                    'Лекарственные препараты: '.($profile->medicines ?: 'Не указаны'),
-                                    'Биологически активные добавки: '.($profile->supplements ?: 'Не указаны'),
-                                ];
-                            })
-                            ->listWithLineBreaks()
-                            ->wrap()
-                            ->columnSpanFull(),
-                    ])
-                    ->collapsible(),
+                                    return app(GetMedicalProfile::class)->handle($actor, $record)?->anamnesis;
+                                })
+                                ->placeholder('Не заполнен')
+                                ->columnSpanFull()
+                                ->wrap(),
+                            TextEntry::make('complaints_goals')
+                                ->label('Жалобы, ВАШ и цели')
+                                ->state(function (Client $record): ?string {
+                                    $actor = auth()->user();
+
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
+
+                                    return app(GetMedicalProfile::class)->handle($actor, $record)?->complaintsGoals;
+                                })
+                                ->placeholder('Не указаны')
+                                ->columnSpanFull()
+                                ->wrap(),
+                            TextEntry::make('operations_injuries')
+                                ->label('Операции и травмы')
+                                ->state(function (Client $record): ?string {
+                                    $actor = auth()->user();
+
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
+
+                                    return app(GetMedicalProfile::class)->handle($actor, $record)?->operationsInjuries;
+                                })
+                                ->placeholder('Не указаны')
+                                ->columnSpanFull()
+                                ->wrap(),
+                            TextEntry::make('medicines')
+                                ->label('Фармакотерапия (лекарственные препараты)')
+                                ->state(function (Client $record): ?string {
+                                    $actor = auth()->user();
+
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
+
+                                    return app(GetMedicalProfile::class)->handle($actor, $record)?->medicines;
+                                })
+                                ->placeholder('Не указаны')
+                                ->columnSpanFull()
+                                ->wrap(),
+                            TextEntry::make('supplements')
+                                ->label('Нутрицевтики и БАДы')
+                                ->state(function (Client $record): ?string {
+                                    $actor = auth()->user();
+
+                                    if (! $actor instanceof User) {
+                                        return 'Требуется авторизация';
+                                    }
+
+                                    return app(GetMedicalProfile::class)->handle($actor, $record)?->supplements;
+                                })
+                                ->placeholder('Не указаны')
+                                ->columnSpanFull()
+                                ->wrap(),
+                        ])
+                        ->columns(1),
+                ])->extraAttributes(['class' => 'min-w-0 w-full']),
             ]);
     }
 }

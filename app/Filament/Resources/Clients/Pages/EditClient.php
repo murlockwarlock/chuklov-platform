@@ -13,6 +13,8 @@ class EditClient extends EditRecord
 {
     protected static string $resource = ClientResource::class;
 
+    protected static ?string $title = 'Редактировать клиента';
+
     /** @param array<string, mixed> $data */
     protected function handleRecordUpdate(Model $record, array $data): Model
     {

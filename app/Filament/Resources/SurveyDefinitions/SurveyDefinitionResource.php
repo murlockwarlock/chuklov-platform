@@ -24,7 +24,7 @@ final class SurveyDefinitionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
-    protected static ?string $navigationLabel = 'Тесты';
+    protected static ?string $navigationLabel = 'Опросники и тесты';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Контент и знания';
 

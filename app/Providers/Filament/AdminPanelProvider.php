@@ -2,13 +2,13 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
 use App\Http\Middleware\ResolveOrganization;
 use App\Http\Middleware\SetAdminLocale;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;

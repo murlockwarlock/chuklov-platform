@@ -29,7 +29,7 @@ class ViewClient extends ViewRecord
 
     public function getContentTabLabel(): ?string
     {
-        return 'Профиль';
+        return 'Клинический профиль';
     }
 
     public function infolist(Schema $schema): Schema

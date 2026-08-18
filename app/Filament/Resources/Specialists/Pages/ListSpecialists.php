@@ -10,6 +10,8 @@ class ListSpecialists extends ListRecords
 {
     protected static string $resource = SpecialistResource::class;
 
+    protected static ?string $title = 'Специалисты';
+
     protected function getHeaderActions(): array
     {
         return [CreateAction::make()];

@@ -27,35 +27,46 @@ class ClientsTable
                 TextColumn::make('id')
                     ->label('ID')
                     ->formatStateUsing(fn (int|string $state): string => '#'.$state)
+                    ->fontFamily('mono')
                     ->sortable(),
-                TextColumn::make('full_name')->label('Имя')->sortable(),
-                TextColumn::make('email')->label('Email')->placeholder('—'),
-                TextColumn::make('phone')->label('Телефон')->placeholder('—'),
-                TextColumn::make('language')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
-                    ->sortable(),
+                TextColumn::make('full_name')->label('Имя')->sortable()->wrap(),
+                TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—'),
+                TextColumn::make('email')->label('Email')->placeholder('—')->visibleFrom('sm'),
+                TextColumn::make('channel_identities_count')->label('Способы связи')->sortable()->visibleFrom('md'),
                 TextColumn::make('timezone')
                     ->label('Часовой пояс')
                     ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
-                    ->sortable(),
-                TextColumn::make('channel_identities_count')->label('Способы связи')->sortable(),
+                    ->sortable()
+                    ->visibleFrom('lg'),
+                TextColumn::make('language')
+                    ->label('Язык')
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->sortable()
+                    ->visibleFrom('xl'),
                 IconColumn::make('activeBookingRestriction')
-                    ->label('Самостоятельная запись заблокирована')
+                    ->label('Запись')
                     ->boolean()
-                    ->state(fn (Client $record): bool => $record->activeBookingRestriction !== null),
+                    ->state(fn (Client $record): bool => $record->activeBookingRestriction === null)
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger')
+                    ->tooltip(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Запись разрешена' : 'Запись ограничена: '.$record->activeBookingRestriction->reason),
             ])
             ->filters([
                 TernaryFilter::make('activeBookingRestriction')
-                    ->label('Самостоятельная запись заблокирована')
+                    ->label('Самостоятельная запись')
+                    ->placeholder('Все клиенты')
+                    ->trueLabel('Только разрешённые')
+                    ->falseLabel('Только с ограничениями')
                     ->queries(
-                        true: fn ($query) => $query->whereHas('activeBookingRestriction'),
-                        false: fn ($query) => $query->whereDoesntHave('activeBookingRestriction'),
+                        true: fn ($query) => $query->whereDoesntHave('activeBookingRestriction'),
+                        false: fn ($query) => $query->whereHas('activeBookingRestriction'),
                     ),
             ])
             ->recordActions([
-                ViewAction::make(),
-                EditAction::make(),
+                ViewAction::make()->label('Открыть'),
+                EditAction::make()->label('Редактировать'),
             ]);
     }
 }

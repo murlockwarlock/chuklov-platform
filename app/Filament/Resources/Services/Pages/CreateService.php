@@ -12,6 +12,8 @@ class CreateService extends CreateRecord
 {
     protected static string $resource = ServiceResource::class;
 
+    protected static ?string $title = 'Добавить услугу';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

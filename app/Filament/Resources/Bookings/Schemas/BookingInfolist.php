@@ -13,6 +13,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use Carbon\CarbonImmutable;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
 class BookingInfolist
@@ -21,41 +22,60 @@ class BookingInfolist
     {
         return $schema
             ->components([
-                TextEntry::make('client.full_name')->label('Клиент'),
-                TextEntry::make('specialist.display_name')->label('Специалист'),
-                TextEntry::make('service.name')->label('Услуга'),
-                TextEntry::make('visit_format')
-                    ->label('Формат')
-                    ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
-                TextEntry::make('status')
-                    ->label('Статус')
-                    ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state)),
-                TextEntry::make('payment_status')
-                    ->label('Оплата')
-                    ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state)),
-                TextEntry::make('payment_requirement')
-                    ->label('Условие оплаты')
-                    ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state)),
-                TextEntry::make('party_size')->label('Количество человек'),
-                TextEntry::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i'),
-                TextEntry::make('ends_at')->label('Окончание')->dateTime('d.m.Y H:i'),
-                TextEntry::make('requested_at')->label('Создана')->dateTime('d.m.Y H:i'),
-                TextEntry::make('location')->label('Адрес'),
-                TextEntry::make('meeting_url')
-                    ->label('Ссылка на встречу')
-                    ->url(fn (Booking $record): ?string => $record->meeting_url)
-                    ->openUrlInNewTab(),
-                TextEntry::make('history')
-                    ->label('История записи')
-                    ->state(function (Booking $record): string {
-                        return $record->events()
-                            ->with(['actorUser', 'actorClient'])
-                            ->orderBy('occurred_at')
-                            ->get()
-                            ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
-                            ->implode("\n");
-                    })
-                    ->columnSpanFull(),
+                Section::make('Информация о приёме')
+                    ->schema([
+                        TextEntry::make('client.full_name')->label('Клиент')->wrap(),
+                        TextEntry::make('specialist.display_name')->label('Специалист')->wrap(),
+                        TextEntry::make('service.name')->label('Услуга')->wrap(),
+                        TextEntry::make('visit_format')
+                            ->label('Формат')
+                            ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
+                        TextEntry::make('starts_at')->label('Дата и время начала')->dateTime('d.m.Y H:i'),
+                        TextEntry::make('ends_at')->label('Окончание')->dateTime('d.m.Y H:i'),
+                        TextEntry::make('party_size')->label('Количество персон'),
+                        TextEntry::make('requested_at')->label('Заявка создана')->dateTime('d.m.Y H:i'),
+                        TextEntry::make('location')->label('Адрес')->placeholder('Не указан')->columnSpanFull()->wrap(),
+                        TextEntry::make('meeting_url')
+                            ->label('Ссылка на онлайн-встречу')
+                            ->placeholder('Не указана')
+                            ->url(fn (Booking $record): ?string => $record->meeting_url)
+                            ->openUrlInNewTab()
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2),
+
+                Section::make('Статус и оплата')
+                    ->schema([
+                        TextEntry::make('status')
+                            ->label('Статус записи')
+                            ->badge()
+                            ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state)),
+                        TextEntry::make('payment_status')
+                            ->label('Статус оплаты')
+                            ->badge()
+                            ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state)),
+                        TextEntry::make('payment_requirement')
+                            ->label('Условие оплаты')
+                            ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state)),
+                    ])
+                    ->columns(3),
+
+                Section::make('История событий')
+                    ->schema([
+                        TextEntry::make('history')
+                            ->label('Журнал изменений')
+                            ->state(function (Booking $record): string {
+                                return $record->events()
+                                    ->with(['actorUser', 'actorClient'])
+                                    ->orderBy('occurred_at')
+                                    ->get()
+                                    ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
+                                    ->implode("\n");
+                            })
+                            ->placeholder('Событий пока нет')
+                            ->columnSpanFull()
+                            ->wrap(),
+                    ]),
             ]);
     }
 
