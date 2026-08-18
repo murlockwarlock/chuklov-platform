@@ -5,6 +5,7 @@ namespace App\Filament\Resources\SurveyAttempts;
 use App\Filament\Resources\SurveyAttempts\Pages\ListSurveyAttempts;
 use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use BackedEnum;
 use Filament\Actions\ViewAction;
@@ -52,7 +53,7 @@ final class SurveyAttemptResource extends Resource
                 TextColumn::make('status')
                     ->label('Статус')
                     ->badge()
-                    ->formatStateUsing(fn ($state): string => ($state?->value ?? (string) $state) === 'completed' ? 'Завершён' : 'Не завершён'),
+                    ->formatStateUsing(fn (SurveyAttemptStatus $state): string => $state === SurveyAttemptStatus::Completed ? 'Завершён' : 'Не завершён'),
                 TextColumn::make('completed_at')->label('Завершён')->dateTime('d.m.Y H:i')->placeholder('—')->sortable(),
             ])
             ->recordActions([ViewAction::make()->label('Открыть')])

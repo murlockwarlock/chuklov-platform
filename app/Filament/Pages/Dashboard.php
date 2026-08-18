@@ -9,7 +9,7 @@ final class Dashboard extends BaseDashboard
 {
     protected static ?string $title = 'Инфопанель';
 
-    public function getColumns(): int|array
+    public function getColumns(): int
     {
         return 1;
     }

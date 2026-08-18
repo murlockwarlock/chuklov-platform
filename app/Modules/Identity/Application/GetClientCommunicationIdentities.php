@@ -36,7 +36,7 @@ final readonly class GetClientCommunicationIdentities
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
-        return ClientChannelIdentity::query()
+        return array_values(ClientChannelIdentity::query()
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->select(['id', 'organization_id', 'client_id', 'channel', 'external_id', 'verification_status', 'verified_at'])
@@ -62,14 +62,19 @@ final readonly class GetClientCommunicationIdentities
                     default => $identity->external_id,
                 };
 
+                $verifiedAt = $identity->getAttribute('verified_at');
+                if ($verifiedAt !== null && ! $verifiedAt instanceof \DateTimeInterface) {
+                    throw new \LogicException('The client identity verified_at attribute must be a datetime or null.');
+                }
+
                 return [
                     'channel' => $identity->channel,
                     'externalId' => (string) $identity->external_id,
                     'verificationStatus' => $identity->verification_status,
-                    'verifiedAt' => $identity->verified_at,
+                    'verifiedAt' => $verifiedAt,
                     'summary' => $channelName.' ('.$idLabel.', '.$statusLabel.')',
                 ];
             })
-            ->all();
+            ->all());
     }
 }
