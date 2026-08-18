@@ -17,6 +17,23 @@ type CrmFixture = {
     bookingStartsAt: string;
 };
 
+function validPdfBuffer(): Buffer {
+    return Buffer.from([
+        '%PDF-1.4',
+        '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 595 842]>>endobj',
+        'xref',
+        '0 4',
+        '0000000000 65535 f',
+        '0000000009 00000 n',
+        '0000000052 00000 n',
+        '0000000101 00000 n',
+        'trailer<</Size 4/Root 1 0 R>>',
+        'startxref',
+        '150',
+        '%%EOF',
+    ].join('\n'));
+}
+
 function createCrmFixture(): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
@@ -258,7 +275,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
     for (const tabLabel of ['Клинический профиль', 'Сеансы', 'Записи на приём', 'Опросы и отчёты', 'Файлы и МРТ']) {
-        await expect(page.getByText(tabLabel, { exact: true }).last()).toBeVisible();
+        await expect(page.getByRole('tab', { name: tabLabel, exact: true })).toBeVisible();
     }
 
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
@@ -269,7 +286,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
-    await page.getByText('Файлы и МРТ', { exact: true }).last().click();
+    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     const attachmentType = uploadDialog.getByLabel('Тип файла');
@@ -281,12 +298,18 @@ test('staff can use the client cockpit for medical profile and private files', a
     await fileInput.setInputFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
-        buffer: Buffer.from('%PDF-1.4\nUX-A'),
+        buffer: validPdfBuffer(),
     });
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
+    await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
+    await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
     await uploadSubmit.click();
-    await expect(page.getByText('ux-a-report.pdf', { exact: true })).toBeVisible();
+
+    const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
+    const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
+    await expect(uploadedRow).toBeVisible();
+    await expect(uploadedRow.getByRole('cell', { name: 'ux-a-report.pdf', exact: true })).toBeVisible();
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
