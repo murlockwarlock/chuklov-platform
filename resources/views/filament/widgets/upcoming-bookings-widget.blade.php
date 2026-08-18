@@ -42,14 +42,21 @@
                                 $formatLabel = \App\Filament\Widgets\UpcomingBookingsWidget::formatLabel($booking->visit_format);
                             @endphp
                             <a href="{{ \App\Filament\Resources\Bookings\BookingResource::getUrl('view', ['record' => $booking->id]) }}"
-                               class="block bg-white dark:bg-gray-900 border border-slate-200 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[4px] p-2.5 transition group shadow-none">
-                                <div class="flex items-center justify-between mb-1.5">
-                                    <span class="font-mono text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition">
-                                        {{ $time }}
-                                    </span>
-                                    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-[3px] border {{ $statusColor }}">
-                                        {{ $statusLabel }}
-                                    </span>
+                               class="block bg-white dark:bg-gray-900 border border-slate-200 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[4px] p-2.5 transition group shadow-none min-w-0 overflow-hidden">
+                                <div class="flex flex-col gap-1.5 mb-2">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="font-mono text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition shrink-0">
+                                            {{ $time }}
+                                        </span>
+                                        <span class="text-[10px] text-slate-400 dark:text-gray-400 shrink-0 font-medium">
+                                            {{ $formatLabel }}
+                                        </span>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <span class="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-[3px] border leading-normal break-words {{ $statusColor }}">
+                                            {{ $statusLabel }}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div class="text-xs font-semibold text-slate-900 dark:text-white truncate mb-0.5" title="{{ $booking->client?->full_name }}">
                                     {{ $booking->client?->full_name ?: 'Клиент #' . $booking->client_id }}
@@ -57,13 +64,8 @@
                                 <div class="text-[11px] text-slate-600 dark:text-gray-300 truncate mb-1" title="{{ $booking->service?->name }}">
                                     {{ $booking->service?->name ?: 'Услуга' }}
                                 </div>
-                                <div class="flex items-center justify-between text-[10px] text-slate-500 dark:text-gray-400 pt-1 border-t border-slate-100 dark:border-white/5">
-                                    <span class="truncate max-w-[65%]" title="{{ $booking->specialist?->display_name }}">
-                                        {{ $booking->specialist?->display_name ?: 'Специалист' }}
-                                    </span>
-                                    <span class="text-slate-400 dark:text-gray-500">
-                                        {{ $formatLabel }}
-                                    </span>
+                                <div class="text-[10px] text-slate-500 dark:text-gray-400 pt-1 border-t border-slate-100 dark:border-white/5 truncate" title="{{ $booking->specialist?->display_name }}">
+                                    {{ $booking->specialist?->display_name ?: 'Специалист' }}
                                 </div>
                             </a>
                         @empty

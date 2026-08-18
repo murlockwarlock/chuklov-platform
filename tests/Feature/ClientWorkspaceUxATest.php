@@ -16,7 +16,9 @@ use App\Modules\Finance\Application\GetClientBalanceSummary;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Application\ClientSearch;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -426,5 +428,78 @@ final class ClientWorkspaceUxATest extends TestCase
             'idempotency_key' => 'ux-a-balance-payment-'.$organization->id.'-'.$client->id.'-'.$index,
         ]);
         $entry->save();
+    }
+
+    public function test_phone_prefix_search_finds_clients_by_partial_number(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $otherOrganization = Organization::factory()->create();
+
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Евгений Пронин',
+            'phone' => '87052865589',
+        ]);
+        self::assertSame('77052865589', $client->phone_search_key);
+
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create([
+            'full_name' => 'Чужой Клиент',
+            'phone' => '87052865589',
+        ]);
+
+        $search = app(ClientSearch::class);
+
+        // A. Search '8705' finds domestic leading-8 phone normalized to 7
+        $results = $search->query($admin, '8705')->pluck('id')->all();
+        self::assertContains($client->id, $results);
+        self::assertNotContains($otherClient->id, $results, 'cross-tenant isolated');
+
+        // B. Search '7705' finds the same client
+        $results = $search->query($admin, '7705')->pluck('id')->all();
+        self::assertContains($client->id, $results);
+
+        // C. Explicit #ID does not match phone
+        $results = $search->query($admin, '#8705')->pluck('id')->all();
+        self::assertNotContains($client->id, $results);
+
+        // D. 1-3 digits do not run phone prefix search
+        $results = $search->query($admin, '870')->pluck('id')->all();
+        self::assertNotContains($client->id, $results);
+    }
+
+    public function test_client_cockpit_renders_identity_summary_and_edit_action(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Анна Иванова',
+            'phone' => '+7 (999) 123-45-67',
+            'email' => 'anna@example.test',
+            'language' => 'ru',
+            'timezone' => 'Europe/Moscow',
+            'lead_source' => 'Инстаграм',
+            'referral_code' => 'REF123',
+        ]);
+
+        ClientChannelIdentity::forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $client->id,
+            'channel' => 'telegram',
+            'external_id' => '12345678',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+
+        Livewire::test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSuccessful()
+            ->assertSee('#'.$client->id)
+            ->assertSee('Анна Иванова')
+            ->assertSee('+7 (999) 123-45-67')
+            ->assertSee('anna@example.test')
+            ->assertSee('Telegram ID: 12345678')
+            ->assertSee('Инстаграм')
+            ->assertSee('REF123')
+            ->assertActionExists('edit');
     }
 }

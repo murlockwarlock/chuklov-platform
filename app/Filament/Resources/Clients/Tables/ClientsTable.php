@@ -64,6 +64,8 @@ class ClientsTable
                         false: fn ($query) => $query->whereHas('activeBookingRestriction'),
                     ),
             ])
+            ->emptyStateHeading('Клиентов пока нет')
+            ->emptyStateDescription('Добавьте клиента вручную или он появится автоматически после первой записи.')
             ->recordActions([
                 ViewAction::make()->label('Открыть'),
                 EditAction::make()->label('Редактировать'),

@@ -16,6 +16,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
@@ -25,179 +26,214 @@ final class ScenarioRuleForm
     {
         return $schema
             ->components([
-                TextInput::make('name')
-                    ->label('Название правила')
-                    ->required()
-                    ->maxLength(160),
-                Select::make('trigger_event')
-                    ->label('Когда')
-                    ->options([
-                        ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
-                        ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
-                        ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',
-                        ScenarioEventType::SurveyCompleted->value => 'Клиент завершил тест',
-                        ScenarioEventType::TestStagnationDetected->value => 'В повторном тесте нет снижения показателей',
-                    ])
-                    ->required(),
-                Toggle::make('is_enabled')
-                    ->label('Активно')
-                    ->required()
-                    ->default(false),
-                TextInput::make('delay_value')
-                    ->label('Через')
-                    ->integer()
-                    ->required()
-                    ->minValue(0)
-                    ->maxValue(PHP_INT_MAX),
-                Select::make('delay_unit')
-                    ->label('Единица времени')
-                    ->options([
-                        ScenarioDelayUnit::Minutes->value => 'минут',
-                        ScenarioDelayUnit::Hours->value => 'часов',
-                        ScenarioDelayUnit::Days->value => 'дней',
-                    ])
-                    ->required(),
-                TextInput::make('max_occurrences')
-                    ->label('Максимум сообщений')
-                    ->integer()
-                    ->required()
-                    ->default(1)
-                    ->minValue(1)
-                    ->maxValue(100)
-                    ->live(),
-                TextInput::make('repeat_interval_value')
-                    ->label('Интервал между сообщениями')
-                    ->integer()
-                    ->minValue(1)
-                    ->maxValue(PHP_INT_MAX)
-                    ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
-                    ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
-                Select::make('repeat_interval_unit')
-                    ->label('Единица интервала')
-                    ->options([
-                        ScenarioDelayUnit::Minutes->value => 'минут',
-                        ScenarioDelayUnit::Hours->value => 'часов',
-                        ScenarioDelayUnit::Days->value => 'дней',
-                    ])
-                    ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
-                    ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
-                Select::make('purpose')
-                    ->label('Назначение сообщения')
-                    ->options([
-                        ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
-                        ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
-                    ])
-                    ->required(),
-                Select::make('template_version_id')
-                    ->label('Сообщение')
-                    ->options(fn (): array => NotificationTemplateVersion::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->where('status', NotificationTemplateStatus::Published->value)
-                        ->with('template')
-                        ->orderByDesc('id')
-                        ->get()
-                        ->mapWithKeys(function (NotificationTemplateVersion $version): array {
-                            $template = $version->template;
-
-                            return [
-                                $version->getKey() => ($template?->name ?: 'Сообщение').' — '.self::localeLabel($template?->locale),
-                            ];
-                        })
-                        ->all())
-                    ->searchable()
-                    ->required()
-                    ->helperText('Для уже отправленных сообщений сохраняется выбранный текст.'),
-                Repeater::make('conditions')
-                    ->label('Дополнительное условие')
+                Section::make('Основная информация')
                     ->schema([
-                        Select::make('type')
-                            ->label('Что проверить')
+                        TextInput::make('name')
+                            ->label('Название правила')
+                            ->required()
+                            ->maxLength(160),
+                        Toggle::make('is_enabled')
+                            ->label('Активно')
+                            ->helperText('Пока правило выключено, новые отправки по нему не создаются. Уже запланированные отправки не будут выполнены, если правило останется выключенным к моменту отправки.')
+                            ->required()
+                            ->default(false),
+                    ])
+                    ->columns(2),
+
+                Section::make('1. Когда отправлять')
+                    ->description('Укажите событие в CRM и задержку перед отправкой сообщения.')
+                    ->schema([
+                        Select::make('trigger_event')
+                            ->label('Событие')
                             ->options([
-                                'booking.status' => 'Статус записи',
-                                'booking.has_qualifying_next_booking' => 'Есть подходящая следующая запись',
-                                'client.language' => 'Язык клиента',
-                                'client.marketing_consent' => 'Согласие на маркетинговые сообщения',
-                                'onboarding.completed' => 'Оформление завершено',
-                                'onboarding.stage' => 'Этап оформления',
-                                'finance.has_outstanding_debt' => 'Есть непогашенная задолженность',
+                                ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
+                                ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
+                                ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',
+                                ScenarioEventType::SurveyCompleted->value => 'Клиент завершил тест',
+                                ScenarioEventType::TestStagnationDetected->value => 'В повторном тесте нет снижения показателей',
                             ])
-                            ->required(),
-                        Select::make('operator')
-                            ->label('Проверка')
+                            ->required()
+                            ->columnSpanFull(),
+                        TextInput::make('delay_value')
+                            ->label('Задержка перед отправкой')
+                            ->integer()
+                            ->required()
+                            ->minValue(0)
+                            ->maxValue(PHP_INT_MAX)
+                            ->default(0),
+                        Select::make('delay_unit')
+                            ->label('Единица времени')
                             ->options([
-                                ScenarioConditionOperator::Equals->value => 'Равно',
-                                ScenarioConditionOperator::NotEquals->value => 'Не равно',
-                                ScenarioConditionOperator::In->value => 'Одно из',
-                                ScenarioConditionOperator::Exists->value => 'Заполнено',
+                                ScenarioDelayUnit::Minutes->value => 'минут',
+                                ScenarioDelayUnit::Hours->value => 'часов',
+                                ScenarioDelayUnit::Days->value => 'дней',
                             ])
+                            ->required()
+                            ->default(ScenarioDelayUnit::Minutes->value),
+                        TextInput::make('max_occurrences')
+                            ->label('Максимум сообщений')
+                            ->integer()
+                            ->required()
+                            ->default(1)
+                            ->minValue(1)
+                            ->maxValue(100)
+                            ->live()
+                            ->columnSpanFull(),
+                        TextInput::make('repeat_interval_value')
+                            ->label('Интервал между повторами')
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(PHP_INT_MAX)
+                            ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
+                            ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
+                        Select::make('repeat_interval_unit')
+                            ->label('Единица интервала')
+                            ->options([
+                                ScenarioDelayUnit::Minutes->value => 'минут',
+                                ScenarioDelayUnit::Hours->value => 'часов',
+                                ScenarioDelayUnit::Days->value => 'дней',
+                            ])
+                            ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
+                            ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
+                    ])
+                    ->columns(2),
+
+                Section::make('2. При каких условиях')
+                    ->description('Дополнительные фильтры для отправки сообщения.')
+                    ->schema([
+                        Repeater::make('conditions')
+                            ->label('Условия отправки')
+                            ->schema([
+                                Select::make('type')
+                                    ->label('Что проверить')
+                                    ->options([
+                                        'booking.status' => 'Статус записи',
+                                        'booking.has_qualifying_next_booking' => 'Есть подходящая следующая запись',
+                                        'client.language' => 'Язык клиента',
+                                        'client.marketing_consent' => 'Согласие на маркетинговые сообщения',
+                                        'onboarding.completed' => 'Оформление завершено',
+                                        'onboarding.stage' => 'Этап оформления',
+                                        'finance.has_outstanding_debt' => 'Есть непогашенная задолженность',
+                                    ])
+                                    ->required(),
+                                Select::make('operator')
+                                    ->label('Проверка')
+                                    ->options([
+                                        ScenarioConditionOperator::Equals->value => 'Равно',
+                                        ScenarioConditionOperator::NotEquals->value => 'Не равно',
+                                        ScenarioConditionOperator::In->value => 'Одно из',
+                                        ScenarioConditionOperator::Exists->value => 'Заполнено',
+                                    ])
+                                    ->required(),
+                                Select::make('value')
+                                    ->label('Значение')
+                                    ->options(fn (Get $get): array => self::conditionValues($get('type')))
+                                    ->searchable()
+                                    ->visible(fn (Get $get): bool => ! in_array($get('operator'), [
+                                        ScenarioConditionOperator::In->value,
+                                        ScenarioConditionOperator::Exists->value,
+                                    ], true))
+                                    ->required(fn (Get $get): bool => in_array($get('operator'), [
+                                        ScenarioConditionOperator::Equals->value,
+                                        ScenarioConditionOperator::NotEquals->value,
+                                    ], true)),
+                                TagsInput::make('value')
+                                    ->label('Значения')
+                                    ->visible(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
+                                    ->required(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
+                                    ->nestedRecursiveRules(['string', 'max:120']),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить условие')
+                            ->columnSpanFull(),
+                    ]),
+
+                Section::make('3. Что отправлять')
+                    ->description('Выберите категорию и опубликованный шаблон сообщения.')
+                    ->schema([
+                        Select::make('purpose')
+                            ->label('Назначение сообщения')
+                            ->options([
+                                ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
+                                ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
+                            ])
+                            ->helperText('Категория сообщения. Сама по себе не определяет получателя или канал связи.')
                             ->required(),
-                        Select::make('value')
-                            ->label('Значение')
-                            ->options(fn (Get $get): array => self::conditionValues($get('type')))
+                        Select::make('template_version_id')
+                            ->label('Шаблон сообщения')
+                            ->options(fn (): array => NotificationTemplateVersion::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->where('status', NotificationTemplateStatus::Published->value)
+                                ->with('template')
+                                ->orderByDesc('id')
+                                ->get()
+                                ->mapWithKeys(function (NotificationTemplateVersion $version): array {
+                                    $template = $version->template;
+
+                                    return [
+                                        $version->getKey() => ($template?->name ?: 'Сообщение').' — '.self::localeLabel($template?->locale).' (v'.$version->version.')',
+                                    ];
+                                })
+                                ->all())
                             ->searchable()
-                            ->visible(fn (Get $get): bool => ! in_array($get('operator'), [
-                                ScenarioConditionOperator::In->value,
-                                ScenarioConditionOperator::Exists->value,
-                            ], true))
-                            ->required(fn (Get $get): bool => in_array($get('operator'), [
-                                ScenarioConditionOperator::Equals->value,
-                                ScenarioConditionOperator::NotEquals->value,
-                            ], true)),
-                        TagsInput::make('value')
-                            ->label('Значения')
-                            ->visible(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
-                            ->required(fn (Get $get): bool => $get('operator') === ScenarioConditionOperator::In->value)
-                            ->nestedRecursiveRules(['string', 'max:120']),
+                            ->required()
+                            ->helperText('Изменение текста создаёт новую версию. Существующие правила продолжают использовать выбранную ранее версию, пока вы явно не выберете новую.'),
                     ])
-                    ->columns(3)
-                    ->defaultItems(0)
-                    ->reorderable(false)
-                    ->addActionLabel('Добавить условие')
-                    ->columnSpanFull(),
-                Select::make('recipient_strategy.type')
-                    ->label('Кому')
-                    ->options([
-                        'client' => 'Клиенту записи',
-                        'members' => 'Выбранным сотрудникам',
-                        'roles' => 'Сотрудникам по роли',
+                    ->columns(2),
+
+                Section::make('4. Кому и как отправлять')
+                    ->description('Определите получателя и способ связи.')
+                    ->schema([
+                        Select::make('recipient_strategy.type')
+                            ->label('Кому отправлять')
+                            ->options([
+                                'client' => 'Клиенту записи',
+                                'members' => 'Выбранным сотрудникам',
+                                'roles' => 'Сотрудникам по роли',
+                            ])
+                            ->required()
+                            ->default('client')
+                            ->live(),
+                        Select::make('channel_priority')
+                            ->label('Способ связи')
+                            ->options([
+                                'telegram' => 'Telegram',
+                            ])
+                            ->multiple()
+                            ->required()
+                            ->default(['telegram']),
+                        Select::make('recipient_strategy.user_ids')
+                            ->label('Сотрудники')
+                            ->options(fn (): array => OrganizationMembership::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->active()
+                                ->with('user')
+                                ->orderBy('user_id')
+                                ->get()
+                                ->mapWithKeys(fn (OrganizationMembership $membership): array => [
+                                    $membership->user_id => $membership->user?->name.' ('.$membership->user?->email.')',
+                                ])
+                                ->all())
+                            ->multiple()
+                            ->searchable()
+                            ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'members')
+                            ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'members')
+                            ->columnSpanFull(),
+                        Select::make('recipient_strategy.roles')
+                            ->label('Роли')
+                            ->options([
+                                OrganizationRole::Owner->value => 'Владелец',
+                                OrganizationRole::Administrator->value => 'Администратор',
+                                OrganizationRole::Staff->value => 'Сотрудник',
+                            ])
+                            ->multiple()
+                            ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
+                            ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
+                            ->columnSpanFull(),
                     ])
-                    ->required()
-                    ->default('client')
-                    ->live(),
-                Select::make('recipient_strategy.user_ids')
-                    ->label('Сотрудники')
-                    ->options(fn (): array => OrganizationMembership::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->active()
-                        ->with('user')
-                        ->orderBy('user_id')
-                        ->get()
-                        ->mapWithKeys(fn (OrganizationMembership $membership): array => [
-                            $membership->user_id => $membership->user?->name.' ('.$membership->user?->email.')',
-                        ])
-                        ->all())
-                    ->multiple()
-                    ->searchable()
-                    ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'members')
-                    ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'members'),
-                Select::make('recipient_strategy.roles')
-                    ->label('Роли')
-                    ->options([
-                        OrganizationRole::Owner->value => 'Владелец',
-                        OrganizationRole::Administrator->value => 'Администратор',
-                        OrganizationRole::Staff->value => 'Сотрудник',
-                    ])
-                    ->multiple()
-                    ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
-                    ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles'),
-                Select::make('channel_priority')
-                    ->label('Способ связи')
-                    ->options([
-                        'telegram' => 'Telegram',
-                    ])
-                    ->multiple()
-                    ->required()
-                    ->default(['telegram']),
+                    ->columns(2),
             ]);
     }
 

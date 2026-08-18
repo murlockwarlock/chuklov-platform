@@ -40,7 +40,10 @@ class ViewClient extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            EditAction::make()->label('Изменить данные клиента'),
+            EditAction::make()
+                ->label('Редактировать клиента')
+                ->icon('heroicon-o-pencil-square')
+                ->color('primary'),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')

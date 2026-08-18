@@ -66,22 +66,48 @@ final readonly class ClientSearch
         if (preg_match('/^\d+$/', $input) === 1) {
             $id = $this->exactId($input);
             $phoneKey = ClientPhoneSearchKey::from($input);
+            $prefixCandidates = [];
 
-            if ($phoneKey !== null) {
-                return $this->bounded($query->where(function (Builder $query) use ($id, $phoneKey): void {
+            if (strlen($input) >= 4) {
+                $prefixCandidates[] = $input;
+                if ($input[0] === '8') {
+                    $prefixCandidates[] = '7'.substr($input, 1);
+                } elseif ($input[0] === '7') {
+                    $prefixCandidates[] = '8'.substr($input, 1);
+                }
+                $prefixCandidates = array_values(array_unique($prefixCandidates));
+            }
+
+            if ($id !== null || $phoneKey !== null || $prefixCandidates !== []) {
+                return $this->bounded($query->where(function (Builder $query) use ($id, $phoneKey, $prefixCandidates): void {
+                    $hasClause = false;
+
                     if ($id !== null) {
-                        $query->whereKey($id)->orWhere('phone_search_key', $phoneKey->value);
-
-                        return;
+                        $query->whereKey($id);
+                        $hasClause = true;
                     }
 
-                    $query->where('phone_search_key', $phoneKey->value);
+                    if ($phoneKey !== null) {
+                        $method = $hasClause ? 'orWhere' : 'where';
+                        $query->{$method}('phone_search_key', $phoneKey->value);
+                        $hasClause = true;
+                    }
+
+                    if ($prefixCandidates !== []) {
+                        foreach ($prefixCandidates as $prefix) {
+                            $method = $hasClause ? 'orWhere' : 'where';
+                            $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
+                            $hasClause = true;
+                        }
+                    }
+
+                    if (! $hasClause) {
+                        $query->whereKey(0);
+                    }
                 }));
             }
 
-            return $id === null
-                ? $this->bounded($query->whereKey(0))
-                : $this->bounded($query->whereKey($id));
+            return $this->bounded($query->whereKey(0));
         }
 
         if ($this->looksLikePhone($input)) {

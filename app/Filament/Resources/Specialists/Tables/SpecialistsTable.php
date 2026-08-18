@@ -42,6 +42,8 @@ class SpecialistsTable
             ->filters([
                 TernaryFilter::make('is_active')->label('Доступен'),
             ])
+            ->emptyStateHeading('Специалистов пока нет')
+            ->emptyStateDescription('Добавьте врачей или консультантов клиники, чтобы настроить их рабочие часы и услуги.')
             ->recordActions([
                 ViewAction::make()->label('Открыть'),
                 EditAction::make()->label('Редактировать'),

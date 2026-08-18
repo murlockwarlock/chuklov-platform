@@ -6,12 +6,17 @@ use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Models\User;
 use App\Modules\Scenarios\Application\UpdateNotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class EditNotificationTemplate extends EditRecord
 {
     protected static string $resource = NotificationTemplateResource::class;
+
+    protected static ?string $title = 'Редактировать шаблон сообщения';
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -22,8 +27,23 @@ final class EditNotificationTemplate extends EditRecord
             ...$data,
             'subject' => $latest->subject,
             'body' => $latest->body,
-            'variables' => $latest->variables,
         ];
+    }
+
+    protected function mutateFormDataBeforeSave(array $data): array
+    {
+        try {
+            $data['variables'] = ScenarioTemplateVariableCatalog::used(
+                (string) ($data['body'] ?? ''),
+                (string) ($data['subject'] ?? ''),
+            );
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                'body' => 'Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.',
+            ]);
+        }
+
+        return $data;
     }
 
     protected function handleRecordUpdate(Model $record, array $data): Model

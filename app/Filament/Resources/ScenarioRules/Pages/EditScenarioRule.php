@@ -13,6 +13,8 @@ final class EditScenarioRule extends EditRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 
+    protected static ?string $title = 'Редактировать правило сообщений';
+
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         abort_unless($record instanceof ScenarioRule, 404);
