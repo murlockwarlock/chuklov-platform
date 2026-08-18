@@ -6,6 +6,10 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- M10 AI Components & Control Plane — CLOSED / ACCEPTED:
+  - Accepted main SHA: `a0746bad2d4e0695d80ff8689c49b1c57a24161e`; PR #8 was squash-merged from accepted head `6def6a6c4c2fb591401a10feaea2b3a11f92c549`.
+  - Final safety/privacy/concurrency remediation and hosted evidence were accepted: Quality `32112766821` GREEN; Integration concurrency `32112766462` GREEN; 22 tests / 116 assertions.
+
 - M10 Terra remediation:
   - Persisted immutable asynchronous candidate/failover snapshots with credential-revision, provider-configuration, and pricing provenance, plus fenced pre-I/O revalidation.
   - Forced OpenAI Responses executions to `store=false`, corrected the first Kill-Switch transition, and completed private cleared medical attachment execution for documents and three-photo posture analysis.
@@ -23,16 +27,16 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added organization-scoped authored/private-upload sources, immutable revisions, durable retry-safe ingestion runs, deterministic versioned chunking, provider-neutral embedding generation, and PostgreSQL/pgvector exact cosine retrieval behind `KnowledgeRetriever`.
   - Added composite tenant constraints, configuration provenance, active-ready atomic exposure, retirement/reactivation, sanitized structural audits, explicit knowledge permissions, and fail-closed embedding compatibility.
   - Added Filament source/version/ingestion management and a bounded retrieval inspection page. Retrieved instruction-like content remains inert data; M9 creates no AI answer, prompt studio, agent, or `AiRun` behavior.
-  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015 and M10 remains IN_PROGRESS.
+  - Added deterministic evaluation, feature/unit regression coverage, and hosted-only PostgreSQL/pgvector/concurrency tests. OQ-008 remains open, so platform-shared method knowledge is not ingested; M8 remains blocked by OQ-015, and M10 closeout is recorded above.
   - Reorganized the Filament sidebar into business groups and placed knowledge management and retrieval inspection together under `Контент и знания`.
 
 - M10 high-risk remediation candidate:
   - Centralized organization-owned typed input-reference validation, bounded prompt/RAG/tool-loop admission, immutable release pricing reservations, conservative fenced settlement, durable tool provenance, scheduled lease reclamation, fixed human-review reason codes, real provider connectivity semantics, exact evaluation release pinning, fail-closed eval privacy, PostgreSQL-safe async idempotency, activation permission separation, RAG failure/context controls, provider-reported usage provenance, tenant-safe eval prompt ownership, explicit medical actors, and platform-clamped organization safety limits.
-  - M9 remains CLOSED / ACCEPTED. M10 remains IN_PROGRESS pending independent remediation re-review, candidate hosted CI, and final acceptance; PostgreSQL concurrency coverage is present but is not claimed as locally executed.
+  - M9 remains CLOSED / ACCEPTED. The M10 candidate was followed by independent remediation review and hosted acceptance; PostgreSQL concurrency coverage is present but is not claimed as locally executed.
 
 - M10 final bounded remediation pass:
   - Added a whole-run deadline/lease/queue timeout contract, accumulated multi-step provider exposure reservation, ownership-independent stale-attempt reconciliation, credential-revision/configuration-bound provider health, canonical non-redirecting probes, synthetic-only eval execution, fixed-scope tool RAG, durable tool-chunk provenance with retention-safe foreign keys, a finite platform daily-spend ceiling, and fail-closed immutable prompt-version execution.
-  - M10 remains IN_PROGRESS; PostgreSQL concurrency coverage is present and is not claimed as locally executed, and hosted CI/final acceptance remain outstanding.
+  - The final bounded remediation pass was accepted in the M10 closeout above; PostgreSQL concurrency coverage is present and is not claimed as locally executed.
 
 - M10 final three targeted remediations:
   - Recomputed the immutable retrieval deadline before every bounded PostgreSQL metadata/vector statement and added cumulative timeout regression coverage.
