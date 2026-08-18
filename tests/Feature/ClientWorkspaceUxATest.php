@@ -165,6 +165,19 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertCount(0, $component->instance()->getTableRecords());
     }
 
+    public function test_view_client_page_renders_successfully(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+
+        $component->assertSuccessful();
+    }
+
     public function test_cross_organization_attachment_upload_id_fails_closed_before_storage(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

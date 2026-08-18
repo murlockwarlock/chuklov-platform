@@ -71,7 +71,7 @@ final class ClientWorkspaceInfolist
                                 ->state(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Разрешена' : 'Ограничена')
                                 ->badge()
                                 ->color(fn (string $state): string => $state === 'Разрешена' ? 'success' : 'danger')
-                                ->description(fn (Client $record): ?string => $record->activeBookingRestriction?->reason ? 'Причина: '.$record->activeBookingRestriction->reason : null)
+                                ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason ? 'Причина: '.$record->activeBookingRestriction->reason : null)
                                 ->wrap(),
                             TextEntry::make('balance_summary')
                                 ->label('Открытый баланс')
