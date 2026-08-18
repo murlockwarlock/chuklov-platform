@@ -7,6 +7,7 @@ export default defineConfig({
         command: 'php artisan serve --host=127.0.0.1 --port=8000',
         env: {
             ...process.env,
+            APP_ENV: 'e2e',
             MEDICAL_ENCRYPTION_KEY_V1:
                 process.env.MEDICAL_ENCRYPTION_KEY_V1 ??
                 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
