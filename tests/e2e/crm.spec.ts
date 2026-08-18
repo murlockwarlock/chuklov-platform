@@ -14,6 +14,7 @@ type CrmFixture = {
     contentSectionId: number;
     contentSectionTitle: string;
     attachmentFilename: string;
+    bookingStartsAt: string;
 };
 
 function createCrmFixture(): CrmFixture {
@@ -69,6 +70,12 @@ function createCrmFixture(): CrmFixture {
                     'end_time' => '23:59',
                 ]);
         }
+        $leadTimeMinutes = (int) (\\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('setting_key', 'booking_lead_time_minutes')
+            ->value('integer_value') ?? 0);
+        $minimumBookingStart = \\Carbon\\CarbonImmutable::now('UTC')->addMinutes($leadTimeMinutes + 60);
+        $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
         config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
         app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
             $admin,
@@ -108,6 +115,7 @@ function createCrmFixture(): CrmFixture {
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
             'attachmentFilename' => $attachmentFilename,
+            'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -191,7 +199,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    await page.getByLabel('Дата и время').fill('2026-08-18T09:00');
+    await page.getByLabel('Дата и время').fill(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
@@ -255,23 +263,29 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
-    await expect(medicalDialog).toBeVisible();
-    await medicalDialog.getByLabel('Анамнез').fill('Запись из клиентского рабочего места');
+    const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
+    await expect(anamnesis).toBeVisible();
+    await anamnesis.fill('Запись из клиентского рабочего места');
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
     await page.getByText('Файлы и МРТ', { exact: true }).last().click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
-    await expect(uploadDialog).toBeVisible();
-    await uploadDialog.getByLabel('Тип файла').click();
-    await uploadDialog.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
-    await uploadDialog.locator('input[type="file"]').setInputFiles({
+    const attachmentType = uploadDialog.getByLabel('Тип файла');
+    await expect(attachmentType).toBeVisible();
+    await attachmentType.click();
+    await page.getByRole('option', { name: 'Медицинское заключение', exact: true }).click();
+    const fileInput = uploadDialog.locator('input[type="file"]');
+    await expect(fileInput).toHaveCount(1);
+    await fileInput.setInputFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
         buffer: Buffer.from('%PDF-1.4\nUX-A'),
     });
-    await uploadDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
+    await expect(uploadSubmit).toBeVisible();
+    await uploadSubmit.click();
     await expect(page.getByText('ux-a-report.pdf', { exact: true })).toBeVisible();
 });
 
