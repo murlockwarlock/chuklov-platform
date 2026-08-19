@@ -6,6 +6,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 /**
  * @property int $id
@@ -22,6 +23,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class SurveyDefinition extends Model
 {
     protected $guarded = [];
+
+    protected static function booted(): void
+    {
+        static::updating(function (SurveyDefinition $definition): void {
+            if ($definition->isDirty('definition_key')) {
+                throw new LogicException('Survey definition keys are immutable.');
+            }
+        });
+    }
 
     /** @return BelongsTo<Organization, $this> */
     public function organization(): BelongsTo

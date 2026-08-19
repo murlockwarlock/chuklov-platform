@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- UX-C2 survey builder:
+  - Replaced raw definition, question, option, metric, condition, scoring, compatibility, and threshold fields with human questionnaire-builder controls while preserving canonical survey JSON.
+  - Added stable generated nested identities, tenant-safe reference validation, locked-draft publish validation, compatibility-scale lifecycle handling, and human threshold-result display.
+  - OQ-015 questionnaire and clinical scoring content remains unchanged and blocked.
+
 - UX-C1B service pricing and media closeout:
   - Replaced CRM exposure of price_minor with exact major-unit price entry and edit hydration while retaining integer minor-unit persistence and explicit currency.
   - Added organization-scoped JPG/PNG service uploads, HTTPS-only external image URLs, managed-media cleanup after commit, and canonical legacy/managed/external image resolution.

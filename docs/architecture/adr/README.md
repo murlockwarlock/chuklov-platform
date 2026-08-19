@@ -20,5 +20,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 014 | Atomic deployment | Accepted |
 | 015 | Security and data protection | Accepted |
 | 016 | Finance and multi-currency core | Accepted |
+| 018 | Survey builder stable identities and canonical snapshots | Accepted |
 
 Use `000-template.md` for new significant decisions.
