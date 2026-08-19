@@ -73,7 +73,7 @@ class CreateService
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
         unset($attributes['service_image'], $attributes['remove_image']);
-        $this->assertMediaInput($attributes, $uploadedFile, $removeImage, $organization->getKey());
+        $this->assertMediaInput($attributes, $uploadedFile, $removeImage);
 
         $configurationAttributes = $attributes;
 
@@ -146,7 +146,6 @@ class CreateService
         array $attributes,
         ?UploadedFile $uploadedFile,
         bool $removeImage,
-        int $organizationId,
     ): void {
         $hasPath = $this->hasValue($attributes['image_path'] ?? null);
         $hasExternalUrl = $this->hasValue($attributes['external_image_url'] ?? null);
@@ -161,10 +160,7 @@ class CreateService
             ]);
         }
 
-        if ($hasPath
-            && str_starts_with(trim((string) $attributes['image_path']), 'services/')
-            && ! $this->media->isManagedPath($organizationId, trim((string) $attributes['image_path']))
-        ) {
+        if ($hasPath && str_starts_with(trim((string) $attributes['image_path']), 'services/')) {
             throw ValidationException::withMessages([
                 'service_image' => ['Выберите изображение или HTTPS-ссылку на изображение.'],
             ]);

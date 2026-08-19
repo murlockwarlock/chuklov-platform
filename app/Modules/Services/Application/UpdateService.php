@@ -96,7 +96,7 @@ class UpdateService
             $requestedImagePath,
             $requestedExternalUrl,
         );
-        $this->assertMediaInput($attributes, $uploadedFile, $removeImage, $organization->getKey());
+        $this->assertMediaInput($attributes, $service, $uploadedFile, $removeImage, $organization->getKey());
         $configuration = ServiceConfiguration::from($attributes);
         $validatedImagePath = $configuration->imagePath;
         $validatedExternalUrl = $configuration->externalImageUrl;
@@ -324,6 +324,7 @@ class UpdateService
     /** @param array<string, mixed> $attributes */
     private function assertMediaInput(
         array $attributes,
+        Service $service,
         ?UploadedFile $uploadedFile,
         bool $removeImage,
         int $organizationId,
@@ -341,10 +342,15 @@ class UpdateService
             ]);
         }
 
-        if ($hasPath
-            && str_starts_with(trim((string) $attributes['image_path']), 'services/')
-            && ! $this->media->isManagedPath($organizationId, trim((string) $attributes['image_path']))
-        ) {
+        if ($hasPath && str_starts_with(trim((string) $attributes['image_path']), 'services/')) {
+            $path = trim((string) $attributes['image_path']);
+
+            if ($path === (string) $service->getAttribute('image_path')
+                && $this->media->isManagedPath($organizationId, $path)
+            ) {
+                return;
+            }
+
             throw ValidationException::withMessages([
                 'service_image' => ['Выберите изображение или HTTPS-ссылку на изображение.'],
             ]);

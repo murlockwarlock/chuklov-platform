@@ -10,6 +10,7 @@ setup:
 	scripts/initialize-app-key.sh $(COMPOSE) run --rm app php artisan key:generate --no-interaction
 	$(COMPOSE) run --rm node npm ci
 	$(COMPOSE) run --rm app php artisan migrate --seed --force
+	$(COMPOSE) run --rm app php artisan storage:link
 	$(COMPOSE) run --rm node npm run build
 
 up:

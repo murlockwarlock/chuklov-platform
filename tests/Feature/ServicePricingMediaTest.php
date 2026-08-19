@@ -18,10 +18,8 @@ use Illuminate\Database\QueryException;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -182,53 +180,6 @@ final class ServicePricingMediaTest extends TestCase
         self::assertSame($url, app(ServiceImageUrlResolver::class)->resolve($service));
     }
 
-    public function test_replacing_a_managed_image_deletes_the_old_object_after_successful_persistence(): void
-    {
-        [$organization, $admin] = $this->organizationAndAdmin();
-        $service = app(CreateService::class)->handle($admin, [
-            'name' => 'Replaceable image service',
-            'summary' => 'The first image is managed.',
-            'service_image' => UploadedFile::fake()->image('first.jpg'),
-        ]);
-        $oldPath = (string) $service->image_path;
-
-        $updated = app(UpdateService::class)->handle($admin, $service, [
-            'name' => $service->name,
-            'summary' => $service->summary,
-            'is_active' => true,
-            'service_image' => UploadedFile::fake()->image('second.jpg'),
-        ]);
-        $newPath = (string) $updated->image_path;
-        $this->commitOuterTransactionAndResetDatabase();
-
-        self::assertNotSame($oldPath, $newPath);
-        Storage::disk(self::DISK)->assertMissing($oldPath);
-        Storage::disk(self::DISK)->assertExists($newPath);
-    }
-
-    public function test_removing_a_managed_image_deletes_only_that_managed_object(): void
-    {
-        [$organization, $admin] = $this->organizationAndAdmin();
-        $service = app(CreateService::class)->handle($admin, [
-            'name' => 'Removable image service',
-            'summary' => 'The image can be removed.',
-            'service_image' => UploadedFile::fake()->image('remove.jpg'),
-        ]);
-        $path = (string) $service->image_path;
-
-        $updated = app(UpdateService::class)->handle($admin, $service, [
-            'name' => $service->name,
-            'summary' => $service->summary,
-            'is_active' => true,
-            'remove_image' => true,
-        ]);
-        $this->commitOuterTransactionAndResetDatabase();
-
-        self::assertNull($updated->image_path);
-        self::assertNull($updated->external_image_url);
-        Storage::disk(self::DISK)->assertMissing($path);
-    }
-
     public function test_removing_an_external_image_clears_the_current_url(): void
     {
         [, $admin] = $this->organizationAndAdmin();
@@ -372,40 +323,66 @@ final class ServicePricingMediaTest extends TestCase
         Exceptions::assertReported(fn (RuntimeException $reported): bool => $reported === $cleanupException);
     }
 
-    public function test_post_commit_cleanup_failure_is_reported_without_failing_the_successful_update(): void
+    public function test_managed_media_path_cannot_be_reused_by_another_service_in_same_organization_on_create(): void
     {
         [$organization, $admin] = $this->organizationAndAdmin();
         $service = app(CreateService::class)->handle($admin, [
-            'name' => 'Post-commit cleanup service',
-            'summary' => 'The database update must remain successful.',
-            'service_image' => UploadedFile::fake()->image('post-commit.jpg'),
+            'name' => 'Original managed image service',
+            'summary' => 'The path belongs to this service.',
+            'service_image' => UploadedFile::fake()->image('original.jpg'),
         ]);
-        $oldPath = (string) $service->image_path;
-        $cleanupException = new RuntimeException('post-commit cleanup failed');
-        $media = \Mockery::mock(ServiceMediaStorageInterface::class);
-        $media->shouldReceive('isManagedPath')
-            ->once()
-            ->with($organization->getKey(), $oldPath)
-            ->andReturnTrue();
-        $media->shouldReceive('deleteManaged')
-            ->once()
-            ->with($organization->getKey(), $oldPath)
-            ->andThrow($cleanupException);
-        app()->instance(ServiceMediaStorageInterface::class, $media);
-        $this->fakeExceptionReporting();
+
+        $this->expectException(ValidationException::class);
+
+        app(CreateService::class)->handle($admin, [
+            'name' => 'Reused managed image service',
+            'summary' => 'The path must not be reusable.',
+            'image_path' => $service->image_path,
+        ]);
+    }
+
+    public function test_managed_media_path_cannot_be_assigned_to_another_service_on_update(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $service = app(CreateService::class)->handle($admin, [
+            'name' => 'Original update image service',
+            'summary' => 'The path belongs to the original service.',
+            'service_image' => UploadedFile::fake()->image('original-update.jpg'),
+        ]);
+        $otherService = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Other service',
+            'summary' => 'The other service has no image.',
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(UpdateService::class)->handle($admin, $otherService, [
+            'name' => $otherService->name,
+            'summary' => $otherService->summary,
+            'is_active' => true,
+            'image_path' => $service->image_path,
+        ]);
+    }
+
+    public function test_service_can_preserve_its_own_current_managed_media_path(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $service = app(CreateService::class)->handle($admin, [
+            'name' => 'Preserved managed image service',
+            'summary' => 'The current path remains valid.',
+            'service_image' => UploadedFile::fake()->image('preserved.jpg'),
+        ]);
+        $path = (string) $service->image_path;
 
         $updated = app(UpdateService::class)->handle($admin, $service, [
             'name' => $service->name,
             'summary' => $service->summary,
             'is_active' => true,
-            'remove_image' => true,
+            'image_path' => $path,
         ]);
 
-        self::assertNull($updated->image_path);
-        $this->commitOuterTransactionAndResetDatabase();
-
-        Storage::disk(self::DISK)->assertExists($oldPath);
-        Exceptions::assertReported(fn (RuntimeException $reported): bool => $reported === $cleanupException);
+        self::assertSame($path, $updated->image_path);
+        Storage::disk(self::DISK)->assertExists($path);
     }
 
     public function test_managed_media_cannot_be_resolved_or_deleted_across_organizations(): void
@@ -460,23 +437,6 @@ final class ServicePricingMediaTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin];
-    }
-
-    private function commitOuterTransactionAndResetDatabase(): void
-    {
-        DB::commit();
-
-        DB::statement('PRAGMA foreign_keys = OFF');
-        foreach (Schema::getTableListing() as $table) {
-            if (in_array($table, ['migrations', 'sqlite_sequence'], true)) {
-                continue;
-            }
-
-            DB::table($table)->delete();
-        }
-        DB::statement('PRAGMA foreign_keys = ON');
-
-        DB::beginTransaction();
     }
 
     private function fakeExceptionReporting(): void

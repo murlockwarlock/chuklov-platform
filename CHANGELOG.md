@@ -11,6 +11,7 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added organization-scoped JPG/PNG service uploads, HTTPS-only external image URLs, managed-media cleanup after commit, and canonical legacy/managed/external image resolution.
   - Scenario Rules were reviewed and intentionally left unchanged because the existing information hierarchy and semantics already meet this slice.
   - Remediated portal booking price rendering for non-two-decimal currencies and made managed-media cleanup failures observable without changing persistence failure authority.
+  - Final remediation keeps schedule-impact digests stable across media changes, prevents managed-path reuse, uses database-agnostic after-commit coverage, and provisions the local public storage link during setup.
 
 - UX-A Client Workspace + ordinary client/global search — implementation candidate:
   - Added bounded identity-only name, email, exact-ID, and canonical phone search with organization/phone and PostgreSQL fragment indexes plus a resumable legacy phone-key backfill command.
