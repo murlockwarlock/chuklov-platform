@@ -8,14 +8,26 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 class CreateSpecialistServiceAssignment extends CreateRecord
 {
     protected static string $resource = SpecialistServiceAssignmentResource::class;
 
     protected static ?string $title = 'Назначить специалиста на услугу';
+
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return 'Специалист назначен на услугу';
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return SpecialistServiceAssignmentResource::getUrl('index');
+    }
 
     protected function handleRecordCreation(array $data): Model
     {
@@ -29,6 +41,23 @@ class CreateSpecialistServiceAssignment extends CreateRecord
             ->where('organization_id', $organizationId)
             ->findOrFail((int) $data['service_id']);
 
-        return app(AssignSpecialistToService::class)->handle($actor, $specialist, $service);
+        try {
+            return app(AssignSpecialistToService::class)->handle($actor, $specialist, $service);
+        } catch (ValidationException $exception) {
+            $duplicateMessages = $exception->errors()['assignment'] ?? [];
+
+            if (! in_array('This specialist is already assigned to the service.', $duplicateMessages, true)) {
+                throw $exception;
+            }
+
+            Notification::make()
+                ->danger()
+                ->title('Этот специалист уже оказывает выбранную услугу')
+                ->send();
+
+            $this->halt(shouldRollbackDatabaseTransaction: true);
+
+            throw $exception;
+        }
     }
 }

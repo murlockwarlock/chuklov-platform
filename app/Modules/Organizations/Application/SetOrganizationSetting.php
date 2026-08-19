@@ -40,6 +40,10 @@ class SetOrganizationSetting
             ]);
             $setting->save();
 
+            if ($key === OrganizationSettingKey::DefaultTimezone) {
+                $this->context->invalidateDefaultTimezone();
+            }
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
