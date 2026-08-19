@@ -12,15 +12,20 @@ use App\Modules\Services\Application\ServiceImageUrlResolver;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Services\Infrastructure\Storage\FilesystemServiceMediaStorage;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\QueryException;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use RuntimeException;
 use Tests\TestCase;
 
 final class ServicePricingMediaTest extends TestCase
@@ -36,6 +41,21 @@ final class ServicePricingMediaTest extends TestCase
         config()->set('service_media.disk', self::DISK);
         config()->set('service_media.max_bytes', 5_242_880);
         Storage::fake(self::DISK);
+    }
+
+    public function test_managed_delete_failure_is_detectable_on_a_non_throwing_disk(): void
+    {
+        $organizationId = 41;
+        $path = 'services/41/44444444-4444-4444-8444-444444444444.jpg';
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('exists')->once()->with($path)->andReturnTrue();
+        $disk->shouldReceive('delete')->once()->with($path)->andReturnFalse();
+        $disk->shouldReceive('missing')->once()->with($path)->andReturnFalse();
+        Storage::shouldReceive('disk')->once()->with(self::DISK)->andReturn($disk);
+
+        $this->expectException(RuntimeException::class);
+
+        app(FilesystemServiceMediaStorage::class)->deleteManaged($organizationId, $path);
     }
 
     public function test_valid_upload_uses_an_organization_namespaced_generated_path(): void
@@ -276,6 +296,118 @@ final class ServicePricingMediaTest extends TestCase
         }
     }
 
+    public function test_failed_create_rethrows_the_persistence_exception_and_reports_cleanup_failure(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $name = 'Conflicting create service';
+        Service::factory()->forOrganization($organization)->create(['name' => $name]);
+        $storedPath = "services/{$organization->id}/55555555-5555-4555-8555-555555555555.jpg";
+        $cleanupException = new RuntimeException('create cleanup failed');
+        $media = \Mockery::mock(ServiceMediaStorageInterface::class);
+        $media->shouldReceive('store')
+            ->once()
+            ->with($organization->getKey(), \Mockery::type(UploadedFile::class))
+            ->andReturn($storedPath);
+        $media->shouldReceive('deleteManaged')
+            ->once()
+            ->with($organization->getKey(), $storedPath)
+            ->andThrow($cleanupException);
+        app()->instance(ServiceMediaStorageInterface::class, $media);
+        $this->fakeExceptionReporting();
+
+        try {
+            app(CreateService::class)->handle($admin, [
+                'name' => $name,
+                'summary' => 'The create must fail.',
+                'service_image' => UploadedFile::fake()->image('create-orphan.jpg'),
+            ]);
+
+            self::fail('The duplicate service name must fail persistence.');
+        } catch (QueryException $exception) {
+            self::assertInstanceOf(QueryException::class, $exception);
+        }
+
+        Exceptions::assertReported(fn (RuntimeException $reported): bool => $reported === $cleanupException);
+    }
+
+    public function test_failed_update_rethrows_the_persistence_exception_and_reports_cleanup_failure(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $service = app(CreateService::class)->handle($admin, [
+            'name' => 'Original update service',
+            'summary' => 'The old image must survive.',
+            'service_image' => UploadedFile::fake()->image('update-original.jpg'),
+        ]);
+        $oldPath = (string) $service->image_path;
+        $conflictingName = 'Conflicting update service';
+        Service::factory()->forOrganization($organization)->create(['name' => $conflictingName]);
+        $storedPath = "services/{$organization->id}/66666666-6666-4666-8666-666666666666.jpg";
+        $cleanupException = new RuntimeException('update cleanup failed');
+        $media = \Mockery::mock(ServiceMediaStorageInterface::class);
+        $media->shouldReceive('store')
+            ->once()
+            ->with($organization->getKey(), \Mockery::type(UploadedFile::class))
+            ->andReturn($storedPath);
+        $media->shouldReceive('deleteManaged')
+            ->once()
+            ->with($organization->getKey(), $storedPath)
+            ->andThrow($cleanupException);
+        app()->instance(ServiceMediaStorageInterface::class, $media);
+        $this->fakeExceptionReporting();
+
+        try {
+            app(UpdateService::class)->handle($admin, $service, [
+                'name' => $conflictingName,
+                'summary' => $service->summary,
+                'is_active' => true,
+                'service_image' => UploadedFile::fake()->image('update-orphan.jpg'),
+            ]);
+
+            self::fail('The duplicate service name must fail persistence.');
+        } catch (QueryException $exception) {
+            self::assertInstanceOf(QueryException::class, $exception);
+        }
+
+        Storage::disk(self::DISK)->assertExists($oldPath);
+        Exceptions::assertReported(fn (RuntimeException $reported): bool => $reported === $cleanupException);
+    }
+
+    public function test_post_commit_cleanup_failure_is_reported_without_failing_the_successful_update(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $service = app(CreateService::class)->handle($admin, [
+            'name' => 'Post-commit cleanup service',
+            'summary' => 'The database update must remain successful.',
+            'service_image' => UploadedFile::fake()->image('post-commit.jpg'),
+        ]);
+        $oldPath = (string) $service->image_path;
+        $cleanupException = new RuntimeException('post-commit cleanup failed');
+        $media = \Mockery::mock(ServiceMediaStorageInterface::class);
+        $media->shouldReceive('isManagedPath')
+            ->once()
+            ->with($organization->getKey(), $oldPath)
+            ->andReturnTrue();
+        $media->shouldReceive('deleteManaged')
+            ->once()
+            ->with($organization->getKey(), $oldPath)
+            ->andThrow($cleanupException);
+        app()->instance(ServiceMediaStorageInterface::class, $media);
+        $this->fakeExceptionReporting();
+
+        $updated = app(UpdateService::class)->handle($admin, $service, [
+            'name' => $service->name,
+            'summary' => $service->summary,
+            'is_active' => true,
+            'remove_image' => true,
+        ]);
+
+        self::assertNull($updated->image_path);
+        $this->commitOuterTransactionAndResetDatabase();
+
+        Storage::disk(self::DISK)->assertExists($oldPath);
+        Exceptions::assertReported(fn (RuntimeException $reported): bool => $reported === $cleanupException);
+    }
+
     public function test_managed_media_cannot_be_resolved_or_deleted_across_organizations(): void
     {
         [$organizationA] = $this->organizationAndAdmin();
@@ -345,5 +477,11 @@ final class ServicePricingMediaTest extends TestCase
         DB::statement('PRAGMA foreign_keys = ON');
 
         DB::beginTransaction();
+    }
+
+    private function fakeExceptionReporting(): void
+    {
+        $fake = Exceptions::fake();
+        app()->instance(ExceptionHandler::class, $fake);
     }
 }

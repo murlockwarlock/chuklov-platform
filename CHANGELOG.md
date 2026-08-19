@@ -10,6 +10,7 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Replaced CRM exposure of price_minor with exact major-unit price entry and edit hydration while retaining integer minor-unit persistence and explicit currency.
   - Added organization-scoped JPG/PNG service uploads, HTTPS-only external image URLs, managed-media cleanup after commit, and canonical legacy/managed/external image resolution.
   - Scenario Rules were reviewed and intentionally left unchanged because the existing information hierarchy and semantics already meet this slice.
+  - Remediated portal booking price rendering for non-two-decimal currencies and made managed-media cleanup failures observable without changing persistence failure authority.
 
 - UX-A Client Workspace + ordinary client/global search — implementation candidate:
   - Added bounded identity-only name, email, exact-ID, and canonical phone search with organization/phone and PostgreSQL fragment indexes plus a resumable legacy phone-key backfill command.

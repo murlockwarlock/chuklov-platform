@@ -16,6 +16,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -35,6 +36,55 @@ class PortalBookingRemediationTest extends TestCase
         Carbon::setTestNow();
 
         parent::tearDown();
+    }
+
+    public function test_booking_create_projects_exact_major_prices_without_exposing_minor_units(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        DB::table('organization_allowed_currencies')->insert([
+            [
+                'organization_id' => $organization->getKey(),
+                'currency' => 'JPY',
+                'created_at' => now(),
+            ],
+            [
+                'organization_id' => $organization->getKey(),
+                'currency' => 'KZT',
+                'created_at' => now(),
+            ],
+        ]);
+
+        $service->forceFill([
+            'price_minor' => 15_000,
+            'price_currency' => 'JPY',
+        ])->save();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('services.0.priceMajor', '15000')
+                ->where('services.0.priceCurrency', 'JPY')
+                ->missing('services.0.priceMinor'));
+
+        $service->forceFill([
+            'price_minor' => 1_500_050,
+            'price_currency' => 'KZT',
+        ])->save();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('services.0.priceMajor', '15000.50')
+                ->where('services.0.priceCurrency', 'KZT')
+                ->missing('services.0.priceMinor'));
     }
 
     public function test_normal_booking_uses_the_full_current_month_as_the_authoritative_availability_range(): void

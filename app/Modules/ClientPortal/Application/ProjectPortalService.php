@@ -21,7 +21,6 @@ final class ProjectPortalService
             'imageUrl' => $this->imageResolver->resolve($service),
             'category' => $this->stringValue($service->getAttribute('category')),
             'durationMinutes' => $service->durationMinutes(),
-            'priceMinor' => $service->getAttribute('price_minor'),
             'priceMajor' => $this->priceMajor($service),
             'priceCurrency' => $this->stringValue($service->getAttribute('price_currency')),
         ];

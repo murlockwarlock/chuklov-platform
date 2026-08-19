@@ -184,7 +184,8 @@ class CreateService
 
         try {
             $this->media->deleteManaged($organizationId, $path);
-        } catch (Throwable) {
+        } catch (Throwable $cleanupException) {
+            report($cleanupException);
         }
     }
 }

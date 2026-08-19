@@ -7,6 +7,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 
 final class FilesystemServiceMediaStorage implements ServiceMediaStorageInterface
 {
@@ -90,7 +91,17 @@ final class FilesystemServiceMediaStorage implements ServiceMediaStorageInterfac
             return;
         }
 
-        Storage::disk($this->disk())->delete($path);
+        $disk = Storage::disk($this->disk());
+
+        if (! $disk->exists($path)) {
+            return;
+        }
+
+        if ($disk->delete($path) === false && ! $disk->missing($path)) {
+            throw new RuntimeException(
+                "Managed service media deletion failed for organization {$organizationId} at {$path}.",
+            );
+        }
     }
 
     private function disk(): string

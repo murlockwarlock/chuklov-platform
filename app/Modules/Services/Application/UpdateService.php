@@ -155,7 +155,8 @@ class UpdateService
                     DB::afterCommit(function () use ($organization, $oldImagePath): void {
                         try {
                             $this->media->deleteManaged($organization->getKey(), $oldImagePath);
-                        } catch (Throwable) {
+                        } catch (Throwable $cleanupException) {
+                            report($cleanupException);
                         }
                     });
                 }
@@ -363,7 +364,8 @@ class UpdateService
 
         try {
             $this->media->deleteManaged($organizationId, $path);
-        } catch (Throwable) {
+        } catch (Throwable $cleanupException) {
+            report($cleanupException);
         }
     }
 }
