@@ -97,6 +97,26 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         self::assertSame(['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5], $normalized['definition']['sections'][0]['questions'][3]['condition']);
     }
 
+    public function test_legacy_fractional_integer_condition_round_trips_without_conversion(): void
+    {
+        $version = new SurveyVersion;
+        $definition = $this->definition();
+        $definition['sections'][0]['questions'][] = [
+            'key' => 'q-number-dependent',
+            'type' => 'long_text',
+            'label' => 'Пояснение',
+            'condition' => ['question_key' => 'q-number', 'operator' => 'greater_than', 'value' => 1.9],
+        ];
+        $version->definition = $definition;
+        $version->scoring = $this->scoring();
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $legacyCondition = ['question_key' => 'q-number', 'operator' => 'greater_than', 'value' => 1.9];
+
+        self::assertSame($legacyCondition, $state['sections'][0]['questions'][3]['condition_legacy']);
+        self::assertSame($legacyCondition, SurveyDefinitionFormMapper::normalize($state)['definition']['sections'][0]['questions'][3]['condition']);
+    }
+
     public function test_unsupported_scoring_round_trips_without_conversion(): void
     {
         $version = new SurveyVersion;

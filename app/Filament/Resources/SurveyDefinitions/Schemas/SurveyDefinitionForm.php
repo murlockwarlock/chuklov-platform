@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SurveyDefinitions\Schemas;
 
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Filament\Support\SurveyDefinitionFormOptions;
+use Closure;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
@@ -139,6 +140,20 @@ final class SurveyDefinitionForm
                                 TextInput::make('condition_value')
                                     ->label('Значение')
                                     ->numeric(fn (Get $get): bool => in_array(self::conditionType($get), ['integer', 'number'], true))
+                                    ->rules([
+                                        fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get): void {
+                                            if (self::hasLegacyCondition($get)
+                                                || self::conditionType($get) !== 'integer'
+                                                || ! in_array($get('condition_operator'), ['equals', 'not_equals', 'greater_than', 'less_than'], true)
+                                                || $value === null
+                                                || $value === ''
+                                                || SurveyDefinitionFormMapper::isWholeIntegerInput($value)) {
+                                                return;
+                                            }
+
+                                            $fail('Укажите целое число.');
+                                        },
+                                    ])
                                     ->visible(fn (Get $get): bool => in_array(self::conditionType($get), ['integer', 'number', 'short_text', 'long_text'], true)
                                         && in_array($get('condition_operator'), ['equals', 'not_equals', 'greater_than', 'less_than'], true))
                                     ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get)),

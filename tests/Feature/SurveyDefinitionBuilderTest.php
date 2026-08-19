@@ -12,6 +12,7 @@ use App\Modules\Surveys\Application\CreateSurveyDefinition as CreateSurveyDefini
 use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\UpdateSurveyDefinitionDraft;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -205,40 +206,44 @@ final class SurveyDefinitionBuilderTest extends TestCase
     {
         [, $admin] = $this->fixture();
         $definition = app(CreateSurveyDefinitionAction::class)->handle($admin, $this->canonicalData());
-        $version = $definition->versions()->sole();
 
-        $state = SurveyDefinitionFormMapper::denormalize($version);
-        [$source, $dependent, $number] = $state['sections'][0]['questions'];
-        $dependent['type'] = 'integer';
-        $dependent['condition_question_key'] = 'q-number';
-        $dependent['condition_operator'] = 'equals';
-        $dependent['condition_value'] = 1.9;
-        $state['sections'][0]['questions'] = [$source, $number, $dependent];
+        foreach ([
+            ['equals', 1.9],
+            ['greater_than', 1.9],
+            ['less_than', -2.5],
+        ] as [$operator, $value]) {
+            $state = $this->integerConditionState($definition->refresh()->versions()->sole(), $operator, $value);
 
-        Livewire::actingAs($admin)
-            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
-            ->fillForm($state)
-            ->call('save')
-            ->assertHasErrors();
+            Livewire::actingAs($admin)
+                ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+                ->fillForm($state)
+                ->call('save')
+                ->assertHasErrors();
 
-        self::assertSame(
-            ['question_key' => 'q-source', 'operator' => 'equals', 'value' => 'option-poor'],
-            $version->fresh()->definition['sections'][0]['questions'][1]['condition'],
-        );
+            self::assertSame(
+                ['question_key' => 'q-source', 'operator' => 'equals', 'value' => 'option-poor'],
+                $definition->refresh()->versions()->sole()->definition['sections'][0]['questions'][1]['condition'],
+            );
+        }
 
-        $wholeState = SurveyDefinitionFormMapper::denormalize($version->fresh());
-        [$wholeSource, $wholeDependent, $wholeNumber] = $wholeState['sections'][0]['questions'];
-        $wholeDependent['type'] = 'integer';
-        $wholeDependent['condition_question_key'] = 'q-number';
-        $wholeDependent['condition_operator'] = 'equals';
-        $wholeDependent['condition_value'] = '1';
-        $wholeState['sections'][0]['questions'] = [$wholeSource, $wholeNumber, $wholeDependent];
-        $normalizedWhole = SurveyDefinitionFormMapper::normalize($wholeState);
-        self::assertSame(1, $normalizedWhole['definition']['sections'][0]['questions'][2]['condition']['value']);
-        app(UpdateSurveyDefinitionDraft::class)->handle($admin, $definition, $normalizedWhole);
+        foreach ([
+            ['equals', 1, 1],
+            ['greater_than', '2', 2],
+            ['less_than', -3, -3],
+        ] as [$operator, $value, $expected]) {
+            $state = $this->integerConditionState($definition->refresh()->versions()->sole(), $operator, $value);
 
-        $draft = $definition->refresh()->versions()->sole();
-        self::assertSame(1, $draft->definition['sections'][0]['questions'][2]['condition']['value']);
+            Livewire::actingAs($admin)
+                ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+                ->fillForm($state)
+                ->call('save')
+                ->assertHasNoFormErrors();
+
+            self::assertSame(
+                $expected,
+                $definition->refresh()->versions()->sole()->definition['sections'][0]['questions'][2]['condition']['value'],
+            );
+        }
     }
 
     public function test_legacy_number_equality_survives_unrelated_edit_and_publishes_but_ordering_stays_authoritative(): void
@@ -372,6 +377,29 @@ final class SurveyDefinitionBuilderTest extends TestCase
             ],
             'is_available' => true,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function integerConditionState(SurveyVersion $version, string $operator, mixed $value): array
+    {
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $questions = [];
+        foreach ($state['sections'][0]['questions'] as $question) {
+            if (is_array($question) && is_string($question['key'] ?? null)) {
+                $questions[$question['key']] = $question;
+            }
+        }
+
+        $source = $questions['q-source'];
+        $dependent = $questions['q-dependent'];
+        $number = $questions['q-number'];
+        $dependent['type'] = 'integer';
+        $dependent['condition_question_key'] = 'q-number';
+        $dependent['condition_operator'] = $operator;
+        $dependent['condition_value'] = $value;
+        $state['sections'][0]['questions'] = [$source, $number, $dependent];
+
+        return $state;
     }
 
     /** @return array{0: Organization, 1: User} */

@@ -319,10 +319,17 @@ final class SurveyDefinitionFormMapper
         return $formValue === ($legacy['value'] ?? null);
     }
 
-    private static function isWholeIntegerInput(mixed $value): bool
+    public static function isWholeIntegerInput(mixed $value): bool
     {
-        return is_int($value)
-            || (is_string($value) && preg_match('/^[+-]?\d+$/', trim($value)) === 1);
+        if (is_int($value)) {
+            return true;
+        }
+
+        if (is_float($value)) {
+            return is_finite($value) && fmod($value, 1.0) === 0.0;
+        }
+
+        return is_string($value) && preg_match('/^[+-]?\d+$/', trim($value)) === 1;
     }
 
     /**
