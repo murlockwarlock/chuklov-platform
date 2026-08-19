@@ -20,6 +20,8 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 use UnitEnum;
 
 /** @property-read Schema $form */
@@ -75,7 +77,12 @@ final class KnowledgeRetrievalInspector extends Page
             Section::make('Фильтры')->schema([
                 Select::make('source_ids')->label('Источники')->multiple()->maxItems(20)->searchable()->options(fn (): array => KnowledgeSource::query()
                     ->where('organization_id', app(OrganizationContext::class)->id())
-                    ->where('status', 'active')->orderBy('title')->limit(100)->pluck('title', 'id')->all()),
+                    ->where('status', 'active')
+                    ->whereHas('activeRevision', fn (Builder $query): Builder => $query->where('status', 'ready'))
+                    ->orderBy('title')
+                    ->limit(100)
+                    ->pluck('title', 'id')
+                    ->all()),
                 Select::make('top_k')->label('Показать результатов')->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
             ])->columns(2),
         ])->statePath('data');
@@ -108,15 +115,16 @@ final class KnowledgeRetrievalInspector extends Page
                 topK: (int) $data['top_k'],
                 sourceIds: array_values(array_map('intval', $data['source_ids'] ?? [])),
             ));
-            $this->results = array_map(static fn ($result): array => [
-                'source_title' => $result->sourceTitle,
-                'revision_version' => $result->revisionVersion,
-                'content' => $result->content,
-                'similarity' => round($result->similarity, 4),
-                'source_reference' => $result->sourceReference,
-            ], $results);
+            $this->results = [];
+            foreach ($results as $index => $result) {
+                $this->results[] = [
+                    'rank' => $index + 1,
+                    'source_title' => $result->sourceTitle,
+                    'content' => Str::limit($result->content, 1200),
+                ];
+            }
         } catch (\Throwable) {
-            Notification::make()->title('Поиск недоступен')->body('Проверьте настройку поиска знаний.')->danger()->send();
+            Notification::make()->title('Поиск недоступен')->body('Не удалось выполнить поиск по доступным материалам.')->danger()->send();
         }
     }
 }

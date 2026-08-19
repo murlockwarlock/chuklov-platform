@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -36,6 +37,24 @@ final class KnowledgeAuthorization
         }
 
         $this->authorizer->authorize($actor, $organization, $permission);
+
+        return $organization;
+    }
+
+    public function organizationForRevision(
+        User $actor,
+        KnowledgeSource $source,
+        KnowledgeRevision $revision,
+        OrganizationPermission $permission,
+    ): Organization {
+        $organization = $this->organizationForSource($actor, $source, $permission);
+
+        if (
+            (int) $revision->organization_id !== (int) $organization->getKey()
+            || (int) $revision->knowledge_source_id !== (int) $source->getKey()
+        ) {
+            throw new AuthorizationException('The knowledge revision is not available.');
+        }
 
         return $organization;
     }

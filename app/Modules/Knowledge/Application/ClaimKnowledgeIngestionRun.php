@@ -2,7 +2,9 @@
 
 namespace App\Modules\Knowledge\Application;
 
+use App\Modules\Knowledge\Domain\Enums\KnowledgeIngestionAttemptStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionAttempt;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
@@ -51,17 +53,47 @@ final class ClaimKnowledgeIngestionRun
                 return null;
             }
 
+            $startedAt = now();
+            if ($processingExpired && $run->attempts > 0) {
+                $staleAttempt = KnowledgeIngestionAttempt::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->where('knowledge_revision_id', $revisionId)
+                    ->where('knowledge_ingestion_run_id', $run->getKey())
+                    ->where('attempt_number', $run->attempts)
+                    ->where('status', KnowledgeIngestionAttemptStatus::Processing)
+                    ->lockForUpdate()
+                    ->first();
+                if ($staleAttempt instanceof KnowledgeIngestionAttempt) {
+                    $staleAttempt->update([
+                        'status' => KnowledgeIngestionAttemptStatus::Abandoned,
+                        'error_code' => 'stale_processing_reclaimed',
+                        'completed_at' => $startedAt,
+                    ]);
+                }
+            }
+
+            $attemptNumber = $run->attempts + 1;
             $run->chunks()->delete();
             $run->update([
                 'status' => 'processing',
-                'attempts' => $run->attempts + 1,
+                'attempts' => $attemptNumber,
                 'error_code' => null,
-                'processing_started_at' => now(),
+                'processing_started_at' => $startedAt,
                 'completed_at' => null,
             ]);
             if (! in_array($revision->status, [KnowledgeRevisionStatus::Ready, KnowledgeRevisionStatus::Stale], true)) {
                 $revision->update(['status' => 'processing']);
             }
+            KnowledgeIngestionAttempt::query()->create([
+                'organization_id' => $organizationId,
+                'knowledge_source_id' => $sourceId,
+                'knowledge_revision_id' => $revisionId,
+                'knowledge_ingestion_run_id' => $run->getKey(),
+                'attempt_number' => $attemptNumber,
+                'status' => KnowledgeIngestionAttemptStatus::Processing,
+                'started_at' => $startedAt,
+            ]);
 
             return $run->refresh();
         });

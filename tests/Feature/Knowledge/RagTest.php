@@ -8,11 +8,14 @@ use App\Models\User;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\ProcessKnowledgeIngestion;
+use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
 use App\Modules\Knowledge\Application\RetireKnowledgeSource;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource;
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeIngestionAttemptStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionAttempt;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
@@ -100,7 +103,10 @@ final class RagTest extends TestCase
         self::assertSame($chunkCount, $run->chunks()->count());
         self::assertSame(1, $revisionOne->ingestionRuns()->count());
 
-        $revisionTwo = app(UpdateKnowledgeSource::class)->handle($actor, $source, ['title' => 'Guide', 'content' => 'booking version two']);
+        $update = app(UpdateKnowledgeSource::class)->handle($actor, $source, ['title' => 'Guide', 'content' => 'booking version two']);
+        self::assertTrue($update->revisionCreated);
+        self::assertNotNull($update->revision);
+        $revisionTwo = $update->revision;
         self::assertSame('stale', $revisionOne->fresh()->status->value);
         self::assertSame('ready', $revisionTwo->fresh()->status->value);
         $result = app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5))[0];
@@ -138,6 +144,12 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame(1, KnowledgeChunk::query()->where('knowledge_revision_id', $revision->getKey())->count());
         self::assertSame(2, KnowledgeIngestionRun::query()->where('knowledge_revision_id', $revision->getKey())->value('attempts'));
+        self::assertSame(['failed', 'ready'], KnowledgeIngestionAttempt::query()
+            ->where('knowledge_revision_id', $revision->getKey())
+            ->orderBy('attempt_number')
+            ->pluck('status')
+            ->map(static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status)
+            ->all());
     }
 
     public function test_bounded_retrieval_clamps_embedding_timeout_to_platform_and_remaining_deadline(): void
@@ -308,6 +320,12 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame('ready', $revision->ingestionRuns()->sole()->status->value);
         self::assertSame(2, $revision->ingestionRuns()->sole()->attempts);
+        self::assertSame(
+            [KnowledgeIngestionAttemptStatus::Abandoned->value, KnowledgeIngestionAttemptStatus::Ready->value],
+            $revision->ingestionAttemptHistory()->orderBy('attempt_number')->pluck('status')->map(
+                static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status,
+            )->all(),
+        );
     }
 
     public function test_revision_provenance_is_immutable(): void
@@ -317,6 +335,32 @@ final class RagTest extends TestCase
         $this->expectException(LogicException::class);
         $revision->content = 'rewritten';
         $revision->save();
+    }
+
+    public function test_terminal_ingestion_attempt_history_is_immutable(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $attempt = $source->revisions()->sole()->ingestionAttemptHistory()->sole();
+
+        $this->expectException(LogicException::class);
+        $attempt->error_code = 'rewritten';
+        $attempt->save();
+    }
+
+    public function test_reactivation_restores_the_latest_retired_ready_revision_for_retrieval(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        app(RetireKnowledgeSource::class)->handle($actor, $source);
+
+        self::assertSame('retired', $revision->fresh()->status->value);
+        app(ReactivateKnowledgeSource::class)->handle($actor, $source->fresh());
+
+        self::assertSame('active', $source->fresh()->status->value);
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame($revision->getKey(), app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5))[0]->revisionId);
     }
 
     public function test_reembedding_active_revision_keeps_it_authoritative(): void

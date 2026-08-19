@@ -39,9 +39,9 @@ final class EditKnowledgeSource extends EditRecord
         abort_unless($record instanceof KnowledgeSource, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        app(UpdateKnowledgeSourceAction::class)->handle($actor, $record, $data);
+        $result = app(UpdateKnowledgeSourceAction::class)->handle($actor, $record, $data);
 
-        return $record->refresh();
+        return $result->source;
     }
 
     protected function getHeaderActions(): array

@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- UX-C3 knowledge productization:
+  - Added human source availability and newest-revision processing presentation, metadata-only edits, safe latest-failed manual retry, immutable ingestion-attempt history projection, and tenant-scoped original-file downloads.
+  - Kept `KnowledgeIngestionRun::attempts` as the sole claim/fencing authority, preserved `PgvectorKnowledgeRetriever` and Laravel Filesystem storage, and removed raw provenance/retrieval implementation details from normal Knowledge CRM screens.
+  - Added focused lifecycle, provenance, retry, fencing/history, download, presentation, and PostgreSQL schema coverage. No authored-content download, new storage abstraction, retrieval rewrite, Playwright, benchmark, staging, or hosted CI was added.
+
 - UX-C2 survey builder:
   - Replaced raw definition, question, option, metric, condition, scoring, compatibility, and threshold fields with human questionnaire-builder controls while preserving canonical survey JSON.
   - Added stable generated nested identities, tenant-safe reference validation, locked-draft publish validation, compatibility-scale lifecycle handling, and human threshold-result display.

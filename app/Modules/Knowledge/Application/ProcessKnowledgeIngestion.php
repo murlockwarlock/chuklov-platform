@@ -3,8 +3,10 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeIngestionAttemptStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionAttempt;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -39,7 +41,11 @@ final class ProcessKnowledgeIngestion
         $claimedAttempt = $run->attempts;
 
         try {
-            $revision = KnowledgeRevision::query()->where('organization_id', $organizationId)->whereKey($revisionId)->firstOrFail();
+            $revision = KnowledgeRevision::query()
+                ->where('organization_id', $organizationId)
+                ->where('knowledge_source_id', $sourceId)
+                ->whereKey($revisionId)
+                ->firstOrFail();
             $text = $revision->content;
             if ($text === null && $revision->storage_disk !== null && $revision->storage_path !== null) {
                 $text = Storage::disk($revision->storage_disk)->get($revision->storage_path);
@@ -70,7 +76,22 @@ final class ProcessKnowledgeIngestion
                 if ($lockedRun->attempts !== $claimedAttempt || $lockedRun->status->value !== 'processing') {
                     return;
                 }
+                $attempt = KnowledgeIngestionAttempt::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->where('knowledge_revision_id', $revisionId)
+                    ->where('knowledge_ingestion_run_id', $run->getKey())
+                    ->where('attempt_number', $claimedAttempt)
+                    ->where('status', KnowledgeIngestionAttemptStatus::Processing)
+                    ->lockForUpdate()
+                    ->first();
                 $lockedRun->update(['status' => 'ready', 'completed_at' => now()]);
+                if ($attempt instanceof KnowledgeIngestionAttempt) {
+                    $attempt->update([
+                        'status' => KnowledgeIngestionAttemptStatus::Ready,
+                        'completed_at' => now(),
+                    ]);
+                }
 
                 if ($source->status->value === 'retired' || $revision->status === KnowledgeRevisionStatus::Retired) {
                     return;
@@ -94,23 +115,55 @@ final class ProcessKnowledgeIngestion
                     'source_id' => $sourceId,
                     'revision_id' => $revisionId,
                     'chunk_count' => $lockedRun->chunks()->count(),
+                    'ingestion_run_id' => $lockedRun->getKey(),
+                    'attempt_number' => $claimedAttempt,
                 ]);
             });
         } catch (Throwable $exception) {
             $errorCode = $this->errorCode($exception);
             $failedCurrentAttempt = DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $run, $claimedAttempt, $errorCode): bool {
-                $updated = KnowledgeIngestionRun::query()
+                $lockedRun = KnowledgeIngestionRun::query()
                     ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->where('knowledge_revision_id', $revisionId)
                     ->whereKey($run->getKey())
-                    ->where('attempts', $claimedAttempt)
-                    ->where('status', 'processing')
-                    ->update(['status' => 'failed', 'error_code' => $errorCode, 'completed_at' => now()]);
-                if ($updated === 0) {
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                if ($lockedRun->attempts !== $claimedAttempt || $lockedRun->status->value !== 'processing') {
                     return false;
                 }
-                KnowledgeRevision::query()->where('organization_id', $organizationId)->whereKey($revisionId)->where('status', 'processing')->update(['status' => 'failed']);
+                $attempt = KnowledgeIngestionAttempt::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->where('knowledge_revision_id', $revisionId)
+                    ->where('knowledge_ingestion_run_id', $run->getKey())
+                    ->where('attempt_number', $claimedAttempt)
+                    ->where('status', KnowledgeIngestionAttemptStatus::Processing)
+                    ->lockForUpdate()
+                    ->first();
+                $completedAt = now();
+                $lockedRun->update(['status' => 'failed', 'error_code' => $errorCode, 'completed_at' => $completedAt]);
+                if ($attempt instanceof KnowledgeIngestionAttempt) {
+                    $attempt->update([
+                        'status' => KnowledgeIngestionAttemptStatus::Failed,
+                        'error_code' => $errorCode,
+                        'completed_at' => $completedAt,
+                    ]);
+                }
+                KnowledgeRevision::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->whereKey($revisionId)
+                    ->where('status', 'processing')
+                    ->update(['status' => 'failed']);
                 $organization = Organization::query()->findOrFail($organizationId);
-                $this->audit->handle($organization, null, 'knowledge.ingestion.failed', KnowledgeRevision::class, (string) $revisionId, ['source_id' => $sourceId, 'revision_id' => $revisionId, 'error_code' => $errorCode]);
+                $this->audit->handle($organization, null, 'knowledge.ingestion.failed', KnowledgeRevision::class, (string) $revisionId, [
+                    'source_id' => $sourceId,
+                    'revision_id' => $revisionId,
+                    'error_code' => $errorCode,
+                    'ingestion_run_id' => $lockedRun->getKey(),
+                    'attempt_number' => $claimedAttempt,
+                ]);
 
                 return true;
             });

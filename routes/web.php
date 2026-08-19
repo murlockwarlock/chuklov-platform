@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminFinanceReceiptController;
+use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AvailabilityController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
 use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
+use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
@@ -32,6 +34,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
         ->middleware('auth')
         ->name('admin.attachments.download');
+    Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
+        ->middleware(Authenticate::class)
+        ->whereNumber(['knowledgeSourceId', 'knowledgeRevisionId'])
+        ->name('admin.knowledge.revision.download');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
