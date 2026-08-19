@@ -8,6 +8,7 @@ import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { formatMajorPrice } from '../../utils/formatMajorPrice';
 
 type VisitFormat = 'office' | 'home' | 'online';
 type BookingStep = 'time' | 'confirmation' | 'success';
@@ -18,7 +19,7 @@ type ServiceOption = {
     summary: string;
     formats: VisitFormat[];
     durationMinutes: number | null;
-    priceMinor: number | null;
+    priceMajor: string | null;
     priceCurrency: string | null;
 };
 
@@ -194,15 +195,11 @@ function durationLabel(service: ServiceOption): string | null {
 }
 
 function priceLabel(service: ServiceOption): string | null {
-    if (service.priceMinor === null || service.priceCurrency === null) {
+    if (service.priceMajor === null || service.priceCurrency === null) {
         return null;
     }
 
-    return new Intl.NumberFormat(locale.value === 'ru' ? 'ru-RU' : 'en-GB', {
-        style: 'currency',
-        currency: service.priceCurrency,
-        maximumFractionDigits: 0,
-    }).format(service.priceMinor / 100);
+    return formatMajorPrice(service.priceMajor, service.priceCurrency, locale.value);
 }
 
 const serviceChoices = computed(() => props.services.map((service) => ({

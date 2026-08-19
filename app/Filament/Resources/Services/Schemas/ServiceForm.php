@@ -7,12 +7,18 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Models\Service;
+use App\Rules\HttpsImageUrl;
+use App\Rules\MajorUnitPrice;
+use App\Rules\ServicePriceCurrencyPair;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
 class ServiceForm
@@ -21,7 +27,7 @@ class ServiceForm
     {
         return $schema
             ->components([
-                Section::make('Основная информация')
+                Section::make('Основное')
                     ->schema([
                         TextInput::make('name')
                             ->label('Название')
@@ -52,7 +58,7 @@ class ServiceForm
                     ])
                     ->columns(2),
 
-                Section::make('Параметры приёма и форматы')
+                Section::make('Приём')
                     ->schema([
                         TextInput::make('duration_minutes')
                             ->label('Длительность (минуты)')
@@ -77,17 +83,24 @@ class ServiceForm
                     ])
                     ->columns(2),
 
-                Section::make('Стоимость и условия')
+                Section::make('Цена')
                     ->schema([
-                        TextInput::make('price_minor')
-                            ->label('Цена (в минимальных единицах валюты)')
-                            ->integer()
-                            ->minValue(0)
-                            ->maxValue(PHP_INT_MAX),
+                        TextInput::make('price')
+                            ->label('Цена')
+                            ->placeholder('15000 или 15000.50')
+                            ->inputMode('decimal')
+                            ->maxLength(32)
+                            ->rules(fn (Get $get): array => [
+                                new MajorUnitPrice(self::nullableString($get('price_currency'))),
+                            ]),
                         Select::make('price_currency')
                             ->label('Валюта')
                             ->options(fn (): array => self::priceCurrencyOptions())
-                            ->searchable(),
+                            ->searchable()
+                            ->live()
+                            ->rules(fn (Get $get): array => [
+                                new ServicePriceCurrencyPair($get('price')),
+                            ]),
                         TextInput::make('payment_policy')
                             ->label('Условия оплаты')
                             ->maxLength(64)
@@ -95,13 +108,36 @@ class ServiceForm
                     ])
                     ->columns(2),
 
-                Section::make('Локализация и медиа')
+                Section::make('Изображение')
                     ->schema([
-                        TextInput::make('image_path')
-                            ->label('Изображение карточки')
-                            ->helperText('Путь к файлу в ассетах, например portal-assets/services/consultation.jpg.')
-                            ->maxLength(255)
+                        FileUpload::make('service_image')
+                            ->label('Загрузить изображение')
+                            ->image()
+                            ->acceptedFileTypes(['image/jpeg', 'image/png'])
+                            ->maxSize(self::imageUploadKilobytes())
+                            ->storeFiles(false)
+                            ->validationMessages([
+                                'mimetypes' => 'Поддерживаются только изображения JPG и PNG.',
+                                'max' => 'Изображение должно быть размером до 5 МБ.',
+                            ])
+                            ->helperText('JPG или PNG размером до 5 МБ.')
                             ->columnSpanFull(),
+                        TextInput::make('external_image_url')
+                            ->label('Ссылка на изображение')
+                            ->helperText('HTTPS-ссылка на изображение без загрузки файла.')
+                            ->maxLength(2048)
+                            ->rules([new HttpsImageUrl])
+                            ->columnSpanFull(),
+                        Toggle::make('remove_image')
+                            ->label('Удалить текущее изображение')
+                            ->visible(fn (?Service $record): bool => $record instanceof Service
+                                && (self::hasValue($record->getAttribute('image_path'))
+                                    || self::hasValue($record->getAttribute('external_image_url')))),
+                    ])
+                    ->columns(2),
+
+                Section::make('Дополнительно / локализация')
+                    ->schema([
                         TextInput::make('name_ru')
                             ->label('Название на русском')
                             ->maxLength(160),
@@ -141,5 +177,22 @@ class ServiceForm
         }
 
         return $catalog->options();
+    }
+
+    private static function imageUploadKilobytes(): int
+    {
+        $bytes = max(1, (int) config('service_media.max_bytes', 5_242_880));
+
+        return intdiv($bytes + 1023, 1024);
+    }
+
+    private static function hasValue(mixed $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        return self::hasValue($value) ? trim((string) $value) : null;
     }
 }

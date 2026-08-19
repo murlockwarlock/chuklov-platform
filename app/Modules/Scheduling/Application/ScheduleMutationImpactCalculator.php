@@ -11,6 +11,7 @@ use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\ValueObjects\ScheduleExceptionDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
@@ -111,7 +112,7 @@ final class ScheduleMutationImpactCalculator
         return $this->fromBookings($this->futureBookingsForService($service->getKey()), [
             'type' => 'service_change',
             'service_id' => $service->getKey(),
-            'attributes' => $attributes,
+            'scheduling_intent' => $this->serviceSchedulingIntent($service, $attributes),
         ]);
     }
 
@@ -215,6 +216,26 @@ final class ScheduleMutationImpactCalculator
             ->orderBy('id')
             ->get()
             ->all();
+    }
+
+    /** @param array<string, mixed> $attributes
+     * @return array{duration_minutes: int|null, buffer_minutes: int, formats: list<mixed>, is_active: bool, catalog_type: string}
+     */
+    private function serviceSchedulingIntent(Service $service, array $attributes): array
+    {
+        $durationMinutes = $attributes['duration_minutes'] ?? $service->duration_minutes;
+        $formats = $attributes['formats'] ?? $service->formats;
+        $catalogType = $attributes['catalog_type'] ?? $service->catalogItemType()->value;
+
+        return [
+            'duration_minutes' => $durationMinutes === null ? null : (int) $durationMinutes,
+            'buffer_minutes' => (int) ($attributes['buffer_minutes'] ?? $service->buffer_minutes),
+            'formats' => is_array($formats) ? array_values($formats) : [],
+            'is_active' => (bool) ($attributes['is_active'] ?? $service->is_active),
+            'catalog_type' => $catalogType instanceof CatalogItemType
+                ? $catalogType->value
+                : (string) $catalogType,
+        ];
     }
 
     /**

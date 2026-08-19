@@ -9,9 +9,13 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServiceConfiguration;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CreateService
 {
@@ -20,6 +24,7 @@ class CreateService
         private readonly OrganizationAuthorizer $authorizer,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly ServiceMediaStorageInterface $media,
     ) {}
 
     /**
@@ -48,7 +53,7 @@ class CreateService
         $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageServices);
 
-        $configuration = ServiceConfiguration::from(is_array($name) ? $name : [
+        $attributes = is_array($name) ? $name : [
             'name' => $name,
             'summary' => $summary,
             'is_active' => $isActive,
@@ -64,30 +69,119 @@ class CreateService
             'price_minor' => $priceMinor,
             'price_currency' => $priceCurrency,
             'payment_policy' => $paymentPolicy,
-        ]);
+        ];
+        $uploadedFile = $this->uploadedFile($attributes);
+        $removeImage = (bool) ($attributes['remove_image'] ?? false);
+        unset($attributes['service_image'], $attributes['remove_image']);
+        $this->assertMediaInput($attributes, $uploadedFile, $removeImage);
 
-        return DB::transaction(function () use ($organization, $actor, $configuration): Service {
-            $service = new Service;
-            $service->forceFill([
-                'organization_id' => $organization->getKey(),
-                ...$configuration->attributes(),
+        $configurationAttributes = $attributes;
+
+        if ($uploadedFile !== null) {
+            $configurationAttributes['image_path'] = null;
+            $configurationAttributes['external_image_url'] = null;
+        }
+
+        $configuration = ServiceConfiguration::from($configurationAttributes);
+        $storedPath = null;
+
+        try {
+            if ($uploadedFile !== null) {
+                $storedPath = $this->media->store($organization->getKey(), $uploadedFile);
+                $configurationAttributes['image_path'] = $storedPath;
+                $configurationAttributes['external_image_url'] = null;
+                $configuration = ServiceConfiguration::from($configurationAttributes);
+            }
+
+            return DB::transaction(function () use ($organization, $actor, $configuration): Service {
+                $service = new Service;
+                $service->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    ...$configuration->attributes(),
+                ]);
+                $service->save();
+
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'service.created',
+                    targetType: Service::class,
+                    targetId: (string) $service->getKey(),
+                    metadata: [
+                        'source' => 'application',
+                        'is_active' => $configuration->isActive,
+                        'has_price' => $configuration->priceMinor !== null,
+                    ],
+                );
+
+                return $service->refresh();
+            });
+        } catch (Throwable $exception) {
+            $this->discard($organization->getKey(), $storedPath);
+
+            throw $exception;
+        }
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function uploadedFile(array $attributes): ?UploadedFile
+    {
+        $value = $attributes['service_image'] ?? null;
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! $value instanceof UploadedFile) {
+            throw ValidationException::withMessages([
+                'service_image' => ['Загрузите изображение в формате JPG или PNG.'],
             ]);
-            $service->save();
+        }
 
-            $this->audit->handle(
-                organization: $organization,
-                actor: $actor,
-                action: 'service.created',
-                targetType: Service::class,
-                targetId: (string) $service->getKey(),
-                metadata: [
-                    'source' => 'application',
-                    'is_active' => $configuration->isActive,
-                    'has_price' => $configuration->priceMinor !== null,
-                ],
-            );
+        return $value;
+    }
 
-            return $service->refresh();
-        });
+    /** @param array<string, mixed> $attributes */
+    private function assertMediaInput(
+        array $attributes,
+        ?UploadedFile $uploadedFile,
+        bool $removeImage,
+    ): void {
+        $hasPath = $this->hasValue($attributes['image_path'] ?? null);
+        $hasExternalUrl = $this->hasValue($attributes['external_image_url'] ?? null);
+        $hasConflictingInput = ($uploadedFile !== null && ($hasPath || $hasExternalUrl))
+            || ($removeImage && ($uploadedFile !== null || $hasPath || $hasExternalUrl))
+            || ($hasPath && $hasExternalUrl);
+
+        if ($hasConflictingInput) {
+            throw ValidationException::withMessages([
+                'service_image' => ['Выберите файл или HTTPS-ссылку на изображение.'],
+                'external_image_url' => ['Выберите файл или HTTPS-ссылку на изображение.'],
+            ]);
+        }
+
+        if ($hasPath && str_starts_with(trim((string) $attributes['image_path']), 'services/')) {
+            throw ValidationException::withMessages([
+                'service_image' => ['Выберите изображение или HTTPS-ссылку на изображение.'],
+            ]);
+        }
+    }
+
+    private function hasValue(mixed $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
+    }
+
+    private function discard(int $organizationId, ?string $path): void
+    {
+        if ($path === null) {
+            return;
+        }
+
+        try {
+            $this->media->deleteManaged($organizationId, $path);
+        } catch (Throwable $cleanupException) {
+            report($cleanupException);
+        }
     }
 }
