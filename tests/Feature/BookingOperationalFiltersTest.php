@@ -46,7 +46,7 @@ final class BookingOperationalFiltersTest extends TestCase
             $client,
             $specialist,
             $service,
-            CarbonImmutable::create(2026, 8, 18, 18, 59, 0, 'UTC'),
+            CarbonImmutable::create(2026, 8, 18, 17, 59, 0, 'UTC'),
         );
         $localDayStart = $this->createBooking(
             $organization,
