@@ -3,6 +3,7 @@
 namespace App\Modules\Services\Domain\ValueObjects;
 
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use InvalidArgumentException;
 
@@ -13,6 +14,7 @@ final readonly class ServiceConfiguration
         public string $name,
         public string $summary,
         public ?string $imagePath,
+        public ?string $externalImageUrl,
         public bool $isActive,
         public CatalogItemType $catalogType,
         public ?string $nameRu,
@@ -47,6 +49,12 @@ final readonly class ServiceConfiguration
             500,
         );
         $imagePath = self::imagePath($attributes['image_path'] ?? null);
+        $externalImageUrl = self::externalImageUrl($attributes['external_image_url'] ?? null);
+
+        if ($imagePath !== null && $externalImageUrl !== null) {
+            throw new InvalidArgumentException('A service cannot have both a managed image and an external image URL.');
+        }
+
         $catalogType = self::catalogType($attributes['catalog_type'] ?? CatalogItemType::Service->value);
 
         $descriptionRu = self::optionalString(
@@ -77,9 +85,12 @@ final readonly class ServiceConfiguration
             65535,
             true,
         );
-        $formats = self::formats($attributes['formats'] ?? []);
-        $priceMinor = self::optionalNonNegativeInteger($attributes['price_minor'] ?? null, 'The service price is invalid.');
         $priceCurrency = self::currency($attributes['price_currency'] ?? null);
+        $priceMinor = array_key_exists('price', $attributes)
+            ? self::priceMinorFromMajor($attributes['price'], $priceCurrency)
+            : self::optionalNonNegativeInteger($attributes['price_minor'] ?? null, 'The service price is invalid.');
+
+        $formats = self::formats($attributes['formats'] ?? []);
 
         if (($priceMinor === null) !== ($priceCurrency === null)) {
             throw new InvalidArgumentException('A service price requires an explicit currency.');
@@ -95,6 +106,7 @@ final readonly class ServiceConfiguration
             name: $name,
             summary: $summary,
             imagePath: $imagePath,
+            externalImageUrl: $externalImageUrl,
             isActive: (bool) ($attributes['is_active'] ?? true),
             catalogType: $catalogType,
             nameRu: $nameRu,
@@ -118,6 +130,7 @@ final readonly class ServiceConfiguration
             'name' => $this->name,
             'summary' => $this->summary,
             'image_path' => $this->imagePath,
+            'external_image_url' => $this->externalImageUrl,
             'is_active' => $this->isActive,
             'catalog_type' => $this->catalogType->value,
             'name_ru' => $this->nameRu,
@@ -184,12 +197,78 @@ final readonly class ServiceConfiguration
             || mb_strlen($value) > 255
             || str_starts_with($value, '/')
             || str_contains($value, '..')
+            || preg_match('/^[a-z][a-z0-9+.-]*:\/\//i', $value) === 1
             || preg_match('/\.(?:jpe?g|png|webp|avif)$/i', $value) !== 1
         ) {
             throw new InvalidArgumentException('The service image path is invalid.');
         }
 
         return $value;
+    }
+
+    private static function externalImageUrl(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException('The external service image URL is invalid.');
+        }
+
+        $value = trim($value);
+
+        if ($value === ''
+            || mb_strlen($value) > 2048
+            || filter_var($value, FILTER_VALIDATE_URL) === false
+        ) {
+            throw new InvalidArgumentException('The external service image URL is invalid.');
+        }
+
+        $parts = parse_url($value);
+
+        if (! is_array($parts)
+            || ($parts['scheme'] ?? null) !== 'https'
+            || ! is_string($parts['host'] ?? null)
+            || $parts['host'] === ''
+        ) {
+            throw new InvalidArgumentException('The external service image URL must use HTTPS.');
+        }
+
+        return $value;
+    }
+
+    private static function priceMinorFromMajor(mixed $value, ?string $currency): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($currency === null) {
+            throw new InvalidArgumentException('A service price requires an explicit currency.');
+        }
+
+        if (! is_string($value) && ! is_int($value)) {
+            throw new InvalidArgumentException('The service price is invalid.');
+        }
+
+        $amount = is_string($value) ? trim($value) : $value;
+
+        if ($amount === '') {
+            return null;
+        }
+
+        try {
+            $money = Money::fromDecimal($amount, $currency);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException('The service price is invalid.', previous: $exception);
+        }
+
+        if ($money->isNegative()) {
+            throw new InvalidArgumentException('The service price is invalid.');
+        }
+
+        return $money->minorUnits();
     }
 
     private static function catalogType(mixed $value): CatalogItemType

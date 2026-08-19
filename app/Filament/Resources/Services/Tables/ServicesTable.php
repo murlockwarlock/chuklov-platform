@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Services\Tables;
 
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\EditAction;
@@ -9,6 +10,7 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use InvalidArgumentException;
 
 class ServicesTable
 {
@@ -29,9 +31,18 @@ class ServicesTable
                 TextColumn::make('duration_minutes')->label('Длительность')->suffix(' мин.')->sortable(),
                 TextColumn::make('price_minor')
                     ->label('Цена')
-                    ->state(fn (Service $record): string => $record->price_minor === null
-                        ? '—'
-                        : $record->price_minor.' '.($record->price_currency ?? '')),
+                    ->state(function (Service $record): string {
+                        if ($record->price_minor === null || $record->price_currency === null) {
+                            return '—';
+                        }
+
+                        try {
+                            return Money::ofMinor($record->price_minor, $record->price_currency)->toDecimalString()
+                                .' '.$record->price_currency;
+                        } catch (InvalidArgumentException) {
+                            return '—';
+                        }
+                    }),
                 IconColumn::make('is_active')->label('Доступна')->boolean()->sortable(),
             ])
             ->filters([

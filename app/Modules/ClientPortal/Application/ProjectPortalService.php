@@ -2,10 +2,14 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Services\Application\ServiceImageUrlResolver;
 use App\Modules\Services\Domain\Models\Service;
 
 final class ProjectPortalService
 {
+    public function __construct(private readonly ServiceImageUrlResolver $imageResolver) {}
+
     /** @return array<string, mixed> */
     public function handle(Service $service, string $locale): array
     {
@@ -14,10 +18,11 @@ final class ProjectPortalService
             'name' => $this->localizedValue($service, 'name', $locale) ?? (string) $service->name,
             'summary' => $this->localizedValue($service, 'description', $locale)
                 ?? (string) $service->summary,
-            'imageUrl' => $this->imageUrl($service),
+            'imageUrl' => $this->imageResolver->resolve($service),
             'category' => $this->stringValue($service->getAttribute('category')),
             'durationMinutes' => $service->durationMinutes(),
             'priceMinor' => $service->getAttribute('price_minor'),
+            'priceMajor' => $this->priceMajor($service),
             'priceCurrency' => $this->stringValue($service->getAttribute('price_currency')),
         ];
     }
@@ -49,10 +54,19 @@ final class ProjectPortalService
         return trim($value);
     }
 
-    private function imageUrl(Service $service): ?string
+    private function priceMajor(Service $service): ?string
     {
-        $path = $this->stringValue($service->getAttribute('image_path'));
+        $minor = $service->getAttribute('price_minor');
+        $currency = $this->stringValue($service->getAttribute('price_currency'));
 
-        return $path === null ? null : asset($path);
+        if ($minor === null || $currency === null) {
+            return null;
+        }
+
+        try {
+            return Money::ofMinor($minor, $currency)->toDecimalString();
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
     }
 }

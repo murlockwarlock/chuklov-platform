@@ -257,6 +257,22 @@ class MilestoneThreeDatabaseTest extends TestCase
         ]);
     }
 
+    public function test_service_catalog_check_rejects_both_image_sources(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The service image source check requires PostgreSQL.');
+        }
+
+        $organization = Organization::factory()->create();
+
+        $this->expectException(QueryException::class);
+
+        Service::factory()->forOrganization($organization)->create([
+            'image_path' => 'portal-assets/services/legacy.jpg',
+            'external_image_url' => 'https://cdn.example.test/service.jpg',
+        ]);
+    }
+
     public function test_zero_price_buffer_and_content_order_are_valid_boundaries(): void
     {
         $organization = Organization::factory()->create();

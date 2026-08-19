@@ -77,7 +77,9 @@ use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Services\Infrastructure\Storage\FilesystemServiceMediaStorage;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -161,6 +163,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(MedicalKeyResolverInterface::class, AppKeyMedicalKeyResolver::class);
         $this->app->bind(MedicalEncryptorInterface::class, MedicalDataEncryptor::class);
         $this->app->bind(AttachmentStorageInterface::class, PrivateMedicalAttachmentStorage::class);
+        $this->app->bind(ServiceMediaStorageInterface::class, FilesystemServiceMediaStorage::class);
         $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
         $this->app->bind(EmbeddingGenerator::class, LaravelEmbeddingGenerator::class);
         $this->app->bind(KnowledgeRetriever::class, PgvectorKnowledgeRetriever::class);

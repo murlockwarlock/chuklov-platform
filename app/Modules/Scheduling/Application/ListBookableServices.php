@@ -49,6 +49,7 @@ class ListBookableServices
                 'name',
                 'summary',
                 'image_path',
+                'external_image_url',
                 'name_ru',
                 'name_en',
                 'description_ru',

@@ -14,6 +14,7 @@ use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -42,6 +43,27 @@ class ServiceVerticalSliceTest extends TestCase
                 ->has('services', 1)
                 ->where('services.0.name', 'Foundation Service')
                 ->where('services.0.imageUrl', asset('portal-assets/services/consultation.jpg')));
+    }
+
+    public function test_portal_projects_service_price_as_an_exact_major_unit_string(): void
+    {
+        $organization = Organization::factory()->create();
+        $this->enableServiceCatalog($organization);
+        config()->set('tenancy.default_organization_id', $organization->id);
+        DB::table('organization_allowed_currencies')->insert([
+            'organization_id' => $organization->id,
+            'currency' => 'KZT',
+            'created_at' => now(),
+        ]);
+        Service::factory()->forOrganization($organization)->create([
+            'price_minor' => 1_500_050,
+            'price_currency' => 'KZT',
+        ]);
+
+        $this->get(route('portal.services.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('services.0.priceMajor', '15000.50')
+                ->where('services.0.priceCurrency', 'KZT'));
     }
 
     public function test_application_service_creation_requires_the_service_catalog_feature(): void

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { portalText } from '../../locales/portal';
 import type { PortalLocale } from '../../types/portal';
+import { formatMajorPrice } from '../../utils/formatMajorPrice';
 
 type Service = {
     id: number;
@@ -9,7 +10,7 @@ type Service = {
     summary: string | null;
     imageUrl: string | null;
     durationMinutes: number | null;
-    priceMinor: number | null;
+    priceMajor: string | null;
     priceCurrency: string | null;
 };
 
@@ -28,15 +29,11 @@ const duration = computed(() => {
 });
 
 const price = computed(() => {
-    if (props.service.priceMinor === null || props.service.priceCurrency === null) {
+    if (props.service.priceMajor === null || props.service.priceCurrency === null) {
         return portalText(props.locale, 'service.priceUnavailable');
     }
 
-    const formatted = new Intl.NumberFormat(props.locale === 'ru' ? 'ru-RU' : 'en-GB', {
-        style: 'currency',
-        currency: props.service.priceCurrency,
-        maximumFractionDigits: 0,
-    }).format(props.service.priceMinor / 100);
+    const formatted = formatMajorPrice(props.service.priceMajor, props.service.priceCurrency, props.locale);
 
     return portalText(props.locale, 'service.from') + ' ' + formatted;
 });

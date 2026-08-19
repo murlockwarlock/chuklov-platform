@@ -19,6 +19,7 @@ class MilestoneThreeDatabaseTest extends TestCase
         self::assertTrue(Schema::hasColumn('specialists', 'timezone'));
         self::assertTrue(Schema::hasColumn('services', 'price_minor'));
         self::assertTrue(Schema::hasColumn('services', 'image_path'));
+        self::assertTrue(Schema::hasColumn('services', 'external_image_url'));
         self::assertTrue(Schema::hasColumn('services', 'price_currency'));
         self::assertTrue(Schema::hasColumn('services', 'catalog_type'));
         self::assertTrue(Schema::hasTable('medical_profiles'));

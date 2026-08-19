@@ -109,15 +109,65 @@ class FilamentServiceSecurityTest extends TestCase
                 'summary' => 'Decimal values must not persist.',
                 'duration_minutes' => '60.5',
                 'buffer_minutes' => '5.5',
-                'price_minor' => '1250.50',
+                'price' => '1250.50',
                 'price_currency' => 'USD',
                 'is_active' => true,
                 'catalog_type' => 'service',
             ])
             ->call('create')
-            ->assertHasFormErrors(['duration_minutes', 'buffer_minutes', 'price_minor']);
+            ->assertHasFormErrors(['duration_minutes', 'buffer_minutes']);
 
         self::assertSame(0, Service::query()->count());
+    }
+
+    public function test_edit_form_hydrates_minor_units_as_exact_major_units(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->enableServiceCatalog($organization);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'price_minor' => 1_500_050,
+            'price_currency' => 'KZT',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertFormSet([
+                'price' => '15000.50',
+                'price_currency' => 'KZT',
+            ]);
+    }
+
+    public function test_filament_price_create_edit_round_trip_keeps_decimal_precision(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->enableServiceCatalog($organization);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(CreateService::class)
+            ->fillForm([
+                'name' => 'Precision service',
+                'summary' => 'The displayed amount keeps its precision.',
+                'price' => '15000.50',
+                'price_currency' => 'KZT',
+                'is_active' => true,
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $service = Service::query()->sole();
+        self::assertSame(1_500_050, $service->price_minor);
+
+        Livewire::actingAs($admin)
+            ->test(EditService::class, ['record' => $service->getRouteKey()])
+            ->fillForm(['price' => '15000.50', 'price_currency' => 'KZT'])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(1_500_050, $service->fresh()->price_minor);
     }
 
     private function resolveFilamentContext(User $admin, Organization $organization): void
