@@ -95,6 +95,7 @@ final class SurveyDefinitionForm
                                         $get('key'),
                                         $get('condition_question_key'),
                                     ))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get))
                                     ->searchable()
                                     ->live(),
                                 Select::make('condition_operator')
@@ -103,6 +104,7 @@ final class SurveyDefinitionForm
                                         SurveyDefinitionFormOptions::questionType(self::sections($get), $get('condition_question_key')),
                                         $get('condition_operator'),
                                     ))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get))
                                     ->visible(fn (Get $get): bool => filled($get('condition_question_key')) || filled($get('condition_operator')))
                                     ->live(),
                                 Select::make('condition_option_value')
@@ -114,6 +116,7 @@ final class SurveyDefinitionForm
                                     ))
                                     ->visible(fn (Get $get): bool => self::conditionType($get) === 'single_choice'
                                         && in_array($get('condition_operator'), ['equals', 'not_equals'], true))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get))
                                     ->searchable(),
                                 Select::make('condition_values')
                                     ->label('Варианты ответа')
@@ -125,17 +128,20 @@ final class SurveyDefinitionForm
                                     ->multiple()
                                     ->visible(fn (Get $get): bool => self::conditionType($get) === 'single_choice'
                                         && in_array($get('condition_operator'), ['in', 'not_in'], true))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get))
                                     ->searchable(),
                                 Select::make('condition_boolean_value')
                                     ->label('Ответ')
                                     ->options(['true' => 'Да', 'false' => 'Нет'])
                                     ->visible(fn (Get $get): bool => self::conditionType($get) === 'boolean'
-                                        && in_array($get('condition_operator'), ['equals', 'not_equals'], true)),
+                                        && in_array($get('condition_operator'), ['equals', 'not_equals'], true))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get)),
                                 TextInput::make('condition_value')
                                     ->label('Значение')
                                     ->numeric(fn (Get $get): bool => in_array(self::conditionType($get), ['integer', 'number'], true))
                                     ->visible(fn (Get $get): bool => in_array(self::conditionType($get), ['integer', 'number', 'short_text', 'long_text'], true)
-                                        && in_array($get('condition_operator'), ['equals', 'not_equals', 'greater_than', 'less_than'], true)),
+                                        && in_array($get('condition_operator'), ['equals', 'not_equals', 'greater_than', 'less_than'], true))
+                                    ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get)),
                             ])->columns(2)->columnSpanFull(),
                     ])->columnSpanFull(),
             ]),
@@ -275,5 +281,10 @@ final class SurveyDefinitionForm
     private static function hasLegacyScoring(Get $get): bool
     {
         return is_array($get('/data.legacy_scoring'));
+    }
+
+    private static function hasLegacyCondition(Get $get): bool
+    {
+        return is_array($get('condition_legacy'));
     }
 }

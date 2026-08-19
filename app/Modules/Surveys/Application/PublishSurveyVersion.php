@@ -23,14 +23,19 @@ final readonly class PublishSurveyVersion
         $organization = $this->authorization->manage($actor);
 
         return DB::transaction(function () use ($actor, $organization, $version): SurveyVersion {
-            $locked = SurveyVersion::query()->where('organization_id', $organization->getKey())->whereKey($version->getKey())->lockForUpdate()->firstOrFail();
-            abort_unless($locked->status === SurveyVersionStatus::Draft, 422, 'Опубликовать можно только черновик.');
-            $this->validator->validate($locked->definition, $locked->scoring);
             $definition = SurveyDefinition::query()
                 ->where('organization_id', $organization->getKey())
-                ->whereKey($locked->survey_definition_id)
+                ->whereKey($version->survey_definition_id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $locked = SurveyVersion::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('survey_definition_id', $definition->getKey())
+                ->whereKey($version->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless($locked->status === SurveyVersionStatus::Draft, 422, 'Опубликовать можно только черновик.');
+            $this->validator->validate($locked->definition, $locked->scoring);
             SurveyVersion::query()->where('organization_id', $organization->getKey())->where('survey_definition_id', $definition->getKey())->where('status', SurveyVersionStatus::Published)->update([
                 'status' => SurveyVersionStatus::Retired,
                 'retired_at' => now(),

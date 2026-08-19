@@ -29,7 +29,16 @@ final class SurveyDefinitionValidatorTest extends TestCase
         (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
     }
 
-    public function test_operator_matrix_rejects_multiple_choice_membership(): void
+    public function test_missing_question_reference_is_rejected(): void
+    {
+        $data = $this->data();
+        $data['definition']['sections'][0]['questions'][1]['condition']['question_key'] = 'missing';
+
+        $this->expectException(ValidationException::class);
+        (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+    }
+
+    public function test_canonical_multiple_choice_condition_can_remain_valid_when_human_builder_does_not_expose_it(): void
     {
         $data = $this->data();
         $data['definition']['sections'][0]['questions'][0] = [
@@ -44,12 +53,53 @@ final class SurveyDefinitionValidatorTest extends TestCase
         ];
         $data['definition']['sections'][0]['questions'][1]['condition'] = [
             'question_key' => 'q-multiple',
-            'operator' => 'in',
+            'operator' => 'equals',
             'value' => ['one'],
         ];
+        $data['scoring']['rules'][0] = [
+            'question_key' => 'q-multiple',
+            'metric_key' => 'metric',
+            'operator' => 'selected_sum',
+            'points' => ['one' => 1, 'two' => 2],
+        ];
+
+        (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+        self::assertTrue(true);
+    }
+
+    public function test_fractional_integer_condition_is_rejected(): void
+    {
+        $data = $this->data();
+        $data['definition']['sections'][0]['questions'][0]['type'] = 'integer';
+        $data['definition']['sections'][0]['questions'][1]['condition']['value'] = 1.9;
 
         $this->expectException(ValidationException::class);
         (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+        self::assertTrue(true);
+    }
+
+    public function test_canonical_number_equality_remains_valid_for_legacy_builder_state(): void
+    {
+        $data = $this->data();
+        $data['definition']['sections'][0]['questions'][0] = [
+            'key' => 'q-number',
+            'type' => 'number',
+            'label' => 'Число',
+            'condition' => null,
+        ];
+        $data['definition']['sections'][0]['questions'][1]['condition'] = [
+            'question_key' => 'q-number',
+            'operator' => 'equals',
+            'value' => 5,
+        ];
+        $data['scoring']['rules'] = [[
+            'question_key' => 'q-number',
+            'metric_key' => 'metric',
+            'operator' => 'numeric_value',
+        ]];
+
+        (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+        self::assertTrue(true);
     }
 
     public function test_duplicate_nested_identities_and_references_are_rejected(): void

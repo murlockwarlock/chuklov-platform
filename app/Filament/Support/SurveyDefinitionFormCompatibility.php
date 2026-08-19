@@ -46,7 +46,7 @@ final class SurveyDefinitionFormCompatibility
                 : is_array($value) && $value !== [] && count(array_filter($value, 'is_string')) === count($value),
             'boolean' => in_array($operator, ['equals', 'not_equals'], true) && is_bool($value),
             'integer' => in_array($operator, ['equals', 'not_equals', 'greater_than', 'less_than'], true) && is_int($value),
-            'number' => in_array($operator, ['equals', 'not_equals', 'greater_than', 'less_than'], true) && is_numeric($value),
+            'number' => in_array($operator, ['greater_than', 'less_than'], true) && is_numeric($value),
             'short_text', 'long_text' => in_array($operator, ['equals', 'not_equals'], true) && is_string($value),
             default => false,
         };

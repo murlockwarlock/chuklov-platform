@@ -28,6 +28,7 @@ use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Services\SurveyDefinitionValidator;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -93,6 +94,37 @@ final class MilestoneEightSurveyTest extends TestCase
             self::assertSame($published->getKey(), $definition->fresh()->active_version_id);
             self::assertSame(SurveyVersionStatus::Draft, $draft->fresh()->status);
         }
+    }
+
+    public function test_publish_locks_definition_before_requested_version(): void
+    {
+        [, $actor] = $this->fixture();
+        $definition = $this->publishedDefinition($actor);
+        $draft = app(CreateSurveyVersion::class)->handle($actor, $definition, $this->definitionData());
+        $queries = [];
+        DB::listen(function (QueryExecuted $query) use (&$queries): void {
+            $sql = strtolower($query->sql);
+            if (str_starts_with($sql, 'select') && (str_contains($sql, 'survey_definitions') || str_contains($sql, 'survey_versions'))) {
+                $queries[] = $sql;
+            }
+        });
+
+        app(PublishSurveyVersion::class)->handle($actor, $draft);
+
+        $definitionLockIndex = null;
+        $versionLockIndex = null;
+        foreach ($queries as $index => $query) {
+            if ($definitionLockIndex === null && str_contains($query, 'survey_definitions')) {
+                $definitionLockIndex = $index;
+            }
+            if ($versionLockIndex === null && str_contains($query, 'survey_versions')) {
+                $versionLockIndex = $index;
+            }
+        }
+
+        self::assertNotNull($definitionLockIndex);
+        self::assertNotNull($versionLockIndex);
+        self::assertLessThan($versionLockIndex, $definitionLockIndex);
     }
 
     public function test_completion_is_condition_aware_deterministic_encrypted_and_retry_safe(): void

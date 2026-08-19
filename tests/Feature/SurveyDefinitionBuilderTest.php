@@ -23,40 +23,73 @@ final class SurveyDefinitionBuilderTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_crm_create_generates_technical_identities_without_raw_key_inputs(): void
+    public function test_repeater_add_lifecycle_generates_technical_identities_before_persistence(): void
     {
         [, $admin] = $this->fixture();
-        $sectionKey = SurveyDefinitionFormMapper::newIdentity();
-        $questionKey = SurveyDefinitionFormMapper::newIdentity();
-        $goodValue = SurveyDefinitionFormMapper::newIdentity();
-        $badValue = SurveyDefinitionFormMapper::newIdentity();
-        $metricKey = SurveyDefinitionFormMapper::newIdentity();
+        $component = Livewire::actingAs($admin)->test(CreateSurveyDefinitionPage::class);
+        $component->callFormComponentAction('sections', 'add');
+        $state = $component->get('data');
+        $initialSectionItemKey = array_key_first($state['sections']);
+        $sectionItemKey = array_key_last($state['sections']);
+        $component->callFormComponentAction('sections', 'delete', [], ['item' => $initialSectionItemKey]);
+        $state = $component->get('data');
+        $sectionKey = $state['sections'][$sectionItemKey]['key'];
 
-        Livewire::actingAs($admin)
-            ->test(CreateSurveyDefinitionPage::class)
-            ->fillForm([
-                'title' => 'Новый опросник',
-                'description' => 'Описание',
-                'sections' => [[
-                    'key' => $sectionKey,
-                    'title' => 'Раздел',
-                    'questions' => [[
-                        'key' => $questionKey,
-                        'label' => 'Как вы себя чувствуете?',
-                        'type' => 'single_choice',
-                        'required' => true,
-                        'options' => [
-                            ['value' => $goodValue, 'label' => 'Хорошо'],
-                            ['value' => $badValue, 'label' => 'Плохо'],
-                        ],
-                    ]],
-                ]],
-                'metrics' => [['key' => $metricKey, 'label' => 'Итог']],
-                'rules' => [],
-                'thresholds' => [],
-                'comparison_metric_keys' => [],
-                'is_available' => true,
-            ])
+        $component->callFormComponentAction("sections.{$sectionItemKey}.questions", 'add');
+        $state = $component->get('data');
+        $initialQuestionItemKey = array_key_first($state['sections'][$sectionItemKey]['questions']);
+        $questionItemKey = array_key_last($state['sections'][$sectionItemKey]['questions']);
+        $component->callFormComponentAction("sections.{$sectionItemKey}.questions", 'delete', [], ['item' => $initialQuestionItemKey]);
+        $state = $component->get('data');
+        $questionKey = $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['key'];
+        $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['type'] = 'single_choice';
+        $component->fillForm($state);
+
+        $component->callFormComponentAction("sections.{$sectionItemKey}.questions.{$questionItemKey}.options", 'add');
+        $component->callFormComponentAction('metrics', 'add');
+        $component->callFormComponentAction('thresholds', 'add');
+
+        $state = $component->get('data');
+        $initialMetricItemKey = array_key_first($state['metrics']);
+        $metricItemKey = array_key_last($state['metrics']);
+        $component->callFormComponentAction('metrics', 'delete', [], ['item' => $initialMetricItemKey]);
+        $initialThresholdItemKey = array_key_first($state['thresholds']);
+        $thresholdItemKey = array_key_last($state['thresholds']);
+        $component->callFormComponentAction('thresholds', 'delete', [], ['item' => $initialThresholdItemKey]);
+        $state = $component->get('data');
+        $optionItemKeys = array_keys($state['sections'][$sectionItemKey]['questions'][$questionItemKey]['options']);
+        $optionValues = array_map(
+            fn (string|int $itemKey): mixed => $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['options'][$itemKey]['value'],
+            $optionItemKeys,
+        );
+        $metricKey = $state['metrics'][$metricItemKey]['key'];
+        $thresholdTag = $state['thresholds'][$thresholdItemKey]['tag'];
+
+        foreach ([$sectionKey, $questionKey, ...$optionValues, $metricKey, $thresholdTag] as $identity) {
+            self::assertIsString($identity);
+            self::assertNotSame('', $identity);
+        }
+        self::assertGreaterThanOrEqual(2, count($optionValues));
+        self::assertCount(count($optionValues), array_unique($optionValues));
+
+        $state['title'] = 'Новый опросник';
+        $state['description'] = 'Описание';
+        $state['sections'][$sectionItemKey]['title'] = 'Раздел';
+        $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['label'] = 'Как вы себя чувствуете?';
+        $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['required'] = true;
+        $optionLabels = ['Хорошо', 'Плохо', 'Ещё один вариант'];
+        foreach ($optionItemKeys as $index => $optionItemKey) {
+            $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['options'][$optionItemKey]['label'] = $optionLabels[$index] ?? 'Вариант ответа';
+        }
+        $state['metrics'][$metricItemKey]['label'] = 'Итог';
+        $state['thresholds'][$thresholdItemKey]['metric_key'] = $metricKey;
+        $state['thresholds'][$thresholdItemKey]['min'] = 1;
+        $state['thresholds'][$thresholdItemKey]['label'] = 'Результат';
+        $state['rules'] = [];
+        $state['comparison_metric_keys'] = [];
+        $state['is_available'] = true;
+
+        $component->fillForm($state)
             ->call('create')
             ->assertHasNoFormErrors()
             ->assertRedirect();
@@ -66,16 +99,16 @@ final class SurveyDefinitionBuilderTest extends TestCase
         $question = $version->definition['sections'][0]['questions'][0];
         $options = $question['options'];
         $metric = $version->scoring['metrics'][0];
+        $threshold = $version->scoring['thresholds'][0];
 
         self::assertNotEmpty($definition->definition_key);
         self::assertNotEmpty($version->metric_schema_key);
         self::assertNull($version->source_reference);
-        self::assertNotSame('Новый опросник', $definition->definition_key);
-        self::assertNotSame('Раздел', $version->definition['sections'][0]['key']);
-        self::assertNotSame('Как вы себя чувствуете?', $question['key']);
-        self::assertNotSame('Хорошо', $options[0]['value']);
-        self::assertNotSame('Итог', $metric['key']);
-        self::assertCount(2, array_unique(array_column($options, 'value')));
+        self::assertSame($sectionKey, $version->definition['sections'][0]['key']);
+        self::assertSame($questionKey, $question['key']);
+        self::assertSame($optionValues, array_column($options, 'value'));
+        self::assertSame($metricKey, $metric['key']);
+        self::assertSame($thresholdTag, $threshold['tag']);
     }
 
     public function test_edit_preserves_identities_source_reference_and_compatibility_after_text_and_order_changes(): void
@@ -166,6 +199,91 @@ final class SurveyDefinitionBuilderTest extends TestCase
             ->assertHasErrors();
 
         self::assertSame(1, $definition->refresh()->versions()->count());
+    }
+
+    public function test_fractional_integer_condition_fails_without_persistence_and_whole_integer_is_preserved(): void
+    {
+        [, $admin] = $this->fixture();
+        $definition = app(CreateSurveyDefinitionAction::class)->handle($admin, $this->canonicalData());
+        $version = $definition->versions()->sole();
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        [$source, $dependent, $number] = $state['sections'][0]['questions'];
+        $dependent['type'] = 'integer';
+        $dependent['condition_question_key'] = 'q-number';
+        $dependent['condition_operator'] = 'equals';
+        $dependent['condition_value'] = 1.9;
+        $state['sections'][0]['questions'] = [$source, $number, $dependent];
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($state)
+            ->call('save')
+            ->assertHasErrors();
+
+        self::assertSame(
+            ['question_key' => 'q-source', 'operator' => 'equals', 'value' => 'option-poor'],
+            $version->fresh()->definition['sections'][0]['questions'][1]['condition'],
+        );
+
+        $wholeState = SurveyDefinitionFormMapper::denormalize($version->fresh());
+        [$wholeSource, $wholeDependent, $wholeNumber] = $wholeState['sections'][0]['questions'];
+        $wholeDependent['type'] = 'integer';
+        $wholeDependent['condition_question_key'] = 'q-number';
+        $wholeDependent['condition_operator'] = 'equals';
+        $wholeDependent['condition_value'] = '1';
+        $wholeState['sections'][0]['questions'] = [$wholeSource, $wholeNumber, $wholeDependent];
+        $normalizedWhole = SurveyDefinitionFormMapper::normalize($wholeState);
+        self::assertSame(1, $normalizedWhole['definition']['sections'][0]['questions'][2]['condition']['value']);
+        app(UpdateSurveyDefinitionDraft::class)->handle($admin, $definition, $normalizedWhole);
+
+        $draft = $definition->refresh()->versions()->sole();
+        self::assertSame(1, $draft->definition['sections'][0]['questions'][2]['condition']['value']);
+    }
+
+    public function test_legacy_number_equality_survives_unrelated_edit_and_publishes_but_ordering_stays_authoritative(): void
+    {
+        [, $admin] = $this->fixture();
+        $data = $this->canonicalData();
+        $data['definition']['sections'][0]['questions'][2]['type'] = 'number';
+        [$source, $dependent, $number] = $data['definition']['sections'][0]['questions'];
+        $dependent['condition'] = ['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5];
+        $data['definition']['sections'][0]['questions'] = [$source, $number, $dependent];
+        $definition = app(CreateSurveyDefinitionAction::class)->handle($admin, $data);
+        $version = $definition->versions()->sole();
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+
+        self::assertSame(
+            ['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5],
+            $state['sections'][0]['questions'][2]['condition_legacy'],
+        );
+        $state['title'] = 'Изменено без изменения условия';
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($state)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $draft = $definition->refresh()->versions()->sole();
+        self::assertSame(
+            ['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5],
+            $draft->definition['sections'][0]['questions'][2]['condition'],
+        );
+        app(PublishSurveyVersion::class)->handle($admin, $draft);
+        self::assertSame('published', $draft->fresh()->status->value);
+
+        $invalidState = SurveyDefinitionFormMapper::denormalize($draft->fresh());
+        [$source, $number, $dependent] = $invalidState['sections'][0]['questions'];
+        $invalidState['sections'][0]['questions'] = [$source, $dependent, $number];
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($invalidState)
+            ->call('save')
+            ->assertHasErrors();
+
+        self::assertSame('published', $draft->fresh()->status->value);
     }
 
     public function test_comparison_disable_reenable_and_new_scale_follow_the_compatibility_lifecycle(): void

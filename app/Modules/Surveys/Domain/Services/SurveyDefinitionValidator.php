@@ -102,7 +102,7 @@ final class SurveyDefinitionValidator
         }
         $source = $knownQuestions[$sourceKey];
         $operator = $condition['operator'] ?? null;
-        if (! is_string($operator) || ! in_array($operator, array_keys($this->conditionOperators($source['type'])), true)) {
+        if (! is_string($operator) || ! in_array($operator, array_keys($this->canonicalConditionOperators($source['type'])), true)) {
             $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition", 'Такое условие показа недоступно для выбранного типа ответа.');
         }
 
@@ -115,25 +115,46 @@ final class SurveyDefinitionValidator
         }
 
         $value = $condition['value'] ?? null;
-        if ($source['type'] === 'single_choice') {
-            $allowedValues = $this->optionValues($source['options']);
-            if (in_array($operator, ['equals', 'not_equals'], true) && (! is_string($value) || ! in_array($value, $allowedValues, true))) {
+        if (in_array($operator, ['equals', 'not_equals'], true)) {
+            if ($source['type'] === 'single_choice' && ! $this->choiceValue($value, $this->optionValues($source['options']))) {
                 $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Выберите существующий вариант ответа.');
             }
-            if (in_array($operator, ['in', 'not_in'], true) && (! is_array($value) || $value === [] || count(array_filter($value, 'is_string')) !== count($value) || array_diff($value, $allowedValues) !== [])) {
+            if ($source['type'] === 'multiple_choice' && ! $this->multipleChoiceValue($value, $this->optionValues($source['options']))) {
                 $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Выберите существующие варианты ответа.');
             }
-
-            return;
+            if ($source['type'] === 'boolean' && ! is_bool($value)) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Выберите ответ «Да» или «Нет».');
+            }
+            if ($source['type'] === 'integer' && ! is_int($value)) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите целое число.');
+            }
+            if ($source['type'] === 'number' && ! is_numeric($value)) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите число.');
+            }
+            if (in_array($source['type'], ['short_text', 'long_text'], true) && ! is_string($value)) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите текст.');
+            }
         }
-        if ($source['type'] === 'boolean' && (! is_bool($value) || ! in_array($operator, ['equals', 'not_equals'], true))) {
-            $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Выберите ответ «Да» или «Нет».');
+        if (in_array($operator, ['in', 'not_in'], true)) {
+            if (! is_array($value) || $value === [] || ! array_is_list($value)) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите список значений.');
+            }
+            $allowedValues = $this->optionValues($source['options']);
+            $valid = match ($source['type']) {
+                'single_choice' => $this->choiceList($value, $allowedValues),
+                'multiple_choice' => $this->multipleChoiceValue($value, $allowedValues),
+                'boolean' => count(array_filter($value, 'is_bool')) === count($value),
+                'integer' => count(array_filter($value, 'is_int')) === count($value),
+                'number' => count(array_filter($value, 'is_numeric')) === count($value),
+                'short_text', 'long_text' => count(array_filter($value, 'is_string')) === count($value),
+                default => false,
+            };
+            if (! $valid) {
+                $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Значения условия заполнены некорректно.');
+            }
         }
-        if (in_array($source['type'], ['integer', 'number'], true) && (! is_numeric($value) || ! in_array($operator, ['equals', 'not_equals', 'greater_than', 'less_than'], true))) {
+        if (in_array($operator, ['greater_than', 'less_than'], true) && ! is_numeric($value)) {
             $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите число.');
-        }
-        if (in_array($source['type'], ['short_text', 'long_text'], true) && (! is_string($value) || ! in_array($operator, ['equals', 'not_equals'], true))) {
-            $this->fail("definition.sections.{$sectionIndex}.questions.{$questionIndex}.condition.value", 'Для этого условия укажите текст.');
         }
     }
 
@@ -252,17 +273,54 @@ final class SurveyDefinitionValidator
         return $values;
     }
 
-    /** @return array<string, string> */
-    private function conditionOperators(string $type): array
+    /** @param list<string> $allowedValues */
+    private function choiceValue(mixed $value, array $allowedValues): bool
     {
-        return match ($type) {
-            'single_choice' => ['equals' => 'Равно', 'not_equals' => 'Не равно', 'in' => 'Один из вариантов', 'not_in' => 'Не один из вариантов', 'answered' => 'Есть ответ'],
-            'multiple_choice' => ['answered' => 'Есть ответ'],
-            'boolean' => ['equals' => 'Равно', 'not_equals' => 'Не равно', 'answered' => 'Есть ответ'],
-            'integer', 'number' => ['equals' => 'Равно', 'not_equals' => 'Не равно', 'greater_than' => 'Больше', 'less_than' => 'Меньше', 'answered' => 'Есть ответ'],
-            'short_text', 'long_text' => ['equals' => 'Равно', 'not_equals' => 'Не равно', 'answered' => 'Есть ответ'],
-            default => [],
-        };
+        return is_string($value) && in_array($value, $allowedValues, true);
+    }
+
+    /** @param list<string> $allowedValues */
+    private function choiceList(mixed $value, array $allowedValues): bool
+    {
+        return is_array($value)
+            && $value !== []
+            && array_is_list($value)
+            && count(array_filter($value, fn (mixed $item): bool => $this->choiceValue($item, $allowedValues))) === count($value);
+    }
+
+    /** @param list<string> $allowedValues */
+    private function multipleChoiceValue(mixed $value, array $allowedValues): bool
+    {
+        if (! is_array($value) || $value === [] || ! array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $item) {
+            if (is_string($item) && in_array($item, $allowedValues, true)) {
+                continue;
+            }
+            if (! $this->choiceList($item, $allowedValues)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, string> */
+    private function canonicalConditionOperators(string $type): array
+    {
+        return in_array($type, self::FIELD_TYPES, true)
+            ? [
+                'equals' => 'Равно',
+                'not_equals' => 'Не равно',
+                'in' => 'Один из вариантов',
+                'not_in' => 'Не один из вариантов',
+                'answered' => 'Есть ответ',
+                'greater_than' => 'Больше',
+                'less_than' => 'Меньше',
+            ]
+            : [];
     }
 
     private function filledString(mixed $value): bool

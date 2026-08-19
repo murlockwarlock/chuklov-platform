@@ -101,9 +101,14 @@ final class SurveyDefinitionFormOptions
                 'not_equals' => 'Не равно',
                 'answered' => 'Есть ответ',
             ],
-            'integer', 'number' => [
+            'integer' => [
                 'equals' => 'Равно',
                 'not_equals' => 'Не равно',
+                'greater_than' => 'Больше',
+                'less_than' => 'Меньше',
+                'answered' => 'Есть ответ',
+            ],
+            'number' => [
                 'greater_than' => 'Больше',
                 'less_than' => 'Меньше',
                 'answered' => 'Есть ответ',
@@ -141,16 +146,20 @@ final class SurveyDefinitionFormOptions
         if ($selected === $currentKey) {
             return 'Выберите вопрос выше, а не этот вопрос.';
         }
-        foreach (self::orderedQuestions($sections) as $question) {
-            if (($question['key'] ?? null) === $currentKey) {
-                return 'Условие может ссылаться только на вопрос выше.';
-            }
-            if (($question['key'] ?? null) === $selected) {
-                return 'Условие может ссылаться только на вопрос выше.';
-            }
+        $keys = array_values(array_filter(
+            array_map(static fn (array $question): mixed => $question['key'] ?? null, self::orderedQuestions($sections)),
+            static fn (mixed $key): bool => is_string($key) && $key !== '',
+        ));
+        $currentIndex = array_search($currentKey, $keys, true);
+        $selectedIndex = array_search($selected, $keys, true);
+        if ($selectedIndex === false || $currentIndex === false) {
+            return 'Выбранный вопрос больше недоступен. Выберите другой вопрос или удалите условие.';
+        }
+        if ($selectedIndex < $currentIndex) {
+            return null;
         }
 
-        return 'Выбранный вопрос больше недоступен. Выберите другой вопрос или удалите условие.';
+        return 'Условие может ссылаться только на более ранний вопрос.';
     }
 
     /**

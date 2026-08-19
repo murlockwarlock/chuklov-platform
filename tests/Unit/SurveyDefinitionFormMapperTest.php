@@ -59,11 +59,42 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         self::assertStringNotContainsString('option-good', implode(' ', $options));
         self::assertSame(['equals', 'not_equals', 'in', 'not_in', 'answered'], array_keys(SurveyDefinitionFormOptions::conditionOperators('single_choice')));
         self::assertSame(['equals', 'not_equals', 'answered'], array_keys(SurveyDefinitionFormOptions::conditionOperators('boolean')));
-        self::assertSame(['equals', 'not_equals', 'greater_than', 'less_than', 'answered'], array_keys(SurveyDefinitionFormOptions::conditionOperators('number')));
+        self::assertSame(['greater_than', 'less_than', 'answered'], array_keys(SurveyDefinitionFormOptions::conditionOperators('number')));
         self::assertSame(['equals', 'not_equals', 'answered'], array_keys(SurveyDefinitionFormOptions::conditionOperators('short_text')));
         self::assertSame(['value_map'], array_keys(SurveyDefinitionFormOptions::scoringOperators('single_choice')));
         self::assertSame(['selected_sum'], array_keys(SurveyDefinitionFormOptions::scoringOperators('multiple_choice')));
         self::assertSame(['numeric_value'], array_keys(SurveyDefinitionFormOptions::scoringOperators('integer')));
+    }
+
+    public function test_condition_helper_only_warns_for_invalid_question_order_or_missing_source(): void
+    {
+        $sections = $this->definition()['sections'];
+
+        self::assertNull(SurveyDefinitionFormOptions::conditionHelp($sections, 'q-dependent', 'q-source'));
+        self::assertSame('Выберите вопрос выше, а не этот вопрос.', SurveyDefinitionFormOptions::conditionHelp($sections, 'q-dependent', 'q-dependent'));
+        self::assertSame('Условие может ссылаться только на более ранний вопрос.', SurveyDefinitionFormOptions::conditionHelp($sections, 'q-dependent', 'q-number'));
+        self::assertSame('Выбранный вопрос больше недоступен. Выберите другой вопрос или удалите условие.', SurveyDefinitionFormOptions::conditionHelp($sections, 'q-dependent', 'missing'));
+    }
+
+    public function test_legacy_number_equality_round_trips_without_numeric_type_conversion(): void
+    {
+        $version = new SurveyVersion;
+        $definition = $this->definition();
+        $definition['sections'][0]['questions'][2]['type'] = 'number';
+        $definition['sections'][0]['questions'][] = [
+            'key' => 'q-number-dependent',
+            'type' => 'long_text',
+            'label' => 'Пояснение',
+            'condition' => ['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5],
+        ];
+        $version->definition = $definition;
+        $version->scoring = $this->scoring();
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        self::assertSame(['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5], $state['sections'][0]['questions'][3]['condition_legacy']);
+
+        $normalized = SurveyDefinitionFormMapper::normalize($state);
+        self::assertSame(['question_key' => 'q-number', 'operator' => 'equals', 'value' => 5], $normalized['definition']['sections'][0]['questions'][3]['condition']);
     }
 
     public function test_unsupported_scoring_round_trips_without_conversion(): void

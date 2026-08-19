@@ -251,13 +251,14 @@ final class SurveyDefinitionFormMapper
      */
     private static function normalizeCondition(array $question, array $questionTypes): ?array
     {
-        $questionKey = $question['condition_question_key'] ?? null;
-        $operator = $question['condition_operator'] ?? null;
+        $legacy = is_array($question['condition_legacy'] ?? null) ? $question['condition_legacy'] : null;
+        $questionKey = $question['condition_question_key'] ?? $legacy['question_key'] ?? null;
+        $operator = $question['condition_operator'] ?? $legacy['operator'] ?? null;
         if (! is_string($questionKey) || $questionKey === '' || ! is_string($operator) || $operator === '') {
             return null;
         }
-        if (is_array($question['condition_legacy'] ?? null) && self::legacyConditionIsUnchanged($question, $questionTypes)) {
-            return $question['condition_legacy'];
+        if ($legacy !== null && self::legacyConditionIsUnchanged($question, $questionTypes)) {
+            return $legacy;
         }
 
         $type = $questionTypes[$questionKey] ?? null;
@@ -275,9 +276,10 @@ final class SurveyDefinitionFormMapper
                 'false' => false,
                 default => $question['condition_boolean_value'] ?? null,
             };
-        } elseif ($type === 'integer' && is_numeric($question['condition_value'] ?? null)) {
-            $condition['value'] = (int) $question['condition_value'];
-        } elseif ($type === 'number' && is_numeric($question['condition_value'] ?? null)) {
+        } elseif ($type === 'integer') {
+            $value = $question['condition_value'] ?? null;
+            $condition['value'] = self::isWholeIntegerInput($value) ? (int) $value : $value;
+        } elseif ($type === 'number' && in_array($operator, ['greater_than', 'less_than'], true) && is_numeric($question['condition_value'] ?? null)) {
             $condition['value'] = (float) $question['condition_value'];
         } else {
             $condition['value'] = $question['condition_value'] ?? null;
@@ -295,7 +297,7 @@ final class SurveyDefinitionFormMapper
         $legacy = $question['condition_legacy'];
         $legacyQuestionKey = $legacy['question_key'] ?? null;
         $legacyOperator = $legacy['operator'] ?? null;
-        if (($question['condition_question_key'] ?? null) !== $legacyQuestionKey || ($question['condition_operator'] ?? null) !== $legacyOperator) {
+        if (($question['condition_question_key'] ?? $legacyQuestionKey) !== $legacyQuestionKey || ($question['condition_operator'] ?? $legacyOperator) !== $legacyOperator) {
             return false;
         }
         if ($legacyOperator === 'answered') {
@@ -304,17 +306,23 @@ final class SurveyDefinitionFormMapper
 
         $type = is_string($legacyQuestionKey) ? ($questionTypes[$legacyQuestionKey] ?? null) : null;
         $formValue = match (true) {
-            $type === 'single_choice' && in_array($legacyOperator, ['in', 'not_in'], true) => array_values(is_array($question['condition_values'] ?? null) ? $question['condition_values'] : []),
-            $type === 'single_choice' && in_array($legacyOperator, ['equals', 'not_equals'], true) => $question['condition_option_value'] ?? $question['condition_value'] ?? null,
+            $type === 'single_choice' && in_array($legacyOperator, ['in', 'not_in'], true) => array_values(is_array($question['condition_values'] ?? $legacy['value'] ?? null) ? ($question['condition_values'] ?? $legacy['value']) : []),
+            $type === 'single_choice' && in_array($legacyOperator, ['equals', 'not_equals'], true) => $question['condition_option_value'] ?? $question['condition_value'] ?? ($legacy['value'] ?? null),
             $type === 'boolean' && in_array($legacyOperator, ['equals', 'not_equals'], true) => match ((string) ($question['condition_boolean_value'] ?? $question['condition_value'] ?? '')) {
                 'true' => true,
                 'false' => false,
-                default => $question['condition_boolean_value'] ?? $question['condition_value'] ?? null,
+                default => $question['condition_boolean_value'] ?? $question['condition_value'] ?? ($legacy['value'] ?? null),
             },
-            default => $question['condition_value'] ?? null,
+            default => $question['condition_value'] ?? ($legacy['value'] ?? null),
         };
 
         return $formValue === ($legacy['value'] ?? null);
+    }
+
+    private static function isWholeIntegerInput(mixed $value): bool
+    {
+        return is_int($value)
+            || (is_string($value) && preg_match('/^[+-]?\d+$/', trim($value)) === 1);
     }
 
     /**
