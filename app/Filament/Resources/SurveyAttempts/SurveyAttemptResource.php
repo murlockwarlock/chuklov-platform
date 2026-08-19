@@ -79,9 +79,9 @@ final class SurveyAttemptResource extends Resource
                         ->label('Показатели')
                         ->state(fn (SurveyAttempt $record): array => self::metricDisplay($record))
                         ->columnSpanFull(),
-                    TextEntry::make('result_tags')
-                        ->label('Отметки результата')
-                        ->state(fn (SurveyAttempt $record): string => implode(', ', $record->result_snapshot['tags'] ?? []))
+                    TextEntry::make('result_thresholds')
+                        ->label('Пороговые результаты')
+                        ->state(fn (SurveyAttempt $record): string => self::thresholdDisplay($record))
                         ->placeholder('Нет')
                         ->columnSpanFull(),
                 ]),
@@ -113,10 +113,40 @@ final class SurveyAttemptResource extends Resource
         }
         foreach ($metrics as $key => $metric) {
             if (is_array($metric)) {
-                $display[(string) ($metric['label'] ?? $key)] = (string) ($metric['value'] ?? '');
+                $label = $metric['label'] ?? $key;
+                $display[self::humanLabel($label, (string) $key)] = (string) ($metric['value'] ?? '');
             }
         }
 
         return $display;
+    }
+
+    private static function thresholdDisplay(SurveyAttempt $attempt): string
+    {
+        $thresholds = $attempt->result_snapshot['thresholds'] ?? [];
+        if (! is_array($thresholds)) {
+            return '';
+        }
+
+        $labels = [];
+        foreach ($thresholds as $threshold) {
+            if (is_array($threshold)) {
+                $label = self::humanLabel($threshold['label'] ?? null, '');
+                if ($label !== '') {
+                    $labels[] = $label;
+                }
+            }
+        }
+
+        return implode(', ', array_values(array_unique($labels)));
+    }
+
+    private static function humanLabel(mixed $value, string $fallback): string
+    {
+        if (is_array($value)) {
+            return (string) ($value['ru'] ?? $value['en'] ?? $fallback);
+        }
+
+        return is_string($value) && $value !== '' ? $value : $fallback;
     }
 }

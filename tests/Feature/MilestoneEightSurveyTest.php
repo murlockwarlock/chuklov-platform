@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
 use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
 use App\Models\User;
@@ -27,6 +28,7 @@ use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Services\SurveyDefinitionValidator;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -59,8 +61,8 @@ final class MilestoneEightSurveyTest extends TestCase
             $versionOne->definition = ['sections' => []];
             $versionOne->save();
             self::fail('Published version mutation was accepted.');
-        } catch (LogicException) {
-            self::assertTrue(true);
+        } catch (LogicException $exception) {
+            self::assertSame('Published survey versions are immutable.', $exception->getMessage());
         }
 
         $versionTwoData = $this->definitionData();
@@ -70,9 +72,59 @@ final class MilestoneEightSurveyTest extends TestCase
 
         self::assertSame($versionOne->getKey(), $attempt->survey_version_id);
         self::assertSame('Symptoms', $attempt->definition_snapshot['sections'][0]['questions'][0]['label']);
-        self::assertSame(SurveyVersionStatus::Retired, $versionOne->fresh()->status);
+        $versionOne->refresh();
+        self::assertSame(SurveyVersionStatus::Retired, $versionOne->status);
         self::assertSame(2, $definition->fresh()->activeVersion()->value('version'));
         self::assertSame($organization->getKey(), $attempt->organization_id);
+    }
+
+    public function test_publish_revalidates_locked_draft_before_retiring_previous_version(): void
+    {
+        [, $actor] = $this->fixture();
+        $definition = $this->publishedDefinition($actor);
+        $published = $definition->activeVersion()->firstOrFail();
+        $draft = app(CreateSurveyVersion::class)->handle($actor, $definition, $this->definitionData());
+        $draft->forceFill(['definition' => ['sections' => []]])->save();
+
+        $this->expectException(ValidationException::class);
+        try {
+            app(PublishSurveyVersion::class)->handle($actor, $draft);
+        } finally {
+            self::assertSame(SurveyVersionStatus::Published, $published->fresh()->status);
+            self::assertSame($published->getKey(), $definition->fresh()->active_version_id);
+            self::assertSame(SurveyVersionStatus::Draft, $draft->fresh()->status);
+        }
+    }
+
+    public function test_publish_locks_definition_before_requested_version(): void
+    {
+        [, $actor] = $this->fixture();
+        $definition = $this->publishedDefinition($actor);
+        $draft = app(CreateSurveyVersion::class)->handle($actor, $definition, $this->definitionData());
+        $queries = [];
+        DB::listen(function (QueryExecuted $query) use (&$queries): void {
+            $sql = strtolower($query->sql);
+            if (str_starts_with($sql, 'select') && (str_contains($sql, 'survey_definitions') || str_contains($sql, 'survey_versions'))) {
+                $queries[] = $sql;
+            }
+        });
+
+        app(PublishSurveyVersion::class)->handle($actor, $draft);
+
+        $definitionLockIndex = null;
+        $versionLockIndex = null;
+        foreach ($queries as $index => $query) {
+            if ($definitionLockIndex === null && str_contains($query, 'survey_definitions')) {
+                $definitionLockIndex = $index;
+            }
+            if ($versionLockIndex === null && str_contains($query, 'survey_versions')) {
+                $versionLockIndex = $index;
+            }
+        }
+
+        self::assertNotNull($definitionLockIndex);
+        self::assertNotNull($versionLockIndex);
+        self::assertLessThan($versionLockIndex, $definitionLockIndex);
     }
 
     public function test_completion_is_condition_aware_deterministic_encrypted_and_retry_safe(): void
@@ -109,6 +161,11 @@ final class MilestoneEightSurveyTest extends TestCase
         self::assertIsString($stored);
         self::assertStringNotContainsString('Sensitive health detail', $stored);
         self::assertSame('high', $retried->answers_snapshot['symptoms']);
+
+        Livewire::actingAs($actor)
+            ->test(ViewSurveyAttempt::class, ['record' => $attempt->getKey()])
+            ->assertSee('Needs attention')
+            ->assertDontSee('needs_attention');
     }
 
     public function test_hidden_required_question_is_not_required(): void
