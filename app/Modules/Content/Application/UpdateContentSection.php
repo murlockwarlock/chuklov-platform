@@ -5,6 +5,7 @@ namespace App\Modules\Content\Application;
 use App\Models\User;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -13,6 +14,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Throwable;
 
 class UpdateContentSection
@@ -184,7 +186,7 @@ class UpdateContentSection
             return 'external';
         }
 
-        return $hasImageKey ? 'clear' : 'preserve';
+        return $currentImage !== null || ! $hasImageKey ? 'preserve' : 'clear';
     }
 
     /** @return array<string, mixed>|null */
@@ -211,6 +213,16 @@ class UpdateContentSection
             }
 
             $finalMedia['image'] = $storedPath;
+        }
+
+        if ($mediaMode === 'external') {
+            try {
+                $finalMedia['image'] = ContentExternalImageUrl::required($finalMedia['image'])->value;
+            } catch (InvalidArgumentException) {
+                throw ValidationException::withMessages([
+                    'media.image' => ['Укажите корректную HTTPS-ссылку на изображение.'],
+                ]);
+            }
         }
 
         if (in_array($mediaMode, ['clear', 'remove'], true)) {

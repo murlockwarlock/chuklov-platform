@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -76,6 +77,89 @@ final class ContentSectionMediaTest extends TestCase
         );
     }
 
+    public function test_editing_title_and_body_with_blank_url_preserves_managed_image(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'content_image' => UploadedFile::fake()->image('preserved.png'),
+        ]);
+        $path = $this->imagePath($section->media);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => ''],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($path, $this->imagePath($updated->media));
+        Storage::disk(self::DISK)->assertExists($path);
+        self::assertSame($organization->id, $updated->organization_id);
+    }
+
+    public function test_editing_only_alt_text_preserves_managed_image(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Изображение',
+            'body' => 'Текст раздела.',
+            'media' => ['alt' => 'Старое описание'],
+            'content_image' => UploadedFile::fake()->image('alt.png'),
+        ]);
+        $path = $this->imagePath($section->media);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Изображение',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => '', 'alt' => 'Новое описание'],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($path, $this->imagePath($updated->media));
+        self::assertSame('Новое описание', $updated->media['alt'] ?? null);
+        Storage::disk(self::DISK)->assertExists($path);
+        self::assertSame($organization->id, $updated->organization_id);
+    }
+
+    public function test_explicit_remove_deletes_managed_image_after_commit(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаляемое изображение',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('remove.png'),
+        ]);
+        $path = $this->imagePath($section->media);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаляемое изображение',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => ''],
+            'remove_image' => true,
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertNull($updated->media);
+        Storage::disk(self::DISK)->assertMissing($path);
+    }
+
     public function test_invalid_content_image_is_rejected(): void
     {
         [, $admin] = $this->organizationAndAdmin();
@@ -126,6 +210,195 @@ final class ContentSectionMediaTest extends TestCase
         Storage::disk(self::DISK)->assertExists($newPath);
     }
 
+    public function test_managed_image_can_be_replaced_with_a_valid_https_url(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Внешняя ссылка',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('old.jpg'),
+        ]);
+        $oldPath = $this->imagePath($section->media);
+        $url = 'https://cdn.example.test/content/author.jpg';
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Внешняя ссылка',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $url],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($url, $this->imagePath($updated->media));
+        Storage::disk(self::DISK)->assertMissing($oldPath);
+    }
+
+    public function test_existing_external_url_is_preserved_on_unrelated_edit(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $url = 'https://cdn.example.test/content/existing.jpg';
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $url],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => $url],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($url, $this->imagePath($updated->media));
+    }
+
+    public function test_existing_external_url_is_preserved_when_url_field_is_blank(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $url = 'https://cdn.example.test/content/blank.jpg';
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $url],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => ''],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($url, $this->imagePath($updated->media));
+    }
+
+    public function test_explicit_remove_clears_existing_external_url(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $url = 'https://cdn.example.test/content/remove.jpg';
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаляемая ссылка',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $url],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаляемая ссылка',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $url],
+            'remove_image' => true,
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertNull($updated->media);
+    }
+
+    public function test_valid_https_external_image_url_is_accepted_at_application_boundary(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $url = 'https://cdn.example.test/content/valid.jpg';
+
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Валидная ссылка',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $url],
+        ]);
+
+        self::assertSame($url, $this->imagePath($section->media));
+    }
+
+    public function test_invalid_external_image_urls_are_rejected_at_application_boundary(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+
+        foreach ([
+            'http://cdn.example.test/content/image.jpg',
+            '/content/image.jpg',
+            'javascript:alert(1)',
+            'data:image/png;base64,AAAA',
+            'file:///tmp/image.jpg',
+            'not-a-url',
+            'https://',
+            'https://cdn.example.test/'.str_repeat('a', 2000),
+        ] as $url) {
+            try {
+                app(CreateContentSection::class)->handle($admin, [
+                    'section_key' => 'author',
+                    'locale' => 'ru',
+                    'title' => 'Невалидная ссылка',
+                    'body' => 'Текст раздела.',
+                    'media' => ['image' => $url],
+                ]);
+                self::fail("URL should be rejected: {$url}");
+            } catch (ValidationException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_upload_and_external_url_cannot_be_submitted_together(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+
+        $this->expectException(ValidationException::class);
+
+        app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Два источника изображения',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => 'https://cdn.example.test/content/image.jpg'],
+            'content_image' => UploadedFile::fake()->image('image.jpg'),
+        ]);
+    }
+
+    public function test_update_is_rejected_for_a_different_organization(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Организация',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('image.jpg'),
+        ]);
+        [, $otherAdmin] = $this->organizationAndAdmin();
+
+        $this->expectException(AuthorizationException::class);
+
+        app(UpdateContentSection::class)->handle($otherAdmin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Чужая организация',
+            'body' => 'Изменение запрещено.',
+            'media' => ['image' => ''],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationAndAdmin(): array
     {
@@ -135,5 +408,15 @@ final class ContentSectionMediaTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin];
+    }
+
+    /** @param array<string, string>|null $media */
+    private function imagePath(?array $media): string
+    {
+        $image = $media['image'] ?? null;
+
+        self::assertIsString($image);
+
+        return $image;
     }
 }
