@@ -119,7 +119,28 @@ final class CreateKnowledgeSource
             throw $exception;
         }
 
-        IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $source->revisions()->sole()->getKey());
+        $revision = $source->revisions()->sole();
+        try {
+            $dispatch = IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
+            unset($dispatch);
+        } catch (Throwable) {
+            try {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'knowledge.ingestion.dispatch_failed',
+                    targetType: KnowledgeRevision::class,
+                    targetId: (string) $revision->getKey(),
+                    metadata: [
+                        'source_id' => $source->getKey(),
+                        'revision_id' => $revision->getKey(),
+                        'operation' => 'create',
+                    ],
+                );
+            } catch (Throwable $auditException) {
+                report($auditException);
+            }
+        }
 
         return $source;
     }

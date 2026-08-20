@@ -18,6 +18,7 @@ final class KnowledgeSourcePresentationTest extends TestCase
         $firstPending = $this->source(KnowledgeRevisionStatus::Pending, null, false);
         self::assertSame('Не в поиске', $presentation->searchAvailability($firstPending));
         self::assertSame('Ожидает обработки', $presentation->latestProcessing($firstPending));
+        self::assertTrue($presentation->canStartPending($firstPending, $firstPending->latestRevision));
 
         $firstProcessing = $this->source(KnowledgeRevisionStatus::Processing, null, false);
         self::assertSame('Не в поиске', $presentation->searchAvailability($firstProcessing));
@@ -43,10 +44,15 @@ final class KnowledgeSourcePresentationTest extends TestCase
 
         $incompatible = $this->source(KnowledgeRevisionStatus::Ready, 1, false);
         self::assertSame('Требуется переобработка для поиска', $presentation->searchAvailability($incompatible));
-        self::assertSame('Требуется подготовка для поиска', $presentation->latestProcessing($incompatible));
+        self::assertSame('Требуется переобработка для поиска', $presentation->latestProcessing($incompatible));
         $activeRevision = $incompatible->activeRevision;
         self::assertInstanceOf(KnowledgeRevision::class, $activeRevision);
         self::assertTrue($presentation->canReprocessForSearch($incompatible, $activeRevision));
+
+        $currentlyProcessing = $this->source(KnowledgeRevisionStatus::Ready, 1, false, KnowledgeSourceStatus::Active, true);
+        self::assertSame('Требуется переобработка для поиска', $presentation->searchAvailability($currentlyProcessing));
+        self::assertSame('Подготовка для поиска выполняется', $presentation->latestProcessing($currentlyProcessing));
+        self::assertFalse($presentation->canReprocessForSearch($currentlyProcessing, $currentlyProcessing->activeRevision));
 
         $retired = $this->source(KnowledgeRevisionStatus::Ready, 1, true, KnowledgeSourceStatus::Retired);
         self::assertSame('Источник выключен', $presentation->searchAvailability($retired));
@@ -67,10 +73,12 @@ final class KnowledgeSourcePresentationTest extends TestCase
         ?int $activeRevisionId,
         bool $compatibleRun,
         KnowledgeSourceStatus $sourceStatus = KnowledgeSourceStatus::Active,
+        bool $processingRun = false,
     ): KnowledgeSource {
         $revision = new KnowledgeRevision;
         $revision->forceFill(['id' => 1, 'status' => $latestStatus, 'original_filename' => null]);
         $revision->setAttribute('has_compatible_ready_run', $compatibleRun);
+        $revision->setAttribute('has_compatible_processing_run', $processingRun);
 
         $source = new KnowledgeSource;
         $source->forceFill([

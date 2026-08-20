@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
 use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
+use App\Modules\Knowledge\Application\StartPendingKnowledgeIngestion;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -56,6 +57,7 @@ final class RevisionsRelationManager extends RelationManager
             ])
             ->modifyQueryUsing(function (Builder $query): Builder {
                 $configuration = EmbeddingConfiguration::active();
+                $processingStaleCutoff = now()->subSeconds((int) config('rag.processing_stale_after_seconds'));
 
                 return $query
                     ->select([
@@ -80,9 +82,11 @@ final class RevisionsRelationManager extends RelationManager
                                 ->where('embedding_dimensions', $configuration->dimensions)
                                 ->where('embedding_configuration_version', $configuration->version);
                         },
-                        'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration): void {
+                        'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration, $processingStaleCutoff): void {
                             $query
                                 ->where('status', 'processing')
+                                ->whereNotNull('processing_started_at')
+                                ->where('processing_started_at', '>=', $processingStaleCutoff)
                                 ->where('embedding_provider', $configuration->provider)
                                 ->where('embedding_model', $configuration->model)
                                 ->where('embedding_dimensions', $configuration->dimensions)
@@ -117,6 +121,14 @@ final class RevisionsRelationManager extends RelationManager
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(RetryKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
                         Notification::make()->title('Повторная обработка запущена')->success()->send();
+                    }),
+                Action::make('startPending')
+                    ->label('Запустить обработку')
+                    ->color('warning')
+                    ->visible(fn (KnowledgeRevision $record): bool => $presentation->canStartPending($source, $record))
+                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
+                        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
+                        Notification::make()->title('Обработка запущена')->success()->send();
                     }),
                 Action::make('reprocessForSearch')
                     ->label('Переобработать для поиска')

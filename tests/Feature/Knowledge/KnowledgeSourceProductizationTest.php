@@ -6,19 +6,24 @@ use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
+use App\Modules\Knowledge\Application\ClaimKnowledgeIngestionRun;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
 use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
 use App\Modules\Knowledge\Application\RetireKnowledgeSource;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
+use App\Modules\Knowledge\Application\StartPendingKnowledgeIngestion;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource;
 use App\Modules\Knowledge\Domain\Exceptions\KnowledgeRevisionFileUnavailable;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Jobs\IngestKnowledgeRevision;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -233,6 +238,226 @@ final class KnowledgeSourceProductizationTest extends TestCase
 
         self::assertSame('processing', $revision->fresh()->status->value);
         self::assertSame(0, AuditEvent::query()->where('action', 'knowledge.ingestion.retry_dispatch_failed')->count());
+    }
+
+    public function test_failed_retry_remains_recoverable_when_compensation_cannot_record_audit(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'failed']);
+
+        $dispatchCount = 0;
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->twice()->andReturnUsing(function () use (&$dispatchCount): mixed {
+            $dispatchCount++;
+            if ($dispatchCount === 1) {
+                throw new RuntimeException('redis unavailable');
+            }
+
+            return null;
+        });
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        $auditCalls = 0;
+        $audit = $this->createMock(RecordAuditEvent::class);
+        $audit->expects($this->exactly(3))->method('handle')->willReturnCallback(function (...$arguments) use (&$auditCalls): AuditEvent {
+            unset($arguments);
+            $auditCalls++;
+            if ($auditCalls === 2) {
+                throw new RuntimeException('audit unavailable');
+            }
+
+            return new AuditEvent;
+        });
+        $this->app->instance(RecordAuditEvent::class, $audit);
+
+        try {
+            app(RetryKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+            self::fail('Dispatch failure did not surface a safe validation error.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('Не удалось запустить повторную обработку.', $exception->getMessage());
+            self::assertStringNotContainsString('audit unavailable', $exception->getMessage());
+        }
+
+        self::assertSame('pending', $revision->fresh()->status->value);
+        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source->fresh(), $revision->getKey());
+        self::assertSame('pending', $revision->fresh()->status->value);
+        self::assertSame(2, $dispatchCount);
+    }
+
+    public function test_create_dispatch_failure_keeps_pending_revision_available_for_later_start(): void
+    {
+        [, $actor] = $this->fixture();
+        $dispatchCount = 0;
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->times(3)->andReturnUsing(function () use (&$dispatchCount): mixed {
+            $dispatchCount++;
+            if (in_array($dispatchCount, [1, 2], true)) {
+                throw new RuntimeException('redis unavailable');
+            }
+
+            return null;
+        });
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Guide',
+            'type' => 'authored_text',
+            'content' => 'booking content',
+        ]);
+        $revision = $source->revisions()->sole();
+
+        self::assertSame('pending', $revision->status->value);
+        self::assertSame(1, AuditEvent::query()->where('action', 'knowledge.ingestion.dispatch_failed')->whereJsonContains('metadata->operation', 'create')->count());
+
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($actor, $source->fresh(), $revision->getKey());
+            self::fail('Pending dispatch failure did not surface a safe validation error.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('Не удалось запустить обработку.', $exception->getMessage());
+            self::assertStringNotContainsString('redis unavailable', $exception->getMessage());
+        }
+
+        self::assertSame('pending', $revision->fresh()->status->value);
+        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        self::assertSame('pending', $revision->fresh()->status->value);
+        self::assertSame(3, $dispatchCount);
+    }
+
+    public function test_replacement_dispatch_failure_keeps_previous_active_material_and_new_pending_revision(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Uploaded guide',
+            'type' => 'uploaded_text',
+            'file' => UploadedFile::fake()->createWithContent('first.txt', 'first booking content'),
+        ]);
+        $oldRevision = $source->revisions()->sole();
+        $oldRevision->update(['status' => 'ready', 'ready_at' => now()]);
+        $source->update(['active_revision_id' => $oldRevision->getKey()]);
+
+        $dispatchCount = 0;
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->twice()->andReturnUsing(function () use (&$dispatchCount): mixed {
+            $dispatchCount++;
+            if ($dispatchCount === 1) {
+                throw new RuntimeException('redis unavailable');
+            }
+
+            return null;
+        });
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        $result = app(UpdateKnowledgeSource::class)->handle($actor, $source->fresh(), [
+            'file' => UploadedFile::fake()->createWithContent('second.txt', 'second booking content'),
+        ]);
+        $newRevision = $result->revision;
+        self::assertInstanceOf(KnowledgeRevision::class, $newRevision);
+
+        self::assertSame('active', $result->source->fresh()->status->value);
+        self::assertSame($oldRevision->getKey(), $result->source->fresh()->active_revision_id);
+        self::assertSame('pending', $newRevision->fresh()->status->value);
+        self::assertSame(2, $result->source->revisions()->count());
+        Storage::disk('private')->assertExists($newRevision->storage_path);
+        self::assertSame(1, AuditEvent::query()->where('action', 'knowledge.ingestion.dispatch_failed')->whereJsonContains('metadata->operation', 'replacement')->count());
+
+        app(StartPendingKnowledgeIngestion::class)->handle($actor, $result->source->fresh(), $newRevision->getKey());
+        self::assertSame('pending', $newRevision->fresh()->status->value);
+        self::assertSame(2, $dispatchCount);
+    }
+
+    public function test_pending_start_requires_active_latest_pending_revision_and_manage_permission(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($staff, $source, $revision->getKey());
+            self::fail('A user without ManageKnowledge started pending processing.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        }
+
+        $otherOrganization = Organization::factory()->create();
+        $otherActor = User::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($otherActor, $source, $revision->getKey());
+            self::fail('A cross-tenant pending processing request was accepted.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        } finally {
+            app(OrganizationContext::class)->set($organization);
+        }
+    }
+
+    public function test_pending_start_rejects_retired_superseded_and_non_pending_revisions(): void
+    {
+        [, $actor] = $this->fixture();
+        $retiredSource = $this->createAuthoredSource($actor, 'retired booking content');
+        $retiredRevision = $retiredSource->revisions()->sole();
+        $retiredSource->update(['status' => 'retired']);
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($actor, $retiredSource, $retiredRevision->getKey());
+            self::fail('A retired source accepted pending processing.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        $supersededSource = $this->createAuthoredSource($actor, 'first booking content');
+        $supersededRevision = $supersededSource->revisions()->sole();
+        app(UpdateKnowledgeSource::class)->handle($actor, $supersededSource, ['content' => 'second booking content']);
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($actor, $supersededSource, $supersededRevision->getKey());
+            self::fail('A superseded pending revision accepted processing.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        $readySource = $this->createAuthoredSource($actor, 'ready booking content');
+        $readyRevision = $readySource->revisions()->sole();
+        $readyRevision->update(['status' => 'ready']);
+        try {
+            app(StartPendingKnowledgeIngestion::class)->handle($actor, $readySource, $readyRevision->getKey());
+            self::fail('A non-pending revision accepted pending processing.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+    }
+
+    public function test_duplicate_pending_starts_are_collapsed_by_the_authoritative_claim(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+
+        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+        Queue::assertPushed(IngestKnowledgeRevision::class, 3);
+
+        $firstClaim = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+        $secondClaim = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+
+        self::assertNotNull($firstClaim);
+        self::assertNull($secondClaim);
+        self::assertSame(1, $revision->ingestionRuns()->count());
+        self::assertSame(1, $revision->ingestionRuns()->sole()->attempts);
     }
 
     public function test_ready_active_material_exposes_human_search_reprocessing_and_dispatches_without_a_new_revision(): void

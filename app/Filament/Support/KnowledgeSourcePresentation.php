@@ -51,7 +51,9 @@ final class KnowledgeSourcePresentation
         if (! $hasActiveDifferentRevision
             && $latestRevision->status === KnowledgeRevisionStatus::Ready
             && ! $this->hasCompatibleReadyRun($source)) {
-            return 'Требуется подготовка для поиска';
+            return $this->hasCompatibleProcessingRun($source)
+                ? 'Подготовка для поиска выполняется'
+                : 'Требуется переобработка для поиска';
         }
 
         return match ($latestRevision->status) {
@@ -114,6 +116,13 @@ final class KnowledgeSourcePresentation
             && $revision->status === KnowledgeRevisionStatus::Failed;
     }
 
+    public function canStartPending(KnowledgeSource $source, KnowledgeRevision $revision): bool
+    {
+        return $source->status === KnowledgeSourceStatus::Active
+            && (int) $source->latestRevision?->getKey() === (int) $revision->getKey()
+            && $revision->status === KnowledgeRevisionStatus::Pending;
+    }
+
     public function canDownload(KnowledgeSource $source, KnowledgeRevision $revision): bool
     {
         return $source->type === KnowledgeSourceType::UploadedText
@@ -137,5 +146,14 @@ final class KnowledgeSourcePresentation
         return $activeRevision instanceof KnowledgeRevision
             && $activeRevision->status === KnowledgeRevisionStatus::Ready
             && (bool) $activeRevision->getAttribute('has_compatible_ready_run');
+    }
+
+    private function hasCompatibleProcessingRun(KnowledgeSource $source): bool
+    {
+        $activeRevision = $source->activeRevision;
+
+        return $activeRevision instanceof KnowledgeRevision
+            && $activeRevision->status === KnowledgeRevisionStatus::Ready
+            && (bool) $activeRevision->getAttribute('has_compatible_processing_run');
     }
 }

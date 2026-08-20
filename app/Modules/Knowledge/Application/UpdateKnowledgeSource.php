@@ -172,11 +172,31 @@ final class UpdateKnowledgeSource
         }
 
         if ($result->revision instanceof KnowledgeRevision) {
-            IngestKnowledgeRevision::dispatch(
-                $organization->getKey(),
-                $result->source->getKey(),
-                $result->revision->getKey(),
-            );
+            try {
+                $dispatch = IngestKnowledgeRevision::dispatch(
+                    $organization->getKey(),
+                    $result->source->getKey(),
+                    $result->revision->getKey(),
+                );
+                unset($dispatch);
+            } catch (Throwable) {
+                try {
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'knowledge.ingestion.dispatch_failed',
+                        targetType: KnowledgeRevision::class,
+                        targetId: (string) $result->revision->getKey(),
+                        metadata: [
+                            'source_id' => $result->source->getKey(),
+                            'revision_id' => $result->revision->getKey(),
+                            'operation' => 'replacement',
+                        ],
+                    );
+                } catch (Throwable $auditException) {
+                    report($auditException);
+                }
+            }
         }
 
         return $result;

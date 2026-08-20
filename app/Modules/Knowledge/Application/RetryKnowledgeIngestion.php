@@ -88,7 +88,8 @@ final class RetryKnowledgeIngestion
         } catch (Throwable) {
             try {
                 $this->restoreFailedRevisionAfterDispatchFailure($actor, $organization->getKey(), $source->getKey(), $revision->getKey());
-            } catch (Throwable) {
+            } catch (Throwable $compensationException) {
+                report($compensationException);
             }
 
             throw ValidationException::withMessages(['revision' => 'Не удалось запустить повторную обработку. Попробуйте ещё раз.']);

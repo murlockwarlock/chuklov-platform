@@ -68,17 +68,28 @@ final class KnowledgeSourceResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $configuration = EmbeddingConfiguration::active();
+        $processingStaleCutoff = now()->subSeconds((int) config('rag.processing_stale_after_seconds'));
 
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->with([
-                'activeRevision' => function (Relation $query) use ($configuration): void {
+                'activeRevision' => function (Relation $query) use ($configuration, $processingStaleCutoff): void {
                     $query
                         ->select(['id', 'organization_id', 'knowledge_source_id', 'status', 'ready_at'])
                         ->withExists([
                             'ingestionRuns as has_compatible_ready_run' => function (Builder $query) use ($configuration): void {
                                 $query
                                     ->where('status', 'ready')
+                                    ->where('embedding_provider', $configuration->provider)
+                                    ->where('embedding_model', $configuration->model)
+                                    ->where('embedding_dimensions', $configuration->dimensions)
+                                    ->where('embedding_configuration_version', $configuration->version);
+                            },
+                            'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration, $processingStaleCutoff): void {
+                                $query
+                                    ->where('status', 'processing')
+                                    ->whereNotNull('processing_started_at')
+                                    ->where('processing_started_at', '>=', $processingStaleCutoff)
                                     ->where('embedding_provider', $configuration->provider)
                                     ->where('embedding_model', $configuration->model)
                                     ->where('embedding_dimensions', $configuration->dimensions)

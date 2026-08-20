@@ -90,6 +90,8 @@ class RecordAuditEvent
         'knowledge.ingestion.retry_requested' => ['source_id', 'revision_id', 'ingestion_run_id', 'attempt_number'],
         'knowledge.ingestion.retry_dispatch_failed' => ['source_id', 'revision_id', 'restored'],
         'knowledge.ingestion.reprocess_requested' => ['source_id', 'revision_id'],
+        'knowledge.ingestion.pending_start_requested' => ['source_id', 'revision_id'],
+        'knowledge.ingestion.dispatch_failed' => ['source_id', 'revision_id', 'operation'],
         'knowledge.ingestion.completed' => ['source_id', 'revision_id', 'chunk_count', 'ingestion_run_id', 'attempt_number'],
         'knowledge.ingestion.failed' => ['source_id', 'revision_id', 'error_code', 'ingestion_run_id', 'attempt_number'],
         'knowledge.source.retired' => ['active_revision_id'],

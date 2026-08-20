@@ -28,8 +28,9 @@ final class ReprocessKnowledgeForSearch
     {
         $organization = $this->authorization->organizationForSource($actor, $source, OrganizationPermission::ManageKnowledge);
         $embeddingConfiguration = EmbeddingConfiguration::active();
+        $processingStaleCutoff = now()->subSeconds((int) config('rag.processing_stale_after_seconds'));
 
-        DB::transaction(function () use ($actor, $source, $organization, $revisionId, $embeddingConfiguration): void {
+        DB::transaction(function () use ($actor, $source, $organization, $revisionId, $embeddingConfiguration, $processingStaleCutoff): void {
             $lockedSource = KnowledgeSource::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($source->getKey())
@@ -66,7 +67,11 @@ final class ReprocessKnowledgeForSearch
             if ((clone $compatibleRuns)->where('status', IngestionStatus::Ready)->exists()) {
                 throw ValidationException::withMessages(['revision' => 'Материал уже подготовлен для поиска.']);
             }
-            if ((clone $compatibleRuns)->where('status', IngestionStatus::Processing)->exists()) {
+            if ((clone $compatibleRuns)
+                ->where('status', IngestionStatus::Processing)
+                ->whereNotNull('processing_started_at')
+                ->where('processing_started_at', '>=', $processingStaleCutoff)
+                ->exists()) {
                 throw ValidationException::withMessages(['revision' => 'Подготовка материала для поиска уже выполняется.']);
             }
 

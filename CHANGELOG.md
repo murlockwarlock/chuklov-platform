@@ -11,6 +11,7 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Kept `KnowledgeIngestionRun::attempts` as the sole claim/fencing authority, preserved `PgvectorKnowledgeRetriever` and Laravel Filesystem storage, and removed raw provenance/retrieval implementation details from normal Knowledge CRM screens.
   - Added focused lifecycle, provenance, retry, fencing/history, download, presentation, and PostgreSQL schema coverage. No authored-content download, new storage abstraction, retrieval rewrite, Playwright, benchmark, staging, or hosted CI was added.
   - Added an explicit `Переобработать для поиска` path for ready material missing a compatible current embedding run, plus compensating recovery when manual retry dispatch fails. Existing run fencing and automatic queue retry behavior remain unchanged.
+  - Final durability remediation treats only recent compatible processing as actively busy, reclaims null-start stale runs through the existing claim path, and adds `Запустить обработку` for latest pending material. Create/replacement enqueue failures remain persisted and recoverable without exposing queue details.
 
 - UX-C2 survey builder:
   - Replaced raw definition, question, option, metric, condition, scoring, compatibility, and threshold fields with human questionnaire-builder controls while preserving canonical survey JSON.

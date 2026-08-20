@@ -21,8 +21,9 @@ final class ClaimKnowledgeIngestionRun
         ChunkingConfiguration $chunkingConfiguration,
     ): ?KnowledgeIngestionRun {
         $configurationKey = hash('sha256', $embeddingConfiguration->key().'|'.$chunkingConfiguration->key());
+        $processingStaleCutoff = now()->subSeconds((int) config('rag.processing_stale_after_seconds'));
 
-        return DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $embeddingConfiguration, $chunkingConfiguration, $configurationKey): ?KnowledgeIngestionRun {
+        return DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $embeddingConfiguration, $chunkingConfiguration, $configurationKey, $processingStaleCutoff): ?KnowledgeIngestionRun {
             $revision = KnowledgeRevision::query()
                 ->where('organization_id', $organizationId)
                 ->where('knowledge_source_id', $sourceId)
@@ -47,8 +48,7 @@ final class ClaimKnowledgeIngestionRun
             );
             $run = KnowledgeIngestionRun::query()->whereKey($run->getKey())->lockForUpdate()->firstOrFail();
             $processingExpired = $run->status->value === 'processing'
-                && $run->processing_started_at !== null
-                && $run->processing_started_at->lt(now()->subSeconds((int) config('rag.processing_stale_after_seconds')));
+                && ($run->processing_started_at === null || $run->processing_started_at->lt($processingStaleCutoff));
             if ($run->status->value === 'ready' || ($run->status->value === 'processing' && ! $processingExpired) || $revision->status === KnowledgeRevisionStatus::Retired) {
                 return null;
             }

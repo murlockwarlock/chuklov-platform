@@ -442,7 +442,7 @@ final class RagTest extends TestCase
         app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
     }
 
-    public function test_search_reprocessing_does_not_dispatch_when_a_compatible_run_is_processing(): void
+    public function test_search_reprocessing_does_not_dispatch_when_a_compatible_run_is_recently_processing(): void
     {
         [, $actor] = $this->fixture();
         $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
@@ -466,6 +466,66 @@ final class RagTest extends TestCase
 
         self::assertSame(1, $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->value('attempts'));
         self::assertSame(1, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $run->getKey())->count());
+    }
+
+    public function test_search_reprocessing_reclaims_an_expired_compatible_run_through_the_claim_path(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $run = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+        self::assertNotNull($run);
+        $run->update(['processing_started_at' => now()->subSeconds((int) config('rag.processing_stale_after_seconds') + 1)]);
+
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        self::assertSame('ready', $run->fresh()->status->value);
+        self::assertSame(2, $run->fresh()->attempts);
+        self::assertSame(
+            [KnowledgeIngestionAttemptStatus::Abandoned->value, KnowledgeIngestionAttemptStatus::Ready->value],
+            $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $run->getKey())->orderBy('attempt_number')->pluck('status')->map(
+                static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status,
+            )->all(),
+        );
+        self::assertSame(1, $source->revisions()->count());
+        self::assertSame('ready', $revision->fresh()->status->value);
+    }
+
+    public function test_claim_reclaims_processing_run_without_a_start_timestamp(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $firstRun = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+        self::assertNotNull($firstRun);
+        $firstRun->update(['processing_started_at' => null]);
+
+        $secondRun = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+
+        self::assertNotNull($secondRun);
+        self::assertSame(2, $secondRun->fresh()->attempts);
+        self::assertSame(KnowledgeIngestionAttemptStatus::Abandoned, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $firstRun->getKey())->where('attempt_number', 1)->sole()->status);
+        self::assertSame(KnowledgeIngestionAttemptStatus::Processing, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $secondRun->getKey())->where('attempt_number', 2)->sole()->status);
     }
 
     public function test_uploaded_text_is_private_and_validated_by_mime_and_extension(): void
