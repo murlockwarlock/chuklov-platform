@@ -44,6 +44,9 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('cp -- "$trusted_normalizer" "$normalizer"', $script);
         self::assertStringNotContainsString('tar -xOf "$archive" scripts/normalize-fail2ban-elements.awk > "$normalizer"', $script);
         self::assertStringContainsString('awk -f "$remote_normalizer" > "$output"', $script);
+        self::assertStringContainsString('cleanup_remote_transfer_artifacts()', $script);
+        self::assertStringContainsString('rm -f -- "$archive" "$remote_normalizer" || true', $script);
+        self::assertStringContainsString('trap cleanup_remote_transfer_artifacts EXIT', $script);
         self::assertStringContainsString('normalize_legacy_app_server_command', $script);
         self::assertStringContainsString('forbidden php -S app command', $script);
         self::assertStringContainsString('normalize_staging_runtime_user', $script);

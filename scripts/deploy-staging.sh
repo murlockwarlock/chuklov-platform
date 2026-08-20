@@ -117,6 +117,12 @@ health_url="$5"
 expected_host_port="$6"
 archive="$7"
 remote_normalizer="$8"
+
+cleanup_remote_transfer_artifacts() {
+    rm -f -- "$archive" "$remote_normalizer" || true
+}
+trap cleanup_remote_transfer_artifacts EXIT
+
 release="$root/releases/$revision"
 compose="$root/compose.yml"
 environment="$root/shared/.env"
