@@ -73,7 +73,7 @@ final class KnowledgeRetrievalInspector extends Page
         return $schema->components([
             Section::make('Поиск')->schema([
                 TextInput::make('query')->label('Запрос')->required()->maxLength(4000)->columnSpanFull(),
-            ]),
+            ])->columnSpanFull(),
             Section::make('Фильтры')->schema([
                 Select::make('source_ids')->label('Источники')->multiple()->maxItems(20)->searchable()->options(fn (): array => KnowledgeSource::query()
                     ->where('organization_id', app(OrganizationContext::class)->id())
@@ -84,7 +84,7 @@ final class KnowledgeRetrievalInspector extends Page
                     ->pluck('title', 'id')
                     ->all()),
                 Select::make('top_k')->label('Количество фрагментов')->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
-            ])->columns(2),
+            ])->columns(2)->columnSpanFull(),
         ])->statePath('data');
     }
 

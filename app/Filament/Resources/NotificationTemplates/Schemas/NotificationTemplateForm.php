@@ -49,7 +49,8 @@ final class NotificationTemplateForm
                             ->required()
                             ->default(true),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Текст и подстановочные данные')
                     ->description('Вы можете использовать данные из CRM. При отправке система подставит реальные значения.')
@@ -86,7 +87,8 @@ final class NotificationTemplateForm
                             })
                             ->helperText('Система автоматически подставит реальные данные при отправке (например, имя клиента или дату визита).')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 }

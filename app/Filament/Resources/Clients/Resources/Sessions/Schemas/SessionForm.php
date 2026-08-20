@@ -42,7 +42,7 @@ final class SessionForm
                             ->native(false)
                             ->getSearchResultsUsing(static fn (string $search, Select $component): array => self::bookingResults($search, $component))
                             ->getOptionLabelUsing(static fn (mixed $value, Select $component): ?string => self::bookingLabel($value, $component)),
-                    ])->columns(2),
+                    ])->columns(2)->columnSpanFull(),
                 Section::make('Клинические заметки (опционально)')
                     ->schema([
                         Textarea::make('pain')->label('Боль')->rows(3)->placeholder('Что беспокоит клиента и где'),
@@ -51,7 +51,7 @@ final class SessionForm
                         Textarea::make('root_cause_hypothesis')->label('Гипотеза первопричины')->rows(3)->placeholder('Предполагаемая причина состояния'),
                         Textarea::make('protocol')->label('Протокол')->rows(3)->placeholder('Назначенные процедуры и план'),
                         Textarea::make('result')->label('Результат')->rows(3)->placeholder('Эффект после процедур/до следующего сеанса'),
-                    ]),
+                    ])->columnSpanFull(),
             ]);
     }
 

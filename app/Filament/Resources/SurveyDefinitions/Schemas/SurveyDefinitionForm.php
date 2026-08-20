@@ -28,7 +28,7 @@ final class SurveyDefinitionForm
                 Textarea::make('description_en')->label('Описание на английском')->maxLength(2000)->columnSpanFull(),
                 Toggle::make('is_available')->label('Доступен клиентам после публикации')->default(true),
                 Hidden::make('start_new_metric_scale')->default(false),
-            ])->columns(2),
+            ])->columns(2)->columnSpanFull(),
             Section::make('Вопросы')->schema([
                 Repeater::make('sections')
                     ->label('Разделы')
@@ -159,7 +159,7 @@ final class SurveyDefinitionForm
                                     ->disabled(fn (Get $get): bool => self::hasLegacyCondition($get)),
                             ])->columns(2)->columnSpanFull(),
                     ])->columnSpanFull(),
-            ]),
+            ])->columnSpanFull(),
             Section::make('Подсчёт результата')->schema([
                 Hidden::make('legacy_scoring'),
                 Placeholder::make('legacy_scoring_notice')
@@ -268,7 +268,7 @@ final class SurveyDefinitionForm
                     ->helperText('Выберите показатели, которые нужно сравнивать в повторных результатах.')
                     ->disabled(fn (Get $get): bool => self::hasLegacyScoring($get))
                     ->columnSpanFull(),
-            ]),
+            ])->columnSpanFull(),
         ]);
     }
 

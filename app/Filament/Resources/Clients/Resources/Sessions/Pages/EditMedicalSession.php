@@ -41,7 +41,8 @@ class EditMedicalSession extends EditRecord
                         Textarea::make('root_cause_hypothesis')->label('Гипотеза первопричины')->rows(3)->placeholder('Предполагаемая причина состояния'),
                         Textarea::make('protocol')->label('Протокол')->rows(3)->placeholder('Назначенные процедуры и план'),
                         Textarea::make('result')->label('Результат')->rows(3)->placeholder('Эффект после процедур/до следующего сеанса'),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 

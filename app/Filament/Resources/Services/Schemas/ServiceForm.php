@@ -56,7 +56,8 @@ class ServiceForm
                             ->rows(3)
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Приём')
                     ->schema([
@@ -81,7 +82,8 @@ class ServiceForm
                             ->columns(3)
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Цена')
                     ->schema([
@@ -106,7 +108,8 @@ class ServiceForm
                             ->maxLength(64)
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Изображение')
                     ->schema([
@@ -134,7 +137,8 @@ class ServiceForm
                                 && (self::hasValue($record->getAttribute('image_path'))
                                     || self::hasValue($record->getAttribute('external_image_url')))),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('Дополнительно / локализация')
                     ->schema([
@@ -154,6 +158,7 @@ class ServiceForm
                             ->rows(3),
                     ])
                     ->columns(2)
+                    ->columnSpanFull()
                     ->collapsed(),
 
                 ...ScheduleImpactPreview::components(),

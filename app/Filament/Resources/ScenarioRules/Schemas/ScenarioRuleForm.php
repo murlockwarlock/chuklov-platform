@@ -38,7 +38,8 @@ final class ScenarioRuleForm
                             ->required()
                             ->default(false),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('1. Когда отправлять')
                     ->description('Укажите событие в CRM и задержку перед отправкой сообщения.')
@@ -96,7 +97,8 @@ final class ScenarioRuleForm
                             ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
                             ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('2. При каких условиях')
                     ->description('Дополнительные фильтры для отправки сообщения.')
@@ -148,7 +150,8 @@ final class ScenarioRuleForm
                             ->reorderable(false)
                             ->addActionLabel('Добавить условие')
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columnSpanFull(),
 
                 Section::make('3. Что отправлять')
                     ->description('Выберите категорию и опубликованный шаблон сообщения.')
@@ -181,7 +184,8 @@ final class ScenarioRuleForm
                             ->required()
                             ->helperText('Изменение текста создаёт новую версию. Существующие правила продолжают использовать выбранную ранее версию, пока вы явно не выберете новую.'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
 
                 Section::make('4. Кому и как отправлять')
                     ->description('Определите получателя и способ связи.')
@@ -233,7 +237,8 @@ final class ScenarioRuleForm
                             ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
             ]);
     }
 

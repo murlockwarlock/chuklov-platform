@@ -33,7 +33,9 @@ use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStora
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Content\Infrastructure\Storage\FilesystemContentMediaStorage;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Contracts\ReceiptStorage;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -163,6 +165,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(MedicalKeyResolverInterface::class, AppKeyMedicalKeyResolver::class);
         $this->app->bind(MedicalEncryptorInterface::class, MedicalDataEncryptor::class);
         $this->app->bind(AttachmentStorageInterface::class, PrivateMedicalAttachmentStorage::class);
+        $this->app->bind(ContentMediaStorageInterface::class, FilesystemContentMediaStorage::class);
         $this->app->bind(ServiceMediaStorageInterface::class, FilesystemServiceMediaStorage::class);
         $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
         $this->app->bind(EmbeddingGenerator::class, LaravelEmbeddingGenerator::class);

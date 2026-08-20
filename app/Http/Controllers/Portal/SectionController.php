@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use Illuminate\Http\Request;
@@ -13,7 +14,10 @@ use LogicException;
 
 class SectionController extends Controller
 {
-    public function __construct(private readonly ListPublishedContentSections $sections) {}
+    public function __construct(
+        private readonly ListPublishedContentSections $sections,
+        private readonly ContentImageUrlResolver $imageResolver,
+    ) {}
 
     public function __invoke(
         Request $request,
@@ -31,11 +35,11 @@ class SectionController extends Controller
 
         abort_unless($selectedSections->isNotEmpty(), 404);
 
-        $content = $selectedSections->map(static fn (ContentSection $contentSection): array => [
+        $content = $selectedSections->map(fn (ContentSection $contentSection): array => [
             'locale' => $contentSection->locale,
             'title' => $contentSection->title,
             'body' => $contentSection->body,
-            'media' => self::projectMedia($contentSection->media),
+            'media' => self::projectMedia($contentSection->media, $this->imageResolver->resolve($contentSection)),
             'sortOrder' => $contentSection->sort_order,
         ])->values()->all();
 
@@ -62,15 +66,13 @@ class SectionController extends Controller
      * @param  array<string, string>|null  $media
      * @return array{image: string, alt?: string}|null
      */
-    private static function projectMedia(?array $media): ?array
+    private static function projectMedia(?array $media, ?string $imageUrl): ?array
     {
-        $image = $media['image'] ?? null;
-
-        if (! is_string($image) || trim($image) === '') {
+        if ($imageUrl === null || trim($imageUrl) === '') {
             return null;
         }
 
-        $projected = ['image' => $image];
+        $projected = ['image' => $imageUrl];
         $alt = $media['alt'] ?? null;
 
         if (is_string($alt) && trim($alt) !== '') {
