@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\ContentSections\Pages\EditContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
@@ -12,6 +13,7 @@ use App\Modules\Content\Application\UpdateContentSection;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Filament\Facades\Filament;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -19,6 +21,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class ContentSectionMediaTest extends TestCase
@@ -570,6 +573,107 @@ final class ContentSectionMediaTest extends TestCase
         ]);
     }
 
+    public function test_filament_hides_legacy_image_and_preserves_it_on_unrelated_edit(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $legacyImage = 'private-reference';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()]);
+        $state = $component->get('data');
+
+        self::assertIsArray($state);
+        self::assertNull($state['media']['image'] ?? null);
+
+        $component
+            ->fillForm([
+                'title' => 'После изменения',
+                'body' => 'Обновлённый текст.',
+                'media' => ['alt' => 'Описание legacy-изображения'],
+                'remove_image' => false,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertSame($legacyImage, $this->imagePath($section->refresh()->media));
+        self::assertSame('Описание legacy-изображения', $section->media['alt'] ?? null);
+    }
+
+    public function test_filament_can_explicitly_remove_a_legacy_image(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаление',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => 'private-reference'],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->fillForm(['remove_image' => true])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertNull($section->refresh()->media);
+    }
+
+    public function test_filament_replaces_a_legacy_image_with_a_valid_https_url(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $newImage = 'https://cdn.example.test/content/replaced.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Замена',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => 'private-reference'],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->fillForm([
+                'media' => ['image' => $newImage],
+                'remove_image' => false,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertSame($newImage, $this->imagePath($section->refresh()->media));
+    }
+
+    public function test_filament_rejects_an_invalid_replacement_without_clearing_a_legacy_image(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $legacyImage = 'private-reference';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Неверная замена',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->fillForm([
+                'media' => ['image' => 'http://cdn.example.test/content/rejected.jpg'],
+                'remove_image' => false,
+            ])
+            ->call('save')
+            ->assertHasErrors();
+
+        self::assertSame($legacyImage, $this->imagePath($section->refresh()->media));
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationAndAdmin(): array
     {
@@ -577,6 +681,17 @@ final class ContentSectionMediaTest extends TestCase
         self::assertInstanceOf(Organization::class, $organization);
         $admin = User::factory()->forOrganization($organization)->create();
         app(OrganizationContext::class)->set($organization);
+
+        return [$organization, $admin];
+    }
+
+    /** @return array{0: Organization, 1: User} */
+    private function filamentOrganizationAndAdmin(): array
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->actingAs($admin);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         return [$organization, $admin];
     }
