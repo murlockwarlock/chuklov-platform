@@ -11,7 +11,7 @@ return new class extends Migration
     {
         Schema::create('knowledge_ingestion_attempts', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id');
             $table->foreignId('knowledge_source_id');
             $table->foreignId('knowledge_revision_id');
             $table->foreignId('knowledge_ingestion_run_id');
@@ -21,16 +21,23 @@ return new class extends Migration
             $table->timestampTz('started_at');
             $table->timestampTz('completed_at')->nullable();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
+            $table->unique(['organization_id', 'id'], 'kia_org_id_unique');
             $table->unique(
                 ['organization_id', 'knowledge_ingestion_run_id', 'attempt_number'],
                 'knowledge_ingestion_attempts_org_run_attempt_unique',
             );
-            $table->foreign(['organization_id', 'knowledge_source_id'])
+            $table->foreign('organization_id', 'kia_organization_fk')
+                ->references('id')
+                ->on('organizations')
+                ->restrictOnDelete();
+            $table->foreign(['organization_id', 'knowledge_source_id'], 'kia_org_source_fk')
                 ->references(['organization_id', 'id'])
                 ->on('knowledge_sources')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'knowledge_source_id', 'knowledge_revision_id'])
+            $table->foreign(
+                ['organization_id', 'knowledge_source_id', 'knowledge_revision_id'],
+                'kia_org_source_revision_fk',
+            )
                 ->references(['organization_id', 'knowledge_source_id', 'id'])
                 ->on('knowledge_revisions')
                 ->restrictOnDelete();
@@ -40,8 +47,14 @@ return new class extends Migration
             )->references(['organization_id', 'knowledge_source_id', 'knowledge_revision_id', 'id'])
                 ->on('knowledge_ingestion_runs')
                 ->restrictOnDelete();
-            $table->index(['organization_id', 'knowledge_source_id', 'knowledge_revision_id', 'status']);
-            $table->index(['organization_id', 'status', 'started_at']);
+            $table->index(
+                ['organization_id', 'knowledge_source_id', 'knowledge_revision_id', 'status'],
+                'kia_org_source_revision_status_idx',
+            );
+            $table->index(
+                ['organization_id', 'status', 'started_at'],
+                'kia_org_status_started_idx',
+            );
         });
 
         DB::statement("ALTER TABLE knowledge_ingestion_attempts ADD CONSTRAINT knowledge_ingestion_attempts_status_check CHECK (status IN ('processing', 'ready', 'failed', 'abandoned'))");
