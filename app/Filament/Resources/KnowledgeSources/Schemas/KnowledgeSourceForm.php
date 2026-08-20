@@ -17,7 +17,7 @@ final class KnowledgeSourceForm
     {
         return $schema->components([
             Section::make('Основная информация')
-                ->description('Документы базы знаний индексируются в RAG-поиск и используются AI-ассистентом для ответов клиентам.')
+                ->description('Материалы помогают специалистам находить нужную информацию при работе с клиентами.')
                 ->schema([
                     TextInput::make('title')->label('Название')->required()->maxLength(200),
                     Select::make('type')->label('Тип')->options([
@@ -25,11 +25,10 @@ final class KnowledgeSourceForm
                         KnowledgeSourceType::UploadedText->value => 'TXT или Markdown',
                     ])->required()->live()->disabledOn('edit'),
                     TextInput::make('category')->label('Категория')->maxLength(80),
-                    TextInput::make('source_reference')->label('Ссылка или раздел источника')->maxLength(500),
                 ])->columns(2),
             Section::make('Материал')->schema([
                 Textarea::make('content')->label('Текст')->rows(18)->maxLength(500000)->required(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->visible(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->columnSpanFull(),
-                FileUpload::make('file')->label('Файл')->acceptedFileTypes(config('rag.uploads.allowed_mime_types'))->maxSize((int) config('rag.uploads.maximum_kilobytes'))->storeFiles(false)->required(fn (Get $get): bool => $get('type') === KnowledgeSourceType::UploadedText->value)->visible(fn (Get $get): bool => $get('type') === KnowledgeSourceType::UploadedText->value)->columnSpanFull(),
+                FileUpload::make('file')->label('Файл')->helperText('При редактировании оставьте поле пустым, чтобы сохранить текущий материал.')->acceptedFileTypes(config('rag.uploads.allowed_mime_types'))->maxSize((int) config('rag.uploads.maximum_kilobytes'))->storeFiles(false)->required(fn (Get $get, string $operation): bool => $operation === 'create' && $get('type') === KnowledgeSourceType::UploadedText->value)->visible(fn (Get $get): bool => $get('type') === KnowledgeSourceType::UploadedText->value)->columnSpanFull(),
             ]),
         ]);
     }

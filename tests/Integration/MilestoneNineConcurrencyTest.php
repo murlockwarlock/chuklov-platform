@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Modules\Knowledge\Application\ClaimKnowledgeIngestionRun;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionAttempt;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -50,6 +51,8 @@ final class MilestoneNineConcurrencyTest extends TestCase
         self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'busy')));
         self::assertSame(1, KnowledgeIngestionRun::query()->where('knowledge_revision_id', $revision->getKey())->count());
         self::assertSame(1, KnowledgeIngestionRun::query()->where('knowledge_revision_id', $revision->getKey())->value('attempts'));
+        self::assertSame(1, KnowledgeIngestionAttempt::query()->where('knowledge_revision_id', $revision->getKey())->count());
+        self::assertSame(1, KnowledgeIngestionAttempt::query()->where('knowledge_revision_id', $revision->getKey())->value('attempt_number'));
     }
 
     private static function claim(int $organizationId, int $sourceId, int $revisionId): string

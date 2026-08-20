@@ -55,6 +55,12 @@ class KnowledgeRevision extends Model
         return $this->hasOne(KnowledgeIngestionRun::class)->latestOfMany();
     }
 
+    /** @return HasMany<KnowledgeIngestionAttempt, $this> */
+    public function ingestionAttemptHistory(): HasMany
+    {
+        return $this->hasMany(KnowledgeIngestionAttempt::class, 'knowledge_revision_id');
+    }
+
     protected static function booted(): void
     {
         static::updating(function (KnowledgeRevision $revision): void {

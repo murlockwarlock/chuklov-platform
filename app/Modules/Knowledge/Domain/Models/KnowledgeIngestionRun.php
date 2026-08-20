@@ -42,4 +42,10 @@ class KnowledgeIngestionRun extends Model
     {
         return $this->hasMany(KnowledgeChunk::class);
     }
+
+    /** @return HasMany<KnowledgeIngestionAttempt, $this> */
+    public function attemptHistory(): HasMany
+    {
+        return $this->hasMany(KnowledgeIngestionAttempt::class, 'knowledge_ingestion_run_id');
+    }
 }

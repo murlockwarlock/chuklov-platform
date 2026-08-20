@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Application\Data\KnowledgeSourceUpdateResult;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -23,19 +24,22 @@ final class UpdateKnowledgeSource
     ) {}
 
     /** @param array<string, mixed> $data */
-    public function handle(User $actor, KnowledgeSource $source, array $data): KnowledgeRevision
+    public function handle(User $actor, KnowledgeSource $source, array $data): KnowledgeSourceUpdateResult
     {
         $organization = $this->authorization->organizationForSource($actor, $source, OrganizationPermission::ManageKnowledge);
-        if ($source->status->value === 'retired') {
-            throw ValidationException::withMessages(['source' => 'Сначала восстановите источник.']);
-        }
-        $source->loadMissing('revisions');
         $title = is_string($data['title'] ?? null) ? trim($data['title']) : $source->title;
-        $category = array_key_exists('category', $data) && is_string($data['category']) ? trim($data['category']) : $source->category;
-        $sourceReference = is_string($data['source_reference'] ?? null) ? trim($data['source_reference']) : null;
-        if ($title === '' || mb_strlen($title) > 200 || ($category !== null && mb_strlen($category) > 80) || ($sourceReference !== null && mb_strlen($sourceReference) > 500)) {
-            throw ValidationException::withMessages(['source' => 'Проверьте название, категорию и ссылку на источник.']);
+        $category = array_key_exists('category', $data)
+            ? (is_string($data['category']) ? trim($data['category']) : null)
+            : $source->category;
+        $hasExplicitSourceReference = array_key_exists('source_reference', $data);
+        $sourceReference = $hasExplicitSourceReference
+            ? (is_string($data['source_reference']) ? trim($data['source_reference']) : null)
+            : null;
+
+        if ($title === '' || mb_strlen($title) > 200 || ($category !== null && mb_strlen($category) > 80) || ($hasExplicitSourceReference && $sourceReference !== null && mb_strlen($sourceReference) > 500)) {
+            throw ValidationException::withMessages(['source' => 'Проверьте название и категорию источника.']);
         }
+
         $type = $source->type;
         $content = null;
         $disk = null;
@@ -43,9 +47,11 @@ final class UpdateKnowledgeSource
         $filename = null;
         $mime = 'text/markdown';
         $size = 0;
+        $materialProvided = false;
 
-        if ($type === KnowledgeSourceType::AuthoredText) {
-            $content = (string) ($data['content'] ?? '');
+        if ($type === KnowledgeSourceType::AuthoredText && array_key_exists('content', $data)) {
+            $materialProvided = true;
+            $content = is_string($data['content']) ? $data['content'] : '';
             if (trim($content) === '') {
                 throw ValidationException::withMessages(['content' => 'Добавьте текст источника.']);
             }
@@ -53,7 +59,8 @@ final class UpdateKnowledgeSource
                 throw ValidationException::withMessages(['content' => 'Текст превышает допустимый размер.']);
             }
             $size = strlen($content);
-        } elseif (($data['file'] ?? null) instanceof UploadedFile) {
+        } elseif ($type === KnowledgeSourceType::UploadedText && ($data['file'] ?? null) instanceof UploadedFile) {
+            $materialProvided = true;
             $file = $data['file'];
             $mime = (string) $file->getMimeType();
             $extension = strtolower($file->getClientOriginalExtension());
@@ -77,13 +84,12 @@ final class UpdateKnowledgeSource
                 Storage::disk($disk)->delete($path);
                 throw ValidationException::withMessages(['file' => 'Документ превышает допустимый размер текста.']);
             }
-        } else {
-            throw ValidationException::withMessages(['file' => 'Загрузите новую версию текстового документа.']);
         }
 
-        $checksum = hash('sha256', (string) $content);
+        $checksum = $materialProvided ? hash('sha256', (string) $content) : null;
+
         try {
-            $revision = DB::transaction(function () use ($actor, $source, $organization, $title, $category, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum): KnowledgeRevision {
+            $result = DB::transaction(function () use ($actor, $source, $organization, $title, $category, $hasExplicitSourceReference, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum, $materialProvided): KnowledgeSourceUpdateResult {
                 $lockedSource = KnowledgeSource::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($source->getKey())
@@ -92,6 +98,44 @@ final class UpdateKnowledgeSource
                 if ($lockedSource->status->value === 'retired') {
                     throw ValidationException::withMessages(['source' => 'Сначала восстановите источник.']);
                 }
+
+                $latestRevision = $lockedSource->revisions()
+                    ->orderByDesc('version')
+                    ->lockForUpdate()
+                    ->first();
+                $materialChanged = $materialProvided && (
+                    $lockedSource->type === KnowledgeSourceType::UploadedText
+                    || $latestRevision === null
+                    || $latestRevision->content_checksum !== $checksum
+                );
+
+                if (! $materialChanged && $hasExplicitSourceReference && $latestRevision?->source_reference !== $sourceReference) {
+                    throw ValidationException::withMessages(['source_reference' => 'Происхождение версии нельзя изменить без новой версии материала.']);
+                }
+
+                $changedFields = [];
+                if ($lockedSource->title !== $title) {
+                    $changedFields[] = 'title';
+                }
+                if ($lockedSource->category !== $category) {
+                    $changedFields[] = 'category';
+                }
+                if ($changedFields !== []) {
+                    $lockedSource->update(['title' => $title, 'category' => $category]);
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'knowledge.source.updated',
+                        targetType: KnowledgeSource::class,
+                        targetId: (string) $lockedSource->getKey(),
+                        metadata: ['fields' => implode(',', $changedFields)],
+                    );
+                }
+
+                if (! $materialChanged) {
+                    return new KnowledgeSourceUpdateResult($lockedSource->refresh(), null, false);
+                }
+
                 $version = ((int) $lockedSource->revisions()->max('version')) + 1;
                 $revision = KnowledgeRevision::query()->create([
                     'organization_id' => $organization->getKey(),
@@ -105,13 +149,19 @@ final class UpdateKnowledgeSource
                     'mime_type' => $mime,
                     'size_bytes' => $size,
                     'content_checksum' => $checksum,
-                    'source_reference' => $sourceReference,
+                    'source_reference' => $hasExplicitSourceReference ? $sourceReference : $latestRevision?->source_reference,
                     'created_by_user_id' => $actor->getKey(),
                 ]);
-                $lockedSource->update(['title' => $title, 'category' => $category]);
-                $this->audit->handle($organization, $actor, 'knowledge.revision.created', KnowledgeRevision::class, (string) $revision->getKey(), ['source_id' => $lockedSource->getKey(), 'version' => $version]);
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'knowledge.revision.created',
+                    targetType: KnowledgeRevision::class,
+                    targetId: (string) $revision->getKey(),
+                    metadata: ['source_id' => $lockedSource->getKey(), 'version' => $version],
+                );
 
-                return $revision;
+                return new KnowledgeSourceUpdateResult($lockedSource->refresh(), $revision, true);
             });
         } catch (Throwable $exception) {
             if ($path !== null) {
@@ -121,8 +171,34 @@ final class UpdateKnowledgeSource
             throw $exception;
         }
 
-        IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
+        if ($result->revision instanceof KnowledgeRevision) {
+            try {
+                $dispatch = IngestKnowledgeRevision::dispatch(
+                    $organization->getKey(),
+                    $result->source->getKey(),
+                    $result->revision->getKey(),
+                );
+                unset($dispatch);
+            } catch (Throwable) {
+                try {
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'knowledge.ingestion.dispatch_failed',
+                        targetType: KnowledgeRevision::class,
+                        targetId: (string) $result->revision->getKey(),
+                        metadata: [
+                            'source_id' => $result->source->getKey(),
+                            'revision_id' => $result->revision->getKey(),
+                            'operation' => 'replacement',
+                        ],
+                    );
+                } catch (Throwable $auditException) {
+                    report($auditException);
+                }
+            }
+        }
 
-        return $revision;
+        return $result;
     }
 }

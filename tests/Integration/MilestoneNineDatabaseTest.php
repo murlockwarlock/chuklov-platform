@@ -58,4 +58,54 @@ final class MilestoneNineDatabaseTest extends TestCase
         $this->expectException(QueryException::class);
         DB::table('knowledge_ingestion_runs')->insert($row);
     }
+
+    public function test_ingestion_attempt_history_has_tenant_provenance_and_bounded_terminal_state(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The attempt-history constraint inspection requires PostgreSQL.');
+        }
+
+        $columns = DB::table('information_schema.columns')
+            ->where('table_name', 'knowledge_ingestion_attempts')
+            ->pluck('column_name')
+            ->all();
+        self::assertContains('organization_id', $columns);
+        self::assertContains('knowledge_source_id', $columns);
+        self::assertContains('knowledge_revision_id', $columns);
+        self::assertContains('knowledge_ingestion_run_id', $columns);
+        self::assertContains('attempt_number', $columns);
+
+        $foreignKeys = DB::table('pg_constraint as constraints')
+            ->join('pg_class as tables', 'tables.oid', '=', 'constraints.conrelid')
+            ->where('tables.relname', 'knowledge_ingestion_attempts')
+            ->where('constraints.contype', 'f')
+            ->pluck('constraints.conname')
+            ->all();
+        self::assertEqualsCanonicalizing([
+            'kia_organization_fk',
+            'kia_org_source_fk',
+            'kia_org_source_revision_fk',
+            'knowledge_ingestion_attempts_run_provenance_foreign',
+        ], $foreignKeys);
+
+        self::assertTrue(DB::table('pg_indexes')
+            ->where('tablename', 'knowledge_ingestion_attempts')
+            ->where('indexname', 'knowledge_ingestion_attempts_org_run_attempt_unique')
+            ->exists());
+        self::assertSame(3, DB::table('pg_indexes')
+            ->where('tablename', 'knowledge_ingestion_attempts')
+            ->whereIn('indexname', [
+                'kia_org_id_unique',
+                'kia_org_source_revision_status_idx',
+                'kia_org_status_started_idx',
+            ])
+            ->count());
+        self::assertSame(4, DB::table('pg_constraint as constraints')
+            ->join('pg_class as tables', 'tables.oid', '=', 'constraints.conrelid')
+            ->where('tables.relname', 'knowledge_ingestion_attempts')
+            ->where('constraints.contype', 'f')
+            ->count());
+        self::assertSame(1, DB::table('pg_constraint')->where('conname', 'knowledge_ingestion_attempts_status_check')->count());
+        self::assertSame(1, DB::table('pg_constraint')->where('conname', 'knowledge_ingestion_attempts_number_check')->count());
+    }
 }

@@ -5,15 +5,21 @@ namespace Tests\Feature\Knowledge;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
 use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Models\User;
+use App\Modules\Knowledge\Application\ClaimKnowledgeIngestionRun;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\ProcessKnowledgeIngestion;
+use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
+use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
 use App\Modules\Knowledge\Application\RetireKnowledgeSource;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource;
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeIngestionAttemptStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionAttempt;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
+use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -100,7 +106,10 @@ final class RagTest extends TestCase
         self::assertSame($chunkCount, $run->chunks()->count());
         self::assertSame(1, $revisionOne->ingestionRuns()->count());
 
-        $revisionTwo = app(UpdateKnowledgeSource::class)->handle($actor, $source, ['title' => 'Guide', 'content' => 'booking version two']);
+        $update = app(UpdateKnowledgeSource::class)->handle($actor, $source, ['title' => 'Guide', 'content' => 'booking version two']);
+        self::assertTrue($update->revisionCreated);
+        self::assertNotNull($update->revision);
+        $revisionTwo = $update->revision;
         self::assertSame('stale', $revisionOne->fresh()->status->value);
         self::assertSame('ready', $revisionTwo->fresh()->status->value);
         $result = app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5))[0];
@@ -138,6 +147,12 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame(1, KnowledgeChunk::query()->where('knowledge_revision_id', $revision->getKey())->count());
         self::assertSame(2, KnowledgeIngestionRun::query()->where('knowledge_revision_id', $revision->getKey())->value('attempts'));
+        self::assertSame(['failed', 'ready'], KnowledgeIngestionAttempt::query()
+            ->where('knowledge_revision_id', $revision->getKey())
+            ->orderBy('attempt_number')
+            ->pluck('status')
+            ->map(static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status)
+            ->all());
     }
 
     public function test_bounded_retrieval_clamps_embedding_timeout_to_platform_and_remaining_deadline(): void
@@ -308,6 +323,12 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame('ready', $revision->ingestionRuns()->sole()->status->value);
         self::assertSame(2, $revision->ingestionRuns()->sole()->attempts);
+        self::assertSame(
+            [KnowledgeIngestionAttemptStatus::Abandoned->value, KnowledgeIngestionAttemptStatus::Ready->value],
+            $revision->ingestionAttemptHistory()->orderBy('attempt_number')->pluck('status')->map(
+                static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status,
+            )->all(),
+        );
     }
 
     public function test_revision_provenance_is_immutable(): void
@@ -317,6 +338,32 @@ final class RagTest extends TestCase
         $this->expectException(LogicException::class);
         $revision->content = 'rewritten';
         $revision->save();
+    }
+
+    public function test_terminal_ingestion_attempt_history_is_immutable(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $attempt = $source->revisions()->sole()->ingestionAttemptHistory()->sole();
+
+        $this->expectException(LogicException::class);
+        $attempt->error_code = 'rewritten';
+        $attempt->save();
+    }
+
+    public function test_reactivation_restores_the_latest_retired_ready_revision_for_retrieval(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        app(RetireKnowledgeSource::class)->handle($actor, $source);
+
+        self::assertSame('retired', $revision->fresh()->status->value);
+        app(ReactivateKnowledgeSource::class)->handle($actor, $source->fresh());
+
+        self::assertSame('active', $source->fresh()->status->value);
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame($revision->getKey(), app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5))[0]->revisionId);
     }
 
     public function test_reembedding_active_revision_keeps_it_authoritative(): void
@@ -332,6 +379,153 @@ final class RagTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame(2, $revision->ingestionRuns()->count());
         self::assertSame($revision->getKey(), app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5))[0]->revisionId);
+    }
+
+    public function test_search_reprocessing_reuses_the_ready_revision_and_creates_a_current_compatible_run(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+
+        self::assertSame(1, $source->revisions()->count());
+        self::assertSame(0, $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->count());
+
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        self::assertSame(1, $source->revisions()->count());
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame($revision->getKey(), $source->fresh()->active_revision_id);
+        self::assertSame(1, $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->where('status', 'ready')->count());
+    }
+
+    public function test_failed_search_reprocessing_keeps_ready_material_and_can_be_requested_again(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
+        {
+            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            {
+                throw new RuntimeException('provider unavailable');
+            }
+        });
+
+        try {
+            app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+            self::fail('Failed search reprocessing did not surface a safe error.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('Не удалось запустить подготовку для поиска.', $exception->getMessage());
+            self::assertStringNotContainsString('provider unavailable', $exception->getMessage());
+        }
+
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame('failed', $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->sole()->status->value);
+
+        $this->bindDeterministicEmbeddings();
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame('ready', $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->sole()->status->value);
+        self::assertSame(2, $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->sole()->attempts);
+    }
+
+    public function test_search_reprocessing_rejects_compatible_ready_run(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+
+        $this->expectException(ValidationException::class);
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+    }
+
+    public function test_search_reprocessing_does_not_dispatch_when_a_compatible_run_is_recently_processing(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $run = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+
+        self::assertNotNull($run);
+        try {
+            app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+            self::fail('A duplicate compatible processing run was accepted.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        self::assertSame(1, $revision->ingestionRuns()->where('embedding_configuration_version', 'v2')->value('attempts'));
+        self::assertSame(1, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $run->getKey())->count());
+    }
+
+    public function test_search_reprocessing_reclaims_an_expired_compatible_run_through_the_claim_path(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $run = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+        self::assertNotNull($run);
+        $run->update(['processing_started_at' => now()->subSeconds((int) config('rag.processing_stale_after_seconds') + 1)]);
+
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        self::assertSame('ready', $run->fresh()->status->value);
+        self::assertSame(2, $run->fresh()->attempts);
+        self::assertSame(
+            [KnowledgeIngestionAttemptStatus::Abandoned->value, KnowledgeIngestionAttemptStatus::Ready->value],
+            $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $run->getKey())->orderBy('attempt_number')->pluck('status')->map(
+                static fn ($status): string => $status instanceof KnowledgeIngestionAttemptStatus ? $status->value : (string) $status,
+            )->all(),
+        );
+        self::assertSame(1, $source->revisions()->count());
+        self::assertSame('ready', $revision->fresh()->status->value);
+    }
+
+    public function test_claim_reclaims_processing_run_without_a_start_timestamp(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, ['title' => 'Guide', 'type' => 'authored_text', 'content' => 'booking source']);
+        $revision = $source->revisions()->sole();
+        config()->set('rag.embedding.configuration_version', 'v2');
+        $firstRun = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+        self::assertNotNull($firstRun);
+        $firstRun->update(['processing_started_at' => null]);
+
+        $secondRun = app(ClaimKnowledgeIngestionRun::class)->handle(
+            $source->organization_id,
+            $source->getKey(),
+            $revision->getKey(),
+            EmbeddingConfiguration::active(),
+            ChunkingConfiguration::active(),
+        );
+
+        self::assertNotNull($secondRun);
+        self::assertSame(2, $secondRun->fresh()->attempts);
+        self::assertSame(KnowledgeIngestionAttemptStatus::Abandoned, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $firstRun->getKey())->where('attempt_number', 1)->sole()->status);
+        self::assertSame(KnowledgeIngestionAttemptStatus::Processing, $revision->ingestionAttemptHistory()->where('knowledge_ingestion_run_id', $secondRun->getKey())->where('attempt_number', 2)->sole()->status);
     }
 
     public function test_uploaded_text_is_private_and_validated_by_mime_and_extension(): void
