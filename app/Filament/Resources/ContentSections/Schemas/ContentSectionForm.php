@@ -75,6 +75,7 @@ class ContentSectionForm
                             ->label('Ссылка на изображение')
                             ->url()
                             ->maxLength(2000)
+                            ->dehydrated(fn (mixed $state): bool => filled($state))
                             ->helperText('Заполните только если не загружаете файл.')
                             ->columnSpanFull(),
                         TextInput::make('media.alt')
@@ -97,6 +98,7 @@ class ContentSectionForm
                         TextInput::make('sort_order')
                             ->label('Порядок показа')
                             ->integer()
+                            ->dehydrateStateUsing(fn (mixed $state): ?int => $state === null ? null : (int) $state)
                             ->default(0)
                             ->minValue(0)
                             ->maxValue(PHP_INT_MAX),

@@ -7,8 +7,10 @@ use App\Models\User;
 use App\Modules\Content\Application\UpdateContentSection;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
 class EditContentSection extends EditRecord
 {
@@ -22,9 +24,18 @@ class EditContentSection extends EditRecord
 
         $image = $data['media']['image'] ?? null;
 
-        if (is_string($image)
-            && app(ContentMediaStorageInterface::class)->isManagedPath((int) $this->record->organization_id, $image)
-        ) {
+        $hideImage = is_string($image)
+            && app(ContentMediaStorageInterface::class)->isManagedPath((int) $this->record->organization_id, $image);
+
+        if (! $hideImage && $image !== null && $image !== '') {
+            try {
+                ContentExternalImageUrl::required($image);
+            } catch (InvalidArgumentException) {
+                $hideImage = true;
+            }
+        }
+
+        if ($hideImage) {
             unset($data['media']['image']);
         }
 

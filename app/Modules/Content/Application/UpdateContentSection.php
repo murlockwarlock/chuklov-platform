@@ -5,6 +5,7 @@ namespace App\Modules\Content\Application;
 use App\Models\User;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -13,6 +14,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Throwable;
 
 class UpdateContentSection
@@ -36,7 +38,6 @@ class UpdateContentSection
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageContent);
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
-        $mediaMode = $this->mediaMode($attributes, $uploadedFile, $removeImage, $section, $organization->getKey());
         unset($attributes['content_image'], $attributes['remove_image']);
         $storedPath = null;
 
@@ -45,12 +46,19 @@ class UpdateContentSection
                 $storedPath = $this->media->store($organization->getKey(), $uploadedFile);
             }
 
-            return DB::transaction(function () use ($actor, $attributes, $mediaMode, $organization, $section, $storedPath): ContentSection {
+            return DB::transaction(function () use ($actor, $attributes, $uploadedFile, $removeImage, $organization, $section, $storedPath): ContentSection {
                 $lockedSection = ContentSection::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($section->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
+                $mediaMode = $this->mediaMode(
+                    $attributes,
+                    $uploadedFile,
+                    $removeImage,
+                    $lockedSection,
+                    $organization->getKey(),
+                );
                 $finalAttributes = [
                     ...$attributes,
                     'media' => $this->mediaAttributes(
@@ -169,13 +177,12 @@ class UpdateContentSection
 
         if ($hasImage) {
             $requestedImage = trim((string) $requestedImage);
-            $currentImage = $this->imagePath($section->media);
+
+            if ($isCurrentImage) {
+                return 'preserve';
+            }
 
             if ($this->media->isManagedPath($organizationId, $requestedImage)) {
-                if ($requestedImage === $currentImage) {
-                    return 'preserve';
-                }
-
                 throw ValidationException::withMessages([
                     'media.image' => ['Выберите изображение или ссылку на изображение.'],
                 ]);
@@ -184,7 +191,7 @@ class UpdateContentSection
             return 'external';
         }
 
-        return $hasImageKey ? 'clear' : 'preserve';
+        return $currentImage !== null || ! $hasImageKey ? 'preserve' : 'clear';
     }
 
     /** @return array<string, mixed>|null */
@@ -201,7 +208,12 @@ class UpdateContentSection
         }
 
         $currentMedia = is_array($section->media) ? $section->media : [];
-        $finalMedia = [...$currentMedia, ...($requestedMedia ?? [])];
+        $requestedMedia = is_array($requestedMedia) ? $requestedMedia : [];
+        $finalMedia = [...$currentMedia, ...$requestedMedia];
+
+        if (array_key_exists('alt', $requestedMedia) && $requestedMedia['alt'] === null) {
+            unset($finalMedia['alt']);
+        }
 
         if ($mediaMode === 'upload') {
             if ($storedPath === null) {
@@ -211,6 +223,16 @@ class UpdateContentSection
             }
 
             $finalMedia['image'] = $storedPath;
+        }
+
+        if ($mediaMode === 'external') {
+            try {
+                $finalMedia['image'] = ContentExternalImageUrl::required($finalMedia['image'])->value;
+            } catch (InvalidArgumentException) {
+                throw ValidationException::withMessages([
+                    'media.image' => ['Укажите корректную HTTPS-ссылку на изображение.'],
+                ]);
+            }
         }
 
         if (in_array($mediaMode, ['clear', 'remove'], true)) {

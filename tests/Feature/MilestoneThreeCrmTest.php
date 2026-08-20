@@ -350,7 +350,7 @@ class MilestoneThreeCrmTest extends TestCase
             'locale' => 'en',
             'title' => 'About the author',
             'body' => 'Managed CRM content.',
-            'media' => ['image' => 'private-reference', 'alt' => 'Author portrait'],
+            'media' => ['image' => 'https://cdn.example.test/content/author.jpg', 'alt' => 'Author portrait'],
             'sort_order' => 20,
             'is_visible' => true,
         ]);
@@ -389,7 +389,7 @@ class MilestoneThreeCrmTest extends TestCase
                 ->where('content.0.locale', 'en')
                 ->where('content.0.title', 'About the author')
                 ->where('content.0.sortOrder', 20)
-                ->where('content.0.media.image', 'private-reference')
+                ->where('content.0.media.image', 'https://cdn.example.test/content/author.jpg')
                 ->where('content.0.media.alt', 'Author portrait'));
     }
 
