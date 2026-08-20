@@ -30,22 +30,31 @@ final class SaveCurrencyConfiguration
         $organization = $this->authorization->authorizeManage($actor);
         try {
             $base = $this->catalog->code($data['base_currency'] ?? null);
-            $display = $this->catalog->code($data['display_currency'] ?? null);
             $forceSingle = filter_var($data['force_single_currency'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $display = $forceSingle
+                ? $base
+                : $this->catalog->code($data['display_currency'] ?? null);
             $rounding = FinancialRoundingMode::fromMixed($data['rounding_mode'] ?? FinancialRoundingMode::HalfUp->value);
-            $allowed = $this->currencies($data['allowed_currencies'] ?? []);
-            $submittedRates = $this->rates($data['rates'] ?? [], $allowed);
+            $allowed = $forceSingle
+                ? [$base]
+                : $this->currencies($data['allowed_currencies'] ?? []);
+            $submittedRates = $forceSingle
+                ? []
+                : $this->rates($data['rates'] ?? [], $allowed);
+            $hasSubmittedRates = ! $forceSingle && array_key_exists('rates', $data);
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['currency' => 'Валютные настройки указаны неверно.']);
         }
 
         try {
-            return DB::transaction(function () use ($actor, $organization, $base, $display, $forceSingle, $rounding, $allowed, $submittedRates): OrganizationCurrencyConfiguration {
+            return DB::transaction(function () use ($actor, $organization, $base, $display, $forceSingle, $rounding, $allowed, $submittedRates, $hasSubmittedRates): OrganizationCurrencyConfiguration {
                 $configuration = OrganizationCurrencyConfiguration::query()
                     ->where('organization_id', $organization->getKey())
                     ->lockForUpdate()
                     ->first();
-                $existingRates = $this->existingRates((int) $organization->getKey());
+                $existingRates = $forceSingle || $hasSubmittedRates
+                    ? []
+                    : $this->existingRates((int) $organization->getKey());
                 $rates = $existingRates;
 
                 foreach ($submittedRates as $rate) {
@@ -110,6 +119,14 @@ final class SaveCurrencyConfiguration
                             'updated_at' => now(),
                             'created_at' => $existing === null ? now() : $existing->created_at,
                         ],
+                    );
+                }
+
+                if ($hasSubmittedRates) {
+                    $this->deleteRemovedActiveRates(
+                        (int) $organization->getKey(),
+                        $allowed,
+                        $submittedRates,
                     );
                 }
 
@@ -194,7 +211,11 @@ final class SaveCurrencyConfiguration
 
             $rate = (string) $rate;
 
-            if ($source === $target || ! in_array($source, $allowed, true) || ! in_array($target, $allowed, true)) {
+            if (! in_array($source, $allowed, true) || ! in_array($target, $allowed, true)) {
+                continue;
+            }
+
+            if ($source === $target) {
                 throw ValidationException::withMessages(['rates' => 'Курс должен связывать две доступные разные валюты.']);
             }
 
@@ -240,5 +261,32 @@ final class SaveCurrencyConfiguration
         }
 
         return $rates;
+    }
+
+    /**
+     * @param  list<CurrencyCode>  $allowed
+     * @param  list<array{source: CurrencyCode, target: CurrencyCode, rate: string}>  $submittedRates
+     */
+    private function deleteRemovedActiveRates(int $organizationId, array $allowed, array $submittedRates): void
+    {
+        $submittedKeys = array_fill_keys(array_map(
+            fn (array $rate): string => $this->configuration->rateKey($rate['source'], $rate['target']),
+            $submittedRates,
+        ), true);
+
+        foreach (OrganizationExchangeRate::query()
+            ->where('organization_id', $organizationId)
+            ->get(['id', 'source_currency', 'target_currency']) as $rate) {
+            $source = $this->catalog->code($rate->getRawOriginal('source_currency'));
+            $target = $this->catalog->code($rate->getRawOriginal('target_currency'));
+
+            if (! in_array($source, $allowed, true) || ! in_array($target, $allowed, true)) {
+                continue;
+            }
+
+            if (! array_key_exists($this->configuration->rateKey($source, $target), $submittedKeys)) {
+                DB::table('organization_exchange_rates')->where('id', $rate->getKey())->delete();
+            }
+        }
     }
 }

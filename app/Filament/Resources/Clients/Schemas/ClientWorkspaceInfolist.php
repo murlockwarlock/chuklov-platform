@@ -104,6 +104,10 @@ final class ClientWorkspaceInfolist
 
                                     $summary = app(GetClientBalanceSummary::class)->handle($actor, $record);
 
+                                    if ($summary === null) {
+                                        return 'Расчёт недоступен';
+                                    }
+
                                     if ($summary === []) {
                                         return 'Открытых начислений нет';
                                     }

@@ -154,12 +154,40 @@ final class FinanceConfiguration extends Page
                         Select::make('base_currency')
                             ->label('Валюта практики')
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                            ->live()
+                            ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                if (! is_string($state) || $state === '') {
+                                    return;
+                                }
+
+                                if ((bool) $get('force_single_currency')) {
+                                    self::setSingleCurrencyState($set, $state);
+
+                                    return;
+                                }
+
+                                self::normalizeMultiCurrencyState($get, $set);
+                            })
                             ->disabled(fn (): bool => ! self::canManage())
                             ->required(),
                         Select::make('display_currency')
                             ->label('Валюта отображения')
                             ->helperText('В режиме одной валюты совпадает с валютой практики.')
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                            ->live()
+                            ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                if ((bool) $get('force_single_currency')) {
+                                    $base = $get('base_currency');
+
+                                    if (is_string($base) && $base !== '') {
+                                        self::setSingleCurrencyState($set, $base);
+                                    }
+
+                                    return;
+                                }
+
+                                self::normalizeMultiCurrencyState($get, $set);
+                            })
                             ->disabled(fn (Get $get): bool => ! self::canManage() || (bool) $get('force_single_currency'))
                             ->required(),
                         Toggle::make('force_single_currency')
@@ -169,14 +197,15 @@ final class FinanceConfiguration extends Page
                             ->disabled(fn (): bool => ! self::canManage())
                             ->afterStateUpdated(function (Get $get, Set $set, ?bool $state): void {
                                 if (! $state) {
+                                    self::normalizeMultiCurrencyState($get, $set, null, true);
+
                                     return;
                                 }
 
                                 $base = $get('base_currency');
 
                                 if (is_string($base) && $base !== '') {
-                                    $set('display_currency', $base);
-                                    $set('allowed_currencies', [$base]);
+                                    self::setSingleCurrencyState($set, $base);
                                 }
                             }),
                         Select::make('allowed_currencies')
@@ -184,9 +213,23 @@ final class FinanceConfiguration extends Page
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->multiple()
                             ->searchable()
+                            ->live()
                             ->required()
                             ->visible(fn (Get $get): bool => ! (bool) $get('force_single_currency'))
                             ->dehydrated(true)
+                            ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                if ((bool) $get('force_single_currency')) {
+                                    $base = $get('base_currency');
+
+                                    if (is_string($base) && $base !== '') {
+                                        self::setSingleCurrencyState($set, $base);
+                                    }
+
+                                    return;
+                                }
+
+                                self::normalizeMultiCurrencyState($get, $set, $state);
+                            })
                             ->disabled(fn (): bool => ! self::canManage()),
                     ])
                     ->columns(2)
@@ -268,6 +311,16 @@ final class FinanceConfiguration extends Page
         abort_unless($actor instanceof User, 403);
         $data = $this->form->getState();
 
+        if (filter_var($data['force_single_currency'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $base = $data['base_currency'] ?? null;
+
+            if (is_string($base) && $base !== '') {
+                $data['display_currency'] = $base;
+                $data['allowed_currencies'] = [$base];
+                $data['rates'] = [];
+            }
+        }
+
         try {
             app(SaveCurrencyConfiguration::class)->handle($actor, $data);
         } catch (ValidationException $exception) {
@@ -288,5 +341,67 @@ final class FinanceConfiguration extends Page
         }
 
         return array_intersect_key($options, array_flip(array_map('strval', $selected)));
+    }
+
+    private static function setSingleCurrencyState(Set $set, string $base): void
+    {
+        $set('display_currency', $base);
+        $set('allowed_currencies', [$base]);
+    }
+
+    private static function normalizeMultiCurrencyState(
+        Get $get,
+        Set $set,
+        mixed $changedAllowed = null,
+        bool $restoreRateCurrencies = false,
+    ): void {
+        $base = $get('base_currency');
+
+        if (! is_string($base) || $base === '') {
+            return;
+        }
+
+        $selected = $changedAllowed ?? $get('allowed_currencies');
+        $allowed = is_array($selected)
+            ? array_values(array_unique(array_filter(array_map('strval', $selected), static fn (string $currency): bool => $currency !== '')))
+            : [];
+        $display = $get('display_currency');
+
+        if (! in_array($base, $allowed, true)) {
+            $allowed[] = $base;
+        }
+
+        if (! is_string($display) || $display === '') {
+            $display = $base;
+        }
+
+        if (! in_array($display, $allowed, true)) {
+            $allowed[] = $display;
+        }
+
+        if ($restoreRateCurrencies) {
+            $rates = $get('rates');
+
+            if (is_array($rates)) {
+                foreach ($rates as $rate) {
+                    if (! is_array($rate)) {
+                        continue;
+                    }
+
+                    foreach (['source_currency', 'target_currency'] as $currencyKey) {
+                        $currency = $rate[$currencyKey] ?? null;
+
+                        if (is_string($currency) && $currency !== '') {
+                            $allowed[] = $currency;
+                        }
+                    }
+                }
+            }
+        }
+
+        $allowed = array_values(array_unique($allowed));
+        sort($allowed);
+        $set('display_currency', $display);
+        $set('allowed_currencies', $allowed);
     }
 }

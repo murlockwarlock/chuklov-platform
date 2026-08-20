@@ -16,16 +16,26 @@ final class FinancialObligationInfolist
         return $schema->components([
             Section::make('Расчёт с клиентом')
                 ->schema([
-                    TextEntry::make('client.full_name')
-                        ->label('Клиент'),
+                    TextEntry::make('client_name')
+                        ->label('Клиент')
+                        ->state(function (FinancialObligation $record): string {
+                            $client = $record->client;
+
+                            return $client === null ? '—' : ($client->full_name ?? '—');
+                        }),
                     TextEntry::make('booking_summary')
                         ->label('Запись')
                         ->state(fn (FinancialObligation $record): string => $record->booking === null ? '—' : 'Запись на приём')
                         ->url(fn (FinancialObligation $record): ?string => $record->booking === null
                             ? null
                             : BookingResource::getUrl('view', ['record' => $record->booking->getKey()])),
-                    TextEntry::make('service.name')
-                        ->label('Услуга'),
+                    TextEntry::make('service_name')
+                        ->label('Услуга')
+                        ->state(function (FinancialObligation $record): string {
+                            $service = $record->service;
+
+                            return $service === null ? '—' : $service->name;
+                        }),
                     TextEntry::make('visit_date')
                         ->label('Дата визита')
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->visitDate($record->booking)),
@@ -68,16 +78,25 @@ final class FinancialObligationInfolist
                 ->schema([
                     TextEntry::make('original_amount')
                         ->label('Первоначальная сумма')
-                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->amount($record->amount_minor, $record->currency)),
-                    TextEntry::make('practice_currency')
+                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->amount(
+                            $record->amount_minor,
+                            $record->getRawOriginal('currency'),
+                        )),
+                    TextEntry::make('practice_currency_summary')
                         ->label('Валюта практики')
-                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName($record->base_currency)),
-                    TextEntry::make('settlement_currency')
+                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
+                            $record->getRawOriginal('base_currency'),
+                        )),
+                    TextEntry::make('settlement_currency_summary')
                         ->label('Валюта расчёта')
-                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName($record->settlement_currency)),
-                    TextEntry::make('display_currency')
+                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
+                            $record->getRawOriginal('settlement_currency'),
+                        )),
+                    TextEntry::make('display_currency_summary')
                         ->label('Валюта отображения')
-                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName($record->display_currency)),
+                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
+                            $record->getRawOriginal('display_currency'),
+                        )),
                     TextEntry::make('historical_rate')
                         ->label('Курс при создании расчёта')
                         ->state(fn (FinancialObligation $record): ?string => app(FinancePresentation::class)->historicalRate($record))

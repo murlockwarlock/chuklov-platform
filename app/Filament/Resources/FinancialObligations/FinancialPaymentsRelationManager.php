@@ -57,7 +57,7 @@ final class FinancialPaymentsRelationManager extends RelationManager
                     ->label('Сумма')
                     ->state(fn (FinancialLedgerEntry $record): string => app(FinancePresentation::class)->amount(
                         $record->payment_amount_minor,
-                        $record->payment_currency,
+                        $record->getRawOriginal('payment_currency'),
                     )),
                 TextColumn::make('payment_method_summary')
                     ->label('Способ оплаты')

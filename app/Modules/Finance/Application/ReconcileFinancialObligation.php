@@ -2,6 +2,7 @@
 
 namespace App\Modules\Finance\Application;
 
+use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
@@ -11,6 +12,7 @@ use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use Brick\Math\BigInteger;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use InvalidArgumentException;
 use UnexpectedValueException;
 
 final class ReconcileFinancialObligation
@@ -28,6 +30,9 @@ final class ReconcileFinancialObligation
             throw (new ModelNotFoundException)->setModel(FinancialObligation::class, [$obligationId]);
         }
 
+        $settlementCurrency = $this->obligationCurrency($obligation, 'settlement_currency');
+        $baseCurrency = $this->obligationCurrency($obligation, 'base_currency');
+        $displayCurrency = $this->obligationCurrency($obligation, 'display_currency');
         $appliedMinor = BigInteger::zero();
 
         $entries = FinancialLedgerEntry::query()
@@ -37,9 +42,9 @@ final class ReconcileFinancialObligation
             ->get();
 
         foreach ($entries as $entry) {
-            if ($entry->settlement_currency !== $obligation->settlement_currency
-                || $entry->base_currency !== $obligation->base_currency
-                || $entry->display_currency !== $obligation->display_currency) {
+            if ($this->ledgerCurrency($entry, 'settlement_currency') !== $settlementCurrency
+                || $this->ledgerCurrency($entry, 'base_currency') !== $baseCurrency
+                || $this->ledgerCurrency($entry, 'display_currency') !== $displayCurrency) {
                 throw new UnexpectedValueException('A ledger entry has an incompatible financial currency.');
             }
 
@@ -58,20 +63,23 @@ final class ReconcileFinancialObligation
             throw new UnexpectedValueException('A ledger entry has an incompatible financial currency.');
         }
 
+        $settlementCurrency = $this->obligationCurrency($obligation, 'settlement_currency');
+        $baseCurrency = $this->obligationCurrency($obligation, 'base_currency');
+        $displayCurrency = $this->obligationCurrency($obligation, 'display_currency');
         $appliedMinorValue = BigInteger::zero()->plus((string) ($appliedMinor ?? '0'));
-        $obligationMoney = Money::ofMinor($obligation->settlement_amount_minor, $obligation->settlement_currency);
-        $applied = Money::ofMinor($appliedMinorValue->toString(), $obligation->settlement_currency);
+        $obligationMoney = Money::ofMinor($obligation->settlement_amount_minor, $settlementCurrency);
+        $applied = Money::ofMinor($appliedMinorValue->toString(), $settlementCurrency);
         $outstanding = $obligationMoney->subtract($applied);
 
         if ($applied->isNegative() || $outstanding->isNegative()) {
             throw new UnexpectedValueException('The financial ledger does not reconcile to the obligation.');
         }
 
-        $baseObligation = Money::ofMinor($obligation->base_amount_minor, $obligation->base_currency);
-        $baseOutstanding = $this->valueOutstanding($obligation, $outstanding, 'base', $baseObligation);
+        $baseObligation = Money::ofMinor($obligation->base_amount_minor, $baseCurrency);
+        $baseOutstanding = $this->valueOutstanding($obligation, $outstanding, $settlementCurrency, 'base', $baseObligation);
         $baseApplied = $baseObligation->subtract($baseOutstanding);
-        $displayObligation = Money::ofMinor($obligation->display_amount_minor, $obligation->display_currency);
-        $displayOutstanding = $this->valueOutstanding($obligation, $outstanding, 'display', $displayObligation);
+        $displayObligation = Money::ofMinor($obligation->display_amount_minor, $displayCurrency);
+        $displayOutstanding = $this->valueOutstanding($obligation, $outstanding, $settlementCurrency, 'display', $displayObligation);
         $displayApplied = $displayObligation->subtract($displayOutstanding);
 
         if ($baseApplied->isNegative() || $baseOutstanding->isNegative()
@@ -98,6 +106,7 @@ final class ReconcileFinancialObligation
     private function valueOutstanding(
         FinancialObligation $obligation,
         Money $outstanding,
+        CurrencyCode $settlementCurrency,
         string $role,
         Money $obligationAmount,
     ): Money {
@@ -119,7 +128,7 @@ final class ReconcileFinancialObligation
             throw new UnexpectedValueException('The obligation valuation snapshot is invalid.', previous: $exception);
         }
 
-        if ($sourceCurrency !== $obligation->settlement_currency
+        if ($sourceCurrency !== $settlementCurrency
             || $targetCurrency !== $obligationAmount->currency()
             || $sourceAmount->minorUnits() !== $obligation->settlement_amount_minor
             || $historicalTarget->minorUnits() !== $obligationAmount->minorUnits()
@@ -132,5 +141,24 @@ final class ReconcileFinancialObligation
         }
 
         return $convertedOutstanding;
+    }
+
+    private function obligationCurrency(FinancialObligation $obligation, string $attribute): CurrencyCode
+    {
+        return $this->currencyValue($obligation->getRawOriginal($attribute));
+    }
+
+    private function ledgerCurrency(FinancialLedgerEntry $entry, string $attribute): CurrencyCode
+    {
+        return $this->currencyValue($entry->getRawOriginal($attribute));
+    }
+
+    private function currencyValue(mixed $value): CurrencyCode
+    {
+        try {
+            return $this->catalog->code($value);
+        } catch (InvalidArgumentException $exception) {
+            throw new UnexpectedValueException('A persisted financial currency is invalid.', previous: $exception);
+        }
     }
 }

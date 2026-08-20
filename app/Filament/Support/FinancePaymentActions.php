@@ -10,6 +10,7 @@ use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -111,8 +112,10 @@ final class FinancePaymentActions
                 $receipt = $data['receipt'] ?? null;
                 abort_unless($receipt === null || $receipt instanceof UploadedFile, 422);
                 $presentation = app(FinancePresentation::class);
+                $settlementCurrency = self::settlementCurrency($obligation);
+                abort_unless($settlementCurrency !== null, 422);
                 $currency = $presentation->singleCurrencyMode()
-                    ? $obligation->settlement_currency->value
+                    ? $settlementCurrency
                     : (string) ($data['currency'] ?? '');
 
                 app(RecordManualPayment::class)->handle(
@@ -168,7 +171,13 @@ final class FinancePaymentActions
             Select::make('currency')
                 ->label('Валюта оплаты')
                 ->options(fn (): array => app(FinancePresentation::class)->currencyOptions())
-                ->default(fn (Model $record): ?string => self::obligation($record)?->settlement_currency?->value)
+                ->default(function (Model $record): ?string {
+                    $obligation = self::obligation($record);
+
+                    return $obligation instanceof FinancialObligation
+                        ? self::settlementCurrency($obligation)
+                        : null;
+                })
                 ->hidden(fn (): bool => app(FinancePresentation::class)->singleCurrencyMode())
                 ->dehydrated(true)
                 ->required(),
@@ -228,12 +237,22 @@ final class FinancePaymentActions
         $presentation = app(FinancePresentation::class);
 
         try {
-            $amount = Money::ofMinor($entry->payment_amount_minor, $entry->payment_currency)
-                ->toDecimalString().' '.$entry->payment_currency->value;
-        } catch (\Throwable) {
+            $currency = app(CurrencyCatalog::class)->code($entry->getRawOriginal('payment_currency'));
+            $amount = Money::ofMinor($entry->payment_amount_minor, $currency)
+                ->toDecimalString().' '.$currency->value;
+        } catch (\InvalidArgumentException) {
             $amount = '—';
         }
 
         return $amount.' · '.$presentation->timestamp($entry->occurred_at).' · '.$presentation->paymentMethodLabel($entry);
+    }
+
+    private static function settlementCurrency(FinancialObligation $obligation): ?string
+    {
+        try {
+            return app(CurrencyCatalog::class)->code($obligation->getRawOriginal('settlement_currency'))->value;
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
     }
 }

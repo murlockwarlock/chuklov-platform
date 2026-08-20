@@ -23,7 +23,9 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Throwable;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use UnexpectedValueException;
 use WeakMap;
 
 final class FinancePresentation
@@ -60,7 +62,12 @@ final class FinancePresentation
                     $attributes['crm_incompatible_ledger_rows'] ?? '0',
                 )
                 : $this->reconciliation->handle((int) $record->organization_id, (int) $record->getKey());
-        } catch (Throwable) {
+        } catch (UnexpectedValueException) {
+            Log::warning('Finance reconciliation was unavailable for persisted history.', [
+                'organization_id' => (int) $record->getRawOriginal('organization_id'),
+                'obligation_id' => (int) $record->getKey(),
+                'reason_code' => 'invalid_persisted_finance_history',
+            ]);
             $result = null;
         }
 
@@ -83,11 +90,7 @@ final class FinancePresentation
             return self::$bookingSummaryCache[$booking];
         }
 
-        try {
-            $summary = $this->bookingFinance->handle($actor, $booking);
-        } catch (Throwable) {
-            $summary = null;
-        }
+        $summary = $this->bookingFinance->handle($actor, $booking);
 
         self::$bookingSummaryCache[$booking] = $summary;
 
@@ -149,7 +152,7 @@ final class FinancePresentation
 
     public function displayAmount(FinancialObligation $record): string
     {
-        return $this->amount($record->display_amount_minor, $record->display_currency);
+        return $this->amount($record->display_amount_minor, $record->getRawOriginal('display_currency'));
     }
 
     public function amount(mixed $minor, mixed $currency): string
@@ -158,7 +161,7 @@ final class FinancePresentation
             $code = $this->catalog->code($currency);
 
             return Money::ofMinor($minor, $code)->toDecimalString().' '.$code->value;
-        } catch (Throwable) {
+        } catch (InvalidArgumentException) {
             return '—';
         }
     }
@@ -177,7 +180,17 @@ final class FinancePresentation
     {
         $reconciliation = $this->reconciliation($record);
 
-        if ($reconciliation === null || $reconciliation->outstanding->currency() !== $record->settlement_currency) {
+        if ($reconciliation === null) {
+            return null;
+        }
+
+        try {
+            $settlementCurrency = $this->catalog->code($record->getRawOriginal('settlement_currency'));
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        if ($reconciliation->outstanding->currency() !== $settlementCurrency) {
             return null;
         }
 
@@ -193,7 +206,7 @@ final class FinancePresentation
                     $currency->value => $this->catalog->definition($currency)->name.' ('.$currency->value.')',
                 ])
                 ->all();
-        } catch (Throwable) {
+        } catch (ModelNotFoundException|InvalidArgumentException) {
             return [];
         }
     }
@@ -219,7 +232,7 @@ final class FinancePresentation
             return $booking->startsAtUtc()
                 ->setTimezone($this->context->defaultTimezone())
                 ->format('d.m.Y H:i');
-        } catch (Throwable) {
+        } catch (InvalidArgumentException) {
             return '—';
         }
     }
@@ -237,7 +250,7 @@ final class FinancePresentation
             $code = $this->catalog->code($currency);
 
             return $this->catalog->definition($code)->name.' ('.$code->value.')';
-        } catch (Throwable) {
+        } catch (InvalidArgumentException) {
             return '—';
         }
     }
@@ -256,7 +269,7 @@ final class FinancePresentation
             $rate = (string) $snapshot['rate'];
 
             return $source === $target ? null : '1 '.$source->value.' = '.$rate.' '.$target->value;
-        } catch (Throwable) {
+        } catch (InvalidArgumentException) {
             return null;
         }
     }
@@ -275,7 +288,7 @@ final class FinancePresentation
                 FinancialRoundingMode::HalfEven => 'До ближайшего чётного',
                 FinancialRoundingMode::Down => 'Вниз, без увеличения суммы',
             };
-        } catch (Throwable) {
+        } catch (InvalidArgumentException) {
             return null;
         }
     }
@@ -332,7 +345,7 @@ final class FinancePresentation
     public function clientFinanceUrl(Client $client): string
     {
         return FinancialObligationResource::getUrl('index', [
-            'tableFilters' => ['client' => ['value' => $client->getKey()]],
+            'filters' => ['client' => ['value' => $client->getKey()]],
         ]);
     }
 }

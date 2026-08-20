@@ -11,6 +11,8 @@ use Illuminate\Database\Query\Expression;
 
 final class ListFinancialObligationsForCrm
 {
+    public function __construct(private readonly FinancialReconciliationProjection $projection) {}
+
     /** @return Builder<FinancialObligation> */
     public function query(int $organizationId): Builder
     {
@@ -18,8 +20,8 @@ final class ListFinancialObligationsForCrm
         $ledgerTable = (new FinancialLedgerEntry)->getTable();
         $bookingTable = (new Booking)->getTable();
 
-        $appliedSettlement = $this->appliedSettlementQuery($obligationTable, $ledgerTable);
-        $incompatibleLedgerRows = $this->incompatibleLedgerRowsQuery($obligationTable, $ledgerTable);
+        $appliedSettlement = $this->projection->appliedSettlementQuery($obligationTable, $ledgerTable);
+        $incompatibleLedgerRows = $this->projection->incompatibleLedgerRowsQuery($obligationTable, $ledgerTable);
 
         return FinancialObligation::query()
             ->select($obligationTable.'.*')
@@ -49,9 +51,10 @@ final class ListFinancialObligationsForCrm
             return $query;
         }
 
+        $this->projection->applyValidReconciliationFilter($query);
         $obligationTable = (new FinancialObligation)->getTable();
         $ledgerTable = (new FinancialLedgerEntry)->getTable();
-        $appliedSettlement = $this->appliedSettlementQuery($obligationTable, $ledgerTable);
+        $appliedSettlement = $this->projection->appliedSettlementQuery($obligationTable, $ledgerTable);
         $zero = new Expression('0');
         $obligationAmount = new Expression('financial_obligations.settlement_amount_minor');
 
@@ -72,31 +75,5 @@ final class ListFinancialObligationsForCrm
         }
 
         return $query;
-    }
-
-    /** @return Builder<FinancialLedgerEntry> */
-    private function appliedSettlementQuery(string $obligationTable, string $ledgerTable): Builder
-    {
-        return FinancialLedgerEntry::query()
-            ->from($ledgerTable.' as ledger')
-            ->selectRaw('COALESCE(SUM(ledger.settlement_amount_minor), 0)')
-            ->whereColumn('ledger.organization_id', $obligationTable.'.organization_id')
-            ->whereColumn('ledger.obligation_id', $obligationTable.'.id');
-    }
-
-    /** @return Builder<FinancialLedgerEntry> */
-    private function incompatibleLedgerRowsQuery(string $obligationTable, string $ledgerTable): Builder
-    {
-        return FinancialLedgerEntry::query()
-            ->from($ledgerTable.' as ledger')
-            ->selectRaw('COUNT(*)')
-            ->whereColumn('ledger.organization_id', $obligationTable.'.organization_id')
-            ->whereColumn('ledger.obligation_id', $obligationTable.'.id')
-            ->where(function (Builder $query) use ($obligationTable): void {
-                $query
-                    ->whereColumn('ledger.settlement_currency', '<>', $obligationTable.'.settlement_currency')
-                    ->orWhereColumn('ledger.base_currency', '<>', $obligationTable.'.base_currency')
-                    ->orWhereColumn('ledger.display_currency', '<>', $obligationTable.'.display_currency');
-            });
     }
 }

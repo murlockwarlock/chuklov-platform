@@ -3,7 +3,10 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Finance\Domain\Enums\FinancialStatus;
+use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
@@ -131,6 +134,98 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
             'force_single_currency' => false,
             'rounding_mode' => 'half_up',
         ]);
+    }
+
+    public function test_postgresql_finance_status_projection_excludes_invalid_snapshot_and_ledger_currency(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $snapshot = [
+            'source_amount_minor' => '10000',
+            'source_currency' => 'USD',
+            'target_amount_minor' => '10000',
+            'target_currency' => 'USD',
+            'rate' => '1',
+            'rate_id' => null,
+            'rate_version' => null,
+            'effective_at' => null,
+            'rounding_mode' => 'half_up',
+            'source_scale' => 2,
+            'target_scale' => 2,
+        ];
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => $booking->getKey(),
+            'service_id' => $service->getKey(),
+            'amount_minor' => 10000,
+            'currency' => 'USD',
+            'base_amount_minor' => 10000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 10000,
+            'display_currency' => 'USD',
+            'payment_amount_minor' => 10000,
+            'payment_currency' => 'USD',
+            'settlement_amount_minor' => 10000,
+            'settlement_currency' => 'USD',
+            'price_snapshot' => ['amount_minor' => 10000],
+            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'creation_key' => 'pg-projection-'.$organization->getKey(),
+        ])->save();
+
+        $list = app(ListFinancialObligationsForCrm::class);
+        self::assertCount(1, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
+
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update(['conversion_snapshots' => json_encode(['base' => $snapshot])]);
+        self::assertCount(0, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
+
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update(['conversion_snapshots' => json_encode(['base' => $snapshot, 'display' => $snapshot])]);
+        $entry = new FinancialLedgerEntry;
+        $entry->forceFill([
+            'organization_id' => $organization->getKey(),
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 1000,
+            'currency' => 'USD',
+            'payment_amount_minor' => 1000,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 1000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 1000,
+            'display_currency' => 'RUB',
+            'settlement_amount_minor' => 1000,
+            'settlement_currency' => 'USD',
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'actor_user_id' => $admin->getKey(),
+            'idempotency_key' => 'pg-projection-incompatible',
+        ])->save();
+
+        self::assertCount(0, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
     }
 
     private function requirePostgres(): void

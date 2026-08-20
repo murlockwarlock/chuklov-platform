@@ -81,18 +81,26 @@ final class FinancialObligationsTable
                     ->relationship(
                         'client',
                         'full_name',
-                        fn (Builder $query): Builder => $query->where('organization_id', app(OrganizationContext::class)->id()),
+                        fn (Builder $query): Builder => $query
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->orderBy('full_name')
+                            ->orderBy('id'),
                     )
                     ->searchable()
+                    ->preload()
                     ->optionsLimit(50),
                 SelectFilter::make('service')
                     ->label('Услуга')
                     ->relationship(
                         'service',
                         'name',
-                        fn (Builder $query): Builder => $query->where('organization_id', app(OrganizationContext::class)->id()),
+                        fn (Builder $query): Builder => $query
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->orderBy('name')
+                            ->orderBy('id'),
                     )
                     ->searchable()
+                    ->preload()
                     ->optionsLimit(50),
                 Filter::make('visit_date')
                     ->label('Дата визита')

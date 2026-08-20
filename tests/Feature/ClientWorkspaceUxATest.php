@@ -330,7 +330,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'settlement_amount_minor' => 10000,
             'settlement_currency' => 'USD',
             'price_snapshot' => ['amount_minor' => 10000],
-            'conversion_snapshots' => [],
+            'conversion_snapshots' => $this->conversionSnapshots(10000),
             'creation_key' => 'ux-a-balance-'.$client->id,
         ]);
         $obligation->save();
@@ -389,6 +389,32 @@ final class ClientWorkspaceUxATest extends TestCase
         ], app(GetClientBalanceSummary::class)->handle($admin, $client));
     }
 
+    public function test_client_finance_summary_fails_closed_when_finance_detail_cannot_reconcile(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $obligation = $this->createOutstandingBalanceFixture(
+            organization: $organization,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            index: 900,
+            amountMinor: 10000,
+            paidMinor: 2000,
+        );
+        $obligation->forceFill(['conversion_snapshots' => []])->save();
+
+        self::assertNull(app(GetClientBalanceSummary::class)->handle($admin, $client));
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Расчёт недоступен');
+    }
+
     public function test_phone_search_backfill_processes_resumable_batches(): void
     {
         [$organization] = $this->organizationWithAdmin();
@@ -429,7 +455,7 @@ final class ClientWorkspaceUxATest extends TestCase
         int $index,
         int $amountMinor,
         int $paidMinor,
-    ): void {
+    ): FinancialObligation {
         $startsAt = now()->addDays(20 + $index)->setTime(10, 0);
         $booking = Booking::factory()
             ->forClient($client)
@@ -458,7 +484,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'settlement_amount_minor' => $amountMinor,
             'settlement_currency' => 'USD',
             'price_snapshot' => ['amount_minor' => $amountMinor],
-            'conversion_snapshots' => [],
+            'conversion_snapshots' => $this->conversionSnapshots($amountMinor),
             'creation_key' => 'ux-a-balance-'.$organization->id.'-'.$client->id.'-'.$index,
         ]);
         $obligation->save();
@@ -485,6 +511,41 @@ final class ClientWorkspaceUxATest extends TestCase
             'idempotency_key' => 'ux-a-balance-payment-'.$organization->id.'-'.$client->id.'-'.$index,
         ]);
         $entry->save();
+
+        return $obligation;
+    }
+
+    /** @return array<string, array<string, int|string|null>> */
+    private function conversionSnapshots(int $amountMinor): array
+    {
+        return [
+            'base' => [
+                'source_amount_minor' => (string) $amountMinor,
+                'source_currency' => 'USD',
+                'target_amount_minor' => (string) $amountMinor,
+                'target_currency' => 'USD',
+                'rate' => '1',
+                'rate_id' => null,
+                'rate_version' => null,
+                'effective_at' => null,
+                'rounding_mode' => 'half_up',
+                'source_scale' => 2,
+                'target_scale' => 2,
+            ],
+            'display' => [
+                'source_amount_minor' => (string) $amountMinor,
+                'source_currency' => 'USD',
+                'target_amount_minor' => (string) $amountMinor,
+                'target_currency' => 'USD',
+                'rate' => '1',
+                'rate_id' => null,
+                'rate_version' => null,
+                'effective_at' => null,
+                'rounding_mode' => 'half_up',
+                'source_scale' => 2,
+                'target_scale' => 2,
+            ],
+        ];
     }
 
     public function test_phone_prefix_search_finds_clients_by_partial_number(): void

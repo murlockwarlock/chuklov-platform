@@ -8,6 +8,7 @@ use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\FinancialObligations\FinancialPaymentsRelationManager;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Filament\Resources\FinancialObligations\Pages\ViewFinancialObligation;
+use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\InitiateFakePayment;
@@ -78,11 +79,17 @@ final class FinanceCrmUxTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         $list = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
-        $list->assertTableColumnStateSet('financial_status', 'К оплате', $obligation);
+        $list
+            ->assertTableColumnStateSet('financial_status', 'К оплате', $obligation)
+            ->set('tableFilters.status.value', FinancialStatus::Outstanding->value)
+            ->assertCountTableRecords(1);
 
         app(RecordManualPayment::class)->handle($admin, $obligation, '25.00', 'USD', 'cash', now(), null, null, 'status-partial');
         $partial = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
-        $partial->assertTableColumnStateSet('financial_status', 'Оплачено частично', $obligation);
+        $partial
+            ->assertTableColumnStateSet('financial_status', 'Оплачено частично', $obligation)
+            ->set('tableFilters.status.value', FinancialStatus::PartiallyPaid->value)
+            ->assertCountTableRecords(1);
 
         app(RecordManualPayment::class)->handle($admin, $obligation, '75.00', 'USD', 'bank_transfer', now(), null, null, 'status-settled');
         $settled = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
@@ -100,9 +107,15 @@ final class FinanceCrmUxTest extends TestCase
         $obligation->forceFill(['conversion_snapshots' => $snapshots])->save();
         $this->resolveFilamentContext($admin, $organization);
 
-        Livewire::actingAs($admin)
+        $filtered = Livewire::actingAs($admin)
             ->test(ListFinancialObligations::class)
             ->assertTableColumnStateSet('financial_status', 'Расчёт недоступен', $obligation);
+
+        $filtered
+            ->set('tableFilters.status.value', FinancialStatus::Outstanding->value)
+            ->assertCountTableRecords(0)
+            ->set('tableFilters.status.value', 'unexpected')
+            ->assertCountTableRecords(0);
 
         Livewire::actingAs($admin)
             ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
@@ -204,7 +217,19 @@ final class FinanceCrmUxTest extends TestCase
             ->assertTableColumnExists('receipt_summary')
             ->assertTableActionExists('correctPayment', null, $payment);
 
-        $correction = app(CorrectFinancialPayment::class)->handle(
+        $history
+            ->mountTableAction('correctPayment', $payment)
+            ->assertFormFieldExists('reason')
+            ->setTableActionData([
+                'reason' => 'Исправлена сумма.',
+                'idempotency_key' => 'history-correction',
+            ])
+            ->callMountedTableAction();
+
+        $correction = FinancialLedgerEntry::query()
+            ->where('corrects_ledger_entry_id', $payment->getKey())
+            ->sole();
+        $replayed = app(CorrectFinancialPayment::class)->handle(
             actor: $admin,
             original: $payment,
             reason: 'Исправлена сумма.',
@@ -212,11 +237,92 @@ final class FinanceCrmUxTest extends TestCase
         );
 
         self::assertSame(-2000, $correction->settlement_amount_minor);
+        self::assertSame($correction->getKey(), $replayed->getKey());
         self::assertDatabaseHas('financial_ledger_entries', [
             'id' => $payment->getKey(),
             'amount_minor' => 2000,
         ]);
         self::assertStringContainsString('Расчёт по визиту', $component->html());
+    }
+
+    public function test_incompatible_ledger_currency_is_excluded_from_normal_status_filters(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '25.00',
+            currency: 'USD',
+            paymentMethod: 'cash',
+            occurredAt: CarbonImmutable::now('UTC'),
+            note: null,
+            receipt: null,
+            idempotencyKey: 'incompatible-status-payment',
+        );
+        DB::table('financial_ledger_entries')
+            ->where('id', $payment->getKey())
+            ->update(['display_currency' => 'RUB']);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $list = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertTableColumnStateSet('financial_status', 'Расчёт недоступен', $obligation);
+
+        foreach (FinancialStatus::cases() as $status) {
+            $list
+                ->set('tableFilters.status.value', $status->value)
+                ->assertCountTableRecords(0);
+        }
+    }
+
+    public function test_overpayment_is_excluded_from_normal_status_filters(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '25.00',
+            currency: 'USD',
+            paymentMethod: 'cash',
+            occurredAt: CarbonImmutable::now('UTC'),
+            note: null,
+            receipt: null,
+            idempotencyKey: 'overpayment-status-payment',
+        );
+        DB::table('financial_ledger_entries')
+            ->where('id', $payment->getKey())
+            ->update(['settlement_amount_minor' => 10100]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $list = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertTableColumnStateSet('financial_status', 'Расчёт недоступен', $obligation);
+
+        foreach (FinancialStatus::cases() as $status) {
+            $list
+                ->set('tableFilters.status.value', $status->value)
+                ->assertCountTableRecords(0);
+        }
+    }
+
+    public function test_malformed_legacy_currency_fails_closed_in_finance_list_and_detail(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update(['display_currency' => 'ZZZ']);
+        $obligation->refresh();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertTableColumnStateSet('amount_summary', '—', $obligation)
+            ->assertTableColumnStateSet('financial_status', 'Расчёт недоступен', $obligation);
+
+        Livewire::actingAs($admin)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Расчёт недоступен. Проверьте историю оплат.');
     }
 
     public function test_view_only_finance_user_can_inspect_configuration_but_cannot_save(): void
@@ -260,6 +366,43 @@ final class FinanceCrmUxTest extends TestCase
             ->assertTableActionVisible('view', $obligation);
     }
 
+    public function test_view_only_finance_user_can_read_booking_detail_and_history_without_mutation_actions(): void
+    {
+        [$organization, $admin, , $booking, $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '20.00',
+            currency: 'USD',
+            paymentMethod: 'cash',
+            occurredAt: CarbonImmutable::now('UTC'),
+            note: null,
+            receipt: null,
+            idempotencyKey: 'view-only-history-payment',
+        );
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->resolveFilamentContext($staff, $organization);
+
+        Livewire::actingAs($staff)
+            ->test(ViewBooking::class, ['record' => $booking->getRouteKey()])
+            ->assertSuccessful()
+            ->assertActionExists('openPayment')
+            ->assertActionHidden('recordBookingPayment');
+
+        Livewire::actingAs($staff)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->assertSuccessful()
+            ->assertActionHidden('recordPayment');
+
+        Livewire::actingAs($staff)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableActionHidden('correctPayment', $payment);
+    }
+
     public function test_manage_finance_user_sees_advanced_currency_controls_only_in_multi_currency_mode(): void
     {
         [$organization, $admin] = $this->financeFixture(
@@ -276,6 +419,139 @@ final class FinanceCrmUxTest extends TestCase
             ->assertSee('Курсы конвертации')
             ->assertSee('Например: 1 USD = 500 KZT')
             ->assertSee('Сохранить финансовые настройки');
+    }
+
+    public function test_initial_currency_configuration_form_is_seeded_from_the_local_service_currency(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        Service::factory()->forOrganization($organization)->create([
+            'price_minor' => 10000,
+            'price_currency' => 'USD',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinanceConfiguration::class)
+            ->assertSet('data.base_currency', 'USD')
+            ->assertSet('data.display_currency', 'USD')
+            ->assertSet('data.allowed_currencies', ['USD'])
+            ->assertSet('data.force_single_currency', true)
+            ->call('save');
+
+        self::assertDatabaseHas('organization_currency_configurations', [
+            'organization_id' => $organization->getKey(),
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'force_single_currency' => true,
+        ]);
+    }
+
+    public function test_currency_configuration_form_normalizes_single_and_multi_currency_transitions(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['RUB', 'USD'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '500'],
+                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.002'],
+            ],
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(FinanceConfiguration::class);
+        $component
+            ->set('data.force_single_currency', true)
+            ->assertSet('data.display_currency', 'RUB')
+            ->assertSet('data.allowed_currencies', ['RUB'])
+            ->set('data.base_currency', 'USD')
+            ->assertSet('data.display_currency', 'USD')
+            ->assertSet('data.allowed_currencies', ['USD'])
+            ->call('save');
+
+        self::assertSame('USD', OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->firstOrFail()->base_currency->value);
+        self::assertSame(['USD'], DB::table('organization_allowed_currencies')->where('organization_id', $organization->getKey())->pluck('currency')->all());
+        self::assertSame(2, DB::table('organization_exchange_rates')->where('organization_id', $organization->getKey())->count());
+
+        $component = Livewire::actingAs($admin)->test(FinanceConfiguration::class);
+        $component
+            ->set('data.force_single_currency', false)
+            ->assertSet('data.display_currency', 'USD')
+            ->assertSet('data.allowed_currencies', ['RUB', 'USD'])
+            ->set('data.base_currency', 'RUB')
+            ->assertSet('data.base_currency', 'RUB')
+            ->assertSet('data.allowed_currencies', ['RUB', 'USD'])
+            ->set('data.display_currency', 'RUB')
+            ->assertSet('data.display_currency', 'RUB')
+            ->set('data.allowed_currencies', ['USD'])
+            ->assertSet('data.allowed_currencies', ['RUB', 'USD'])
+            ->assertSet('data.force_single_currency', false)
+            ->call('save');
+
+        self::assertSame('RUB', OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->firstOrFail()->base_currency->value);
+        self::assertSame('RUB', OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->firstOrFail()->display_currency->value);
+
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'RUB',
+            'allowed_currencies' => ['RUB', 'USD'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '501'],
+            ],
+        ]);
+
+        self::assertDatabaseHas('organization_exchange_rates', [
+            'organization_id' => $organization->getKey(),
+            'source_currency' => 'USD',
+            'target_currency' => 'RUB',
+            'rate' => '501',
+        ]);
+        self::assertDatabaseMissing('organization_exchange_rates', [
+            'organization_id' => $organization->getKey(),
+            'source_currency' => 'RUB',
+            'target_currency' => 'USD',
+        ]);
+    }
+
+    public function test_finance_relationship_filters_preload_bounded_local_options_and_search(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->financeFixture(singleCurrency: true);
+        $service = $booking->service;
+        $otherOrganization = Organization::factory()->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create(['full_name' => 'Чужой клиент']);
+        $otherService = Service::factory()->forOrganization($otherOrganization)->create(['name' => 'Чужая услуга']);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
+
+        foreach ([
+            'client' => [$client->full_name, $otherClient->getKey()],
+            'service' => [$service->name, $otherService->getKey()],
+        ] as $filterName => [$search, $foreignKey]) {
+            $filter = $component->instance()->getTable()->getFilter($filterName);
+            self::assertNotNull($filter);
+            self::assertTrue($filter->isPreloaded());
+            self::assertSame(50, $filter->getOptionsLimit());
+            $component->instance()->getTableFiltersForm();
+            $field = $filter->getSchema()->getFlatFields()['value'];
+            $options = $filter->getOptionsFromRelationship($field);
+
+            self::assertIsArray($options);
+            self::assertArrayHasKey($filterName === 'client' ? $client->getKey() : $service->getKey(), $options);
+            self::assertArrayNotHasKey($foreignKey, $options);
+            self::assertArrayHasKey(
+                $filterName === 'client' ? $client->getKey() : $service->getKey(),
+                $filter->getSearchResultsFromRelationship($field, $search),
+            );
+        }
     }
 
     public function test_finance_list_is_tenant_scoped_and_cross_organization_record_fails_closed(): void
@@ -349,6 +625,18 @@ final class FinanceCrmUxTest extends TestCase
     public function test_client_and_booking_contexts_link_to_the_same_finance_summary(): void
     {
         [$organization, $admin, $client, $booking, $obligation] = $this->financeFixture(singleCurrency: true);
+        $otherClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Другой клиент']);
+        $otherBooking = Booking::factory()
+            ->forClient($otherClient)
+            ->forSpecialist($booking->specialist)
+            ->forService($booking->service)
+            ->create([
+                'starts_at' => CarbonImmutable::create(2026, 8, 19, 9, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 8, 19, 10, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 8, 19, 10, 0, 0, 'UTC'),
+            ]);
+        app(CompleteBooking::class)->handle($admin, $otherBooking);
+        $otherObligation = FinancialObligation::query()->where('booking_id', $otherBooking->getKey())->sole();
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,
@@ -362,7 +650,19 @@ final class FinanceCrmUxTest extends TestCase
             ->assertSuccessful()
             ->assertSee('К оплате')
             ->assertSee('Открыть оплаты')
-            ->assertSee('tableFilters');
+            ->assertSee('filters');
+
+        $financeUrl = app(FinancePresentation::class)->clientFinanceUrl($client);
+        $this->get($financeUrl)
+            ->assertOk()
+            ->assertSee('Иван Петров');
+
+        parse_str((string) parse_url($financeUrl, PHP_URL_QUERY), $query);
+        Livewire::withQueryParams($query)
+            ->actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertCanSeeTableRecords([$obligation])
+            ->assertCanNotSeeTableRecords([$otherObligation]);
 
         $bookingPage = Livewire::actingAs($admin)->test(ViewBooking::class, [
             'record' => $booking->getRouteKey(),
