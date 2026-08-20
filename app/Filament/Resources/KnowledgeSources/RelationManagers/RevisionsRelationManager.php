@@ -5,10 +5,12 @@ namespace App\Filament\Resources\KnowledgeSources\RelationManagers;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
+use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -53,6 +55,8 @@ final class RevisionsRelationManager extends RelationManager
                 TextColumn::make('created_at')->label('Создана')->dateTime('d.m.Y H:i'),
             ])
             ->modifyQueryUsing(function (Builder $query): Builder {
+                $configuration = EmbeddingConfiguration::active();
+
                 return $query
                     ->select([
                         'id',
@@ -66,6 +70,24 @@ final class RevisionsRelationManager extends RelationManager
                         'mime_type',
                         'size_bytes',
                         'created_at',
+                    ])
+                    ->withExists([
+                        'ingestionRuns as has_compatible_ready_run' => function (Builder $query) use ($configuration): void {
+                            $query
+                                ->where('status', 'ready')
+                                ->where('embedding_provider', $configuration->provider)
+                                ->where('embedding_model', $configuration->model)
+                                ->where('embedding_dimensions', $configuration->dimensions)
+                                ->where('embedding_configuration_version', $configuration->version);
+                        },
+                        'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration): void {
+                            $query
+                                ->where('status', 'processing')
+                                ->where('embedding_provider', $configuration->provider)
+                                ->where('embedding_model', $configuration->model)
+                                ->where('embedding_dimensions', $configuration->dimensions)
+                                ->where('embedding_configuration_version', $configuration->version);
+                        },
                     ])
                     ->with([
                         'latestIngestionRun' => function (Relation $query): void {
@@ -95,6 +117,14 @@ final class RevisionsRelationManager extends RelationManager
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(RetryKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
                         Notification::make()->title('Повторная обработка запущена')->success()->send();
+                    }),
+                Action::make('reprocessForSearch')
+                    ->label('Переобработать для поиска')
+                    ->color('warning')
+                    ->visible(fn (KnowledgeRevision $record): bool => $presentation->canReprocessForSearch($source, $record))
+                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
+                        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source, $record->getKey());
+                        Notification::make()->title('Подготовка для поиска запущена')->success()->send();
                     }),
             ])
             ->defaultSort('version', 'desc')

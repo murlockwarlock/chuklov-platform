@@ -2,10 +2,14 @@
 
 namespace Tests\Feature\Knowledge;
 
+use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
+use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
+use App\Modules\Knowledge\Application\RetireKnowledgeSource;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource;
 use App\Modules\Knowledge\Domain\Exceptions\KnowledgeRevisionFileUnavailable;
@@ -13,16 +17,19 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Jobs\IngestKnowledgeRevision;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
 use Tests\TestCase;
 
 final class KnowledgeSourceProductizationTest extends TestCase
@@ -169,6 +176,141 @@ final class KnowledgeSourceProductizationTest extends TestCase
         app(RetryKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
     }
 
+    public function test_manual_retry_dispatch_failure_restores_failed_state_and_allows_a_new_request(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'failed']);
+        $dispatchCount = 0;
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->twice()->andReturnUsing(function () use (&$dispatchCount): mixed {
+            $dispatchCount++;
+            if ($dispatchCount === 1) {
+                throw new RuntimeException('redis unavailable');
+            }
+
+            return null;
+        });
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        try {
+            app(RetryKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+            self::fail('Dispatch failure did not surface a safe validation error.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('Не удалось запустить повторную обработку.', $exception->getMessage());
+            self::assertStringNotContainsString('redis unavailable', $exception->getMessage());
+        }
+
+        self::assertSame('failed', $revision->fresh()->status->value);
+        self::assertSame(1, AuditEvent::query()->where('action', 'knowledge.ingestion.retry_dispatch_failed')->count());
+
+        app(RetryKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+
+        self::assertSame('pending', $revision->fresh()->status->value);
+        self::assertSame(2, $dispatchCount);
+    }
+
+    public function test_manual_retry_dispatch_compensation_does_not_overwrite_authoritative_progress(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'failed']);
+        $dispatcher = \Mockery::mock(Dispatcher::class);
+        $dispatcher->shouldReceive('dispatch')->once()->andReturnUsing(function () use ($revision): mixed {
+            DB::table('knowledge_revisions')->where('id', $revision->getKey())->update(['status' => 'processing']);
+            throw new RuntimeException('redis unavailable after claim');
+        });
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        try {
+            app(RetryKnowledgeIngestion::class)->handle($actor, $source, $revision->getKey());
+            self::fail('Dispatch failure did not surface a safe validation error.');
+        } catch (ValidationException $exception) {
+            self::assertStringNotContainsString('redis unavailable after claim', $exception->getMessage());
+        }
+
+        self::assertSame('processing', $revision->fresh()->status->value);
+        self::assertSame(0, AuditEvent::query()->where('action', 'knowledge.ingestion.retry_dispatch_failed')->count());
+    }
+
+    public function test_ready_active_material_exposes_human_search_reprocessing_and_dispatches_without_a_new_revision(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'ready']);
+        $source->update(['active_revision_id' => $revision->getKey()]);
+        $revision->setAttribute('has_compatible_ready_run', false);
+        $revision->setAttribute('has_compatible_processing_run', false);
+
+        self::assertTrue(app(KnowledgeSourcePresentation::class)->canReprocessForSearch($source->fresh(), $revision));
+        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+
+        Queue::assertPushed(IngestKnowledgeRevision::class, 2);
+        self::assertSame(1, $source->revisions()->count());
+        self::assertSame('ready', $revision->fresh()->status->value);
+        self::assertSame(1, AuditEvent::query()->where('action', 'knowledge.ingestion.reprocess_requested')->count());
+    }
+
+    public function test_search_reprocessing_fails_closed_for_permission_tenant_lifecycle_and_active_revision_guards(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'ready']);
+        $source->update(['active_revision_id' => $revision->getKey()]);
+
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->expectException(AuthorizationException::class);
+        app(ReprocessKnowledgeForSearch::class)->handle($staff, $source, $revision->getKey());
+    }
+
+    public function test_search_reprocessing_rejects_cross_tenant_retired_and_non_active_revisions(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'ready']);
+        $source->update(['active_revision_id' => $revision->getKey()]);
+
+        $otherOrganization = Organization::factory()->create();
+        $otherActor = User::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        try {
+            app(ReprocessKnowledgeForSearch::class)->handle($otherActor, $source, $revision->getKey());
+            self::fail('A cross-tenant reprocess request was accepted.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        } finally {
+            app(OrganizationContext::class)->set($organization);
+        }
+
+        $secondSource = $this->createAuthoredSource($actor, 'second booking content');
+        $secondRevision = $secondSource->revisions()->sole();
+        $secondRevision->update(['status' => 'ready']);
+        $secondSource->update(['active_revision_id' => $secondRevision->getKey()]);
+        $replacement = app(UpdateKnowledgeSource::class)->handle($actor, $secondSource->fresh(), ['content' => 'third booking content']);
+        $nonActiveRevision = $replacement->revision;
+        self::assertInstanceOf(KnowledgeRevision::class, $nonActiveRevision);
+        $nonActiveRevision->update(['status' => 'ready']);
+        try {
+            app(ReprocessKnowledgeForSearch::class)->handle($actor, $secondSource->fresh(), $nonActiveRevision->getKey());
+            self::fail('A non-active revision was accepted for search reprocessing.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        app(RetireKnowledgeSource::class)->handle($actor, $source->fresh());
+        try {
+            app(ReprocessKnowledgeForSearch::class)->handle($actor, $source->fresh(), $revision->getKey());
+            self::fail('A retired source was accepted for search reprocessing.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+    }
+
     public function test_manual_retry_rejects_superseded_and_cross_organization_revisions(): void
     {
         [, $actor] = $this->fixture();
@@ -269,6 +411,18 @@ final class KnowledgeSourceProductizationTest extends TestCase
             ->assertOk()
             ->assertDontSee('source_reference')
             ->assertDontSee('similarity');
+    }
+
+    public function test_retrieval_inspector_uses_human_fragment_count_label(): void
+    {
+        [, $actor] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $this->actingAs($actor)
+            ->get(KnowledgeRetrievalInspector::getUrl())
+            ->assertOk()
+            ->assertSee('Количество фрагментов')
+            ->assertDontSee('Показать результатов');
     }
 
     /** @return array{0: Organization, 1: User} */

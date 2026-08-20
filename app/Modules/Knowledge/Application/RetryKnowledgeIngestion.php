@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class RetryKnowledgeIngestion
 {
@@ -81,8 +82,65 @@ final class RetryKnowledgeIngestion
             return $lockedRevision->refresh();
         });
 
-        IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
+        try {
+            $dispatch = IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
+            unset($dispatch);
+        } catch (Throwable) {
+            try {
+                $this->restoreFailedRevisionAfterDispatchFailure($actor, $organization->getKey(), $source->getKey(), $revision->getKey());
+            } catch (Throwable) {
+            }
+
+            throw ValidationException::withMessages(['revision' => 'Не удалось запустить повторную обработку. Попробуйте ещё раз.']);
+        }
 
         return $revision;
+    }
+
+    private function restoreFailedRevisionAfterDispatchFailure(User $actor, int $organizationId, int $sourceId, int $revisionId): void
+    {
+        DB::transaction(function () use ($actor, $organizationId, $sourceId, $revisionId): void {
+            $lockedSource = KnowledgeSource::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($sourceId)
+                ->lockForUpdate()
+                ->first();
+            if (! $lockedSource instanceof KnowledgeSource || $lockedSource->status !== KnowledgeSourceStatus::Active) {
+                return;
+            }
+
+            $lockedRevision = KnowledgeRevision::query()
+                ->where('organization_id', $organizationId)
+                ->where('knowledge_source_id', $lockedSource->getKey())
+                ->whereKey($revisionId)
+                ->lockForUpdate()
+                ->first();
+            if (! $lockedRevision instanceof KnowledgeRevision || $lockedRevision->status !== KnowledgeRevisionStatus::Pending) {
+                return;
+            }
+
+            $latestRevisionId = KnowledgeRevision::query()
+                ->where('organization_id', $organizationId)
+                ->where('knowledge_source_id', $lockedSource->getKey())
+                ->orderByDesc('version')
+                ->value('id');
+            if ((int) $latestRevisionId !== (int) $lockedRevision->getKey()) {
+                return;
+            }
+
+            $lockedRevision->update(['status' => KnowledgeRevisionStatus::Failed]);
+            $this->audit->handle(
+                organization: $lockedSource->organization,
+                actor: $actor,
+                action: 'knowledge.ingestion.retry_dispatch_failed',
+                targetType: KnowledgeRevision::class,
+                targetId: (string) $lockedRevision->getKey(),
+                metadata: [
+                    'source_id' => $lockedSource->getKey(),
+                    'revision_id' => $lockedRevision->getKey(),
+                    'restored' => true,
+                ],
+            );
+        });
     }
 }

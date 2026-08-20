@@ -83,7 +83,7 @@ final class KnowledgeRetrievalInspector extends Page
                     ->limit(100)
                     ->pluck('title', 'id')
                     ->all()),
-                Select::make('top_k')->label('Показать результатов')->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
+                Select::make('top_k')->label('Количество фрагментов')->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
             ])->columns(2),
         ])->statePath('data');
     }

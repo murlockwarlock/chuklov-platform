@@ -27,7 +27,7 @@ final class KnowledgeSourcePresentation
         if (! $activeRevision instanceof KnowledgeRevision || $activeRevision->status !== KnowledgeRevisionStatus::Ready) {
             return 'Не в поиске';
         }
-        if (! (bool) $activeRevision->getAttribute('has_compatible_ready_run')) {
+        if (! $this->hasCompatibleReadyRun($source)) {
             return 'Требуется переобработка для поиска';
         }
 
@@ -47,6 +47,12 @@ final class KnowledgeSourcePresentation
 
         $hasActiveDifferentRevision = $source->active_revision_id !== null
             && (int) $source->active_revision_id !== (int) $latestRevision->getKey();
+
+        if (! $hasActiveDifferentRevision
+            && $latestRevision->status === KnowledgeRevisionStatus::Ready
+            && ! $this->hasCompatibleReadyRun($source)) {
+            return 'Требуется подготовка для поиска';
+        }
 
         return match ($latestRevision->status) {
             KnowledgeRevisionStatus::Pending => $hasActiveDifferentRevision ? 'Новая версия ожидает обработки' : 'Ожидает обработки',
@@ -113,5 +119,23 @@ final class KnowledgeSourcePresentation
         return $source->type === KnowledgeSourceType::UploadedText
             && $revision->storage_disk !== null
             && $revision->storage_path !== null;
+    }
+
+    public function canReprocessForSearch(KnowledgeSource $source, KnowledgeRevision $revision): bool
+    {
+        return $source->status === KnowledgeSourceStatus::Active
+            && (int) $source->active_revision_id === (int) $revision->getKey()
+            && $revision->status === KnowledgeRevisionStatus::Ready
+            && ! (bool) $revision->getAttribute('has_compatible_ready_run')
+            && ! (bool) $revision->getAttribute('has_compatible_processing_run');
+    }
+
+    private function hasCompatibleReadyRun(KnowledgeSource $source): bool
+    {
+        $activeRevision = $source->activeRevision;
+
+        return $activeRevision instanceof KnowledgeRevision
+            && $activeRevision->status === KnowledgeRevisionStatus::Ready
+            && (bool) $activeRevision->getAttribute('has_compatible_ready_run');
     }
 }

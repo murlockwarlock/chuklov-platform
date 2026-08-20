@@ -43,6 +43,10 @@ final class KnowledgeSourcePresentationTest extends TestCase
 
         $incompatible = $this->source(KnowledgeRevisionStatus::Ready, 1, false);
         self::assertSame('Требуется переобработка для поиска', $presentation->searchAvailability($incompatible));
+        self::assertSame('Требуется подготовка для поиска', $presentation->latestProcessing($incompatible));
+        $activeRevision = $incompatible->activeRevision;
+        self::assertInstanceOf(KnowledgeRevision::class, $activeRevision);
+        self::assertTrue($presentation->canReprocessForSearch($incompatible, $activeRevision));
 
         $retired = $this->source(KnowledgeRevisionStatus::Ready, 1, true, KnowledgeSourceStatus::Retired);
         self::assertSame('Источник выключен', $presentation->searchAvailability($retired));
