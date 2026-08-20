@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- UX-C4 Finance:
+  - Reworked the Finance CRM around human-facing `Оплаты`, `Расчёт по визиту`, `История оплат`, and `Настройки валют` labels while preserving the accepted append-only ledger, reconciliation, currency, audit, authorization, and tenant boundaries.
+  - Added a bounded organization-scoped Finance list projection with shared fail-closed reconciliation semantics, settlement-safe payment defaults, organization-timezone payment entry, paginated payment history, manual compensating corrections, and read-only legacy fake-payment history.
+  - Added Finance summaries and payment entry points to Client and completed Booking contexts, removed the fake payment action from normal CRM, and added focused UX, tenant, correction, currency, timezone, and bounded-query coverage. No migration, real provider, Playwright, benchmark, deployment, or UX-C5 work was added.
+
 - UX-C3 knowledge productization:
   - Added human source availability and newest-revision processing presentation, metadata-only edits, safe latest-failed manual retry, immutable ingestion-attempt history projection, and tenant-scoped original-file downloads.
   - Kept `KnowledgeIngestionRun::attempts` as the sole claim/fencing authority, preserved `PgvectorKnowledgeRetriever` and Laravel Filesystem storage, and removed raw provenance/retrieval implementation details from normal Knowledge CRM screens.

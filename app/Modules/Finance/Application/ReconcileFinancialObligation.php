@@ -46,8 +46,21 @@ final class ReconcileFinancialObligation
             $appliedMinor = $appliedMinor->plus((string) $entry->getRawOriginal('settlement_amount_minor'));
         }
 
+        return $this->handleAggregated($obligation, $appliedMinor->toString());
+    }
+
+    public function handleAggregated(
+        FinancialObligation $obligation,
+        string|int|null $appliedMinor,
+        string|int|null $incompatibleLedgerRows = 0,
+    ): FinancialReconciliation {
+        if ((int) ($incompatibleLedgerRows ?? 0) > 0) {
+            throw new UnexpectedValueException('A ledger entry has an incompatible financial currency.');
+        }
+
+        $appliedMinorValue = BigInteger::zero()->plus((string) ($appliedMinor ?? '0'));
         $obligationMoney = Money::ofMinor($obligation->settlement_amount_minor, $obligation->settlement_currency);
-        $applied = Money::ofMinor($appliedMinor->toString(), $obligation->settlement_currency);
+        $applied = Money::ofMinor($appliedMinorValue->toString(), $obligation->settlement_currency);
         $outstanding = $obligationMoney->subtract($applied);
 
         if ($applied->isNegative() || $outstanding->isNegative()) {

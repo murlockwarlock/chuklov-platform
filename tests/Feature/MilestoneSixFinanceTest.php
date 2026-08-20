@@ -161,7 +161,8 @@ final class MilestoneSixFinanceTest extends TestCase
         $this->actingAs($admin)
             ->get(route('filament.admin.resources.financial-obligations.index'))
             ->assertOk()
-            ->assertSee('50.00 USD');
+            ->assertSee('9000.00 RUB')
+            ->assertSee('4500.00 RUB');
 
         app(RecordManualPayment::class)->handle($admin, $obligation, '50.00', 'USD', 'bank_transfer', now(), null, null, 'rate-change-final');
         $settled = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());

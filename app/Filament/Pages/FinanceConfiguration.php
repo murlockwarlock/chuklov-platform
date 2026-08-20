@@ -23,7 +23,9 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -34,9 +36,9 @@ use UnitEnum;
 /** @property-read Schema $form */
 final class FinanceConfiguration extends Page
 {
-    protected static ?string $title = 'Настройки финансов';
+    protected static ?string $title = 'Настройки валют';
 
-    protected static ?string $navigationLabel = 'Настройки финансов';
+    protected static ?string $navigationLabel = 'Настройки валют';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
@@ -59,6 +61,21 @@ final class FinanceConfiguration extends Page
 
         try {
             return app(FinanceAuthorization::class)->allowsView($actor);
+        } catch (LogicException|AuthorizationException) {
+            return false;
+        }
+    }
+
+    public static function canManage(): bool
+    {
+        $actor = auth()->user();
+
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        try {
+            return app(FinanceAuthorization::class)->allowsManage($actor);
         } catch (LogicException|AuthorizationException) {
             return false;
         }
@@ -132,53 +149,94 @@ final class FinanceConfiguration extends Page
     {
         return $schema
             ->components([
-                Select::make('base_currency')
-                    ->label('Базовая валюта')
-                    ->options(fn (): array => app(CurrencyCatalog::class)->options())
-                    ->required(),
-                Select::make('display_currency')
-                    ->label('Валюта отображения')
-                    ->options(fn (): array => app(CurrencyCatalog::class)->options())
-                    ->required(),
-                Select::make('allowed_currencies')
-                    ->label('Доступные валюты')
-                    ->options(fn (): array => app(CurrencyCatalog::class)->options())
-                    ->multiple()
-                    ->searchable()
-                    ->required(),
-                Toggle::make('force_single_currency')
-                    ->label('Работать только в одной валюте')
-                    ->helperText('В этом режиме базовая и отображаемая валюта должны совпадать.')
-                    ->live(),
-                Select::make('rounding_mode')
-                    ->label('Округление при конвертации')
-                    ->options([
-                        FinancialRoundingMode::HalfUp->value => 'Обычное математическое',
-                        FinancialRoundingMode::HalfEven->value => 'До ближайшего чётного',
-                        FinancialRoundingMode::Down->value => 'Вниз, без увеличения суммы',
-                    ])
-                    ->required(),
-                Repeater::make('rates')
-                    ->label('Ручные курсы')
+                Section::make('Основные настройки')
                     ->schema([
-                        Select::make('source_currency')
-                            ->label('Из валюты')
-                            ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
+                        Select::make('base_currency')
+                            ->label('Валюта практики')
+                            ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                            ->disabled(fn (): bool => ! self::canManage())
                             ->required(),
-                        Select::make('target_currency')
-                            ->label('В валюту')
-                            ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
+                        Select::make('display_currency')
+                            ->label('Валюта отображения')
+                            ->helperText('В режиме одной валюты совпадает с валютой практики.')
+                            ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                            ->disabled(fn (Get $get): bool => ! self::canManage() || (bool) $get('force_single_currency'))
                             ->required(),
-                        TextInput::make('rate')
-                            ->label('Курс: 1 единица =')
-                            ->inputMode('decimal')
+                        Toggle::make('force_single_currency')
+                            ->label('Принимать оплаты только в одной валюте')
+                            ->helperText('Для обычной практики оставьте включённым режим одной валюты.')
+                            ->live()
+                            ->disabled(fn (): bool => ! self::canManage())
+                            ->afterStateUpdated(function (Get $get, Set $set, ?bool $state): void {
+                                if (! $state) {
+                                    return;
+                                }
+
+                                $base = $get('base_currency');
+
+                                if (is_string($base) && $base !== '') {
+                                    $set('display_currency', $base);
+                                    $set('allowed_currencies', [$base]);
+                                }
+                            }),
+                        Select::make('allowed_currencies')
+                            ->label('Валюты, доступные для оплаты')
+                            ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                            ->multiple()
+                            ->searchable()
                             ->required()
-                            ->maxLength(40),
+                            ->visible(fn (Get $get): bool => ! (bool) $get('force_single_currency'))
+                            ->dehydrated(true)
+                            ->disabled(fn (): bool => ! self::canManage()),
                     ])
-                    ->columns(3)
-                    ->defaultItems(0)
-                    ->reorderable(false)
-                    ->addActionLabel('Добавить курс')
+                    ->columns(2)
+                    ->columnSpanFull(),
+
+                Section::make('Мультивалютные расчёты')
+                    ->description('Настройте дополнительные валюты и конвертацию только если практика принимает оплаты в нескольких валютах.')
+                    ->schema([
+                        Select::make('rounding_mode')
+                            ->label('Правило округления при конвертации')
+                            ->options([
+                                FinancialRoundingMode::HalfUp->value => 'Обычное математическое',
+                                FinancialRoundingMode::HalfEven->value => 'До ближайшего чётного',
+                                FinancialRoundingMode::Down->value => 'Вниз, без увеличения суммы',
+                            ])
+                            ->required()
+                            ->dehydrated(true)
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        Repeater::make('rates')
+                            ->label('Курсы конвертации')
+                            ->helperText('Например: 1 USD = 500 KZT')
+                            ->schema([
+                                Select::make('source_currency')
+                                    ->label('Из валюты')
+                                    ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
+                                    ->required()
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                Select::make('target_currency')
+                                    ->label('В валюту')
+                                    ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
+                                    ->required()
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                TextInput::make('rate')
+                                    ->label('Курс')
+                                    ->placeholder('500')
+                                    ->inputMode('decimal')
+                                    ->required()
+                                    ->maxLength(40)
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить курс')
+                            ->columnSpanFull()
+                            ->dehydrated(true)
+                            ->disabled(fn (): bool => ! self::canManage()),
+                    ])
+                    ->visible(fn (Get $get): bool => ! (bool) $get('force_single_currency'))
+                    ->columns(2)
                     ->columnSpanFull(),
             ])
             ->statePath('data');
@@ -198,6 +256,7 @@ final class FinanceConfiguration extends Page
                 Actions::make([
                     Action::make('save')
                         ->label('Сохранить финансовые настройки')
+                        ->visible(fn (): bool => self::canManage())
                         ->submit('save'),
                 ]),
             ]);

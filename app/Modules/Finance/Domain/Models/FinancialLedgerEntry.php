@@ -69,6 +69,12 @@ class FinancialLedgerEntry extends Model
         return $this->hasOne(FinancialReceipt::class, 'ledger_entry_id');
     }
 
+    /** @return HasOne<FinancialLedgerEntry, $this> */
+    public function correction(): HasOne
+    {
+        return $this->hasOne(self::class, 'corrects_ledger_entry_id');
+    }
+
     protected function casts(): array
     {
         return [
