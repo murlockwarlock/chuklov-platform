@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\CreateContentSection;
 use App\Modules\Content\Application\UpdateContentSection;
+use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Schemas\Components\Section;
@@ -208,6 +209,176 @@ final class ContentSectionMediaTest extends TestCase
         self::assertTrue(str_starts_with($newPath, "content/{$organization->id}/"));
         Storage::disk(self::DISK)->assertMissing($oldPath);
         Storage::disk(self::DISK)->assertExists($newPath);
+    }
+
+    public function test_unchanged_legacy_image_value_is_preserved_on_unrelated_edit(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $legacyImage = 'private-reference';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => $legacyImage],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($legacyImage, $this->imagePath($updated->media));
+    }
+
+    public function test_unchanged_legacy_image_value_is_preserved_when_form_field_is_blank(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $legacyImage = 'http://legacy.example.test/content/old.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => ''],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($legacyImage, $this->imagePath($updated->media));
+    }
+
+    public function test_explicit_remove_clears_an_unchanged_legacy_image_value(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $legacyImage = 'private-reference';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаление',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Удаление',
+            'body' => 'Текст раздела.',
+            'media' => ['image' => $legacyImage],
+            'remove_image' => true,
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertNull($updated->media);
+    }
+
+    public function test_new_invalid_external_image_values_replace_legacy_image_only_by_rejection(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => 'private-reference'],
+        ]);
+
+        foreach ([
+            'http://new.example.test/content/image.jpg',
+            'new-private-reference',
+        ] as $newImage) {
+            try {
+                app(UpdateContentSection::class)->handle($admin, $section, [
+                    'section_key' => 'author',
+                    'locale' => 'ru',
+                    'title' => 'После изменения',
+                    'body' => 'Обновлённый текст.',
+                    'media' => ['image' => $newImage],
+                    'sort_order' => 0,
+                    'is_visible' => true,
+                ]);
+                self::fail("URL should be rejected: {$newImage}");
+            } catch (ValidationException) {
+                self::addToAssertionCount(1);
+            }
+        }
+
+        self::assertSame('private-reference', $this->imagePath($section->refresh()->media));
+    }
+
+    public function test_new_valid_https_image_value_replaces_legacy_image(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $legacyImage = 'private-reference';
+        $newImage = 'https://cdn.example.test/content/new.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $legacyImage],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => $newImage],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($newImage, $this->imagePath($updated->media));
+    }
+
+    public function test_stale_caller_preserves_image_from_locked_authoritative_state(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => null,
+        ]);
+        $staleSection = ContentSection::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey($section->getKey())
+            ->firstOrFail();
+        $authoritativeImage = 'authoritative-reference';
+        $authoritativeSection = ContentSection::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey($section->getKey())
+            ->firstOrFail();
+        $authoritativeSection->forceFill(['media' => ['image' => $authoritativeImage]])->save();
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $staleSection, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => ''],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($authoritativeImage, $this->imagePath($updated->media));
     }
 
     public function test_managed_image_can_be_replaced_with_a_valid_https_url(): void

@@ -38,7 +38,6 @@ class UpdateContentSection
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageContent);
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
-        $mediaMode = $this->mediaMode($attributes, $uploadedFile, $removeImage, $section, $organization->getKey());
         unset($attributes['content_image'], $attributes['remove_image']);
         $storedPath = null;
 
@@ -47,12 +46,19 @@ class UpdateContentSection
                 $storedPath = $this->media->store($organization->getKey(), $uploadedFile);
             }
 
-            return DB::transaction(function () use ($actor, $attributes, $mediaMode, $organization, $section, $storedPath): ContentSection {
+            return DB::transaction(function () use ($actor, $attributes, $uploadedFile, $removeImage, $organization, $section, $storedPath): ContentSection {
                 $lockedSection = ContentSection::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($section->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
+                $mediaMode = $this->mediaMode(
+                    $attributes,
+                    $uploadedFile,
+                    $removeImage,
+                    $lockedSection,
+                    $organization->getKey(),
+                );
                 $finalAttributes = [
                     ...$attributes,
                     'media' => $this->mediaAttributes(
@@ -171,13 +177,12 @@ class UpdateContentSection
 
         if ($hasImage) {
             $requestedImage = trim((string) $requestedImage);
-            $currentImage = $this->imagePath($section->media);
+
+            if ($isCurrentImage) {
+                return 'preserve';
+            }
 
             if ($this->media->isManagedPath($organizationId, $requestedImage)) {
-                if ($requestedImage === $currentImage) {
-                    return 'preserve';
-                }
-
                 throw ValidationException::withMessages([
                     'media.image' => ['Выберите изображение или ссылку на изображение.'],
                 ]);
