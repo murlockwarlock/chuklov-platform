@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "$script_directory/.." && pwd)"
+trusted_normalizer="$script_directory/normalize-fail2ban-elements.awk"
+
+if [[ ! -f "$trusted_normalizer" || ! -r "$trusted_normalizer" ]]; then
+    echo "Missing trusted fail2ban normalizer: $trusted_normalizer" >&2
+    exit 1
+fi
+
 deploy_env="${STAGING_DEPLOY_ENV:-$repository_root/.env.staging-deploy}"
 
 if [[ ! -f "$deploy_env" ]]; then
@@ -62,6 +70,8 @@ temporary_directory="$(mktemp -d)"
 archive="$temporary_directory/chuklov-$revision.tar"
 trap 'rm -rf "$temporary_directory"' EXIT
 git archive --format=tar --output="$archive" "$revision"
+normalizer="$temporary_directory/normalize-fail2ban-elements.awk"
+cp -- "$trusted_normalizer" "$normalizer"
 
 ssh_options=(
     -o BatchMode=yes
@@ -71,8 +81,10 @@ ssh_options=(
 )
 remote="${STAGING_USER}@${STAGING_HOST}"
 remote_archive="/tmp/chuklov-$revision.tar"
+remote_normalizer="/tmp/chuklov-$revision-normalize-fail2ban-elements.awk"
 
 scp "${ssh_options[@]}" "$archive" "$remote:$remote_archive"
+scp "${ssh_options[@]}" "$normalizer" "$remote:$remote_normalizer"
 
 ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$revision" \
@@ -81,11 +93,13 @@ ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$STAGING_PROJECT" \
     "$STAGING_HEALTH_URL" \
     "$STAGING_EXPECTED_HOST_PORT" \
-    "$remote_archive" <<'REMOTE'
+    "$remote_archive" \
+    "$remote_normalizer" <<'REMOTE'
 set -Eeuo pipefail
 
 report_preflight_failure() {
     local status="$?"
+    rm -f -- "${remote_normalizer:-}" || true
     echo "Staging deployment failed during preflight at remote script line $1 (exit $status)." >&2
     exit "$status"
 }
@@ -102,6 +116,13 @@ project="$4"
 health_url="$5"
 expected_host_port="$6"
 archive="$7"
+remote_normalizer="$8"
+
+cleanup_remote_transfer_artifacts() {
+    rm -f -- "$archive" "$remote_normalizer" || true
+}
+trap cleanup_remote_transfer_artifacts EXIT
+
 release="$root/releases/$revision"
 compose="$root/compose.yml"
 environment="$root/shared/.env"
@@ -141,11 +162,7 @@ write_normalized_nftables() {
 
     sed -E '/ip daddr 127\.0\.0\.1 iifname != "lo" tcp dport 18080 .* drop$/d' "$nftables_dump" \
         | sed -E 's/counter packets [0-9]+ bytes [0-9]+/counter packets N bytes N/g' \
-        | awk '
-            /^table / { in_fail2ban = ($0 == "table inet f2b-table {") }
-            in_fail2ban && /^[[:space:]]*elements = / { print "\t\telements = { DYNAMIC_BANS }"; next }
-            { print }
-        ' > "$output"
+        | awk -f "$remote_normalizer" > "$output"
     printf '%s\n' 'CHUKLOV_LOOPBACK_GUARD_PRESENT' >> "$output"
     rm -f "$nftables_dump"
 
@@ -338,6 +355,7 @@ rollback() {
     cp "$compose_backup" "$compose"
     cd "$root"
     docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
+    rm -f -- "$remote_normalizer" || true
 }
 trap 'rollback "$LINENO" "$?"' ERR
 
@@ -437,6 +455,7 @@ echo "Protected host services and routing match the pre-deploy baseline."
 printf '%s\n' "$revision" > "$root/REVISION"
 chmod -R a-w "$release"
 rm -f "$archive"
+rm -f -- "$remote_normalizer"
 trap - ERR
 
 echo
