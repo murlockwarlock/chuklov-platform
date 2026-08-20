@@ -208,7 +208,12 @@ class UpdateContentSection
         }
 
         $currentMedia = is_array($section->media) ? $section->media : [];
-        $finalMedia = [...$currentMedia, ...($requestedMedia ?? [])];
+        $requestedMedia = is_array($requestedMedia) ? $requestedMedia : [];
+        $finalMedia = [...$currentMedia, ...$requestedMedia];
+
+        if (array_key_exists('alt', $requestedMedia) && $requestedMedia['alt'] === null) {
+            unset($finalMedia['alt']);
+        }
 
         if ($mediaMode === 'upload') {
             if ($storedPath === null) {

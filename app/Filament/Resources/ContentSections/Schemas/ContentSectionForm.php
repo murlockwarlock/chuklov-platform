@@ -81,7 +81,6 @@ class ContentSectionForm
                         TextInput::make('media.alt')
                             ->label('Описание изображения')
                             ->maxLength(255)
-                            ->dehydrated(fn (mixed $state): bool => filled($state))
                             ->columnSpanFull(),
                         Placeholder::make('current_image_status')
                             ->label('Текущее изображение')

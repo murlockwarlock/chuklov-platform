@@ -650,6 +650,37 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame($newImage, $this->imagePath($section->refresh()->media));
     }
 
+    public function test_filament_can_clear_image_alt_without_removing_the_image(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $image = 'https://cdn.example.test/content/with-alt.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Описание изображения',
+            'body' => 'Текст раздела.',
+            'media' => [
+                'image' => $image,
+                'alt' => 'Старое описание',
+            ],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->fillForm([
+                'media' => ['alt' => ''],
+                'remove_image' => false,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $media = $section->refresh()->media;
+
+        self::assertIsArray($media);
+        self::assertSame($image, $this->imagePath($media));
+        self::assertArrayNotHasKey('alt', $media);
+    }
+
     public function test_filament_rejects_an_invalid_replacement_without_clearing_a_legacy_image(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();
