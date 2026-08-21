@@ -50,7 +50,7 @@ final class AiModelReleasePermissionTest extends TestCase
     public function test_manage_provider_permission_can_create_preview_configuration_but_not_activate_release(): void
     {
         $authorizer = $this->authorizerAllowing(OrganizationPermission::ManageAiProviders);
-        $createConfiguration = new CreateModelConfiguration($authorizer, app(RecordAuditEvent::class));
+        $createConfiguration = new CreateModelConfiguration(app(OrganizationContext::class), $authorizer, app(RecordAuditEvent::class));
         $model = $createConfiguration->handle($this->user, $this->provider, [
             'model_name' => 'gpt-4o-mini',
             'display_name' => 'GPT-4o Mini',
@@ -62,7 +62,7 @@ final class AiModelReleasePermissionTest extends TestCase
         $this->assertSame(0, AiModelRelease::query()->where('model_config_id', $model->id)->count());
 
         $this->expectException(AuthorizationException::class);
-        (new CreateAndActivateModelRelease($authorizer, app(RecordAuditEvent::class)))
+        (new CreateAndActivateModelRelease(app(OrganizationContext::class), $authorizer, app(RecordAuditEvent::class)))
             ->handle($this->user, $model, []);
     }
 
@@ -81,7 +81,7 @@ final class AiModelReleasePermissionTest extends TestCase
             'failover_priority' => 1,
         ]);
         $authorizer = $this->authorizerAllowing(OrganizationPermission::ActivateAiReleases);
-        $action = new CreateAndActivateModelRelease($authorizer, app(RecordAuditEvent::class));
+        $action = new CreateAndActivateModelRelease(app(OrganizationContext::class), $authorizer, app(RecordAuditEvent::class));
 
         $release = $action->handle($this->user, $model, []);
 

@@ -10,7 +10,9 @@ use App\Filament\Resources\AiProviders\Schemas\AiProviderForm;
 use App\Modules\AI\Application\Actions\TestProviderConnection;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Security\Domain\Enums\CredentialStatus;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -21,6 +23,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Auth;
 
 final class AiProviderResource extends Resource
@@ -51,8 +54,21 @@ final class AiProviderResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('display_name')->label('Название')->searchable()->sortable(),
-                TextColumn::make('provider_name')->label('Ключ провайдера')->searchable(),
-                TextColumn::make('credential.credential_name')->label('Учетные данные')->placeholder('Не привязаны'),
+                TextColumn::make('provider_name')
+                    ->label('Провайдер')
+                    ->formatStateUsing(fn ($state): string => self::providerLabel($state)),
+                TextColumn::make('credential.credential_name')
+                    ->label('Учетные данные')
+                    ->placeholder('Не подключены')
+                    ->formatStateUsing(function ($state, AiProviderConfiguration $record): string {
+                        if (! filled($state)) {
+                            return 'Не подключены';
+                        }
+
+                        return $record->credential?->status === CredentialStatus::Active
+                            ? 'Подключены: '.$state
+                            : 'Отключены: '.$state;
+                    }),
                 TextColumn::make('health_status')
                     ->label('Состояние')
                     ->badge()
@@ -83,8 +99,8 @@ final class AiProviderResource extends Resource
                                     ->send();
                             } else {
                                 Notification::make()
-                                    ->title('Ошибка проверки связи')
-                                    ->body($result['message'])
+                                    ->title('Проблема при проверке связи')
+                                    ->body('Провайдер требует внимания. Проверьте учетные данные и состояние подключения.')
                                     ->danger()
                                     ->send();
                             }
@@ -99,7 +115,11 @@ final class AiProviderResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->with(['credential']);
+            ->with(['credential' => function (Relation $query): void {
+                $query
+                    ->where('organization_id', app(OrganizationContext::class)->id())
+                    ->select(['id', 'organization_id', 'provider', 'credential_name', 'status', 'last_rotated_at']);
+            }]);
     }
 
     public static function getRelations(): array
@@ -116,5 +136,14 @@ final class AiProviderResource extends Resource
             'create' => CreateAiProvider::route('/create'),
             'edit' => EditAiProvider::route('/{record}/edit'),
         ];
+    }
+
+    private static function providerLabel(mixed $provider): string
+    {
+        try {
+            return AiProviderCatalog::label($provider);
+        } catch (\InvalidArgumentException) {
+            return 'Провайдер требует проверки';
+        }
     }
 }

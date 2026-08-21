@@ -12,10 +12,10 @@ enum ProviderHealthStatus: string
     public function label(): string
     {
         return match ($this) {
-            self::Unknown => 'Не проверен (Unknown)',
-            self::Healthy => 'Доступен (Healthy)',
-            self::Degraded => 'Деградирован (Degraded)',
-            self::Unavailable => 'Недоступен (Unavailable)',
+            self::Unknown => 'Не проверен',
+            self::Healthy => 'Подключен и работает',
+            self::Degraded => 'Обнаружена проблема',
+            self::Unavailable => 'Недоступен',
         };
     }
 }

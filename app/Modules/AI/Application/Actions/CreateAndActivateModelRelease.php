@@ -5,17 +5,21 @@ namespace App\Modules\AI\Application\Actions;
 use App\Models\User;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 final class CreateAndActivateModelRelease
 {
     public function __construct(
+        private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -23,7 +27,7 @@ final class CreateAndActivateModelRelease
     /** @param array<string, mixed> $data */
     public function handle(User $actor, AiModelConfiguration $modelConfig, array $data): AiModelRelease
     {
-        $organization = $modelConfig->organization;
+        $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ActivateAiReleases);
 
         $providerManagementKeys = [
@@ -80,10 +84,10 @@ final class CreateAndActivateModelRelease
                 $pricing = (new AiPricingSnapshot(
                     currency: $existingPricing->currency,
                     inputCostPerMillionMinorUnits: array_key_exists('input_cost_per_million', $data)
-                        ? max(0, (int) $data['input_cost_per_million'])
+                        ? AiMoney::canonicalMinorUnits($data['input_cost_per_million'], 'input_cost_per_million')
                         : $existingPricing->inputCostPerMillionMinorUnits,
                     outputCostPerMillionMinorUnits: array_key_exists('output_cost_per_million', $data)
-                        ? max(0, (int) $data['output_cost_per_million'])
+                        ? AiMoney::canonicalMinorUnits($data['output_cost_per_million'], 'output_cost_per_million')
                         : $existingPricing->outputCostPerMillionMinorUnits,
                     cacheReadInputCostPerMillionMinorUnits: array_key_exists('cache_read_input_cost_per_million', $data)
                         ? self::optionalCost($data, 'cache_read_input_cost_per_million')
@@ -138,7 +142,7 @@ final class CreateAndActivateModelRelease
 
             $configUpdates = [
                 'active_release_id' => $release->getKey(),
-                'is_enabled' => true,
+                'is_enabled' => array_key_exists('is_enabled', $data) ? (bool) $data['is_enabled'] : true,
                 'lifecycle_status' => 'active',
             ];
             if (array_intersect($providerManagementKeys, array_keys($data)) !== []) {
@@ -148,7 +152,10 @@ final class CreateAndActivateModelRelease
                     'display_name' => (string) ($data['display_name'] ?? $lockedConfig->display_name),
                     'capabilities' => $capabilities,
                     'pricing_snapshot' => $pricing,
-                    'failover_priority' => max(1, (int) ($data['failover_priority'] ?? $lockedConfig->failover_priority)),
+                    'failover_priority' => self::positiveInteger(
+                        $data['failover_priority'] ?? $lockedConfig->failover_priority,
+                        'failover_priority',
+                    ),
                 ];
             }
             $lockedConfig->update($configUpdates);
@@ -172,7 +179,28 @@ final class CreateAndActivateModelRelease
     /** @param array<string, mixed> $data */
     private static function optionalCost(array $data, string $key, ?int $default = null): ?int
     {
-        return array_key_exists($key, $data) ? max(0, (int) $data[$key]) : $default;
+        return array_key_exists($key, $data)
+            ? AiMoney::canonicalMinorUnits($data[$key], $key)
+            : $default;
+    }
+
+    private static function positiveInteger(mixed $value, string $key): int
+    {
+        if (is_float($value) && is_finite($value) && floor($value) === $value) {
+            if ($value > PHP_INT_MAX) {
+                throw new InvalidArgumentException("{$key} is outside the supported range.");
+            }
+
+            $value = (int) $value;
+        }
+
+        $value = AiMoney::canonicalMinorUnits($value, $key);
+
+        if ($value < 1) {
+            throw new InvalidArgumentException("{$key} must be at least 1.");
+        }
+
+        return $value;
     }
 
     /** @return list<string> */

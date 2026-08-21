@@ -9,9 +9,11 @@ use App\Filament\Resources\AiEvaluations\RelationManagers\CasesRelationManager;
 use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -74,25 +76,21 @@ final class AiEvaluationResource extends Resource
                     ->form([
                         Select::make('prompt_version_id')
                             ->label('Точная версия промпта')
-                            ->options(fn (AiEvalSuite $record): array => AiPromptVersion::query()
-                                ->where('organization_id', $record->organization_id)
-                                ->where('prompt_id', $record->prompt_id)
-                                ->whereIn('status', ['active', 'retired'])
-                                ->orderByDesc('version')
-                                ->get()
-                                ->mapWithKeys(fn (AiPromptVersion $version): array => [$version->id => "v{$version->version}"])
-                                ->all())
+                            ->options(fn (AiEvalSuite $record): array => self::promptVersionOptions($record))
+                            ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::promptVersionOptions($record, $search))
+                            ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::promptVersionLabel($record, $value))
+                            ->optionsLimit(50)
+                            ->searchable()
+                            ->native(false)
                             ->required(),
                         Select::make('model_release_id')
                             ->label('Точный выпуск модели')
-                            ->options(fn (AiEvalSuite $record): array => AiModelRelease::query()
-                                ->where('organization_id', $record->organization_id)
-                                ->whereIn('status', ['active', 'retired'])
-                                ->whereJsonContains('capabilities', $record->capability->value)
-                                ->orderByDesc('id')
-                                ->get()
-                                ->mapWithKeys(fn (AiModelRelease $release): array => [$release->id => "{$release->provider_name} / {$release->model_name} / r{$release->release_number}"])
-                                ->all())
+                            ->options(fn (AiEvalSuite $record): array => self::modelReleaseOptions($record))
+                            ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::modelReleaseOptions($record, $search))
+                            ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::modelReleaseLabel($record, $value))
+                            ->optionsLimit(50)
+                            ->searchable()
+                            ->native(false)
                             ->required(),
                     ])
                     ->action(function (AiEvalSuite $record, array $data, RunEvaluationSuite $runner) {
@@ -138,5 +136,105 @@ final class AiEvaluationResource extends Resource
             'create' => CreateAiEvaluation::route('/create'),
             'edit' => EditAiEvaluation::route('/{record}/edit'),
         ];
+    }
+
+    /** @return array<int|string, string> */
+    private static function promptVersionOptions(AiEvalSuite $suite, string $search = ''): array
+    {
+        $query = AiPromptVersion::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('prompt_id', $suite->prompt_id)
+            ->whereIn('status', [PromptVersionStatus::Active->value, PromptVersionStatus::Retired->value]);
+
+        $search = trim($search);
+        if ($search !== '') {
+            $version = preg_replace('/^v/i', '', $search);
+            $query->where('version', ctype_digit((string) $version) ? (int) $version : 0);
+        }
+
+        return $query
+            ->orderByDesc('version')
+            ->limit(50)
+            ->get(['id', 'version', 'status'])
+            ->mapWithKeys(static fn (AiPromptVersion $version): array => [
+                $version->getKey() => self::promptVersionDisplayLabel($version),
+            ])
+            ->all();
+    }
+
+    private static function promptVersionLabel(AiEvalSuite $suite, mixed $value): ?string
+    {
+        if (! is_scalar($value) || ! is_numeric($value)) {
+            return null;
+        }
+
+        $version = AiPromptVersion::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('prompt_id', $suite->prompt_id)
+            ->whereKey((int) $value)
+            ->first(['id', 'version', 'status']);
+
+        return $version instanceof AiPromptVersion
+            ? self::promptVersionDisplayLabel($version)
+            : 'Сохранённая версия промпта недоступна';
+    }
+
+    /** @return array<int|string, string> */
+    private static function modelReleaseOptions(AiEvalSuite $suite, string $search = ''): array
+    {
+        $query = AiModelRelease::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereIn('status', ['active', 'retired'])
+            ->whereJsonContains('capabilities', $suite->capability->value);
+
+        $search = trim($search);
+        if ($search !== '') {
+            $query->where(function (Builder $nested) use ($search): void {
+                $nested
+                    ->where('provider_name', 'like', '%'.$search.'%')
+                    ->orWhere('model_name', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['id', 'provider_name', 'model_name', 'release_number', 'status'])
+            ->mapWithKeys(static fn (AiModelRelease $release): array => [
+                $release->getKey() => self::modelReleaseDisplayLabel($release),
+            ])
+            ->all();
+    }
+
+    private static function modelReleaseLabel(AiEvalSuite $suite, mixed $value): ?string
+    {
+        if (! is_scalar($value) || ! is_numeric($value)) {
+            return null;
+        }
+
+        $release = AiModelRelease::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereKey((int) $value)
+            ->first(['id', 'provider_name', 'model_name', 'release_number', 'status']);
+
+        return $release instanceof AiModelRelease
+            ? self::modelReleaseDisplayLabel($release)
+            : 'Сохранённый выпуск модели недоступен';
+    }
+
+    private static function promptVersionDisplayLabel(AiPromptVersion $version): string
+    {
+        return "v{$version->version} · ".$version->status->label();
+    }
+
+    private static function modelReleaseDisplayLabel(AiModelRelease $release): string
+    {
+        try {
+            $provider = AiProviderCatalog::label($release->provider_name);
+        } catch (\InvalidArgumentException) {
+            $provider = 'Провайдер требует проверки';
+        }
+
+        return $provider.' · '.$release->model_name.' · выпуск '.$release->release_number;
     }
 }

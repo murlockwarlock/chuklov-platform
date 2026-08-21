@@ -5,6 +5,7 @@ namespace App\Modules\AI\Application\Actions;
 use App\Models\User;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -35,6 +36,7 @@ final class UpdateAiSafetyControl
     /** @param array<string, mixed> $values */
     public function handle(User $actor, array $values): AiOrganizationSafetyControl
     {
+        $values = $this->normalizeValues($values);
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
@@ -74,5 +76,30 @@ final class UpdateAiSafetyControl
         );
 
         return $control->refresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    private function normalizeValues(array $values): array
+    {
+        if (array_key_exists('max_daily_spend', $values)) {
+            if (array_key_exists('max_daily_spend_minor_units', $values)) {
+                throw new \InvalidArgumentException('Provide the daily spend limit only once.');
+            }
+
+            $values['max_daily_spend_minor_units'] = AiMoney::minorUnitsFromDecimal($values['max_daily_spend']);
+            unset($values['max_daily_spend']);
+        }
+
+        if (array_key_exists('max_daily_spend_minor_units', $values)) {
+            $values['max_daily_spend_minor_units'] = AiMoney::canonicalMinorUnits(
+                $values['max_daily_spend_minor_units'],
+                'max_daily_spend_minor_units',
+            );
+        }
+
+        return $values;
     }
 }

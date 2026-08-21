@@ -2,22 +2,37 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\User;
 use App\Modules\AI\Application\Actions\UpdateAiSafetyControl;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
 use Carbon\Carbon;
+use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\EmbeddedSchema;
+use Filament\Schemas\Components\Form;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 
-class AiMonitoringOverview extends Page
+/** @property-read Schema $form */
+final class AiMonitoringOverview extends Page
 {
     public const int PROVIDER_OVERVIEW_LIMIT = 50;
 
@@ -32,6 +47,9 @@ class AiMonitoringOverview extends Page
     protected static ?int $navigationSort = 1;
 
     protected string $view = 'filament.pages.ai-monitoring-overview';
+
+    /** @var array<string, mixed>|null */
+    public ?array $data = null;
 
     public static function canAccess(): bool
     {
@@ -51,9 +69,153 @@ class AiMonitoringOverview extends Page
         return 'Мониторинг AI и безопасность';
     }
 
-    public function getSubheading(): ?string
+    public function getSubheading(): string
     {
-        return 'Клинический пульт управления: статус провайдеров, бюджет, лимиты и аварийное отключение (Kill-Switch).';
+        return 'Статус провайдеров, дневной бюджет, лимиты и аварийное отключение AI для организации.';
+    }
+
+    public static function canManage(): bool
+    {
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        $context = app(OrganizationContext::class);
+
+        return app(OrganizationAuthorizer::class)->allows(
+            $user,
+            $context->organization(),
+            OrganizationPermission::ManageAiProviders,
+        );
+    }
+
+    public function mount(): void
+    {
+        $this->fillSafetyForm();
+    }
+
+    public function form(Schema $schema): Schema
+    {
+        return $schema
+            ->components([
+                Section::make('Безопасность и дневной бюджет')
+                    ->description('Эти ограничения применяются авторитетным AI runtime для всей организации.')
+                    ->schema([
+                        Toggle::make('is_ai_globally_enabled')
+                            ->label('AI включен для организации')
+                            ->helperText('Отключение блокирует новые внешние AI-вызовы.')
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        TextInput::make('max_daily_spend')
+                            ->label('Дневной лимит AI')
+                            ->prefix('$')
+                            ->suffix('/ день')
+                            ->helperText('Сумма, которую runtime может зарезервировать и списать за один день.')
+                            ->inputMode('decimal')
+                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/')
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        TextInput::make('max_tokens_per_run')
+                            ->label('Максимум токенов за запуск')
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(8192)
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
+                Section::make('Расширенные ограничения')
+                    ->description('Меняйте эти значения только если стандартных ограничений недостаточно.')
+                    ->collapsed()
+                    ->schema([
+                        TextInput::make('max_runs_per_minute')
+                            ->label('Максимум запусков в минуту')
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(60)
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        TextInput::make('max_tool_calls_per_run')
+                            ->label('Максимум вызовов инструментов за запуск')
+                            ->integer()
+                            ->minValue(0)
+                            ->maxValue(5)
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        TextInput::make('default_timeout_seconds')
+                            ->label('Тайм-аут по умолчанию, секунд')
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(120)
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        TextInput::make('max_failover_attempts')
+                            ->label('Максимум попыток переключения')
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(3)
+                            ->required()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        Select::make('disabled_capabilities')
+                            ->label('Отключенные возможности')
+                            ->options(self::capabilityOptions())
+                            ->multiple()
+                            ->searchable()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        Select::make('disabled_providers')
+                            ->label('Отключенные провайдеры')
+                            ->options(AiProviderCatalog::options())
+                            ->multiple()
+                            ->searchable()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                        Select::make('disabled_tools')
+                            ->label('Отключенные инструменты')
+                            ->options(self::toolOptions())
+                            ->multiple()
+                            ->searchable()
+                            ->disabled(fn (): bool => ! self::canManage()),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
+            ])
+            ->statePath('data');
+    }
+
+    public function content(Schema $schema): Schema
+    {
+        return $schema->components([$this->getFormContentComponent()]);
+    }
+
+    public function getFormContentComponent(): Component
+    {
+        return Form::make([
+            EmbeddedSchema::make('form'),
+        ])
+            ->id('ai-safety-form')
+            ->livewireSubmitHandler('save')
+            ->footer([
+                Actions::make([
+                    Action::make('save')
+                        ->label('Сохранить ограничения')
+                        ->submit('save')
+                        ->visible(fn (): bool => self::canManage()),
+                ]),
+            ]);
+    }
+
+    public function save(): void
+    {
+        $actor = Auth::user();
+        if (! $actor instanceof User || ! self::canManage()) {
+            Notification::make()->title('Недостаточно прав для изменения настроек AI')->danger()->send();
+
+            return;
+        }
+
+        app(UpdateAiSafetyControl::class)->handle($actor, $this->form->getState());
+        $this->fillSafetyForm();
+        Notification::make()->title('Ограничения AI сохранены')->success()->send();
     }
 
     /**
@@ -84,6 +246,10 @@ class AiMonitoringOverview extends Page
             ->whereIn('status', ['failed', 'timed_out', 'invalid_output'])
             ->count();
 
+        $maxDailySpendMinor = $safety !== null ? (int) $safety->max_daily_spend_minor_units : 5000;
+        $spentTodayMinor = $budget !== null ? (int) $budget->spent_minor_units : 0;
+        $reservedTodayMinor = $budget !== null ? (int) $budget->reserved_minor_units : 0;
+
         $providers = AiProviderConfiguration::query()
             ->where('organization_id', $orgId)
             ->withCount('models')
@@ -93,9 +259,15 @@ class AiMonitoringOverview extends Page
 
         return [
             'isAiEnabled' => $safety !== null ? $safety->is_ai_globally_enabled : true,
-            'maxDailySpendMinor' => $safety !== null ? $safety->max_daily_spend_minor_units : 5000,
-            'spentTodayMinor' => $budget !== null ? $budget->spent_minor_units : 0,
-            'reservedTodayMinor' => $budget !== null ? $budget->reserved_minor_units : 0,
+            'maxDailySpendMinor' => $maxDailySpendMinor,
+            'maxDailySpend' => AiMoney::decimalFromMinorUnits($maxDailySpendMinor),
+            'spentTodayMinor' => $spentTodayMinor,
+            'spentToday' => AiMoney::decimalFromMinorUnits($spentTodayMinor),
+            'reservedTodayMinor' => $reservedTodayMinor,
+            'reservedToday' => AiMoney::decimalFromMinorUnits($reservedTodayMinor),
+            'spendPercent' => $maxDailySpendMinor > 0
+                ? min(100, intdiv(($spentTodayMinor + $reservedTodayMinor) * 100, $maxDailySpendMinor))
+                : 0,
             'runsCountToday' => $runsCountToday,
             'failedRunsCountToday' => $failedRunsCountToday,
             'providers' => $providers,
@@ -127,5 +299,48 @@ class AiMonitoringOverview extends Page
             ->title($safety->is_ai_globally_enabled ? 'AI сервис включен' : 'AI сервис аварийно отключен (Kill-Switch активирован)')
             ->success()
             ->send();
+    }
+
+    private function fillSafetyForm(): void
+    {
+        $control = AiOrganizationSafetyControl::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->first();
+        $current = $control ?? new AiOrganizationSafetyControl;
+
+        $this->form->fill([
+            'is_ai_globally_enabled' => (bool) $current->is_ai_globally_enabled,
+            'max_daily_spend' => AiMoney::decimalFromMinorUnits((int) $current->max_daily_spend_minor_units),
+            'max_tokens_per_run' => (int) $current->max_tokens_per_run,
+            'max_runs_per_minute' => (int) $current->max_runs_per_minute,
+            'max_tool_calls_per_run' => (int) $current->max_tool_calls_per_run,
+            'default_timeout_seconds' => (int) $current->default_timeout_seconds,
+            'max_failover_attempts' => (int) $current->max_failover_attempts,
+            'disabled_capabilities' => $current->disabled_capabilities ?? [],
+            'disabled_providers' => $current->disabled_providers ?? [],
+            'disabled_tools' => $current->disabled_tools ?? [],
+        ]);
+    }
+
+    /** @return array<string, string> */
+    private static function capabilityOptions(): array
+    {
+        return array_map(
+            static fn ($definition): string => $definition->displayName,
+            AiCapabilityRegistry::all(),
+        );
+    }
+
+    /** @return array<string, string> */
+    private static function toolOptions(): array
+    {
+        $tools = [];
+        foreach (AiCapabilityRegistry::all() as $definition) {
+            foreach ($definition->allowedTools as $tool) {
+                $tools[$tool] = $tool;
+            }
+        }
+
+        return $tools;
     }
 }

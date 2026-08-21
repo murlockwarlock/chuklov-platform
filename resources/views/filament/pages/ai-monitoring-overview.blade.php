@@ -32,15 +32,12 @@
                 <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Дневной расход</p>
                 <div class="mt-2 flex items-baseline gap-2">
                     <span class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                        ${{ number_format($spentTodayMinor / 100, 2) }}
+                        ${{ $spentToday }}
                     </span>
-                    <span class="text-xs text-slate-500">из ${{ number_format($maxDailySpendMinor / 100, 2) }}</span>
+                    <span class="text-xs text-slate-500">из ${{ $maxDailySpend }}</span>
                 </div>
                 <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    @php
-                        $percent = $maxDailySpendMinor > 0 ? min(100, round((($spentTodayMinor + $reservedTodayMinor) / $maxDailySpendMinor) * 100)) : 0;
-                    @endphp
-                    <div class="h-full bg-slate-900 dark:bg-slate-100 transition-all duration-300" style="width: {{ $percent }}%"></div>
+                    <div class="h-full bg-slate-900 transition-all duration-300 dark:bg-slate-100" style="width: {{ $spendPercent }}%"></div>
                 </div>
             </div>
 
@@ -48,7 +45,7 @@
                 <p class="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Зарезервировано</p>
                 <div class="mt-2">
                     <span class="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                        ${{ number_format($reservedTodayMinor / 100, 2) }}
+                        ${{ $reservedToday }}
                     </span>
                 </div>
                 <p class="mt-2 text-xs text-slate-500">Активные и выполняемые попытки</p>
@@ -105,5 +102,7 @@
                 @endforelse
             </div>
         </div>
+
+        {{ $this->content }}
     </div>
 </x-filament-panels::page>

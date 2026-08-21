@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AiPrompts\Schemas;
 
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Models\AiPrompt;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -19,10 +20,13 @@ class AiPromptForm
                     ->required()
                     ->maxLength(200),
                 TextInput::make('key')
-                    ->label('Ключ (уникальный идентификатор)')
+                    ->label('Ключ промпта')
+                    ->helperText('Техническая идентичность промпта. После создания изменить нельзя.')
                     ->required()
                     ->maxLength(80)
-                    ->regex('/^[a-z0-9_\-]+$/'),
+                    ->regex('/^[a-z0-9_\-]+$/')
+                    ->disabled(fn (?AiPrompt $record): bool => $record !== null)
+                    ->dehydrated(true),
                 Select::make('capability')
                     ->label('Назначение / Возможность')
                     ->options(collect(AiCapability::cases())->mapWithKeys(fn ($c) => [$c->value => $c->label()]))
