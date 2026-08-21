@@ -14,6 +14,7 @@ use App\Modules\Finance\Application\SaveExchangeRate;
 use App\Modules\Finance\Application\SettleFakePayment;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
+use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
@@ -33,6 +34,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -76,6 +78,14 @@ final class MilestoneSixFinanceTest extends TestCase
 
         self::assertSame($obligation->getKey(), app(CreateFinancialObligation::class)->handle($admin, $booking)?->getKey());
         self::assertSame(1, FinancialObligation::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame([
+            'source' => 'booking.completed',
+            'currency' => 'USD',
+        ], AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'finance.obligation.created')
+            ->sole()
+            ->metadata);
     }
 
     public function test_currency_configuration_rejects_missing_directed_rates_atomically_and_allows_same_currency(): void
@@ -161,7 +171,8 @@ final class MilestoneSixFinanceTest extends TestCase
         $this->actingAs($admin)
             ->get(route('filament.admin.resources.financial-obligations.index'))
             ->assertOk()
-            ->assertSee('50.00 USD');
+            ->assertSee('9000.00 RUB')
+            ->assertSee('4500.00 RUB');
 
         app(RecordManualPayment::class)->handle($admin, $obligation, '50.00', 'USD', 'bank_transfer', now(), null, null, 'rate-change-final');
         $settled = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
@@ -457,6 +468,46 @@ final class MilestoneSixFinanceTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_client_portal_finance_marks_invalid_history_unavailable_without_a_numeric_total(): void
+    {
+        [$organization, , $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        DB::table('financial_obligations')->where('id', $obligation->getKey())->update(['display_currency' => 'ZZZ']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Finance')
+                ->where('hasUnavailableObligations', true)
+                ->has('totals', 0)
+                ->where('obligations.0.available', false)
+                ->where('obligations.0.outstandingMinor', null)
+                ->where('obligations.0.statusLabel', 'Calculation unavailable'));
+
+        self::assertSame($organization->getKey(), $obligation->organization_id);
+    }
+
+    public function test_client_portal_finance_marks_malformed_ledger_history_unavailable(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        $this->rawLedgerEntry($admin, $obligation, 'portal-malformed-ledger', ['payment_currency' => 'ZZZ']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Finance')
+                ->where('hasUnavailableObligations', true)
+                ->has('totals', 0)
+                ->where('obligations.0.available', false)
+                ->where('obligations.0.history.0.available', false)
+                ->where('obligations.0.history.0.amountMinor', null));
+
+        self::assertSame($organization->getKey(), $obligation->organization_id);
+    }
+
     public function test_finance_scenario_event_uses_existing_engine_and_rechecks_debt_before_delivery(): void
     {
         [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
@@ -538,6 +589,43 @@ final class MilestoneSixFinanceTest extends TestCase
         app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
 
         return FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+    }
+
+    /** @param array<string, mixed> $overrides */
+    private function rawLedgerEntry(
+        User $admin,
+        FinancialObligation $obligation,
+        string $idempotencyKey,
+        array $overrides = [],
+    ): FinancialLedgerEntry {
+        $attributes = [
+            'organization_id' => $obligation->organization_id,
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 2000,
+            'currency' => 'USD',
+            'payment_amount_minor' => 2000,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 2000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 2000,
+            'display_currency' => 'USD',
+            'settlement_amount_minor' => 2000,
+            'settlement_currency' => 'USD',
+            'conversion_snapshot' => null,
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'note' => null,
+            'actor_user_id' => $admin->getKey(),
+            'provider_reference' => null,
+            'idempotency_key' => 'raw:'.$idempotencyKey,
+            'corrects_ledger_entry_id' => null,
+            'created_at' => now(),
+        ];
+        $id = DB::table('financial_ledger_entries')->insertGetId([...$attributes, ...$overrides]);
+
+        return FinancialLedgerEntry::query()->findOrFail($id);
     }
 
     private function setOrganization(Organization $organization): void

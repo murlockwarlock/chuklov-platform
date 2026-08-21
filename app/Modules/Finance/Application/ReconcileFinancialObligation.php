@@ -2,20 +2,20 @@
 
 namespace App\Modules\Finance\Application;
 
-use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
+use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
-use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use Brick\Math\BigInteger;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use InvalidArgumentException;
 use UnexpectedValueException;
 
 final class ReconcileFinancialObligation
 {
-    public function __construct(private readonly CurrencyCatalog $catalog) {}
+    public function __construct(private readonly FinancialReconciliationContract $contract) {}
 
     public function handle(int $organizationId, int $obligationId, bool $lock = false): FinancialReconciliation
     {
@@ -28,6 +28,10 @@ final class ReconcileFinancialObligation
             throw (new ModelNotFoundException)->setModel(FinancialObligation::class, [$obligationId]);
         }
 
+        $obligationData = $this->contract->validateObligation($obligation);
+        $settlementCurrency = $obligationData['currencies']['settlement_currency'];
+        $baseCurrency = $obligationData['currencies']['base_currency'];
+        $displayCurrency = $obligationData['currencies']['display_currency'];
         $appliedMinor = BigInteger::zero();
 
         $entries = FinancialLedgerEntry::query()
@@ -37,28 +41,66 @@ final class ReconcileFinancialObligation
             ->get();
 
         foreach ($entries as $entry) {
-            if ($entry->settlement_currency !== $obligation->settlement_currency
-                || $entry->base_currency !== $obligation->base_currency
-                || $entry->display_currency !== $obligation->display_currency) {
+            $ledgerData = $this->contract->validateLedgerForReconciliation($entry);
+
+            if ($ledgerData['currencies']['settlement_currency'] !== $settlementCurrency
+                || $ledgerData['currencies']['base_currency'] !== $baseCurrency
+                || $ledgerData['currencies']['display_currency'] !== $displayCurrency) {
                 throw new UnexpectedValueException('A ledger entry has an incompatible financial currency.');
             }
 
-            $appliedMinor = $appliedMinor->plus((string) $entry->getRawOriginal('settlement_amount_minor'));
+            $appliedMinor = $appliedMinor->plus((string) $ledgerData['settlement_amount_minor']);
         }
 
-        $obligationMoney = Money::ofMinor($obligation->settlement_amount_minor, $obligation->settlement_currency);
-        $applied = Money::ofMinor($appliedMinor->toString(), $obligation->settlement_currency);
-        $outstanding = $obligationMoney->subtract($applied);
+        return $this->handleAggregated($obligation, $appliedMinor->toString());
+    }
+
+    public function handleAggregated(
+        FinancialObligation $obligation,
+        string|int|null $appliedMinor,
+        string|int|null $incompatibleLedgerRows = 0,
+    ): FinancialReconciliation {
+        if ((int) ($incompatibleLedgerRows ?? 0) > 0) {
+            throw new UnexpectedValueException('A ledger entry has an incompatible financial currency.');
+        }
+
+        $obligationData = $this->contract->validateObligation($obligation);
+        $settlementCurrency = $obligationData['currencies']['settlement_currency'];
+        $baseCurrency = $obligationData['currencies']['base_currency'];
+        $displayCurrency = $obligationData['currencies']['display_currency'];
+        $appliedMinorValue = BigInteger::zero()->plus((string) ($appliedMinor ?? '0'));
+
+        try {
+            $obligationMoney = Money::ofMinor($obligationData['amounts']['settlement_amount_minor'], $settlementCurrency);
+            $applied = Money::ofMinor($appliedMinorValue->toString(), $settlementCurrency);
+            $outstanding = $obligationMoney->subtract($applied);
+        } catch (InvalidArgumentException $exception) {
+            throw new UnexpectedValueException('The financial ledger does not reconcile to the obligation.', previous: $exception);
+        }
 
         if ($applied->isNegative() || $outstanding->isNegative()) {
             throw new UnexpectedValueException('The financial ledger does not reconcile to the obligation.');
         }
 
-        $baseObligation = Money::ofMinor($obligation->base_amount_minor, $obligation->base_currency);
-        $baseOutstanding = $this->valueOutstanding($obligation, $outstanding, 'base', $baseObligation);
+        $baseObligation = Money::ofMinor($obligationData['amounts']['base_amount_minor'], $baseCurrency);
+        $baseOutstanding = $this->valueOutstanding(
+            $obligation,
+            $outstanding,
+            $settlementCurrency,
+            $obligationData['amounts']['settlement_amount_minor'],
+            'base',
+            $baseObligation,
+        );
         $baseApplied = $baseObligation->subtract($baseOutstanding);
-        $displayObligation = Money::ofMinor($obligation->display_amount_minor, $obligation->display_currency);
-        $displayOutstanding = $this->valueOutstanding($obligation, $outstanding, 'display', $displayObligation);
+        $displayObligation = Money::ofMinor($obligationData['amounts']['display_amount_minor'], $displayCurrency);
+        $displayOutstanding = $this->valueOutstanding(
+            $obligation,
+            $outstanding,
+            $settlementCurrency,
+            $obligationData['amounts']['settlement_amount_minor'],
+            'display',
+            $displayObligation,
+        );
         $displayApplied = $displayObligation->subtract($displayOutstanding);
 
         if ($baseApplied->isNegative() || $baseOutstanding->isNegative()
@@ -85,32 +127,34 @@ final class ReconcileFinancialObligation
     private function valueOutstanding(
         FinancialObligation $obligation,
         Money $outstanding,
+        CurrencyCode $settlementCurrency,
+        int $settlementAmountMinor,
         string $role,
         Money $obligationAmount,
     ): Money {
-        $snapshot = $obligation->conversion_snapshots[$role] ?? null;
-
-        if (! is_array($snapshot)) {
-            throw new UnexpectedValueException('The obligation is missing its immutable valuation snapshot.');
-        }
+        $snapshots = $obligation->getAttribute('conversion_snapshots');
+        $snapshot = is_array($snapshots) ? ($snapshots[$role] ?? null) : null;
 
         try {
-            $sourceCurrency = $this->catalog->code($snapshot['source_currency'] ?? null);
-            $targetCurrency = $this->catalog->code($snapshot['target_currency'] ?? null);
-            $roundingMode = FinancialRoundingMode::fromMixed($snapshot['rounding_mode'] ?? null);
-            $sourceAmount = Money::ofMinor($snapshot['source_amount_minor'] ?? null, $sourceCurrency);
-            $historicalTarget = Money::ofMinor($snapshot['target_amount_minor'] ?? null, $targetCurrency);
-            $historicalRate = $snapshot['rate'] ?? null;
-            $convertedOutstanding = $outstanding->convert($targetCurrency, (string) $historicalRate, $roundingMode);
-        } catch (\Throwable $exception) {
+            $valuation = $this->contract->validateValuationSnapshot($snapshot);
+            $convertedOutstanding = $outstanding->convert(
+                $valuation['target_currency'],
+                $valuation['rate'],
+                $valuation['rounding_mode'],
+            );
+        } catch (InvalidArgumentException|UnexpectedValueException $exception) {
             throw new UnexpectedValueException('The obligation valuation snapshot is invalid.', previous: $exception);
         }
 
-        if ($sourceCurrency !== $obligation->settlement_currency
-            || $targetCurrency !== $obligationAmount->currency()
-            || $sourceAmount->minorUnits() !== $obligation->settlement_amount_minor
-            || $historicalTarget->minorUnits() !== $obligationAmount->minorUnits()
-            || $sourceAmount->convert($targetCurrency, (string) $historicalRate, $roundingMode)->minorUnits() !== $obligationAmount->minorUnits()) {
+        if ($valuation['source_currency'] !== $settlementCurrency
+            || $valuation['target_currency'] !== $obligationAmount->currency()
+            || $valuation['source_amount']->minorUnits() !== $settlementAmountMinor
+            || $valuation['target_amount']->minorUnits() !== $obligationAmount->minorUnits()
+            || $valuation['source_amount']->convert(
+                $valuation['target_currency'],
+                $valuation['rate'],
+                $valuation['rounding_mode'],
+            )->minorUnits() !== $obligationAmount->minorUnits()) {
             throw new UnexpectedValueException('The obligation valuation snapshot does not match its immutable amounts.');
         }
 

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Schemas;
 
+use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -93,7 +94,7 @@ final class ClientWorkspaceInfolist
                                 ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason ? 'Причина: '.$record->activeBookingRestriction->reason : null)
                                 ->wrap(),
                             TextEntry::make('balance_summary')
-                                ->label('Открытый баланс')
+                                ->label('К оплате')
                                 ->state(function (Client $record): string {
                                     $actor = auth()->user();
 
@@ -102,6 +103,10 @@ final class ClientWorkspaceInfolist
                                     }
 
                                     $summary = app(GetClientBalanceSummary::class)->handle($actor, $record);
+
+                                    if ($summary === null) {
+                                        return 'Расчёт недоступен';
+                                    }
 
                                     if ($summary === []) {
                                         return 'Открытых начислений нет';
@@ -113,6 +118,11 @@ final class ClientWorkspaceInfolist
                                 })
                                 ->placeholder('Нет данных')
                                 ->wrap(),
+                            TextEntry::make('finance_link')
+                                ->label('Оплаты')
+                                ->state('Открыть оплаты')
+                                ->url(fn (Client $record): string => app(FinancePresentation::class)->clientFinanceUrl($record))
+                                ->visible(fn (): bool => app(FinancePresentation::class)->canViewFinance()),
                         ])
                         ->columns(1),
                 ])->extraAttributes(['class' => 'w-full space-y-6']),

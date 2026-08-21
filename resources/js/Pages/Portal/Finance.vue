@@ -6,23 +6,25 @@ import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
 type FinanceHistory = {
-    amountMinor: number;
-    currency: string;
+    available: boolean;
+    amountMinor: number | null;
+    currency: string | null;
     occurredAt: string;
     methodLabel: string;
     receiptUrl: string | null;
 };
 
 type Obligation = {
+    available: boolean;
     serviceName: string;
     bookingUrl: string | null;
     completedAt: string | null;
-    obligationMinor: number;
-    paidMinor: number;
-    outstandingMinor: number;
-    displayCurrency: string;
-    originalCurrency: string;
-    status: 'outstanding' | 'partially_paid' | 'settled';
+    obligationMinor: number | null;
+    paidMinor: number | null;
+    outstandingMinor: number | null;
+    displayCurrency: string | null;
+    originalCurrency: string | null;
+    status: 'outstanding' | 'partially_paid' | 'settled' | 'unavailable';
     statusLabel: string;
     history: FinanceHistory[];
 };
@@ -33,6 +35,7 @@ const props = defineProps<{
     portal: PortalShell;
     obligations: Obligation[];
     totals: Total[];
+    hasUnavailableObligations: boolean;
     urls: { home: string; bookings: string };
 }>();
 
@@ -46,6 +49,12 @@ function formatMoney(minor: number, currency: string): string {
         minimumFractionDigits: digits,
         maximumFractionDigits: digits,
     }).format(minor / (10 ** digits));
+}
+
+function formatNullableMoney(minor: number | null, currency: string | null): string {
+    return minor === null || currency === null
+        ? t('finance.entryUnavailable')
+        : formatMoney(minor, currency);
 }
 </script>
 
@@ -76,6 +85,16 @@ function formatMoney(minor: number, currency: string): string {
           {{ t('finance.backBookings') }}
         </Link>
       </header>
+
+      <div
+        v-if="props.hasUnavailableObligations"
+        class="portal-panel border border-[var(--portal-color-warning)] bg-[var(--portal-color-surface-muted)]"
+        role="status"
+      >
+        <p class="portal-copy">
+          {{ t('finance.partialUnavailable') }}
+        </p>
+      </div>
 
       <section
         v-if="props.totals.length"
@@ -120,7 +139,7 @@ function formatMoney(minor: number, currency: string): string {
             </h2>
             <p class="portal-copy portal-copy--small">
               {{ obligation.completedAt ?? t('finance.visitDateUnavailable') }}
-              <span v-if="obligation.originalCurrency !== obligation.displayCurrency">
+              <span v-if="obligation.originalCurrency && obligation.displayCurrency && obligation.originalCurrency !== obligation.displayCurrency">
                 · {{ obligation.originalCurrency }}
               </span>
             </p>
@@ -132,13 +151,26 @@ function formatMoney(minor: number, currency: string): string {
           </span>
         </header>
 
-        <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
+        <div
+          v-if="!obligation.available"
+          class="portal-panel border border-[var(--portal-color-warning)] bg-[var(--portal-color-surface-muted)]"
+          role="status"
+        >
+          <p class="portal-copy">
+            {{ t('finance.obligationUnavailable') }}
+          </p>
+        </div>
+
+        <div
+          v-else
+          class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3"
+        >
           <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
             <p class="portal-copy portal-copy--small">
               {{ t('finance.obligation') }}
             </p>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatMoney(obligation.obligationMinor, obligation.displayCurrency) }}
+              {{ formatNullableMoney(obligation.obligationMinor, obligation.displayCurrency) }}
             </strong>
           </div>
           <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
@@ -146,7 +178,7 @@ function formatMoney(minor: number, currency: string): string {
               {{ t('finance.paid') }}
             </p>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatMoney(obligation.paidMinor, obligation.displayCurrency) }}
+              {{ formatNullableMoney(obligation.paidMinor, obligation.displayCurrency) }}
             </strong>
           </div>
           <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
@@ -154,7 +186,7 @@ function formatMoney(minor: number, currency: string): string {
               {{ t('finance.remaining') }}
             </p>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatMoney(obligation.outstandingMinor, obligation.displayCurrency) }}
+              {{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}
             </strong>
           </div>
         </div>
@@ -184,7 +216,12 @@ function formatMoney(minor: number, currency: string): string {
               </div>
               <div class="flex min-w-0 items-center gap-3 sm:justify-end">
                 <strong class="break-words text-[var(--portal-color-ink)]">
-                  {{ formatMoney(entry.amountMinor, entry.currency) }}
+                  <template v-if="entry.available && entry.amountMinor !== null && entry.currency">
+                    {{ formatMoney(entry.amountMinor, entry.currency) }}
+                  </template>
+                  <template v-else>
+                    {{ t('finance.entryUnavailable') }}
+                  </template>
                 </strong>
                 <a
                   v-if="entry.receiptUrl"

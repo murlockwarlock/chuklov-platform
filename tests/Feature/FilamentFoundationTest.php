@@ -80,5 +80,7 @@ class FilamentFoundationTest extends TestCase
         self::assertSame('База знаний', KnowledgeSourceResource::getNavigationLabel());
         self::assertSame('Контент и знания', KnowledgeRetrievalInspector::getNavigationGroup());
         self::assertSame('Поиск по знаниям', KnowledgeRetrievalInspector::getNavigationLabel());
+        self::assertSame('Оплаты', FinancialObligationResource::getNavigationLabel());
+        self::assertSame('Настройки валют', FinanceConfiguration::getNavigationLabel());
     }
 }

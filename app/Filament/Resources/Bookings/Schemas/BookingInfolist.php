@@ -2,12 +2,13 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Filament\Support\FinancePresentation;
 use App\Models\User;
+use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
-use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
@@ -57,23 +58,48 @@ class BookingInfolist
                             })
                             ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
                             ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
-                        TextEntry::make('payment_status')
-                            ->label('Статус оплаты')
-                            ->badge()
-                            ->color(fn (PaymentStatus|string $state): string => match ($state instanceof PaymentStatus ? $state : PaymentStatus::tryFrom($state)) {
-                                PaymentStatus::Paid => 'success',
-                                PaymentStatus::PartiallyPaid, PaymentStatus::Pending => 'warning',
-                                PaymentStatus::Refunded => 'danger',
-                                default => 'gray',
-                            })
-                            ->formatStateUsing(fn (PaymentStatus|string $state): string => self::paymentStatusLabel($state))
-                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
                         TextEntry::make('payment_requirement')
                             ->label('Условие оплаты')
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
                             ->wrap(),
                     ])
                     ->columns(['default' => 1, 'sm' => 2, 'lg' => 3]),
+
+                Section::make('Расчёт')
+                    ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
+                    ->schema([
+                        TextEntry::make('finance_amount')
+                            ->label('Сумма')
+                            ->state(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? '—'
+                                : app(FinancePresentation::class)->bookingAmount(self::bookingSummary($record))),
+                        TextEntry::make('finance_paid')
+                            ->label('Оплачено')
+                            ->state(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? '—'
+                                : app(FinancePresentation::class)->bookingPaid(self::bookingSummary($record))),
+                        TextEntry::make('finance_outstanding')
+                            ->label('Осталось')
+                            ->state(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? '—'
+                                : app(FinancePresentation::class)->bookingOutstanding(self::bookingSummary($record))),
+                        TextEntry::make('finance_status')
+                            ->label('Статус')
+                            ->badge()
+                            ->state(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? '—'
+                                : app(FinancePresentation::class)->bookingStatus(self::bookingSummary($record)))
+                            ->color(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? 'gray'
+                                : app(FinancePresentation::class)->bookingStatusColor(self::bookingSummary($record))),
+                        TextEntry::make('finance_error')
+                            ->label('Состояние расчёта')
+                            ->state('Расчёт недоступен. Проверьте историю оплат.')
+                            ->color('danger')
+                            ->visible(fn (Booking $record): bool => self::bookingSummary($record)?->reconciliation === null)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(['default' => 1, 'sm' => 2, 'lg' => 4]),
 
                 Section::make('История событий')
                     ->schema([
@@ -166,20 +192,6 @@ class BookingInfolist
         };
     }
 
-    private static function paymentStatusLabel(PaymentStatus|string $status): string
-    {
-        $status = $status instanceof PaymentStatus ? $status : PaymentStatus::tryFrom($status);
-
-        return match ($status) {
-            PaymentStatus::Unpaid => 'Не оплачено',
-            PaymentStatus::Pending => 'Ожидается',
-            PaymentStatus::PartiallyPaid => 'Оплачено частично',
-            PaymentStatus::Paid => 'Оплачено',
-            PaymentStatus::Refunded => 'Возвращено',
-            default => 'Не указано',
-        };
-    }
-
     private static function paymentRequirementLabel(PaymentRequirementType|string|null $requirement): string
     {
         $requirement = $requirement instanceof PaymentRequirementType || $requirement === null
@@ -191,6 +203,11 @@ class BookingInfolist
             PaymentRequirementType::TransportDeposit => 'Депозит за выезд',
             default => 'Не указано',
         };
+    }
+
+    private static function bookingSummary(Booking $booking): ?BookingFinanceSummary
+    {
+        return app(FinancePresentation::class)->bookingSummary($booking);
     }
 
     /** @param array<string, mixed> $values */

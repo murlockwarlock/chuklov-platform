@@ -28,7 +28,7 @@ class AiLogRedactionTest extends TestCase
                 'rag_chunk' => 'Confidential patient clinical guidelines',
                 'retrieved_content' => 'Full text of chunk',
                 'tool_payload' => ['client_ssn' => '000-00-0000'],
-                'api_key' => 'sk-live-secret-key-12345',
+                'api_key' => 'synthetic-credential-material',
                 'status' => 'succeeded',
             ],
         );

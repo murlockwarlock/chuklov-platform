@@ -3,9 +3,15 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
+use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
+use App\Modules\Finance\Domain\Enums\FinancialStatus;
+use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -19,7 +25,9 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
+use UnexpectedValueException;
 
 final class MilestoneSixFinanceRolloutTest extends TestCase
 {
@@ -131,6 +139,449 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
             'force_single_currency' => false,
             'rounding_mode' => 'half_up',
         ]);
+    }
+
+    public function test_postgresql_finance_status_projection_excludes_invalid_snapshot_and_ledger_currency(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $snapshot = [
+            'source_amount_minor' => '10000',
+            'source_currency' => 'USD',
+            'target_amount_minor' => '10000',
+            'target_currency' => 'USD',
+            'rate' => '1',
+            'rate_id' => null,
+            'rate_version' => null,
+            'effective_at' => null,
+            'rounding_mode' => 'half_up',
+            'source_scale' => 2,
+            'target_scale' => 2,
+        ];
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => $booking->getKey(),
+            'service_id' => $service->getKey(),
+            'amount_minor' => 10000,
+            'currency' => 'USD',
+            'base_amount_minor' => 10000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 10000,
+            'display_currency' => 'USD',
+            'payment_amount_minor' => 10000,
+            'payment_currency' => 'USD',
+            'settlement_amount_minor' => 10000,
+            'settlement_currency' => 'USD',
+            'price_snapshot' => ['amount_minor' => 10000],
+            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'creation_key' => 'pg-projection-'.$organization->getKey(),
+        ])->save();
+
+        $list = app(ListFinancialObligationsForCrm::class);
+        self::assertCount(1, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
+
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update(['conversion_snapshots' => json_encode(['base' => $snapshot])]);
+        self::assertCount(0, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
+
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update(['conversion_snapshots' => json_encode(['base' => $snapshot, 'display' => $snapshot])]);
+        $entry = new FinancialLedgerEntry;
+        $entry->forceFill([
+            'organization_id' => $organization->getKey(),
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 1000,
+            'currency' => 'USD',
+            'payment_amount_minor' => 1000,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 1000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 1000,
+            'display_currency' => 'RUB',
+            'settlement_amount_minor' => 1000,
+            'settlement_currency' => 'USD',
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'actor_user_id' => $admin->getKey(),
+            'idempotency_key' => 'pg-projection-incompatible',
+        ])->save();
+
+        self::assertCount(0, $list->applyStatusFilter(
+            $list->query($organization->getKey()),
+            FinancialStatus::Outstanding->value,
+        )->get());
+    }
+
+    public function test_postgresql_projection_matches_php_for_valid_statuses_and_correction(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+        $payment = $this->postgresLedger($obligation, 2500, 2500);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::PartiallyPaid->value);
+        $this->postgresLedger($obligation, 7500, 7500);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Settled->value);
+        $this->postgresLedger($obligation, -2500, -2500, 'correction', $payment->getKey());
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::PartiallyPaid->value);
+    }
+
+    #[DataProvider('postgresRoundingCases')]
+    public function test_postgresql_projection_matches_php_for_jpy_and_decimal_rounding(
+        string $settlementCurrency,
+        string $targetCurrency,
+        int $settlementAmountMinor,
+        string $rate,
+        string $roundingMode,
+        int $targetAmountMinor,
+    ): void {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture(
+            settlementCurrency: $settlementCurrency,
+            targetCurrency: $targetCurrency,
+            settlementAmountMinor: $settlementAmountMinor,
+            rate: $rate,
+            roundingMode: $roundingMode,
+        );
+
+        self::assertSame($targetAmountMinor, $obligation->display_amount_minor);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function postgresNoncanonicalCurrencyCases(): iterable
+    {
+        foreach (['currency', 'base_currency', 'display_currency', 'payment_currency', 'settlement_currency'] as $attribute) {
+            yield 'obligation '.$attribute => ['obligation:'.$attribute];
+            yield 'ledger '.$attribute => ['ledger:'.$attribute];
+        }
+    }
+
+    #[DataProvider('postgresNoncanonicalCurrencyCases')]
+    public function test_postgresql_projection_rejects_noncanonical_persisted_currency(string $case): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+        [$model, $attribute] = explode(':', $case, 2);
+
+        if ($model === 'obligation') {
+            DB::table('financial_obligations')
+                ->where('id', $obligation->getKey())
+                ->update([$attribute => 'usd']);
+        } else {
+            $this->insertPostgresLedgerWithNoncanonicalCurrency($obligation, $attribute);
+        }
+
+        $this->assertPostgresParity($organization, $obligation, null);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function postgresSnapshotCases(): iterable
+    {
+        yield 'numeric rate' => ['numeric_rate'];
+        yield 'trailing-zero rate' => ['trailing_zero_rate'];
+        yield 'numeric minor' => ['numeric_minor'];
+        yield 'leading zero minor' => ['leading_zero_minor'];
+        yield 'negative zero minor' => ['negative_zero_minor'];
+        yield 'invalid snapshot currency' => ['snapshot_currency'];
+        yield 'whitespace-wrapped snapshot currency' => ['snapshot_whitespace_currency'];
+        yield 'invalid source scale' => ['source_scale'];
+        yield 'invalid target scale' => ['target_scale'];
+        yield 'same currency non-unit rate' => ['same_currency_rate'];
+        yield 'same currency mismatched amount' => ['same_currency_amount'];
+    }
+
+    #[DataProvider('postgresSnapshotCases')]
+    public function test_postgresql_projection_rejects_noncanonical_snapshot_values(string $case): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+        $snapshots = $obligation->conversion_snapshots;
+        $updates = [];
+
+        switch ($case) {
+            case 'numeric_rate':
+                $snapshots['base']['rate'] = 1;
+                break;
+            case 'trailing_zero_rate':
+                $snapshots['base']['rate'] = '1.0';
+                break;
+            case 'numeric_minor':
+                $snapshots['base']['source_amount_minor'] = 10000;
+                break;
+            case 'leading_zero_minor':
+                $snapshots['base']['target_amount_minor'] = '010000';
+                break;
+            case 'negative_zero_minor':
+                $snapshots['base']['target_amount_minor'] = '-0';
+                break;
+            case 'snapshot_currency':
+                $snapshots['base']['source_currency'] = 'usd';
+                break;
+            case 'snapshot_whitespace_currency':
+                $snapshots['base']['source_currency'] = 'USD ';
+                break;
+            case 'source_scale':
+                $snapshots['base']['source_scale'] = 0;
+                break;
+            case 'target_scale':
+                $snapshots['base']['target_scale'] = 0;
+                break;
+            case 'same_currency_rate':
+                $snapshots['base']['rate'] = '2';
+                $snapshots['base']['target_amount_minor'] = '20000';
+                $updates['base_amount_minor'] = 20000;
+                break;
+            case 'same_currency_amount':
+                $snapshots['base']['target_amount_minor'] = '9999';
+                $updates['base_amount_minor'] = 9999;
+                break;
+        }
+
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update([
+                ...$updates,
+                'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
+            ]);
+
+        $this->assertPostgresParity($organization, $obligation, null);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function postgresInvalidCases(): iterable
+    {
+        yield 'missing display snapshot' => ['missing_display_snapshot'];
+        yield 'unsupported persisted currency' => ['unsupported_currency'];
+        yield 'invalid rounding mode' => ['invalid_rounding_mode'];
+        yield 'incompatible ledger currency' => ['incompatible_ledger_currency'];
+        yield 'overpayment' => ['overpayment'];
+        yield 'negative aggregate' => ['negative_aggregate'];
+    }
+
+    #[DataProvider('postgresInvalidCases')]
+    public function test_postgresql_projection_rejects_the_same_invalid_record_as_php(string $case): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+
+        if ($case === 'missing_display_snapshot' || $case === 'invalid_rounding_mode') {
+            $snapshots = $obligation->conversion_snapshots;
+
+            if ($case === 'missing_display_snapshot') {
+                unset($snapshots['display']);
+            } else {
+                $snapshots['base']['rounding_mode'] = 'invalid';
+            }
+
+            DB::table('financial_obligations')->where('id', $obligation->getKey())->update([
+                'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
+            ]);
+        } elseif ($case === 'unsupported_currency') {
+            DB::table('financial_obligations')->where('id', $obligation->getKey())->update(['base_currency' => 'ZZZ']);
+        } elseif ($case === 'incompatible_ledger_currency') {
+            $this->postgresLedger($obligation, 1000, 1000, 'manual_payment', null, 'RUB');
+        } elseif ($case === 'overpayment') {
+            $this->postgresLedger($obligation, 10001, 10001);
+        } else {
+            $payment = $this->postgresLedger($obligation, 1000, 1000);
+            $this->postgresLedger($obligation, -2000, -2000, 'correction', $payment->getKey());
+        }
+
+        $this->assertPostgresParity($organization, $obligation, null);
+    }
+
+    /** @return array<string, array{string, string, int, string, string, int}> */
+    public static function postgresRoundingCases(): array
+    {
+        return [
+            'JPY to USD half up' => ['JPY', 'USD', 1, '0.005', 'half_up', 1],
+            'JPY to USD half even' => ['JPY', 'USD', 1, '0.005', 'half_even', 0],
+            'JPY to USD down' => ['JPY', 'USD', 1, '0.005', 'down', 0],
+            'USD to JPY half up' => ['USD', 'JPY', 1, '50', 'half_up', 1],
+            'USD to JPY half even' => ['USD', 'JPY', 1, '50', 'half_even', 0],
+            'USD to JPY down' => ['USD', 'JPY', 1, '50', 'down', 0],
+        ];
+    }
+
+    /** @return array{Organization, User, FinancialObligation} */
+    private function postgresObligationFixture(
+        string $settlementCurrency = 'USD',
+        string $targetCurrency = 'USD',
+        int $settlementAmountMinor = 10000,
+        string $rate = '1',
+        string $roundingMode = 'half_up',
+    ): array {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $rounding = FinancialRoundingMode::fromMixed($roundingMode);
+        $target = Money::ofMinor($settlementAmountMinor, $settlementCurrency)
+            ->convert($targetCurrency, $rate, $rounding);
+        $snapshot = [
+            'source_amount_minor' => (string) $settlementAmountMinor,
+            'source_currency' => $settlementCurrency,
+            'target_amount_minor' => $target->minorUnitsString(),
+            'target_currency' => $targetCurrency,
+            'rate' => $rate,
+            'rate_id' => null,
+            'rate_version' => null,
+            'effective_at' => null,
+            'rounding_mode' => $roundingMode,
+            'source_scale' => Money::ofMinor($settlementAmountMinor, $settlementCurrency)->scale(),
+            'target_scale' => $target->scale(),
+        ];
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => $booking->getKey(),
+            'service_id' => $service->getKey(),
+            'amount_minor' => $settlementAmountMinor,
+            'currency' => $settlementCurrency,
+            'base_amount_minor' => $target->minorUnits(),
+            'base_currency' => $targetCurrency,
+            'display_amount_minor' => $target->minorUnits(),
+            'display_currency' => $targetCurrency,
+            'payment_amount_minor' => $settlementAmountMinor,
+            'payment_currency' => $settlementCurrency,
+            'settlement_amount_minor' => $settlementAmountMinor,
+            'settlement_currency' => $settlementCurrency,
+            'price_snapshot' => ['amount_minor' => $settlementAmountMinor],
+            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'creation_key' => 'pg-parity-'.$organization->getKey(),
+        ])->save();
+
+        return [$organization, $admin, $obligation];
+    }
+
+    private function postgresLedger(
+        FinancialObligation $obligation,
+        int $amountMinor,
+        int $settlementAmountMinor,
+        string $entryType = 'manual_payment',
+        ?int $corrects = null,
+        ?string $displayCurrency = null,
+    ): FinancialLedgerEntry {
+        $currency = (string) $obligation->getRawOriginal('settlement_currency');
+        $displayCurrency ??= (string) $obligation->getRawOriginal('display_currency');
+        $entry = new FinancialLedgerEntry;
+        $entry->forceFill([
+            'organization_id' => $obligation->organization_id,
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => $entryType,
+            'source' => 'crm',
+            'amount_minor' => $amountMinor,
+            'currency' => $currency,
+            'payment_amount_minor' => $amountMinor,
+            'payment_currency' => $currency,
+            'base_amount_minor' => $amountMinor,
+            'base_currency' => $displayCurrency,
+            'display_amount_minor' => $amountMinor,
+            'display_currency' => $displayCurrency,
+            'settlement_amount_minor' => $settlementAmountMinor,
+            'settlement_currency' => $currency,
+            'payment_method' => $entryType === 'correction' ? null : 'cash',
+            'occurred_at' => now(),
+            'idempotency_key' => 'pg-parity-ledger-'.uniqid('', true),
+            'corrects_ledger_entry_id' => $corrects,
+        ])->save();
+
+        return $entry;
+    }
+
+    private function insertPostgresLedgerWithNoncanonicalCurrency(
+        FinancialObligation $obligation,
+        string $currencyAttribute,
+    ): void {
+        $currencies = [
+            'currency' => (string) $obligation->getRawOriginal('currency'),
+            'payment_currency' => (string) $obligation->getRawOriginal('payment_currency'),
+            'base_currency' => (string) $obligation->getRawOriginal('base_currency'),
+            'display_currency' => (string) $obligation->getRawOriginal('display_currency'),
+            'settlement_currency' => (string) $obligation->getRawOriginal('settlement_currency'),
+        ];
+        $currencies[$currencyAttribute] = 'usd';
+
+        DB::table('financial_ledger_entries')->insert([
+            'organization_id' => (int) $obligation->getRawOriginal('organization_id'),
+            'obligation_id' => (int) $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 2500,
+            'currency' => $currencies['currency'],
+            'payment_amount_minor' => 2500,
+            'payment_currency' => $currencies['payment_currency'],
+            'base_amount_minor' => 2500,
+            'base_currency' => $currencies['base_currency'],
+            'display_amount_minor' => 2500,
+            'display_currency' => $currencies['display_currency'],
+            'settlement_amount_minor' => 2500,
+            'settlement_currency' => $currencies['settlement_currency'],
+            'conversion_snapshot' => null,
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'note' => null,
+            'actor_user_id' => null,
+            'provider_reference' => null,
+            'idempotency_key' => 'pg-noncanonical-ledger-'.$obligation->getKey().'-'.$currencyAttribute,
+            'corrects_ledger_entry_id' => null,
+            'created_at' => now(),
+        ]);
+    }
+
+    private function assertPostgresParity(Organization $organization, FinancialObligation $obligation, ?string $expectedStatus): void
+    {
+        $phpStatus = null;
+
+        try {
+            $phpStatus = app(ReconcileFinancialObligation::class)
+                ->handle($organization->getKey(), $obligation->getKey())
+                ->status
+                ->value;
+        } catch (UnexpectedValueException) {
+            $phpStatus = null;
+        }
+
+        self::assertSame($expectedStatus, $phpStatus);
+        $list = app(ListFinancialObligationsForCrm::class);
+
+        foreach (FinancialStatus::cases() as $status) {
+            $matches = $list->applyStatusFilter(
+                $list->query($organization->getKey()),
+                $status->value,
+            )->whereKey($obligation->getKey())->count();
+
+            self::assertSame($expectedStatus === $status->value ? 1 : 0, $matches, $status->value);
+        }
     }
 
     private function requirePostgres(): void

@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Application;
 
 use App\Models\User;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
@@ -11,13 +12,23 @@ final readonly class GetClientBalanceSummary
 {
     private const MAX_CURRENCIES = 10;
 
-    public function __construct(private FinanceAuthorization $authorization) {}
+    public function __construct(
+        private FinanceAuthorization $authorization,
+        private FinancialReconciliationProjection $projection,
+    ) {}
 
-    /** @return list<array{currency: string, outstandingMinor: string}> */
-    public function handle(User $actor, Client $client): array
+    /** @return list<array{currency: string, outstandingMinor: string}>|null */
+    public function handle(User $actor, Client $client): ?array
     {
         $organization = $this->authorization->authorizeView($actor);
         $this->authorization->assertClientOwned($client);
+        $obligations = FinancialObligation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey());
+
+        if ($this->projection->hasInvalidReconciliation($obligations)) {
+            return null;
+        }
 
         $applied = DB::table('financial_ledger_entries as ledger_entries')
             ->join('financial_obligations as applied_obligations', function (JoinClause $join): void {
@@ -44,7 +55,7 @@ final readonly class GetClientBalanceSummary
             ->where('financial_obligations.organization_id', $organization->getKey())
             ->where('financial_obligations.client_id', $client->getKey())
             ->select([
-                'financial_obligations.settlement_currency AS currency',
+                DB::raw('financial_obligations.settlement_currency AS currency'),
                 DB::raw('SUM(financial_obligations.settlement_amount_minor - COALESCE(ledger.applied_minor, 0)) AS outstanding_minor'),
             ])
             ->groupBy('financial_obligations.settlement_currency')
