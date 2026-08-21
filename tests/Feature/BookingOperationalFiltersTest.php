@@ -294,6 +294,34 @@ final class BookingOperationalFiltersTest extends TestCase
         }
     }
 
+    public function test_booking_client_filter_uses_a_safe_label_for_clients_without_a_name(): void
+    {
+        [$organization, $admin, $existingClient] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create(['full_name' => null]);
+
+        $component = Livewire::actingAs($admin)->test(ListBookings::class);
+        $filter = $component->instance()->getTable()->getFilter('client');
+        self::assertInstanceOf(SelectFilter::class, $filter);
+
+        $component->instance()->getTableFiltersForm();
+        $field = $filter->getSchema()->getFlatFields()['value'];
+        self::assertInstanceOf(Select::class, $field);
+
+        $options = $filter->getOptionsFromRelationship($field);
+        self::assertArrayHasKey($client->getKey(), $options);
+        self::assertSame('#'.$client->getKey(), $options[$client->getKey()]);
+
+        $javascriptOptions = $field->getOptionsForJs();
+        $javascriptOption = collect($javascriptOptions)->firstWhere('value', (string) $client->getKey());
+        self::assertIsArray($javascriptOption);
+        self::assertSame('#'.$client->getKey(), $javascriptOption['label']);
+
+        $searchResults = $filter->getSearchResultsFromRelationship($field, $existingClient->full_name);
+        self::assertArrayHasKey($existingClient->getKey(), $searchResults);
+        self::assertSame($existingClient->full_name, $searchResults[$existingClient->getKey()]);
+        self::assertNotContains(null, array_values($searchResults));
+    }
+
     /** @return array{Organization, User, Client, Specialist, Service} */
     private function fixture(string $organizationTimezone = 'UTC', ?string $configuredTimezone = null): array
     {
