@@ -32,6 +32,9 @@ final class SessionForm
                             ->required()
                             ->searchable()
                             ->native(false)
+                            ->preload()
+                            ->optionsLimit(50)
+                            ->options(static fn (): array => self::specialistResults(''))
                             ->getSearchResultsUsing(static fn (string $search): array => self::specialistResults($search))
                             ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value)),
                         Select::make('booking_id')

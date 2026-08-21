@@ -17,6 +17,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -221,10 +222,75 @@ final class BookingOperationalFiltersTest extends TestCase
             $filter = $component->instance()->getTable()->getFilter($filterName);
             self::assertInstanceOf(SelectFilter::class, $filter);
             self::assertSame(50, $filter->getOptionsLimit());
+            self::assertTrue($filter->isPreloaded());
+            $component->instance()->getTableFiltersForm();
+            $field = $filter->getSchema()->getFlatFields()['value'];
+            self::assertInstanceOf(Select::class, $field);
+            $options = $filter->getOptionsFromRelationship($field);
             self::assertSame(
                 [$filterName === 'specialist' ? $specialist->getKey() : ($filterName === 'service' ? $service->getKey() : $client->getKey())],
                 $filter->getRelationshipQuery()->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
             );
+            self::assertArrayHasKey(
+                $filterName === 'specialist' ? $specialist->getKey() : ($filterName === 'service' ? $service->getKey() : $client->getKey()),
+                $options,
+            );
+            self::assertArrayNotHasKey(
+                $filterName === 'specialist' ? $otherSpecialist->getKey() : ($filterName === 'service' ? $otherService->getKey() : $otherClient->getKey()),
+                $options,
+            );
+        }
+    }
+
+    public function test_booking_relationship_filter_options_are_bounded_scoped_and_searchable_before_typing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $targetSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'A Target Specialist',
+        ]);
+        $targetService = Service::factory()->forOrganization($organization)->create([
+            'name' => 'A Target Service',
+        ]);
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create([
+            'display_name' => 'A Target Specialist',
+        ]);
+        $foreignService = Service::factory()->forOrganization($otherOrganization)->create([
+            'name' => 'A Target Service',
+        ]);
+
+        for ($index = 0; $index < 55; $index++) {
+            Specialist::factory()->forOrganization($organization)->create([
+                'display_name' => 'Z Specialist '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+            Service::factory()->forOrganization($organization)->create([
+                'name' => 'Z Service '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $component = Livewire::actingAs($admin)->test(ListBookings::class);
+
+        foreach ([
+            'specialist' => [$targetSpecialist, $foreignSpecialist],
+            'service' => [$targetService, $foreignService],
+        ] as $filterName => [$target, $foreign]) {
+            $filter = $component->instance()->getTable()->getFilter($filterName);
+            self::assertInstanceOf(SelectFilter::class, $filter);
+
+            $component->instance()->getTableFiltersForm();
+            $field = $filter->getSchema()->getFlatFields()['value'];
+            self::assertInstanceOf(Select::class, $field);
+            self::assertTrue($filter->isPreloaded());
+            self::assertSame(50, $filter->getOptionsLimit());
+            $options = $filter->getOptionsFromRelationship($field);
+            self::assertIsArray($options);
+            self::assertCount(50, $options);
+            self::assertArrayHasKey($target->getKey(), $options);
+            self::assertArrayNotHasKey($foreign->getKey(), $options);
+
+            $searchResults = $filter->getSearchResultsFromRelationship($field, 'A Target');
+            self::assertArrayHasKey($target->getKey(), $searchResults);
+            self::assertArrayNotHasKey($foreign->getKey(), $searchResults);
         }
     }
 

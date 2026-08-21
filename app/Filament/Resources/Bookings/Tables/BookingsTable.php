@@ -77,6 +77,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('service')
                 ->label('Услуга')
@@ -86,6 +87,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('visit_format')
                 ->label('Формат визита')
@@ -101,6 +103,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50);
         }
 

@@ -17,10 +17,35 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
+use Illuminate\Contracts\Support\Htmlable;
 
 class ViewClient extends ViewRecord
 {
     protected static string $resource = ClientResource::class;
+
+    public function getRecordTitle(): string
+    {
+        return ClientResource::getRecordTitle($this->getRecord());
+    }
+
+    public function getTitle(): string|Htmlable
+    {
+        return $this->getRecordTitle();
+    }
+
+    public function getBreadcrumb(): string
+    {
+        return $this->getRecordTitle();
+    }
+
+    /** @return array<string> */
+    public function getBreadcrumbs(): array
+    {
+        return [
+            ...$this->getResourceBreadcrumbs(),
+            $this->getBreadcrumb(),
+        ];
+    }
 
     public function hasCombinedRelationManagerTabsWithContent(): bool
     {
