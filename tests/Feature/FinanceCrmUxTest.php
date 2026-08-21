@@ -11,6 +11,7 @@ use App\Filament\Resources\FinancialObligations\Pages\ViewFinancialObligation;
 use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
+use App\Modules\Finance\Application\GetBookingFinanceSummary;
 use App\Modules\Finance\Application\InitiateFakePayment;
 use App\Modules\Finance\Application\RecordManualPayment;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
@@ -34,9 +35,13 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\TestCase;
 
 final class FinanceCrmUxTest extends TestCase
@@ -352,6 +357,112 @@ final class FinanceCrmUxTest extends TestCase
         self::assertStringNotContainsString('Сохранить финансовые настройки', $component->html());
         self::assertStringNotContainsString('Мультивалютные расчёты', $component->html());
         self::assertNotNull(OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->first());
+    }
+
+    public function test_invalid_persisted_configuration_renders_unavailable_and_cannot_be_overwritten(): void
+    {
+        [$organization, $admin] = $this->financeFixture(singleCurrency: true);
+        DB::table('organization_currency_configurations')
+            ->where('organization_id', $organization->getKey())
+            ->update(['base_currency' => 'ZZZ']);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(FinanceConfiguration::class)
+            ->assertSuccessful()
+            ->assertSet('configurationUnavailable', true)
+            ->assertSee('Настройки валют недоступны');
+
+        self::assertStringNotContainsString('Сохранить финансовые настройки', $component->html());
+        try {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            self::fail('A normal save must not overwrite a corrupt persisted configuration.');
+        } catch (\Throwable $exception) {
+            self::assertInstanceOf(ValidationException::class, $exception);
+            self::assertSame('ZZZ', DB::table('organization_currency_configurations')
+                ->where('organization_id', $organization->getKey())
+                ->value('base_currency'));
+        }
+        self::assertSame('ZZZ', DB::table('organization_currency_configurations')
+            ->where('organization_id', $organization->getKey())
+            ->value('base_currency'));
+    }
+
+    public function test_correction_action_fails_closed_for_malformed_ledger_currency_and_payment_metadata(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '20.00',
+            currency: 'USD',
+            paymentMethod: 'cash',
+            occurredAt: CarbonImmutable::now('UTC'),
+            note: null,
+            receipt: null,
+            idempotencyKey: 'malformed-correction-source',
+        );
+        DB::table('financial_ledger_entries')
+            ->where('id', $payment->getKey())
+            ->update([
+                'payment_currency' => 'ZZZ',
+                'payment_method' => 'unsupported_method',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableActionHidden('correctPayment', $payment)
+            ->assertSee('Способ оплаты недоступен');
+    }
+
+    public function test_booking_finance_logs_sanitized_metadata_for_expected_history_corruption(): void
+    {
+        [$organization, $admin, , $booking, $obligation] = $this->financeFixture(singleCurrency: true);
+        $snapshots = $obligation->conversion_snapshots;
+        unset($snapshots['display']);
+        $obligation->forceFill(['conversion_snapshots' => $snapshots])->save();
+        $this->resolveFilamentContext($admin, $organization);
+        Log::spy();
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Расчёт недоступен');
+
+        Log::shouldHaveReceived('warning')
+            ->with(
+                'Booking finance reconciliation was unavailable for persisted history.',
+                [
+                    'organization_id' => $organization->getKey(),
+                    'booking_id' => $booking->getKey(),
+                    'obligation_id' => $obligation->getKey(),
+                    'reason_code' => 'invalid_persisted_finance_history',
+                ],
+            )
+            ->once();
+    }
+
+    public function test_booking_finance_does_not_convert_unexpected_errors_to_unavailable_state(): void
+    {
+        [$organization, $admin, , $booking] = $this->financeFixture(singleCurrency: true);
+        DB::listen(static function (QueryExecuted $query): void {
+            if (str_contains($query->sql, 'financial_ledger_entries')) {
+                throw new RuntimeException('database connection failed');
+            }
+        });
+        $this->expectException(RuntimeException::class);
+        app(GetBookingFinanceSummary::class)->handle($admin, $booking);
     }
 
     public function test_view_only_finance_user_cannot_record_payment_from_the_list(): void

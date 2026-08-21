@@ -7,12 +7,11 @@ use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
+use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Finance\Application\GetBookingFinanceSummary;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
-use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
-use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
@@ -38,6 +37,7 @@ final class FinancePresentation
 
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
+        private readonly FinancialReconciliationContract $contract,
         private readonly FinanceAuthorization $authorization,
         private readonly CurrencyConfigurationService $configuration,
         private readonly CurrencyCatalog $catalog,
@@ -160,8 +160,9 @@ final class FinancePresentation
         try {
             $code = $this->catalog->code($currency);
 
-            return Money::ofMinor($minor, $code)->toDecimalString().' '.$code->value;
-        } catch (InvalidArgumentException) {
+            return $this->contract->money($minor, $code, 'A persisted financial amount is invalid.')
+                ->toDecimalString().' '.$code->value;
+        } catch (InvalidArgumentException|UnexpectedValueException) {
             return '—';
         }
     }
@@ -266,10 +267,10 @@ final class FinancePresentation
         try {
             $source = $this->catalog->code($snapshot['source_currency'] ?? null);
             $target = $this->catalog->code($snapshot['target_currency'] ?? null);
-            $rate = (string) $snapshot['rate'];
+            $rate = $this->contract->rate($snapshot['rate']);
 
             return $source === $target ? null : '1 '.$source->value.' = '.$rate.' '.$target->value;
-        } catch (InvalidArgumentException) {
+        } catch (InvalidArgumentException|UnexpectedValueException) {
             return null;
         }
     }
@@ -295,16 +296,22 @@ final class FinancePresentation
 
     public function paymentMethodLabel(FinancialLedgerEntry $entry): string
     {
-        return match ($entry->entry_type) {
-            FinancialLedgerEntryType::Correction => 'Исправление оплаты',
-            FinancialLedgerEntryType::FakeGatewaySettlement => 'Тестовая оплата',
-            FinancialLedgerEntryType::ManualPayment => match ($entry->payment_method) {
-                PaymentMethod::Cash => 'Наличные',
-                PaymentMethod::BankTransfer => 'Банковский перевод',
-                PaymentMethod::ManualCard => 'Карта в клинике',
-                PaymentMethod::Other => 'Другое',
+        return match ($entry->getRawOriginal('entry_type')) {
+            'correction' => $entry->getRawOriginal('payment_method') === null
+                ? 'Исправление оплаты'
+                : 'Способ оплаты недоступен',
+            'fake_gateway_settlement' => $entry->getRawOriginal('payment_method') === null
+                ? 'Тестовая оплата'
+                : 'Способ оплаты недоступен',
+            'manual_payment' => match ($entry->getRawOriginal('payment_method')) {
+                'cash' => 'Наличные',
+                'bank_transfer' => 'Банковский перевод',
+                'manual_card' => 'Карта в клинике',
+                'other' => 'Другое',
                 null => 'Оплата',
+                default => 'Способ оплаты недоступен',
             },
+            default => 'Платёж недоступен',
         };
     }
 

@@ -5,13 +5,12 @@ namespace App\Filament\Support;
 use App\Models\User;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\FinanceAuthorization;
+use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Finance\Application\RecordManualPayment;
-use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
-use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -77,7 +76,8 @@ final class FinancePaymentActions
 
                 return $actor instanceof User
                     && app(FinanceAuthorization::class)->allowsManage($actor)
-                    && $record->entry_type === FinancialLedgerEntryType::ManualPayment
+                    && $record->getRawOriginal('entry_type') === 'manual_payment'
+                    && self::canCorrect($record)
                     && ! (bool) $record->getAttribute('has_correction');
             })
             ->action(function (FinancialLedgerEntry $record, array $data): void {
@@ -237,10 +237,11 @@ final class FinancePaymentActions
         $presentation = app(FinancePresentation::class);
 
         try {
-            $currency = app(CurrencyCatalog::class)->code($entry->getRawOriginal('payment_currency'));
-            $amount = Money::ofMinor($entry->payment_amount_minor, $currency)
+            $currency = app(FinancialReconciliationContract::class)->currency($entry->getRawOriginal('payment_currency'));
+            $amount = app(FinancialReconciliationContract::class)
+                ->money($entry->getRawOriginal('payment_amount_minor'), $currency, 'A persisted ledger payment amount is invalid.')
                 ->toDecimalString().' '.$currency->value;
-        } catch (\InvalidArgumentException) {
+        } catch (\InvalidArgumentException|\UnexpectedValueException) {
             $amount = '—';
         }
 
@@ -253,6 +254,17 @@ final class FinancePaymentActions
             return app(CurrencyCatalog::class)->code($obligation->getRawOriginal('settlement_currency'))->value;
         } catch (\InvalidArgumentException) {
             return null;
+        }
+    }
+
+    private static function canCorrect(FinancialLedgerEntry $entry): bool
+    {
+        try {
+            app(FinancialReconciliationContract::class)->validateCorrectableLedgerEntry($entry);
+
+            return true;
+        } catch (\UnexpectedValueException) {
+            return false;
         }
     }
 }

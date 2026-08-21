@@ -458,6 +458,47 @@ final class MilestoneSixFinanceTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_client_portal_finance_marks_invalid_history_unavailable_without_a_numeric_total(): void
+    {
+        [$organization, , $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        DB::table('financial_obligations')->where('id', $obligation->getKey())->update(['display_currency' => 'ZZZ']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Finance')
+                ->where('hasUnavailableObligations', true)
+                ->has('totals', 0)
+                ->where('obligations.0.available', false)
+                ->where('obligations.0.outstandingMinor', null)
+                ->where('obligations.0.statusLabel', 'Calculation unavailable'));
+
+        self::assertSame($organization->getKey(), $obligation->organization_id);
+    }
+
+    public function test_client_portal_finance_marks_malformed_ledger_history_unavailable(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        $payment = app(RecordManualPayment::class)->handle($admin, $obligation, '20.00', 'USD', 'cash', now(), null, null, 'portal-malformed-ledger');
+        DB::table('financial_ledger_entries')->where('id', $payment->getKey())->update(['payment_currency' => 'ZZZ']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Finance')
+                ->where('hasUnavailableObligations', true)
+                ->has('totals', 0)
+                ->where('obligations.0.available', false)
+                ->where('obligations.0.history.0.available', false)
+                ->where('obligations.0.history.0.amountMinor', null));
+
+        self::assertSame($organization->getKey(), $obligation->organization_id);
+    }
+
     public function test_finance_scenario_event_uses_existing_engine_and_rechecks_debt_before_delivery(): void
     {
         [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);

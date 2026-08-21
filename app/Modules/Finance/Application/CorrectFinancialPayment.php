@@ -12,6 +12,7 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use UnexpectedValueException;
 
 final class CorrectFinancialPayment
 {
@@ -19,6 +20,7 @@ final class CorrectFinancialPayment
         private readonly FinanceAuthorization $authorization,
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly RecordAuditEvent $audit,
+        private readonly FinancialReconciliationContract $contract,
     ) {}
 
     public function handle(User $actor, FinancialLedgerEntry $original, string $reason, string $idempotencyKey): FinancialLedgerEntry
@@ -96,8 +98,9 @@ final class CorrectFinancialPayment
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if (! in_array($lockedOriginal->entry_type->value, ['manual_payment', 'fake_gateway_settlement'], true)
-                || $lockedOriginal->corrects_ledger_entry_id !== null) {
+            try {
+                $originalData = $this->contract->validateCorrectableLedgerEntry($lockedOriginal);
+            } catch (UnexpectedValueException) {
                 throw ValidationException::withMessages(['payment' => 'Эту запись нельзя исправить повторной проводкой.']);
             }
 
@@ -114,16 +117,16 @@ final class CorrectFinancialPayment
                 data: new FinancialLedgerEntryData(
                     entryType: FinancialLedgerEntryType::Correction,
                     source: FinancialEntrySource::Crm,
-                    amountMinor: -$lockedOriginal->amount_minor,
-                    currency: $lockedOriginal->currency,
-                    paymentAmountMinor: -$lockedOriginal->payment_amount_minor,
-                    paymentCurrency: $lockedOriginal->payment_currency,
-                    baseAmountMinor: -$lockedOriginal->base_amount_minor,
-                    baseCurrency: $lockedOriginal->base_currency,
-                    displayAmountMinor: -$lockedOriginal->display_amount_minor,
-                    displayCurrency: $lockedOriginal->display_currency,
-                    settlementAmountMinor: -$lockedOriginal->settlement_amount_minor,
-                    settlementCurrency: $lockedOriginal->settlement_currency,
+                    amountMinor: -$originalData['amount_minor'],
+                    currency: $originalData['currency'],
+                    paymentAmountMinor: -$originalData['payment_amount_minor'],
+                    paymentCurrency: $originalData['payment_currency'],
+                    baseAmountMinor: -$originalData['base_amount_minor'],
+                    baseCurrency: $originalData['base_currency'],
+                    displayAmountMinor: -$originalData['display_amount_minor'],
+                    displayCurrency: $originalData['display_currency'],
+                    settlementAmountMinor: -$originalData['settlement_amount_minor'],
+                    settlementCurrency: $originalData['settlement_currency'],
                     conversionSnapshot: [
                         'correction_of' => $lockedOriginal->getKey(),
                         'original_snapshot' => $lockedOriginal->conversion_snapshot,

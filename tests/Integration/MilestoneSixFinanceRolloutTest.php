@@ -4,11 +4,14 @@ namespace Tests\Integration;
 
 use App\Models\User;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
+use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -22,7 +25,9 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
+use UnexpectedValueException;
 
 final class MilestoneSixFinanceRolloutTest extends TestCase
 {
@@ -226,6 +231,240 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
             $list->query($organization->getKey()),
             FinancialStatus::Outstanding->value,
         )->get());
+    }
+
+    public function test_postgresql_projection_matches_php_for_valid_statuses_and_correction(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+        $payment = $this->postgresLedger($obligation, 2500, 2500);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::PartiallyPaid->value);
+        $this->postgresLedger($obligation, 7500, 7500);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Settled->value);
+        $this->postgresLedger($obligation, -2500, -2500, 'correction', $payment->getKey());
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::PartiallyPaid->value);
+    }
+
+    #[DataProvider('postgresRoundingCases')]
+    public function test_postgresql_projection_matches_php_for_jpy_and_decimal_rounding(
+        string $settlementCurrency,
+        string $targetCurrency,
+        int $settlementAmountMinor,
+        string $rate,
+        string $roundingMode,
+        int $targetAmountMinor,
+    ): void {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture(
+            settlementCurrency: $settlementCurrency,
+            targetCurrency: $targetCurrency,
+            settlementAmountMinor: $settlementAmountMinor,
+            rate: $rate,
+            roundingMode: $roundingMode,
+        );
+
+        self::assertSame($targetAmountMinor, $obligation->display_amount_minor);
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+    }
+
+    public function test_postgresql_projection_accepts_the_contractual_currency_normalization(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+        $snapshots = $obligation->conversion_snapshots;
+
+        foreach (['base', 'display'] as $role) {
+            $snapshots[$role]['source_currency'] = ' usd ';
+            $snapshots[$role]['target_currency'] = ' usd ';
+        }
+
+        DB::table('financial_obligations')->where('id', $obligation->getKey())->update([
+            'currency' => 'usd',
+            'base_currency' => 'usd',
+            'display_currency' => 'usd',
+            'payment_currency' => 'usd',
+            'settlement_currency' => 'usd',
+            'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
+        ]);
+
+        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function postgresInvalidCases(): iterable
+    {
+        yield 'missing display snapshot' => ['missing_display_snapshot'];
+        yield 'unsupported persisted currency' => ['unsupported_currency'];
+        yield 'invalid rounding mode' => ['invalid_rounding_mode'];
+        yield 'incompatible ledger currency' => ['incompatible_ledger_currency'];
+        yield 'overpayment' => ['overpayment'];
+        yield 'negative aggregate' => ['negative_aggregate'];
+    }
+
+    #[DataProvider('postgresInvalidCases')]
+    public function test_postgresql_projection_rejects_the_same_invalid_record_as_php(string $case): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+
+        if ($case === 'missing_display_snapshot' || $case === 'invalid_rounding_mode') {
+            $snapshots = $obligation->conversion_snapshots;
+
+            if ($case === 'missing_display_snapshot') {
+                unset($snapshots['display']);
+            } else {
+                $snapshots['base']['rounding_mode'] = 'invalid';
+            }
+
+            DB::table('financial_obligations')->where('id', $obligation->getKey())->update([
+                'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
+            ]);
+        } elseif ($case === 'unsupported_currency') {
+            DB::table('financial_obligations')->where('id', $obligation->getKey())->update(['base_currency' => 'ZZZ']);
+        } elseif ($case === 'incompatible_ledger_currency') {
+            $this->postgresLedger($obligation, 1000, 1000, 'manual_payment', null, 'RUB');
+        } elseif ($case === 'overpayment') {
+            $this->postgresLedger($obligation, 10001, 10001);
+        } else {
+            $payment = $this->postgresLedger($obligation, 1000, 1000);
+            $this->postgresLedger($obligation, -2000, -2000, 'correction', $payment->getKey());
+        }
+
+        $this->assertPostgresParity($organization, $obligation, null);
+    }
+
+    /** @return array<string, array{string, string, int, string, string, int}> */
+    public static function postgresRoundingCases(): array
+    {
+        return [
+            'JPY to USD half up' => ['JPY', 'USD', 1, '0.005', 'half_up', 1],
+            'JPY to USD half even' => ['JPY', 'USD', 1, '0.005', 'half_even', 0],
+            'JPY to USD down' => ['JPY', 'USD', 1, '0.005', 'down', 0],
+            'USD to JPY half up' => ['USD', 'JPY', 1, '50', 'half_up', 1],
+            'USD to JPY half even' => ['USD', 'JPY', 1, '50', 'half_even', 0],
+            'USD to JPY down' => ['USD', 'JPY', 1, '50', 'down', 0],
+        ];
+    }
+
+    /** @return array{Organization, User, FinancialObligation} */
+    private function postgresObligationFixture(
+        string $settlementCurrency = 'USD',
+        string $targetCurrency = 'USD',
+        int $settlementAmountMinor = 10000,
+        string $rate = '1',
+        string $roundingMode = 'half_up',
+    ): array {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $rounding = FinancialRoundingMode::fromMixed($roundingMode);
+        $target = Money::ofMinor($settlementAmountMinor, $settlementCurrency)
+            ->convert($targetCurrency, $rate, $rounding);
+        $snapshot = [
+            'source_amount_minor' => (string) $settlementAmountMinor,
+            'source_currency' => $settlementCurrency,
+            'target_amount_minor' => $target->minorUnitsString(),
+            'target_currency' => $targetCurrency,
+            'rate' => $rate,
+            'rate_id' => null,
+            'rate_version' => null,
+            'effective_at' => null,
+            'rounding_mode' => $roundingMode,
+            'source_scale' => Money::ofMinor($settlementAmountMinor, $settlementCurrency)->scale(),
+            'target_scale' => $target->scale(),
+        ];
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => $booking->getKey(),
+            'service_id' => $service->getKey(),
+            'amount_minor' => $settlementAmountMinor,
+            'currency' => $settlementCurrency,
+            'base_amount_minor' => $target->minorUnits(),
+            'base_currency' => $targetCurrency,
+            'display_amount_minor' => $target->minorUnits(),
+            'display_currency' => $targetCurrency,
+            'payment_amount_minor' => $settlementAmountMinor,
+            'payment_currency' => $settlementCurrency,
+            'settlement_amount_minor' => $settlementAmountMinor,
+            'settlement_currency' => $settlementCurrency,
+            'price_snapshot' => ['amount_minor' => $settlementAmountMinor],
+            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'creation_key' => 'pg-parity-'.$organization->getKey(),
+        ])->save();
+
+        return [$organization, $admin, $obligation];
+    }
+
+    private function postgresLedger(
+        FinancialObligation $obligation,
+        int $amountMinor,
+        int $settlementAmountMinor,
+        string $entryType = 'manual_payment',
+        ?int $corrects = null,
+        ?string $displayCurrency = null,
+    ): FinancialLedgerEntry {
+        $currency = (string) $obligation->getRawOriginal('settlement_currency');
+        $displayCurrency ??= (string) $obligation->getRawOriginal('display_currency');
+        $entry = new FinancialLedgerEntry;
+        $entry->forceFill([
+            'organization_id' => $obligation->organization_id,
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => $entryType,
+            'source' => 'crm',
+            'amount_minor' => $amountMinor,
+            'currency' => $currency,
+            'payment_amount_minor' => $amountMinor,
+            'payment_currency' => $currency,
+            'base_amount_minor' => $amountMinor,
+            'base_currency' => $displayCurrency,
+            'display_amount_minor' => $amountMinor,
+            'display_currency' => $displayCurrency,
+            'settlement_amount_minor' => $settlementAmountMinor,
+            'settlement_currency' => $currency,
+            'payment_method' => $entryType === 'correction' ? null : 'cash',
+            'occurred_at' => now(),
+            'idempotency_key' => 'pg-parity-ledger-'.uniqid('', true),
+            'corrects_ledger_entry_id' => $corrects,
+        ])->save();
+
+        return $entry;
+    }
+
+    private function assertPostgresParity(Organization $organization, FinancialObligation $obligation, ?string $expectedStatus): void
+    {
+        $phpStatus = null;
+
+        try {
+            $phpStatus = app(ReconcileFinancialObligation::class)
+                ->handle($organization->getKey(), $obligation->getKey())
+                ->status
+                ->value;
+        } catch (UnexpectedValueException) {
+            $phpStatus = null;
+        }
+
+        self::assertSame($expectedStatus, $phpStatus);
+        $list = app(ListFinancialObligationsForCrm::class);
+
+        foreach (FinancialStatus::cases() as $status) {
+            $matches = $list->applyStatusFilter(
+                $list->query($organization->getKey()),
+                $status->value,
+            )->whereKey($obligation->getKey())->count();
+
+            self::assertSame($expectedStatus === $status->value ? 1 : 0, $matches, $status->value);
+        }
     }
 
     private function requirePostgres(): void

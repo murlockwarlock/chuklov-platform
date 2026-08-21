@@ -2,7 +2,6 @@
 
 namespace App\Modules\Finance\Application;
 
-use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +12,8 @@ final class FinancialReconciliationProjection
     private const OBLIGATION_TABLE = 'financial_obligations';
 
     private const LEDGER_TABLE = 'financial_ledger_entries';
+
+    public function __construct(private readonly FinancialReconciliationContract $contract) {}
 
     /** @return Builder<FinancialLedgerEntry> */
     public function appliedSettlementQuery(string $obligationTable, string $ledgerTable): Builder
@@ -32,12 +33,7 @@ final class FinancialReconciliationProjection
             ->selectRaw('COUNT(*)')
             ->whereColumn('ledger.organization_id', $obligationTable.'.organization_id')
             ->whereColumn('ledger.obligation_id', $obligationTable.'.id')
-            ->where(function (Builder $query) use ($obligationTable): void {
-                $query
-                    ->whereColumn('ledger.settlement_currency', '<>', $obligationTable.'.settlement_currency')
-                    ->orWhereColumn('ledger.base_currency', '<>', $obligationTable.'.base_currency')
-                    ->orWhereColumn('ledger.display_currency', '<>', $obligationTable.'.display_currency');
-            });
+            ->where(new FinanceSqlCondition($this->invalidOrIncompatibleLedgerSql($obligationTable)));
     }
 
     /**
@@ -50,15 +46,28 @@ final class FinancialReconciliationProjection
         $ledgerTable = self::LEDGER_TABLE;
         $applied = $this->appliedSettlementSql($obligationTable, $ledgerTable);
 
+        foreach ($this->contract->obligationCurrencyAttributes() as $attribute) {
+            $this->whereSupportedCurrency($query, $obligationTable.'.'.$attribute);
+        }
+
+        foreach (array_merge(
+            $this->contract->obligationAmountInvariants()['positive'],
+            $this->contract->obligationAmountInvariants()['non_negative'],
+        ) as $attribute) {
+            $query->where(new FinanceSqlCondition(
+                $this->contract->validIntegerSql($obligationTable.'.'.$attribute),
+            ));
+        }
+
+        foreach ($this->contract->obligationAmountInvariants()['positive'] as $attribute) {
+            $query->where($obligationTable.'.'.$attribute, '>', 0);
+        }
+
+        foreach ($this->contract->obligationAmountInvariants()['non_negative'] as $attribute) {
+            $query->where($obligationTable.'.'.$attribute, '>=', 0);
+        }
+
         $query
-            ->whereIn($obligationTable.'.currency', $this->currencyValues())
-            ->whereIn($obligationTable.'.base_currency', $this->currencyValues())
-            ->whereIn($obligationTable.'.display_currency', $this->currencyValues())
-            ->whereIn($obligationTable.'.payment_currency', $this->currencyValues())
-            ->whereIn($obligationTable.'.settlement_currency', $this->currencyValues())
-            ->where($obligationTable.'.settlement_amount_minor', '>', 0)
-            ->where($obligationTable.'.base_amount_minor', '>=', 0)
-            ->where($obligationTable.'.display_amount_minor', '>=', 0)
             ->where(new FinanceSqlCondition($applied.' >= 0'))
             ->where(new FinanceSqlCondition($applied.' <= '.$obligationTable.'.settlement_amount_minor'))
             ->where(new FinanceSqlCondition($this->compatibleLedgerSql($obligationTable, $ledgerTable)))
@@ -99,15 +108,6 @@ final class FinancialReconciliationProjection
         return $valid < $total;
     }
 
-    /** @return list<string> */
-    private function currencyValues(): array
-    {
-        return array_map(
-            static fn (CurrencyCode $currency): string => $currency->value,
-            CurrencyCode::cases(),
-        );
-    }
-
     private function appliedSettlementSql(string $obligationTable, string $ledgerTable): string
     {
         return '(SELECT COALESCE(SUM(ledger.settlement_amount_minor), 0)'
@@ -122,12 +122,57 @@ final class FinancialReconciliationProjection
             .'SELECT 1 FROM '.$ledgerTable.' AS ledger'
             .' WHERE ledger.organization_id = '.$obligationTable.'.organization_id'
             .' AND ledger.obligation_id = '.$obligationTable.'.id'
-            .' AND ('
-            .'ledger.settlement_currency <> '.$obligationTable.'.settlement_currency'
-            .' OR ledger.base_currency <> '.$obligationTable.'.base_currency'
-            .' OR ledger.display_currency <> '.$obligationTable.'.display_currency'
-            .')'
+            .' AND '.$this->invalidOrIncompatibleLedgerSql($obligationTable, 'ledger')
             .')';
+    }
+
+    private function invalidOrIncompatibleLedgerSql(
+        string $obligationTable,
+        string $ledgerAlias = 'ledger',
+    ): string {
+        $invalidCurrencies = array_map(
+            fn (string $attribute): string => $this->unsupportedCurrencySql($ledgerAlias.'.'.$attribute),
+            $this->contract->ledgerCurrencyAttributes(),
+        );
+        $ledgerSettlement = $ledgerAlias.'.settlement_amount_minor';
+        $currencyMismatches = array_map(
+            fn (string $attribute): string => $this->currencyMismatchSql(
+                $ledgerAlias.'.'.$attribute,
+                $obligationTable.'.'.$attribute,
+            ),
+            ['settlement_currency', 'base_currency', 'display_currency'],
+        );
+
+        return '('.$ledgerSettlement.' IS NULL'
+            .' OR NOT COALESCE('.$this->contract->validIntegerSql($ledgerSettlement).', false)'
+            .' OR '.$ledgerSettlement.' = 0'
+            .' OR ('.implode(' OR ', $invalidCurrencies).')'
+            .' OR ('.implode(' OR ', $currencyMismatches).'))';
+    }
+
+    /** @param Builder<FinancialObligation> $query */
+    private function whereSupportedCurrency(Builder $query, string $column): void
+    {
+        $values = implode(', ', array_map(static fn (string $value): string => "'".$value."'", $this->contract->currencyValues()));
+        $query->where(new FinanceSqlCondition(
+            $this->contract->normalizedCurrencySql($column).' IN ('.$values.')',
+        ));
+    }
+
+    private function unsupportedCurrencySql(string $column): string
+    {
+        $values = implode(', ', array_map(static fn (string $value): string => "'".$value."'", $this->contract->currencyValues()));
+        $normalized = $this->contract->normalizedCurrencySql($column);
+
+        return '('.$normalized.' IS NULL OR '.$normalized.' NOT IN ('.$values.'))';
+    }
+
+    private function currencyMismatchSql(string $left, string $right): string
+    {
+        $normalizedLeft = $this->contract->normalizedCurrencySql($left);
+        $normalizedRight = $this->contract->normalizedCurrencySql($right);
+
+        return $normalizedLeft.' IS NULL OR '.$normalizedRight.' IS NULL OR '.$normalizedLeft.' <> '.$normalizedRight;
     }
 
     private function snapshotSql(
@@ -156,10 +201,18 @@ final class FinancialReconciliationProjection
         $rateText = $field('rate');
         $rounding = $field('rounding_mode');
         $minor = static fn (string $value): string => "CASE WHEN {$value} ~ '^(0|[1-9][0-9]*)$' THEN ({$value})::numeric END";
-        $rate = "CASE WHEN {$rateText} ~ '^(?:0|[1-9][0-9]{0,19})(?:\\.[0-9]{1,18})?$' THEN ({$rateText})::numeric END";
+        $rateType = "json_typeof({$path}->'rate')";
+        $rate = 'CASE'
+            ." WHEN {$rateType} = 'string' AND {$rateText} ~ '".$this->contract->ratePattern()."' THEN ({$rateText})::numeric"
+            ." WHEN {$rateType} = 'number' AND {$rateText} ~ '".$this->contract->integerRatePattern()."' THEN ({$rateText})::numeric"
+            .' END';
+        $normalizedSourceCurrency = $this->contract->normalizedCurrencySql($sourceCurrency);
+        $normalizedTargetCurrency = $this->contract->normalizedCurrencySql($targetCurrency);
+        $normalizedSettlementCurrency = $this->contract->normalizedCurrencySql($obligationTable.'.settlement_currency');
+        $normalizedTargetColumn = $this->contract->normalizedCurrencySql($obligationTable.'.'.$targetCurrencyColumn);
         $raw = '('.$obligationTable.'.settlement_amount_minor::numeric * '.$rate.' * CASE'
-            .' WHEN '.$obligationTable.'.settlement_currency = \'JPY\' AND '.$obligationTable.'.'.$targetCurrencyColumn." <> 'JPY' THEN 100"
-            .' WHEN '.$obligationTable.'.settlement_currency <> \'JPY\' AND '.$obligationTable.'.'.$targetCurrencyColumn." = 'JPY' THEN 0.01"
+            .' WHEN '.$normalizedSettlementCurrency." = 'JPY' AND ".$normalizedTargetColumn." <> 'JPY' THEN 100"
+            .' WHEN '.$normalizedSettlementCurrency." <> 'JPY' AND ".$normalizedTargetColumn." = 'JPY' THEN 0.01"
             .' ELSE 1 END)';
         $floor = 'floor('.$raw.')';
         $rounded = "CASE\n"
@@ -173,8 +226,8 @@ final class FinancialReconciliationProjection
             .' END END';
 
         return "json_typeof({$obligationTable}.conversion_snapshots->'{$role}') = 'object'"
-            .' AND '.$sourceCurrency.' = '.$obligationTable.'.settlement_currency'
-            .' AND '.$targetCurrency.' = '.$obligationTable.'.'.$targetCurrencyColumn
+            .' AND '.$normalizedSourceCurrency.' = '.$normalizedSettlementCurrency
+            .' AND '.$normalizedTargetCurrency.' = '.$normalizedTargetColumn
             .' AND '.$minor($sourceAmount).' = '.$obligationTable.'.settlement_amount_minor'
             .' AND '.$minor($targetAmount).' = '.$obligationTable.'.'.$targetAmountColumn
             .' AND '.$rate.' > 0'
@@ -194,12 +247,21 @@ final class FinancialReconciliationProjection
         $targetCurrency = $field('target_currency');
         $sourceAmount = $field('source_amount_minor');
         $targetAmount = $field('target_amount_minor');
+        $sourceAmountType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.source_amount_minor')";
+        $targetAmountType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.target_amount_minor')";
         $rateValue = $field('rate');
+        $rateType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.rate')";
         $rateText = 'CAST('.$rateValue.' AS TEXT)';
         $rounding = $field('rounding_mode');
-        $raw = '(CAST('.$obligationTable.'.settlement_amount_minor AS REAL) * CAST('.$rateText.' AS REAL) * CASE'
-            .' WHEN '.$obligationTable.'.settlement_currency = \'JPY\' AND '.$obligationTable.'.'.$targetCurrencyColumn." <> 'JPY' THEN 100"
-            .' WHEN '.$obligationTable.'.settlement_currency <> \'JPY\' AND '.$obligationTable.'.'.$targetCurrencyColumn." = 'JPY' THEN 0.01"
+        $normalizedSourceCurrency = $this->contract->normalizedCurrencySql('CAST('.$sourceCurrency.' AS TEXT)');
+        $normalizedTargetCurrency = $this->contract->normalizedCurrencySql('CAST('.$targetCurrency.' AS TEXT)');
+        $normalizedSettlementCurrency = $this->contract->normalizedCurrencySql($obligationTable.'.settlement_currency');
+        $normalizedTargetColumn = $this->contract->normalizedCurrencySql($obligationTable.'.'.$targetCurrencyColumn);
+        $rate = "CASE WHEN {$rateType} IN ('text', 'integer') AND ".$this->sqliteRateSql($rateText)
+            .' THEN '.$rateText.' END';
+        $raw = '(CAST('.$obligationTable.'.settlement_amount_minor AS REAL) * '.$rate.' * CASE'
+            .' WHEN '.$normalizedSettlementCurrency." = 'JPY' AND ".$normalizedTargetColumn." <> 'JPY' THEN 100"
+            .' WHEN '.$normalizedSettlementCurrency." <> 'JPY' AND ".$normalizedTargetColumn." = 'JPY' THEN 0.01"
             .' ELSE 1 END)';
         $floor = 'CAST('.$raw.' AS INTEGER)';
         $rounded = "CASE\n"
@@ -213,20 +275,21 @@ final class FinancialReconciliationProjection
             .' END END';
 
         return "json_type({$obligationTable}.conversion_snapshots, '{$path}') = 'object'"
-            .' AND CAST('.$sourceCurrency.' AS TEXT) = '.$obligationTable.'.settlement_currency'
-            .' AND CAST('.$targetCurrency.' AS TEXT) = '.$obligationTable.'.'.$targetCurrencyColumn
-            .' AND '.$this->sqliteMinorSql($sourceAmount, $obligationTable.'.settlement_amount_minor')
-            .' AND '.$this->sqliteMinorSql($targetAmount, $obligationTable.'.'.$targetAmountColumn)
-            .' AND '.$this->sqliteRateSql($rateText)
+            .' AND '.$normalizedSourceCurrency.' = '.$normalizedSettlementCurrency
+            .' AND '.$normalizedTargetCurrency.' = '.$normalizedTargetColumn
+            .' AND '.$this->sqliteMinorSql($sourceAmount, $obligationTable.'.settlement_amount_minor', $sourceAmountType)
+            .' AND '.$this->sqliteMinorSql($targetAmount, $obligationTable.'.'.$targetAmountColumn, $targetAmountType)
+            .' AND '.$rate.' > 0'
             .' AND '.$rounding." IN ('down', 'half_up', 'half_even')"
             .' AND '.$rounded.' = '.$obligationTable.'.'.$targetAmountColumn;
     }
 
-    private function sqliteMinorSql(string $value, string $expected): string
+    private function sqliteMinorSql(string $value, string $expected, string $type): string
     {
         $text = 'CAST('.$value.' AS TEXT)';
 
-        return $value.' IS NOT NULL'
+        return $type." IN ('text', 'integer')"
+            .' AND '.$value.' IS NOT NULL'
             .' AND '.$text." NOT GLOB '*[^0-9]*'"
             .' AND '.$text." <> ''"
             .' AND ('.$text." = '0' OR substr(".$text.', 1, 1) <> \'0\')'
