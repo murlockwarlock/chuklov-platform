@@ -58,10 +58,7 @@ final class FinanceReconciliationProjectionTest extends TestCase
                 ->where('id', $obligation->getKey())
                 ->update([$attribute => 'usd']);
         } else {
-            $entry = $this->ledger($obligation, 2500, 2500);
-            DB::table('financial_ledger_entries')
-                ->where('id', $entry->getKey())
-                ->update([$attribute => 'usd']);
+            $this->ledger($obligation, 2500, 2500, overrides: [$attribute => 'usd']);
         }
 
         $this->assertCanonicalState($organization, $obligation, null);
@@ -209,15 +206,16 @@ final class FinanceReconciliationProjectionTest extends TestCase
         return [$organization, $obligation];
     }
 
+    /** @param array<string, mixed> $overrides */
     private function ledger(
         FinancialObligation $obligation,
         int $amountMinor,
         int $settlementAmountMinor,
         string $entryType = 'manual_payment',
         ?int $corrects = null,
+        array $overrides = [],
     ): FinancialLedgerEntry {
-        $entry = new FinancialLedgerEntry;
-        $entry->forceFill([
+        $attributes = [
             'organization_id' => $obligation->organization_id,
             'obligation_id' => $obligation->getKey(),
             'entry_type' => $entryType,
@@ -237,9 +235,11 @@ final class FinanceReconciliationProjectionTest extends TestCase
             'occurred_at' => now(),
             'idempotency_key' => 'projection-ledger-'.uniqid('', true),
             'corrects_ledger_entry_id' => $corrects,
-        ])->save();
+            'created_at' => now(),
+        ];
+        $id = DB::table('financial_ledger_entries')->insertGetId([...$attributes, ...$overrides]);
 
-        return $entry;
+        return FinancialLedgerEntry::query()->findOrFail($id);
     }
 
     private function assertCanonicalState(

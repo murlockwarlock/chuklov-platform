@@ -14,6 +14,7 @@ use App\Modules\Finance\Application\SaveExchangeRate;
 use App\Modules\Finance\Application\SettleFakePayment;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
+use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
@@ -491,8 +492,7 @@ final class MilestoneSixFinanceTest extends TestCase
     {
         [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
         $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
-        $payment = app(RecordManualPayment::class)->handle($admin, $obligation, '20.00', 'USD', 'cash', now(), null, null, 'portal-malformed-ledger');
-        DB::table('financial_ledger_entries')->where('id', $payment->getKey())->update(['payment_currency' => 'ZZZ']);
+        $this->rawLedgerEntry($admin, $obligation, 'portal-malformed-ledger', ['payment_currency' => 'ZZZ']);
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->get(route('portal.finance.index'))
@@ -589,6 +589,43 @@ final class MilestoneSixFinanceTest extends TestCase
         app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
 
         return FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+    }
+
+    /** @param array<string, mixed> $overrides */
+    private function rawLedgerEntry(
+        User $admin,
+        FinancialObligation $obligation,
+        string $idempotencyKey,
+        array $overrides = [],
+    ): FinancialLedgerEntry {
+        $attributes = [
+            'organization_id' => $obligation->organization_id,
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 2000,
+            'currency' => 'USD',
+            'payment_amount_minor' => 2000,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 2000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 2000,
+            'display_currency' => 'USD',
+            'settlement_amount_minor' => 2000,
+            'settlement_currency' => 'USD',
+            'conversion_snapshot' => null,
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'note' => null,
+            'actor_user_id' => $admin->getKey(),
+            'provider_reference' => null,
+            'idempotency_key' => 'raw:'.$idempotencyKey,
+            'corrects_ledger_entry_id' => null,
+            'created_at' => now(),
+        ];
+        $id = DB::table('financial_ledger_entries')->insertGetId([...$attributes, ...$overrides]);
+
+        return FinancialLedgerEntry::query()->findOrFail($id);
     }
 
     private function setOrganization(Organization $organization): void

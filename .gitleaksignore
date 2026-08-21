@@ -3,6 +3,8 @@
 6c655b18dbab7e2b8b750f6cbfc14e9f2605acf4:tests/Feature/AI/AiLogRedactionTest.php:generic-api-key:29
 # Synthetic log-redaction fixture in the working-tree directory scan, not a credential.
 /scan/tests/Feature/AI/AiLogRedactionTest.php:generic-api-key:31
+# Synthetic log-redaction fixture in a reachable historical commit, not a credential.
+a0746bad2d4e0695d80ff8689c49b1c57a24161e:tests/Feature/AI/AiLogRedactionTest.php:generic-api-key:31
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:156
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:235
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:323

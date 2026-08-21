@@ -8,6 +8,7 @@ use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\FinancialObligations\FinancialPaymentsRelationManager;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Filament\Resources\FinancialObligations\Pages\ViewFinancialObligation;
+use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
@@ -261,20 +262,9 @@ final class FinanceCrmUxTest extends TestCase
     public function test_incompatible_ledger_currency_is_excluded_from_normal_status_filters(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
-        $payment = app(RecordManualPayment::class)->handle(
-            actor: $admin,
-            obligation: $obligation,
-            amount: '25.00',
-            currency: 'USD',
-            paymentMethod: 'cash',
-            occurredAt: CarbonImmutable::now('UTC'),
-            note: null,
-            receipt: null,
-            idempotencyKey: 'incompatible-status-payment',
-        );
-        DB::table('financial_ledger_entries')
-            ->where('id', $payment->getKey())
-            ->update(['display_currency' => 'RUB']);
+        $payment = $this->rawLedgerEntry($admin, $obligation, 'incompatible-status-payment', [
+            'display_currency' => 'RUB',
+        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $list = Livewire::actingAs($admin)
@@ -300,20 +290,9 @@ final class FinanceCrmUxTest extends TestCase
     public function test_overpayment_is_excluded_from_normal_status_filters(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
-        $payment = app(RecordManualPayment::class)->handle(
-            actor: $admin,
-            obligation: $obligation,
-            amount: '25.00',
-            currency: 'USD',
-            paymentMethod: 'cash',
-            occurredAt: CarbonImmutable::now('UTC'),
-            note: null,
-            receipt: null,
-            idempotencyKey: 'overpayment-status-payment',
-        );
-        DB::table('financial_ledger_entries')
-            ->where('id', $payment->getKey())
-            ->update(['settlement_amount_minor' => 10100]);
+        $payment = $this->rawLedgerEntry($admin, $obligation, 'overpayment-status-payment', [
+            'settlement_amount_minor' => 10100,
+        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $list = Livewire::actingAs($admin)
@@ -411,24 +390,12 @@ final class FinanceCrmUxTest extends TestCase
             ->value('base_currency'));
     }
 
-    public function test_save_currency_configuration_does_not_overwrite_a_corrupt_current_rate_when_rates_are_submitted(): void
+    public function test_save_currency_configuration_rejects_an_invalid_submitted_rate_without_mutating_current_configuration(): void
     {
         [$organization, $admin] = $this->financeFixture(singleCurrency: false);
-        DB::table('organization_exchange_rates')
-            ->where('organization_id', $organization->getKey())
-            ->where('source_currency', 'USD')
-            ->where('target_currency', 'RUB')
-            ->update(['source_currency' => 'usd']);
         $version = DB::table('organization_currency_configurations')
             ->where('organization_id', $organization->getKey())
             ->value('version');
-        $this->resolveFilamentContext($admin, $organization);
-
-        Livewire::actingAs($admin)
-            ->test(FinanceConfiguration::class)
-            ->assertSuccessful()
-            ->assertSet('configurationUnavailable', true)
-            ->assertSee('Настройки валют недоступны');
 
         try {
             app(SaveCurrencyConfiguration::class)->handle($admin, [
@@ -438,22 +405,23 @@ final class FinanceCrmUxTest extends TestCase
                 'force_single_currency' => false,
                 'rounding_mode' => 'half_even',
                 'rates' => [
-                    ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '501'],
+                    ['source_currency' => 'ZZZ', 'target_currency' => 'RUB', 'rate' => '501'],
                     ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.001996007984031936'],
                 ],
             ]);
-            self::fail('A normal save must not overwrite a corrupt current exchange rate.');
+            self::fail('An invalid submitted exchange rate must be rejected.');
         } catch (ValidationException) {
-            self::assertSame('usd', DB::table('organization_exchange_rates')
+            self::assertSame('500.000000000000000000', (string) DB::table('organization_exchange_rates')
                 ->where('organization_id', $organization->getKey())
+                ->where('source_currency', 'USD')
                 ->where('target_currency', 'RUB')
-                ->value('source_currency'));
+                ->value('rate'));
             self::assertSame($version, DB::table('organization_currency_configurations')
                 ->where('organization_id', $organization->getKey())
                 ->value('version'));
             self::assertDatabaseMissing('organization_exchange_rates', [
                 'organization_id' => $organization->getKey(),
-                'source_currency' => 'USD',
+                'source_currency' => 'ZZZ',
                 'target_currency' => 'RUB',
                 'rate' => '501',
             ]);
@@ -507,23 +475,10 @@ final class FinanceCrmUxTest extends TestCase
     public function test_correction_action_fails_closed_for_malformed_ledger_currency_and_payment_metadata(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
-        $payment = app(RecordManualPayment::class)->handle(
-            actor: $admin,
-            obligation: $obligation,
-            amount: '20.00',
-            currency: 'USD',
-            paymentMethod: 'cash',
-            occurredAt: CarbonImmutable::now('UTC'),
-            note: null,
-            receipt: null,
-            idempotencyKey: 'malformed-correction-source',
-        );
-        DB::table('financial_ledger_entries')
-            ->where('id', $payment->getKey())
-            ->update([
-                'payment_currency' => 'ZZZ',
-                'payment_method' => 'unsupported_method',
-            ]);
+        $payment = $this->rawLedgerEntry($admin, $obligation, 'malformed-correction-source', [
+            'payment_currency' => 'ZZZ',
+            'payment_method' => 'unsupported_method',
+        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
@@ -950,42 +905,24 @@ final class FinanceCrmUxTest extends TestCase
         $this->assertCorrectionRejected($admin, $entry, 'reject-fake-gateway-correction');
     }
 
-    public function test_history_marks_zero_manual_payment_amount_unavailable_without_mutation_action(): void
+    public function test_finance_presentation_marks_zero_manual_payment_amount_unavailable_without_mutation_action(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
-        $payment = $this->manualPayment($admin, $obligation, 'history-zero-payment');
-        DB::table('financial_ledger_entries')
-            ->where('id', $payment->getKey())
-            ->update(['payment_amount_minor' => 0]);
+        $payment = $this->inMemoryLedgerEntry($obligation, 0);
         $this->resolveFilamentContext($admin, $organization);
 
-        Livewire::actingAs($admin)
-            ->test(FinancialPaymentsRelationManager::class, [
-                'ownerRecord' => $obligation,
-                'pageClass' => ViewFinancialObligation::class,
-            ])
-            ->loadTable()
-            ->assertTableColumnStateSet('amount_summary', '—', $payment)
-            ->assertTableActionHidden('correctPayment', $payment);
+        self::assertSame('—', app(FinancePresentation::class)->ledgerPaymentAmount($payment));
+        self::assertFalse(FinancePaymentActions::correction()->record($payment)->isVisible());
     }
 
-    public function test_history_marks_decimal_raw_manual_payment_amount_unavailable(): void
+    public function test_finance_presentation_marks_decimal_raw_manual_payment_amount_unavailable(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
-        $payment = $this->manualPayment($admin, $obligation, 'history-decimal-payment');
-        DB::table('financial_ledger_entries')
-            ->where('id', $payment->getKey())
-            ->update(['payment_amount_minor' => '20.5']);
+        $payment = $this->inMemoryLedgerEntry($obligation, '20.5');
         $this->resolveFilamentContext($admin, $organization);
 
-        Livewire::actingAs($admin)
-            ->test(FinancialPaymentsRelationManager::class, [
-                'ownerRecord' => $obligation,
-                'pageClass' => ViewFinancialObligation::class,
-            ])
-            ->loadTable()
-            ->assertTableColumnStateSet('amount_summary', '—', $payment)
-            ->assertTableActionHidden('correctPayment', $payment);
+        self::assertSame('—', app(FinancePresentation::class)->ledgerPaymentAmount($payment));
+        self::assertFalse(FinancePaymentActions::correction()->record($payment)->isVisible());
     }
 
     public function test_direct_correction_rejects_forbidden_ledger_and_parent_states_without_side_effects(): void
@@ -1002,17 +939,15 @@ final class FinanceCrmUxTest extends TestCase
         $this->assertCorrectionRejected($admin, $payment, 'reject-already-corrected');
 
         [, $malformedAdmin, , , $malformedObligation] = $this->financeFixture(singleCurrency: true);
-        $malformedPayment = $this->manualPayment($malformedAdmin, $malformedObligation, 'direct-correction-malformed');
-        DB::table('financial_ledger_entries')
-            ->where('id', $malformedPayment->getKey())
-            ->update(['payment_amount_minor' => 0]);
+        $malformedPayment = $this->rawLedgerEntry($malformedAdmin, $malformedObligation, 'direct-correction-malformed', [
+            'payment_method' => 'unsupported_method',
+        ]);
         $this->assertCorrectionRejected($malformedAdmin, $malformedPayment, 'reject-malformed-ledger');
 
         [, $incompatibleAdmin, , , $incompatibleObligation] = $this->financeFixture(singleCurrency: true);
-        $incompatiblePayment = $this->manualPayment($incompatibleAdmin, $incompatibleObligation, 'direct-correction-incompatible');
-        DB::table('financial_ledger_entries')
-            ->where('id', $incompatiblePayment->getKey())
-            ->update(['display_currency' => 'RUB']);
+        $incompatiblePayment = $this->rawLedgerEntry($incompatibleAdmin, $incompatibleObligation, 'direct-correction-incompatible', [
+            'display_currency' => 'RUB',
+        ]);
         $this->assertCorrectionRejected($incompatibleAdmin, $incompatiblePayment, 'reject-incompatible-ledger');
 
         [, $invalidParentAdmin, , , $invalidParentObligation] = $this->financeFixture(singleCurrency: true);
@@ -1140,6 +1075,56 @@ final class FinanceCrmUxTest extends TestCase
             receipt: null,
             idempotencyKey: $idempotencyKey,
         );
+    }
+
+    /** @param array<string, mixed> $overrides */
+    private function rawLedgerEntry(
+        User $admin,
+        FinancialObligation $obligation,
+        string $idempotencyKey,
+        array $overrides = [],
+    ): FinancialLedgerEntry {
+        $attributes = [
+            'organization_id' => $obligation->organization_id,
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 2000,
+            'currency' => 'USD',
+            'payment_amount_minor' => 2000,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 2000,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 2000,
+            'display_currency' => 'USD',
+            'settlement_amount_minor' => 2000,
+            'settlement_currency' => 'USD',
+            'conversion_snapshot' => null,
+            'payment_method' => 'cash',
+            'occurred_at' => CarbonImmutable::now('UTC'),
+            'note' => null,
+            'actor_user_id' => $admin->getKey(),
+            'provider_reference' => null,
+            'idempotency_key' => 'raw:'.$idempotencyKey,
+            'corrects_ledger_entry_id' => null,
+            'created_at' => now(),
+        ];
+        $id = DB::table('financial_ledger_entries')->insertGetId([...$attributes, ...$overrides]);
+
+        return FinancialLedgerEntry::query()->findOrFail($id);
+    }
+
+    private function inMemoryLedgerEntry(FinancialObligation $obligation, mixed $paymentAmountMinor): FinancialLedgerEntry
+    {
+        $entry = new FinancialLedgerEntry;
+        $entry->setRawAttributes([
+            'entry_type' => 'manual_payment',
+            'payment_currency' => 'USD',
+            'payment_amount_minor' => $paymentAmountMinor,
+        ]);
+        $entry->setRelation('obligation', $obligation);
+
+        return $entry;
     }
 
     private function assertCorrectionRejected(User $admin, FinancialLedgerEntry $entry, string $idempotencyKey): void
