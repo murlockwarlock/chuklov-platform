@@ -743,16 +743,20 @@ final class FinanceCrmUxTest extends TestCase
         ]);
     }
 
-    public function test_finance_relationship_filters_preload_bounded_local_options_and_search(): void
+    public function test_finance_relationship_filters_preload_bounded_local_options_safe_labels_and_search(): void
     {
         [$organization, $admin, $client, $booking] = $this->financeFixture(singleCurrency: true);
         $service = $booking->service;
+        $unnamedClient = Client::factory()->forOrganization($organization)->create(['full_name' => null]);
+        $blankClient = Client::factory()->forOrganization($organization)->create(['full_name' => '   ']);
         $otherOrganization = Organization::factory()->create();
         $otherClient = Client::factory()->forOrganization($otherOrganization)->create(['full_name' => 'Чужой клиент']);
         $otherService = Service::factory()->forOrganization($otherOrganization)->create(['name' => 'Чужая услуга']);
         $this->resolveFilamentContext($admin, $organization);
 
-        $component = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
+        $component = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertSuccessful();
 
         foreach ([
             'client' => [$client->full_name, $otherClient->getKey()],
@@ -769,10 +773,19 @@ final class FinanceCrmUxTest extends TestCase
             self::assertIsArray($options);
             self::assertArrayHasKey($filterName === 'client' ? $client->getKey() : $service->getKey(), $options);
             self::assertArrayNotHasKey($foreignKey, $options);
+            $searchResults = $filter->getSearchResultsFromRelationship($field, $search);
+
             self::assertArrayHasKey(
                 $filterName === 'client' ? $client->getKey() : $service->getKey(),
-                $filter->getSearchResultsFromRelationship($field, $search),
+                $searchResults,
             );
+
+            if ($filterName === 'client') {
+                self::assertSame($client->full_name, $options[$client->getKey()]);
+                self::assertSame('Имя не указано', $options[$unnamedClient->getKey()]);
+                self::assertSame('Имя не указано', $options[$blankClient->getKey()]);
+                self::assertSame($client->full_name, $searchResults[$client->getKey()]);
+            }
         }
     }
 

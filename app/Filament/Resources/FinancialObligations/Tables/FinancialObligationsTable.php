@@ -9,6 +9,7 @@ use App\Filament\Support\FinancePresentation;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Filament\Actions\Action;
@@ -85,6 +86,11 @@ final class FinancialObligationsTable
                             ->where('organization_id', app(OrganizationContext::class)->id())
                             ->orderBy('full_name')
                             ->orderBy('id'),
+                    )
+                    ->getOptionLabelFromRecordUsing(
+                        static fn (Client $record): string => is_string($record->full_name) && filled($record->full_name)
+                            ? $record->full_name
+                            : 'Имя не указано',
                     )
                     ->searchable()
                     ->preload()
