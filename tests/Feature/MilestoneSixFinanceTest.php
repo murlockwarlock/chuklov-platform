@@ -33,6 +33,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -76,6 +77,14 @@ final class MilestoneSixFinanceTest extends TestCase
 
         self::assertSame($obligation->getKey(), app(CreateFinancialObligation::class)->handle($admin, $booking)?->getKey());
         self::assertSame(1, FinancialObligation::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame([
+            'source' => 'booking.completed',
+            'currency' => 'USD',
+        ], AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'finance.obligation.created')
+            ->sole()
+            ->metadata);
     }
 
     public function test_currency_configuration_rejects_missing_directed_rates_atomically_and_allows_same_currency(): void

@@ -153,26 +153,24 @@ final class FinancialReconciliationProjection
     /** @param Builder<FinancialObligation> $query */
     private function whereSupportedCurrency(Builder $query, string $column): void
     {
-        $values = implode(', ', array_map(static fn (string $value): string => "'".$value."'", $this->contract->currencyValues()));
         $query->where(new FinanceSqlCondition(
-            $this->contract->normalizedCurrencySql($column).' IN ('.$values.')',
+            $this->supportedCurrencySql($column),
         ));
     }
 
     private function unsupportedCurrencySql(string $column): string
     {
-        $values = implode(', ', array_map(static fn (string $value): string => "'".$value."'", $this->contract->currencyValues()));
-        $normalized = $this->contract->normalizedCurrencySql($column);
+        $canonical = $this->contract->canonicalCurrencySql($column);
 
-        return '('.$normalized.' IS NULL OR '.$normalized.' NOT IN ('.$values.'))';
+        return '('.$canonical.' IS NULL OR NOT '.$this->supportedCurrencySql($column).')';
     }
 
     private function currencyMismatchSql(string $left, string $right): string
     {
-        $normalizedLeft = $this->contract->normalizedCurrencySql($left);
-        $normalizedRight = $this->contract->normalizedCurrencySql($right);
+        $canonicalLeft = $this->contract->canonicalCurrencySql($left);
+        $canonicalRight = $this->contract->canonicalCurrencySql($right);
 
-        return $normalizedLeft.' IS NULL OR '.$normalizedRight.' IS NULL OR '.$normalizedLeft.' <> '.$normalizedRight;
+        return $canonicalLeft.' IS NULL OR '.$canonicalRight.' IS NULL OR '.$canonicalLeft.' <> '.$canonicalRight;
     }
 
     private function snapshotSql(
@@ -192,28 +190,36 @@ final class FinancialReconciliationProjection
         string $targetAmountColumn,
         string $targetCurrencyColumn,
     ): string {
-        $path = $obligationTable.'.conversion_snapshots->\''.$role.'\'';
-        $field = static fn (string $name): string => '('.$path.'->>\''.$name.'\')';
+        $path = $obligationTable.".conversion_snapshots->'{$role}'";
+        $jsonField = static fn (string $name): string => "({$path}->'{$name}')";
+        $field = static fn (string $name): string => "({$path}->>'{$name}')";
         $sourceCurrency = $field('source_currency');
         $targetCurrency = $field('target_currency');
         $sourceAmount = $field('source_amount_minor');
         $targetAmount = $field('target_amount_minor');
         $rateText = $field('rate');
         $rounding = $field('rounding_mode');
-        $minor = static fn (string $value): string => "CASE WHEN {$value} ~ '^(0|[1-9][0-9]*)$' THEN ({$value})::numeric END";
-        $rateType = "json_typeof({$path}->'rate')";
-        $rate = 'CASE'
-            ." WHEN {$rateType} = 'string' AND {$rateText} ~ '".$this->contract->ratePattern()."' THEN ({$rateText})::numeric"
-            ." WHEN {$rateType} = 'number' AND {$rateText} ~ '".$this->contract->integerRatePattern()."' THEN ({$rateText})::numeric"
-            .' END';
-        $normalizedSourceCurrency = $this->contract->normalizedCurrencySql($sourceCurrency);
-        $normalizedTargetCurrency = $this->contract->normalizedCurrencySql($targetCurrency);
-        $normalizedSettlementCurrency = $this->contract->normalizedCurrencySql($obligationTable.'.settlement_currency');
-        $normalizedTargetColumn = $this->contract->normalizedCurrencySql($obligationTable.'.'.$targetCurrencyColumn);
-        $raw = '('.$obligationTable.'.settlement_amount_minor::numeric * '.$rate.' * CASE'
-            .' WHEN '.$normalizedSettlementCurrency." = 'JPY' AND ".$normalizedTargetColumn." <> 'JPY' THEN 100"
-            .' WHEN '.$normalizedSettlementCurrency." <> 'JPY' AND ".$normalizedTargetColumn." = 'JPY' THEN 0.01"
-            .' ELSE 1 END)';
+        $sourceScale = $field('source_scale');
+        $targetScale = $field('target_scale');
+        $sourceCurrencyType = 'json_typeof('.$jsonField('source_currency').')';
+        $targetCurrencyType = 'json_typeof('.$jsonField('target_currency').')';
+        $sourceAmountType = 'json_typeof('.$jsonField('source_amount_minor').')';
+        $targetAmountType = 'json_typeof('.$jsonField('target_amount_minor').')';
+        $rateType = 'json_typeof('.$jsonField('rate').')';
+        $roundingType = 'json_typeof('.$jsonField('rounding_mode').')';
+        $sourceScaleType = 'json_typeof('.$jsonField('source_scale').')';
+        $targetScaleType = 'json_typeof('.$jsonField('target_scale').')';
+        $minor = fn (string $value, string $type): string => "CASE WHEN {$type} = 'string' AND {$value} ~ '".$this->contract->snapshotMinorPattern()."' THEN ({$value})::numeric END";
+        $scale = fn (string $value, string $type): string => "CASE WHEN {$type} = 'number' AND {$value} ~ '^(0|[1-9][0-9]*)$' THEN ({$value})::integer END";
+        $rate = "CASE WHEN {$rateType} = 'string' AND {$rateText} ~ '".$this->contract->ratePattern()."' THEN ({$rateText})::numeric END";
+        $sourceAmountMinor = $minor($sourceAmount, $sourceAmountType);
+        $targetAmountMinor = $minor($targetAmount, $targetAmountType);
+        $sourceScaleValue = $scale($sourceScale, $sourceScaleType);
+        $targetScaleValue = $scale($targetScale, $targetScaleType);
+        $settlementCurrency = $obligationTable.'.settlement_currency';
+        $targetColumnCurrency = $obligationTable.'.'.$targetCurrencyColumn;
+        $raw = '('.$obligationTable.'.settlement_amount_minor::numeric * '.$rate.' * '
+            .$this->contract->minorScaleFactorSql($settlementCurrency, $targetColumnCurrency).')';
         $floor = 'floor('.$raw.')';
         $rounded = "CASE\n"
             ." WHEN {$rounding} = 'down' THEN {$floor}\n"
@@ -225,13 +231,22 @@ final class FinancialReconciliationProjection
             ."   ELSE 1\n"
             .' END END';
 
-        return "json_typeof({$obligationTable}.conversion_snapshots->'{$role}') = 'object'"
-            .' AND '.$normalizedSourceCurrency.' = '.$normalizedSettlementCurrency
-            .' AND '.$normalizedTargetCurrency.' = '.$normalizedTargetColumn
-            .' AND '.$minor($sourceAmount).' = '.$obligationTable.'.settlement_amount_minor'
-            .' AND '.$minor($targetAmount).' = '.$obligationTable.'.'.$targetAmountColumn
+        return "json_typeof({$path}) = 'object'"
+            ." AND {$sourceCurrencyType} = 'string'"
+            ." AND {$targetCurrencyType} = 'string'"
+            .' AND '.$this->supportedCurrencySql($sourceCurrency)
+            .' AND '.$this->supportedCurrencySql($targetCurrency)
+            .' AND '.$sourceCurrency.' = '.$settlementCurrency
+            .' AND '.$targetCurrency.' = '.$targetColumnCurrency
+            .' AND '.$sourceAmountMinor.' = '.$obligationTable.'.settlement_amount_minor'
+            .' AND '.$targetAmountMinor.' = '.$obligationTable.'.'.$targetAmountColumn
+            .' AND '.$sourceScaleValue.' = '.$this->contract->currencyScaleSql($sourceCurrency)
+            .' AND '.$targetScaleValue.' = '.$this->contract->currencyScaleSql($targetCurrency)
             .' AND '.$rate.' > 0'
+            ." AND {$roundingType} = 'string'"
             .' AND '.$rounding." IN ('down', 'half_up', 'half_even')"
+            .' AND ('.$sourceCurrency.' <> '.$targetCurrency
+            ." OR ({$rateText} = '1' AND {$sourceAmountMinor} = {$targetAmountMinor}))"
             .' AND '.$rounded.' = '.$obligationTable.'.'.$targetAmountColumn;
     }
 
@@ -242,27 +257,33 @@ final class FinancialReconciliationProjection
         string $targetCurrencyColumn,
     ): string {
         $path = '$.'.$role;
-        $field = static fn (string $name): string => "json_extract({$obligationTable}.conversion_snapshots, '{$path}.{$name}')";
+        $json = "(CASE WHEN json_valid({$obligationTable}.conversion_snapshots) THEN {$obligationTable}.conversion_snapshots END)";
+        $field = static fn (string $name): string => "json_extract({$json}, '{$path}.{$name}')";
+        $type = static fn (string $name): string => "json_type({$json}, '{$path}.{$name}')";
+        $snapshotType = "json_type({$json}, '{$path}')";
         $sourceCurrency = $field('source_currency');
         $targetCurrency = $field('target_currency');
         $sourceAmount = $field('source_amount_minor');
         $targetAmount = $field('target_amount_minor');
-        $sourceAmountType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.source_amount_minor')";
-        $targetAmountType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.target_amount_minor')";
         $rateValue = $field('rate');
-        $rateType = "json_type({$obligationTable}.conversion_snapshots, '{$path}.rate')";
         $rateText = 'CAST('.$rateValue.' AS TEXT)';
         $rounding = $field('rounding_mode');
-        $normalizedSourceCurrency = $this->contract->normalizedCurrencySql('CAST('.$sourceCurrency.' AS TEXT)');
-        $normalizedTargetCurrency = $this->contract->normalizedCurrencySql('CAST('.$targetCurrency.' AS TEXT)');
-        $normalizedSettlementCurrency = $this->contract->normalizedCurrencySql($obligationTable.'.settlement_currency');
-        $normalizedTargetColumn = $this->contract->normalizedCurrencySql($obligationTable.'.'.$targetCurrencyColumn);
-        $rate = "CASE WHEN {$rateType} IN ('text', 'integer') AND ".$this->sqliteRateSql($rateText)
+        $sourceScale = $field('source_scale');
+        $targetScale = $field('target_scale');
+        $sourceCurrencyType = $type('source_currency');
+        $targetCurrencyType = $type('target_currency');
+        $sourceAmountType = $type('source_amount_minor');
+        $targetAmountType = $type('target_amount_minor');
+        $rateType = $type('rate');
+        $roundingType = $type('rounding_mode');
+        $sourceScaleType = $type('source_scale');
+        $targetScaleType = $type('target_scale');
+        $settlementCurrency = $obligationTable.'.settlement_currency';
+        $targetColumnCurrency = $obligationTable.'.'.$targetCurrencyColumn;
+        $rate = "CASE WHEN {$rateType} = 'text' AND ".$this->sqliteRateSql($rateText)
             .' THEN '.$rateText.' END';
-        $raw = '(CAST('.$obligationTable.'.settlement_amount_minor AS REAL) * '.$rate.' * CASE'
-            .' WHEN '.$normalizedSettlementCurrency." = 'JPY' AND ".$normalizedTargetColumn." <> 'JPY' THEN 100"
-            .' WHEN '.$normalizedSettlementCurrency." <> 'JPY' AND ".$normalizedTargetColumn." = 'JPY' THEN 0.01"
-            .' ELSE 1 END)';
+        $raw = '(CAST('.$obligationTable.'.settlement_amount_minor AS REAL) * '.$rate.' * '
+            .$this->contract->minorScaleFactorSql($settlementCurrency, $targetColumnCurrency).')';
         $floor = 'CAST('.$raw.' AS INTEGER)';
         $rounded = "CASE\n"
             ." WHEN {$rounding} = 'down' THEN {$floor}\n"
@@ -274,13 +295,24 @@ final class FinancialReconciliationProjection
             ."   ELSE 1\n"
             .' END END';
 
-        return "json_type({$obligationTable}.conversion_snapshots, '{$path}') = 'object'"
-            .' AND '.$normalizedSourceCurrency.' = '.$normalizedSettlementCurrency
-            .' AND '.$normalizedTargetCurrency.' = '.$normalizedTargetColumn
+        return $snapshotType." = 'object'"
+            ." AND {$sourceCurrencyType} = 'text'"
+            ." AND {$targetCurrencyType} = 'text'"
+            .' AND '.$this->supportedCurrencySql($sourceCurrency)
+            .' AND '.$this->supportedCurrencySql($targetCurrency)
+            .' AND '.$sourceCurrency.' = '.$settlementCurrency
+            .' AND '.$targetCurrency.' = '.$targetColumnCurrency
             .' AND '.$this->sqliteMinorSql($sourceAmount, $obligationTable.'.settlement_amount_minor', $sourceAmountType)
             .' AND '.$this->sqliteMinorSql($targetAmount, $obligationTable.'.'.$targetAmountColumn, $targetAmountType)
+            ." AND {$sourceScaleType} = 'integer'"
+            .' AND '.$sourceScale.' = '.$this->contract->currencyScaleSql($sourceCurrency)
+            ." AND {$targetScaleType} = 'integer'"
+            .' AND '.$targetScale.' = '.$this->contract->currencyScaleSql($targetCurrency)
             .' AND '.$rate.' > 0'
+            ." AND {$roundingType} = 'text'"
             .' AND '.$rounding." IN ('down', 'half_up', 'half_even')"
+            .' AND ('.$sourceCurrency.' <> '.$targetCurrency
+            ." OR ({$rateText} = '1' AND {$sourceAmount} = {$targetAmount}))"
             .' AND '.$rounded.' = '.$obligationTable.'.'.$targetAmountColumn;
     }
 
@@ -288,7 +320,7 @@ final class FinancialReconciliationProjection
     {
         $text = 'CAST('.$value.' AS TEXT)';
 
-        return $type." IN ('text', 'integer')"
+        return $type." = 'text'"
             .' AND '.$value.' IS NOT NULL'
             .' AND '.$text." NOT GLOB '*[^0-9]*'"
             .' AND '.$text." <> ''"
@@ -307,7 +339,16 @@ final class FinancialReconciliationProjection
             .' AND length('.$fraction.') BETWEEN 1 AND 18)';
         $noDecimal = "instr({$value}, '.') = 0 AND {$integerValid}";
         $decimal = "instr({$value}, '.') > 0 AND {$integerValid} AND {$fractionValid}";
+        $canonicalFraction = "instr({$value}, '.') = 0 OR substr({$value}, -1, 1) <> '0'";
 
-        return '(('.$noDecimal.' OR '.$decimal.') AND CAST('.$value.' AS REAL) > 0)';
+        return '(('.$noDecimal.' OR '.$decimal.') AND '.$canonicalFraction
+            .' AND length(ltrim('.$value.", '0.')) > 0)";
+    }
+
+    private function supportedCurrencySql(string $column): string
+    {
+        $values = implode(', ', array_map(static fn (string $value): string => "'".$value."'", $this->contract->currencyValues()));
+
+        return $this->contract->canonicalCurrencySql($column).' IN ('.$values.')';
     }
 }

@@ -7,6 +7,7 @@ use App\Modules\Finance\Domain\Enums\FinancialEntrySource;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Models\FinanceIdempotencyKey;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
@@ -21,6 +22,7 @@ final class CorrectFinancialPayment
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly RecordAuditEvent $audit,
         private readonly FinancialReconciliationContract $contract,
+        private readonly ReconcileFinancialObligation $reconciliation,
     ) {}
 
     public function handle(User $actor, FinancialLedgerEntry $original, string $reason, string $idempotencyKey): FinancialLedgerEntry
@@ -44,6 +46,11 @@ final class CorrectFinancialPayment
         ], JSON_THROW_ON_ERROR));
 
         return DB::transaction(function () use ($actor, $organization, $original, $reason, $idempotencyKey, $requestHash): FinancialLedgerEntry {
+            $lockedOriginal = FinancialLedgerEntry::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($original->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
             $idempotency = FinanceIdempotencyKey::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('idempotency_key', $idempotencyKey)
@@ -51,11 +58,10 @@ final class CorrectFinancialPayment
                 ->first();
 
             if ($idempotency !== null) {
-                if ($idempotency->operation !== 'financial_correction'
-                    || $idempotency->subject_type !== FinancialLedgerEntry::class
-                    || $idempotency->subject_id !== $original->getKey()
-                    || $idempotency->request_hash !== $requestHash) {
-                    throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой операции.']);
+                $this->assertMatchingIdempotency($idempotency, $lockedOriginal, $requestHash);
+
+                if ($idempotency->result_id === null) {
+                    throw ValidationException::withMessages(['idempotency_key' => 'Эта операция ещё обрабатывается.']);
                 }
 
                 return FinancialLedgerEntry::query()
@@ -64,44 +70,25 @@ final class CorrectFinancialPayment
                     ->firstOrFail();
             }
 
-            DB::table('finance_idempotency_keys')->insertOrIgnore([
-                'organization_id' => $organization->getKey(),
-                'idempotency_key' => $idempotencyKey,
-                'operation' => 'financial_correction',
-                'subject_type' => FinancialLedgerEntry::class,
-                'subject_id' => $original->getKey(),
-                'request_hash' => $requestHash,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $idempotency = FinanceIdempotencyKey::query()
+            $lockedObligation = FinancialObligation::query()
                 ->where('organization_id', $organization->getKey())
-                ->where('idempotency_key', $idempotencyKey)
+                ->whereKey($lockedOriginal->getRawOriginal('obligation_id'))
                 ->lockForUpdate()
-                ->firstOrFail();
-            if ($idempotency->result_id !== null) {
-                if ($idempotency->operation !== 'financial_correction'
-                    || $idempotency->subject_type !== FinancialLedgerEntry::class
-                    || $idempotency->subject_id !== $original->getKey()
-                    || $idempotency->request_hash !== $requestHash) {
-                    throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой операции.']);
-                }
+                ->first();
 
-                return FinancialLedgerEntry::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->whereKey($idempotency->result_id)
-                    ->firstOrFail();
+            if ($lockedObligation === null) {
+                throw $this->invalidCorrection();
             }
-            $lockedOriginal = FinancialLedgerEntry::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereKey($original->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
 
             try {
-                $originalData = $this->contract->validateCorrectableLedgerEntry($lockedOriginal);
+                $originalData = $this->contract->validateCorrectableLedgerEntry($lockedOriginal, $lockedObligation);
+                $this->reconciliation->handle(
+                    (int) $organization->getKey(),
+                    (int) $lockedObligation->getKey(),
+                    true,
+                );
             } catch (UnexpectedValueException) {
-                throw ValidationException::withMessages(['payment' => 'Эту запись нельзя исправить повторной проводкой.']);
+                throw $this->invalidCorrection();
             }
 
             if (FinancialLedgerEntry::query()
@@ -111,9 +98,33 @@ final class CorrectFinancialPayment
                 throw ValidationException::withMessages(['payment' => 'Для этой записи уже есть исправление.']);
             }
 
+            DB::table('finance_idempotency_keys')->insertOrIgnore([
+                'organization_id' => $organization->getKey(),
+                'idempotency_key' => $idempotencyKey,
+                'operation' => 'financial_correction',
+                'subject_type' => FinancialLedgerEntry::class,
+                'subject_id' => $lockedOriginal->getKey(),
+                'request_hash' => $requestHash,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $idempotency = FinanceIdempotencyKey::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertMatchingIdempotency($idempotency, $lockedOriginal, $requestHash);
+
+            if ($idempotency->result_id !== null) {
+                return FinancialLedgerEntry::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereKey($idempotency->result_id)
+                    ->firstOrFail();
+            }
+
             $entry = $this->ledger->handle(
                 organization: $organization,
-                obligation: $lockedOriginal->obligation_id,
+                obligation: $lockedObligation,
                 data: new FinancialLedgerEntryData(
                     entryType: FinancialLedgerEntryType::Correction,
                     source: FinancialEntrySource::Crm,
@@ -160,5 +171,25 @@ final class CorrectFinancialPayment
 
             return $entry;
         });
+    }
+
+    private function assertMatchingIdempotency(
+        FinanceIdempotencyKey $idempotency,
+        FinancialLedgerEntry $original,
+        string $requestHash,
+    ): void {
+        if ($idempotency->operation !== 'financial_correction'
+            || $idempotency->subject_type !== FinancialLedgerEntry::class
+            || $idempotency->subject_id !== $original->getKey()
+            || $idempotency->request_hash !== $requestHash) {
+            throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой операции.']);
+        }
+    }
+
+    private function invalidCorrection(): ValidationException
+    {
+        return ValidationException::withMessages([
+            'payment' => 'Эту запись нельзя исправить повторной проводкой.',
+        ]);
     }
 }

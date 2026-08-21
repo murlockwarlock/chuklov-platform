@@ -120,7 +120,6 @@ final class CreateFinancialObligation
                 metadata: [
                     'source' => 'booking.completed',
                     'currency' => $priceCurrency->value,
-                    'amount_minor' => $price->minorUnits(),
                 ],
             );
 

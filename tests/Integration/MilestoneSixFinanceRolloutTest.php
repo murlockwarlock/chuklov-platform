@@ -269,27 +269,107 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
         $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
     }
 
-    public function test_postgresql_projection_accepts_the_contractual_currency_normalization(): void
+    /** @return iterable<string, array{string}> */
+    public static function postgresNoncanonicalCurrencyCases(): iterable
+    {
+        foreach (['currency', 'base_currency', 'display_currency', 'payment_currency', 'settlement_currency'] as $attribute) {
+            yield 'obligation '.$attribute => ['obligation:'.$attribute];
+            yield 'ledger '.$attribute => ['ledger:'.$attribute];
+        }
+    }
+
+    #[DataProvider('postgresNoncanonicalCurrencyCases')]
+    public function test_postgresql_projection_rejects_noncanonical_persisted_currency(string $case): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+        [$model, $attribute] = explode(':', $case, 2);
+
+        if ($model === 'obligation') {
+            DB::table('financial_obligations')
+                ->where('id', $obligation->getKey())
+                ->update([$attribute => 'usd']);
+        } else {
+            $entry = $this->postgresLedger($obligation, 2500, 2500);
+            DB::table('financial_ledger_entries')
+                ->where('id', $entry->getKey())
+                ->update([$attribute => 'usd']);
+        }
+
+        $this->assertPostgresParity($organization, $obligation, null);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function postgresSnapshotCases(): iterable
+    {
+        yield 'numeric rate' => ['numeric_rate'];
+        yield 'trailing-zero rate' => ['trailing_zero_rate'];
+        yield 'numeric minor' => ['numeric_minor'];
+        yield 'leading zero minor' => ['leading_zero_minor'];
+        yield 'negative zero minor' => ['negative_zero_minor'];
+        yield 'invalid snapshot currency' => ['snapshot_currency'];
+        yield 'whitespace-wrapped snapshot currency' => ['snapshot_whitespace_currency'];
+        yield 'invalid source scale' => ['source_scale'];
+        yield 'invalid target scale' => ['target_scale'];
+        yield 'same currency non-unit rate' => ['same_currency_rate'];
+        yield 'same currency mismatched amount' => ['same_currency_amount'];
+    }
+
+    #[DataProvider('postgresSnapshotCases')]
+    public function test_postgresql_projection_rejects_noncanonical_snapshot_values(string $case): void
     {
         $this->requirePostgres();
         [$organization, , $obligation] = $this->postgresObligationFixture();
         $snapshots = $obligation->conversion_snapshots;
+        $updates = [];
 
-        foreach (['base', 'display'] as $role) {
-            $snapshots[$role]['source_currency'] = ' usd ';
-            $snapshots[$role]['target_currency'] = ' usd ';
+        switch ($case) {
+            case 'numeric_rate':
+                $snapshots['base']['rate'] = 1;
+                break;
+            case 'trailing_zero_rate':
+                $snapshots['base']['rate'] = '1.0';
+                break;
+            case 'numeric_minor':
+                $snapshots['base']['source_amount_minor'] = 10000;
+                break;
+            case 'leading_zero_minor':
+                $snapshots['base']['target_amount_minor'] = '010000';
+                break;
+            case 'negative_zero_minor':
+                $snapshots['base']['target_amount_minor'] = '-0';
+                break;
+            case 'snapshot_currency':
+                $snapshots['base']['source_currency'] = 'usd';
+                break;
+            case 'snapshot_whitespace_currency':
+                $snapshots['base']['source_currency'] = 'USD ';
+                break;
+            case 'source_scale':
+                $snapshots['base']['source_scale'] = 0;
+                break;
+            case 'target_scale':
+                $snapshots['base']['target_scale'] = 0;
+                break;
+            case 'same_currency_rate':
+                $snapshots['base']['rate'] = '2';
+                $snapshots['base']['target_amount_minor'] = '20000';
+                $updates['base_amount_minor'] = 20000;
+                break;
+            case 'same_currency_amount':
+                $snapshots['base']['target_amount_minor'] = '9999';
+                $updates['base_amount_minor'] = 9999;
+                break;
         }
 
-        DB::table('financial_obligations')->where('id', $obligation->getKey())->update([
-            'currency' => 'usd',
-            'base_currency' => 'usd',
-            'display_currency' => 'usd',
-            'payment_currency' => 'usd',
-            'settlement_currency' => 'usd',
-            'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
-        ]);
+        DB::table('financial_obligations')
+            ->where('id', $obligation->getKey())
+            ->update([
+                ...$updates,
+                'conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR),
+            ]);
 
-        $this->assertPostgresParity($organization, $obligation, FinancialStatus::Outstanding->value);
+        $this->assertPostgresParity($organization, $obligation, null);
     }
 
     /** @return iterable<string, array{string}> */

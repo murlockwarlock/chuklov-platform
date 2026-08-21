@@ -21,6 +21,7 @@ final class SaveCurrencyConfiguration
         private readonly FinanceAuthorization $authorization,
         private readonly CurrencyCatalog $catalog,
         private readonly CurrencyConfigurationService $configuration,
+        private readonly CurrentCurrencyConfigurationIntegrity $integrity,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -52,14 +53,13 @@ final class SaveCurrencyConfiguration
                     ->where('organization_id', $organization->getKey())
                     ->lockForUpdate()
                     ->first();
-                $this->assertExistingConfigurationReadable(
-                    configuration: $configuration,
-                    organizationId: (int) $organization->getKey(),
-                    reuseExistingRates: ! $forceSingle && ! $hasSubmittedRates,
+                $current = $this->integrity->inspect(
+                    $configuration,
+                    (int) $organization->getKey(),
                 );
                 $existingRates = $forceSingle || $hasSubmittedRates
                     ? []
-                    : $this->existingRates((int) $organization->getKey());
+                    : ($current['rate_map'] ?? []);
                 $rates = $existingRates;
 
                 foreach ($submittedRates as $rate) {
@@ -158,7 +158,9 @@ final class SaveCurrencyConfiguration
                 return $configuration->refresh();
             });
         } catch (InvalidArgumentException) {
-            throw ValidationException::withMessages(['currency' => 'Валютные настройки указаны неверно.']);
+            throw ValidationException::withMessages([
+                'currency' => 'Сохранённые финансовые данные требуют проверки. Настройки не изменены.',
+            ]);
         }
     }
 
@@ -252,22 +254,6 @@ final class SaveCurrencyConfiguration
         return array_values($rates);
     }
 
-    /** @return array<string, string> */
-    private function existingRates(int $organizationId): array
-    {
-        $rates = [];
-
-        foreach (OrganizationExchangeRate::query()
-            ->where('organization_id', $organizationId)
-            ->get(['source_currency', 'target_currency', 'rate']) as $rate) {
-            $source = $this->catalog->code($rate->getRawOriginal('source_currency'));
-            $target = $this->catalog->code($rate->getRawOriginal('target_currency'));
-            $rates[$this->configuration->rateKey($source, $target)] = (string) $rate->getRawOriginal('rate');
-        }
-
-        return $rates;
-    }
-
     /**
      * @param  list<CurrencyCode>  $allowed
      * @param  list<array{source: CurrencyCode, target: CurrencyCode, rate: string}>  $submittedRates
@@ -296,65 +282,6 @@ final class SaveCurrencyConfiguration
             if (! array_key_exists($this->configuration->rateKey($source, $target), $submittedKeys)) {
                 DB::table('organization_exchange_rates')->where('id', $rate->getKey())->delete();
             }
-        }
-    }
-
-    private function assertExistingConfigurationReadable(
-        ?OrganizationCurrencyConfiguration $configuration,
-        int $organizationId,
-        bool $reuseExistingRates,
-    ): void {
-        if ($configuration === null) {
-            return;
-        }
-
-        try {
-            $base = $this->catalog->code($configuration->getRawOriginal('base_currency'));
-            $display = $this->catalog->code($configuration->getRawOriginal('display_currency'));
-            $allowed = DB::table('organization_allowed_currencies')
-                ->where('organization_id', $organizationId)
-                ->pluck('currency')
-                ->map(fn (mixed $currency): CurrencyCode => $this->catalog->code($currency))
-                ->all();
-            $forceSingle = filter_var($configuration->getRawOriginal('force_single_currency'), FILTER_VALIDATE_BOOLEAN);
-            FinancialRoundingMode::fromMixed($configuration->getRawOriginal('rounding_mode'));
-
-            if ($allowed === [] || ! in_array($base, $allowed, true) || ! in_array($display, $allowed, true)
-                || ($forceSingle && ($base !== $display || $allowed !== [$base]))) {
-                throw new InvalidArgumentException('The existing currency configuration is invalid.');
-            }
-
-            if ($reuseExistingRates) {
-                $rateKeys = [];
-
-                foreach (DB::table('organization_exchange_rates')
-                    ->where('organization_id', $organizationId)
-                    ->get(['source_currency', 'target_currency', 'rate']) as $rate) {
-                    $source = $this->catalog->code($rate->source_currency);
-                    $target = $this->catalog->code($rate->target_currency);
-                    $value = $rate->rate;
-                    $valueString = (string) $value;
-
-                    if ((! is_string($value) && ! is_int($value) && ! is_float($value))
-                        || $source === $target
-                        || preg_match('/^(?:0|[1-9][0-9]{0,19})(?:\.[0-9]{1,18})?$/', $valueString) !== 1
-                        || BigDecimal::of($valueString)->isNegativeOrZero()) {
-                        throw new InvalidArgumentException('The existing exchange rates are invalid.');
-                    }
-
-                    $key = $this->configuration->rateKey($source, $target);
-
-                    if (isset($rateKeys[$key])) {
-                        throw new InvalidArgumentException('The existing exchange rates are duplicated.');
-                    }
-
-                    $rateKeys[$key] = true;
-                }
-            }
-        } catch (InvalidArgumentException) {
-            throw ValidationException::withMessages([
-                'currency' => 'Сохранённые финансовые данные требуют проверки. Настройки не изменены.',
-            ]);
         }
     }
 }

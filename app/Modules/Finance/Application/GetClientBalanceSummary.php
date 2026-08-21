@@ -55,10 +55,10 @@ final readonly class GetClientBalanceSummary
             ->where('financial_obligations.organization_id', $organization->getKey())
             ->where('financial_obligations.client_id', $client->getKey())
             ->select([
-                DB::raw('UPPER(TRIM(financial_obligations.settlement_currency)) AS currency'),
+                DB::raw('financial_obligations.settlement_currency AS currency'),
                 DB::raw('SUM(financial_obligations.settlement_amount_minor - COALESCE(ledger.applied_minor, 0)) AS outstanding_minor'),
             ])
-            ->groupByRaw('UPPER(TRIM(financial_obligations.settlement_currency))')
+            ->groupBy('financial_obligations.settlement_currency')
             ->havingRaw('SUM(financial_obligations.settlement_amount_minor - COALESCE(ledger.applied_minor, 0)) > 0')
             ->orderByDesc('outstanding_minor')
             ->limit(self::MAX_CURRENCIES)

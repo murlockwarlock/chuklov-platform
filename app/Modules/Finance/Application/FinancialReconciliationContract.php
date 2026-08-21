@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Application;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Enums\FinancialEntrySource;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
+use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -66,54 +67,91 @@ final class FinancialReconciliationContract
         );
     }
 
-    public function normalizedCurrencySql(string $expression): string
+    public function canonicalCurrencySql(string $expression): string
     {
-        return 'UPPER(TRIM('.$expression.'))';
+        return $expression;
+    }
+
+    public function currencyScaleSql(string $expression): string
+    {
+        $cases = array_map(
+            fn (CurrencyCode $currency): string => "WHEN '{$currency->value}' THEN ".$this->catalog->scale($currency),
+            $this->catalog->codes(),
+        );
+
+        return '(CASE '.$expression.' '.implode(' ', $cases).' END)';
+    }
+
+    public function minorScaleFactorSql(string $sourceCurrency, string $targetCurrency): string
+    {
+        $sourceScale = $this->currencyScaleSql($sourceCurrency);
+        $targetScale = $this->currencyScaleSql($targetCurrency);
+        $scalePairs = [];
+        $numericCast = DB::getDriverName() === 'pgsql' ? '::numeric' : '';
+
+        foreach ($this->catalog->codes() as $source) {
+            foreach ($this->catalog->codes() as $target) {
+                $sourceValue = $this->catalog->scale($source);
+                $targetValue = $this->catalog->scale($target);
+                $scalePairs[$sourceValue.':'.$targetValue] = [$sourceValue, $targetValue];
+            }
+        }
+
+        $cases = [];
+
+        foreach ($scalePairs as [$sourceValue, $targetValue]) {
+            $difference = $targetValue - $sourceValue;
+            $factor = $difference >= 0
+                ? '1'.str_repeat('0', $difference)
+                : '0.'.str_repeat('0', -$difference - 1).'1';
+            $cases[] = 'WHEN '.$sourceScale.' = '.$sourceValue
+                .' AND '.$targetScale.' = '.$targetValue.' THEN '.$factor.$numericCast;
+        }
+
+        return '(CASE '.implode(' ', $cases).' END)';
     }
 
     public function ratePattern(): string
     {
-        return '^(?:0|[1-9][0-9]{0,19})(?:\.[0-9]{1,18})?$';
+        return '^(0|[1-9][0-9]{0,19})(\\.[0-9]{0,17}[1-9])?$';
     }
 
-    public function integerRatePattern(): string
+    public function snapshotMinorPattern(): string
     {
-        return '^(?:0|[1-9][0-9]{0,19})$';
+        return '^(0|[1-9][0-9]*)$';
     }
 
     public function validIntegerSql(string $expression): string
     {
         return match (DB::getDriverName()) {
-            'pgsql' => "({$expression})::text ~ '^-?(0|[1-9][0-9]*)$'",
+            'pgsql' => "({$expression})::text ~ '^(0|[1-9][0-9]*|-[1-9][0-9]*)$'",
             default => "typeof({$expression}) = 'integer'",
         };
     }
 
     public function rate(mixed $value): string
     {
-        if (! is_string($value) && ! is_int($value)) {
-            throw new UnexpectedValueException('A persisted financial rate is invalid.');
-        }
-
-        $rate = (string) $value;
-
-        if (preg_match('/'.$this->ratePattern().'/', $rate) !== 1) {
+        if (! is_string($value) || preg_match('/'.$this->ratePattern().'/', $value) !== 1) {
             throw new UnexpectedValueException('A persisted financial rate is invalid.');
         }
 
         try {
-            if (BigDecimal::of($rate)->isNegativeOrZero()) {
+            if (BigDecimal::of($value)->isNegativeOrZero()) {
                 throw new UnexpectedValueException('A persisted financial rate is invalid.');
             }
         } catch (MathException $exception) {
             throw new UnexpectedValueException('A persisted financial rate is invalid.', previous: $exception);
         }
 
-        return $rate;
+        return $value;
     }
 
     public function currency(mixed $value): CurrencyCode
     {
+        if (! is_string($value) || CurrencyCode::tryFrom($value) === null) {
+            throw new UnexpectedValueException('A persisted financial currency is invalid.');
+        }
+
         try {
             return $this->catalog->code($value);
         } catch (InvalidArgumentException $exception) {
@@ -128,6 +166,59 @@ final class FinancialReconciliationContract
         } catch (UnexpectedValueException) {
             return null;
         }
+    }
+
+    /**
+     * @return array{
+     *     source_currency: CurrencyCode,
+     *     target_currency: CurrencyCode,
+     *     source_amount: Money,
+     *     target_amount: Money,
+     *     rate: string,
+     *     rounding_mode: FinancialRoundingMode,
+     *     source_scale: int,
+     *     target_scale: int
+     * }
+     */
+    public function validateValuationSnapshot(mixed $snapshot): array
+    {
+        if (! is_array($snapshot)) {
+            throw new UnexpectedValueException('The obligation valuation snapshot is invalid.');
+        }
+
+        try {
+            $sourceCurrency = $this->currency($snapshot['source_currency'] ?? null);
+            $targetCurrency = $this->currency($snapshot['target_currency'] ?? null);
+            $sourceAmount = $this->snapshotMoney($snapshot['source_amount_minor'] ?? null, $sourceCurrency);
+            $targetAmount = $this->snapshotMoney($snapshot['target_amount_minor'] ?? null, $targetCurrency);
+            $rate = $this->rate($snapshot['rate'] ?? null);
+
+            if (! is_string($snapshot['rounding_mode'] ?? null)) {
+                throw new UnexpectedValueException('The obligation valuation snapshot is invalid.');
+            }
+
+            $roundingMode = FinancialRoundingMode::fromMixed($snapshot['rounding_mode']);
+            $sourceScale = $this->snapshotScale($snapshot['source_scale'] ?? null, $sourceCurrency);
+            $targetScale = $this->snapshotScale($snapshot['target_scale'] ?? null, $targetCurrency);
+        } catch (InvalidArgumentException $exception) {
+            throw new UnexpectedValueException('The obligation valuation snapshot is invalid.', previous: $exception);
+        }
+
+        if ($sourceCurrency === $targetCurrency
+            && ($rate !== '1' || $sourceAmount->minorUnits() !== $targetAmount->minorUnits())) {
+            throw new UnexpectedValueException('The obligation valuation snapshot is invalid.');
+        }
+
+        return [
+            'source_currency' => $sourceCurrency,
+            'target_currency' => $targetCurrency,
+            'source_amount' => $sourceAmount,
+            'target_amount' => $targetAmount,
+            'rate' => $rate,
+            'rounding_mode' => $roundingMode,
+            'source_scale' => $sourceScale,
+            'target_scale' => $targetScale,
+        ];
     }
 
     /**
@@ -206,8 +297,6 @@ final class FinancialReconciliationContract
 
     /**
      * @return array{
-     *     entry_type: FinancialLedgerEntryType,
-     *     source: FinancialEntrySource,
      *     amount_minor: int,
      *     currency: CurrencyCode,
      *     payment_amount_minor: int,
@@ -220,8 +309,10 @@ final class FinancialReconciliationContract
      *     settlement_currency: CurrencyCode
      * }
      */
-    public function validateCorrectableLedgerEntry(FinancialLedgerEntry $entry): array
-    {
+    public function validateCorrectableLedgerEntry(
+        FinancialLedgerEntry $entry,
+        FinancialObligation $obligation,
+    ): array {
         $entryType = is_string($entry->getRawOriginal('entry_type'))
             ? FinancialLedgerEntryType::tryFrom($entry->getRawOriginal('entry_type'))
             : null;
@@ -229,20 +320,18 @@ final class FinancialReconciliationContract
             ? FinancialEntrySource::tryFrom($entry->getRawOriginal('source'))
             : null;
 
-        if ($entryType === null || $source === null || $entry->getRawOriginal('corrects_ledger_entry_id') !== null) {
+        if ($entryType !== FinancialLedgerEntryType::ManualPayment
+            || $source !== FinancialEntrySource::Crm
+            || $entry->getRawOriginal('corrects_ledger_entry_id') !== null) {
             throw new UnexpectedValueException('The ledger entry cannot be corrected.');
         }
 
-        $expectedSource = match ($entryType) {
-            FinancialLedgerEntryType::ManualPayment => FinancialEntrySource::Crm,
-            FinancialLedgerEntryType::FakeGatewaySettlement => FinancialEntrySource::FakeGateway,
-            FinancialLedgerEntryType::Correction => null,
-        };
-
-        if ($expectedSource !== $source) {
-            throw new UnexpectedValueException('The ledger entry cannot be corrected.');
+        if (! is_string($entry->getRawOriginal('payment_method'))
+            || PaymentMethod::tryFrom($entry->getRawOriginal('payment_method')) === null) {
+            throw new UnexpectedValueException('The ledger payment method is invalid.');
         }
 
+        $obligationData = $this->validateObligation($obligation);
         $currencies = $this->modelCurrencies($entry, self::LEDGER_CURRENCY_ATTRIBUTES);
         $amounts = [
             'amount_minor' => $this->money($entry->getRawOriginal('amount_minor'), $currencies['currency'], 'A persisted ledger amount is invalid.')->minorUnits(),
@@ -252,27 +341,18 @@ final class FinancialReconciliationContract
             'settlement_amount_minor' => $this->money($entry->getRawOriginal('settlement_amount_minor'), $currencies['settlement_currency'], 'A persisted ledger settlement amount is invalid.')->minorUnits(),
         ];
 
-        if ($entryType === FinancialLedgerEntryType::ManualPayment
-            && ! is_string($entry->getRawOriginal('payment_method'))) {
-            throw new UnexpectedValueException('The manual ledger payment method is invalid.');
-        }
-
-        if ($entry->getRawOriginal('payment_method') !== null
-            && (! is_string($entry->getRawOriginal('payment_method')) || PaymentMethod::tryFrom($entry->getRawOriginal('payment_method')) === null)) {
-            throw new UnexpectedValueException('The ledger payment method is invalid.');
-        }
-
         if ($amounts['amount_minor'] <= 0
             || $amounts['payment_amount_minor'] <= 0
             || $amounts['settlement_amount_minor'] <= 0
             || $amounts['base_amount_minor'] < 0
-            || $amounts['display_amount_minor'] < 0) {
-            throw new UnexpectedValueException('The ledger entry amounts cannot be corrected.');
+            || $amounts['display_amount_minor'] < 0
+            || $currencies['settlement_currency'] !== $obligationData['currencies']['settlement_currency']
+            || $currencies['base_currency'] !== $obligationData['currencies']['base_currency']
+            || $currencies['display_currency'] !== $obligationData['currencies']['display_currency']) {
+            throw new UnexpectedValueException('The ledger entry cannot be corrected.');
         }
 
         return [
-            'entry_type' => $entryType,
-            'source' => $source,
             ...$amounts,
             'currency' => $currencies['currency'],
             'payment_currency' => $currencies['payment_currency'],
@@ -284,7 +364,8 @@ final class FinancialReconciliationContract
 
     public function money(mixed $value, CurrencyCode $currency, string $message): Money
     {
-        if (! is_int($value) && ! is_string($value)) {
+        if (! is_int($value)
+            && (! is_string($value) || preg_match('/^(0|[1-9][0-9]*|-[1-9][0-9]*)$/', $value) !== 1)) {
             throw new UnexpectedValueException($message);
         }
 
@@ -295,7 +376,28 @@ final class FinancialReconciliationContract
         }
     }
 
-    /** @param list<string> $attributes
+    private function snapshotMoney(mixed $value, CurrencyCode $currency): Money
+    {
+        if (! is_string($value) || preg_match('/'.$this->snapshotMinorPattern().'/', $value) !== 1) {
+            throw new UnexpectedValueException('The obligation valuation snapshot is invalid.');
+        }
+
+        return $this->money($value, $currency, 'The obligation valuation snapshot is invalid.');
+    }
+
+    private function snapshotScale(mixed $value, CurrencyCode $currency): int
+    {
+        $expected = $this->catalog->scale($currency);
+
+        if (! is_int($value) || $value !== $expected) {
+            throw new UnexpectedValueException('The obligation valuation snapshot is invalid.');
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  list<string>  $attributes
      * @return array<string, CurrencyCode>
      */
     private function modelCurrencies(FinancialLedgerEntry|FinancialObligation $model, array $attributes): array

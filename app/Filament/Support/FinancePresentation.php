@@ -152,13 +152,54 @@ final class FinancePresentation
 
     public function displayAmount(FinancialObligation $record): string
     {
-        return $this->amount($record->display_amount_minor, $record->getRawOriginal('display_currency'));
+        if ($this->reconciliation($record) === null) {
+            return '—';
+        }
+
+        return $this->amount(
+            $record->getRawOriginal('display_amount_minor'),
+            $record->getRawOriginal('display_currency'),
+        );
+    }
+
+    public function obligationAmount(FinancialObligation $record, string $amountAttribute, string $currencyAttribute): string
+    {
+        if ($this->reconciliation($record) === null) {
+            return '—';
+        }
+
+        return $this->amount(
+            $record->getRawOriginal($amountAttribute),
+            $record->getRawOriginal($currencyAttribute),
+        );
+    }
+
+    public function ledgerPaymentAmount(FinancialLedgerEntry $entry): string
+    {
+        $obligation = $entry->relationLoaded('obligation')
+            ? $entry->getRelation('obligation')
+            : null;
+
+        if (! $obligation instanceof FinancialObligation || $this->reconciliation($obligation) === null) {
+            return '—';
+        }
+
+        try {
+            $this->contract->validateLedgerForReconciliation($entry);
+        } catch (UnexpectedValueException) {
+            return '—';
+        }
+
+        return $this->amount(
+            $entry->getRawOriginal('payment_amount_minor'),
+            $entry->getRawOriginal('payment_currency'),
+        );
     }
 
     public function amount(mixed $minor, mixed $currency): string
     {
         try {
-            $code = $this->catalog->code($currency);
+            $code = $this->contract->currency($currency);
 
             return $this->contract->money($minor, $code, 'A persisted financial amount is invalid.')
                 ->toDecimalString().' '.$code->value;
@@ -186,8 +227,8 @@ final class FinancePresentation
         }
 
         try {
-            $settlementCurrency = $this->catalog->code($record->getRawOriginal('settlement_currency'));
-        } catch (InvalidArgumentException) {
+            $settlementCurrency = $this->contract->currency($record->getRawOriginal('settlement_currency'));
+        } catch (UnexpectedValueException) {
             return null;
         }
 
@@ -248,48 +289,50 @@ final class FinancePresentation
     public function currencyName(mixed $currency): string
     {
         try {
-            $code = $this->catalog->code($currency);
+            $code = $this->contract->currency($currency);
 
             return $this->catalog->definition($code)->name.' ('.$code->value.')';
-        } catch (InvalidArgumentException) {
+        } catch (UnexpectedValueException) {
             return '—';
         }
     }
 
     public function historicalRate(FinancialObligation $record): ?string
     {
-        $snapshot = $record->conversion_snapshots['display'] ?? null;
-
-        if (! is_array($snapshot) || (! is_string($snapshot['rate'] ?? null) && ! is_int($snapshot['rate'] ?? null))) {
+        if ($this->reconciliation($record) === null) {
             return null;
         }
 
-        try {
-            $source = $this->catalog->code($snapshot['source_currency'] ?? null);
-            $target = $this->catalog->code($snapshot['target_currency'] ?? null);
-            $rate = $this->contract->rate($snapshot['rate']);
+        $snapshots = $record->getAttribute('conversion_snapshots');
+        $snapshot = is_array($snapshots) ? ($snapshots['display'] ?? null) : null;
 
-            return $source === $target ? null : '1 '.$source->value.' = '.$rate.' '.$target->value;
-        } catch (InvalidArgumentException|UnexpectedValueException) {
+        try {
+            $valuation = $this->contract->validateValuationSnapshot($snapshot);
+
+            return $valuation['source_currency'] === $valuation['target_currency']
+                ? null
+                : '1 '.$valuation['source_currency']->value.' = '.$valuation['rate'].' '.$valuation['target_currency']->value;
+        } catch (UnexpectedValueException) {
             return null;
         }
     }
 
     public function roundingMode(FinancialObligation $record): ?string
     {
-        $snapshot = $record->conversion_snapshots['display'] ?? null;
-
-        if (! is_array($snapshot)) {
+        if ($this->reconciliation($record) === null) {
             return null;
         }
 
+        $snapshots = $record->getAttribute('conversion_snapshots');
+        $snapshot = is_array($snapshots) ? ($snapshots['display'] ?? null) : null;
+
         try {
-            return match (FinancialRoundingMode::fromMixed($snapshot['rounding_mode'] ?? null)) {
+            return match ($this->contract->validateValuationSnapshot($snapshot)['rounding_mode']) {
                 FinancialRoundingMode::HalfUp => 'Обычное математическое',
                 FinancialRoundingMode::HalfEven => 'До ближайшего чётного',
                 FinancialRoundingMode::Down => 'Вниз, без увеличения суммы',
             };
-        } catch (InvalidArgumentException) {
+        } catch (UnexpectedValueException) {
             return null;
         }
     }
@@ -317,7 +360,14 @@ final class FinancePresentation
 
     public function bookingAmount(BookingFinanceSummary $summary): string
     {
-        return $this->displayAmount($summary->obligation);
+        if ($summary->reconciliation === null) {
+            return '—';
+        }
+
+        return $this->amount(
+            $summary->obligation->getRawOriginal('display_amount_minor'),
+            $summary->obligation->getRawOriginal('display_currency'),
+        );
     }
 
     public function bookingPaid(BookingFinanceSummary $summary): string

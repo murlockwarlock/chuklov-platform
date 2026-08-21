@@ -78,9 +78,10 @@ final class FinancialObligationInfolist
                 ->schema([
                     TextEntry::make('original_amount')
                         ->label('Первоначальная сумма')
-                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->amount(
-                            $record->amount_minor,
-                            $record->getRawOriginal('currency'),
+                        ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->obligationAmount(
+                            $record,
+                            'amount_minor',
+                            'currency',
                         )),
                     TextEntry::make('practice_currency_summary')
                         ->label('Валюта практики')

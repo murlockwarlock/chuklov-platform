@@ -3,15 +3,14 @@
 namespace App\Filament\Pages;
 
 use App\Models\User;
+use App\Modules\Finance\Application\CurrentCurrencyConfigurationIntegrity;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
-use App\Modules\Finance\Domain\Models\OrganizationExchangeRate;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Services\Domain\Models\Service;
-use Brick\Math\BigDecimal;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -29,7 +28,6 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
@@ -90,6 +88,7 @@ final class FinanceConfiguration extends Page
     {
         $organizationId = app(OrganizationContext::class)->id();
         $catalog = app(CurrencyCatalog::class);
+        $integrity = app(CurrentCurrencyConfigurationIntegrity::class);
         $model = OrganizationCurrencyConfiguration::query()
             ->where('organization_id', $organizationId)
             ->first();
@@ -125,32 +124,33 @@ final class FinanceConfiguration extends Page
         }
 
         try {
-            if ($model === null) {
+            $current = $integrity->inspect($model, $organizationId);
+
+            if ($current === null) {
                 $base = $defaultBase;
                 $display = $defaultDisplay;
                 $allowed = $defaultAllowed;
                 $forceSingle = $defaultForceSingle;
                 $rounding = FinancialRoundingMode::HalfUp->value;
+                $rates = [];
             } else {
-                $base = $catalog->code($model->getRawOriginal('base_currency'))->value;
-                $display = $catalog->code($model->getRawOriginal('display_currency'))->value;
-                $allowed = DB::table('organization_allowed_currencies')
-                    ->where('organization_id', $organizationId)
-                    ->orderBy('currency')
-                    ->pluck('currency')
-                    ->map(fn (mixed $currency): string => $catalog->code($currency)->value)
-                    ->values()
-                    ->all();
-                $forceSingle = filter_var($model->getRawOriginal('force_single_currency'), FILTER_VALIDATE_BOOLEAN);
-                $rounding = FinancialRoundingMode::fromMixed($model->getRawOriginal('rounding_mode'))->value;
-
-                if ($allowed === [] || ! in_array($base, $allowed, true) || ! in_array($display, $allowed, true)
-                    || ($forceSingle && ($base !== $display || $allowed !== [$base]))) {
-                    throw new InvalidArgumentException('The persisted currency configuration is invalid.');
-                }
+                $base = $current['base']->value;
+                $display = $current['display']->value;
+                $allowed = array_map(
+                    static fn ($currency): string => $currency->value,
+                    $current['allowed'],
+                );
+                $forceSingle = $current['force_single'];
+                $rounding = $current['rounding']->value;
+                $rates = array_map(
+                    static fn (array $rate): array => [
+                        'source_currency' => $rate['source']->value,
+                        'target_currency' => $rate['target']->value,
+                        'rate' => $rate['rate'],
+                    ],
+                    $current['rates'],
+                );
             }
-
-            $rates = $this->persistedRates($organizationId, $catalog);
         } catch (InvalidArgumentException|UnexpectedValueException) {
             $this->configurationUnavailable = true;
             $this->data = null;
@@ -366,45 +366,6 @@ final class FinanceConfiguration extends Page
         }
 
         Notification::make()->success()->title('Финансовые настройки сохранены')->send();
-    }
-
-    /** @return list<array{source_currency: string, target_currency: string, rate: string}> */
-    private function persistedRates(int $organizationId, CurrencyCatalog $catalog): array
-    {
-        $seen = [];
-        $rates = [];
-
-        foreach (OrganizationExchangeRate::query()
-            ->where('organization_id', $organizationId)
-            ->orderBy('source_currency')
-            ->orderBy('target_currency')
-            ->get() as $rate) {
-            $source = $catalog->code($rate->getRawOriginal('source_currency'))->value;
-            $target = $catalog->code($rate->getRawOriginal('target_currency'))->value;
-            $value = $rate->getRawOriginal('rate');
-
-            if ((! is_string($value) && ! is_int($value) && ! is_float($value))
-                || preg_match('/^(?:0|[1-9][0-9]{0,19})(?:\.[0-9]{1,18})?$/', (string) $value) !== 1
-                || BigDecimal::of((string) $value)->isNegativeOrZero()
-                || $source === $target) {
-                throw new InvalidArgumentException('A persisted exchange rate is invalid.');
-            }
-
-            $key = $source.'>'.$target;
-
-            if (isset($seen[$key])) {
-                throw new InvalidArgumentException('Persisted exchange rates are duplicated after normalization.');
-            }
-
-            $seen[$key] = true;
-            $rates[] = [
-                'source_currency' => $source,
-                'target_currency' => $target,
-                'rate' => (string) $value,
-            ];
-        }
-
-        return $rates;
     }
 
     /** @return array<string, string> */

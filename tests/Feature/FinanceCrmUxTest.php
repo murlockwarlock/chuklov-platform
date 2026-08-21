@@ -278,6 +278,15 @@ final class FinanceCrmUxTest extends TestCase
                 ->set('tableFilters.status.value', $status->value)
                 ->assertCountTableRecords(0);
         }
+
+        Livewire::actingAs($admin)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '—', $payment)
+            ->assertTableActionHidden('correctPayment', $payment);
     }
 
     public function test_overpayment_is_excluded_from_normal_status_filters(): void
@@ -392,6 +401,99 @@ final class FinanceCrmUxTest extends TestCase
         self::assertSame('ZZZ', DB::table('organization_currency_configurations')
             ->where('organization_id', $organization->getKey())
             ->value('base_currency'));
+    }
+
+    public function test_save_currency_configuration_does_not_overwrite_a_corrupt_current_rate_when_rates_are_submitted(): void
+    {
+        [$organization, $admin] = $this->financeFixture(singleCurrency: false);
+        DB::table('organization_exchange_rates')
+            ->where('organization_id', $organization->getKey())
+            ->where('source_currency', 'USD')
+            ->where('target_currency', 'RUB')
+            ->update(['source_currency' => 'usd']);
+        $version = DB::table('organization_currency_configurations')
+            ->where('organization_id', $organization->getKey())
+            ->value('version');
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinanceConfiguration::class)
+            ->assertSuccessful()
+            ->assertSet('configurationUnavailable', true)
+            ->assertSee('Настройки валют недоступны');
+
+        try {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'RUB',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['RUB', 'USD'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_even',
+                'rates' => [
+                    ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '501'],
+                    ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.001996007984031936'],
+                ],
+            ]);
+            self::fail('A normal save must not overwrite a corrupt current exchange rate.');
+        } catch (ValidationException) {
+            self::assertSame('usd', DB::table('organization_exchange_rates')
+                ->where('organization_id', $organization->getKey())
+                ->where('target_currency', 'RUB')
+                ->value('source_currency'));
+            self::assertSame($version, DB::table('organization_currency_configurations')
+                ->where('organization_id', $organization->getKey())
+                ->value('version'));
+            self::assertDatabaseMissing('organization_exchange_rates', [
+                'organization_id' => $organization->getKey(),
+                'source_currency' => 'USD',
+                'target_currency' => 'RUB',
+                'rate' => '501',
+            ]);
+        }
+    }
+
+    public function test_save_currency_configuration_does_not_repair_a_missing_active_rate_as_a_normal_save(): void
+    {
+        [$organization, $admin] = $this->financeFixture(singleCurrency: false);
+        DB::table('organization_exchange_rates')
+            ->where('organization_id', $organization->getKey())
+            ->where('source_currency', 'USD')
+            ->where('target_currency', 'RUB')
+            ->delete();
+        $version = DB::table('organization_currency_configurations')
+            ->where('organization_id', $organization->getKey())
+            ->value('version');
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinanceConfiguration::class)
+            ->assertSuccessful()
+            ->assertSet('configurationUnavailable', true)
+            ->assertSee('Настройки валют недоступны');
+
+        try {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'RUB',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['RUB', 'USD'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_up',
+                'rates' => [
+                    ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '500'],
+                    ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.002'],
+                ],
+            ]);
+            self::fail('A normal save must not repair a corrupt active rate set.');
+        } catch (ValidationException) {
+            self::assertDatabaseMissing('organization_exchange_rates', [
+                'organization_id' => $organization->getKey(),
+                'source_currency' => 'USD',
+                'target_currency' => 'RUB',
+            ]);
+            self::assertSame($version, DB::table('organization_currency_configurations')
+                ->where('organization_id', $organization->getKey())
+                ->value('version'));
+        }
     }
 
     public function test_correction_action_fails_closed_for_malformed_ledger_currency_and_payment_metadata(): void
@@ -821,6 +923,79 @@ final class FinanceCrmUxTest extends TestCase
             ->loadTable()
             ->assertSee('Тестовая оплата')
             ->assertTableActionHidden('correctPayment', $entry);
+
+        $this->assertCorrectionRejected($admin, $entry, 'reject-fake-gateway-correction');
+    }
+
+    public function test_direct_correction_rejects_forbidden_ledger_and_parent_states_without_side_effects(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = $this->manualPayment($admin, $obligation, 'direct-correction-original');
+        $correction = app(CorrectFinancialPayment::class)->handle(
+            actor: $admin,
+            original: $payment,
+            reason: 'Первичное исправление.',
+            idempotencyKey: 'direct-correction-accepted',
+        );
+        $this->assertCorrectionRejected($admin, $correction, 'reject-correction-row');
+        $this->assertCorrectionRejected($admin, $payment, 'reject-already-corrected');
+
+        [, $malformedAdmin, , , $malformedObligation] = $this->financeFixture(singleCurrency: true);
+        $malformedPayment = $this->manualPayment($malformedAdmin, $malformedObligation, 'direct-correction-malformed');
+        DB::table('financial_ledger_entries')
+            ->where('id', $malformedPayment->getKey())
+            ->update(['payment_amount_minor' => 0]);
+        $this->assertCorrectionRejected($malformedAdmin, $malformedPayment, 'reject-malformed-ledger');
+
+        [, $incompatibleAdmin, , , $incompatibleObligation] = $this->financeFixture(singleCurrency: true);
+        $incompatiblePayment = $this->manualPayment($incompatibleAdmin, $incompatibleObligation, 'direct-correction-incompatible');
+        DB::table('financial_ledger_entries')
+            ->where('id', $incompatiblePayment->getKey())
+            ->update(['display_currency' => 'RUB']);
+        $this->assertCorrectionRejected($incompatibleAdmin, $incompatiblePayment, 'reject-incompatible-ledger');
+
+        [, $invalidParentAdmin, , , $invalidParentObligation] = $this->financeFixture(singleCurrency: true);
+        $invalidParentPayment = $this->manualPayment($invalidParentAdmin, $invalidParentObligation, 'direct-correction-invalid-parent');
+        $snapshots = $invalidParentObligation->conversion_snapshots;
+        unset($snapshots['display']);
+        DB::table('financial_obligations')
+            ->where('id', $invalidParentObligation->getKey())
+            ->update(['conversion_snapshots' => json_encode($snapshots, JSON_THROW_ON_ERROR)]);
+        $this->assertCorrectionRejected($invalidParentAdmin, $invalidParentPayment, 'reject-invalid-parent');
+
+        self::assertSame(2, DB::table('financial_ledger_entries')
+            ->where('organization_id', $organization->getKey())
+            ->count());
+    }
+
+    public function test_direct_correction_rejects_cross_organization_entries_without_side_effects(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = $this->manualPayment($admin, $obligation, 'direct-correction-cross-organization');
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $otherAdmin = User::factory()->forOrganization($otherOrganization)->create();
+        $this->setOrganization($otherOrganization);
+        $ledgerCount = DB::table('financial_ledger_entries')
+            ->where('organization_id', $organization->getKey())
+            ->count();
+
+        try {
+            app(CorrectFinancialPayment::class)->handle(
+                actor: $otherAdmin,
+                original: $payment,
+                reason: 'Чужая организация.',
+                idempotencyKey: 'reject-cross-organization-correction',
+            );
+            self::fail('Cross-organization correction must be rejected at the application boundary.');
+        } catch (AuthorizationException) {
+            self::assertSame($ledgerCount, DB::table('financial_ledger_entries')
+                ->where('organization_id', $organization->getKey())
+                ->count());
+            self::assertDatabaseMissing('finance_idempotency_keys', [
+                'organization_id' => $otherOrganization->getKey(),
+                'idempotency_key' => 'reject-cross-organization-correction',
+            ]);
+        }
     }
 
     /** @return array{Organization, User, Client, Booking, FinancialObligation} */
@@ -889,5 +1064,45 @@ final class FinanceCrmUxTest extends TestCase
             $queries,
             static fn (array $query): bool => str_contains($query['query'], 'financial_ledger_entries'),
         ));
+    }
+
+    private function manualPayment(User $admin, FinancialObligation $obligation, string $idempotencyKey): FinancialLedgerEntry
+    {
+        return app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '20.00',
+            currency: 'USD',
+            paymentMethod: 'cash',
+            occurredAt: CarbonImmutable::now('UTC'),
+            note: null,
+            receipt: null,
+            idempotencyKey: $idempotencyKey,
+        );
+    }
+
+    private function assertCorrectionRejected(User $admin, FinancialLedgerEntry $entry, string $idempotencyKey): void
+    {
+        $ledgerCount = DB::table('financial_ledger_entries')
+            ->where('organization_id', $entry->getRawOriginal('organization_id'))
+            ->count();
+
+        try {
+            app(CorrectFinancialPayment::class)->handle(
+                actor: $admin,
+                original: $entry,
+                reason: 'Недопустимое исправление.',
+                idempotencyKey: $idempotencyKey,
+            );
+            self::fail('The forbidden correction must be rejected.');
+        } catch (ValidationException) {
+            self::assertSame($ledgerCount, DB::table('financial_ledger_entries')
+                ->where('organization_id', $entry->getRawOriginal('organization_id'))
+                ->count());
+            self::assertDatabaseMissing('finance_idempotency_keys', [
+                'organization_id' => $entry->getRawOriginal('organization_id'),
+                'idempotency_key' => $idempotencyKey,
+            ]);
+        }
     }
 }

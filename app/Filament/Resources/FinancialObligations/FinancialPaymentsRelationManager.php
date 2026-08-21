@@ -45,7 +45,7 @@ final class FinancialPaymentsRelationManager extends RelationManager
             ->modifyQueryUsing(function (Builder $query): Builder {
                 return $query
                     ->where('organization_id', app(OrganizationContext::class)->id())
-                    ->with('receipt')
+                    ->with(['receipt', 'obligation'])
                     ->withExists(['correction as has_correction']);
             })
             ->columns([
@@ -55,10 +55,7 @@ final class FinancialPaymentsRelationManager extends RelationManager
                     ->sortable(),
                 TextColumn::make('amount_summary')
                     ->label('Сумма')
-                    ->state(fn (FinancialLedgerEntry $record): string => app(FinancePresentation::class)->amount(
-                        $record->payment_amount_minor,
-                        $record->getRawOriginal('payment_currency'),
-                    )),
+                    ->state(fn (FinancialLedgerEntry $record): string => app(FinancePresentation::class)->ledgerPaymentAmount($record)),
                 TextColumn::make('payment_method_summary')
                     ->label('Способ оплаты')
                     ->state(fn (FinancialLedgerEntry $record): string => app(FinancePresentation::class)->paymentMethodLabel($record)),

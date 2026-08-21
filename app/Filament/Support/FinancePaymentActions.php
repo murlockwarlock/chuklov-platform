@@ -10,7 +10,6 @@ use App\Modules\Finance\Application\RecordManualPayment;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
-use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -236,33 +235,36 @@ final class FinancePaymentActions
     {
         $presentation = app(FinancePresentation::class);
 
-        try {
-            $currency = app(FinancialReconciliationContract::class)->currency($entry->getRawOriginal('payment_currency'));
-            $amount = app(FinancialReconciliationContract::class)
-                ->money($entry->getRawOriginal('payment_amount_minor'), $currency, 'A persisted ledger payment amount is invalid.')
-                ->toDecimalString().' '.$currency->value;
-        } catch (\InvalidArgumentException|\UnexpectedValueException) {
-            $amount = '—';
-        }
-
-        return $amount.' · '.$presentation->timestamp($entry->occurred_at).' · '.$presentation->paymentMethodLabel($entry);
+        return $presentation->ledgerPaymentAmount($entry)
+            .' · '.$presentation->timestamp($entry->occurred_at)
+            .' · '.$presentation->paymentMethodLabel($entry);
     }
 
     private static function settlementCurrency(FinancialObligation $obligation): ?string
     {
         try {
-            return app(CurrencyCatalog::class)->code($obligation->getRawOriginal('settlement_currency'))->value;
-        } catch (\InvalidArgumentException) {
+            return app(FinancialReconciliationContract::class)->currency(
+                $obligation->getRawOriginal('settlement_currency'),
+            )->value;
+        } catch (\UnexpectedValueException) {
             return null;
         }
     }
 
     private static function canCorrect(FinancialLedgerEntry $entry): bool
     {
-        try {
-            app(FinancialReconciliationContract::class)->validateCorrectableLedgerEntry($entry);
+        $obligation = $entry->relationLoaded('obligation')
+            ? $entry->getRelation('obligation')
+            : null;
 
-            return true;
+        if (! $obligation instanceof FinancialObligation) {
+            return false;
+        }
+
+        try {
+            app(FinancialReconciliationContract::class)->validateCorrectableLedgerEntry($entry, $obligation);
+
+            return app(FinancePresentation::class)->reconciliation($obligation) !== null;
         } catch (\UnexpectedValueException) {
             return false;
         }
