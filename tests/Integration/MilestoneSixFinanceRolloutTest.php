@@ -290,10 +290,7 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
                 ->where('id', $obligation->getKey())
                 ->update([$attribute => 'usd']);
         } else {
-            $entry = $this->postgresLedger($obligation, 2500, 2500);
-            DB::table('financial_ledger_entries')
-                ->where('id', $entry->getKey())
-                ->update([$attribute => 'usd']);
+            $this->insertPostgresLedgerWithNoncanonicalCurrency($obligation, $attribute);
         }
 
         $this->assertPostgresParity($organization, $obligation, null);
@@ -519,6 +516,46 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
         ])->save();
 
         return $entry;
+    }
+
+    private function insertPostgresLedgerWithNoncanonicalCurrency(
+        FinancialObligation $obligation,
+        string $currencyAttribute,
+    ): void {
+        $currencies = [
+            'currency' => (string) $obligation->getRawOriginal('currency'),
+            'payment_currency' => (string) $obligation->getRawOriginal('payment_currency'),
+            'base_currency' => (string) $obligation->getRawOriginal('base_currency'),
+            'display_currency' => (string) $obligation->getRawOriginal('display_currency'),
+            'settlement_currency' => (string) $obligation->getRawOriginal('settlement_currency'),
+        ];
+        $currencies[$currencyAttribute] = 'usd';
+
+        DB::table('financial_ledger_entries')->insert([
+            'organization_id' => (int) $obligation->getRawOriginal('organization_id'),
+            'obligation_id' => (int) $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 2500,
+            'currency' => $currencies['currency'],
+            'payment_amount_minor' => 2500,
+            'payment_currency' => $currencies['payment_currency'],
+            'base_amount_minor' => 2500,
+            'base_currency' => $currencies['base_currency'],
+            'display_amount_minor' => 2500,
+            'display_currency' => $currencies['display_currency'],
+            'settlement_amount_minor' => 2500,
+            'settlement_currency' => $currencies['settlement_currency'],
+            'conversion_snapshot' => null,
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'note' => null,
+            'actor_user_id' => null,
+            'provider_reference' => null,
+            'idempotency_key' => 'pg-noncanonical-ledger-'.$obligation->getKey().'-'.$currencyAttribute,
+            'corrects_ledger_entry_id' => null,
+            'created_at' => now(),
+        ]);
     }
 
     private function assertPostgresParity(Organization $organization, FinancialObligation $obligation, ?string $expectedStatus): void
