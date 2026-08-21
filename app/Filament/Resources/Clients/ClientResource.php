@@ -25,6 +25,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class ClientResource extends Resource
@@ -74,6 +75,17 @@ class ClientResource extends Resource
         ];
     }
 
+    public static function getRecordTitle(?Model $record): string
+    {
+        if (! $record instanceof Client) {
+            return static::getModelLabel();
+        }
+
+        $fullName = trim((string) $record->getAttribute('full_name'));
+
+        return $fullName !== '' ? $fullName : '#'.$record->getKey();
+    }
+
     /** @return Collection<int, GlobalSearchResult> */
     public static function getGlobalSearchResults(string $search): Collection
     {
@@ -89,7 +101,7 @@ class ClientResource extends Resource
             ->limit(static::getGlobalSearchResultsLimit())
             ->get()
             ->map(static fn (Client $client): GlobalSearchResult => new GlobalSearchResult(
-                title: $client->full_name ?: '#'.$client->getKey(),
+                title: static::getRecordTitle($client),
                 url: static::getUrl('view', ['record' => $client]),
                 details: array_filter([
                     'ID' => '#'.$client->getKey(),

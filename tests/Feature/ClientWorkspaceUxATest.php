@@ -237,6 +237,59 @@ final class ClientWorkspaceUxATest extends TestCase
         $component->assertSuccessful();
     }
 
+    public function test_view_client_uses_full_name_for_header_and_breadcrumb_without_view_label(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Murlock Warlock',
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+
+        self::assertSame('Murlock Warlock', (string) $component->instance()->getTitle());
+        self::assertSame(['База клиентов', 'Murlock Warlock'], array_values($component->instance()->getBreadcrumbs()));
+        self::assertNotContains('Просмотр', array_values($component->instance()->getBreadcrumbs()));
+        $component
+            ->assertSee('Murlock Warlock')
+            ->assertDontSee('Просмотр');
+    }
+
+    public function test_view_client_uses_id_fallback_for_blank_full_name(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => '   ',
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+
+        $fallback = '#'.$client->getKey();
+        self::assertSame($fallback, (string) $component->instance()->getTitle());
+        self::assertSame(['База клиентов', $fallback], array_values($component->instance()->getBreadcrumbs()));
+    }
+
+    public function test_view_client_cannot_resolve_a_foreign_organization_record(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $otherOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($otherOrganization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $url = ClientResource::getUrl('view', [
+            'record' => $foreignClient,
+        ], shouldGuessMissingParameters: true);
+
+        $this->actingAs($admin)
+            ->get((string) parse_url($url, PHP_URL_PATH))
+            ->assertNotFound();
+    }
+
     public function test_cross_organization_attachment_upload_id_fails_closed_before_storage(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

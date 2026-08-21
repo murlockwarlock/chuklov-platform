@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Bookings\Tables;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\BookingNeedsAttention;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -77,6 +78,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('service')
                 ->label('Услуга')
@@ -86,6 +88,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('visit_format')
                 ->label('Формат визита')
@@ -100,7 +103,13 @@ class BookingsTable
                     'full_name',
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
+                ->getOptionLabelFromRecordUsing(
+                    static fn (Client $record): string => is_string($record->full_name) && filled($record->full_name)
+                        ? $record->full_name
+                        : '#'.$record->getKey(),
+                )
                 ->searchable()
+                ->preload()
                 ->optionsLimit(50);
         }
 

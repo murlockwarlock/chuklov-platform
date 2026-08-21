@@ -19,7 +19,9 @@ class SpecialistServiceAssignmentForm
                     ->label('Специалист')
                     ->searchable()
                     ->native(false)
+                    ->preload()
                     ->optionsLimit(50)
+                    ->options(static fn (): array => self::specialistResults(''))
                     ->getSearchResultsUsing(static fn (string $search): array => self::specialistResults($search))
                     ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value))
                     ->required(),
@@ -27,7 +29,9 @@ class SpecialistServiceAssignmentForm
                     ->label('Услуга')
                     ->searchable()
                     ->native(false)
+                    ->preload()
                     ->optionsLimit(50)
+                    ->options(static fn (): array => self::serviceResults(''))
                     ->getSearchResultsUsing(static fn (string $search): array => self::serviceResults($search))
                     ->getOptionLabelUsing(static fn (mixed $value): ?string => self::serviceLabel($value))
                     ->required(),

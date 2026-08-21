@@ -591,8 +591,8 @@ final class SessionCockpitTest extends TestCase
     public function test_specialist_select_options_present_inactive_specialists_after_active(): void
     {
         [$organization, $admin, $client] = $this->fixture();
-        $active = Specialist::factory()->forOrganization($organization)->create(['display_name' => 'Активный Специалист']);
-        $inactive = Specialist::factory()->inactive()->forOrganization($organization)->create(['display_name' => 'Архивный Специалист']);
+        $active = Specialist::factory()->forOrganization($organization)->create(['display_name' => '000 Активный Специалист']);
+        $inactive = Specialist::factory()->inactive()->forOrganization($organization)->create(['display_name' => '999 Архивный Специалист']);
         $foreignOrganization = Organization::factory()->create();
         $foreign = Specialist::factory()->forOrganization($foreignOrganization)->create(['display_name' => 'Чужой Специалист']);
         Specialist::factory()->count(55)->forOrganization($organization)->create();
@@ -603,10 +603,27 @@ final class SessionCockpitTest extends TestCase
         $select = $component->instance()->getSchemaComponent('form.specialist_id');
 
         self::assertInstanceOf(Select::class, $select);
-        self::assertSame('Активный Специалист (активен)', $select->getSearchResults('Активный')[$active->getKey()] ?? null);
-        self::assertSame('Архивный Специалист (неактивен)', $select->getSearchResults('Архивный')[$inactive->getKey()] ?? null);
+        self::assertTrue($select->isPreloaded());
+        $initialOptions = $select->getOptions();
+        self::assertCount(50, $initialOptions);
+        self::assertSame('000 Активный Специалист (активен)', $initialOptions[$active->getKey()] ?? null);
+        self::assertArrayNotHasKey($foreign->getKey(), $initialOptions);
+        self::assertSame('000 Активный Специалист (активен)', $select->getSearchResults('Активный')[$active->getKey()] ?? null);
+        self::assertSame('999 Архивный Специалист (неактивен)', $select->getSearchResults('Архивный')[$inactive->getKey()] ?? null);
         self::assertArrayNotHasKey($foreign->getKey(), $select->getSearchResults('Чужой'));
         self::assertCount(50, $select->getSearchResults(''));
+
+        $component->fillForm(['specialist_id' => $active->getKey()]);
+        $select = $component->instance()->getSchemaComponent('form.specialist_id');
+        self::assertInstanceOf(Select::class, $select);
+        self::assertSame((string) $active->getKey(), (string) $select->getState());
+        self::assertSame('000 Активный Специалист (активен)', $select->getOptionLabel());
+
+        $component->fillForm(['specialist_id' => $inactive->getKey()]);
+        $select = $component->instance()->getSchemaComponent('form.specialist_id');
+        self::assertInstanceOf(Select::class, $select);
+        self::assertSame((string) $inactive->getKey(), (string) $select->getState());
+        self::assertSame('999 Архивный Специалист (неактивен)', $select->getOptionLabel());
 
         $component->fillForm(['specialist_id' => $foreign->getKey()]);
         $select = $component->instance()->getSchemaComponent('form.specialist_id');

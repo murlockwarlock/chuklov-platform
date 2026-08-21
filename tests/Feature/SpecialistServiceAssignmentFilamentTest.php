@@ -12,6 +12,7 @@ use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Mockery;
@@ -104,6 +105,69 @@ final class SpecialistServiceAssignmentFilamentTest extends TestCase
         }
 
         self::assertSame(0, SpecialistServiceAssignment::query()->count());
+    }
+
+    public function test_assignment_selects_have_bounded_tenant_scoped_initial_and_search_results(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $targetSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'A Target Specialist',
+        ]);
+        $targetService = Service::factory()->forOrganization($organization)->create([
+            'name' => 'A Target Service',
+        ]);
+        $otherOrganization = Organization::factory()->create();
+        $foreignSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create([
+            'display_name' => 'A Target Specialist',
+        ]);
+        $foreignService = Service::factory()->forOrganization($otherOrganization)->create([
+            'name' => 'A Target Service',
+        ]);
+
+        for ($index = 0; $index < 55; $index++) {
+            Specialist::factory()->forOrganization($organization)->create([
+                'display_name' => 'Z Specialist '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+            Service::factory()->forOrganization($organization)->create([
+                'name' => 'Z Service '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $component = Livewire::actingAs($admin)->test(CreateSpecialistServiceAssignment::class);
+
+        foreach ([
+            'specialist_id' => [$targetSpecialist, $foreignSpecialist, 'A Target Specialist'],
+            'service_id' => [$targetService, $foreignService, 'A Target Service'],
+        ] as $fieldName => [$target, $foreign, $targetLabel]) {
+            $select = $component->instance()->getSchemaComponent('form.'.$fieldName);
+            self::assertInstanceOf(Select::class, $select);
+            self::assertTrue($select->isPreloaded());
+            self::assertSame(50, $select->getOptionsLimit());
+
+            $options = $select->getOptions();
+            self::assertCount(50, $options);
+            self::assertSame($targetLabel, $options[$target->getKey()] ?? null);
+            self::assertArrayNotHasKey($foreign->getKey(), $options);
+
+            $searchResults = $select->getSearchResults('A Target');
+            self::assertSame($targetLabel, $searchResults[$target->getKey()] ?? null);
+            self::assertArrayNotHasKey($foreign->getKey(), $searchResults);
+        }
+
+        $component->fillForm([
+            'specialist_id' => $targetSpecialist->getKey(),
+            'service_id' => $targetService->getKey(),
+        ]);
+
+        foreach ([
+            'specialist_id' => [$targetSpecialist, 'A Target Specialist'],
+            'service_id' => [$targetService, 'A Target Service'],
+        ] as $fieldName => [$target, $targetLabel]) {
+            $select = $component->instance()->getSchemaComponent('form.'.$fieldName);
+            self::assertInstanceOf(Select::class, $select);
+            self::assertSame((string) $target->getKey(), (string) $select->getState());
+            self::assertSame($targetLabel, $select->getOptionLabel());
+        }
     }
 
     /** @return array{Organization, User, Specialist, Service} */

@@ -6,6 +6,11 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- CRM lookup/navigation cleanup:
+  - Fixed Client view title and breadcrumbs to use the client name without the generic `Просмотр` level, with an ID fallback for blank names.
+  - Added bounded, organization-scoped initial choices to Bookings, Session Specialist, Specialist-Service Assignment, and Session attachment lookups while preserving search and selected IDs.
+  - No migrations, Finance behavior, UX-C5, domain lifecycle, Playwright, Docker, hosted CI, deployment, or merge work was added.
+
 - UX-C4 Finance:
   - Reworked the Finance CRM around human-facing `Оплаты`, `Расчёт по визиту`, `История оплат`, and `Настройки валют` labels while preserving the accepted append-only ledger, reconciliation, currency, audit, authorization, and tenant boundaries.
   - Added a bounded organization-scoped Finance list projection with shared fail-closed reconciliation semantics, settlement-safe payment defaults, organization-timezone payment entry, paginated payment history, manual compensating corrections, and read-only legacy fake-payment history.

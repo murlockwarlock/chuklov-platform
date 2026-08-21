@@ -21,6 +21,7 @@ use App\Modules\Sessions\Application\UnlinkSessionAttachment;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -160,6 +161,65 @@ final class SessionAttachmentTest extends TestCase
             ->assertSee('Проверен');
     }
 
+    public function test_link_attachment_select_has_bounded_tenant_scoped_initial_and_search_results(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $session = $this->makeSession($admin, $client, $specialist);
+
+        foreach (range(1, 55) as $index) {
+            $this->attachment(
+                $organization,
+                $admin,
+                $client,
+                AttachmentScanStatus::Cleared,
+                'Archive '.$index.'.pdf',
+            );
+        }
+
+        $target = $this->attachment(
+            $organization,
+            $admin,
+            $client,
+            AttachmentScanStatus::Cleared,
+            'A Target.pdf',
+        );
+        $otherOrganization = Organization::factory()->create();
+        $otherAdmin = User::factory()->forOrganization($otherOrganization, OrganizationRole::Administrator)->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create();
+        $foreign = $this->attachment(
+            $otherOrganization,
+            $otherAdmin,
+            $otherClient,
+            AttachmentScanStatus::Cleared,
+            'A Target.pdf',
+        );
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->mountAction('linkAttachment');
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.attachment_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertTrue($select->isPreloaded());
+        self::assertSame(50, $select->getOptionsLimit());
+        self::assertCount(50, $select->getOptions());
+        self::assertArrayHasKey($target->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($foreign->getKey(), $select->getOptions());
+
+        $searchResults = $select->getSearchResults('Target');
+        self::assertArrayHasKey($target->getKey(), $searchResults);
+        self::assertArrayNotHasKey($foreign->getKey(), $searchResults);
+
+        $component->setActionData(['attachment_id' => $target->getKey()]);
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.attachment_id');
+        self::assertInstanceOf(Select::class, $select);
+        self::assertSame((string) $target->getKey(), (string) $select->getState());
+        self::assertStringStartsWith('A Target.pdf · ', (string) $select->getOptionLabel());
+    }
+
     /** @return array{Organization, User, Client, Specialist} */
     private function fixture(): array
     {
@@ -187,8 +247,13 @@ final class SessionAttachmentTest extends TestCase
         return MedicalSession::query()->findOrFail($result->id);
     }
 
-    private function attachment(Organization $organization, User $admin, Client $client, AttachmentScanStatus $status = AttachmentScanStatus::Cleared): MedicalAttachment
-    {
+    private function attachment(
+        Organization $organization,
+        User $admin,
+        Client $client,
+        AttachmentScanStatus $status = AttachmentScanStatus::Cleared,
+        string $filename = 'report.pdf',
+    ): MedicalAttachment {
         return MedicalAttachment::query()->create([
             'uuid' => (string) Str::uuid(),
             'organization_id' => $organization->getKey(),
@@ -197,7 +262,7 @@ final class SessionAttachmentTest extends TestCase
             'attachment_type' => AttachmentType::MedicalReport,
             'disk' => 'private',
             'storage_path' => 'medical/attachments/'.$organization->getKey().'/report.pdf',
-            'original_filename' => 'report.pdf',
+            'original_filename' => $filename,
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => (string) Str::uuid(),
