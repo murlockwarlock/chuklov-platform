@@ -220,6 +220,7 @@ final class FinanceCrmUxTest extends TestCase
             ->assertTableColumnExists('payment_method_summary')
             ->assertTableColumnExists('note')
             ->assertTableColumnExists('receipt_summary')
+            ->assertTableColumnStateSet('amount_summary', '20.00 USD', $payment)
             ->assertTableActionExists('correctPayment', null, $payment);
 
         $history
@@ -243,6 +244,13 @@ final class FinanceCrmUxTest extends TestCase
 
         self::assertSame(-2000, $correction->settlement_amount_minor);
         self::assertSame($correction->getKey(), $replayed->getKey());
+        Livewire::actingAs($admin)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '-20.00 USD', $correction);
         self::assertDatabaseHas('financial_ledger_entries', [
             'id' => $payment->getKey(),
             'amount_minor' => 2000,
@@ -524,6 +532,7 @@ final class FinanceCrmUxTest extends TestCase
                 'pageClass' => ViewFinancialObligation::class,
             ])
             ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '—', $payment)
             ->assertTableActionHidden('correctPayment', $payment)
             ->assertSee('Способ оплаты недоступен');
     }
@@ -921,10 +930,49 @@ final class FinanceCrmUxTest extends TestCase
 
         $history
             ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '100.00 USD', $entry)
             ->assertSee('Тестовая оплата')
             ->assertTableActionHidden('correctPayment', $entry);
 
         $this->assertCorrectionRejected($admin, $entry, 'reject-fake-gateway-correction');
+    }
+
+    public function test_history_marks_zero_manual_payment_amount_unavailable_without_mutation_action(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = $this->manualPayment($admin, $obligation, 'history-zero-payment');
+        DB::table('financial_ledger_entries')
+            ->where('id', $payment->getKey())
+            ->update(['payment_amount_minor' => 0]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '—', $payment)
+            ->assertTableActionHidden('correctPayment', $payment);
+    }
+
+    public function test_history_marks_decimal_raw_manual_payment_amount_unavailable(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = $this->manualPayment($admin, $obligation, 'history-decimal-payment');
+        DB::table('financial_ledger_entries')
+            ->where('id', $payment->getKey())
+            ->update(['payment_amount_minor' => '20.5']);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinancialPaymentsRelationManager::class, [
+                'ownerRecord' => $obligation,
+                'pageClass' => ViewFinancialObligation::class,
+            ])
+            ->loadTable()
+            ->assertTableColumnStateSet('amount_summary', '—', $payment)
+            ->assertTableActionHidden('correctPayment', $payment);
     }
 
     public function test_direct_correction_rejects_forbidden_ledger_and_parent_states_without_side_effects(): void

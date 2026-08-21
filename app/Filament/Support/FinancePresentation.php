@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
+use App\Modules\Finance\Application\FinancialLedgerPresentationContract;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Finance\Application\GetBookingFinanceSummary;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
@@ -38,6 +39,7 @@ final class FinancePresentation
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly FinancialReconciliationContract $contract,
+        private readonly FinancialLedgerPresentationContract $ledgerPresentation,
         private readonly FinanceAuthorization $authorization,
         private readonly CurrencyConfigurationService $configuration,
         private readonly CurrencyCatalog $catalog,
@@ -185,15 +187,12 @@ final class FinancePresentation
         }
 
         try {
-            $this->contract->validateLedgerForReconciliation($entry);
+            $amount = $this->ledgerPresentation->validatePaymentAmount($entry);
         } catch (UnexpectedValueException) {
             return '—';
         }
 
-        return $this->amount(
-            $entry->getRawOriginal('payment_amount_minor'),
-            $entry->getRawOriginal('payment_currency'),
-        );
+        return $this->money($amount);
     }
 
     public function amount(mixed $minor, mixed $currency): string
