@@ -24,4 +24,11 @@ class EditAiProvider extends EditRecord
 
         return app(ConnectAiProvider::class)->update($actor, $record, $data);
     }
+
+    protected function afterSave(): void
+    {
+        if (is_array($this->data)) {
+            unset($this->data['api_key']);
+        }
+    }
 }

@@ -22,6 +22,8 @@ final readonly class AiModelDefinition
         public array $modalities,
         public ?AiPricingSnapshot $pricing,
         public ModelLifecycleStatus $lifecycleStatus,
+        public ?string $catalogSource = null,
+        public ?string $pricingAsOf = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -66,6 +68,8 @@ final readonly class AiModelDefinition
             modalities: array_values($modalities),
             pricing: $pricing,
             lifecycleStatus: $lifecycle,
+            catalogSource: self::nullableString($data['catalog_source'] ?? null, 'catalog_source'),
+            pricingAsOf: self::nullableString($data['pricing_as_of'] ?? null, 'pricing_as_of'),
         );
     }
 
@@ -91,5 +95,14 @@ final readonly class AiModelDefinition
         }
 
         return $value;
+    }
+
+    private static function nullableString(mixed $value, string $field): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return self::requiredString($value, $field);
     }
 }

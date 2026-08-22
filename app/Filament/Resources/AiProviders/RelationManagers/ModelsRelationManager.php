@@ -49,7 +49,10 @@ class ModelsRelationManager extends RelationManager
             ->components([
                 Select::make('model_selection')
                     ->label('Модель')
-                    ->options(AiModelCatalog::optionsForProvider($provider->provider_name))
+                    ->options(fn (?AiModelConfiguration $record): array => AiModelCatalog::optionsForProvider(
+                        $provider->provider_name,
+                        $record?->model_name,
+                    ))
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => $record === null
                         ? (string) ($state ?? '')
                         : AiModelCatalog::selection($provider->provider_name, $record->model_name))

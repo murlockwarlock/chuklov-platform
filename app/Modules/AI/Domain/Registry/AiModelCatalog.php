@@ -21,17 +21,25 @@ final class AiModelCatalog
     }
 
     /** @return array<string, string> */
-    public static function optionsForProvider(mixed $provider): array
+    public static function optionsForProvider(mixed $provider, ?string $currentModel = null): array
     {
         $provider = AiProviderCatalog::normalize($provider);
+        $currentModel = $currentModel === null ? null : trim($currentModel);
         $options = [];
 
         foreach (self::all() as $definition) {
-            if ($definition->provider !== $provider) {
+            if ($definition->provider !== $provider
+                || (! $definition->lifecycleStatus->isSelectableForNewConfiguration()
+                    && $definition->modelName !== $currentModel)) {
                 continue;
             }
 
-            $options[$definition->modelName] = $definition->displayName.' · '.$definition->family;
+            $label = $definition->displayName.' · '.$definition->family;
+            if (! $definition->lifecycleStatus->isSelectableForNewConfiguration()) {
+                $label .= ' · '.$definition->lifecycleStatus->label();
+            }
+
+            $options[$definition->modelName] = $label;
         }
 
         $options[self::CUSTOM_MODEL] = 'Другая модель / Указать вручную';
