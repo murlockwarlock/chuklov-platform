@@ -4,7 +4,6 @@ namespace App\Filament\Resources\AiProviders\Schemas;
 
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
-use App\Modules\Knowledge\Domain\Registry\KnowledgeModelCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
@@ -24,7 +23,7 @@ class AiProviderForm
             ->components([
                 Select::make('provider_name')
                     ->label('Провайдер')
-                    ->options(AiProviderCatalog::options())
+                    ->options(fn (?AiProviderConfiguration $record): array => AiProviderCatalog::options($record?->provider_name))
                     ->native(false)
                     ->live()
                     ->disabled(fn (?AiProviderConfiguration $record): bool => $record !== null)
@@ -75,31 +74,6 @@ class AiProviderForm
                             ->placeholder('us-east-1')
                             ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'bedrock')
                             ->maxLength(80),
-                    ])
-                    ->columns(2)
-                    ->columnSpanFull(),
-                Section::make('База знаний')
-                    ->description('Это отдельные модели индексации и reranking: файл сначала превращается в текст, затем текст индексируется и только релевантные фрагменты попадают в AI-контекст.')
-                    ->collapsed()
-                    ->visible(fn (Get $get): bool => self::hasKnowledgeModelSettings($get('provider_name')))
-                    ->schema([
-                        Select::make('options.embedding_model')
-                            ->label('Модель индексации / embeddings')
-                            ->options(fn (Get $get): array => self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $get('provider_name')))
-                            ->helperText('Выберите модель для построения векторов базы знаний. Она не используется как обычная chat-модель.')
-                            ->searchable()
-                            ->native(false)
-                            ->nullable()
-                            ->visible(fn (Get $get): bool => self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $get('provider_name')) !== []),
-                        Select::make('options.reranking_model')
-                            ->label('Модель reranking')
-                            ->placeholder('Не использовать')
-                            ->options(fn (Get $get): array => self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $get('provider_name')))
-                            ->helperText('Опционально уточняет порядок уже найденных фрагментов; не заменяет embeddings.')
-                            ->searchable()
-                            ->native(false)
-                            ->nullable()
-                            ->visible(fn (Get $get): bool => self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $get('provider_name')) !== []),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -205,22 +179,5 @@ class AiProviderForm
     private static function hasAdvancedConnection(mixed $providerName): bool
     {
         return in_array(self::supportedProvider($providerName), ['openai_compatible', 'ollama', 'azure', 'bedrock'], true);
-    }
-
-    /** @return array<string, string> */
-    private static function knowledgeModelOptions(string $role, mixed $providerName): array
-    {
-        $provider = self::supportedProvider($providerName);
-        if ($provider === null) {
-            return [];
-        }
-
-        return KnowledgeModelCatalog::optionsFor($role, $provider);
-    }
-
-    private static function hasKnowledgeModelSettings(mixed $providerName): bool
-    {
-        return self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $providerName) !== []
-            || self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $providerName) !== [];
     }
 }

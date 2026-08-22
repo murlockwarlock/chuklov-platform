@@ -11,6 +11,7 @@ use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -22,6 +23,8 @@ final class AiModelDiscoveryService
     private const int STALE_TTL_SECONDS = 86_400;
 
     private const int MAX_MODELS = 250;
+
+    private const int MAX_RESPONSE_BYTES = 2_000_000;
 
     public function definitionFor(AiProviderConfiguration $provider, mixed $model): ?AiModelDefinition
     {
@@ -115,7 +118,12 @@ final class AiModelDiscoveryService
     private function fetch(AiProviderConfiguration $provider, string $secret, array $options): array
     {
         $driver = AiProviderCatalog::normalize($provider->provider_name);
-        $request = Http::withoutRedirecting()->acceptJson()->connectTimeout(3)->timeout(5);
+        $request = Http::withoutRedirecting()
+            ->acceptJson()
+            ->connectTimeout(3)
+            ->timeout(5)
+            ->withOptions(['stream' => true])
+            ->withHeaders(['X-Chuklov-AI-Provider' => $driver]);
         if ($secret !== '') {
             $request = $request->withToken($secret);
         }
@@ -131,10 +139,7 @@ final class AiModelDiscoveryService
             throw new RuntimeException('Model discovery returned a non-success response.');
         }
 
-        $payload = $response->json();
-        if (! is_array($payload)) {
-            throw new RuntimeException('Model discovery returned an invalid response.');
-        }
+        $payload = $this->boundedJson($response);
 
         return match ($driver) {
             'openrouter' => $this->openRouterDefinitions($payload),
@@ -232,9 +237,6 @@ final class AiModelDiscoveryService
                 continue;
             }
 
-            $modalities = is_array($item['input_modalities'] ?? null)
-                ? $this->modalities($item['input_modalities'])
-                : [];
             $definitions[] = [
                 'provider' => 'openai_compatible',
                 'model' => $modelId,
@@ -244,8 +246,8 @@ final class AiModelDiscoveryService
                 'positioning' => 'Доступна в подключённом аккаунте',
                 'recommended' => false,
                 'context_window_tokens' => $this->positiveInt($item['context_length'] ?? null),
-                'supported_capabilities' => ['text_generation'],
-                'modalities' => $modalities,
+                'supported_capabilities' => [],
+                'modalities' => [],
                 'lifecycle' => 'active',
                 'catalog_source' => 'https://platform.openai.com/docs/api-reference/models/list',
                 'pricing_as_of' => now()->toDateString(),
@@ -286,7 +288,7 @@ final class AiModelDiscoveryService
                 'summary' => 'Модель установлена на подключённом Ollama сервере.',
                 'positioning' => 'Доступна локально',
                 'recommended' => false,
-                'supported_capabilities' => ['text_generation'],
+                'supported_capabilities' => [],
                 'modalities' => [],
                 'lifecycle' => 'active',
                 'catalog_source' => 'https://docs.ollama.com/api/tags',
@@ -321,6 +323,12 @@ final class AiModelDiscoveryService
         }
 
         $requestRate = $this->perRequestRate($pricing['request'] ?? null);
+        if (array_key_exists('request', $pricing)
+            && $pricing['request'] !== null
+            && $pricing['request'] !== ''
+            && $requestRate === null) {
+            return null;
+        }
 
         return [
             'currency' => 'USD',
@@ -488,9 +496,64 @@ final class AiModelDiscoveryService
             return [];
         }
 
-        return array_values(array_filter(
-            array_slice($definitions, 0, self::MAX_MODELS),
-            static fn (mixed $definition): bool => is_array($definition),
-        ));
+        $bounded = [];
+        $seen = [];
+        foreach ($definitions as $definition) {
+            if (! is_array($definition)) {
+                continue;
+            }
+
+            $key = is_string($definition['provider'] ?? null) && is_string($definition['model'] ?? null)
+                ? strtolower(trim($definition['provider']).'|'.trim($definition['model']))
+                : hash('sha256', json_encode($definition, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $bounded[] = $definition;
+            if (count($bounded) >= self::MAX_MODELS) {
+                break;
+            }
+        }
+
+        return $bounded;
+    }
+
+    /** @return array<string, mixed> */
+    private function boundedJson(Response $response): array
+    {
+        $stream = $response->toPsrResponse()->getBody();
+        $body = '';
+
+        while (! $stream->eof()) {
+            $remaining = self::MAX_RESPONSE_BYTES + 1 - strlen($body);
+            if ($remaining <= 0) {
+                throw new RuntimeException('Model discovery response is too large.');
+            }
+
+            $chunk = $stream->read(min(65_536, $remaining));
+            if ($chunk === '') {
+                break;
+            }
+
+            $body .= $chunk;
+        }
+
+        if (strlen($body) > self::MAX_RESPONSE_BYTES) {
+            throw new RuntimeException('Model discovery response is too large.');
+        }
+
+        try {
+            $payload = json_decode($body, true, 64, JSON_THROW_ON_ERROR);
+        } catch (\Throwable $exception) {
+            throw new RuntimeException('Model discovery returned an invalid response.', previous: $exception);
+        }
+
+        if (! is_array($payload)) {
+            throw new RuntimeException('Model discovery returned an invalid response.');
+        }
+
+        return $payload;
     }
 }

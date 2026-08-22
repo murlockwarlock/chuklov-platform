@@ -6,6 +6,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- Independent UX-C5 closeout remediation (requires fresh review) now fails closed on unknown billable meters, preserves exact fixed-point pricing without compatibility truncation, rejects unsafe custom endpoint targets and redirects, keeps Gemini credentials out of URLs, bounds and capability-conserves dynamic discovery, rejects provider-incompatible modalities, hides unwired Knowledge/specialized provider settings, and marks scheduled-shutdown Gemini 3.1 Flash-Lite as historical-only. No hosted CI, deployment, or merge was performed.
+
 - UX-C5 remediation now uses a runtime-verified provider capability matrix, current guided catalogs for mainstream providers including DeepSeek, official bounded discovery for OpenRouter/OpenAI-compatible/Ollama, separate Knowledge embeddings/reranking choices, modality-compatible direct-attachment failover, exact fixed-point pricing with conservative tiered budget reservation, immutable pricing provenance, and tenant-safe credential-bounded discovery. No hosted CI, deployment, or merge was performed.
 
 - UX-C5 AI Administration (implementation candidate):

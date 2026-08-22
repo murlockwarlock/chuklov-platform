@@ -103,6 +103,51 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertTrue($model->getPricingSnapshot()->isComplete());
     }
 
+    public function test_manual_model_activation_requires_explicit_zero_for_unbilled_optional_meters(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'manual-meter-model',
+            'display_name' => 'Manual meter model',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'input_cost_per_million' => '0.30',
+            'output_cost_per_million' => '1.00',
+        ]);
+
+        self::assertFalse($model->getPricingSnapshot()->isComplete());
+        $this->expectException(AiPricingProfileIncompleteException::class);
+
+        app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'manual-meter-model',
+            'input_cost_per_million' => '0.30',
+            'output_cost_per_million' => '1.00',
+        ]);
+    }
+
+    public function test_manual_modality_payload_is_bounded_by_the_provider_adapter(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        $provider = $this->provider('deepseek');
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'deepseek-manual-model',
+            'display_name' => 'DeepSeek manual model',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'model_modalities' => [AiModelModality::DocumentInput->value],
+            'input_cost_per_million' => '0.14',
+            'output_cost_per_million' => '0.28',
+            'cache_read_input_cost_per_million' => '0',
+            'cache_write_input_cost_per_million' => '0',
+            'reasoning_cost_per_million' => '0',
+        ]);
+    }
+
     public function test_explicit_custom_edit_does_not_inherit_catalog_price_or_modalities(): void
     {
         [, $owner] = $this->organizationFixture();
@@ -715,7 +760,10 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         ));
 
         foreach ($definitions as $definition) {
-            self::assertSame('active', $definition->lifecycleStatus->value);
+            self::assertSame(
+                $definition->modelName === 'gemini-3.1-flash-lite' ? 'deprecated' : 'active',
+                $definition->lifecycleStatus->value,
+            );
             self::assertNotNull($definition->pricing);
             self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $definition->pricing->pricingSource);
             self::assertSame(

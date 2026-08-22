@@ -18,8 +18,12 @@ final class AiProviderConnectivityProbe
             throw new RuntimeException('Provider credential is empty.');
         }
 
-        $request = Http::withoutRedirecting()->acceptJson()->connectTimeout(3)->timeout(5);
-        if (trim($secret) !== '') {
+        $request = Http::withoutRedirecting()
+            ->acceptJson()
+            ->connectTimeout(3)
+            ->timeout(5)
+            ->withHeaders(['X-Chuklov-AI-Provider' => $driver]);
+        if (trim($secret) !== '' && ! in_array($driver, ['anthropic', 'azure', 'gemini'], true)) {
             $request = $request->withToken($secret);
         }
 
@@ -29,9 +33,7 @@ final class AiProviderConnectivityProbe
                 'x-api-key' => $secret,
                 'anthropic-version' => '2023-06-01',
             ])->get($this->canonicalEndpoint($driver)),
-            'gemini' => $request->get($this->canonicalEndpoint($driver), [
-                'key' => $secret,
-            ]),
+            'gemini' => $request->withHeaders(['x-goog-api-key' => $secret])->get($this->canonicalEndpoint($driver)),
             'azure' => $request->withHeaders(['api-key' => $secret])->get(
                 AiProviderExecutionConfiguration::probeEndpoint($driver, $options),
             ),

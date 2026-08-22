@@ -137,6 +137,7 @@ final readonly class AiModelConfigurationInput
         $existingDisplayName = $existing === null ? null : $existing->display_name;
         $displayName = self::displayName($data['display_name'] ?? $existingDisplayName ?? $catalogDisplayName);
         $capabilities = self::capabilities(
+            provider: $provider,
             data: $data,
             existing: $existing,
             definition: $definition,
@@ -231,6 +232,7 @@ final readonly class AiModelConfigurationInput
      * @return list<string>
      */
     private static function capabilities(
+        string $provider,
         array $data,
         ?AiModelConfiguration $existing,
         ?AiModelDefinition $definition,
@@ -251,6 +253,10 @@ final readonly class AiModelConfigurationInput
             );
         } elseif (array_key_exists('model_modalities', $data)) {
             $modalityValues = self::modalityList($data['model_modalities']);
+            $unsupportedModalities = array_diff($modalityValues, AiProviderCatalog::modalities($provider));
+            if ($unsupportedModalities !== []) {
+                throw new InvalidArgumentException('Выбранный тип входных данных не поддерживается адаптером провайдера.');
+            }
         } elseif ($resetExistingCustomState) {
             $modalityValues = [];
         } else {
@@ -339,17 +345,17 @@ final readonly class AiModelConfigurationInput
         $cacheReadRate = self::optionalRate(
             $data,
             'cache_read_input_cost_per_million',
-            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->cacheReadRatePerMillionUnits(),
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->cacheReadRatePerMillionUnits(),
         );
         $cacheWriteRate = self::optionalRate(
             $data,
             'cache_write_input_cost_per_million',
-            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->cacheWriteRatePerMillionUnits(),
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->cacheWriteRatePerMillionUnits(),
         );
         $reasoningRate = self::optionalRate(
             $data,
             'reasoning_cost_per_million',
-            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->reasoningRatePerMillionUnits(),
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->reasoningRatePerMillionUnits(),
         );
         $fixedRequestRate = self::optionalRate(
             $data,
@@ -517,7 +523,7 @@ final readonly class AiModelConfigurationInput
 
     private static function compatibilityMinor(int $rate): int
     {
-        return intdiv($rate, 10_000);
+        return AiMoney::minorUnitsFromRateUnitsCeiling($rate);
     }
 
     private static function compatibilityNullableMinor(?int $rate): ?int

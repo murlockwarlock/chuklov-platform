@@ -28,6 +28,9 @@ final class CreateAiProviderConfiguration
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
         $providerName = AiProviderCatalog::normalize($data['provider_name'] ?? null);
+        if (! AiProviderCatalog::isSelectableForNewConfiguration($providerName)) {
+            throw new InvalidArgumentException('This provider does not have an executable Chuklov configuration.');
+        }
         $displayName = self::displayName($data['display_name'] ?? null);
         $credentialId = self::credentialId($data['credential_id'] ?? null);
         $credential = null;

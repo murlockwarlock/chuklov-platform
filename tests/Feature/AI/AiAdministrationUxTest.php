@@ -32,6 +32,7 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -182,6 +183,27 @@ final class AiAdministrationUxTest extends TestCase
         } catch (InvalidArgumentException $exception) {
             self::assertStringContainsString('specialized configuration', $exception->getMessage());
         }
+    }
+
+    public function test_specialized_providers_and_unwired_knowledge_models_are_not_exposed_as_executable_configuration(): void
+    {
+        [, $admin] = $this->organizationFixture();
+
+        self::assertArrayNotHasKey('cohere', AiProviderCatalog::options());
+        self::assertArrayNotHasKey('jina', AiProviderCatalog::options());
+        self::assertArrayNotHasKey('voyageai', AiProviderCatalog::options());
+        self::assertArrayNotHasKey('eleven', AiProviderCatalog::options());
+        self::assertSame([], AiProviderExecutionConfiguration::normalizeOptions('openai', [
+            'embedding_model' => 'text-embedding-3-small',
+            'reranking_model' => 'rerank-v4.0-fast',
+        ]));
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(CreateAiProviderConfiguration::class)->handle($admin, [
+            'provider_name' => 'cohere',
+            'display_name' => 'Cohere knowledge',
+        ]);
     }
 
     public function test_provider_server_invariants_reject_unsupported_identity_changes_and_foreign_credentials(): void

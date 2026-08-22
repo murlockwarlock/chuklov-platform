@@ -10,7 +10,6 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
-use App\Modules\Knowledge\Domain\Registry\KnowledgeModelCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -158,10 +157,10 @@ final class AiModelDiscoveryTest extends TestCase
             'organization_id' => $organization->getKey(),
             'provider_name' => 'openai_compatible',
             'display_name' => 'Local compatible endpoint',
-            'options' => ['base_url' => 'https://compatible.example/v1'],
+            'options' => ['base_url' => 'https://93.184.216.34/v1'],
         ]);
         Http::fake([
-            'https://compatible.example/v1/models' => Http::response([
+            'https://93.184.216.34/v1/models' => Http::response([
                 'data' => [
                     ['id' => 'tenant-model', 'owned_by' => 'tenant'],
                 ],
@@ -174,10 +173,53 @@ final class AiModelDiscoveryTest extends TestCase
         self::assertNotNull($definition);
         self::assertSame('tenant-model', $definition->modelName);
         self::assertNull($definition->pricing);
+        self::assertSame([], $definition->supportedCapabilities);
         self::assertSame([], $definition->modalities);
         self::assertStringContainsString('compatible endpoint', $definition->summary ?? '');
-        Http::assertSent(fn ($request): bool => $request->url() === 'https://compatible.example/v1/models'
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://93.184.216.34/v1/models'
             && ! $request->hasHeader('Authorization'));
+    }
+
+    public function test_ollama_discovery_does_not_claim_chat_capability_from_tags_alone(): void
+    {
+        [$organization] = $this->organizationFixture('ollama-catalog-clinic');
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'ollama',
+            'display_name' => 'Local Ollama',
+            'options' => ['base_url' => 'http://127.0.0.1:11434'],
+        ]);
+        Http::fake([
+            'http://127.0.0.1:11434/api/tags' => Http::response([
+                'models' => [['name' => 'embedding-only:latest', 'details' => ['family' => 'embedding']]],
+            ], 200),
+        ]);
+
+        $definition = app(AiModelDiscoveryService::class)->discover($provider)->models()[0] ?? null;
+
+        self::assertNotNull($definition);
+        self::assertSame([], $definition->supportedCapabilities);
+        self::assertSame([], $definition->modalities);
+        self::assertNull($definition->pricing);
+    }
+
+    public function test_discovery_rejects_a_response_body_over_the_bounded_limit(): void
+    {
+        [$organization] = $this->organizationFixture('oversized-catalog-clinic');
+        $provider = $this->providerWithCredential($organization, 'openrouter');
+        Cache::flush();
+        Http::fake([
+            'https://openrouter.ai/api/v1/models' => Http::response(
+                json_encode(['data' => [['id' => str_repeat('x', 2_000_001)]]], JSON_THROW_ON_ERROR),
+                200,
+            ),
+        ]);
+
+        $result = app(AiModelDiscoveryService::class)->discover($provider->load('credential'));
+
+        self::assertSame([], $result->models());
+        self::assertTrue($result->hasError());
+        self::assertStringNotContainsString('openrouter-secret', (string) $result->error);
     }
 
     public function test_discovery_keeps_a_model_when_provider_pricing_is_missing_or_malformed(): void
@@ -244,30 +286,6 @@ final class AiModelDiscoveryTest extends TestCase
         self::assertSame([], $result->models());
         self::assertStringContainsString('действующий ключ', mb_strtolower((string) $result->error));
         Http::assertNothingSent();
-    }
-
-    public function test_knowledge_model_catalog_keeps_embeddings_and_reranking_out_of_chat_picker(): void
-    {
-        self::assertSame([
-            'text-embedding-3-small',
-            'text-embedding-3-large',
-        ], array_keys(KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Embedding, 'openai')));
-        self::assertSame([
-            'rerank-v4.0-pro',
-            'rerank-v4.0-fast',
-        ], array_keys(KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Reranking, 'cohere')));
-        self::assertSame([
-            'voyage-4-large',
-            'voyage-4',
-            'voyage-4-lite',
-        ], array_keys(KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Embedding, 'voyageai')));
-        self::assertSame([
-            'rerank-2.5',
-            'rerank-2.5-lite',
-        ], array_keys(KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Reranking, 'voyageai')));
-        self::assertArrayNotHasKey('embed-v4.0', AiModelCatalog::optionsForProvider('cohere'));
-        self::assertStringContainsString('1M токенов', KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Embedding, 'openai')['text-embedding-3-small']);
-        self::assertStringContainsString('поисковые единицы', KnowledgeModelCatalog::optionsFor(KnowledgeModelCatalog::Reranking, 'cohere')['rerank-v4.0-fast']);
     }
 
     protected function tearDown(): void

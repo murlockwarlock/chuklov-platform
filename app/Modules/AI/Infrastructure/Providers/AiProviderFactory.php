@@ -81,6 +81,10 @@ class AiProviderFactory
             'key' => $secret,
             'name' => $providerName,
         ], AiProviderExecutionConfiguration::sdkOptions($driver, $providerOptions), $extraConfig);
+        $config['headers'] = array_merge(
+            (array) ($config['headers'] ?? []),
+            ['X-Chuklov-AI-Provider' => $driver],
+        );
 
         if ($driver === 'openai') {
             $config['store'] = false;

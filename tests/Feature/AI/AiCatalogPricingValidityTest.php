@@ -405,7 +405,7 @@ final class AiCatalogPricingValidityTest extends TestCase
         self::assertSame($organization->getKey(), $release->organization_id);
     }
 
-    public function test_terra_and_gemini_non_expiring_catalog_prices_continue_to_resolve(): void
+    public function test_terra_and_gemini_current_catalog_prices_continue_to_resolve(): void
     {
         $this->at('2026-09-01 00:00:00');
         config()->set('ai.model_catalog', $this->defaultCatalog());
@@ -436,6 +436,25 @@ final class AiCatalogPricingValidityTest extends TestCase
         ));
         self::assertFalse(AiModelCatalog::pricingIsStale('openai', 'gpt-5.6-terra', $terra->pricing));
         self::assertFalse(AiModelCatalog::pricingIsStale('gemini', 'gemini-3.7-flash', $gemini->pricing));
+    }
+
+    public function test_gemini_flash_scheduled_price_change_resolves_at_the_effective_boundary(): void
+    {
+        config()->set('ai.model_catalog', $this->defaultCatalog());
+
+        $this->at('2026-12-31 23:59:59');
+        $current = AiModelCatalog::find('gemini', 'gemini-3.7-flash');
+        self::assertNotNull($current?->pricing);
+        self::assertSame('0.750000', $current->pricing->inputPricePerMillion());
+        self::assertSame('2026-12-31 23:59:59', $current->pricing->catalogPricingEffectiveUntil);
+
+        $this->at('2027-01-01 00:00:00');
+        $future = AiModelCatalog::find('gemini', 'gemini-3.7-flash');
+        self::assertNotNull($future?->pricing);
+        self::assertSame('1.500000', $future->pricing->inputPricePerMillion());
+        self::assertSame('7.500000', $future->pricing->outputPricePerMillion());
+        self::assertSame('0.150000', AiMoney::decimalFromRateUnits($future->pricing->cacheReadRatePerMillionUnits()));
+        self::assertSame('2027-01-01 00:00:00', $future->pricing->catalogPricingEffectiveFrom);
     }
 
     /** @return array{0: AiModelConfiguration, 1: AiModelRelease, 2: AiProviderConfiguration, 3: User} */

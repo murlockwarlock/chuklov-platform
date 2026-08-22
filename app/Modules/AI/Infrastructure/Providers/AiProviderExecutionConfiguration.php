@@ -60,6 +60,9 @@ final class AiProviderExecutionConfiguration
             $options,
             static fn (mixed $value): bool => $value !== null && $value !== '',
         );
+        foreach (['embedding_model', 'reranking_model'] as $legacyKnowledgeOption) {
+            unset($options[$legacyKnowledgeOption]);
+        }
 
         $allowed = match ($provider) {
             'openai_compatible', 'ollama' => ['base_url', 'url'],
@@ -67,13 +70,6 @@ final class AiProviderExecutionConfiguration
             'bedrock' => ['region'],
             default => [],
         };
-        $capabilities = AiProviderCatalog::capabilities($provider);
-        if ($capabilities['embeddings'] === true) {
-            $allowed[] = 'embedding_model';
-        }
-        if ($capabilities['reranking'] === true) {
-            $allowed[] = 'reranking_model';
-        }
         $unsupported = array_diff(array_keys($options), $allowed);
         if ($unsupported !== []) {
             if (! in_array($provider, ['openai_compatible', 'ollama', 'azure', 'bedrock'], true)) {
@@ -96,7 +92,7 @@ final class AiProviderExecutionConfiguration
         }
 
         if ($baseUrl !== null) {
-            $normalized['base_url'] = self::safeUrl($baseUrl, 'base_url');
+            $normalized['base_url'] = AiProviderEndpointGuard::assertSafeUrl($baseUrl, 'base_url', $provider);
         } elseif (in_array($provider, ['openai_compatible', 'azure'], true)) {
             throw new AiProviderProbeUnsupportedException(
                 'A provider endpoint is required before the connection can be checked.',
@@ -130,19 +126,6 @@ final class AiProviderExecutionConfiguration
             }
 
             $normalized['region'] = $region;
-        }
-
-        foreach (['embedding_model', 'reranking_model'] as $knowledgeModelField) {
-            if (! array_key_exists($knowledgeModelField, $options)) {
-                continue;
-            }
-
-            $knowledgeModel = self::optionString($options[$knowledgeModelField], $knowledgeModelField);
-            if ($knowledgeModel === null) {
-                throw new AiProviderProbeUnsupportedException("The knowledge model {$knowledgeModelField} is invalid.");
-            }
-
-            $normalized[$knowledgeModelField] = $knowledgeModel;
         }
 
         return $normalized;
@@ -241,32 +224,5 @@ final class AiProviderExecutionConfiguration
         }
 
         return trim($value);
-    }
-
-    private static function safeUrl(string $value, string $field): string
-    {
-        if (preg_match('/[\r\n]/', $value) === 1) {
-            throw new AiProviderProbeUnsupportedException("The provider option {$field} is invalid.");
-        }
-
-        $parts = parse_url($value);
-        if (! is_array($parts)
-            || ! in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
-            || ! is_string($parts['host'] ?? null)
-            || isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment'])) {
-            throw new AiProviderProbeUnsupportedException("The provider option {$field} must be an HTTP(S) URL without credentials or query parameters.");
-        }
-
-        $host = strtolower($parts['host']);
-        if (in_array($host, ['169.254.169.254', 'metadata.google.internal', 'metadata.google.internal.'], true)) {
-            throw new AiProviderProbeUnsupportedException('The provider endpoint is not allowed.');
-        }
-
-        if (isset($parts['port'])
-            && filter_var($parts['port'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) === false) {
-            throw new AiProviderProbeUnsupportedException("The provider option {$field} has an invalid port.");
-        }
-
-        return rtrim($value, '/');
     }
 }

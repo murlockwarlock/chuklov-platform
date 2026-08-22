@@ -60,6 +60,88 @@ final class AiExactPricingTest extends TestCase
         $pricing->calculateCostMinorUnits(1, 0);
     }
 
+    public function test_v2_compatibility_minor_units_round_up_without_changing_exact_rates(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'pricing_schema_version' => 2,
+            'rate_scale' => AiMoney::RATE_SCALE,
+            'input_price_per_million' => '0.075',
+            'output_price_per_million' => '0.028',
+            'cache_read_input_price_per_million' => '0.0028',
+            'cache_write_input_price_per_million' => '0',
+            'reasoning_price_per_million' => '2.00',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+        ]);
+
+        $serialized = $pricing->toArray();
+
+        self::assertSame(75_000, $serialized['input_rate_per_million_units']);
+        self::assertSame(8, $serialized['input_cost_per_million_minor_units']);
+        self::assertSame(3, $serialized['output_cost_per_million_minor_units']);
+        self::assertSame(1, $serialized['cache_read_input_cost_per_million_minor_units']);
+        self::assertSame(0, $serialized['cache_write_input_cost_per_million_minor_units']);
+        self::assertSame('0.075000', $pricing->inputPricePerMillion());
+        self::assertSame('0.028000', $pricing->outputPricePerMillion());
+    }
+
+    public function test_canonical_v2_rate_wins_over_a_forged_compatibility_minor_value(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'pricing_schema_version' => 2,
+            'rate_scale' => AiMoney::RATE_SCALE,
+            'input_rate_per_million_units' => 75_000,
+            'output_rate_per_million_units' => 28_000,
+            'input_cost_per_million_minor_units' => 0,
+            'output_cost_per_million_minor_units' => 0,
+            'cache_read_input_rate_per_million_units' => null,
+            'cache_write_input_rate_per_million_units' => null,
+            'reasoning_rate_per_million_units' => null,
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+        ]);
+
+        self::assertSame(8, $pricing->toArray()['input_cost_per_million_minor_units']);
+        self::assertSame(3, $pricing->toArray()['output_cost_per_million_minor_units']);
+    }
+
+    public function test_unknown_pricing_schema_and_rate_scale_are_rejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        AiPricingSnapshot::fromArray([
+            'pricing_schema_version' => 3,
+            'rate_scale' => AiMoney::RATE_SCALE,
+            'input_price_per_million' => '1.00',
+            'output_price_per_million' => '2.00',
+        ]);
+    }
+
+    public function test_explicit_v1_snapshot_remains_legacy_minor_units(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'pricing_schema_version' => 1,
+            'currency' => 'USD',
+            'input_cost_per_million_minor_units' => 250,
+            'output_cost_per_million_minor_units' => 1000,
+            'cache_read_input_cost_per_million_minor_units' => 25,
+            'cache_write_input_cost_per_million_minor_units' => 50,
+            'reasoning_cost_per_million_minor_units' => 0,
+            'fixed_request_cost_applicable' => false,
+            'fixed_request_cost_minor_units' => 0,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+        ]);
+
+        self::assertSame('2.500000', $pricing->inputPricePerMillion());
+        self::assertSame(250, $pricing->inputCostPerMillionMinorUnits);
+        self::assertSame(2, $pricing->toArray()['pricing_schema_version']);
+    }
+
     public function test_tier_boundary_is_exact_and_gaps_do_not_activate(): void
     {
         $pricing = AiPricingSnapshot::fromArray([

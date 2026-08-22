@@ -109,6 +109,20 @@ final readonly class AiMoney
         );
     }
 
+    public static function minorUnitsFromRateUnitsCeiling(int $rateUnits): int
+    {
+        if ($rateUnits < 0) {
+            throw new InvalidArgumentException('Monetary values cannot be negative.');
+        }
+
+        [$minorUnits, $remainder] = BigInteger::of((string) $rateUnits)->quotientAndRemainder('10000');
+        if (! $remainder->isZero()) {
+            $minorUnits = $minorUnits->plus(1);
+        }
+
+        return self::toInt($minorUnits, 'The monetary value is outside the supported range.');
+    }
+
     public static function decimalFromRateUnits(int $rateUnits): string
     {
         if ($rateUnits < 0) {

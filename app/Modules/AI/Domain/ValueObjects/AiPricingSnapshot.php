@@ -49,6 +49,20 @@ final readonly class AiPricingSnapshot
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
+        $schemaVersion = $data['pricing_schema_version'] ?? null;
+        if ($schemaVersion !== null && ! in_array($schemaVersion, [1, 2], true)) {
+            throw new InvalidArgumentException('The AI pricing schema version is invalid.');
+        }
+
+        $rateScale = $data['rate_scale'] ?? null;
+        if ($rateScale !== null && $rateScale !== AiMoney::RATE_SCALE) {
+            throw new InvalidArgumentException('The AI pricing rate scale is invalid.');
+        }
+
+        if ($schemaVersion === 1 && ($rateScale !== null || self::hasAnyCanonicalRate($data))) {
+            throw new InvalidArgumentException('Legacy AI pricing snapshots cannot contain exact rate fields.');
+        }
+
         $source = (string) ($data['pricing_source'] ?? (
             self::hasAnyRate($data)
                 ? self::SOURCE_MANUAL
@@ -410,6 +424,18 @@ final readonly class AiPricingSnapshot
     }
 
     /** @param array<string, mixed> $data */
+    private static function hasAnyCanonicalRate(array $data): bool
+    {
+        foreach (['input', 'output', 'cache_read_input', 'cache_write_input', 'reasoning', 'fixed_request'] as $prefix) {
+            if (self::hasCanonicalRate($data, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @param array<string, mixed> $data */
     private static function rate(array $data, string $prefix): ?int
     {
         $isFixed = $prefix === 'fixed_request';
@@ -450,22 +476,44 @@ final readonly class AiPricingSnapshot
     private static function compatibilityMinor(array $data, string $prefix, ?int $rate): int
     {
         $key = "{$prefix}_cost_per_million_minor_units";
+        if (self::hasCanonicalRate($data, $prefix)) {
+            return $rate === null ? 0 : AiMoney::minorUnitsFromRateUnitsCeiling($rate);
+        }
+
         if (array_key_exists($key, $data) && $data[$key] !== null) {
             return AiMoney::canonicalMinorUnits($data[$key], $key);
         }
 
-        return $rate === null ? 0 : intdiv($rate, self::MICRO_UNITS_PER_MINOR_UNIT);
+        return $rate === null ? 0 : AiMoney::minorUnitsFromRateUnitsCeiling($rate);
     }
 
     /** @param array<string, mixed> $data */
     private static function compatibilityNullableMinor(array $data, string $prefix, ?int $rate): ?int
     {
         $key = "{$prefix}_cost_per_million_minor_units";
+        if (self::hasCanonicalRate($data, $prefix)) {
+            return $rate === null ? null : AiMoney::minorUnitsFromRateUnitsCeiling($rate);
+        }
+
         if (array_key_exists($key, $data)) {
             return $data[$key] === null ? null : AiMoney::canonicalMinorUnits($data[$key], $key);
         }
 
-        return $rate === null ? null : intdiv($rate, self::MICRO_UNITS_PER_MINOR_UNIT);
+        return $rate === null ? null : AiMoney::minorUnitsFromRateUnitsCeiling($rate);
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function hasCanonicalRate(array $data, string $prefix): bool
+    {
+        $isFixed = $prefix === 'fixed_request';
+
+        return array_key_exists(
+            $isFixed ? 'fixed_request_rate_units' : "{$prefix}_rate_per_million_units",
+            $data,
+        ) || array_key_exists(
+            $isFixed ? 'fixed_request_price' : "{$prefix}_price_per_million",
+            $data,
+        );
     }
 
     /** @return list<AiPricingTier> */
