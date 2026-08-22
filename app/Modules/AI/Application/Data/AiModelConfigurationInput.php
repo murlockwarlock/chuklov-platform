@@ -106,19 +106,29 @@ final readonly class AiModelConfigurationInput
         $capabilities = array_key_exists('capabilities', $data)
             ? self::stringList($data['capabilities'])
             : self::stringList($existing === null ? [] : $existing->capabilities);
+        $allModalityValues = array_map(
+            static fn (AiModelModality $modality): string => $modality->value,
+            AiModelModality::cases(),
+        );
         if ($definition !== null) {
+            $capabilities = array_values(array_diff($capabilities, $allModalityValues));
             $modalityValues = array_map(
                 static fn (AiModelModality $modality): string => $modality->value,
                 $definition->modalities,
             );
         } elseif (array_key_exists('model_modalities', $data)) {
+            if ($discardExistingCatalogMetadata) {
+                $capabilities = array_values(array_diff($capabilities, $allModalityValues));
+            }
+
             $modalityValues = self::stringList($data['model_modalities']);
         } elseif ($discardExistingCatalogMetadata) {
+            $capabilities = array_values(array_diff($capabilities, $allModalityValues));
             $modalityValues = [];
         } else {
             $modalityValues = array_values(array_intersect(
                 self::stringList($existing === null ? [] : $existing->capabilities),
-                array_map(static fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()),
+                $allModalityValues,
             ));
         }
 

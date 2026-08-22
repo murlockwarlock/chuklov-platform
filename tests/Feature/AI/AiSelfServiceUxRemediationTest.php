@@ -117,7 +117,11 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             'model_selection' => AiModelCatalog::CUSTOM_MODEL,
             'model_name' => 'custom-model',
             'display_name' => 'Ручная модель',
-            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::ImageInput->value,
+            ],
+            'model_modalities' => [],
             'input_cost_per_million' => '2.50',
             'output_cost_per_million' => '10.00',
             'cache_read_input_cost_per_million' => '0.25',
@@ -143,23 +147,73 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             'model_selection' => 'catalog-model',
             'display_name' => 'Каталожная модель',
             'capabilities' => [AiCapability::GeneralAssistant->value],
-            'input_cost_per_million' => '3.00',
-            'output_cost_per_million' => '11.00',
         ]);
 
-        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->getPricingSnapshot()->pricingSource);
+        app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
+            'model_selection' => 'catalog-model',
+            'display_name' => 'Каталожная модель',
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::ImageInput->value,
+            ],
+            'model_modalities' => [],
+            'input_cost_per_million' => '3.00',
+            'output_cost_per_million' => '11.00',
+            'is_enabled' => true,
+        ]);
+
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->refresh()->getPricingSnapshot()->pricingSource);
 
         $custom = AiModelConfigurationInput::forRelease($model, [
             'model_selection' => AiModelCatalog::CUSTOM_MODEL,
             'model_name' => 'custom-model',
             'display_name' => 'Ручная модель',
-            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::ImageInput->value,
+            ],
+            'model_modalities' => [],
         ]);
 
         self::assertSame('custom-model', $custom->modelName);
         self::assertSame(['general_assistant'], $custom->capabilities);
         self::assertSame(AiPricingSnapshot::SOURCE_UNKNOWN, $custom->pricing->pricingSource);
         self::assertFalse($custom->pricing->isComplete());
+        self::assertNull($custom->pricing->catalogPricingEffectiveFrom);
+        self::assertNull($custom->pricing->catalogPricingEffectiveUntil);
+        self::assertNull($custom->pricing->catalogPricingAsOf);
+    }
+
+    public function test_custom_transition_to_catalog_uses_catalog_pricing_and_modalities(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('catalog-model', ['image_input'])]);
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'custom-model',
+            'display_name' => 'Ручная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'model_modalities' => [AiModelModality::DocumentInput->value],
+            'input_cost_per_million' => '1.00',
+            'output_cost_per_million' => '2.00',
+        ]);
+
+        $release = app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
+            'model_selection' => 'catalog-model',
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::DocumentInput->value,
+            ],
+            'model_modalities' => [],
+            'is_enabled' => true,
+        ]);
+
+        self::assertSame('catalog-model', $release->model_name);
+        self::assertSame(['general_assistant', 'image_input'], $release->capabilities);
+        self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $release->getPricingSnapshot()->pricingSource);
+        self::assertSame(250, $release->getPricingSnapshot()->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
     }
 
     public function test_default_catalog_contains_only_current_priced_choices_and_excludes_legacy_models(): void
