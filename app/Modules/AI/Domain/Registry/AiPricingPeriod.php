@@ -77,40 +77,71 @@ final readonly class AiPricingPeriod
     {
         $normalized = $pricing;
 
-        foreach ([
-            ['input_cost_per_million_minor_units', 'input_price_per_million'],
-            ['output_cost_per_million_minor_units', 'output_price_per_million'],
-        ] as [$canonicalKey, $legacyKey]) {
-            if (array_key_exists($canonicalKey, $pricing)) {
-                if ($pricing[$canonicalKey] === null || $pricing[$canonicalKey] === '') {
-                    throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
-                }
+        foreach (['input', 'output'] as $prefix) {
+            $rateKey = "{$prefix}_rate_per_million_units";
+            $priceKey = "{$prefix}_price_per_million";
+            $minorKey = "{$prefix}_cost_per_million_minor_units";
 
-                $normalized[$canonicalKey] = AiMoney::canonicalMinorUnits($pricing[$canonicalKey], $canonicalKey);
-                unset($normalized[$legacyKey]);
+            if (array_key_exists($rateKey, $pricing)) {
+                $normalized[$rateKey] = AiMoney::canonicalRateUnits($pricing[$rateKey], $rateKey);
 
                 continue;
             }
 
-            if (! array_key_exists($legacyKey, $pricing)
-                || $pricing[$legacyKey] === null
-                || $pricing[$legacyKey] === '') {
+            if (array_key_exists($priceKey, $pricing)) {
+                if ($pricing[$priceKey] === null || $pricing[$priceKey] === '') {
+                    throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
+                }
+
+                $normalized[$rateKey] = AiMoney::rateUnitsFromDecimal($pricing[$priceKey], $priceKey);
+                unset($normalized[$priceKey]);
+
+                continue;
+            }
+
+            if (! array_key_exists($minorKey, $pricing)
+                || $pricing[$minorKey] === null
+                || $pricing[$minorKey] === '') {
                 throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
             }
 
-            $normalized[$canonicalKey] = AiMoney::minorUnitsFromDecimal($pricing[$legacyKey]);
-            unset($normalized[$legacyKey]);
+            $normalized[$minorKey] = AiMoney::canonicalMinorUnits($pricing[$minorKey], $minorKey);
         }
 
-        foreach ([
-            'cache_read_input_cost_per_million_minor_units',
-            'cache_write_input_cost_per_million_minor_units',
-            'reasoning_cost_per_million_minor_units',
-            'fixed_request_cost_minor_units',
-        ] as $key) {
-            if (array_key_exists($key, $pricing) && $pricing[$key] !== null) {
-                $normalized[$key] = AiMoney::canonicalMinorUnits($pricing[$key], $key);
+        foreach (['cache_read_input', 'cache_write_input', 'reasoning'] as $prefix) {
+            $rateKey = "{$prefix}_rate_per_million_units";
+            $priceKey = "{$prefix}_price_per_million";
+            $minorKey = "{$prefix}_cost_per_million_minor_units";
+
+            if (array_key_exists($rateKey, $pricing)) {
+                $normalized[$rateKey] = $pricing[$rateKey] === null
+                    ? null
+                    : AiMoney::canonicalRateUnits($pricing[$rateKey], $rateKey);
+            } elseif (array_key_exists($priceKey, $pricing)) {
+                $normalized[$rateKey] = $pricing[$priceKey] === null
+                    ? null
+                    : AiMoney::rateUnitsFromDecimal($pricing[$priceKey], $priceKey);
+                unset($normalized[$priceKey]);
+            } elseif (array_key_exists($minorKey, $pricing) && $pricing[$minorKey] !== null) {
+                $normalized[$minorKey] = AiMoney::canonicalMinorUnits($pricing[$minorKey], $minorKey);
             }
+        }
+
+        if (array_key_exists('fixed_request_rate_units', $pricing)) {
+            $normalized['fixed_request_rate_units'] = $pricing['fixed_request_rate_units'] === null
+                ? null
+                : AiMoney::canonicalRateUnits($pricing['fixed_request_rate_units'], 'fixed_request_rate_units');
+        } elseif (array_key_exists('fixed_request_price', $pricing)) {
+            $normalized['fixed_request_rate_units'] = $pricing['fixed_request_price'] === null
+                ? null
+                : AiMoney::rateUnitsFromDecimal($pricing['fixed_request_price'], 'fixed_request_price');
+            unset($normalized['fixed_request_price']);
+        } elseif (array_key_exists('fixed_request_cost_minor_units', $pricing)
+            && $pricing['fixed_request_cost_minor_units'] !== null) {
+            $normalized['fixed_request_cost_minor_units'] = AiMoney::canonicalMinorUnits(
+                $pricing['fixed_request_cost_minor_units'],
+                'fixed_request_cost_minor_units',
+            );
         }
 
         return $normalized;

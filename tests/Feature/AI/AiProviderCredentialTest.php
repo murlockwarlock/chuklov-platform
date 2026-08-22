@@ -509,32 +509,27 @@ class AiProviderCredentialTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'attacker.example'));
     }
 
-    public function test_unsupported_probe_remains_unknown_instead_of_false_healthy(): void
+    public function test_credentialless_ollama_probe_uses_the_local_models_endpoint(): void
     {
-        $credential = new OrganizationCredential([
-            'provider' => 'ollama',
-            'credential_name' => 'Ollama Health Test',
-            'revision_id' => '00000000-0000-4000-8000-000000000030',
+        Http::fake([
+            'http://localhost:11434/api/tags' => Http::response(['models' => []], 200),
         ]);
-        $credential->organization_id = $this->organizationA->id;
-        $credential->credentials = ['api_key' => 'local-secret'];
-        $credential->status = CredentialStatus::Active;
-        $credential->save();
 
         $provider = AiProviderConfiguration::create([
             'organization_id' => $this->organizationA->id,
             'provider_name' => 'ollama',
             'display_name' => 'Ollama',
             'is_enabled' => true,
-            'credential_id' => $credential->id,
         ]);
 
         $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
 
-        $this->assertFalse($result['success']);
+        $this->assertTrue($result['success']);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://localhost:11434/api/tags');
         $provider->refresh();
-        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
-        $this->assertStringContainsString('not supported', strtolower((string) $provider->last_health_error));
+        $this->assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
+        $this->assertNull($provider->tested_credential_revision);
     }
 
     public function test_failed_authenticated_probe_is_degraded_with_sanitized_error(): void

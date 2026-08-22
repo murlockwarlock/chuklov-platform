@@ -8,6 +8,7 @@ use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Registry\AiModelDefinition;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use BackedEnum;
@@ -28,19 +29,26 @@ final readonly class AiModelConfigurationInput
     ) {}
 
     /** @param array<string, mixed> $data */
-    public static function forCreate(AiProviderConfiguration $provider, array $data): self
-    {
+    public static function forCreate(
+        AiProviderConfiguration $provider,
+        array $data,
+        ?AiModelDefinition $discoveredDefinition = null,
+    ): self {
         return self::fromData(
             provider: $provider->provider_name,
             data: $data,
             existing: null,
             defaultEnabled: false,
+            discoveredDefinition: $discoveredDefinition,
         );
     }
 
     /** @param array<string, mixed> $data */
-    public static function forRelease(AiModelConfiguration $model, array $data): self
-    {
+    public static function forRelease(
+        AiModelConfiguration $model,
+        array $data,
+        ?AiModelDefinition $discoveredDefinition = null,
+    ): self {
         $provider = $model->providerConfiguration;
         if ($provider === null) {
             throw new InvalidArgumentException('The model provider configuration is missing.');
@@ -51,6 +59,7 @@ final readonly class AiModelConfigurationInput
             data: $data,
             existing: $model,
             defaultEnabled: true,
+            discoveredDefinition: $discoveredDefinition,
         );
     }
 
@@ -60,11 +69,31 @@ final readonly class AiModelConfigurationInput
         array $data,
         ?AiModelConfiguration $existing,
         bool $defaultEnabled,
+        ?AiModelDefinition $discoveredDefinition,
     ): self {
         $selectionProvided = array_key_exists('model_selection', $data);
         $selection = $data['model_selection'] ?? null;
-        $selectedDefinition = AiModelCatalog::selectedDefinition($provider, $selection);
         $existingPricing = $existing?->getPricingSnapshot();
+        $persistedDiscoveredDefinition = self::persistedDiscoveredDefinition(
+            provider: $provider,
+            selection: $selectionProvided ? $selection : ($data['model_name'] ?? $existing?->model_name),
+            existing: $existing,
+            pricing: $existingPricing,
+        );
+        try {
+            $selectedDefinition = AiModelCatalog::selectedDefinition($provider, $selection);
+        } catch (InvalidArgumentException $exception) {
+            if (self::matchesDiscoveredDefinition($provider, $selection, $discoveredDefinition)) {
+                $selectedDefinition = $discoveredDefinition;
+            } elseif (self::matchesDiscoveredDefinition($provider, $selection, $persistedDiscoveredDefinition)) {
+                $selectedDefinition = $persistedDiscoveredDefinition;
+            } else {
+                throw $exception;
+            }
+        }
+        if ($selectedDefinition === null && $persistedDiscoveredDefinition !== null) {
+            $selectedDefinition = $persistedDiscoveredDefinition;
+        }
         $existingCatalogDefinition = $existing === null
             ? null
             : AiModelCatalog::find($provider, $existing->model_name);
@@ -102,7 +131,8 @@ final readonly class AiModelConfigurationInput
             && (! $sameManualIdentity
                 || ($explicitCustomSelection
                     && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG));
-        $catalogAuthoritative = $definition !== null;
+        $definitionAuthoritative = $definition !== null;
+        $catalogPricingAuthoritative = $definition?->pricing !== null;
         $catalogDisplayName = $definition === null ? null : $definition->displayName;
         $existingDisplayName = $existing === null ? null : $existing->display_name;
         $displayName = self::displayName($data['display_name'] ?? $existingDisplayName ?? $catalogDisplayName);
@@ -110,14 +140,14 @@ final readonly class AiModelConfigurationInput
             data: $data,
             existing: $existing,
             definition: $definition,
-            catalogAuthoritative: $catalogAuthoritative,
+            catalogAuthoritative: $definitionAuthoritative,
             resetExistingCustomState: $resetExistingCustomState,
         );
         $pricing = self::pricing(
             data: $data,
             existing: $existingPricing,
             catalogPricing: $definition?->pricing,
-            catalogAuthoritative: $catalogAuthoritative,
+            catalogAuthoritative: $catalogPricingAuthoritative,
             resetExistingCustomState: $resetExistingCustomState,
         );
 
@@ -131,6 +161,69 @@ final readonly class AiModelConfigurationInput
                 ? self::boolean($data['is_enabled'], 'is_enabled')
                 : ($existing === null ? $defaultEnabled : $existing->is_enabled),
         );
+    }
+
+    private static function matchesDiscoveredDefinition(
+        string $provider,
+        mixed $selection,
+        ?AiModelDefinition $definition,
+    ): bool {
+        if (! $definition instanceof AiModelDefinition
+            || ! is_string($selection)
+            || trim($selection) === ''
+            || $selection === AiModelCatalog::CUSTOM_MODEL) {
+            return false;
+        }
+
+        try {
+            $provider = AiProviderCatalog::normalize($provider);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return $definition->provider === $provider && $definition->modelName === trim($selection);
+    }
+
+    private static function persistedDiscoveredDefinition(
+        string $provider,
+        mixed $selection,
+        ?AiModelConfiguration $existing,
+        ?AiPricingSnapshot $pricing,
+    ): ?AiModelDefinition {
+        if (! $existing instanceof AiModelConfiguration
+            || ! $pricing instanceof AiPricingSnapshot
+            || $pricing->pricingSource !== AiPricingSnapshot::SOURCE_CATALOG
+            || ! AiModelCatalog::isImmutableDiscoveredPricing($provider, $pricing)
+            || ! is_string($selection)
+            || trim($selection) === ''
+            || trim($selection) !== $existing->model_name
+            || AiModelCatalog::find($provider, $existing->model_name) !== null) {
+            return null;
+        }
+
+        $modalityValues = array_values(array_intersect(
+            $existing->capabilities,
+            array_map(
+                static fn (AiModelModality $modality): string => $modality->value,
+                AiModelModality::cases(),
+            ),
+        ));
+
+        return AiModelDefinition::fromArray([
+            'provider' => $provider,
+            'model' => $existing->model_name,
+            'display_name' => $existing->display_name,
+            'family' => 'Сохранённая модель',
+            'summary' => 'Модель сохранена из подключённого каталога; её текущая запись провайдера временно недоступна.',
+            'positioning' => 'Ранее обнаруженная',
+            'recommended' => false,
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => $modalityValues,
+            'pricing' => $pricing->toArray(),
+            'lifecycle' => 'active',
+            'catalog_source' => $pricing->catalogSource,
+            'pricing_as_of' => $pricing->catalogPricingAsOf,
+        ]);
     }
 
     /**
@@ -233,43 +326,53 @@ final readonly class AiModelConfigurationInput
         if (! $hasManualInput) {
             return $base;
         }
+        $inputRate = self::requiredRate(
+            $data,
+            'input_cost_per_million',
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->inputRatePerMillionUnits(),
+        );
+        $outputRate = self::requiredRate(
+            $data,
+            'output_cost_per_million',
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->outputRatePerMillionUnits(),
+        );
+        $cacheReadRate = self::optionalRate(
+            $data,
+            'cache_read_input_cost_per_million',
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->cacheReadRatePerMillionUnits(),
+        );
+        $cacheWriteRate = self::optionalRate(
+            $data,
+            'cache_write_input_cost_per_million',
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->cacheWriteRatePerMillionUnits(),
+        );
+        $reasoningRate = self::optionalRate(
+            $data,
+            'reasoning_cost_per_million',
+            $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? 0 : $base->reasoningRatePerMillionUnits(),
+        );
+        $fixedRequestRate = self::optionalRate(
+            $data,
+            'fixed_request_cost_minor_units',
+            $base->fixedRequestRateUnits(),
+        );
         $pricing = new AiPricingSnapshot(
             currency: $base->currency,
-            inputCostPerMillionMinorUnits: self::requiredMinor(
-                $data,
-                'input_cost_per_million',
-                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->inputCostPerMillionMinorUnits,
-            ),
-            outputCostPerMillionMinorUnits: self::requiredMinor(
-                $data,
-                'output_cost_per_million',
-                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->outputCostPerMillionMinorUnits,
-            ),
-            cacheReadInputCostPerMillionMinorUnits: self::optionalMinor(
-                $data,
-                'cache_read_input_cost_per_million',
-                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
-                    ? 0
-                    : $base->cacheReadInputCostPerMillionMinorUnits,
-            ),
-            cacheWriteInputCostPerMillionMinorUnits: self::optionalMinor(
-                $data,
-                'cache_write_input_cost_per_million',
-                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
-                    ? 0
-                    : $base->cacheWriteInputCostPerMillionMinorUnits,
-            ),
-            reasoningCostPerMillionMinorUnits: self::optionalMinor(
-                $data,
-                'reasoning_cost_per_million',
-                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
-                    ? 0
-                    : $base->reasoningCostPerMillionMinorUnits,
-            ),
+            inputCostPerMillionMinorUnits: self::compatibilityMinor($inputRate),
+            outputCostPerMillionMinorUnits: self::compatibilityMinor($outputRate),
+            cacheReadInputCostPerMillionMinorUnits: self::compatibilityNullableMinor($cacheReadRate),
+            cacheWriteInputCostPerMillionMinorUnits: self::compatibilityNullableMinor($cacheWriteRate),
+            reasoningCostPerMillionMinorUnits: self::compatibilityNullableMinor($reasoningRate),
             fixedRequestCostApplicable: $fixedRequestCostApplicable ?? $base->fixedRequestCostApplicable,
-            fixedRequestCostMinorUnits: self::optionalMinor($data, 'fixed_request_cost_minor_units', $base->fixedRequestCostMinorUnits),
+            fixedRequestCostMinorUnits: self::compatibilityNullableMinor($fixedRequestRate),
             unsupportedMeters: $unsupportedMeters ?? $base->unsupportedMeters,
             pricingSource: AiPricingSnapshot::SOURCE_MANUAL,
+            inputRatePerMillionUnits: $inputRate,
+            outputRatePerMillionUnits: $outputRate,
+            cacheReadRatePerMillionUnits: $cacheReadRate,
+            cacheWriteRatePerMillionUnits: $cacheWriteRate,
+            reasoningRatePerMillionUnits: $reasoningRate,
+            fixedRequestRateUnits: $fixedRequestRate,
         );
 
         if ($catalogPricing !== null
@@ -290,6 +393,28 @@ final readonly class AiModelConfigurationInput
     {
         if (! is_array($value)) {
             throw new InvalidArgumentException('The pricing snapshot must be a canonical array.');
+        }
+
+        $exactKeys = [
+            'input_rate_per_million_units',
+            'output_rate_per_million_units',
+            'cache_read_input_rate_per_million_units',
+            'cache_write_input_rate_per_million_units',
+            'reasoning_rate_per_million_units',
+            'fixed_request_rate_units',
+            'input_price_per_million',
+            'output_price_per_million',
+            'cache_read_input_price_per_million',
+            'cache_write_input_price_per_million',
+            'reasoning_price_per_million',
+            'fixed_request_price',
+            'pricing_tiers',
+        ];
+        if (array_intersect($exactKeys, array_keys($value)) !== []) {
+            return AiPricingSnapshot::fromArray([
+                ...$value,
+                'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+            ]);
         }
 
         foreach ([
@@ -360,7 +485,7 @@ final readonly class AiModelConfigurationInput
     }
 
     /** @param array<string, mixed> $data */
-    private static function requiredMinor(array $data, string $key, ?int $default): int
+    private static function requiredRate(array $data, string $key, ?int $default): int
     {
         if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
             if ($default === null) {
@@ -370,24 +495,34 @@ final readonly class AiModelConfigurationInput
             return $default;
         }
 
-        return self::minor($data[$key], $key);
+        return self::rate($data[$key], $key);
     }
 
     /** @param array<string, mixed> $data */
-    private static function optionalMinor(array $data, string $key, ?int $default): ?int
+    private static function optionalRate(array $data, string $key, ?int $default): ?int
     {
         if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
             return $default;
         }
 
-        return self::minor($data[$key], $key);
+        return self::rate($data[$key], $key);
     }
 
-    private static function minor(mixed $value, string $key): int
+    private static function rate(mixed $value, string $key): int
     {
         return is_int($value)
-            ? AiMoney::canonicalMinorUnits($value, $key)
-            : AiMoney::minorUnitsFromDecimal($value);
+            ? AiMoney::rateUnitsFromMinorUnits(AiMoney::canonicalMinorUnits($value, $key))
+            : AiMoney::rateUnitsFromDecimal($value, $key);
+    }
+
+    private static function compatibilityMinor(int $rate): int
+    {
+        return intdiv($rate, 10_000);
+    }
+
+    private static function compatibilityNullableMinor(?int $rate): ?int
+    {
+        return $rate === null ? null : self::compatibilityMinor($rate);
     }
 
     /** @return list<string> */

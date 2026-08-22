@@ -45,7 +45,7 @@ final class CreateAiProviderConfiguration
 
         $options = (array) ($data['options'] ?? []);
         try {
-            AiProviderExecutionConfiguration::assertSupportedOptions($options);
+            $options = AiProviderExecutionConfiguration::normalizeOptions($providerName, $options);
         } catch (\Throwable $exception) {
             throw new InvalidArgumentException($exception->getMessage(), previous: $exception);
         }

@@ -71,16 +71,45 @@ final class AiAdministrationUxTest extends TestCase
             'deepseek',
             'ollama',
             'mistral',
-        ], AiProviderCatalog::keys());
+        ], array_values(array_filter(
+            AiProviderCatalog::keys(),
+            static fn (string $providerKey): bool => ! AiProviderCatalog::isSpecialized($providerKey),
+        )));
 
-        foreach (AiProviderCatalog::keys() as $providerKey) {
+        $genericProviders = array_values(array_filter(
+            AiProviderCatalog::keys(),
+            static fn (string $providerKey): bool => ! AiProviderCatalog::isSpecialized($providerKey),
+        ));
+        self::assertSame([
+            'cohere',
+            'jina',
+            'voyageai',
+            'eleven',
+        ], array_values(array_filter(
+            AiProviderCatalog::keys(),
+            static fn (string $providerKey): bool => AiProviderCatalog::isSpecialized($providerKey),
+        )));
+
+        foreach ($genericProviders as $providerKey) {
+            $providerOptions = match ($providerKey) {
+                'azure' => ['base_url' => 'https://azure.example'],
+                'openai_compatible' => ['base_url' => 'https://compatible.example/v1'],
+                'ollama' => ['base_url' => 'http://ollama.example'],
+                default => [],
+            };
+
             self::assertInstanceOf(
                 TextProvider::class,
                 app(AiProviderFactory::class)->createTextProvider(
                     $providerKey,
                     $this->credential($organization, $providerKey, "{$providerKey} credential"),
+                    extraConfig: ['provider_options' => $providerOptions],
                 ),
             );
+        }
+
+        foreach (['cohere', 'jina', 'voyageai', 'eleven'] as $providerKey) {
+            self::assertTrue(AiProviderCatalog::isSpecialized($providerKey));
         }
 
         for ($index = 1; $index <= 55; $index++) {
@@ -131,6 +160,28 @@ final class AiAdministrationUxTest extends TestCase
         $component
             ->set('data.credential_id', $target->getKey());
         self::assertStringNotContainsString('sk-openai-secret', serialize($component->instance()->form->getState()));
+    }
+
+    public function test_specialized_providers_are_not_exposed_as_generic_model_relations(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'cohere',
+            'display_name' => 'Cohere Knowledge',
+        ]);
+
+        self::assertFalse(ModelsRelationManager::canViewForRecord($provider, EditAiProvider::class));
+
+        try {
+            app(CreateModelConfiguration::class)->handle($admin, $provider, [
+                'model_selection' => 'embed-v4.0',
+                'display_name' => 'Cohere Embeddings',
+            ]);
+            self::fail('Specialized providers must not create generic chat model configurations.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('specialized configuration', $exception->getMessage());
+        }
     }
 
     public function test_provider_server_invariants_reject_unsupported_identity_changes_and_foreign_credentials(): void

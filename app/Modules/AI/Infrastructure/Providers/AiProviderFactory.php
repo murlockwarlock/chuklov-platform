@@ -67,18 +67,20 @@ class AiProviderFactory
      */
     public function createTextProvider(
         string $providerName,
-        OrganizationCredential $credential,
+        ?OrganizationCredential $credential,
         ?Agent $agent = null,
         array $extraConfig = [],
     ): TextProvider {
         $secret = $this->resolveSecret($credential);
         $driver = AiProviderCatalog::normalize($providerName);
 
+        $providerOptions = (array) ($extraConfig['provider_options'] ?? []);
+        unset($extraConfig['provider_options']);
         $config = array_merge([
             'driver' => $driver,
             'key' => $secret,
             'name' => $providerName,
-        ], $extraConfig);
+        ], AiProviderExecutionConfiguration::sdkOptions($driver, $providerOptions), $extraConfig);
 
         if ($driver === 'openai') {
             $config['store'] = false;
@@ -125,21 +127,21 @@ class AiProviderFactory
      * Perform the smallest supported connectivity check using the credential.
      */
     /** @param array<string, mixed> $options */
-    public function testConnectivity(string $providerName, OrganizationCredential $credential, array $options = []): void
+    public function testConnectivity(string $providerName, ?OrganizationCredential $credential, array $options = []): void
     {
         $driver = AiProviderCatalog::normalize($providerName);
-        $secret = $this->resolveSecret($credential);
+        $secret = $credential === null ? '' : $this->resolveSecret($credential);
 
-        if (trim($secret) === '') {
+        if (AiProviderExecutionConfiguration::providerRequiresSecret($driver) && trim($secret) === '') {
             throw new InvalidArgumentException('Credential secret is empty.');
         }
 
         $this->connectivityProbe->probe($driver, $secret, $options);
     }
 
-    private function resolveSecret(OrganizationCredential $credential): string
+    private function resolveSecret(?OrganizationCredential $credential): string
     {
-        $credentials = $credential->credentials;
+        $credentials = $credential->credentials ?? [];
 
         return (string) ($credentials['api_key'] ?? $credentials['key'] ?? $credentials['secret'] ?? '');
     }

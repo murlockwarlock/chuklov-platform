@@ -21,24 +21,45 @@ final class AiModelCatalog
         );
     }
 
-    /** @return array<string, string> */
+    /**
+     * @param  list<mixed>  $additionalDefinitions
+     * @return array<string, string>
+     */
     public static function optionsForProvider(
         mixed $provider,
         ?string $currentModel = null,
         ?DateTimeInterface $asOf = null,
+        array $additionalDefinitions = [],
     ): array {
         $provider = AiProviderCatalog::normalize($provider);
         $currentModel = $currentModel === null ? null : trim($currentModel);
         $options = [];
+        $definitions = self::all($asOf);
+        foreach ($additionalDefinitions as $additionalDefinition) {
+            if ($additionalDefinition instanceof AiModelDefinition) {
+                $definitions[] = $additionalDefinition;
+            }
+        }
 
-        foreach (self::all($asOf) as $definition) {
+        foreach ($definitions as $definition) {
             if ($definition->provider !== $provider
                 || (! $definition->lifecycleStatus->isSelectableForNewConfiguration()
                     && $definition->modelName !== $currentModel)) {
                 continue;
             }
 
-            $label = $definition->displayName.' · '.$definition->family;
+            $label = $definition->displayName.' · '.($definition->positioning ?? $definition->family);
+            if ($definition->recommended) {
+                $label .= ' · Рекомендуется';
+            }
+            $inputs = self::humanSupportedInputs($definition);
+            if ($inputs !== []) {
+                $label .= ' · '.implode(', ', $inputs);
+            }
+            if ($definition->pricing !== null) {
+                $label .= ' · $'.AiMoney::displayDecimalFromRateUnits($definition->pricing->inputRatePerMillionUnits())
+                    .' / $'.AiMoney::displayDecimalFromRateUnits($definition->pricing->outputRatePerMillionUnits()).' за 1 млн токенов';
+            }
             if (! $definition->lifecycleStatus->isSelectableForNewConfiguration()) {
                 $label .= ' · '.$definition->lifecycleStatus->label();
             }
@@ -104,8 +125,8 @@ final class AiModelCatalog
             return 'Стоимость не задана';
         }
 
-        return 'Стоимость по каталогу: $'.AiMoney::decimalFromMinorUnits($pricing->inputCostPerMillionMinorUnits)
-            .' вход / $'.AiMoney::decimalFromMinorUnits($pricing->outputCostPerMillionMinorUnits)
+        return 'Стоимость по каталогу: $'.AiMoney::displayDecimalFromRateUnits($pricing->inputRatePerMillionUnits())
+            .' вход / $'.AiMoney::displayDecimalFromRateUnits($pricing->outputRatePerMillionUnits())
             .' ответ';
     }
 
@@ -121,7 +142,9 @@ final class AiModelCatalog
 
         $definition = self::find($provider, $modelName, $asOf);
         if ($definition === null || $definition->pricing === null) {
-            return true;
+            return $definition === null
+                ? ! self::isImmutableDiscoveredPricing($provider, $pricing)
+                : true;
         }
 
         if ($definition->pricing->hasCatalogPricingMetadata()
@@ -137,6 +160,23 @@ final class AiModelCatalog
         return ! $pricing->sameBillablePricing($definition->pricing);
     }
 
+    public static function isImmutableDiscoveredPricing(mixed $provider, AiPricingSnapshot $pricing): bool
+    {
+        if (! $pricing->hasCatalogPricingMetadata() || $pricing->catalogSource === null) {
+            return false;
+        }
+
+        $provider = AiProviderCatalog::normalize($provider);
+        $allowedSources = match ($provider) {
+            'openrouter' => ['https://openrouter.ai/docs/api/api-reference/models/get-models'],
+            'openai_compatible' => ['https://platform.openai.com/docs/api-reference/models/list'],
+            'ollama' => ['https://docs.ollama.com/api/tags'],
+            default => [],
+        };
+
+        return in_array($pricing->catalogSource, $allowedSources, true);
+    }
+
     /** @return list<string> */
     public static function humanSupportedInputs(AiModelDefinition $definition): array
     {
@@ -144,8 +184,8 @@ final class AiModelCatalog
 
         foreach ($definition->supportedCapabilities as $capability) {
             $label = match ($capability) {
-                'text_generation' => 'текст',
-                'structured_output' => 'структурированные ответы',
+                'text_generation' => 'Текст',
+                'structured_output' => 'Структурированные ответы',
                 default => null,
             };
 
@@ -156,8 +196,8 @@ final class AiModelCatalog
 
         foreach ($definition->modalities as $modality) {
             $inputs[] = match ($modality) {
-                AiModelModality::ImageInput => 'изображения',
-                AiModelModality::DocumentInput => 'документы',
+                AiModelModality::ImageInput => 'Изображения и сканы',
+                AiModelModality::DocumentInput => 'Документы / PDF',
             };
         }
 

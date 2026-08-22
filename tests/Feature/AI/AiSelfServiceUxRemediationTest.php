@@ -19,6 +19,7 @@ use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Registry\AiModelDefinition;
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -81,7 +82,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         ])]);
         $provider = $this->provider('openai');
 
-        self::assertSame('Каталожная модель · Catalog family', AiModelCatalog::optionsForProvider('openai')['catalog-model']);
+        self::assertStringContainsString('Каталожная модель · Catalog family', AiModelCatalog::optionsForProvider('openai')['catalog-model']);
         self::assertSame('Другая модель / Указать вручную', AiModelCatalog::optionsForProvider('openai')[AiModelCatalog::CUSTOM_MODEL]);
 
         $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
@@ -686,8 +687,28 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
         self::assertSame([
             'gpt-5.6-terra',
+            'gpt-5.6-sol',
+            'gpt-5.6-luna',
+            'claude-fable-5',
+            'claude-opus-5',
             'claude-sonnet-5',
-            'gemini-2.5-flash',
+            'claude-haiku-4-5-20251001',
+            'gemini-3.7-flash',
+            'gemini-3.6-flash',
+            'gemini-3.5-flash',
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'deepseek-v4-pro',
+            'deepseek-v4-flash',
+            'mistral-medium-3-5',
+            'mistral-large-2512',
+            'mistral-small-2603',
+            'ministral-14b-2512',
+            'ministral-8b-2512',
+            'openai/gpt-oss-120b',
+            'openai/gpt-oss-20b',
+            'grok-4.6',
+            'grok-4.3',
         ], array_map(
             static fn (AiModelDefinition $definition): string => $definition->modelName,
             $definitions,
@@ -697,7 +718,10 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             self::assertSame('active', $definition->lifecycleStatus->value);
             self::assertNotNull($definition->pricing);
             self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $definition->pricing->pricingSource);
-            self::assertSame('2026-08-22', $definition->pricingAsOf);
+            self::assertSame(
+                $definition->provider === 'openai' ? '2026-08-23' : '2026-08-22',
+                $definition->pricingAsOf,
+            );
             self::assertNotSame('', $definition->catalogSource);
         }
 
@@ -750,9 +774,9 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         config()->set('ai.model_catalog', $this->defaultCatalog());
 
         $expected = [
-            ['openai', 'gpt-5.6-terra', 200, 1200, 20, 250],
-            ['anthropic', 'claude-sonnet-5', 200, 1000, 20, 400],
-            ['gemini', 'gemini-2.5-flash', 30, 250, 3, null],
+            ['openai', 'gpt-5.6-terra', '2.000000', '12.000000', '0.200000', '2.500000'],
+            ['anthropic', 'claude-sonnet-5', '2.000000', '10.000000', '0.200000', '2.500000'],
+            ['gemini', 'gemini-3.7-flash', '0.750000', '3.750000', '0.075000', null],
         ];
 
         foreach ($expected as [$providerName, $modelName, $input, $output, $cacheRead, $cacheWrite]) {
@@ -765,10 +789,14 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
             self::assertSame($modelName, $model->model_name);
             self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $pricing->pricingSource);
-            self::assertSame($input, $pricing->inputCostPerMillionMinorUnits);
-            self::assertSame($output, $pricing->outputCostPerMillionMinorUnits);
-            self::assertSame($cacheRead, $pricing->cacheReadInputCostPerMillionMinorUnits);
-            self::assertSame($cacheWrite, $pricing->cacheWriteInputCostPerMillionMinorUnits);
+            self::assertSame($input, AiMoney::decimalFromRateUnits($pricing->inputRatePerMillionUnits()));
+            self::assertSame($output, AiMoney::decimalFromRateUnits($pricing->outputRatePerMillionUnits()));
+            self::assertSame($cacheRead, $pricing->cacheReadRatePerMillionUnits() === null
+                ? null
+                : AiMoney::decimalFromRateUnits($pricing->cacheReadRatePerMillionUnits()));
+            self::assertSame($cacheWrite, $pricing->cacheWriteRatePerMillionUnits() === null
+                ? null
+                : AiMoney::decimalFromRateUnits($pricing->cacheWriteRatePerMillionUnits()));
             self::assertTrue($pricing->isComplete());
         }
     }

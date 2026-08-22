@@ -21,6 +21,6 @@ enum ModelLifecycleStatus: string
 
     public function isSelectableForNewConfiguration(): bool
     {
-        return in_array($this, [self::Active, self::Preview], true);
+        return $this === self::Active;
     }
 }

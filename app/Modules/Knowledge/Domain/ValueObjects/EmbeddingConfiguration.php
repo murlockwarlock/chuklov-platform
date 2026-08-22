@@ -18,6 +18,8 @@ final readonly class EmbeddingConfiguration
         public int $dimensions,
         public string $version,
         public int $timeoutSeconds,
+        public ?string $catalogSource = null,
+        public ?string $verifiedAsOf = null,
     ) {
         if ($provider === '' || $model === '' || $version === '' || $dimensions < 1 || $timeoutSeconds < 1) {
             throw new InvalidArgumentException('Embedding configuration is invalid.');
@@ -32,6 +34,8 @@ final readonly class EmbeddingConfiguration
             (int) config('rag.embedding.dimensions'),
             (string) config('rag.embedding.configuration_version'),
             (int) config('rag.embedding.timeout_seconds'),
+            is_string(config('rag.embedding.catalog_source')) ? config('rag.embedding.catalog_source') : null,
+            is_string(config('rag.embedding.verified_as_of')) ? config('rag.embedding.verified_as_of') : null,
         );
     }
 
@@ -43,6 +47,8 @@ final readonly class EmbeddingConfiguration
         $dimensions = $snapshot['dimensions'] ?? null;
         $version = $snapshot['configuration_version'] ?? null;
         $timeoutSeconds = $snapshot['timeout_seconds'] ?? null;
+        $catalogSource = $snapshot['catalog_source'] ?? null;
+        $verifiedAsOf = $snapshot['verified_as_of'] ?? null;
 
         if (! is_string($provider)
             || ! is_string($model)
@@ -51,8 +57,14 @@ final readonly class EmbeddingConfiguration
             || ! is_int($timeoutSeconds)) {
             throw new InvalidArgumentException('Embedding configuration snapshot is invalid.');
         }
+        if ($catalogSource !== null && ! is_string($catalogSource)) {
+            throw new InvalidArgumentException('Embedding configuration source is invalid.');
+        }
+        if ($verifiedAsOf !== null && ! is_string($verifiedAsOf)) {
+            throw new InvalidArgumentException('Embedding configuration verification date is invalid.');
+        }
 
-        $configuration = new self($provider, $model, $dimensions, $version, $timeoutSeconds);
+        $configuration = new self($provider, $model, $dimensions, $version, $timeoutSeconds, $catalogSource, $verifiedAsOf);
         if (($snapshot['configuration_key'] ?? null) !== $configuration->key()) {
             throw new InvalidArgumentException('Embedding configuration snapshot key is invalid.');
         }
@@ -86,6 +98,8 @@ final readonly class EmbeddingConfiguration
             'configuration_version' => $this->version,
             'configuration_key' => $this->key(),
             'timeout_seconds' => $this->timeoutSeconds,
+            'catalog_source' => $this->catalogSource,
+            'verified_as_of' => $this->verifiedAsOf,
         ];
     }
 
@@ -97,6 +111,8 @@ final readonly class EmbeddingConfiguration
             dimensions: $this->dimensions,
             version: $this->version,
             timeoutSeconds: $timeoutSeconds,
+            catalogSource: $this->catalogSource,
+            verifiedAsOf: $this->verifiedAsOf,
         );
     }
 }

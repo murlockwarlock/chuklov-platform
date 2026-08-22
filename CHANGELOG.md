@@ -6,6 +6,8 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- UX-C5 remediation now uses a runtime-verified provider capability matrix, current guided catalogs for mainstream providers including DeepSeek, official bounded discovery for OpenRouter/OpenAI-compatible/Ollama, separate Knowledge embeddings/reranking choices, modality-compatible direct-attachment failover, exact fixed-point pricing with conservative tiered budget reservation, immutable pricing provenance, and tenant-safe credential-bounded discovery. No hosted CI, deployment, or merge was performed.
+
 - UX-C5 AI Administration (implementation candidate):
   - Productized organization-scoped AI safety, provider, model/release, prompt/version, and evaluation administration with human labels, bounded lookups, immutable technical identities, exact monetary hydration, and preserved application/runtime lifecycle boundaries.
   - Added the shared 12-provider catalog used by CRM and the provider factory, exact decimal-to-minor-unit conversion for budgets/pricing, safe OrganizationCredential selection, normal/advanced model and prompt settings, and focused Feature coverage. No migration, OQ-015 content, M11, Finance, Portal, Playwright, benchmark, hosted CI, deployment, or merge work was added.

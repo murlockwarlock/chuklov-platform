@@ -21,6 +21,7 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -56,19 +57,21 @@ final class AiCatalogPricingValidityTest extends TestCase
         $current = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
         self::assertNotNull($current);
         self::assertNotNull($current->pricing);
-        self::assertSame(200, $current->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(1000, $current->pricing->outputCostPerMillionMinorUnits);
-        self::assertSame(20, $current->pricing->cacheReadInputCostPerMillionMinorUnits);
-        self::assertSame(400, $current->pricing->cacheWriteInputCostPerMillionMinorUnits);
-        self::assertNull($current->pricing->catalogPricingEffectiveFrom);
-        self::assertNull($current->pricing->catalogPricingEffectiveUntil);
+        self::assertSame('2.000000', $current->pricing->inputPricePerMillion());
+        self::assertSame('10.000000', $current->pricing->outputPricePerMillion());
+        self::assertSame('0.200000', AiMoney::decimalFromRateUnits($current->pricing->cacheReadRatePerMillionUnits()));
+        self::assertSame('2.500000', AiMoney::decimalFromRateUnits($current->pricing->cacheWriteRatePerMillionUnits()));
+        self::assertSame('2026-01-01 00:00:00', $current->pricing->catalogPricingEffectiveFrom);
+        self::assertSame('2026-08-31 23:59:59', $current->pricing->catalogPricingEffectiveUntil);
         self::assertSame('2026-08-22', $current->pricingAsOf);
 
         $this->at('2026-09-01 00:00:00');
         $unchanged = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
         self::assertNotNull($unchanged);
         self::assertNotNull($unchanged->pricing);
-        self::assertSame($current->pricing->toArray(), $unchanged->pricing->toArray());
+        self::assertNotSame($current->pricing->toArray(), $unchanged->pricing->toArray());
+        self::assertSame('3.000000', $unchanged->pricing->inputPricePerMillion());
+        self::assertSame('15.000000', $unchanged->pricing->outputPricePerMillion());
     }
 
     public function test_invalid_and_overlapping_catalog_periods_are_rejected(): void
@@ -186,16 +189,16 @@ final class AiCatalogPricingValidityTest extends TestCase
 
         self::assertSame($organization->getKey(), $model->organization_id);
         self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $model->getPricingSnapshot()->pricingSource);
-        self::assertSame(200, $model->getPricingSnapshot()->inputCostPerMillionMinorUnits);
-        self::assertSame(1000, $model->getPricingSnapshot()->outputCostPerMillionMinorUnits);
+        self::assertSame('3.000000', $model->getPricingSnapshot()->inputPricePerMillion());
+        self::assertSame('15.000000', $model->getPricingSnapshot()->outputPricePerMillion());
 
         $release = app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
             'model_selection' => 'claude-sonnet-5',
             'is_enabled' => true,
         ]);
 
-        self::assertSame(200, $release->getPricingSnapshot()->inputCostPerMillionMinorUnits);
-        self::assertSame(1000, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
+        self::assertSame('3.000000', $release->getPricingSnapshot()->inputPricePerMillion());
+        self::assertSame('15.000000', $release->getPricingSnapshot()->outputPricePerMillion());
     }
 
     public function test_old_release_remains_immutable_after_the_catalog_period_changes(): void
@@ -408,19 +411,19 @@ final class AiCatalogPricingValidityTest extends TestCase
         config()->set('ai.model_catalog', $this->defaultCatalog());
 
         $terra = AiModelCatalog::find('openai', 'gpt-5.6-terra');
-        $gemini = AiModelCatalog::find('gemini', 'gemini-2.5-flash');
+        $gemini = AiModelCatalog::find('gemini', 'gemini-3.7-flash');
 
         self::assertNotNull($terra);
         self::assertNotNull($terra->pricing);
         self::assertNotNull($gemini);
         self::assertNotNull($gemini->pricing);
-        self::assertSame(200, $terra->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(1200, $terra->pricing->outputCostPerMillionMinorUnits);
-        self::assertSame(20, $terra->pricing->cacheReadInputCostPerMillionMinorUnits);
-        self::assertSame(250, $terra->pricing->cacheWriteInputCostPerMillionMinorUnits);
-        self::assertSame(30, $gemini->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(250, $gemini->pricing->outputCostPerMillionMinorUnits);
-        self::assertSame(3, $gemini->pricing->cacheReadInputCostPerMillionMinorUnits);
+        self::assertSame('2.000000', $terra->pricing->inputPricePerMillion());
+        self::assertSame('12.000000', $terra->pricing->outputPricePerMillion());
+        self::assertSame('0.200000', AiMoney::decimalFromRateUnits($terra->pricing->cacheReadRatePerMillionUnits()));
+        self::assertSame('2.500000', AiMoney::decimalFromRateUnits($terra->pricing->cacheWriteRatePerMillionUnits()));
+        self::assertSame('0.750000', $gemini->pricing->inputPricePerMillion());
+        self::assertSame('3.750000', $gemini->pricing->outputPricePerMillion());
+        self::assertSame('0.075000', AiMoney::decimalFromRateUnits($gemini->pricing->cacheReadRatePerMillionUnits()));
         self::assertContains('document_input', array_map(
             static fn (\BackedEnum $modality): string => $modality->value,
             $gemini->modalities,
@@ -432,7 +435,7 @@ final class AiCatalogPricingValidityTest extends TestCase
             $anthropic->modalities,
         ));
         self::assertFalse(AiModelCatalog::pricingIsStale('openai', 'gpt-5.6-terra', $terra->pricing));
-        self::assertFalse(AiModelCatalog::pricingIsStale('gemini', 'gemini-2.5-flash', $gemini->pricing));
+        self::assertFalse(AiModelCatalog::pricingIsStale('gemini', 'gemini-3.7-flash', $gemini->pricing));
     }
 
     /** @return array{0: AiModelConfiguration, 1: AiModelRelease, 2: AiProviderConfiguration, 3: User} */

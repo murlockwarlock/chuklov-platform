@@ -38,7 +38,12 @@ class TestProviderConnection
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
         $credential = $providerConfig->credential;
-        if ($credential === null || $credential->status !== CredentialStatus::Active) {
+        $providerName = $providerConfig->provider_name;
+        $credentialAvailable = $credential !== null
+            && $credential->status === CredentialStatus::Active
+            && $credential->provider === $providerName
+            && (int) $credential->organization_id === (int) $organization->getKey();
+        if (! $credentialAvailable && AiProviderExecutionConfiguration::providerRequiresSecret($providerName)) {
             $providerConfig->update([
                 'health_status' => ProviderHealthStatus::Unavailable,
                 'last_checked_at' => Carbon::now(),
@@ -54,7 +59,11 @@ class TestProviderConnection
         }
 
         try {
-            $this->providerFactory->testConnectivity($providerConfig->provider_name, $credential, $providerConfig->options ?? []);
+            $this->providerFactory->testConnectivity(
+                $providerName,
+                $credentialAvailable ? $credential : null,
+                $providerConfig->options ?? [],
+            );
 
             $configurationDigest = AiProviderExecutionConfiguration::digest(
                 $providerConfig->provider_name,
@@ -65,7 +74,7 @@ class TestProviderConnection
                 'health_status' => ProviderHealthStatus::Healthy,
                 'last_checked_at' => Carbon::now(),
                 'last_health_error' => null,
-                'tested_credential_revision' => $credential->revision_id,
+                'tested_credential_revision' => $credential?->revision_id,
                 'tested_configuration_digest' => $configurationDigest,
             ]);
 

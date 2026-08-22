@@ -12,8 +12,10 @@ use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Registry\AiModelDefinition;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -32,6 +34,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class ModelsRelationManager extends RelationManager
@@ -41,6 +44,13 @@ class ModelsRelationManager extends RelationManager
     protected static ?string $title = 'Модели провайдера';
 
     protected static string|BackedEnum|null $icon = Heroicon::OutlinedRectangleStack;
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return $ownerRecord instanceof AiProviderConfiguration
+            && ! AiProviderCatalog::isSpecialized($ownerRecord->provider_name)
+            && parent::canViewForRecord($ownerRecord, $pageClass);
+    }
 
     public function form(Schema $schema): Schema
     {
@@ -54,19 +64,25 @@ class ModelsRelationManager extends RelationManager
                     ->options(fn (?AiModelConfiguration $record): array => AiModelCatalog::optionsForProvider(
                         $provider->provider_name,
                         $record?->model_name,
+                        null,
+                        self::discoveredDefinitions($provider, $record),
                     ))
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => $record === null
                         ? (string) ($state ?? '')
-                        : AiModelCatalog::selection($provider->provider_name, $record->model_name))
-                    ->afterStateUpdated(function (Set $set, Get $get, mixed $state) use ($provider): void {
-                        $definition = self::definition($provider->provider_name, $state);
+                        : self::selection($provider, $record->model_name, $record))
+                    ->afterStateUpdated(function (Set $set, Get $get, mixed $state, ?AiModelConfiguration $record) use ($provider): void {
+                        $definition = self::definition($provider, $state, $record);
                         if ($definition !== null) {
                             if (blank($get('display_name'))) {
                                 $set('display_name', $definition->displayName);
                             }
 
                             $set('model_modalities', []);
-                            self::fillCatalogPricing($set, $definition);
+                            if ($definition->pricing !== null) {
+                                self::fillCatalogPricing($set, $definition);
+                            } else {
+                                self::clearPricingFields($set);
+                            }
                         } elseif ($state === AiModelCatalog::CUSTOM_MODEL) {
                             self::clearCatalogPricing($set);
                         }
@@ -74,10 +90,11 @@ class ModelsRelationManager extends RelationManager
                     ->live()
                     ->native(false)
                     ->searchable()
+                    ->optionsLimit(250)
                     ->required(fn (Get $get): bool => blank($get('model_name'))),
                 TextInput::make('model_name')
                     ->label('Название модели в API')
-                    ->helperText('Используйте это поле только если нужной модели пока нет в списке.')
+                    ->helperText('Расширенный режим: используйте только для новой, частной или нестандартной модели.')
                     ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                     ->required(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                     ->dehydratedWhenHidden()
@@ -117,7 +134,7 @@ class ModelsRelationManager extends RelationManager
                     ->inputMode('decimal')
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'input'))
                     ->nullable()
-                    ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                    ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                 TextInput::make('output_cost_per_million')
                     ->label('Ответ модели')
                     ->prefix('$')
@@ -126,7 +143,7 @@ class ModelsRelationManager extends RelationManager
                     ->inputMode('decimal')
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'output'))
                     ->nullable()
-                    ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                    ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                 Toggle::make('is_enabled')
                     ->label('Модель включена')
                     ->default(false),
@@ -141,7 +158,7 @@ class ModelsRelationManager extends RelationManager
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'cache_read'))
                             ->nullable()
-                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('cache_write_input_cost_per_million')
                             ->label('Запись в кеш')
                             ->prefix('$')
@@ -149,7 +166,7 @@ class ModelsRelationManager extends RelationManager
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'cache_write'))
                             ->nullable()
-                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('reasoning_cost_per_million')
                             ->label('Дополнительное рассуждение')
                             ->prefix('$')
@@ -157,7 +174,7 @@ class ModelsRelationManager extends RelationManager
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'reasoning'))
                             ->nullable()
-                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         Toggle::make('fixed_request_cost_applicable')
                             ->label('Есть фиксированная стоимость запроса')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): bool => $record === null
@@ -170,7 +187,7 @@ class ModelsRelationManager extends RelationManager
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'fixed'))
                             ->nullable()
-                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/'),
+                            ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('unsupported_meters')
                             ->label('Другие списания')
                             ->helperText('Перечислите через запятую то, что нельзя посчитать в этой настройке. Такую модель нельзя активировать до уточнения стоимости.')
@@ -241,8 +258,8 @@ class ModelsRelationManager extends RelationManager
                             return 'Стоимость не задана';
                         }
 
-                        return '$'.AiMoney::decimalFromMinorUnits($pricing->inputCostPerMillionMinorUnits)
-                            .' / $'.AiMoney::decimalFromMinorUnits($pricing->outputCostPerMillionMinorUnits);
+                        return '$'.AiMoney::displayDecimalFromRateUnits($pricing->inputRatePerMillionUnits())
+                            .' / $'.AiMoney::displayDecimalFromRateUnits($pricing->outputRatePerMillionUnits());
                     }),
             ])
             ->emptyStateHeading('Моделей пока нет')
@@ -347,13 +364,51 @@ class ModelsRelationManager extends RelationManager
         return $selection === AiModelCatalog::CUSTOM_MODEL || $selection === null || $selection === '';
     }
 
-    private static function definition(string $provider, mixed $selection): ?AiModelDefinition
-    {
+    private static function definition(
+        AiProviderConfiguration $provider,
+        mixed $selection,
+        ?AiModelConfiguration $record = null,
+    ): ?AiModelDefinition {
         try {
-            return AiModelCatalog::selectedDefinition($provider, $selection);
+            $definition = app(AiModelDiscoveryService::class)->definitionFor($provider, $selection);
+            if ($definition !== null) {
+                return $definition;
+            }
         } catch (\InvalidArgumentException) {
-            return null;
         }
+
+        return self::persistedDefinition($provider, $selection, $record);
+    }
+
+    /** @return list<AiModelDefinition> */
+    private static function discoveredDefinitions(
+        AiProviderConfiguration $provider,
+        ?AiModelConfiguration $record = null,
+    ): array {
+        try {
+            $definitions = app(AiModelDiscoveryService::class)->definitionsFor($provider);
+        } catch (\Throwable) {
+            $definitions = [];
+        }
+
+        $persisted = self::persistedDefinition($provider, $record?->model_name, $record);
+        if ($persisted !== null && ! collect($definitions)->contains(
+            static fn (AiModelDefinition $definition): bool => $definition->modelName === $persisted->modelName,
+        )) {
+            $definitions[] = $persisted;
+        }
+
+        return $definitions;
+    }
+
+    private static function selection(
+        AiProviderConfiguration $provider,
+        string $model,
+        ?AiModelConfiguration $record = null,
+    ): string {
+        return self::definition($provider, $model, $record) instanceof AiModelDefinition
+            ? $model
+            : AiModelCatalog::CUSTOM_MODEL;
     }
 
     private static function supportedInputs(
@@ -361,7 +416,7 @@ class ModelsRelationManager extends RelationManager
         mixed $selection,
         ?AiModelConfiguration $record,
     ): string {
-        $definition = self::definition($provider->provider_name, $selection);
+        $definition = self::definition($provider, $selection, $record);
         if ($definition === null && $record !== null) {
             $definition = AiModelCatalog::find($provider->provider_name, $record->model_name);
         }
@@ -378,7 +433,7 @@ class ModelsRelationManager extends RelationManager
         mixed $selection,
         ?AiModelConfiguration $record,
     ): string {
-        $definition = self::definition($provider->provider_name, $selection);
+        $definition = self::definition($provider, $selection, $record);
         if ($record !== null
             && AiModelCatalog::pricingIsStale(
                 $provider->provider_name,
@@ -405,6 +460,49 @@ class ModelsRelationManager extends RelationManager
         return 'Стоимость не задана';
     }
 
+    private static function persistedDefinition(
+        AiProviderConfiguration $provider,
+        mixed $selection,
+        ?AiModelConfiguration $record,
+    ): ?AiModelDefinition {
+        if (! $record instanceof AiModelConfiguration
+            || ! is_string($selection)
+            || trim($selection) === ''
+            || trim($selection) !== $record->model_name) {
+            return null;
+        }
+
+        $pricing = $record->getPricingSnapshot();
+        if ($pricing->pricingSource !== AiPricingSnapshot::SOURCE_CATALOG
+            || ! AiModelCatalog::isImmutableDiscoveredPricing($provider->provider_name, $pricing)
+            || AiModelCatalog::find($provider->provider_name, $record->model_name) !== null) {
+            return null;
+        }
+
+        $modalities = array_values(array_intersect(
+            $record->capabilities,
+            array_map(
+                static fn (AiModelModality $modality): string => $modality->value,
+                AiModelModality::cases(),
+            ),
+        ));
+
+        return AiModelDefinition::fromArray([
+            'provider' => $provider->provider_name,
+            'model' => $record->model_name,
+            'display_name' => $record->display_name,
+            'family' => 'Сохранённая модель',
+            'summary' => 'Модель сохранена из подключённого каталога; её текущая запись провайдера временно недоступна.',
+            'positioning' => 'Ранее обнаруженная',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => $modalities,
+            'pricing' => $pricing->toArray(),
+            'lifecycle' => 'active',
+            'catalog_source' => $pricing->catalogSource,
+            'pricing_as_of' => $pricing->catalogPricingAsOf,
+        ]);
+    }
+
     private static function fillCatalogPricing(Set $set, AiModelDefinition $definition): void
     {
         $pricing = $definition->pricing;
@@ -412,14 +510,31 @@ class ModelsRelationManager extends RelationManager
             return;
         }
 
-        $set('input_cost_per_million', AiMoney::decimalFromMinorUnits($pricing->inputCostPerMillionMinorUnits));
-        $set('output_cost_per_million', AiMoney::decimalFromMinorUnits($pricing->outputCostPerMillionMinorUnits));
-        $set('cache_read_input_cost_per_million', self::decimalOrNull($pricing->cacheReadInputCostPerMillionMinorUnits));
-        $set('cache_write_input_cost_per_million', self::decimalOrNull($pricing->cacheWriteInputCostPerMillionMinorUnits));
-        $set('reasoning_cost_per_million', self::decimalOrNull($pricing->reasoningCostPerMillionMinorUnits));
+        $set('input_cost_per_million', AiMoney::displayDecimalFromRateUnits($pricing->inputRatePerMillionUnits()));
+        $set('output_cost_per_million', AiMoney::displayDecimalFromRateUnits($pricing->outputRatePerMillionUnits()));
+        $set('cache_read_input_cost_per_million', self::decimalOrNull($pricing->cacheReadRatePerMillionUnits()));
+        $set('cache_write_input_cost_per_million', self::decimalOrNull($pricing->cacheWriteRatePerMillionUnits()));
+        $set('reasoning_cost_per_million', self::decimalOrNull($pricing->reasoningRatePerMillionUnits()));
         $set('fixed_request_cost_applicable', $pricing->fixedRequestCostApplicable);
-        $set('fixed_request_cost_minor_units', self::decimalOrNull($pricing->fixedRequestCostMinorUnits));
+        $set('fixed_request_cost_minor_units', self::decimalOrNull($pricing->fixedRequestRateUnits()));
         $set('unsupported_meters', implode(', ', $pricing->unsupportedMeters));
+    }
+
+    private static function clearPricingFields(Set $set): void
+    {
+        foreach ([
+            'input_cost_per_million',
+            'output_cost_per_million',
+            'cache_read_input_cost_per_million',
+            'cache_write_input_cost_per_million',
+            'reasoning_cost_per_million',
+            'fixed_request_cost_minor_units',
+            'unsupported_meters',
+        ] as $field) {
+            $set($field, null);
+        }
+
+        $set('fixed_request_cost_applicable', false);
     }
 
     private static function clearCatalogPricing(Set $set): void
@@ -441,9 +556,9 @@ class ModelsRelationManager extends RelationManager
         $set('model_modalities', []);
     }
 
-    private static function decimalOrNull(?int $minorUnits): ?string
+    private static function decimalOrNull(?int $rateUnits): ?string
     {
-        return $minorUnits === null ? null : AiMoney::decimalFromMinorUnits($minorUnits);
+        return $rateUnits === null ? null : AiMoney::displayDecimalFromRateUnits($rateUnits);
     }
 
     private static function moneyState(mixed $state, ?AiModelConfiguration $record, string $field): string
@@ -454,17 +569,17 @@ class ModelsRelationManager extends RelationManager
                 return '';
             }
 
-            $minorUnits = match ($field) {
-                'input' => $pricing->inputCostPerMillionMinorUnits,
-                'output' => $pricing->outputCostPerMillionMinorUnits,
-                'cache_read' => $pricing->cacheReadInputCostPerMillionMinorUnits,
-                'cache_write' => $pricing->cacheWriteInputCostPerMillionMinorUnits,
-                'reasoning' => $pricing->reasoningCostPerMillionMinorUnits,
-                'fixed' => $pricing->fixedRequestCostMinorUnits,
+            $rateUnits = match ($field) {
+                'input' => $pricing->inputRatePerMillionUnits(),
+                'output' => $pricing->outputRatePerMillionUnits(),
+                'cache_read' => $pricing->cacheReadRatePerMillionUnits(),
+                'cache_write' => $pricing->cacheWriteRatePerMillionUnits(),
+                'reasoning' => $pricing->reasoningRatePerMillionUnits(),
+                'fixed' => $pricing->fixedRequestRateUnits(),
                 default => null,
             };
 
-            return self::decimalOrNull($minorUnits) ?? '';
+            return self::decimalOrNull($rateUnits) ?? '';
         }
 
         return $state === null || $state === '' ? '' : (string) $state;

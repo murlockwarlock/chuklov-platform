@@ -6,11 +6,14 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
+use InvalidArgumentException;
 
 final class CreateModelConfiguration
 {
@@ -18,6 +21,7 @@ final class CreateModelConfiguration
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly ?AiModelDiscoveryService $modelDiscovery = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -30,7 +34,15 @@ final class CreateModelConfiguration
             throw new AuthorizationException('Provider configuration is outside the current organization.');
         }
 
-        $input = AiModelConfigurationInput::forCreate($provider, $data);
+        if (AiProviderCatalog::isSpecialized($provider->provider_name)) {
+            throw new InvalidArgumentException('Embedding, reranking and audio providers use their specialized configuration.');
+        }
+
+        $discoveredDefinition = ($this->modelDiscovery ?? app(AiModelDiscoveryService::class))->definitionFor(
+            provider: $provider,
+            model: $data['model_selection'] ?? null,
+        );
+        $input = AiModelConfigurationInput::forCreate($provider, $data, $discoveredDefinition);
         $model = AiModelConfiguration::create([
             'organization_id' => $organization->getKey(),
             'provider_config_id' => $provider->getKey(),

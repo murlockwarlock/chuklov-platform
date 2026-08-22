@@ -30,6 +30,10 @@ final readonly class AiModelDefinition
         public ?string $pricingAsOf = null,
         public array $pricingPeriods = [],
         public ?AiPricingPeriod $currentPricingPeriod = null,
+        public ?string $summary = null,
+        public ?string $positioning = null,
+        public bool $recommended = false,
+        public ?int $contextWindowTokens = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -54,11 +58,16 @@ final readonly class AiModelDefinition
                 throw new InvalidArgumentException('The AI model modality is invalid.');
             }
 
+            if (! in_array($parsed->value, AiProviderCatalog::modalities($provider), true)) {
+                throw new InvalidArgumentException('The AI model modality is not supported by the provider adapter.');
+            }
+
             $modalities[$parsed->value] = $parsed;
         }
 
         $catalogSource = self::nullableString($data['catalog_source'] ?? null, 'catalog_source');
         $pricingAsOf = self::nullableDate($data['pricing_as_of'] ?? null, 'pricing_as_of');
+        $contextWindowTokens = self::nullablePositiveInt($data['context_window_tokens'] ?? null, 'context_window_tokens');
         $pricingPeriods = self::pricingPeriods($data, $catalogSource, $pricingAsOf);
         AiPricingPeriod::assertNonOverlapping($pricingPeriods);
         $currentPricingPeriod = null;
@@ -90,6 +99,10 @@ final readonly class AiModelDefinition
             currentPricingPeriod: $currentPricingPeriod,
             catalogSource: $currentCatalogSource,
             pricingAsOf: $currentPricingAsOf,
+            summary: self::nullableString($data['summary'] ?? null, 'summary', 240),
+            positioning: self::nullableString($data['positioning'] ?? null, 'positioning'),
+            recommended: self::boolean($data['recommended'] ?? false, 'recommended'),
+            contextWindowTokens: $contextWindowTokens,
         );
     }
 
@@ -154,13 +167,22 @@ final readonly class AiModelDefinition
         return $value;
     }
 
-    private static function nullableString(mixed $value, string $field): ?string
+    private static function nullableString(mixed $value, string $field, int $maximumLength = 120): ?string
     {
         if ($value === null || $value === '') {
             return null;
         }
 
-        return self::requiredString($value, $field);
+        if (! is_string($value)) {
+            throw new InvalidArgumentException("The AI model {$field} is invalid.");
+        }
+
+        $value = trim($value);
+        if ($value === '' || mb_strlen($value) > $maximumLength) {
+            throw new InvalidArgumentException("The AI model {$field} is invalid.");
+        }
+
+        return $value;
     }
 
     private static function nullableDate(mixed $value, string $field): ?string
@@ -180,6 +202,35 @@ final readonly class AiModelDefinition
         if ($date === false
             || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
             || $date->format('Y-m-d') !== $value) {
+            throw new InvalidArgumentException("The AI model {$field} is invalid.");
+        }
+
+        return $value;
+    }
+
+    private static function nullablePositiveInt(mixed $value, string $field): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (is_string($value) && preg_match('/^[1-9][0-9]*$/', $value) === 1) {
+            $parsed = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($parsed !== false) {
+                return $parsed;
+            }
+        }
+
+        throw new InvalidArgumentException("The AI model {$field} is invalid.");
+    }
+
+    private static function boolean(mixed $value, string $field): bool
+    {
+        if (! is_bool($value)) {
             throw new InvalidArgumentException("The AI model {$field} is invalid.");
         }
 

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AiProviders\Schemas;
 
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\Knowledge\Domain\Registry\KnowledgeModelCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
@@ -41,10 +42,67 @@ class AiProviderForm
                     ->helperText(fn (Get $get): string => self::apiKeyHelp($get('provider_name')))
                     ->nullable()
                     ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->required(fn (Get $get, string $operation): bool => $operation === 'create' && blank($get('credential_id'))),
+                    ->required(fn (Get $get, string $operation): bool => $operation === 'create'
+                        && blank($get('credential_id'))
+                        && ! in_array(self::supportedProvider($get('provider_name')), ['ollama', 'openai_compatible'], true)),
                 Toggle::make('is_enabled')
                     ->label('Провайдер включен')
                     ->default(true),
+                Section::make('Расширенное подключение')
+                    ->description('Нужно только для локального сервера, OpenAI-compatible endpoint, Azure deployment или региона Bedrock.')
+                    ->collapsed()
+                    ->visible(fn (Get $get): bool => self::hasAdvancedConnection($get('provider_name')))
+                    ->schema([
+                        TextInput::make('options.base_url')
+                            ->label('Адрес API')
+                            ->placeholder('https://example.com/v1')
+                            ->url()
+                            ->required(fn (Get $get): bool => in_array(self::supportedProvider($get('provider_name')), ['openai_compatible', 'azure'], true))
+                            ->visible(fn (Get $get): bool => in_array(self::supportedProvider($get('provider_name')), ['openai_compatible', 'ollama', 'azure'], true))
+                            ->maxLength(500),
+                        TextInput::make('options.api_version')
+                            ->label('Версия Azure API')
+                            ->placeholder('2025-04-01-preview')
+                            ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'azure')
+                            ->maxLength(80),
+                        TextInput::make('options.deployment')
+                            ->label('Azure deployment')
+                            ->helperText('Имя deployment в вашем ресурсе Azure, а не глобальное имя модели.')
+                            ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'azure')
+                            ->maxLength(120),
+                        TextInput::make('options.region')
+                            ->label('Регион Bedrock')
+                            ->placeholder('us-east-1')
+                            ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'bedrock')
+                            ->maxLength(80),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
+                Section::make('База знаний')
+                    ->description('Это отдельные модели индексации и reranking: файл сначала превращается в текст, затем текст индексируется и только релевантные фрагменты попадают в AI-контекст.')
+                    ->collapsed()
+                    ->visible(fn (Get $get): bool => self::hasKnowledgeModelSettings($get('provider_name')))
+                    ->schema([
+                        Select::make('options.embedding_model')
+                            ->label('Модель индексации / embeddings')
+                            ->options(fn (Get $get): array => self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $get('provider_name')))
+                            ->helperText('Выберите модель для построения векторов базы знаний. Она не используется как обычная chat-модель.')
+                            ->searchable()
+                            ->native(false)
+                            ->nullable()
+                            ->visible(fn (Get $get): bool => self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $get('provider_name')) !== []),
+                        Select::make('options.reranking_model')
+                            ->label('Модель reranking')
+                            ->placeholder('Не использовать')
+                            ->options(fn (Get $get): array => self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $get('provider_name')))
+                            ->helperText('Опционально уточняет порядок уже найденных фрагментов; не заменяет embeddings.')
+                            ->searchable()
+                            ->native(false)
+                            ->nullable()
+                            ->visible(fn (Get $get): bool => self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $get('provider_name')) !== []),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
                 Section::make('Дополнительно: использовать сохранённый ключ')
                     ->description('Выберите уже сохранённый ключ, если он был добавлен ранее. Новый API-ключ надёжно сохраняется автоматически.')
                     ->collapsed()
@@ -142,5 +200,27 @@ class AiProviderForm
         } catch (\InvalidArgumentException) {
             return null;
         }
+    }
+
+    private static function hasAdvancedConnection(mixed $providerName): bool
+    {
+        return in_array(self::supportedProvider($providerName), ['openai_compatible', 'ollama', 'azure', 'bedrock'], true);
+    }
+
+    /** @return array<string, string> */
+    private static function knowledgeModelOptions(string $role, mixed $providerName): array
+    {
+        $provider = self::supportedProvider($providerName);
+        if ($provider === null) {
+            return [];
+        }
+
+        return KnowledgeModelCatalog::optionsFor($role, $provider);
+    }
+
+    private static function hasKnowledgeModelSettings(mixed $providerName): bool
+    {
+        return self::knowledgeModelOptions(KnowledgeModelCatalog::Embedding, $providerName) !== []
+            || self::knowledgeModelOptions(KnowledgeModelCatalog::Reranking, $providerName) !== [];
     }
 }

@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -13,6 +15,7 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 final class CreateAndActivateModelRelease
 {
@@ -20,6 +23,7 @@ final class CreateAndActivateModelRelease
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly ?AiModelDiscoveryService $modelDiscovery = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -50,7 +54,22 @@ final class CreateAndActivateModelRelease
             $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
         }
 
-        return DB::transaction(function () use ($organization, $actor, $modelConfig, $data, $providerManagementKeys): AiModelRelease {
+        $providerForDiscovery = $modelConfig->providerConfiguration;
+        if ($providerForDiscovery === null
+            || (int) $providerForDiscovery->organization_id !== (int) $organization->getKey()) {
+            throw new AuthorizationException('Model provider configuration is outside the current organization.');
+        }
+
+        if (AiProviderCatalog::isSpecialized($providerForDiscovery->provider_name)) {
+            throw new InvalidArgumentException('Embedding, reranking and audio providers use their specialized configuration.');
+        }
+
+        $discoveredDefinition = ($this->modelDiscovery ?? app(AiModelDiscoveryService::class))->definitionFor(
+            provider: $providerForDiscovery,
+            model: $data['model_selection'] ?? null,
+        );
+
+        return DB::transaction(function () use ($organization, $actor, $modelConfig, $data, $providerManagementKeys, $discoveredDefinition): AiModelRelease {
             $lockedConfig = AiModelConfiguration::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($modelConfig->getKey())
@@ -67,7 +86,7 @@ final class CreateAndActivateModelRelease
                 throw new AuthorizationException('Model provider configuration is outside the current organization.');
             }
 
-            $input = AiModelConfigurationInput::forRelease($lockedConfig, $data);
+            $input = AiModelConfigurationInput::forRelease($lockedConfig, $data, $discoveredDefinition);
             $input->pricing->assertComplete();
             $pricing = $input->pricing->toArray();
             $modelName = $input->modelName;

@@ -58,7 +58,7 @@ final class UpdateAiProviderConfiguration
             ? (array) $data['options']
             : (array) ($providerConfig->options ?? []);
         try {
-            AiProviderExecutionConfiguration::assertSupportedOptions($options);
+            $options = AiProviderExecutionConfiguration::normalizeOptions($providerName, $options);
         } catch (AiProviderProbeUnsupportedException $exception) {
             throw new InvalidArgumentException($exception->getMessage(), previous: $exception);
         }
