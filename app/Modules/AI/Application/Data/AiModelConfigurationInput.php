@@ -59,16 +59,24 @@ final readonly class AiModelConfigurationInput
         ?AiModelConfiguration $existing,
         bool $defaultEnabled,
     ): self {
-        $definition = AiModelCatalog::selectedDefinition($provider, $data['model_selection'] ?? null);
+        $selection = $data['model_selection'] ?? null;
+        $definition = AiModelCatalog::selectedDefinition($provider, $selection);
+        $existingPricing = $existing?->getPricingSnapshot();
+        $explicitCustomSelection = array_key_exists('model_selection', $data)
+            && self::isCustomSelection($selection);
+        $discardExistingCatalogMetadata = $explicitCustomSelection
+            && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG;
         $existingModelName = $existing === null ? null : $existing->model_name;
-        $existingDisplayName = $existing === null ? null : $existing->display_name;
+        $existingDisplayName = $discardExistingCatalogMetadata || $existing === null
+            ? null
+            : $existing->display_name;
         $modelName = $definition !== null
             ? $definition->modelName
             : self::modelName($data['model_name'] ?? $existingModelName);
         $catalogDisplayName = $definition === null ? null : $definition->displayName;
         $displayName = self::displayName($data['display_name'] ?? $existingDisplayName ?? $catalogDisplayName);
-        $capabilities = self::capabilities($data, $existing, $definition);
-        $pricing = self::pricing($data, $existing?->getPricingSnapshot(), $definition?->pricing);
+        $capabilities = self::capabilities($data, $existing, $definition, $discardExistingCatalogMetadata);
+        $pricing = self::pricing($data, $existingPricing, $definition?->pricing, $discardExistingCatalogMetadata);
 
         return new self(
             modelName: $modelName,
@@ -90,22 +98,25 @@ final readonly class AiModelConfigurationInput
         array $data,
         ?AiModelConfiguration $existing,
         ?AiModelDefinition $definition,
+        bool $discardExistingCatalogMetadata,
     ): array {
         $capabilities = array_key_exists('capabilities', $data)
             ? self::stringList($data['capabilities'])
             : self::stringList($existing === null ? [] : $existing->capabilities);
-        $modalityValues = array_key_exists('model_modalities', $data)
-            ? self::stringList($data['model_modalities'])
-            : array_values(array_intersect(
+        if ($definition !== null) {
+            $modalityValues = array_map(
+                static fn (AiModelModality $modality): string => $modality->value,
+                $definition->modalities,
+            );
+        } elseif (array_key_exists('model_modalities', $data)) {
+            $modalityValues = self::stringList($data['model_modalities']);
+        } elseif ($discardExistingCatalogMetadata) {
+            $modalityValues = [];
+        } else {
+            $modalityValues = array_values(array_intersect(
                 self::stringList($existing === null ? [] : $existing->capabilities),
                 array_map(static fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()),
             ));
-
-        if ($definition !== null) {
-            $modalityValues = array_merge(
-                $modalityValues,
-                array_map(static fn (AiModelModality $modality): string => $modality->value, $definition->modalities),
-            );
         }
 
         return array_values(array_unique([...$capabilities, ...$modalityValues]));
@@ -116,12 +127,13 @@ final readonly class AiModelConfigurationInput
         array $data,
         ?AiPricingSnapshot $existing,
         ?AiPricingSnapshot $catalogPricing,
+        bool $discardExistingCatalogMetadata,
     ): AiPricingSnapshot {
         if (array_key_exists('pricing_snapshot', $data)) {
             return self::directPricing($data['pricing_snapshot']);
         }
 
-        $base = $catalogPricing ?? $existing;
+        $base = $catalogPricing ?? ($discardExistingCatalogMetadata ? null : $existing);
         $priceFields = [
             'input_cost_per_million',
             'output_cost_per_million',
@@ -244,6 +256,11 @@ final readonly class AiModelConfigurationInput
         }
 
         return trim($value);
+    }
+
+    private static function isCustomSelection(mixed $selection): bool
+    {
+        return $selection === null || $selection === '' || $selection === AiModelCatalog::CUSTOM_MODEL;
     }
 
     private static function displayName(mixed $value): string

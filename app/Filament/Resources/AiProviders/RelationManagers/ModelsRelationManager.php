@@ -65,11 +65,10 @@ class ModelsRelationManager extends RelationManager
                                 $set('display_name', $definition->displayName);
                             }
 
+                            $set('model_modalities', []);
                             self::fillCatalogPricing($set, $definition);
                         } elseif ($state === AiModelCatalog::CUSTOM_MODEL) {
-                            $set('model_name', null);
-                            $set('input_cost_per_million', null);
-                            $set('output_cost_per_million', null);
+                            self::clearCatalogPricing($set);
                         }
                     })
                     ->live()
@@ -182,6 +181,12 @@ class ModelsRelationManager extends RelationManager
                         CheckboxList::make('model_modalities')
                             ->label('Типы входных данных для ручной модели')
                             ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => $modality->label()])->all())
+                            ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): array => $record === null
+                                ? (is_array($state) ? $state : [])
+                                : array_values(array_intersect(
+                                    $record->capabilities,
+                                    array_map(fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()),
+                                )))
                             ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                             ->helperText('Для модели из каталога эти возможности определяются автоматически.')
                             ->columnSpanFull(),
@@ -415,6 +420,25 @@ class ModelsRelationManager extends RelationManager
         $set('fixed_request_cost_applicable', $pricing->fixedRequestCostApplicable);
         $set('fixed_request_cost_minor_units', self::decimalOrNull($pricing->fixedRequestCostMinorUnits));
         $set('unsupported_meters', implode(', ', $pricing->unsupportedMeters));
+    }
+
+    private static function clearCatalogPricing(Set $set): void
+    {
+        foreach ([
+            'model_name',
+            'display_name',
+            'input_cost_per_million',
+            'output_cost_per_million',
+            'cache_read_input_cost_per_million',
+            'cache_write_input_cost_per_million',
+            'reasoning_cost_per_million',
+            'fixed_request_cost_applicable',
+            'fixed_request_cost_minor_units',
+            'unsupported_meters',
+            'model_modalities',
+        ] as $field) {
+            $set($field, null);
+        }
     }
 
     private static function decimalOrNull(?int $minorUnits): ?string

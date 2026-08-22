@@ -21,4 +21,11 @@ class CreateAiProvider extends CreateRecord
 
         return app(ConnectAiProvider::class)->create($actor, $data);
     }
+
+    protected function afterCreate(): void
+    {
+        if (is_array($this->data)) {
+            unset($this->data['api_key']);
+        }
+    }
 }

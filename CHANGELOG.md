@@ -11,6 +11,7 @@ All notable implementation changes are recorded here. Requirement changes belong
   - Added the shared 12-provider catalog used by CRM and the provider factory, exact decimal-to-minor-unit conversion for budgets/pricing, safe OrganizationCredential selection, normal/advanced model and prompt settings, and focused Feature coverage. No migration, OQ-015 content, M11, Finance, Portal, Playwright, benchmark, hosted CI, deployment, or merge work was added.
   - Verified the prior Filament lookup P1 against the installed 5.7.6 Select implementation and actual dynamic-search path: `CODEX P1 NOT REPRODUCIBLE`; CRM production code was unchanged.
   - Staging remediation adds owner-facing provider connection, catalog-first model selection with custom fallback, catalog/manual/unknown pricing states, human capability and failover controls, generated prompt/evaluation identities, progressive-disclosure generation and safety settings, and regression coverage for secrecy, tenant scope, exact values, and immutable runtime contracts.
+  - Independent self-service hardening scrubs API-key state after create, rejects malformed catalog minor units, prevents known-to-custom metadata inheritance, preserves legacy manual modalities, and aligns bundled Anthropic/Gemini pricing and document support with current provider documentation.
 
 - CRM lookup/navigation cleanup:
   - Fixed Client view title and breadcrumbs to use the client name without the generic `Просмотр` level, with an ID fallback for blank names.

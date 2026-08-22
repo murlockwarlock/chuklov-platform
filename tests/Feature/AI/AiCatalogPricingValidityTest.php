@@ -48,39 +48,27 @@ final class AiCatalogPricingValidityTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_sonnet_pricing_resolves_the_active_period_at_each_boundary(): void
+    public function test_sonnet_current_standard_pricing_resolves_without_a_retirement_transition(): void
     {
         config()->set('ai.model_catalog', $this->defaultCatalog());
 
         $this->at('2026-08-22 00:00:00');
-        $introductory = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
-        self::assertNotNull($introductory);
-        self::assertNotNull($introductory->pricing);
-        self::assertSame(200, $introductory->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(1000, $introductory->pricing->outputCostPerMillionMinorUnits);
-        self::assertSame(20, $introductory->pricing->cacheReadInputCostPerMillionMinorUnits);
-        self::assertNull($introductory->pricing->cacheWriteInputCostPerMillionMinorUnits);
-        self::assertSame('2026-08-22 00:00:00', $introductory->pricing->catalogPricingEffectiveFrom);
-        self::assertSame('2026-08-31 23:59:59', $introductory->pricing->catalogPricingEffectiveUntil);
-
-        $this->at('2026-08-31 23:59:59');
-        $lastIntroductorySecond = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
-        self::assertNotNull($lastIntroductorySecond);
-        self::assertNotNull($lastIntroductorySecond->pricing);
-        self::assertSame(200, $lastIntroductorySecond->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(1000, $lastIntroductorySecond->pricing->outputCostPerMillionMinorUnits);
+        $current = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
+        self::assertNotNull($current);
+        self::assertNotNull($current->pricing);
+        self::assertSame(200, $current->pricing->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $current->pricing->outputCostPerMillionMinorUnits);
+        self::assertSame(20, $current->pricing->cacheReadInputCostPerMillionMinorUnits);
+        self::assertSame(400, $current->pricing->cacheWriteInputCostPerMillionMinorUnits);
+        self::assertNull($current->pricing->catalogPricingEffectiveFrom);
+        self::assertNull($current->pricing->catalogPricingEffectiveUntil);
+        self::assertSame('2026-08-22', $current->pricingAsOf);
 
         $this->at('2026-09-01 00:00:00');
-        $standard = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
-        self::assertNotNull($standard);
-        self::assertNotNull($standard->pricing);
-        self::assertSame(300, $standard->pricing->inputCostPerMillionMinorUnits);
-        self::assertSame(1500, $standard->pricing->outputCostPerMillionMinorUnits);
-        self::assertSame(30, $standard->pricing->cacheReadInputCostPerMillionMinorUnits);
-        self::assertNull($standard->pricing->cacheWriteInputCostPerMillionMinorUnits);
-        self::assertSame('2026-09-01 00:00:00', $standard->pricing->catalogPricingEffectiveFrom);
-        self::assertNull($standard->pricing->catalogPricingEffectiveUntil);
-        self::assertSame('2026-09-01', $standard->pricingAsOf);
+        $unchanged = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
+        self::assertNotNull($unchanged);
+        self::assertNotNull($unchanged->pricing);
+        self::assertSame($current->pricing->toArray(), $unchanged->pricing->toArray());
     }
 
     public function test_invalid_and_overlapping_catalog_periods_are_rejected(): void
@@ -129,6 +117,24 @@ final class AiCatalogPricingValidityTest extends TestCase
         AiModelCatalog::all();
     }
 
+    public function test_catalog_rejects_malformed_canonical_money_instead_of_casting_it(): void
+    {
+        config()->set('ai.model_catalog', [$this->catalogEntryWithPeriods([
+            [
+                'effective_from' => '2026-08-22 00:00:00',
+                'effective_until' => null,
+                'pricing' => [
+                    'currency' => 'USD',
+                    'input_cost_per_million_minor_units' => '2.50',
+                    'output_cost_per_million_minor_units' => 1000,
+                ],
+            ],
+        ])]);
+
+        $this->expectException(InvalidArgumentException::class);
+        AiModelCatalog::all();
+    }
+
     public function test_overlapping_periods_are_rejected_even_when_the_boundary_is_shared(): void
     {
         config()->set('ai.model_catalog', [$this->catalogEntryWithPeriods([
@@ -165,7 +171,7 @@ final class AiCatalogPricingValidityTest extends TestCase
         self::assertSame('Стоимость не задана', AiModelCatalog::pricingText($definition->pricing));
     }
 
-    public function test_known_catalog_model_can_be_configured_without_manual_pricing_after_the_transition(): void
+    public function test_known_catalog_model_can_be_configured_without_manual_pricing(): void
     {
         $this->at('2026-09-01 00:00:00');
         config()->set('ai.model_catalog', $this->defaultCatalog());
@@ -180,16 +186,16 @@ final class AiCatalogPricingValidityTest extends TestCase
 
         self::assertSame($organization->getKey(), $model->organization_id);
         self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $model->getPricingSnapshot()->pricingSource);
-        self::assertSame(300, $model->getPricingSnapshot()->inputCostPerMillionMinorUnits);
-        self::assertSame(1500, $model->getPricingSnapshot()->outputCostPerMillionMinorUnits);
+        self::assertSame(200, $model->getPricingSnapshot()->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $model->getPricingSnapshot()->outputCostPerMillionMinorUnits);
 
         $release = app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
             'model_selection' => 'claude-sonnet-5',
             'is_enabled' => true,
         ]);
 
-        self::assertSame(300, $release->getPricingSnapshot()->inputCostPerMillionMinorUnits);
-        self::assertSame(1500, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
+        self::assertSame(200, $release->getPricingSnapshot()->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
     }
 
     public function test_old_release_remains_immutable_after_the_catalog_period_changes(): void
@@ -385,6 +391,16 @@ final class AiCatalogPricingValidityTest extends TestCase
         self::assertSame(30, $gemini->pricing->inputCostPerMillionMinorUnits);
         self::assertSame(250, $gemini->pricing->outputCostPerMillionMinorUnits);
         self::assertSame(3, $gemini->pricing->cacheReadInputCostPerMillionMinorUnits);
+        self::assertContains('document_input', array_map(
+            static fn (\BackedEnum $modality): string => $modality->value,
+            $gemini->modalities,
+        ));
+        $anthropic = AiModelCatalog::find('anthropic', 'claude-sonnet-5');
+        self::assertNotNull($anthropic);
+        self::assertContains('document_input', array_map(
+            static fn (\BackedEnum $modality): string => $modality->value,
+            $anthropic->modalities,
+        ));
         self::assertFalse(AiModelCatalog::pricingIsStale('openai', 'gpt-5.6-terra', $terra->pricing));
         self::assertFalse(AiModelCatalog::pricingIsStale('gemini', 'gemini-2.5-flash', $gemini->pricing));
     }
@@ -393,7 +409,7 @@ final class AiCatalogPricingValidityTest extends TestCase
     private function sonnetRelease(bool $withCredential = false): array
     {
         $this->at('2026-08-22 12:00:00');
-        config()->set('ai.model_catalog', $this->defaultCatalog());
+        config()->set('ai.model_catalog', $this->transitionCatalog());
         [, $owner] = $this->organizationFixture();
         $provider = $withCredential
             ? $this->providerWithCredential('anthropic')
@@ -473,6 +489,34 @@ final class AiCatalogPricingValidityTest extends TestCase
         return $config['model_catalog'];
     }
 
+    /** @return list<array<string, mixed>> */
+    private function transitionCatalog(): array
+    {
+        return array_map(function (array $entry): array {
+            if ($entry['provider'] !== 'anthropic' || $entry['model'] !== 'claude-sonnet-5') {
+                return $entry;
+            }
+
+            unset($entry['pricing']);
+            $entry['pricing_periods'] = [
+                [
+                    'effective_from' => '2026-08-22 00:00:00',
+                    'effective_until' => '2026-08-31 23:59:59',
+                    'pricing' => $this->pricing(200, 1000),
+                    'pricing_as_of' => '2026-08-22',
+                ],
+                [
+                    'effective_from' => '2026-09-01 00:00:00',
+                    'effective_until' => null,
+                    'pricing' => $this->pricing(300, 1500),
+                    'pricing_as_of' => '2026-09-01',
+                ],
+            ];
+
+            return $entry;
+        }, $this->defaultCatalog());
+    }
+
     /**
      * @param  list<array<string, mixed>>  $periods
      * @return array<string, mixed>
@@ -499,6 +543,9 @@ final class AiCatalogPricingValidityTest extends TestCase
             'currency' => 'USD',
             'input_cost_per_million_minor_units' => $input,
             'output_cost_per_million_minor_units' => $output,
+            'cache_read_input_cost_per_million_minor_units' => 20,
+            'cache_write_input_cost_per_million_minor_units' => 400,
+            'reasoning_cost_per_million_minor_units' => 0,
             'fixed_request_cost_applicable' => false,
             'unsupported_meters' => [],
         ];

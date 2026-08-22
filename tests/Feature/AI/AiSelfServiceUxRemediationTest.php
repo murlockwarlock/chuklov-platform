@@ -57,6 +57,11 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             ->call('create')
             ->assertHasNoFormErrors();
 
+        self::assertStringNotContainsString(
+            'sk-owner-self-service-secret',
+            serialize($component->instance()->form->getRawState()),
+        );
+
         $provider = AiProviderConfiguration::query()->where('organization_id', $organization->getKey())->sole();
         $credential = OrganizationCredential::query()->where('id', $provider->credential_id)->sole();
 
@@ -96,6 +101,38 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertTrue($model->getPricingSnapshot()->isComplete());
     }
 
+    public function test_explicit_custom_edit_does_not_inherit_catalog_price_or_modalities(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('catalog-model', ['image_input'])]);
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => 'catalog-model',
+            'display_name' => 'Каталожная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+        ]);
+
+        $release = app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'custom-model',
+            'display_name' => 'Ручная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'input_cost_per_million' => '2.50',
+            'output_cost_per_million' => '10.00',
+            'cache_read_input_cost_per_million' => '0.25',
+            'cache_write_input_cost_per_million' => '0.50',
+            'reasoning_cost_per_million' => '1.25',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'is_enabled' => true,
+        ]);
+
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $release->getPricingSnapshot()->pricingSource);
+        self::assertSame('custom-model', $release->model_name);
+        self::assertSame(['general_assistant'], $release->capabilities);
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->refresh()->getPricingSnapshot()->pricingSource);
+    }
+
     public function test_default_catalog_contains_only_current_priced_choices_and_excludes_legacy_models(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 22, 12, 0, 0, 'UTC'));
@@ -126,6 +163,42 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertArrayNotHasKey('gemini-2.0-flash', AiModelCatalog::optionsForProvider('gemini'));
     }
 
+    public function test_switching_between_known_and_custom_models_clears_catalog_metadata(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('catalog-model', ['image_input'])]);
+        $provider = $this->provider('openai');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($owner)
+            ->test(ModelsRelationManager::class, [
+                'ownerRecord' => $provider,
+                'pageClass' => EditAiProvider::class,
+            ])
+            ->mountTableAction('create')
+            ->setTableActionData([
+                'model_selection' => 'catalog-model',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ])
+            ->setTableActionData([
+                'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            ])
+            ->assertTableActionDataSet([
+                'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                'model_name' => null,
+                'display_name' => null,
+                'input_cost_per_million' => null,
+                'output_cost_per_million' => null,
+                'cache_read_input_cost_per_million' => null,
+                'cache_write_input_cost_per_million' => null,
+                'reasoning_cost_per_million' => null,
+                'fixed_request_cost_applicable' => null,
+                'fixed_request_cost_minor_units' => null,
+                'unsupported_meters' => null,
+                'model_modalities' => [],
+            ]);
+    }
+
     public function test_known_catalog_models_are_priced_without_manual_token_entry(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 22, 12, 0, 0, 'UTC'));
@@ -134,7 +207,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
         $expected = [
             ['openai', 'gpt-5.6-terra', 200, 1200, 20, 250],
-            ['anthropic', 'claude-sonnet-5', 200, 1000, 20, null],
+            ['anthropic', 'claude-sonnet-5', 200, 1000, 20, 400],
             ['gemini', 'gemini-2.5-flash', 30, 250, 3, null],
         ];
 
@@ -179,7 +252,10 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             'provider_config_id' => $provider->getKey(),
             'model_name' => 'gpt-4o-mini',
             'display_name' => 'Сохранённая старая модель',
-            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::DocumentInput->value,
+            ],
             'pricing_snapshot' => (new AiPricingSnapshot(
                 inputCostPerMillionMinorUnits: 250,
                 outputCostPerMillionMinorUnits: 1000,
@@ -201,6 +277,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             ->assertTableActionDataSet([
                 'model_selection' => AiModelCatalog::CUSTOM_MODEL,
                 'model_name' => 'gpt-4o-mini',
+                'model_modalities' => [AiModelModality::DocumentInput->value],
             ]);
     }
 

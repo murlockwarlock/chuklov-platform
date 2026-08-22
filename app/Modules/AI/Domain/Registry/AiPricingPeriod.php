@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Domain\Registry;
 
+use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -39,25 +40,6 @@ final readonly class AiPricingPeriod
             throw new InvalidArgumentException('The AI pricing period must define pricing.');
         }
 
-        foreach ([
-            ['input_cost_per_million_minor_units', 'input_price_per_million'],
-            ['output_cost_per_million_minor_units', 'output_price_per_million'],
-        ] as $priceKeys) {
-            $hasPrice = false;
-            foreach ($priceKeys as $priceKey) {
-                if (array_key_exists($priceKey, $pricing)
-                    && $pricing[$priceKey] !== null
-                    && $pricing[$priceKey] !== '') {
-                    $hasPrice = true;
-                    break;
-                }
-            }
-
-            if (! $hasPrice) {
-                throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
-            }
-        }
-
         $effectiveFrom = self::parseBoundary($data['effective_from'] ?? null, 'effective_from');
         $effectiveUntil = self::parseBoundary($data['effective_until'] ?? null, 'effective_until');
         $catalogSource = self::optionalText(
@@ -70,7 +52,7 @@ final readonly class AiPricingPeriod
         );
 
         $snapshot = AiPricingSnapshot::fromArray([
-            ...$pricing,
+            ...self::normalizePricing($pricing),
             'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
             'catalog_pricing_effective_from' => $effectiveFrom?->format(self::DATE_TIME_FORMAT),
             'catalog_pricing_effective_until' => $effectiveUntil?->format(self::DATE_TIME_FORMAT),
@@ -84,6 +66,53 @@ final readonly class AiPricingPeriod
             catalogSource: $catalogSource,
             pricingAsOf: $pricingAsOf,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $pricing
+     * @return array<string, mixed>
+     */
+    private static function normalizePricing(array $pricing): array
+    {
+        $normalized = $pricing;
+
+        foreach ([
+            ['input_cost_per_million_minor_units', 'input_price_per_million'],
+            ['output_cost_per_million_minor_units', 'output_price_per_million'],
+        ] as [$canonicalKey, $legacyKey]) {
+            if (array_key_exists($canonicalKey, $pricing)) {
+                if ($pricing[$canonicalKey] === null || $pricing[$canonicalKey] === '') {
+                    throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
+                }
+
+                $normalized[$canonicalKey] = AiMoney::canonicalMinorUnits($pricing[$canonicalKey], $canonicalKey);
+                unset($normalized[$legacyKey]);
+
+                continue;
+            }
+
+            if (! array_key_exists($legacyKey, $pricing)
+                || $pricing[$legacyKey] === null
+                || $pricing[$legacyKey] === '') {
+                throw new InvalidArgumentException('The AI pricing period must define input and output prices.');
+            }
+
+            $normalized[$canonicalKey] = AiMoney::minorUnitsFromDecimal($pricing[$legacyKey]);
+            unset($normalized[$legacyKey]);
+        }
+
+        foreach ([
+            'cache_read_input_cost_per_million_minor_units',
+            'cache_write_input_cost_per_million_minor_units',
+            'reasoning_cost_per_million_minor_units',
+            'fixed_request_cost_minor_units',
+        ] as $key) {
+            if (array_key_exists($key, $pricing) && $pricing[$key] !== null) {
+                $normalized[$key] = AiMoney::canonicalMinorUnits($pricing[$key], $key);
+            }
+        }
+
+        return $normalized;
     }
 
     /** @param array<string, mixed> $pricing */
