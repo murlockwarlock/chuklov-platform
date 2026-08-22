@@ -31,6 +31,7 @@ final readonly class AiPricingSnapshot
         public ?string $catalogPricingEffectiveFrom = null,
         public ?string $catalogPricingEffectiveUntil = null,
         public ?string $catalogPricingAsOf = null,
+        public ?string $catalogSource = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -57,6 +58,9 @@ final readonly class AiPricingSnapshot
             : null;
         $catalogPricingAsOf = $source === self::SOURCE_CATALOG
             ? self::nullableDate($data['catalog_pricing_as_of'] ?? null, 'catalog_pricing_as_of')
+            : null;
+        $catalogSource = $source === self::SOURCE_CATALOG
+            ? self::nullableText($data['catalog_source'] ?? null, 'catalog_source')
             : null;
 
         if ($catalogPricingEffectiveFrom !== null
@@ -87,6 +91,7 @@ final readonly class AiPricingSnapshot
             catalogPricingEffectiveFrom: $catalogPricingEffectiveFrom,
             catalogPricingEffectiveUntil: $catalogPricingEffectiveUntil,
             catalogPricingAsOf: $catalogPricingAsOf,
+            catalogSource: $catalogSource,
         );
     }
 
@@ -123,7 +128,8 @@ final readonly class AiPricingSnapshot
         return $this->pricingSource === self::SOURCE_CATALOG
             && ($this->catalogPricingEffectiveFrom !== null
                 || $this->catalogPricingEffectiveUntil !== null
-                || $this->catalogPricingAsOf !== null);
+                || $this->catalogPricingAsOf !== null
+                || $this->catalogSource !== null);
     }
 
     public function sameBillablePricing(self $other): bool
@@ -201,6 +207,7 @@ final readonly class AiPricingSnapshot
             'catalog_pricing_effective_from' => $this->catalogPricingEffectiveFrom,
             'catalog_pricing_effective_until' => $this->catalogPricingEffectiveUntil,
             'catalog_pricing_as_of' => $this->catalogPricingAsOf,
+            'catalog_source' => $this->catalogSource,
         ];
     }
 
@@ -268,6 +275,24 @@ final readonly class AiPricingSnapshot
         if ($date === false
             || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
             || $date->format('Y-m-d') !== $value) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        return $value;
+    }
+
+    private static function nullableText(mixed $value, string $field): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        $value = trim($value);
+        if ($value === '' || mb_strlen($value) > 200) {
             throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
         }
 

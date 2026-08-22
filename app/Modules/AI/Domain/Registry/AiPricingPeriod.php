@@ -57,6 +57,7 @@ final readonly class AiPricingPeriod
             'catalog_pricing_effective_from' => $effectiveFrom?->format(self::DATE_TIME_FORMAT),
             'catalog_pricing_effective_until' => $effectiveUntil?->format(self::DATE_TIME_FORMAT),
             'catalog_pricing_as_of' => $pricingAsOf,
+            'catalog_source' => $catalogSource,
         ]);
 
         return new self(

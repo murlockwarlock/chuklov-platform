@@ -216,6 +216,406 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertSame(1000, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
     }
 
+    public function test_model_identity_transition_matrix_keeps_catalog_and_user_owned_state_separate(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        $guidedB = $this->catalogEntry('guided-b', [AiModelModality::DocumentInput->value]);
+        $guidedB['pricing']['input_cost_per_million_minor_units'] = 700;
+        $guidedB['pricing']['output_cost_per_million_minor_units'] = 1800;
+        config()->set('ai.model_catalog', [
+            $this->catalogEntry('guided-a', [AiModelModality::ImageInput->value]),
+            $guidedB,
+        ]);
+        $provider = $this->provider('openai');
+
+        $sourceModels = [
+            'guided' => app(CreateModelConfiguration::class)->handle($owner, $provider, [
+                'model_selection' => 'guided-a',
+                'display_name' => 'Исходная guided',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ]),
+            'custom' => app(CreateModelConfiguration::class)->handle($owner, $provider, [
+                'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                'model_name' => 'matrix-custom-a',
+                'display_name' => 'Исходная custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'model_modalities' => [AiModelModality::DocumentInput->value],
+                'input_cost_per_million' => '1.25',
+                'output_cost_per_million' => '5.00',
+                'cache_read_input_cost_per_million' => '0.10',
+                'cache_write_input_cost_per_million' => '0.20',
+                'reasoning_cost_per_million' => '0.30',
+            ]),
+            'legacy' => AiModelConfiguration::create([
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'provider_config_id' => $provider->getKey(),
+                'model_name' => 'matrix-legacy',
+                'display_name' => 'Исходная legacy',
+                'is_enabled' => false,
+                'capabilities' => [
+                    AiCapability::GeneralAssistant->value,
+                    AiModelModality::DocumentInput->value,
+                ],
+                'pricing_snapshot' => (new AiPricingSnapshot(
+                    inputCostPerMillionMinorUnits: 111,
+                    outputCostPerMillionMinorUnits: 222,
+                    cacheReadInputCostPerMillionMinorUnits: 1,
+                    cacheWriteInputCostPerMillionMinorUnits: 2,
+                    reasoningCostPerMillionMinorUnits: 3,
+                ))->toArray(),
+                'failover_priority' => 1,
+            ]),
+        ];
+
+        $cases = [
+            'guided_same' => [
+                'source' => 'guided',
+                'data' => ['model_selection' => 'guided-a'],
+                'model' => 'guided-a',
+                'display' => 'Исходная guided',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+                'input' => 250,
+                'output' => 1000,
+            ],
+            'guided_a_to_guided_b' => [
+                'source' => 'guided',
+                'data' => [
+                    'model_selection' => 'guided-b',
+                    'model_name' => 'forged-model-a',
+                    'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value],
+                    'model_modalities' => [AiModelModality::DocumentInput->value],
+                    'input_cost_per_million' => '99.00',
+                    'output_cost_per_million' => '199.00',
+                    'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+                    'catalog_source' => 'forged-source',
+                    'catalog_pricing_as_of' => '1900-01-01',
+                    'lifecycle' => 'retired',
+                ],
+                'model' => 'guided-b',
+                'display' => 'Исходная guided',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+                'input' => 700,
+                'output' => 1800,
+            ],
+            'guided_to_custom' => [
+                'source' => 'guided',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-from-guided',
+                    'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value],
+                    'model_modalities' => [],
+                    'fixed_request_cost_applicable' => false,
+                    'unsupported_meters' => [],
+                ],
+                'model' => 'matrix-custom-from-guided',
+                'display' => 'Исходная guided',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_UNKNOWN,
+                'input' => 0,
+                'output' => 0,
+            ],
+            'custom_same_partial' => [
+                'source' => 'custom',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-a',
+                    'display_name' => 'Изменённое custom',
+                ],
+                'model' => 'matrix-custom-a',
+                'display' => 'Изменённое custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+                'input' => 125,
+                'output' => 500,
+            ],
+            'custom_same_clear_modalities' => [
+                'source' => 'custom',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-a',
+                    'model_modalities' => [],
+                ],
+                'model' => 'matrix-custom-a',
+                'display' => 'Исходная custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+                'input' => 125,
+                'output' => 500,
+            ],
+            'custom_a_to_custom_b' => [
+                'source' => 'custom',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-b',
+                    'fixed_request_cost_applicable' => false,
+                    'unsupported_meters' => [],
+                ],
+                'model' => 'matrix-custom-b',
+                'display' => 'Исходная custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_UNKNOWN,
+                'input' => 0,
+                'output' => 0,
+            ],
+            'custom_a_to_custom_b_with_new_prices' => [
+                'source' => 'custom',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-b',
+                    'input_cost_per_million' => '9.00',
+                    'output_cost_per_million' => '10.00',
+                ],
+                'model' => 'matrix-custom-b',
+                'display' => 'Исходная custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+                'input' => 900,
+                'output' => 1000,
+            ],
+            'custom_to_guided' => [
+                'source' => 'custom',
+                'data' => [
+                    'model_selection' => 'guided-b',
+                    'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+                    'model_modalities' => [AiModelModality::ImageInput->value],
+                    'input_cost_per_million' => '1.00',
+                    'output_cost_per_million' => '2.00',
+                    'catalog_source' => 'forged-source',
+                ],
+                'model' => 'guided-b',
+                'display' => 'Исходная custom',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+                'input' => 700,
+                'output' => 1800,
+            ],
+            'legacy_same' => [
+                'source' => 'legacy',
+                'data' => [],
+                'model' => 'matrix-legacy',
+                'display' => 'Исходная legacy',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+                'input' => 111,
+                'output' => 222,
+            ],
+            'legacy_to_custom' => [
+                'source' => 'legacy',
+                'data' => [
+                    'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                    'model_name' => 'matrix-custom-from-legacy',
+                ],
+                'model' => 'matrix-custom-from-legacy',
+                'display' => 'Исходная legacy',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_UNKNOWN,
+                'input' => 0,
+                'output' => 0,
+            ],
+            'legacy_to_guided' => [
+                'source' => 'legacy',
+                'data' => ['model_selection' => 'guided-a'],
+                'model' => 'guided-a',
+                'display' => 'Исходная legacy',
+                'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value],
+                'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+                'input' => 250,
+                'output' => 1000,
+            ],
+        ];
+
+        foreach ($cases as $case => $expectation) {
+            $input = AiModelConfigurationInput::forRelease(
+                $sourceModels[$expectation['source']],
+                $expectation['data'],
+            );
+
+            self::assertSame($expectation['model'], $input->modelName, $case);
+            self::assertSame($expectation['display'], $input->displayName, $case);
+            self::assertSame($expectation['capabilities'], $input->capabilities, $case);
+            self::assertSame($expectation['pricing_source'], $input->pricing->pricingSource, $case);
+            self::assertSame($expectation['input'], $input->pricing->inputCostPerMillionMinorUnits, $case);
+            self::assertSame($expectation['output'], $input->pricing->outputCostPerMillionMinorUnits, $case);
+        }
+    }
+
+    public function test_model_configuration_input_rejects_forged_state_and_parses_money_once(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('guided-a', [AiModelModality::ImageInput->value])]);
+        $provider = $this->provider('openai');
+        $base = [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'strict-custom-model',
+            'display_name' => 'Строгая ручная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'input_cost_per_million' => '2.50',
+            'output_cost_per_million' => '10.00',
+            'cache_read_input_cost_per_million' => '0.25',
+            'cache_write_input_cost_per_million' => '0.50',
+            'reasoning_cost_per_million' => '1.25',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+        ];
+
+        $money = AiModelConfigurationInput::forCreate($provider, $base);
+        self::assertSame(250, $money->pricing->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $money->pricing->outputCostPerMillionMinorUnits);
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $money->pricing->pricingSource);
+
+        $invalidMoney = [
+            '2.50',
+            2.5,
+            '1e2',
+            '-1',
+            true,
+            [],
+            new \stdClass,
+            ' 1',
+            '01',
+        ];
+        foreach (['input_cost_per_million_minor_units', 'fixed_request_cost_minor_units'] as $field) {
+            foreach ($invalidMoney as $value) {
+                $snapshot = [
+                    'currency' => 'USD',
+                    'input_cost_per_million_minor_units' => 0,
+                    'output_cost_per_million_minor_units' => 0,
+                    'cache_read_input_cost_per_million_minor_units' => 0,
+                    'cache_write_input_cost_per_million_minor_units' => 0,
+                    'reasoning_cost_per_million_minor_units' => 0,
+                    'fixed_request_cost_applicable' => $field === 'fixed_request_cost_minor_units',
+                    'fixed_request_cost_minor_units' => 0,
+                    'unsupported_meters' => [],
+                ];
+                $snapshot[$field] = $value;
+
+                try {
+                    AiModelConfigurationInput::forCreate($provider, [
+                        ...$base,
+                        'pricing_snapshot' => $snapshot,
+                    ]);
+                    self::fail("Malformed canonical money was accepted for {$field}.");
+                } catch (InvalidArgumentException) {
+                    self::assertTrue(true);
+                }
+            }
+        }
+
+        $invalidPayloads = [
+            ['capabilities', [['general_assistant']]],
+            ['capabilities', ['not_a_chuklov_capability']],
+            ['model_modalities', ['audio_input']],
+            ['model_modalities', [['image_input']]],
+            ['is_enabled', 'false'],
+            ['fixed_request_cost_applicable', 'false'],
+            ['unsupported_meters', [new \stdClass]],
+        ];
+        foreach ($invalidPayloads as [$field, $value]) {
+            try {
+                AiModelConfigurationInput::forCreate($provider, [
+                    ...$base,
+                    $field => $value,
+                ]);
+                self::fail("Forged {$field} was accepted.");
+            } catch (InvalidArgumentException) {
+                self::assertTrue(true);
+            }
+        }
+
+        $guided = AiModelConfigurationInput::forCreate($provider, [
+            'model_selection' => 'guided-a',
+            'model_name' => 'forged-model-name',
+            'display_name' => 'Каталог',
+            'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::DocumentInput->value],
+            'model_modalities' => [AiModelModality::DocumentInput->value],
+            'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+            'catalog_source' => 'forged-source',
+            'catalog_pricing_as_of' => '1900-01-01',
+            'lifecycle' => 'retired',
+        ]);
+        self::assertSame('guided-a', $guided->modelName);
+        self::assertSame([AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value], $guided->capabilities);
+        self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $guided->pricing->pricingSource);
+        self::assertSame('test_catalog', $guided->pricing->catalogSource);
+        self::assertNull($guided->pricing->catalogPricingAsOf);
+
+        $custom = AiModelConfigurationInput::forCreate($provider, [
+            ...$base,
+            'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+            'catalog_source' => 'forged-source',
+            'catalog_pricing_as_of' => '1900-01-01',
+        ]);
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $custom->pricing->pricingSource);
+        self::assertNull($custom->pricing->catalogSource);
+        self::assertNull($custom->pricing->catalogPricingAsOf);
+
+        $retired = $this->catalogEntry('retired-model', []);
+        $retired['lifecycle'] = 'retired';
+        config()->set('ai.model_catalog', [$retired]);
+        try {
+            AiModelConfigurationInput::forCreate($provider, [
+                'model_selection' => 'retired-model',
+                'display_name' => 'Retired',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ]);
+            self::fail('A retired catalog model was accepted for a new configuration.');
+        } catch (InvalidArgumentException) {
+            self::assertTrue(true);
+        }
+
+        config()->set('ai.model_catalog', [$this->catalogEntry('guided-a', [])]);
+        try {
+            AiModelConfigurationInput::forCreate($provider, [
+                'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+                'model_name' => 'guided-a',
+                'display_name' => 'Collision',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ]);
+            self::fail('A custom identity colliding with the catalog was accepted.');
+        } catch (InvalidArgumentException) {
+            self::assertTrue(true);
+        }
+    }
+
+    public function test_partial_release_update_preserves_disabled_state_and_historical_release_data(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', []);
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'immutable-custom-model',
+            'display_name' => 'Immutable custom',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'input_cost_per_million' => '1.25',
+            'output_cost_per_million' => '5.00',
+            'cache_read_input_cost_per_million' => '0.10',
+            'cache_write_input_cost_per_million' => '0.20',
+            'reasoning_cost_per_million' => '0.30',
+            'is_enabled' => false,
+        ]);
+
+        $releaseOne = app(CreateAndActivateModelRelease::class)->handle($owner, $model, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'immutable-custom-model',
+            'is_enabled' => false,
+        ]);
+        $oldSnapshot = $releaseOne->getPricingSnapshot()->toArray();
+        $oldCapabilities = $releaseOne->capabilities;
+        $oldModelName = $releaseOne->model_name;
+
+        $releaseTwo = app(CreateAndActivateModelRelease::class)->handle($owner, $model->refresh(), []);
+
+        self::assertNotSame($releaseOne->getKey(), $releaseTwo->getKey());
+        self::assertFalse($model->refresh()->is_enabled);
+        self::assertSame($oldSnapshot, $releaseOne->refresh()->getPricingSnapshot()->toArray());
+        self::assertSame($oldCapabilities, $releaseOne->capabilities);
+        self::assertSame($oldModelName, $releaseOne->model_name);
+        self::assertSame($oldSnapshot, $releaseTwo->getPricingSnapshot()->toArray());
+    }
+
     public function test_default_catalog_contains_only_current_priced_choices_and_excludes_legacy_models(): void
     {
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 22, 12, 0, 0, 'UTC'));
@@ -246,7 +646,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertArrayNotHasKey('gemini-2.0-flash', AiModelCatalog::optionsForProvider('gemini'));
     }
 
-    public function test_switching_between_known_and_custom_models_clears_catalog_metadata(): void
+    public function test_switching_between_known_and_custom_models_clears_catalog_metadata_but_preserves_user_fields(): void
     {
         [, $owner] = $this->organizationFixture();
         config()->set('ai.model_catalog', [$this->catalogEntry('catalog-model', ['image_input'])]);
@@ -269,13 +669,13 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             ->assertTableActionDataSet([
                 'model_selection' => AiModelCatalog::CUSTOM_MODEL,
                 'model_name' => null,
-                'display_name' => null,
+                'display_name' => 'Каталожная модель',
                 'input_cost_per_million' => null,
                 'output_cost_per_million' => null,
                 'cache_read_input_cost_per_million' => null,
                 'cache_write_input_cost_per_million' => null,
                 'reasoning_cost_per_million' => null,
-                'fixed_request_cost_applicable' => null,
+                'fixed_request_cost_applicable' => false,
                 'fixed_request_cost_minor_units' => null,
                 'unsupported_meters' => null,
                 'model_modalities' => [],
@@ -620,6 +1020,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
                 'unsupported_meters' => [],
             ],
             'lifecycle' => 'active',
+            'catalog_source' => 'test_catalog',
         ];
     }
 }

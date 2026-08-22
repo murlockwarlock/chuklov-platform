@@ -124,11 +124,14 @@ final class AiModelCatalog
             return true;
         }
 
-        if ($pricing->hasCatalogPricingMetadata()
-            && ($pricing->catalogPricingEffectiveFrom !== $definition->pricing->catalogPricingEffectiveFrom
+        if ($definition->pricing->hasCatalogPricingMetadata()
+            || $pricing->hasCatalogPricingMetadata()) {
+            if ($pricing->catalogPricingEffectiveFrom !== $definition->pricing->catalogPricingEffectiveFrom
                 || $pricing->catalogPricingEffectiveUntil !== $definition->pricing->catalogPricingEffectiveUntil
-                || $pricing->catalogPricingAsOf !== $definition->pricing->catalogPricingAsOf)) {
-            return true;
+                || $pricing->catalogPricingAsOf !== $definition->pricing->catalogPricingAsOf
+                || $pricing->catalogSource !== $definition->pricing->catalogSource) {
+                return true;
+            }
         }
 
         return ! $pricing->sameBillablePricing($definition->pricing);

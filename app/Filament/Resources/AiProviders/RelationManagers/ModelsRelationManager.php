@@ -426,19 +426,19 @@ class ModelsRelationManager extends RelationManager
     {
         foreach ([
             'model_name',
-            'display_name',
             'input_cost_per_million',
             'output_cost_per_million',
             'cache_read_input_cost_per_million',
             'cache_write_input_cost_per_million',
             'reasoning_cost_per_million',
-            'fixed_request_cost_applicable',
             'fixed_request_cost_minor_units',
             'unsupported_meters',
-            'model_modalities',
         ] as $field) {
             $set($field, null);
         }
+
+        $set('fixed_request_cost_applicable', false);
+        $set('model_modalities', []);
     }
 
     private static function decimalOrNull(?int $minorUnits): ?string

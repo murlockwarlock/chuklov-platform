@@ -277,6 +277,36 @@ final class AiCatalogPricingValidityTest extends TestCase
             ->exists());
     }
 
+    public function test_catalog_snapshot_missing_or_changed_provenance_fails_closed(): void
+    {
+        config()->set('ai.model_catalog', $this->defaultCatalog());
+        $definition = AiModelCatalog::find('openai', 'gpt-5.6-terra');
+        self::assertNotNull($definition);
+        self::assertNotNull($definition->pricing);
+
+        $withoutMetadata = new AiPricingSnapshot(
+            inputCostPerMillionMinorUnits: $definition->pricing->inputCostPerMillionMinorUnits,
+            outputCostPerMillionMinorUnits: $definition->pricing->outputCostPerMillionMinorUnits,
+            cacheReadInputCostPerMillionMinorUnits: $definition->pricing->cacheReadInputCostPerMillionMinorUnits,
+            cacheWriteInputCostPerMillionMinorUnits: $definition->pricing->cacheWriteInputCostPerMillionMinorUnits,
+            reasoningCostPerMillionMinorUnits: $definition->pricing->reasoningCostPerMillionMinorUnits,
+            pricingSource: AiPricingSnapshot::SOURCE_CATALOG,
+        );
+        self::assertTrue(AiModelCatalog::pricingIsStale('openai', 'gpt-5.6-terra', $withoutMetadata));
+
+        $withForgedSource = new AiPricingSnapshot(
+            inputCostPerMillionMinorUnits: $definition->pricing->inputCostPerMillionMinorUnits,
+            outputCostPerMillionMinorUnits: $definition->pricing->outputCostPerMillionMinorUnits,
+            cacheReadInputCostPerMillionMinorUnits: $definition->pricing->cacheReadInputCostPerMillionMinorUnits,
+            cacheWriteInputCostPerMillionMinorUnits: $definition->pricing->cacheWriteInputCostPerMillionMinorUnits,
+            reasoningCostPerMillionMinorUnits: $definition->pricing->reasoningCostPerMillionMinorUnits,
+            pricingSource: AiPricingSnapshot::SOURCE_CATALOG,
+            catalogPricingAsOf: $definition->pricing->catalogPricingAsOf,
+            catalogSource: 'forged-source',
+        );
+        self::assertTrue(AiModelCatalog::pricingIsStale('openai', 'gpt-5.6-terra', $withForgedSource));
+    }
+
     public function test_practitioner_can_apply_the_current_catalog_price_as_a_new_release(): void
     {
         [$model, $oldRelease, $provider, $owner] = $this->sonnetRelease();

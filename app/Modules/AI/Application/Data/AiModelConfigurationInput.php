@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Application\Data;
 
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
@@ -9,6 +10,7 @@ use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Registry\AiModelDefinition;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use BackedEnum;
 use InvalidArgumentException;
 
 final readonly class AiModelConfigurationInput
@@ -59,27 +61,75 @@ final readonly class AiModelConfigurationInput
         ?AiModelConfiguration $existing,
         bool $defaultEnabled,
     ): self {
+        $selectionProvided = array_key_exists('model_selection', $data);
         $selection = $data['model_selection'] ?? null;
-        $definition = AiModelCatalog::selectedDefinition($provider, $selection);
+        $selectedDefinition = AiModelCatalog::selectedDefinition($provider, $selection);
         $existingPricing = $existing?->getPricingSnapshot();
-        $explicitCustomSelection = array_key_exists('model_selection', $data)
-            && self::isCustomSelection($selection);
         $existingCatalogDefinition = $existing === null
             ? null
             : AiModelCatalog::find($provider, $existing->model_name);
-        $discardExistingCatalogMetadata = $explicitCustomSelection
-            && $existingCatalogDefinition !== null;
         $existingModelName = $existing === null ? null : $existing->model_name;
-        $existingDisplayName = $discardExistingCatalogMetadata || $existing === null
-            ? null
-            : $existing->display_name;
+        $requestedModelName = ! $selectionProvided && array_key_exists('model_name', $data)
+            ? self::nullableModelName($data['model_name'])
+            : null;
+        $preserveExistingCatalogState = $existingCatalogDefinition !== null
+            && ! $selectionProvided
+            && ($requestedModelName === null || $requestedModelName === $existingModelName);
+        $definition = $preserveExistingCatalogState
+            ? $existingCatalogDefinition
+            : $selectedDefinition;
         $modelName = $definition !== null
             ? $definition->modelName
             : self::modelName($data['model_name'] ?? $existingModelName);
+        if ($definition === null && AiModelCatalog::find($provider, $modelName) !== null) {
+            throw new InvalidArgumentException('Выберите каталожную модель вместо ручной модели с таким же идентификатором.');
+        }
+
+        if ($definition !== null
+            && ! $definition->lifecycleStatus->isSelectableForNewConfiguration()
+            && ($existing === null || $existingModelName !== $definition->modelName)) {
+            throw new InvalidArgumentException('Выбранная модель больше недоступна для новых конфигураций.');
+        }
+
+        $sameGuidedIdentity = $existing !== null
+            && $existingCatalogDefinition !== null
+            && $definition !== null
+            && $existingModelName === $definition->modelName;
+        $sameManualIdentity = $existing !== null
+            && $existingCatalogDefinition === null
+            && $definition === null
+            && $existingModelName === $modelName;
+        $explicitCustomSelection = $selectionProvided
+            && ($selection === null || $selection === '' || $selection === AiModelCatalog::CUSTOM_MODEL);
+        $resetExistingCustomState = $existing !== null
+            && $definition === null
+            && (! $sameManualIdentity
+                || ($explicitCustomSelection
+                    && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG));
+        $forceCatalogState = $existing !== null
+            && $definition !== null
+            && ! $sameGuidedIdentity;
+        $catalogAuthoritative = $definition !== null && ! $preserveExistingCatalogState;
         $catalogDisplayName = $definition === null ? null : $definition->displayName;
+        $existingDisplayName = $existing === null ? null : $existing->display_name;
         $displayName = self::displayName($data['display_name'] ?? $existingDisplayName ?? $catalogDisplayName);
-        $capabilities = self::capabilities($data, $existing, $definition, $discardExistingCatalogMetadata);
-        $pricing = self::pricing($data, $existingPricing, $definition?->pricing, $discardExistingCatalogMetadata);
+        $capabilities = self::capabilities(
+            data: $data,
+            existing: $existing,
+            definition: $definition,
+            catalogAuthoritative: $catalogAuthoritative,
+            resetExistingCustomState: $resetExistingCustomState,
+        );
+        $pricing = self::pricing(
+            data: $data,
+            existing: $existingPricing,
+            catalogPricing: $definition?->pricing,
+            catalogAuthoritative: $catalogAuthoritative,
+            resetExistingCustomState: $resetExistingCustomState,
+            forceCatalogState: $forceCatalogState,
+            preserveExistingManualPricing: $sameGuidedIdentity
+                && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_MANUAL,
+        );
 
         return new self(
             modelName: $modelName,
@@ -88,8 +138,8 @@ final readonly class AiModelConfigurationInput
             pricing: $pricing,
             failoverPriority: self::positiveInteger($data['failover_priority'] ?? ($existing === null ? 1 : $existing->failover_priority)),
             isEnabled: array_key_exists('is_enabled', $data)
-                ? (bool) $data['is_enabled']
-                : $defaultEnabled,
+                ? self::boolean($data['is_enabled'], 'is_enabled')
+                : ($existing === null ? $defaultEnabled : $existing->is_enabled),
         );
     }
 
@@ -101,33 +151,28 @@ final readonly class AiModelConfigurationInput
         array $data,
         ?AiModelConfiguration $existing,
         ?AiModelDefinition $definition,
-        bool $discardExistingCatalogMetadata,
+        bool $catalogAuthoritative,
+        bool $resetExistingCustomState,
     ): array {
         $capabilities = array_key_exists('capabilities', $data)
-            ? self::stringList($data['capabilities'])
-            : self::stringList($existing === null ? [] : $existing->capabilities);
+            ? self::capabilityList($data['capabilities'])
+            : self::capabilityList($existing === null ? [] : $existing->capabilities);
         $allModalityValues = array_map(
             static fn (AiModelModality $modality): string => $modality->value,
             AiModelModality::cases(),
         );
-        if ($definition !== null) {
-            $capabilities = array_values(array_diff($capabilities, $allModalityValues));
+        if ($catalogAuthoritative && $definition !== null) {
             $modalityValues = array_map(
                 static fn (AiModelModality $modality): string => $modality->value,
                 $definition->modalities,
             );
         } elseif (array_key_exists('model_modalities', $data)) {
-            if ($discardExistingCatalogMetadata) {
-                $capabilities = array_values(array_diff($capabilities, $allModalityValues));
-            }
-
-            $modalityValues = self::stringList($data['model_modalities']);
-        } elseif ($discardExistingCatalogMetadata) {
-            $capabilities = array_values(array_diff($capabilities, $allModalityValues));
+            $modalityValues = self::modalityList($data['model_modalities']);
+        } elseif ($resetExistingCustomState) {
             $modalityValues = [];
         } else {
             $modalityValues = array_values(array_intersect(
-                self::stringList($existing === null ? [] : $existing->capabilities),
+                self::stringList($existing === null ? [] : $existing->capabilities, 'capabilities'),
                 $allModalityValues,
             ));
         }
@@ -140,13 +185,27 @@ final readonly class AiModelConfigurationInput
         array $data,
         ?AiPricingSnapshot $existing,
         ?AiPricingSnapshot $catalogPricing,
-        bool $discardExistingCatalogMetadata,
+        bool $catalogAuthoritative,
+        bool $resetExistingCustomState,
+        bool $forceCatalogState,
+        bool $preserveExistingManualPricing,
     ): AiPricingSnapshot {
+        if ($forceCatalogState) {
+            return $catalogPricing ?? self::unknownPricing();
+        }
+
         if (array_key_exists('pricing_snapshot', $data)) {
             return self::directPricing($data['pricing_snapshot']);
         }
 
-        $base = $catalogPricing ?? ($discardExistingCatalogMetadata ? null : $existing);
+        $base = $catalogAuthoritative
+            ? $catalogPricing
+            : ($resetExistingCustomState || ! $existing instanceof AiPricingSnapshot
+                ? null
+                : $existing);
+        if ($preserveExistingManualPricing) {
+            $base = $existing;
+        }
         $priceFields = [
             'input_cost_per_million',
             'output_cost_per_million',
@@ -154,7 +213,6 @@ final readonly class AiModelConfigurationInput
             'cache_write_input_cost_per_million',
             'reasoning_cost_per_million',
             'fixed_request_cost_minor_units',
-            'unsupported_meters',
         ];
         $hasManualInput = false;
         foreach ($priceFields as $field) {
@@ -163,28 +221,30 @@ final readonly class AiModelConfigurationInput
                 break;
             }
         }
-        if (($data['fixed_request_cost_applicable'] ?? false) === true) {
+        $fixedRequestCostApplicable = array_key_exists('fixed_request_cost_applicable', $data)
+            && $data['fixed_request_cost_applicable'] !== null
+            ? self::boolean($data['fixed_request_cost_applicable'], 'fixed_request_cost_applicable')
+            : null;
+        if ($fixedRequestCostApplicable !== null
+            && (($base === null && $fixedRequestCostApplicable)
+                || ($base !== null && $fixedRequestCostApplicable !== $base->fixedRequestCostApplicable))) {
+            $hasManualInput = true;
+        }
+        $unsupportedMeters = array_key_exists('unsupported_meters', $data)
+            ? self::unsupportedMeters($data['unsupported_meters'])
+            : null;
+        if ($unsupportedMeters !== null
+            && (($base === null && $unsupportedMeters !== [])
+                || ($base !== null && $unsupportedMeters !== $base->unsupportedMeters))) {
             $hasManualInput = true;
         }
 
         if ($base === null && ! $hasManualInput) {
-            return new AiPricingSnapshot(
-                cacheReadInputCostPerMillionMinorUnits: null,
-                cacheWriteInputCostPerMillionMinorUnits: null,
-                reasoningCostPerMillionMinorUnits: null,
-                fixedRequestCostMinorUnits: null,
-                pricingSource: AiPricingSnapshot::SOURCE_UNKNOWN,
-            );
+            return self::unknownPricing();
         }
 
         if ($base === null) {
-            $base = new AiPricingSnapshot(
-                cacheReadInputCostPerMillionMinorUnits: null,
-                cacheWriteInputCostPerMillionMinorUnits: null,
-                reasoningCostPerMillionMinorUnits: null,
-                fixedRequestCostMinorUnits: null,
-                pricingSource: AiPricingSnapshot::SOURCE_UNKNOWN,
-            );
+            $base = self::unknownPricing();
         }
 
         if (! $hasManualInput) {
@@ -202,16 +262,30 @@ final readonly class AiModelConfigurationInput
                 'output_cost_per_million',
                 $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN ? null : $base->outputCostPerMillionMinorUnits,
             ),
-            cacheReadInputCostPerMillionMinorUnits: self::optionalMinor($data, 'cache_read_input_cost_per_million', $base->cacheReadInputCostPerMillionMinorUnits),
-            cacheWriteInputCostPerMillionMinorUnits: self::optionalMinor($data, 'cache_write_input_cost_per_million', $base->cacheWriteInputCostPerMillionMinorUnits),
-            reasoningCostPerMillionMinorUnits: self::optionalMinor($data, 'reasoning_cost_per_million', $base->reasoningCostPerMillionMinorUnits),
-            fixedRequestCostApplicable: array_key_exists('fixed_request_cost_applicable', $data)
-                ? (bool) $data['fixed_request_cost_applicable']
-                : $base->fixedRequestCostApplicable,
+            cacheReadInputCostPerMillionMinorUnits: self::optionalMinor(
+                $data,
+                'cache_read_input_cost_per_million',
+                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
+                    ? 0
+                    : $base->cacheReadInputCostPerMillionMinorUnits,
+            ),
+            cacheWriteInputCostPerMillionMinorUnits: self::optionalMinor(
+                $data,
+                'cache_write_input_cost_per_million',
+                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
+                    ? 0
+                    : $base->cacheWriteInputCostPerMillionMinorUnits,
+            ),
+            reasoningCostPerMillionMinorUnits: self::optionalMinor(
+                $data,
+                'reasoning_cost_per_million',
+                $base->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN
+                    ? 0
+                    : $base->reasoningCostPerMillionMinorUnits,
+            ),
+            fixedRequestCostApplicable: $fixedRequestCostApplicable ?? $base->fixedRequestCostApplicable,
             fixedRequestCostMinorUnits: self::optionalMinor($data, 'fixed_request_cost_minor_units', $base->fixedRequestCostMinorUnits),
-            unsupportedMeters: array_key_exists('unsupported_meters', $data)
-                ? self::unsupportedMeters($data['unsupported_meters'])
-                : $base->unsupportedMeters,
+            unsupportedMeters: $unsupportedMeters ?? $base->unsupportedMeters,
             pricingSource: AiPricingSnapshot::SOURCE_MANUAL,
         );
 
@@ -256,6 +330,15 @@ final readonly class AiModelConfigurationInput
             );
         }
 
+        if (array_key_exists('fixed_request_cost_applicable', $value)
+            && ! is_bool($value['fixed_request_cost_applicable'])) {
+            throw new InvalidArgumentException('fixed_request_cost_applicable must be a boolean.');
+        }
+
+        if (array_key_exists('unsupported_meters', $value)) {
+            $value['unsupported_meters'] = self::unsupportedMeters($value['unsupported_meters']);
+        }
+
         return AiPricingSnapshot::fromArray([
             ...$value,
             'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
@@ -271,9 +354,17 @@ final readonly class AiModelConfigurationInput
         return trim($value);
     }
 
-    private static function isCustomSelection(mixed $selection): bool
+    private static function nullableModelName(mixed $value): ?string
     {
-        return $selection === null || $selection === '' || $selection === AiModelCatalog::CUSTOM_MODEL;
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_string($value) || trim($value) === '' || mb_strlen(trim($value)) > 120) {
+            throw new InvalidArgumentException('Укажите модель или выберите её из каталога.');
+        }
+
+        return trim($value);
     }
 
     private static function displayName(mixed $value): string
@@ -317,25 +408,112 @@ final readonly class AiModelConfigurationInput
     }
 
     /** @return list<string> */
-    private static function stringList(mixed $value): array
+    private static function capabilityList(mixed $value): array
     {
-        return array_values(array_unique(array_filter(
-            array_map(static fn (mixed $item): string => trim((string) $item), (array) $value),
-            static fn (string $item): bool => $item !== '',
-        )));
+        $modalityValues = array_map(
+            static fn (AiModelModality $modality): string => $modality->value,
+            AiModelModality::cases(),
+        );
+        $capabilities = [];
+
+        foreach (self::stringList($value, 'capabilities') as $capability) {
+            if (in_array($capability, $modalityValues, true)) {
+                continue;
+            }
+
+            if (AiCapability::tryFrom($capability) === null) {
+                throw new InvalidArgumentException('Выбрана неизвестная задача Chuklov.');
+            }
+
+            $capabilities[] = $capability;
+        }
+
+        return array_values(array_unique($capabilities));
+    }
+
+    /** @return list<string> */
+    private static function modalityList(mixed $value): array
+    {
+        $modalities = [];
+        foreach (self::stringList($value, 'model_modalities') as $modality) {
+            if (AiModelModality::tryFrom($modality) === null) {
+                throw new InvalidArgumentException('Выбран неизвестный тип входных данных модели.');
+            }
+
+            $modalities[] = $modality;
+        }
+
+        return array_values(array_unique($modalities));
+    }
+
+    /** @return list<string> */
+    private static function stringList(mixed $value, string $field): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new InvalidArgumentException("{$field} must be a list of strings.");
+        }
+
+        $items = [];
+        foreach ($value as $item) {
+            if ($item instanceof BackedEnum) {
+                $item = $item->value;
+            }
+
+            if (! is_string($item)) {
+                throw new InvalidArgumentException("{$field} must be a list of strings.");
+            }
+
+            $item = trim($item);
+            if ($item !== '') {
+                $items[] = $item;
+            }
+        }
+
+        return array_values(array_unique($items));
     }
 
     /** @return list<string> */
     private static function unsupportedMeters(mixed $value): array
     {
+        if ($value === null || $value === '') {
+            return [];
+        }
+
         $values = is_array($value)
-            ? $value
-            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
+            ? self::stringList($value, 'unsupported_meters')
+            : (is_string($value) ? preg_split('/\\s*,\\s*/', trim($value)) ?: [] : null);
+        if ($values === null) {
+            throw new InvalidArgumentException('unsupported_meters must be a string or list of strings.');
+        }
 
         return array_values(array_unique(array_filter(
-            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
+            array_map(static fn (string $meter): string => trim($meter), $values),
             static fn (string $meter): bool => $meter !== '',
         )));
+    }
+
+    private static function boolean(mixed $value, string $field): bool
+    {
+        if (! is_bool($value)) {
+            throw new InvalidArgumentException("{$field} must be a boolean.");
+        }
+
+        return $value;
+    }
+
+    private static function unknownPricing(): AiPricingSnapshot
+    {
+        return new AiPricingSnapshot(
+            cacheReadInputCostPerMillionMinorUnits: null,
+            cacheWriteInputCostPerMillionMinorUnits: null,
+            reasoningCostPerMillionMinorUnits: null,
+            fixedRequestCostMinorUnits: null,
+            pricingSource: AiPricingSnapshot::SOURCE_UNKNOWN,
+        );
     }
 
     private static function positiveInteger(mixed $value): int
