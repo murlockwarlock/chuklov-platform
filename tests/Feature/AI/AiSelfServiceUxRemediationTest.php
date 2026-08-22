@@ -162,7 +162,9 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             'is_enabled' => true,
         ]);
 
-        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->refresh()->getPricingSnapshot()->pricingSource);
+        self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $model->refresh()->getPricingSnapshot()->pricingSource);
+        self::assertSame(250, $model->getPricingSnapshot()->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $model->getPricingSnapshot()->outputCostPerMillionMinorUnits);
 
         $custom = AiModelConfigurationInput::forRelease($model, [
             'model_selection' => AiModelCatalog::CUSTOM_MODEL,
@@ -270,7 +272,23 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         $cases = [
             'guided_same' => [
                 'source' => 'guided',
-                'data' => ['model_selection' => 'guided-a'],
+                'data' => [
+                    'model_selection' => 'guided-a',
+                    'model_modalities' => [AiModelModality::DocumentInput->value],
+                    'input_cost_per_million' => '99.00',
+                    'output_cost_per_million' => '199.00',
+                    'pricing_snapshot' => [
+                        'currency' => 'USD',
+                        'input_cost_per_million_minor_units' => 9900,
+                        'output_cost_per_million_minor_units' => 19900,
+                        'cache_read_input_cost_per_million_minor_units' => 0,
+                        'cache_write_input_cost_per_million_minor_units' => 0,
+                        'reasoning_cost_per_million_minor_units' => 0,
+                        'fixed_request_cost_applicable' => false,
+                        'fixed_request_cost_minor_units' => 0,
+                        'unsupported_meters' => [],
+                    ],
+                ],
                 'model' => 'guided-a',
                 'display' => 'Исходная guided',
                 'capabilities' => [AiCapability::GeneralAssistant->value, AiModelModality::ImageInput->value],
@@ -439,6 +457,49 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             self::assertSame($expectation['input'], $input->pricing->inputCostPerMillionMinorUnits, $case);
             self::assertSame($expectation['output'], $input->pricing->outputCostPerMillionMinorUnits, $case);
         }
+    }
+
+    public function test_partial_guided_release_rehydrates_current_catalog_state_after_stale_model_data(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('guided-a', [AiModelModality::ImageInput->value])]);
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => 'guided-a',
+            'display_name' => 'Пользовательское название',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'failover_priority' => 2,
+            'is_enabled' => false,
+        ]);
+        $model->update([
+            'capabilities' => [
+                AiCapability::GeneralAssistant->value,
+                AiModelModality::DocumentInput->value,
+            ],
+            'pricing_snapshot' => (new AiPricingSnapshot(
+                inputCostPerMillionMinorUnits: 200,
+                outputCostPerMillionMinorUnits: 900,
+                cacheReadInputCostPerMillionMinorUnits: 20,
+                cacheWriteInputCostPerMillionMinorUnits: 40,
+                reasoningCostPerMillionMinorUnits: 0,
+                pricingSource: AiPricingSnapshot::SOURCE_CATALOG,
+            ))->toArray(),
+        ]);
+
+        $release = app(CreateAndActivateModelRelease::class)->handle($owner, $model->refresh(), []);
+
+        self::assertSame('guided-a', $release->model_name);
+        self::assertSame('Пользовательское название', $model->refresh()->display_name);
+        self::assertSame(2, $model->failover_priority);
+        self::assertFalse($model->is_enabled);
+        self::assertSame([
+            AiCapability::GeneralAssistant->value,
+            AiModelModality::ImageInput->value,
+        ], $release->capabilities);
+        self::assertSame(AiPricingSnapshot::SOURCE_CATALOG, $release->getPricingSnapshot()->pricingSource);
+        self::assertSame(250, $release->getPricingSnapshot()->inputCostPerMillionMinorUnits);
+        self::assertSame(1000, $release->getPricingSnapshot()->outputCostPerMillionMinorUnits);
+        self::assertSame('test_catalog', $release->getPricingSnapshot()->catalogSource);
     }
 
     public function test_model_configuration_input_rejects_forged_state_and_parses_money_once(): void

@@ -72,10 +72,10 @@ final readonly class AiModelConfigurationInput
         $requestedModelName = ! $selectionProvided && array_key_exists('model_name', $data)
             ? self::nullableModelName($data['model_name'])
             : null;
-        $preserveExistingCatalogState = $existingCatalogDefinition !== null
+        $useExistingCatalogDefinition = $existingCatalogDefinition !== null
             && ! $selectionProvided
             && ($requestedModelName === null || $requestedModelName === $existingModelName);
-        $definition = $preserveExistingCatalogState
+        $definition = $useExistingCatalogDefinition
             ? $existingCatalogDefinition
             : $selectedDefinition;
         $modelName = $definition !== null
@@ -91,10 +91,6 @@ final readonly class AiModelConfigurationInput
             throw new InvalidArgumentException('Выбранная модель больше недоступна для новых конфигураций.');
         }
 
-        $sameGuidedIdentity = $existing !== null
-            && $existingCatalogDefinition !== null
-            && $definition !== null
-            && $existingModelName === $definition->modelName;
         $sameManualIdentity = $existing !== null
             && $existingCatalogDefinition === null
             && $definition === null
@@ -106,10 +102,7 @@ final readonly class AiModelConfigurationInput
             && (! $sameManualIdentity
                 || ($explicitCustomSelection
                     && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG));
-        $forceCatalogState = $existing !== null
-            && $definition !== null
-            && ! $sameGuidedIdentity;
-        $catalogAuthoritative = $definition !== null && ! $preserveExistingCatalogState;
+        $catalogAuthoritative = $definition !== null;
         $catalogDisplayName = $definition === null ? null : $definition->displayName;
         $existingDisplayName = $existing === null ? null : $existing->display_name;
         $displayName = self::displayName($data['display_name'] ?? $existingDisplayName ?? $catalogDisplayName);
@@ -126,9 +119,6 @@ final readonly class AiModelConfigurationInput
             catalogPricing: $definition?->pricing,
             catalogAuthoritative: $catalogAuthoritative,
             resetExistingCustomState: $resetExistingCustomState,
-            forceCatalogState: $forceCatalogState,
-            preserveExistingManualPricing: $sameGuidedIdentity
-                && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_MANUAL,
         );
 
         return new self(
@@ -187,10 +177,8 @@ final readonly class AiModelConfigurationInput
         ?AiPricingSnapshot $catalogPricing,
         bool $catalogAuthoritative,
         bool $resetExistingCustomState,
-        bool $forceCatalogState,
-        bool $preserveExistingManualPricing,
     ): AiPricingSnapshot {
-        if ($forceCatalogState) {
+        if ($catalogAuthoritative) {
             return $catalogPricing ?? self::unknownPricing();
         }
 
@@ -198,14 +186,9 @@ final readonly class AiModelConfigurationInput
             return self::directPricing($data['pricing_snapshot']);
         }
 
-        $base = $catalogAuthoritative
-            ? $catalogPricing
-            : ($resetExistingCustomState || ! $existing instanceof AiPricingSnapshot
-                ? null
-                : $existing);
-        if ($preserveExistingManualPricing) {
-            $base = $existing;
-        }
+        $base = $resetExistingCustomState || ! $existing instanceof AiPricingSnapshot
+            ? null
+            : $existing;
         $priceFields = [
             'input_cost_per_million',
             'output_cost_per_million',
