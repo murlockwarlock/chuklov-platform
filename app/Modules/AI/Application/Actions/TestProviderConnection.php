@@ -10,6 +10,7 @@ use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
@@ -17,6 +18,7 @@ use Carbon\Carbon;
 class TestProviderConnection
 {
     public function __construct(
+        private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly AiProviderFactory $providerFactory,
     ) {}
@@ -28,10 +30,11 @@ class TestProviderConnection
     {
         $providerConfig = AiProviderConfiguration::query()
             ->with(['organization', 'credential'])
-            ->where('id', $providerConfigId)
+            ->where('organization_id', $this->context->id())
+            ->whereKey($providerConfigId)
             ->firstOrFail();
 
-        $organization = $providerConfig->organization;
+        $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
         $credential = $providerConfig->credential;

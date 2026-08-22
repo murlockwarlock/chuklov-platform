@@ -37,6 +37,7 @@ use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Registry\AiCapabilityDefinition;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
@@ -605,7 +606,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             }
 
             $pricing = $release->getPricingSnapshot();
-            if (! $pricing->isComplete()) {
+            if (! $pricing->isComplete()
+                || AiModelCatalog::pricingIsStale($release->provider_name, $release->model_name, $pricing)) {
                 continue;
             }
 

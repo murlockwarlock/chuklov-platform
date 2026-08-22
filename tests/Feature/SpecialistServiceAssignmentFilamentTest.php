@@ -170,6 +170,65 @@ final class SpecialistServiceAssignmentFilamentTest extends TestCase
         }
     }
 
+    public function test_assignment_selects_use_filament_dynamic_search_beyond_initial_options(): void
+    {
+        [$organization, $admin] = $this->fixture();
+
+        for ($index = 1; $index <= 55; $index++) {
+            Specialist::factory()->forOrganization($organization)->create([
+                'display_name' => 'A Specialist '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+            Service::factory()->forOrganization($organization)->create([
+                'name' => 'A Service '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $targetSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Z Target Specialist',
+        ]);
+        $targetService = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Z Target Service',
+        ]);
+        $otherOrganization = Organization::factory()->create();
+        $foreignSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create([
+            'display_name' => 'Z Target Specialist',
+        ]);
+        $foreignService = Service::factory()->forOrganization($otherOrganization)->create([
+            'name' => 'Z Target Service',
+        ]);
+
+        $component = Livewire::actingAs($admin)->test(CreateSpecialistServiceAssignment::class);
+
+        foreach ([
+            'specialist_id' => [$targetSpecialist, $foreignSpecialist, 'Z Target Specialist'],
+            'service_id' => [$targetService, $foreignService, 'Z Target Service'],
+        ] as $fieldName => [$target, $foreign, $targetLabel]) {
+            $select = $component->instance()->getSchemaComponent('form.'.$fieldName);
+            self::assertInstanceOf(Select::class, $select);
+            self::assertTrue($select->hasDynamicOptions());
+            self::assertTrue($select->hasDynamicSearchResults());
+
+            $initialOptions = $select->getOptionsForJs();
+            self::assertCount(50, $initialOptions);
+            self::assertFalse(collect($initialOptions)->contains('value', (string) $target->getKey()));
+
+            $searchResults = $component->instance()->callSchemaComponentMethod(
+                'form.'.$fieldName,
+                'getSearchResultsForJs',
+                ['search' => $targetLabel],
+            );
+
+            self::assertSame([
+                ['label' => $targetLabel, 'value' => (string) $target->getKey(), 'isDisabled' => false],
+            ], $searchResults);
+            self::assertFalse(collect($searchResults)->contains('value', (string) $foreign->getKey()));
+        }
+
+        $html = $component->html();
+        self::assertStringContainsString('hasDynamicOptions: true', $html);
+        self::assertStringContainsString('hasDynamicSearchResults: true', $html);
+    }
+
     /** @return array{Organization, User, Specialist, Service} */
     private function fixture(): array
     {

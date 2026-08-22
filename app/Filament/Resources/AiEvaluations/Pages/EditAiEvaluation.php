@@ -3,33 +3,24 @@
 namespace App\Filament\Resources\AiEvaluations\Pages;
 
 use App\Filament\Resources\AiEvaluations\AiEvaluationResource;
-use App\Modules\AI\Domain\Models\AiPrompt;
-use App\Modules\Organizations\Application\OrganizationContext;
+use App\Models\User;
+use App\Modules\AI\Application\Actions\UpdateAiEvaluationSuite;
+use App\Modules\AI\Domain\Models\AiEvalSuite;
 use Filament\Resources\Pages\EditRecord;
-use InvalidArgumentException;
+use Illuminate\Database\Eloquent\Model;
 
 class EditAiEvaluation extends EditRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
-    protected static ?string $title = 'Редактировать набор тестов AI';
+    protected static ?string $title = 'Редактировать проверку AI';
 
-    protected function mutateFormDataBeforeSave(array $data): array
+    protected function handleRecordUpdate(Model $record, array $data): Model
     {
-        $organizationId = app(OrganizationContext::class)->id();
-        if (! empty($data['prompt_id'])) {
-            $prompt = AiPrompt::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($data['prompt_id'])
-                ->first();
+        abort_unless($record instanceof AiEvalSuite, 404);
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
 
-            if ($prompt === null || $prompt->capability->value !== (string) ($data['capability'] ?? '')) {
-                throw new InvalidArgumentException('Evaluation prompt must belong to the current organization and capability.');
-            }
-        }
-
-        $data['organization_id'] = $organizationId;
-
-        return $data;
+        return app(UpdateAiEvaluationSuite::class)->handle($actor, $record, $data);
     }
 }

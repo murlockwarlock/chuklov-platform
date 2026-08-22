@@ -27,6 +27,68 @@ return [
     'default_for_embeddings' => 'openai',
     'default_for_reranking' => 'cohere',
 
+    'model_catalog' => [
+        [
+            'provider' => 'openai',
+            'model' => 'gpt-5.6-terra',
+            'display_name' => 'GPT-5.6 Terra',
+            'family' => 'GPT-5.6',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => ['image_input'],
+            'pricing' => [
+                'currency' => 'USD',
+                'input_cost_per_million_minor_units' => 200,
+                'output_cost_per_million_minor_units' => 1200,
+                'cache_read_input_cost_per_million_minor_units' => 20,
+                'cache_write_input_cost_per_million_minor_units' => 250,
+                'fixed_request_cost_applicable' => false,
+                'unsupported_meters' => [],
+            ],
+            'lifecycle' => 'active',
+            'catalog_source' => 'official_openai_api_models_and_pricing',
+            'pricing_as_of' => '2026-08-22',
+        ],
+        [
+            'provider' => 'anthropic',
+            'model' => 'claude-sonnet-5',
+            'display_name' => 'Claude Sonnet 5',
+            'family' => 'Claude 5',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => ['image_input', 'document_input'],
+            'pricing' => [
+                'currency' => 'USD',
+                'input_cost_per_million_minor_units' => 200,
+                'output_cost_per_million_minor_units' => 1000,
+                'cache_read_input_cost_per_million_minor_units' => 20,
+                'cache_write_input_cost_per_million_minor_units' => 400,
+                'fixed_request_cost_applicable' => false,
+                'unsupported_meters' => [],
+            ],
+            'lifecycle' => 'active',
+            'catalog_source' => 'official_anthropic_models_and_pricing',
+            'pricing_as_of' => '2026-08-22',
+        ],
+        [
+            'provider' => 'gemini',
+            'model' => 'gemini-2.5-flash',
+            'display_name' => 'Gemini 2.5 Flash',
+            'family' => 'Gemini 2.5',
+            'supported_capabilities' => ['text_generation', 'structured_output'],
+            'modalities' => ['image_input', 'document_input'],
+            'pricing' => [
+                'currency' => 'USD',
+                'input_cost_per_million_minor_units' => 30,
+                'output_cost_per_million_minor_units' => 250,
+                'cache_read_input_cost_per_million_minor_units' => 3,
+                'fixed_request_cost_applicable' => false,
+                'unsupported_meters' => [],
+            ],
+            'lifecycle' => 'active',
+            'catalog_source' => 'official_google_gemini_models_and_pricing',
+            'pricing_as_of' => '2026-08-22',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Caching

@@ -220,6 +220,68 @@ final class SessionAttachmentTest extends TestCase
         self::assertStringStartsWith('A Target.pdf · ', (string) $select->getOptionLabel());
     }
 
+    public function test_link_attachment_select_uses_filament_dynamic_search_beyond_initial_options(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $session = $this->makeSession($admin, $client, $specialist);
+
+        $target = $this->attachment(
+            $organization,
+            $admin,
+            $client,
+            AttachmentScanStatus::Cleared,
+            'Z Target.pdf',
+        );
+
+        foreach (range(1, 55) as $index) {
+            $this->attachment(
+                $organization,
+                $admin,
+                $client,
+                AttachmentScanStatus::Cleared,
+                'Archive '.$index.'.pdf',
+            );
+        }
+
+        $otherOrganization = Organization::factory()->create();
+        $otherAdmin = User::factory()->forOrganization($otherOrganization, OrganizationRole::Administrator)->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create();
+        $foreign = $this->attachment(
+            $otherOrganization,
+            $otherAdmin,
+            $otherClient,
+            AttachmentScanStatus::Cleared,
+            'Z Target.pdf',
+        );
+
+        $this->actingAs($admin);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->mountAction('linkAttachment');
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.attachment_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertTrue($select->hasDynamicOptions());
+        self::assertTrue($select->hasDynamicSearchResults());
+
+        $initialOptions = $select->getOptionsForJs();
+        self::assertCount(50, $initialOptions);
+        self::assertFalse(collect($initialOptions)->contains('value', (string) $target->getKey()));
+
+        $searchResults = $component->instance()->callSchemaComponentMethod(
+            'mountedActionSchema0.attachment_id',
+            'getSearchResultsForJs',
+            ['search' => 'Z Target'],
+        );
+
+        self::assertCount(1, $searchResults);
+        self::assertSame((string) $target->getKey(), $searchResults[0]['value']);
+        self::assertStringStartsWith('Z Target.pdf · ', $searchResults[0]['label']);
+        self::assertFalse(collect($searchResults)->contains('value', (string) $foreign->getKey()));
+    }
+
     /** @return array{Organization, User, Client, Specialist} */
     private function fixture(): array
     {

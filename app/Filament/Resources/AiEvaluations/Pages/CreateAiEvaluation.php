@@ -3,32 +3,22 @@
 namespace App\Filament\Resources\AiEvaluations\Pages;
 
 use App\Filament\Resources\AiEvaluations\AiEvaluationResource;
-use App\Modules\AI\Domain\Models\AiPrompt;
-use App\Modules\Organizations\Application\OrganizationContext;
+use App\Models\User;
+use App\Modules\AI\Application\Actions\CreateAiEvaluationSuite;
 use Filament\Resources\Pages\CreateRecord;
-use InvalidArgumentException;
+use Illuminate\Database\Eloquent\Model;
 
 class CreateAiEvaluation extends CreateRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
-    protected static ?string $title = 'Создать набор тестов AI';
+    protected static ?string $title = 'Создать проверку AI';
 
-    protected function mutateFormDataBeforeCreate(array $data): array
+    protected function handleRecordCreation(array $data): Model
     {
-        $data['organization_id'] = app(OrganizationContext::class)->id();
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
 
-        if (! empty($data['prompt_id'])) {
-            $prompt = AiPrompt::query()
-                ->where('organization_id', $data['organization_id'])
-                ->whereKey($data['prompt_id'])
-                ->first();
-
-            if ($prompt === null || $prompt->capability->value !== (string) ($data['capability'] ?? '')) {
-                throw new InvalidArgumentException('Evaluation prompt must belong to the current organization and capability.');
-            }
-        }
-
-        return $data;
+        return app(CreateAiEvaluationSuite::class)->handle($actor, $data);
     }
 }

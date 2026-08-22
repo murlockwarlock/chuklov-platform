@@ -6,8 +6,10 @@ use App\Models\User;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiProviderProbeUnsupportedException;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
@@ -17,6 +19,7 @@ use InvalidArgumentException;
 final class UpdateAiProviderConfiguration
 {
     public function __construct(
+        private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -24,20 +27,21 @@ final class UpdateAiProviderConfiguration
     /** @param array<string, mixed> $data */
     public function handle(User $actor, AiProviderConfiguration $providerConfig, array $data): AiProviderConfiguration
     {
-        $organization = $providerConfig->organization;
+        $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
         if ((int) $providerConfig->organization_id !== (int) $organization->getKey()) {
             throw new AuthorizationException('Provider configuration is outside the current organization.');
         }
 
-        $providerName = trim((string) ($data['provider_name'] ?? $providerConfig->provider_name));
-        if ($providerName === '' || preg_match('/^[a-z0-9._-]+$/', $providerName) !== 1) {
-            throw new InvalidArgumentException('The provider name is invalid.');
+        $providerName = AiProviderCatalog::normalize($providerConfig->provider_name);
+        if (array_key_exists('provider_name', $data)
+            && AiProviderCatalog::normalize($data['provider_name']) !== $providerName) {
+            throw new InvalidArgumentException('Provider identity cannot be changed after creation.');
         }
 
         $credentialId = array_key_exists('credential_id', $data)
-            ? ($data['credential_id'] === null || $data['credential_id'] === '' ? null : (int) $data['credential_id'])
+            ? self::credentialId($data['credential_id'])
             : $providerConfig->credential_id;
         $credential = null;
         if ($credentialId !== null) {
@@ -100,5 +104,24 @@ final class UpdateAiProviderConfiguration
         ksort($value);
 
         return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+    }
+
+    private static function credentialId(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return $value > 0 ? $value : null;
+        }
+
+        if (is_string($value) && ctype_digit($value)) {
+            $id = (int) $value;
+
+            return $id > 0 ? $id : null;
+        }
+
+        throw new InvalidArgumentException('The selected organization credential is invalid.');
     }
 }

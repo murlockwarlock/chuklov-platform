@@ -9,6 +9,7 @@ use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
@@ -268,7 +269,9 @@ final class ResolveAiExecutionCandidates
             return null;
         }
 
-        if ($providerConfig->tested_configuration_digest !== $configurationDigest || ! $pricing->isComplete()) {
+        if ($providerConfig->tested_configuration_digest !== $configurationDigest
+            || ! $pricing->isComplete()
+            || AiModelCatalog::pricingIsStale($release->provider_name, $release->model_name, $pricing)) {
             return null;
         }
 

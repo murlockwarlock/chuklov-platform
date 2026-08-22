@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\ValueObjects\AiParameterConfig;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -59,9 +60,11 @@ class CreatePromptDraft
             $latestVersion = AiPromptVersion::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('prompt_id', $prompt->id)
-                ->max('version') ?? 0;
+                ->orderByDesc('version')
+                ->lockForUpdate()
+                ->first();
 
-            $versionNumber = $latestVersion + 1;
+            $versionNumber = ((int) ($latestVersion->version ?? 0)) + 1;
 
             $version = new AiPromptVersion([
                 'organization_id' => $organization->getKey(),
@@ -70,11 +73,19 @@ class CreatePromptDraft
                 'status' => PromptVersionStatus::Draft,
                 'system_prompt' => $systemPrompt,
                 'user_prompt_template' => $userPromptTemplate,
-                'variables_schema' => (array) ($data['variables_schema'] ?? []),
-                'parameter_config' => (array) ($data['parameter_config'] ?? []),
-                'context_policy' => (array) ($data['context_policy'] ?? []),
-                'output_schema' => isset($data['output_schema']) ? (array) $data['output_schema'] : null,
-                'allowed_tools' => array_values(array_map('strval', (array) ($data['allowed_tools'] ?? []))),
+                'variables_schema' => array_key_exists('variables_schema', $data)
+                    ? (array) $data['variables_schema']
+                    : (array) ($latestVersion->variables_schema ?? []),
+                'parameter_config' => self::parameterConfig($data, $latestVersion),
+                'context_policy' => array_key_exists('context_policy', $data)
+                    ? (array) $data['context_policy']
+                    : (array) ($latestVersion->context_policy ?? []),
+                'output_schema' => array_key_exists('output_schema', $data)
+                    ? ($data['output_schema'] === null ? null : (array) $data['output_schema'])
+                    : ($latestVersion instanceof AiPromptVersion ? $latestVersion->output_schema : null),
+                'allowed_tools' => array_key_exists('allowed_tools', $data)
+                    ? array_values(array_map('strval', (array) $data['allowed_tools']))
+                    : array_map('strval', (array) ($latestVersion->allowed_tools ?? [])),
                 'change_notes' => isset($data['change_notes']) ? (string) $data['change_notes'] : null,
             ]);
             $version->save();
@@ -93,5 +104,38 @@ class CreatePromptDraft
 
             return $version;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function parameterConfig(array $data, ?AiPromptVersion $latestVersion): array
+    {
+        $parameterConfig = (array) ($latestVersion->parameter_config ?? []);
+        if (array_key_exists('parameter_config', $data)) {
+            $parameterConfig = [
+                ...$parameterConfig,
+                ...(array) $data['parameter_config'],
+            ];
+        }
+
+        foreach ([
+            'temperature',
+            'top_p',
+            'max_tokens',
+            'frequency_penalty',
+            'presence_penalty',
+            'timeout_seconds',
+        ] as $key) {
+            if (array_key_exists($key, $data)) {
+                $parameterConfig[$key] = $data[$key];
+            }
+        }
+
+        return array_replace(
+            $parameterConfig,
+            AiParameterConfig::fromArray($parameterConfig)->toArray(),
+        );
     }
 }

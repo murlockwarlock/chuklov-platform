@@ -3,11 +3,14 @@
 namespace App\Filament\Resources\AiPrompts\Pages;
 
 use App\Filament\Resources\AiPrompts\AiPromptResource;
+use App\Models\User;
 use App\Modules\AI\Application\Actions\ExportPromptBundle;
+use App\Modules\AI\Application\Actions\UpdateAiPrompt;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 class EditAiPrompt extends EditRecord
@@ -15,6 +18,16 @@ class EditAiPrompt extends EditRecord
     protected static string $resource = AiPromptResource::class;
 
     protected static ?string $title = 'Редактировать промпт';
+
+    protected function handleRecordUpdate(Model $record, array $data): Model
+    {
+        abort_unless($record instanceof AiPrompt, 404);
+
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        return app(UpdateAiPrompt::class)->handle($actor, $record, $data);
+    }
 
     protected function getHeaderActions(): array
     {

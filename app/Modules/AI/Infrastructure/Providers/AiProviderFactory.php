@@ -4,6 +4,7 @@ namespace App\Modules\AI\Infrastructure\Providers;
 
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Contracts\Events\Dispatcher;
 use InvalidArgumentException;
@@ -27,22 +28,6 @@ use Laravel\Ai\Providers\XaiProvider;
 
 class AiProviderFactory
 {
-    /** @var array<string, list<string>> */
-    private const PROVIDER_MODALITIES = [
-        'openai' => ['image_input', 'document_input'],
-        'azure' => ['image_input', 'document_input'],
-        'anthropic' => ['image_input', 'document_input'],
-        'gemini' => ['image_input', 'document_input'],
-        'openrouter' => ['image_input', 'document_input'],
-        'xai' => ['image_input', 'document_input'],
-        'bedrock' => ['image_input', 'document_input'],
-        'openai_compatible' => ['image_input'],
-        'groq' => ['image_input'],
-        'deepseek' => ['image_input'],
-        'ollama' => ['image_input'],
-        'mistral' => ['image_input'],
-    ];
-
     /** @param list<mixed> $requiredModalities */
     public static function supportsAttachments(
         string $providerName,
@@ -53,7 +38,11 @@ class AiProviderFactory
             return true;
         }
 
-        $supportedModalities = self::PROVIDER_MODALITIES[strtolower(trim($providerName))] ?? [];
+        try {
+            $supportedModalities = AiProviderCatalog::modalities($providerName);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
 
         foreach ($requiredModalities as $modality) {
             if (! $modality instanceof AiModelModality
@@ -83,7 +72,7 @@ class AiProviderFactory
         array $extraConfig = [],
     ): TextProvider {
         $secret = $this->resolveSecret($credential);
-        $driver = strtolower($providerName);
+        $driver = AiProviderCatalog::normalize($providerName);
 
         $config = array_merge([
             'driver' => $driver,
@@ -138,7 +127,7 @@ class AiProviderFactory
     /** @param array<string, mixed> $options */
     public function testConnectivity(string $providerName, OrganizationCredential $credential, array $options = []): void
     {
-        $driver = strtolower($providerName);
+        $driver = AiProviderCatalog::normalize($providerName);
         $secret = $this->resolveSecret($credential);
 
         if (trim($secret) === '') {

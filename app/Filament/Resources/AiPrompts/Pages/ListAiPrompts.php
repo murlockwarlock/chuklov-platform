@@ -4,7 +4,6 @@ namespace App\Filament\Resources\AiPrompts\Pages;
 
 use App\Filament\Resources\AiPrompts\AiPromptResource;
 use App\Modules\AI\Application\Actions\ImportPromptBundle;
-use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\Textarea;
@@ -26,12 +25,7 @@ class ListAiPrompts extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make()
-                ->mutateFormDataUsing(function (array $data): array {
-                    $data['organization_id'] = app(OrganizationContext::class)->id();
-
-                    return $data;
-                }),
+            CreateAction::make(),
             Action::make('import_bundle')
                 ->label('Импорт пакета (JSON)')
                 ->color('gray')
