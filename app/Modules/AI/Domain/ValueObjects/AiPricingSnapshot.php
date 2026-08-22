@@ -4,6 +4,8 @@ namespace App\Modules\AI\Domain\ValueObjects;
 
 use App\Modules\AI\Domain\Exceptions\AiPricingProfileIncompleteException;
 use Brick\Math\BigInteger;
+use DateTimeImmutable;
+use DateTimeZone;
 use InvalidArgumentException;
 
 final readonly class AiPricingSnapshot
@@ -26,6 +28,9 @@ final readonly class AiPricingSnapshot
         /** @var list<string> */
         public array $unsupportedMeters = [],
         public string $pricingSource = self::SOURCE_MANUAL,
+        public ?string $catalogPricingEffectiveFrom = null,
+        public ?string $catalogPricingEffectiveUntil = null,
+        public ?string $catalogPricingAsOf = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -42,6 +47,22 @@ final readonly class AiPricingSnapshot
 
         if (! in_array($source, [self::SOURCE_CATALOG, self::SOURCE_MANUAL, self::SOURCE_UNKNOWN], true)) {
             throw new InvalidArgumentException('The AI pricing source is invalid.');
+        }
+
+        $catalogPricingEffectiveFrom = $source === self::SOURCE_CATALOG
+            ? self::nullableTimestamp($data['catalog_pricing_effective_from'] ?? null, 'catalog_pricing_effective_from')
+            : null;
+        $catalogPricingEffectiveUntil = $source === self::SOURCE_CATALOG
+            ? self::nullableTimestamp($data['catalog_pricing_effective_until'] ?? null, 'catalog_pricing_effective_until')
+            : null;
+        $catalogPricingAsOf = $source === self::SOURCE_CATALOG
+            ? self::nullableDate($data['catalog_pricing_as_of'] ?? null, 'catalog_pricing_as_of')
+            : null;
+
+        if ($catalogPricingEffectiveFrom !== null
+            && $catalogPricingEffectiveUntil !== null
+            && $catalogPricingEffectiveFrom > $catalogPricingEffectiveUntil) {
+            throw new InvalidArgumentException('The AI catalog pricing snapshot has an invalid period.');
         }
 
         return new self(
@@ -63,6 +84,9 @@ final readonly class AiPricingSnapshot
                 : null,
             unsupportedMeters: array_values(array_map('strval', (array) ($data['unsupported_meters'] ?? []))),
             pricingSource: $source,
+            catalogPricingEffectiveFrom: $catalogPricingEffectiveFrom,
+            catalogPricingEffectiveUntil: $catalogPricingEffectiveUntil,
+            catalogPricingAsOf: $catalogPricingAsOf,
         );
     }
 
@@ -92,6 +116,19 @@ final readonly class AiPricingSnapshot
         if (! $this->isComplete()) {
             throw new AiPricingProfileIncompleteException('The immutable AI billing profile is incomplete for bounded execution.');
         }
+    }
+
+    public function hasCatalogPricingMetadata(): bool
+    {
+        return $this->pricingSource === self::SOURCE_CATALOG
+            && ($this->catalogPricingEffectiveFrom !== null
+                || $this->catalogPricingEffectiveUntil !== null
+                || $this->catalogPricingAsOf !== null);
+    }
+
+    public function sameBillablePricing(self $other): bool
+    {
+        return $this->billablePricing() === $other->billablePricing();
     }
 
     public function calculateCostMinorUnits(
@@ -161,7 +198,80 @@ final readonly class AiPricingSnapshot
             'fixed_request_cost_applicable' => $this->fixedRequestCostApplicable,
             'fixed_request_cost_minor_units' => $this->fixedRequestCostMinorUnits,
             'unsupported_meters' => $this->unsupportedMeters,
+            'catalog_pricing_effective_from' => $this->catalogPricingEffectiveFrom,
+            'catalog_pricing_effective_until' => $this->catalogPricingEffectiveUntil,
+            'catalog_pricing_as_of' => $this->catalogPricingAsOf,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function billablePricing(): array
+    {
+        return [
+            'currency' => $this->currency,
+            'input_cost_per_million_minor_units' => $this->inputCostPerMillionMinorUnits,
+            'output_cost_per_million_minor_units' => $this->outputCostPerMillionMinorUnits,
+            'cache_read_input_cost_per_million_minor_units' => $this->cacheReadInputCostPerMillionMinorUnits,
+            'cache_write_input_cost_per_million_minor_units' => $this->cacheWriteInputCostPerMillionMinorUnits,
+            'reasoning_cost_per_million_minor_units' => $this->reasoningCostPerMillionMinorUnits,
+            'fixed_request_cost_applicable' => $this->fixedRequestCostApplicable,
+            'fixed_request_cost_minor_units' => $this->fixedRequestCostMinorUnits,
+            'unsupported_meters' => $this->unsupportedMeters,
+        ];
+    }
+
+    private static function nullableTimestamp(mixed $value, string $field): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        $value = trim($value);
+        $date = DateTimeImmutable::createFromFormat(
+            '!Y-m-d H:i:s',
+            $value,
+            new DateTimeZone((string) config('app.timezone', 'UTC')),
+        );
+        $errors = DateTimeImmutable::getLastErrors();
+
+        if ($date === false
+            || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+            || $date->format('Y-m-d H:i:s') !== $value) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        return $value;
+    }
+
+    private static function nullableDate(mixed $value, string $field): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        $value = trim($value);
+        $date = DateTimeImmutable::createFromFormat(
+            '!Y-m-d',
+            $value,
+            new DateTimeZone('UTC'),
+        );
+        $errors = DateTimeImmutable::getLastErrors();
+
+        if ($date === false
+            || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+            || $date->format('Y-m-d') !== $value) {
+            throw new InvalidArgumentException("The AI pricing snapshot {$field} is invalid.");
+        }
+
+        return $value;
     }
 
     private static function nullableInt(mixed $value): ?int

@@ -5,6 +5,7 @@ namespace App\Modules\AI\Domain\Registry;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use DateTimeInterface;
 use InvalidArgumentException;
 
 final class AiModelCatalog
@@ -12,22 +13,25 @@ final class AiModelCatalog
     public const string CUSTOM_MODEL = '__custom__';
 
     /** @return list<AiModelDefinition> */
-    public static function all(): array
+    public static function all(?DateTimeInterface $asOf = null): array
     {
         return array_map(
-            static fn (array $definition): AiModelDefinition => AiModelDefinition::fromArray($definition),
+            static fn (array $definition): AiModelDefinition => AiModelDefinition::fromArray($definition, $asOf),
             array_values((array) config('ai.model_catalog', [])),
         );
     }
 
     /** @return array<string, string> */
-    public static function optionsForProvider(mixed $provider, ?string $currentModel = null): array
-    {
+    public static function optionsForProvider(
+        mixed $provider,
+        ?string $currentModel = null,
+        ?DateTimeInterface $asOf = null,
+    ): array {
         $provider = AiProviderCatalog::normalize($provider);
         $currentModel = $currentModel === null ? null : trim($currentModel);
         $options = [];
 
-        foreach (self::all() as $definition) {
+        foreach (self::all($asOf) as $definition) {
             if ($definition->provider !== $provider
                 || (! $definition->lifecycleStatus->isSelectableForNewConfiguration()
                     && $definition->modelName !== $currentModel)) {
@@ -47,15 +51,18 @@ final class AiModelCatalog
         return $options;
     }
 
-    public static function find(mixed $provider, mixed $modelName): ?AiModelDefinition
-    {
+    public static function find(
+        mixed $provider,
+        mixed $modelName,
+        ?DateTimeInterface $asOf = null,
+    ): ?AiModelDefinition {
         $provider = AiProviderCatalog::normalize($provider);
 
         if (! is_string($modelName) || trim($modelName) === '') {
             return null;
         }
 
-        foreach (self::all() as $definition) {
+        foreach (self::all($asOf) as $definition) {
             if ($definition->provider === $provider && $definition->modelName === trim($modelName)) {
                 return $definition;
             }
@@ -64,20 +71,26 @@ final class AiModelCatalog
         return null;
     }
 
-    public static function selection(mixed $provider, mixed $modelName): string
-    {
-        $definition = self::find($provider, $modelName);
+    public static function selection(
+        mixed $provider,
+        mixed $modelName,
+        ?DateTimeInterface $asOf = null,
+    ): string {
+        $definition = self::find($provider, $modelName, $asOf);
 
         return $definition instanceof AiModelDefinition ? $definition->modelName : self::CUSTOM_MODEL;
     }
 
-    public static function selectedDefinition(mixed $provider, mixed $selection): ?AiModelDefinition
-    {
+    public static function selectedDefinition(
+        mixed $provider,
+        mixed $selection,
+        ?DateTimeInterface $asOf = null,
+    ): ?AiModelDefinition {
         if ($selection === null || $selection === '' || $selection === self::CUSTOM_MODEL) {
             return null;
         }
 
-        $definition = self::find($provider, $selection);
+        $definition = self::find($provider, $selection, $asOf);
         if ($definition === null) {
             throw new InvalidArgumentException('Выбранная модель отсутствует в каталоге. Укажите её через расширенный путь.');
         }
@@ -91,9 +104,34 @@ final class AiModelCatalog
             return 'Стоимость не задана';
         }
 
-        return '$'.AiMoney::decimalFromMinorUnits($pricing->inputCostPerMillionMinorUnits)
-            .' за 1 млн входных токенов · $'.AiMoney::decimalFromMinorUnits($pricing->outputCostPerMillionMinorUnits)
-            .' за 1 млн выходных токенов · по каталогу';
+        return 'Стоимость по каталогу: $'.AiMoney::decimalFromMinorUnits($pricing->inputCostPerMillionMinorUnits)
+            .' вход / $'.AiMoney::decimalFromMinorUnits($pricing->outputCostPerMillionMinorUnits)
+            .' ответ';
+    }
+
+    public static function pricingIsStale(
+        mixed $provider,
+        mixed $modelName,
+        AiPricingSnapshot $pricing,
+        ?DateTimeInterface $asOf = null,
+    ): bool {
+        if ($pricing->pricingSource !== AiPricingSnapshot::SOURCE_CATALOG) {
+            return false;
+        }
+
+        $definition = self::find($provider, $modelName, $asOf);
+        if ($definition === null || $definition->pricing === null) {
+            return true;
+        }
+
+        if ($pricing->hasCatalogPricingMetadata()
+            && ($pricing->catalogPricingEffectiveFrom !== $definition->pricing->catalogPricingEffectiveFrom
+                || $pricing->catalogPricingEffectiveUntil !== $definition->pricing->catalogPricingEffectiveUntil
+                || $pricing->catalogPricingAsOf !== $definition->pricing->catalogPricingAsOf)) {
+            return true;
+        }
+
+        return ! $pricing->sameBillablePricing($definition->pricing);
     }
 
     /** @return list<string> */

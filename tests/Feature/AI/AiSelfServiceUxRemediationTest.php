@@ -23,6 +23,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,12 @@ use Tests\TestCase;
 final class AiSelfServiceUxRemediationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        CarbonImmutable::setTestNow();
+        parent::tearDown();
+    }
 
     public function test_owner_can_connect_a_provider_with_an_api_key_without_exposing_the_secret(): void
     {
@@ -91,6 +98,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
     public function test_default_catalog_contains_only_current_priced_choices_and_excludes_legacy_models(): void
     {
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 22, 12, 0, 0, 'UTC'));
         config()->set('ai.model_catalog', $this->defaultCatalog());
 
         $definitions = AiModelCatalog::all();
@@ -120,6 +128,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
     public function test_known_catalog_models_are_priced_without_manual_token_entry(): void
     {
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 22, 12, 0, 0, 'UTC'));
         [, $owner] = $this->organizationFixture();
         config()->set('ai.model_catalog', $this->defaultCatalog());
 

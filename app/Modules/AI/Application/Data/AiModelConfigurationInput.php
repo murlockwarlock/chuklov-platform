@@ -190,19 +190,15 @@ final readonly class AiModelConfigurationInput
             pricingSource: AiPricingSnapshot::SOURCE_MANUAL,
         );
 
-        if ($catalogPricing !== null && $pricing->toArrayWithoutSource() === $catalogPricing->toArrayWithoutSource()) {
-            return new AiPricingSnapshot(
-                currency: $pricing->currency,
-                inputCostPerMillionMinorUnits: $pricing->inputCostPerMillionMinorUnits,
-                outputCostPerMillionMinorUnits: $pricing->outputCostPerMillionMinorUnits,
-                cacheReadInputCostPerMillionMinorUnits: $pricing->cacheReadInputCostPerMillionMinorUnits,
-                cacheWriteInputCostPerMillionMinorUnits: $pricing->cacheWriteInputCostPerMillionMinorUnits,
-                reasoningCostPerMillionMinorUnits: $pricing->reasoningCostPerMillionMinorUnits,
-                fixedRequestCostApplicable: $pricing->fixedRequestCostApplicable,
-                fixedRequestCostMinorUnits: $pricing->fixedRequestCostMinorUnits,
-                unsupportedMeters: $pricing->unsupportedMeters,
-                pricingSource: AiPricingSnapshot::SOURCE_CATALOG,
-            );
+        if ($catalogPricing !== null
+            && $existing !== null
+            && $existing->pricingSource === AiPricingSnapshot::SOURCE_CATALOG
+            && $pricing->sameBillablePricing($existing)) {
+            return $catalogPricing;
+        }
+
+        if ($catalogPricing !== null && $pricing->sameBillablePricing($catalogPricing)) {
+            return $catalogPricing;
         }
 
         return $pricing;

@@ -15,6 +15,7 @@ use App\Modules\AI\Domain\Registry\AiModelDefinition;
 use App\Modules\AI\Domain\ValueObjects\AiMoney;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\CheckboxList;
@@ -22,6 +23,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -217,8 +219,18 @@ class ModelsRelationManager extends RelationManager
                 TextColumn::make('is_enabled')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Включена' : 'Отключена'),
                 TextColumn::make('pricing_snapshot')
                     ->label('Стоимость')
-                    ->formatStateUsing(function ($state): string {
-                        $pricing = AiPricingSnapshot::fromArray((array) $state);
+                    ->state(function (AiModelConfiguration $record): string {
+                        $pricing = $record->getPricingSnapshot();
+                        $provider = $this->getOwnerRecord();
+
+                        if ($provider instanceof AiProviderConfiguration
+                            && AiModelCatalog::pricingIsStale(
+                                $provider->provider_name,
+                                $record->model_name,
+                                $pricing,
+                            )) {
+                            return 'Стоимость модели обновилась';
+                        }
 
                         if ($pricing->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN) {
                             return 'Стоимость не задана';
@@ -245,6 +257,45 @@ class ModelsRelationManager extends RelationManager
                     }),
             ])
             ->recordActions([
+                Action::make('refresh_pricing')
+                    ->label('Применить актуальную стоимость')
+                    ->color('warning')
+                    ->visible(function (AiModelConfiguration $record): bool {
+                        $provider = $this->getOwnerRecord();
+                        if (! $provider instanceof AiProviderConfiguration) {
+                            return false;
+                        }
+
+                        $definition = AiModelCatalog::find($provider->provider_name, $record->model_name);
+
+                        return $definition !== null
+                            && $definition->pricing !== null
+                            && AiModelCatalog::pricingIsStale(
+                                $provider->provider_name,
+                                $record->model_name,
+                                $record->getPricingSnapshot(),
+                            );
+                    })
+                    ->requiresConfirmation()
+                    ->action(function (
+                        AiModelConfiguration $record,
+                        CreateAndActivateModelRelease $releaseAction,
+                    ): void {
+                        $actor = Auth::user();
+                        if (! $actor instanceof User) {
+                            throw new \LogicException('Authenticated user required.');
+                        }
+
+                        $releaseAction->handle($actor, $record, [
+                            'model_selection' => $record->model_name,
+                            'is_enabled' => $record->is_enabled,
+                        ]);
+
+                        Notification::make()
+                            ->title('Актуальная стоимость применена')
+                            ->success()
+                            ->send();
+                    }),
                 EditAction::make()
                     ->using(function (AiModelConfiguration $record, array $data): AiModelConfiguration {
                         $actor = Auth::user();
@@ -323,6 +374,15 @@ class ModelsRelationManager extends RelationManager
         ?AiModelConfiguration $record,
     ): string {
         $definition = self::definition($provider->provider_name, $selection);
+        if ($record !== null
+            && AiModelCatalog::pricingIsStale(
+                $provider->provider_name,
+                $record->model_name,
+                $record->getPricingSnapshot(),
+            )) {
+            return 'Стоимость модели обновилась. Примените актуальный тариф.';
+        }
+
         if ($definition !== null) {
             return AiModelCatalog::pricingText($definition->pricing);
         }
