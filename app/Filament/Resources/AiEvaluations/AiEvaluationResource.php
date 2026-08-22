@@ -34,17 +34,17 @@ final class AiEvaluationResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBeaker;
 
-    protected static ?string $navigationLabel = 'Наборы тестов AI';
+    protected static ?string $navigationLabel = 'Проверки AI';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Искусственный интеллект';
 
     protected static ?int $navigationSort = 5;
 
-    protected static ?string $modelLabel = 'набор тестов AI';
+    protected static ?string $modelLabel = 'проверка AI';
 
-    protected static ?string $pluralModelLabel = 'наборы тестов AI';
+    protected static ?string $pluralModelLabel = 'проверки AI';
 
-    protected static ?string $breadcrumb = 'Наборы тестов AI';
+    protected static ?string $breadcrumb = 'Проверки AI';
 
     public static function form(Schema $schema): Schema
     {
@@ -56,11 +56,10 @@ final class AiEvaluationResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('name')->label('Название')->searchable()->sortable(),
-                TextColumn::make('key')->label('Ключ')->searchable(),
                 TextColumn::make('capability')
-                    ->label('Возможность')
+                    ->label('Что проверяем')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
-                TextColumn::make('cases_count')->counts('cases')->label('Тест-кейсов'),
+                TextColumn::make('cases_count')->counts('cases')->label('Примеров'),
                 TextColumn::make('runs_count')->counts('runs')->label('Запусков'),
                 TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
             ])
@@ -71,11 +70,11 @@ final class AiEvaluationResource extends Resource
                     ->color('success')
                     ->icon(Heroicon::OutlinedPlay)
                     ->requiresConfirmation()
-                    ->modalHeading('Запуск набора тестов')
-                    ->modalDescription('Будут последовательно выполнены все активные тест-кейсы с повторной privacy-проверкой.')
+                    ->modalHeading('Проверить качество AI')
+                    ->modalDescription('Будут последовательно выполнены все активные примеры проверки. Данные должны оставаться искусственными или обезличенными.')
                     ->form([
                         Select::make('prompt_version_id')
-                            ->label('Точная версия промпта')
+                            ->label('Версия промпта')
                             ->options(fn (AiEvalSuite $record): array => self::promptVersionOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::promptVersionOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::promptVersionLabel($record, $value))
@@ -84,7 +83,7 @@ final class AiEvaluationResource extends Resource
                             ->native(false)
                             ->required(),
                         Select::make('model_release_id')
-                            ->label('Точный выпуск модели')
+                            ->label('Модель для проверки')
                             ->options(fn (AiEvalSuite $record): array => self::modelReleaseOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::modelReleaseOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::modelReleaseLabel($record, $value))
@@ -112,6 +111,8 @@ final class AiEvaluationResource extends Resource
                             ->send();
                     }),
             ])
+            ->emptyStateHeading('Проверок AI пока нет')
+            ->emptyStateDescription('Создайте набор примеров, чтобы проверить качество ответов AI перед использованием нового промпта или модели.')
             ->defaultSort('updated_at', 'desc');
     }
 
@@ -199,7 +200,8 @@ final class AiEvaluationResource extends Resource
         return $query
             ->orderByDesc('id')
             ->limit(50)
-            ->get(['id', 'provider_name', 'model_name', 'release_number', 'status'])
+            ->with(['modelConfiguration:id,display_name'])
+            ->get(['id', 'model_config_id', 'provider_name', 'model_name', 'release_number', 'status'])
             ->mapWithKeys(static fn (AiModelRelease $release): array => [
                 $release->getKey() => self::modelReleaseDisplayLabel($release),
             ])
@@ -215,11 +217,12 @@ final class AiEvaluationResource extends Resource
         $release = AiModelRelease::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->whereKey((int) $value)
-            ->first(['id', 'provider_name', 'model_name', 'release_number', 'status']);
+            ->with(['modelConfiguration:id,display_name'])
+            ->first(['id', 'model_config_id', 'provider_name', 'model_name', 'release_number', 'status']);
 
         return $release instanceof AiModelRelease
             ? self::modelReleaseDisplayLabel($release)
-            : 'Сохранённый выпуск модели недоступен';
+            : 'Сохранённая модель недоступна';
     }
 
     private static function promptVersionDisplayLabel(AiPromptVersion $version): string
@@ -235,6 +238,6 @@ final class AiEvaluationResource extends Resource
             $provider = 'Провайдер требует проверки';
         }
 
-        return $provider.' · '.$release->model_name.' · выпуск '.$release->release_number;
+        return $provider.' · '.$release->modelConfiguration->display_name.' · версия '.$release->release_number;
     }
 }

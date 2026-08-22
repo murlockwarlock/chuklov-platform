@@ -58,16 +58,16 @@ final class AiProviderResource extends Resource
                     ->label('Провайдер')
                     ->formatStateUsing(fn ($state): string => self::providerLabel($state)),
                 TextColumn::make('credential.credential_name')
-                    ->label('Учетные данные')
-                    ->placeholder('Не подключены')
+                    ->label('API-ключ')
+                    ->placeholder('Не подключён')
                     ->formatStateUsing(function ($state, AiProviderConfiguration $record): string {
                         if (! filled($state)) {
-                            return 'Не подключены';
+                            return 'Не подключён';
                         }
 
                         return $record->credential?->status === CredentialStatus::Active
-                            ? 'Подключены: '.$state
-                            : 'Отключены: '.$state;
+                            ? 'Подключён: '.$state
+                            : 'Отключён: '.$state;
                     }),
                 TextColumn::make('health_status')
                     ->label('Состояние')
@@ -83,6 +83,8 @@ final class AiProviderResource extends Resource
                 TextColumn::make('models_count')->counts('models')->label('Моделей'),
                 TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
             ])
+            ->emptyStateHeading('Сервисов AI пока нет')
+            ->emptyStateDescription('Подключите сервис AI, которым будет пользоваться Chuklov. Сначала выберите провайдера и добавьте API-ключ.')
             ->recordActions([
                 Action::make('test_connection')
                     ->label('Проверить связь')
@@ -100,7 +102,7 @@ final class AiProviderResource extends Resource
                             } else {
                                 Notification::make()
                                     ->title('Проблема при проверке связи')
-                                    ->body('Провайдер требует внимания. Проверьте учетные данные и состояние подключения.')
+                                    ->body('Провайдер требует внимания. Проверьте API-ключ и состояние подключения.')
                                     ->danger()
                                     ->send();
                             }

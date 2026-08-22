@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Models\AiPrompt;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
 class AiPromptForm
@@ -15,25 +16,36 @@ class AiPromptForm
     {
         return $schema
             ->components([
-                TextInput::make('name')
-                    ->label('Название промпта')
-                    ->required()
-                    ->maxLength(200),
-                TextInput::make('key')
-                    ->label('Ключ промпта')
-                    ->helperText('Техническая идентичность промпта. После создания изменить нельзя.')
-                    ->required()
-                    ->maxLength(80)
-                    ->regex('/^[a-z0-9_\-]+$/')
-                    ->disabled(fn (?AiPrompt $record): bool => $record !== null)
-                    ->dehydrated(true),
-                Select::make('capability')
-                    ->label('Назначение / Возможность')
-                    ->options(collect(AiCapability::cases())->mapWithKeys(fn ($c) => [$c->value => $c->label()]))
-                    ->required(),
-                Textarea::make('description')
-                    ->label('Описание')
-                    ->rows(3)
+                Section::make('Основная информация')
+                    ->schema([
+                        TextInput::make('name')
+                            ->label('Название')
+                            ->required()
+                            ->maxLength(200),
+                        Select::make('capability')
+                            ->label('Для чего используется')
+                            ->options(collect(AiCapability::cases())->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => $capability->label()]))
+                            ->required(),
+                        Textarea::make('description')
+                            ->label('Описание')
+                            ->helperText('Коротко опишите, в каких ситуациях этот промпт помогает специалисту.')
+                            ->rows(3)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
+                Section::make('Технические детали')
+                    ->description('Техническое имя создаётся автоматически из названия, если его не указать. После создания оно неизменно.')
+                    ->collapsed()
+                    ->schema([
+                        TextInput::make('key')
+                            ->label('Техническое имя')
+                            ->helperText('Оставьте пустым для автоматического создания. Ручной ввод нужен только для существующих интеграций.')
+                            ->maxLength(80)
+                            ->regex('/^[a-z0-9_\-]+$/')
+                            ->disabled(fn (?AiPrompt $record): bool => $record !== null)
+                            ->dehydrated(true),
+                    ])
                     ->columnSpanFull(),
             ]);
     }

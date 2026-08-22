@@ -27,6 +27,49 @@ return [
     'default_for_embeddings' => 'openai',
     'default_for_reranking' => 'cohere',
 
+    'model_catalog' => [
+        [
+            'provider' => 'openai',
+            'model' => 'gpt-4o-mini',
+            'display_name' => 'GPT-4o Mini',
+            'family' => 'GPT-4o',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => [],
+            'pricing' => null,
+            'lifecycle' => 'active',
+        ],
+        [
+            'provider' => 'openai',
+            'model' => 'gpt-4o',
+            'display_name' => 'GPT-4o',
+            'family' => 'GPT-4o',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => [],
+            'pricing' => null,
+            'lifecycle' => 'active',
+        ],
+        [
+            'provider' => 'anthropic',
+            'model' => 'claude-3-5-sonnet',
+            'display_name' => 'Claude 3.5 Sonnet',
+            'family' => 'Claude 3.5',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => [],
+            'pricing' => null,
+            'lifecycle' => 'active',
+        ],
+        [
+            'provider' => 'gemini',
+            'model' => 'gemini-2.0-flash',
+            'display_name' => 'Gemini 2.0 Flash',
+            'family' => 'Gemini 2.0',
+            'supported_capabilities' => ['text_generation'],
+            'modalities' => [],
+            'pricing' => null,
+            'lifecycle' => 'active',
+        ],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Caching

@@ -6,6 +6,12 @@ use App\Modules\AI\Domain\Exceptions\AiPricingProfileIncompleteException;
 
 final readonly class AiPricingSnapshot
 {
+    public const string SOURCE_CATALOG = 'catalog';
+
+    public const string SOURCE_MANUAL = 'manual';
+
+    public const string SOURCE_UNKNOWN = 'unknown';
+
     public function __construct(
         public string $currency = 'USD',
         public int $inputCostPerMillionMinorUnits = 0,
@@ -17,11 +23,25 @@ final readonly class AiPricingSnapshot
         public ?int $fixedRequestCostMinorUnits = 0,
         /** @var list<string> */
         public array $unsupportedMeters = [],
+        public string $pricingSource = self::SOURCE_MANUAL,
     ) {}
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
     {
+        $source = (string) ($data['pricing_source'] ?? (
+            array_key_exists('input_cost_per_million_minor_units', $data)
+                || array_key_exists('input_price_per_million', $data)
+                || array_key_exists('output_cost_per_million_minor_units', $data)
+                || array_key_exists('output_price_per_million', $data)
+                ? self::SOURCE_MANUAL
+                : self::SOURCE_UNKNOWN
+        ));
+
+        if (! in_array($source, [self::SOURCE_CATALOG, self::SOURCE_MANUAL, self::SOURCE_UNKNOWN], true)) {
+            throw new \InvalidArgumentException('The AI pricing source is invalid.');
+        }
+
         return new self(
             currency: (string) ($data['currency'] ?? 'USD'),
             inputCostPerMillionMinorUnits: (int) ($data['input_cost_per_million_minor_units'] ?? $data['input_price_per_million'] ?? 0),
@@ -40,20 +60,26 @@ final readonly class AiPricingSnapshot
                 ? self::nullableInt($data['fixed_request_cost_minor_units'])
                 : null,
             unsupportedMeters: array_values(array_map('strval', (array) ($data['unsupported_meters'] ?? []))),
+            pricingSource: $source,
         );
     }
 
     public function isComplete(): bool
     {
         return $this->currency !== ''
+            && $this->pricingSource !== self::SOURCE_UNKNOWN
             && $this->inputCostPerMillionMinorUnits >= 0
             && $this->outputCostPerMillionMinorUnits >= 0
-            && $this->cacheReadInputCostPerMillionMinorUnits !== null
-            && $this->cacheReadInputCostPerMillionMinorUnits >= 0
-            && $this->cacheWriteInputCostPerMillionMinorUnits !== null
-            && $this->cacheWriteInputCostPerMillionMinorUnits >= 0
-            && $this->reasoningCostPerMillionMinorUnits !== null
-            && $this->reasoningCostPerMillionMinorUnits >= 0
+            && ($this->pricingSource === self::SOURCE_CATALOG
+                ? ($this->cacheReadInputCostPerMillionMinorUnits === null || $this->cacheReadInputCostPerMillionMinorUnits >= 0)
+                    && ($this->cacheWriteInputCostPerMillionMinorUnits === null || $this->cacheWriteInputCostPerMillionMinorUnits >= 0)
+                    && ($this->reasoningCostPerMillionMinorUnits === null || $this->reasoningCostPerMillionMinorUnits >= 0)
+                : $this->cacheReadInputCostPerMillionMinorUnits !== null
+                    && $this->cacheReadInputCostPerMillionMinorUnits >= 0
+                    && $this->cacheWriteInputCostPerMillionMinorUnits !== null
+                    && $this->cacheWriteInputCostPerMillionMinorUnits >= 0
+                    && $this->reasoningCostPerMillionMinorUnits !== null
+                    && $this->reasoningCostPerMillionMinorUnits >= 0)
             && (! $this->fixedRequestCostApplicable
                 || ($this->fixedRequestCostMinorUnits !== null && $this->fixedRequestCostMinorUnits >= 0))
             && $this->unsupportedMeters === [];
@@ -85,9 +111,9 @@ final readonly class AiPricingSnapshot
 
         $inputCostRaw = ($promptTokens / 1_000_000.0) * $this->inputCostPerMillionMinorUnits;
         $outputCostRaw = ($completionTokens / 1_000_000.0) * $this->outputCostPerMillionMinorUnits;
-        $cacheReadCostRaw = ($cacheReadInputTokens / 1_000_000.0) * $this->cacheReadInputCostPerMillionMinorUnits;
-        $cacheWriteCostRaw = ($cacheWriteInputTokens / 1_000_000.0) * $this->cacheWriteInputCostPerMillionMinorUnits;
-        $reasoningCostRaw = ($reasoningTokens / 1_000_000.0) * $this->reasoningCostPerMillionMinorUnits;
+        $cacheReadCostRaw = ($cacheReadInputTokens / 1_000_000.0) * ($this->cacheReadInputCostPerMillionMinorUnits ?? 0);
+        $cacheWriteCostRaw = ($cacheWriteInputTokens / 1_000_000.0) * ($this->cacheWriteInputCostPerMillionMinorUnits ?? 0);
+        $reasoningCostRaw = ($reasoningTokens / 1_000_000.0) * ($this->reasoningCostPerMillionMinorUnits ?? 0);
         $requestCostRaw = $this->fixedRequestCostApplicable
             ? $providerRequests * (int) $this->fixedRequestCostMinorUnits
             : 0;
@@ -102,6 +128,15 @@ final readonly class AiPricingSnapshot
 
     /** @return array<string, mixed> */
     public function toArray(): array
+    {
+        return [
+            ...$this->toArrayWithoutSource(),
+            'pricing_source' => $this->pricingSource,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function toArrayWithoutSource(): array
     {
         return [
             'currency' => $this->currency,

@@ -12,7 +12,7 @@ class CreateAiEvaluation extends CreateRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
-    protected static ?string $title = 'Создать набор тестов AI';
+    protected static ?string $title = 'Создать проверку AI';
 
     protected function handleRecordCreation(array $data): Model
     {

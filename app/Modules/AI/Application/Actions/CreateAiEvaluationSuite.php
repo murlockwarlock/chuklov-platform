@@ -3,14 +3,16 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Services\AiTechnicalKeyAllocator;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiPrompt;
-use App\Modules\AI\Domain\ValueObjects\AiTechnicalKey;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class CreateAiEvaluationSuite
@@ -19,6 +21,7 @@ final class CreateAiEvaluationSuite
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly AiTechnicalKeyAllocator $keyAllocator,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -27,41 +30,60 @@ final class CreateAiEvaluationSuite
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiPrompts);
 
-        $key = AiTechnicalKey::normalize($data['key'] ?? null, 'evaluation key');
         $name = self::name($data['name'] ?? null);
         $capability = self::capability($data['capability'] ?? null);
         $promptId = self::promptId($data['prompt_id'] ?? null);
         self::assertPrompt($organization->getKey(), $promptId, $capability);
+        $requestedKey = $data['key'] ?? null;
+        $generatedKey = $requestedKey === null || $requestedKey === '';
 
-        if (AiEvalSuite::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('key', $key)
-            ->exists()) {
-            throw new InvalidArgumentException('An evaluation with this key already exists in the organization.');
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            try {
+                return DB::transaction(function () use ($actor, $capability, $data, $generatedKey, $name, $organization, $promptId, $requestedKey): AiEvalSuite {
+                    $key = $this->keyAllocator->evaluation(
+                        organizationId: (int) $organization->getKey(),
+                        name: $name,
+                        requestedKey: $generatedKey ? null : $requestedKey,
+                    );
+
+                    if (! $generatedKey && AiEvalSuite::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('key', $key)
+                        ->exists()) {
+                        throw new InvalidArgumentException('An evaluation with this key already exists in the organization.');
+                    }
+
+                    $suite = AiEvalSuite::create([
+                        'organization_id' => $organization->getKey(),
+                        'key' => $key,
+                        'name' => $name,
+                        'description' => self::description($data['description'] ?? null),
+                        'capability' => $capability,
+                        'prompt_id' => $promptId,
+                    ]);
+
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'ai.evaluation_suite.created',
+                        targetType: AiEvalSuite::class,
+                        targetId: (string) $suite->getKey(),
+                        metadata: [
+                            'evaluation_key' => $suite->key,
+                            'capability' => $suite->capability->value,
+                        ],
+                    );
+
+                    return $suite;
+                });
+            } catch (QueryException $exception) {
+                if (! $generatedKey || ! self::isUniqueViolation($exception)) {
+                    throw $exception;
+                }
+            }
         }
 
-        $suite = AiEvalSuite::create([
-            'organization_id' => $organization->getKey(),
-            'key' => $key,
-            'name' => $name,
-            'description' => self::description($data['description'] ?? null),
-            'capability' => $capability,
-            'prompt_id' => $promptId,
-        ]);
-
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'ai.evaluation_suite.created',
-            targetType: AiEvalSuite::class,
-            targetId: (string) $suite->getKey(),
-            metadata: [
-                'evaluation_key' => $suite->key,
-                'capability' => $suite->capability->value,
-            ],
-        );
-
-        return $suite;
+        throw new InvalidArgumentException('Не удалось подобрать уникальное техническое имя проверки. Повторите попытку.');
     }
 
     public static function promptId(mixed $value): ?int
@@ -133,5 +155,11 @@ final class CreateAiEvaluationSuite
         }
 
         return trim($value);
+    }
+
+    private static function isUniqueViolation(QueryException $exception): bool
+    {
+        return in_array((string) $exception->getCode(), ['23000', '23505'], true)
+            && str_contains($exception->getMessage(), 'ai_eval_suites');
     }
 }

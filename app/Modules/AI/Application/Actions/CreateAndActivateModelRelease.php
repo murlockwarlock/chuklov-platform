@@ -3,10 +3,9 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
-use App\Modules\AI\Domain\ValueObjects\AiMoney;
-use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -14,7 +13,6 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 
 final class CreateAndActivateModelRelease
 {
@@ -31,9 +29,11 @@ final class CreateAndActivateModelRelease
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ActivateAiReleases);
 
         $providerManagementKeys = [
+            'model_selection',
             'model_name',
             'display_name',
             'capabilities',
+            'model_modalities',
             'pricing_snapshot',
             'input_cost_per_million',
             'output_cost_per_million',
@@ -67,55 +67,11 @@ final class CreateAndActivateModelRelease
                 throw new AuthorizationException('Model provider configuration is outside the current organization.');
             }
 
-            $pricing = array_key_exists('pricing_snapshot', $data)
-                ? self::canonicalPricingSnapshot($data['pricing_snapshot'])
-                : (array) $lockedConfig->pricing_snapshot;
-            if (array_intersect([
-                'input_cost_per_million',
-                'output_cost_per_million',
-                'cache_read_input_cost_per_million',
-                'cache_write_input_cost_per_million',
-                'reasoning_cost_per_million',
-                'fixed_request_cost_applicable',
-                'fixed_request_cost_minor_units',
-                'unsupported_meters',
-            ], array_keys($data)) !== []) {
-                $existingPricing = AiPricingSnapshot::fromArray($pricing);
-                $pricing = (new AiPricingSnapshot(
-                    currency: $existingPricing->currency,
-                    inputCostPerMillionMinorUnits: array_key_exists('input_cost_per_million', $data)
-                        ? AiMoney::canonicalMinorUnits($data['input_cost_per_million'], 'input_cost_per_million')
-                        : $existingPricing->inputCostPerMillionMinorUnits,
-                    outputCostPerMillionMinorUnits: array_key_exists('output_cost_per_million', $data)
-                        ? AiMoney::canonicalMinorUnits($data['output_cost_per_million'], 'output_cost_per_million')
-                        : $existingPricing->outputCostPerMillionMinorUnits,
-                    cacheReadInputCostPerMillionMinorUnits: array_key_exists('cache_read_input_cost_per_million', $data)
-                        ? self::optionalCost($data, 'cache_read_input_cost_per_million')
-                        : $existingPricing->cacheReadInputCostPerMillionMinorUnits,
-                    cacheWriteInputCostPerMillionMinorUnits: array_key_exists('cache_write_input_cost_per_million', $data)
-                        ? self::optionalCost($data, 'cache_write_input_cost_per_million')
-                        : $existingPricing->cacheWriteInputCostPerMillionMinorUnits,
-                    reasoningCostPerMillionMinorUnits: array_key_exists('reasoning_cost_per_million', $data)
-                        ? self::optionalCost($data, 'reasoning_cost_per_million')
-                        : $existingPricing->reasoningCostPerMillionMinorUnits,
-                    fixedRequestCostApplicable: array_key_exists('fixed_request_cost_applicable', $data)
-                        ? (bool) $data['fixed_request_cost_applicable']
-                        : $existingPricing->fixedRequestCostApplicable,
-                    fixedRequestCostMinorUnits: array_key_exists('fixed_request_cost_minor_units', $data)
-                        ? self::optionalCost($data, 'fixed_request_cost_minor_units')
-                        : $existingPricing->fixedRequestCostMinorUnits,
-                    unsupportedMeters: array_key_exists('unsupported_meters', $data)
-                        ? self::unsupportedMeters($data['unsupported_meters'])
-                        : $existingPricing->unsupportedMeters,
-                ))->toArray();
-            }
-
-            $pricingSnapshot = AiPricingSnapshot::fromArray($pricing);
-            $pricingSnapshot->assertComplete();
-            $pricing = $pricingSnapshot->toArray();
-
-            $modelName = (string) ($data['model_name'] ?? $lockedConfig->model_name);
-            $capabilities = array_values(array_map('strval', (array) ($data['capabilities'] ?? $lockedConfig->capabilities ?? [])));
+            $input = AiModelConfigurationInput::forRelease($lockedConfig, $data);
+            $input->pricing->assertComplete();
+            $pricing = $input->pricing->toArray();
+            $modelName = $input->modelName;
+            $capabilities = $input->capabilities;
             $releaseNumber = ((int) AiModelRelease::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('model_config_id', $lockedConfig->getKey())
@@ -142,20 +98,17 @@ final class CreateAndActivateModelRelease
 
             $configUpdates = [
                 'active_release_id' => $release->getKey(),
-                'is_enabled' => array_key_exists('is_enabled', $data) ? (bool) $data['is_enabled'] : true,
+                'is_enabled' => $input->isEnabled,
                 'lifecycle_status' => 'active',
             ];
             if (array_intersect($providerManagementKeys, array_keys($data)) !== []) {
                 $configUpdates = [
                     ...$configUpdates,
                     'model_name' => $modelName,
-                    'display_name' => (string) ($data['display_name'] ?? $lockedConfig->display_name),
+                    'display_name' => $input->displayName,
                     'capabilities' => $capabilities,
                     'pricing_snapshot' => $pricing,
-                    'failover_priority' => self::positiveInteger(
-                        $data['failover_priority'] ?? $lockedConfig->failover_priority,
-                        'failover_priority',
-                    ),
+                    'failover_priority' => $input->failoverPriority,
                 ];
             }
             $lockedConfig->update($configUpdates);
@@ -174,76 +127,5 @@ final class CreateAndActivateModelRelease
 
             return $release;
         });
-    }
-
-    /** @param array<string, mixed> $data */
-    private static function optionalCost(array $data, string $key, ?int $default = null): ?int
-    {
-        return array_key_exists($key, $data)
-            ? AiMoney::canonicalMinorUnits($data[$key], $key)
-            : $default;
-    }
-
-    /** @return array<string, mixed> */
-    private static function canonicalPricingSnapshot(mixed $value): array
-    {
-        if (! is_array($value)) {
-            throw new InvalidArgumentException('The pricing snapshot must be a canonical array.');
-        }
-
-        $snapshot = $value;
-        foreach ([
-            'input_cost_per_million_minor_units',
-            'output_cost_per_million_minor_units',
-            'cache_read_input_cost_per_million_minor_units',
-            'cache_write_input_cost_per_million_minor_units',
-            'reasoning_cost_per_million_minor_units',
-        ] as $key) {
-            if (! array_key_exists($key, $snapshot)) {
-                throw new InvalidArgumentException("The pricing snapshot is missing {$key}.");
-            }
-
-            $snapshot[$key] = AiMoney::canonicalMinorUnits($snapshot[$key], $key);
-        }
-
-        foreach (['fixed_request_cost_minor_units'] as $key) {
-            if (array_key_exists($key, $snapshot) && $snapshot[$key] !== null) {
-                $snapshot[$key] = AiMoney::canonicalMinorUnits($snapshot[$key], $key);
-            }
-        }
-
-        return $snapshot;
-    }
-
-    private static function positiveInteger(mixed $value, string $key): int
-    {
-        if (is_float($value) && is_finite($value) && floor($value) === $value) {
-            if ($value > PHP_INT_MAX) {
-                throw new InvalidArgumentException("{$key} is outside the supported range.");
-            }
-
-            $value = (int) $value;
-        }
-
-        $value = AiMoney::canonicalMinorUnits($value, $key);
-
-        if ($value < 1) {
-            throw new InvalidArgumentException("{$key} must be at least 1.");
-        }
-
-        return $value;
-    }
-
-    /** @return list<string> */
-    private static function unsupportedMeters(mixed $value): array
-    {
-        $values = is_array($value)
-            ? $value
-            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
-
-        return array_values(array_unique(array_filter(
-            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
-            static fn (string $meter): bool => $meter !== '',
-        )));
     }
 }

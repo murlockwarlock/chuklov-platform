@@ -10,6 +10,7 @@ use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
@@ -29,23 +30,48 @@ class AiProviderForm
                     ->required()
                     ->helperText('Выберите поддерживаемый провайдер из каталога.'),
                 TextInput::make('display_name')
-                    ->label('Название в системе')
+                    ->label('Название в CRM')
                     ->required()
                     ->maxLength(120),
-                Select::make('credential_id')
-                    ->label('Учетные данные')
-                    ->helperText('Ключи хранятся в разделе «Безопасность» и здесь никогда не показываются.')
-                    ->placeholder('Без подключенных учетных данных')
-                    ->options(fn (Get $get): array => self::credentialOptions($get('provider_name')))
-                    ->getSearchResultsUsing(fn (string $search, Get $get): array => self::credentialOptions($get('provider_name'), $search))
-                    ->getOptionLabelUsing(fn (mixed $value): ?string => self::credentialLabel($value))
-                    ->optionsLimit(50)
-                    ->searchable()
-                    ->native(false),
+                TextInput::make('api_key')
+                    ->label(fn (string $operation): string => $operation === 'create' ? 'API-ключ' : 'Новый API-ключ')
+                    ->password()
+                    ->revealable()
+                    ->autocomplete('new-password')
+                    ->helperText(fn (Get $get): string => self::apiKeyHelp($get('provider_name')))
+                    ->nullable()
+                    ->dehydrated(fn (mixed $state): bool => filled($state))
+                    ->required(fn (Get $get, string $operation): bool => $operation === 'create' && blank($get('credential_id'))),
                 Toggle::make('is_enabled')
                     ->label('Провайдер включен')
                     ->default(true),
+                Section::make('Дополнительно: использовать сохранённый ключ')
+                    ->description('Выберите уже сохранённый ключ, если он был добавлен ранее. Новый API-ключ надёжно сохраняется автоматически.')
+                    ->collapsed()
+                    ->schema([
+                        Select::make('credential_id')
+                            ->label('Сохранённый API-ключ')
+                            ->placeholder('Не выбирать')
+                            ->options(fn (Get $get): array => self::credentialOptions($get('provider_name')))
+                            ->getSearchResultsUsing(fn (string $search, Get $get): array => self::credentialOptions($get('provider_name'), $search))
+                            ->getOptionLabelUsing(fn (mixed $value): ?string => self::credentialLabel($value))
+                            ->optionsLimit(50)
+                            ->searchable()
+                            ->native(false),
+                    ])
+                    ->columnSpanFull(),
             ]);
+    }
+
+    private static function apiKeyHelp(mixed $providerName): string
+    {
+        try {
+            $provider = AiProviderCatalog::label($providerName);
+        } catch (\InvalidArgumentException) {
+            $provider = 'выбранного провайдера';
+        }
+
+        return "Ключ доступа из личного кабинета {$provider}. После сохранения ключ больше не показывается; затем нажмите «Проверить связь».";
     }
 
     /** @return array<int|string, string> */
@@ -95,7 +121,7 @@ class AiProviderForm
 
         return $credential instanceof OrganizationCredential
             ? self::credentialDisplayLabel($credential)
-            : 'Учетные данные недоступны';
+            : 'Сохранённый API-ключ недоступен';
     }
 
     private static function credentialDisplayLabel(OrganizationCredential $credential): string

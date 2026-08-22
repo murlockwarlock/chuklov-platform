@@ -13,7 +13,7 @@ class EditAiEvaluation extends EditRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 
-    protected static ?string $title = 'Редактировать набор тестов AI';
+    protected static ?string $title = 'Редактировать проверку AI';
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {

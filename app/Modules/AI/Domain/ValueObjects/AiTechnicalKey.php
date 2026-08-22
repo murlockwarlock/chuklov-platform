@@ -2,6 +2,7 @@
 
 namespace App\Modules\AI\Domain\ValueObjects;
 
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 final readonly class AiTechnicalKey
@@ -19,5 +20,18 @@ final readonly class AiTechnicalKey
         }
 
         return $value;
+    }
+
+    public static function fromHumanName(string $name, string $fallback): string
+    {
+        $slug = Str::slug(trim($name), '-');
+        $slug = mb_substr($slug, 0, 80);
+        $slug = rtrim($slug, '-_');
+
+        if ($slug === '') {
+            $slug = Str::slug(trim($fallback), '-');
+        }
+
+        return self::normalize($slug !== '' ? $slug : 'item');
     }
 }

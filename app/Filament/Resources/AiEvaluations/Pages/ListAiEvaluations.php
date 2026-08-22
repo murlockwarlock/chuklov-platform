@@ -10,7 +10,7 @@ class ListAiEvaluations extends ListRecords
 {
     protected static string $resource = AiEvaluationResource::class;
 
-    protected static ?string $title = 'Наборы тестов AI';
+    protected static ?string $title = 'Проверки AI';
 
     public function getBreadcrumbs(): array
     {

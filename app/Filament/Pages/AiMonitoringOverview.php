@@ -36,11 +36,11 @@ final class AiMonitoringOverview extends Page
 {
     public const int PROVIDER_OVERVIEW_LIMIT = 50;
 
-    protected static ?string $title = 'Мониторинг и безопасность AI';
+    protected static ?string $title = 'AI и лимиты';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCpuChip;
 
-    protected static ?string $navigationLabel = 'Мониторинг и безопасность';
+    protected static ?string $navigationLabel = 'AI и лимиты';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Искусственный интеллект';
 
@@ -66,12 +66,12 @@ final class AiMonitoringOverview extends Page
 
     public function getHeading(): string
     {
-        return 'Мониторинг AI и безопасность';
+        return 'AI и лимиты';
     }
 
     public function getSubheading(): string
     {
-        return 'Статус провайдеров, дневной бюджет, лимиты и аварийное отключение AI для организации.';
+        return 'Управляйте доступом AI, дневным бюджетом и подключёнными сервисами организации.';
     }
 
     public static function canManage(): bool
@@ -99,24 +99,25 @@ final class AiMonitoringOverview extends Page
     {
         return $schema
             ->components([
-                Section::make('Безопасность и дневной бюджет')
-                    ->description('Эти ограничения применяются авторитетным AI runtime для всей организации.')
+                Section::make('AI и лимиты')
+                    ->description('Дневной бюджет ограничивает расходы AI за сутки. При достижении лимита новые платные AI-запросы будут остановлены.')
                     ->schema([
                         Toggle::make('is_ai_globally_enabled')
-                            ->label('AI включен для организации')
-                            ->helperText('Отключение блокирует новые внешние AI-вызовы.')
+                            ->label('AI включён')
+                            ->helperText('Выключите, чтобы временно остановить новые платные AI-запросы.')
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_daily_spend')
-                            ->label('Дневной лимит AI')
+                            ->label('Дневной бюджет')
                             ->prefix('$')
                             ->suffix('/ день')
-                            ->helperText('Сумма, которую runtime может зарезервировать и списать за один день.')
+                            ->helperText('Максимальная сумма расходов AI за один день.')
                             ->inputMode('decimal')
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/')
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_tokens_per_run')
-                            ->label('Максимум токенов за запуск')
+                            ->label('Максимальная длина одного AI-запуска')
+                            ->helperText('Верхний предел длины ответа AI в одном запуске.')
                             ->integer()
                             ->minValue(1)
                             ->maxValue(8192)
@@ -125,52 +126,52 @@ final class AiMonitoringOverview extends Page
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Расширенные ограничения')
-                    ->description('Меняйте эти значения только если стандартных ограничений недостаточно.')
+                Section::make('Дополнительные ограничения')
+                    ->description('Дополнительные ограничения для особых сценариев. Обычно менять их не требуется.')
                     ->collapsed()
                     ->schema([
                         TextInput::make('max_runs_per_minute')
-                            ->label('Максимум запусков в минуту')
+                            ->label('Максимум запусков за минуту')
                             ->integer()
                             ->minValue(1)
                             ->maxValue(60)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_tool_calls_per_run')
-                            ->label('Максимум вызовов инструментов за запуск')
+                            ->label('Максимум действий AI за запуск')
                             ->integer()
                             ->minValue(0)
                             ->maxValue(5)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('default_timeout_seconds')
-                            ->label('Тайм-аут по умолчанию, секунд')
+                            ->label('Время ожидания ответа по умолчанию, секунд')
                             ->integer()
                             ->minValue(1)
                             ->maxValue(120)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_failover_attempts')
-                            ->label('Максимум попыток переключения')
+                            ->label('Максимум резервных попыток')
                             ->integer()
                             ->minValue(1)
                             ->maxValue(3)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_capabilities')
-                            ->label('Отключенные возможности')
+                            ->label('Отключённые сценарии AI')
                             ->options(self::capabilityOptions())
                             ->multiple()
                             ->searchable()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_providers')
-                            ->label('Отключенные провайдеры')
+                            ->label('Отключённые сервисы AI')
                             ->options(AiProviderCatalog::options())
                             ->multiple()
                             ->searchable()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_tools')
-                            ->label('Отключенные инструменты')
+                            ->label('Отключённые действия AI')
                             ->options(self::toolOptions())
                             ->multiple()
                             ->searchable()
@@ -296,7 +297,7 @@ final class AiMonitoringOverview extends Page
         ]);
 
         Notification::make()
-            ->title($safety->is_ai_globally_enabled ? 'AI сервис включен' : 'AI сервис аварийно отключен (Kill-Switch активирован)')
+            ->title($safety->is_ai_globally_enabled ? 'AI включён' : 'AI временно отключён')
             ->success()
             ->send();
     }
