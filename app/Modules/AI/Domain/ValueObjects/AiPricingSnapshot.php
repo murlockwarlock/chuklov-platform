@@ -3,6 +3,8 @@
 namespace App\Modules\AI\Domain\ValueObjects;
 
 use App\Modules\AI\Domain\Exceptions\AiPricingProfileIncompleteException;
+use Brick\Math\BigInteger;
+use InvalidArgumentException;
 
 final readonly class AiPricingSnapshot
 {
@@ -39,7 +41,7 @@ final readonly class AiPricingSnapshot
         ));
 
         if (! in_array($source, [self::SOURCE_CATALOG, self::SOURCE_MANUAL, self::SOURCE_UNKNOWN], true)) {
-            throw new \InvalidArgumentException('The AI pricing source is invalid.');
+            throw new InvalidArgumentException('The AI pricing source is invalid.');
         }
 
         return new self(
@@ -109,21 +111,32 @@ final readonly class AiPricingSnapshot
         $reasoningTokens = max(0, $reasoningTokens);
         $providerRequests = max(0, $providerRequests);
 
-        $inputCostRaw = ($promptTokens / 1_000_000.0) * $this->inputCostPerMillionMinorUnits;
-        $outputCostRaw = ($completionTokens / 1_000_000.0) * $this->outputCostPerMillionMinorUnits;
-        $cacheReadCostRaw = ($cacheReadInputTokens / 1_000_000.0) * ($this->cacheReadInputCostPerMillionMinorUnits ?? 0);
-        $cacheWriteCostRaw = ($cacheWriteInputTokens / 1_000_000.0) * ($this->cacheWriteInputCostPerMillionMinorUnits ?? 0);
-        $reasoningCostRaw = ($reasoningTokens / 1_000_000.0) * ($this->reasoningCostPerMillionMinorUnits ?? 0);
-        $requestCostRaw = $this->fixedRequestCostApplicable
-            ? $providerRequests * (int) $this->fixedRequestCostMinorUnits
-            : 0;
-        $totalRaw = $inputCostRaw + $outputCostRaw + $cacheReadCostRaw + $cacheWriteCostRaw + $reasoningCostRaw + $requestCostRaw;
+        $scale = BigInteger::of('1000000');
+        $totalScaledCost = BigInteger::zero()
+            ->plus(BigInteger::of((string) $promptTokens)->multipliedBy($this->inputCostPerMillionMinorUnits))
+            ->plus(BigInteger::of((string) $completionTokens)->multipliedBy($this->outputCostPerMillionMinorUnits))
+            ->plus(BigInteger::of((string) $cacheReadInputTokens)->multipliedBy($this->cacheReadInputCostPerMillionMinorUnits ?? 0))
+            ->plus(BigInteger::of((string) $cacheWriteInputTokens)->multipliedBy($this->cacheWriteInputCostPerMillionMinorUnits ?? 0))
+            ->plus(BigInteger::of((string) $reasoningTokens)->multipliedBy($this->reasoningCostPerMillionMinorUnits ?? 0));
 
-        if ($totalRaw > 0.0 && $totalRaw < 1.0) {
-            return 1;
+        if ($this->fixedRequestCostApplicable) {
+            $totalScaledCost = $totalScaledCost->plus(
+                BigInteger::of((string) $providerRequests)
+                    ->multipliedBy((int) $this->fixedRequestCostMinorUnits)
+                    ->multipliedBy($scale),
+            );
         }
 
-        return (int) ceil($totalRaw);
+        [$wholeCost, $remainder] = $totalScaledCost->quotientAndRemainder($scale);
+        if (! $remainder->isZero()) {
+            $wholeCost = $wholeCost->plus(1);
+        }
+
+        try {
+            return $wholeCost->toInt();
+        } catch (\Throwable $exception) {
+            throw new InvalidArgumentException('The calculated AI cost is outside the supported range.', previous: $exception);
+        }
     }
 
     /** @return array<string, mixed> */
