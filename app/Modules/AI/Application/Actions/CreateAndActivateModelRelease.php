@@ -67,8 +67,8 @@ final class CreateAndActivateModelRelease
                 throw new AuthorizationException('Model provider configuration is outside the current organization.');
             }
 
-            $pricing = isset($data['pricing_snapshot']) && is_array($data['pricing_snapshot'])
-                ? $data['pricing_snapshot']
+            $pricing = array_key_exists('pricing_snapshot', $data)
+                ? self::canonicalPricingSnapshot($data['pricing_snapshot'])
                 : (array) $lockedConfig->pricing_snapshot;
             if (array_intersect([
                 'input_cost_per_million',
@@ -182,6 +182,37 @@ final class CreateAndActivateModelRelease
         return array_key_exists($key, $data)
             ? AiMoney::canonicalMinorUnits($data[$key], $key)
             : $default;
+    }
+
+    /** @return array<string, mixed> */
+    private static function canonicalPricingSnapshot(mixed $value): array
+    {
+        if (! is_array($value)) {
+            throw new InvalidArgumentException('The pricing snapshot must be a canonical array.');
+        }
+
+        $snapshot = $value;
+        foreach ([
+            'input_cost_per_million_minor_units',
+            'output_cost_per_million_minor_units',
+            'cache_read_input_cost_per_million_minor_units',
+            'cache_write_input_cost_per_million_minor_units',
+            'reasoning_cost_per_million_minor_units',
+        ] as $key) {
+            if (! array_key_exists($key, $snapshot)) {
+                throw new InvalidArgumentException("The pricing snapshot is missing {$key}.");
+            }
+
+            $snapshot[$key] = AiMoney::canonicalMinorUnits($snapshot[$key], $key);
+        }
+
+        foreach (['fixed_request_cost_minor_units'] as $key) {
+            if (array_key_exists($key, $snapshot) && $snapshot[$key] !== null) {
+                $snapshot[$key] = AiMoney::canonicalMinorUnits($snapshot[$key], $key);
+            }
+        }
+
+        return $snapshot;
     }
 
     private static function positiveInteger(mixed $value, string $key): int

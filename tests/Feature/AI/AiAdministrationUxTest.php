@@ -344,6 +344,26 @@ final class AiAdministrationUxTest extends TestCase
         self::assertSame('gpt-4o-mini-2026', $releaseTwo->model_name);
         self::assertSame($releaseTwo->getKey(), $model->refresh()->active_release_id);
         self::assertSame([$model->getKey()], AiModelConfiguration::query()->orderBy('failover_priority')->pluck('id')->all());
+
+        $releaseCount = $model->releases()->count();
+        try {
+            app(CreateAndActivateModelRelease::class)->handle($admin, $model->refresh(), [
+                'pricing_snapshot' => [
+                    'currency' => 'USD',
+                    'input_cost_per_million_minor_units' => '2.50',
+                    'output_cost_per_million_minor_units' => 1000,
+                    'cache_read_input_cost_per_million_minor_units' => 25,
+                    'cache_write_input_cost_per_million_minor_units' => 50,
+                    'reasoning_cost_per_million_minor_units' => 125,
+                    'fixed_request_cost_applicable' => false,
+                    'fixed_request_cost_minor_units' => 0,
+                    'unsupported_meters' => [],
+                ],
+            ]);
+            self::fail('Malformed canonical pricing must be rejected.');
+        } catch (InvalidArgumentException) {
+            self::assertSame($releaseCount, $model->releases()->count());
+        }
     }
 
     public function test_model_relation_manager_uses_human_pricing_and_rehydrates_exact_values(): void
