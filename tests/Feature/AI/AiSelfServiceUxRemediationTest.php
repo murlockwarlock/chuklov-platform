@@ -11,6 +11,7 @@ use App\Modules\AI\Application\Actions\CreateAiPrompt;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreateModelConfiguration;
 use App\Modules\AI\Application\Actions\UpdateAiSafetyControl;
+use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Exceptions\AiPricingProfileIncompleteException;
@@ -131,6 +132,34 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertSame('custom-model', $release->model_name);
         self::assertSame(['general_assistant'], $release->capabilities);
         self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->refresh()->getPricingSnapshot()->pricingSource);
+    }
+
+    public function test_custom_transition_does_not_reuse_manual_state_from_current_catalog_model(): void
+    {
+        [, $owner] = $this->organizationFixture();
+        config()->set('ai.model_catalog', [$this->catalogEntry('catalog-model', ['image_input'])]);
+        $provider = $this->provider('openai');
+        $model = app(CreateModelConfiguration::class)->handle($owner, $provider, [
+            'model_selection' => 'catalog-model',
+            'display_name' => 'Каталожная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'input_cost_per_million' => '3.00',
+            'output_cost_per_million' => '11.00',
+        ]);
+
+        self::assertSame(AiPricingSnapshot::SOURCE_MANUAL, $model->getPricingSnapshot()->pricingSource);
+
+        $custom = AiModelConfigurationInput::forRelease($model, [
+            'model_selection' => AiModelCatalog::CUSTOM_MODEL,
+            'model_name' => 'custom-model',
+            'display_name' => 'Ручная модель',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+        ]);
+
+        self::assertSame('custom-model', $custom->modelName);
+        self::assertSame(['general_assistant'], $custom->capabilities);
+        self::assertSame(AiPricingSnapshot::SOURCE_UNKNOWN, $custom->pricing->pricingSource);
+        self::assertFalse($custom->pricing->isComplete());
     }
 
     public function test_default_catalog_contains_only_current_priced_choices_and_excludes_legacy_models(): void

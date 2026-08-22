@@ -64,8 +64,11 @@ final readonly class AiModelConfigurationInput
         $existingPricing = $existing?->getPricingSnapshot();
         $explicitCustomSelection = array_key_exists('model_selection', $data)
             && self::isCustomSelection($selection);
+        $existingCatalogDefinition = $existing === null
+            ? null
+            : AiModelCatalog::find($provider, $existing->model_name);
         $discardExistingCatalogMetadata = $explicitCustomSelection
-            && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG;
+            && $existingCatalogDefinition !== null;
         $existingModelName = $existing === null ? null : $existing->model_name;
         $existingDisplayName = $discardExistingCatalogMetadata || $existing === null
             ? null
