@@ -6,7 +6,9 @@ use App\Filament\Resources\AiEvaluations\Pages\CreateAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\EditAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\ListAiEvaluations;
 use App\Filament\Resources\AiEvaluations\RelationManagers\CasesRelationManager;
+use App\Filament\Resources\AiEvaluations\RelationManagers\RunsRelationManager;
 use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
+use App\Models\User;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
@@ -14,7 +16,9 @@ use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -26,6 +30,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
 final class AiEvaluationResource extends Resource
@@ -49,6 +54,33 @@ final class AiEvaluationResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return AiEvaluationForm::configure($schema);
+    }
+
+    public static function canAccess(): bool
+    {
+        $actor = Auth::user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ViewAiRuns,
+        );
+    }
+
+    public static function canCreate(): bool
+    {
+        $actor = Auth::user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ManageAiPrompts,
+        );
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return self::canCreate();
     }
 
     public static function table(Table $table): Table
@@ -127,6 +159,7 @@ final class AiEvaluationResource extends Resource
     {
         return [
             CasesRelationManager::class,
+            RunsRelationManager::class,
         ];
     }
 

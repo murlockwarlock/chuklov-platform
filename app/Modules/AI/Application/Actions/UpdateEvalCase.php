@@ -4,6 +4,7 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Domain\Models\AiEvalCase;
+use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -14,6 +15,7 @@ class UpdateEvalCase
     public function __construct(
         private readonly OrganizationAuthorizer $authorizer,
         private readonly CreateEvalCase $createAction,
+        private readonly AiEvaluationAssertionRegistry $assertionRegistry,
     ) {}
 
     /**
@@ -44,12 +46,14 @@ class UpdateEvalCase
             ? (is_string($data['expected_assertions']) ? (json_decode($data['expected_assertions'], true) ?: []) : (array) $data['expected_assertions'])
             : (array) $case->expected_assertions;
         $this->createAction->assertNoProductionPatientReferences($organization->id, $expectedAssertions);
+        $expectedAssertions = $this->assertionRegistry->normalize($expectedAssertions);
 
         $expectedOutputSchema = array_key_exists('expected_output_schema', $data)
             ? (is_string($data['expected_output_schema']) ? (json_decode($data['expected_output_schema'], true) ?: null) : ($data['expected_output_schema'] === null ? null : (array) $data['expected_output_schema']))
             : $case->expected_output_schema;
         if ($expectedOutputSchema !== null) {
             $this->createAction->assertNoProductionPatientReferences($organization->id, $expectedOutputSchema);
+            $this->assertionRegistry->validateSchema($expectedOutputSchema);
         }
 
         $case->update([

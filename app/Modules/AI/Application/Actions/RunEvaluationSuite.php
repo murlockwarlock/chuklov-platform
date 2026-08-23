@@ -3,18 +3,27 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Data\AiEvaluationCaseResult;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Services\AiEvaluationRunMetricsAggregator;
 use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
+use App\Modules\AI\Domain\Enums\AiEvaluationCaseStatus;
+use App\Modules\AI\Domain\Enums\AiEvaluationCheckCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
-use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalRun;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Domain\Models\AiRunRagReference;
+use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -22,15 +31,18 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
-class RunEvaluationSuite
+final class RunEvaluationSuite
 {
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly AiWorkflowEngine $workflowEngine,
         private readonly EvalInputPrivacyValidator $privacyValidator,
+        private readonly AiEvaluationAssertionRegistry $assertionRegistry,
+        private readonly AiEvaluationRunMetricsAggregator $metricsAggregator,
     ) {}
 
     public function handle(
@@ -44,7 +56,7 @@ class RunEvaluationSuite
 
         $suite = AiEvalSuite::query()
             ->where('organization_id', $organization->getKey())
-            ->where('id', $evalSuiteId)
+            ->whereKey($evalSuiteId)
             ->first();
 
         if ($suite === null) {
@@ -57,7 +69,7 @@ class RunEvaluationSuite
 
         $promptVersion = AiPromptVersion::query()
             ->where('organization_id', $organization->getKey())
-            ->where('id', $promptVersionId)
+            ->whereKey($promptVersionId)
             ->first();
 
         if ($promptVersion === null) {
@@ -98,7 +110,7 @@ class RunEvaluationSuite
             || $providerConfiguration === null
             || $providerConfiguration->provider_name !== $release->provider_name
             || ! $providerConfiguration->is_enabled
-            || $providerConfiguration->health_status !== ProviderHealthStatus::Healthy
+            || $providerConfiguration->health_status->value !== 'healthy'
             || $credential === null
             || $credential->provider !== $providerConfiguration->provider_name
             || $credential->status !== CredentialStatus::Active
@@ -130,12 +142,15 @@ class RunEvaluationSuite
             throw new InvalidArgumentException('Evaluation suite exceeds the platform maximum of '.AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES.' active cases.');
         }
 
+        $assertionsByCase = [];
         foreach ($cases as $case) {
             $this->privacyValidator->validateClassification($case->is_synthetic, $case->is_deidentified);
             $this->privacyValidator->validate((array) $case->test_inputs);
             $this->privacyValidator->validate((array) $case->expected_assertions);
+            $assertionsByCase[$case->getKey()] = $this->assertionRegistry->normalize((array) $case->expected_assertions);
             if ($case->expected_output_schema !== null) {
                 $this->privacyValidator->validate((array) $case->expected_output_schema);
+                $this->assertionRegistry->validateSchema((array) $case->expected_output_schema);
             }
         }
 
@@ -143,15 +158,9 @@ class RunEvaluationSuite
             throw new InvalidArgumentException('PostureAnalysis evaluation requires a controlled three-photo fixture.');
         }
 
-        $totalCases = $cases->count();
-        $passedCases = 0;
-        $failedCases = 0;
-        $caseResults = [];
-        $actualProvider = null;
-        $actualModel = null;
-
+        $executions = [];
         foreach ($cases as $case) {
-            $request = new AiRunRequest(
+            $result = $this->workflowEngine->run($organization->getKey(), new AiRunRequest(
                 capability: $suite->capability,
                 workflowKey: "eval_suite_{$suite->key}_case_{$case->id}",
                 origin: AiRunOrigin::Evaluation,
@@ -161,77 +170,253 @@ class RunEvaluationSuite
                 modelReleaseId: $release->id,
                 inputVariables: $case->test_inputs ?? [],
                 actor: $actor,
-            );
-
-            $result = $this->workflowEngine->run($organization->getKey(), $request);
-
-            $passed = $result->isSuccess();
-            $failureReason = null;
-            $actualRun = AiRun::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereKey($result->runId)
-                ->first();
-            if ($actualRun !== null) {
-                $actualProvider ??= $actualRun->actual_provider;
-                $actualModel ??= $actualRun->actual_model;
-            }
-
-            if ($actualRun !== null && (int) $actualRun->model_release_id !== (int) $release->id) {
-                $passed = false;
-                $failureReason = 'pinned_release_mismatch';
-            }
-
-            if ($passed && ! empty($case->expected_assertions)) {
-                foreach ((array) $case->expected_assertions as $assertionKey => $expectedVal) {
-                    if ($assertionKey === 'contains_text' && is_string($expectedVal)) {
-                        if (! str_contains(mb_strtolower((string) $result->outputText), mb_strtolower($expectedVal))) {
-                            $passed = false;
-                            $failureReason = 'assertion_failed';
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if ($passed) {
-                $passedCases++;
-            } else {
-                $failedCases++;
-                if ($failureReason === null) {
-                    $failureReason = $result->errorCategory?->value;
-                }
-            }
-
-            $caseResults[] = [
-                'case_id' => $case->id,
-                'run_id' => $result->runId,
-                'passed' => $passed,
-                'latency_ms' => $result->latencyMs,
-                'failure_code' => $failureReason,
-                'model_release_id' => $actualRun?->model_release_id,
-                'actual_provider' => $actualRun?->actual_provider,
-                'actual_model' => $actualRun?->actual_model,
+            ));
+            $executions[] = [
+                'case' => $case,
+                'assertions' => $assertionsByCase[$case->getKey()] ?? [],
+                'result' => $result,
             ];
         }
+
+        $runIds = array_values(array_unique(array_map(static fn (array $execution): int => $execution['result']->runId, $executions)));
+        $actualRuns = AiRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereIn('id', $runIds)
+            ->get()
+            ->keyBy('id');
+        $attempts = AiRunAttempt::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereIn('ai_run_id', $runIds)
+            ->orderBy('attempt_number')
+            ->get()
+            ->groupBy('ai_run_id');
+        $ragReferences = AiRunRagReference::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereIn('ai_run_id', $runIds)
+            ->with([
+                'source:id,organization_id,title',
+                'chunk:id,organization_id,source_reference',
+            ])
+            ->orderBy('reference_index')
+            ->get()
+            ->groupBy('ai_run_id');
+
+        $caseResults = [];
+        foreach ($executions as $execution) {
+            /** @var AiEvalCase $case */
+            $case = $execution['case'];
+            $result = $execution['result'];
+            $actualRun = $actualRuns->get($result->runId);
+            $caseAttempts = $attempts->get($result->runId, collect());
+            $references = $this->ragReferenceData($ragReferences->get($result->runId, collect()));
+            $assertionResults = [];
+            $status = AiEvaluationCaseStatus::ExecutionFailed;
+            $failureCategory = AiEvaluationCheckCategory::Execution->value;
+            $failureCode = $result->errorCategory instanceof AiErrorCategory
+                ? $result->errorCategory->value
+                : 'execution_failed';
+            $failureExplanation = 'AI не смог выполнить этот пример.';
+
+            if ($result->isSuccess() && $actualRun instanceof AiRun && $actualRun->status === AiRunStatus::Succeeded) {
+                if ((int) $actualRun->model_release_id !== (int) $release->id
+                    || (int) $actualRun->prompt_version_id !== (int) $promptVersion->id) {
+                    $failureCode = 'pinned_release_mismatch';
+                    $failureExplanation = 'Фактическая конфигурация AI не совпала с закреплённой версией проверки.';
+                } else {
+                    $assertionResults = $this->assertionRegistry->evaluate(
+                        definitions: $execution['assertions'],
+                        expectedSchema: $case->expected_output_schema,
+                        outputText: (string) $result->outputText,
+                        outputPayload: $result->outputPayload,
+                        ragReferences: $references,
+                    );
+                    $failedAssertion = collect($assertionResults)->first(static fn ($assertion): bool => ! $assertion->passed);
+                    if ($failedAssertion === null) {
+                        $status = AiEvaluationCaseStatus::Passed;
+                        $failureCategory = null;
+                        $failureCode = null;
+                        $failureExplanation = 'Все проверки выполнены.';
+                    } else {
+                        $failureCategory = $failedAssertion->category->value;
+                        $failureCode = $failedAssertion->failureCode;
+                        $failureExplanation = $failedAssertion->explanation;
+                        $status = match ($failedAssertion->category) {
+                            AiEvaluationCheckCategory::Schema => AiEvaluationCaseStatus::SchemaFailed,
+                            AiEvaluationCheckCategory::Rag => AiEvaluationCaseStatus::RagFailed,
+                            AiEvaluationCheckCategory::Judge => AiEvaluationCaseStatus::JudgeFailed,
+                            default => AiEvaluationCaseStatus::AssertionFailed,
+                        };
+                    }
+                }
+            } elseif (($actualRun instanceof AiRun && $actualRun->error_category === AiErrorCategory::OutputSchemaValidationFailed)
+                || $result->errorCategory === AiErrorCategory::OutputSchemaValidationFailed
+                || $result->status === AiRunStatus::InvalidOutput) {
+                $status = AiEvaluationCaseStatus::SchemaFailed;
+                $failureCategory = AiEvaluationCheckCategory::Schema->value;
+                $failureCode = 'schema_invalid';
+                $failureExplanation = 'Ответ AI не соответствует ожидаемому формату.';
+            } elseif ($this->hasRagAssertion($execution['assertions']) && $result->errorCategory === AiErrorCategory::ToolExecutionFailed) {
+                $status = AiEvaluationCaseStatus::RagFailed;
+                $failureCategory = AiEvaluationCheckCategory::Rag->value;
+                $failureCode = 'rag_execution_failed';
+                $failureExplanation = 'Не удалось проверить ответ по разрешённым источникам.';
+            }
+
+            $providerCost = $caseAttempts->sum(static fn (AiRunAttempt $attempt): int => (int) ($attempt->provider_cost_minor_units ?? 0));
+            $executionStatus = $actualRun instanceof AiRun ? $actualRun->status->value : $result->status->value;
+            $executionErrorCategory = $actualRun instanceof AiRun && $actualRun->error_category instanceof AiErrorCategory
+                ? $actualRun->error_category->value
+                : ($result->errorCategory instanceof AiErrorCategory ? $result->errorCategory->value : null);
+            $executionLatency = $actualRun instanceof AiRun ? (int) $actualRun->latency_ms : $result->latencyMs;
+            $executionTokenUsage = $actualRun instanceof AiRun
+                ? $actualRun->getTokenUsage()->toArray()
+                : $result->tokenUsage->toArray();
+            $executionCost = $actualRun instanceof AiRun ? $actualRun->settled_estimated_cost_minor_units : null;
+            $executionCurrency = $actualRun instanceof AiRun ? $actualRun->cost_currency : $result->costCurrency;
+            $executionData = [
+                'status' => $executionStatus,
+                'provider' => $actualRun?->actual_provider,
+                'model' => $actualRun?->actual_model,
+                'latency_ms' => $executionLatency,
+                'attempt_count' => $caseAttempts->count(),
+                'error_category' => $executionErrorCategory,
+                'token_usage' => $executionTokenUsage,
+                'estimated_cost_minor_units' => $executionCost,
+                'provider_cost_minor_units' => $caseAttempts->isEmpty() ? null : $providerCost,
+                'cost_currency' => strtoupper((string) $executionCurrency),
+            ];
+
+            $caseResults[] = new AiEvaluationCaseResult(
+                caseId: (int) $case->getKey(),
+                caseName: $case->name,
+                aiRunId: (int) $result->runId,
+                status: $status,
+                passed: $status->isPassed(),
+                failureCategory: $failureCategory,
+                failureCode: $failureCode,
+                failureExplanation: $failureExplanation,
+                assertions: array_map(static fn ($assertion): array => $assertion->toArray(), $assertionResults),
+                execution: $executionData,
+                rag: [
+                    'checks_present' => $this->hasRagAssertion($execution['assertions']),
+                    'reference_count' => count($references),
+                    'references' => $references,
+                ],
+                modelReleaseId: $actualRun?->model_release_id,
+                actualProvider: $actualRun?->actual_provider,
+                actualModel: $actualRun?->actual_model,
+            );
+        }
+
+        $totalCases = count($caseResults);
+        $passedCases = count(array_filter($caseResults, static fn (AiEvaluationCaseResult $result): bool => $result->passed));
+        $failedCases = $totalCases - $passedCases;
+        $metrics = $this->metricsAggregator->aggregate($organization->getKey(), $actualRuns, $caseResults);
+        $columns = $this->metricsAggregator->columns($metrics);
+        $executedAt = Carbon::now()->toIso8601String();
+        $provenanceSnapshot = $this->provenanceSnapshot($suite, $cases, $promptVersion, $release, $assertionsByCase, $executedAt);
 
         $evalRun = new AiEvalRun([
             'organization_id' => $organization->getKey(),
             'eval_suite_id' => $suite->id,
             'prompt_version_id' => $promptVersion->id,
             'model_release_id' => $release->id,
-            'provider' => $actualProvider,
-            'model' => $actualModel,
+            'provider' => $actualRuns->first()?->actual_provider,
+            'model' => $actualRuns->first()?->actual_model,
             'total_cases' => $totalCases,
             'passed_cases' => $passedCases,
             'failed_cases' => $failedCases,
+            'pass_percentage' => $metrics['pass_percentage'],
+            ...$columns,
             'results_payload' => [
-                'cases' => $caseResults,
-                'executed_at' => Carbon::now()->toIso8601String(),
+                'schema_version' => 2,
+                'cases' => array_map(static fn (AiEvaluationCaseResult $result): array => $result->toArray(), $caseResults),
+                'metrics' => $metrics,
+                'executed_at' => $executedAt,
             ],
+            'metrics_payload' => $metrics,
+            'provenance_snapshot' => $provenanceSnapshot,
             'executed_by_user_id' => $actor->getKey(),
         ]);
         $evalRun->save();
 
         return $evalRun;
+    }
+
+    /** @param list<array<string, mixed>> $assertions */
+    private function hasRagAssertion(array $assertions): bool
+    {
+        foreach ($assertions as $assertion) {
+            if (in_array($assertion['type'] ?? null, ['required_source', 'forbidden_source'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  Collection<int, AiRunRagReference>  $references
+     * @return list<array<string, mixed>>
+     */
+    private function ragReferenceData(Collection $references): array
+    {
+        return array_values($references->map(static fn (AiRunRagReference $reference): array => [
+            'reference_index' => (int) $reference->reference_index,
+            'source_id' => (int) $reference->knowledge_source_id,
+            'source_title' => $reference->source?->title,
+            'source_reference' => $reference->chunk?->source_reference,
+            'revision_id' => (int) $reference->knowledge_revision_id,
+            'chunk_id' => (int) $reference->knowledge_chunk_id,
+            'similarity_score' => (float) $reference->similarity_score,
+            'configuration_key' => $reference->configuration_key,
+        ])->values()->all());
+    }
+
+    /**
+     * @param  Collection<int, AiEvalCase>  $cases
+     * @param  array<int, list<array<string, mixed>>>  $assertionsByCase
+     * @return array<string, mixed>
+     */
+    private function provenanceSnapshot(
+        AiEvalSuite $suite,
+        Collection $cases,
+        AiPromptVersion $promptVersion,
+        AiModelRelease $release,
+        array $assertionsByCase,
+        string $executedAt,
+    ): array {
+        return [
+            'schema_version' => 1,
+            'suite' => [
+                'id' => (int) $suite->getKey(),
+                'key' => $suite->key,
+                'name' => $suite->name,
+                'capability' => $suite->capability->value,
+            ],
+            'cases' => $cases->map(static fn (AiEvalCase $case): array => [
+                'id' => (int) $case->getKey(),
+                'name' => $case->name,
+                'assertions' => $assertionsByCase[$case->getKey()] ?? [],
+                'expected_output_schema' => $case->expected_output_schema,
+            ])->values()->all(),
+            'prompt_version' => [
+                'id' => (int) $promptVersion->getKey(),
+                'prompt_id' => (int) $promptVersion->prompt_id,
+                'version' => (int) $promptVersion->version,
+                'status' => $promptVersion->status->value,
+            ],
+            'model_release' => [
+                'id' => (int) $release->getKey(),
+                'model_config_id' => (int) $release->model_config_id,
+                'release_number' => (int) $release->release_number,
+                'provider' => $release->provider_name,
+                'model' => $release->model_name,
+                'status' => $release->status,
+                'capabilities' => $release->capabilities,
+            ],
+            'capability' => $suite->capability->value,
+            'executed_at' => $executedAt,
+        ];
     }
 }

@@ -40,6 +40,8 @@ final class AiRuntimeLimits
 
     public const int PLATFORM_MAX_EVALUATION_CASES = 100;
 
+    public const int PLATFORM_MAX_EVALUATION_ASSERTIONS = 32;
+
     public const int PLATFORM_MAX_RAG_QUERY_CHARACTERS = 4000;
 
     public const int PLATFORM_MAX_CONTEXT_SESSIONS = 20;

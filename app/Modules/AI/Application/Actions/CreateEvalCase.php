@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
 use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
+use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -16,11 +17,12 @@ class CreateEvalCase
     public function __construct(
         private readonly OrganizationAuthorizer $authorizer,
         private readonly EvalInputPrivacyValidator $privacyValidator,
+        private readonly AiEvaluationAssertionRegistry $assertionRegistry,
     ) {}
 
     /**
      * @param  array<string, mixed>  $testInputs
-     * @param  array<string, mixed>  $expectedAssertions
+     * @param  array<int|string, mixed>  $expectedAssertions
      * @param  array<string, mixed>|null  $expectedOutputSchema
      */
     public function execute(
@@ -41,8 +43,10 @@ class CreateEvalCase
         $this->privacyValidator->validateClassification($isSynthetic, $isDeidentified);
         $this->privacyValidator->validate($testInputs);
         $this->privacyValidator->validate($expectedAssertions);
+        $expectedAssertions = $this->assertionRegistry->normalize($expectedAssertions);
         if ($expectedOutputSchema !== null) {
             $this->privacyValidator->validate($expectedOutputSchema);
+            $this->assertionRegistry->validateSchema($expectedOutputSchema);
         }
 
         $suite = AiEvalSuite::query()

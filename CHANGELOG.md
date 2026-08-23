@@ -232,3 +232,9 @@ All notable implementation changes are recorded here. Requirement changes belong
 - Docker build context is deny-by-default, Gitleaks scans reachable history and Git-relevant working files, privileged User fields are not mass assignable, and private source-history policy is explicit in the master plan.
 - Telegram initData is signature-verified through Nutgram, freshness/replay checked, never trusted from frontend identity fields, and excluded from audit metadata; client sessions resolve only through the server-derived organization context.
 - Email auth codes and Telegram connection tokens are short-lived, single-use or bounded, hashed at rest where applicable, absent from audit metadata, and do not select organization/client context from request input.
+## 2026-08-23 — Stage 10.1 AI Evaluation Quality / Observability
+
+- Extended the accepted AI evaluation foundation with bounded typed deterministic checks: required/forbidden information, non-empty output, JSON schema, required structured fields, bounded field values, and RAG source provenance. Unsupported assertion types fail closed.
+- Stored immutable evaluation provenance and safe case-level failure categories, with run-level pass rate, quality breakdown, latency, token, retry/failover, execution-error, cost, and human-review metrics. Chuklov estimated cost remains distinct from provider-reported cost and historical pricing snapshots remain authoritative.
+- Added Russian Filament quality history, protected-data-safe run detail, and compatibility-gated comparison of prompt/model evaluation runs. The optional judge layer is disabled and does not generate scores by default.
+- Preserved organization tenancy, synthetic/deidentified evaluation validation, encrypted medical trace boundaries, exact prompt/model release pinning, existing RAG provenance, and fake-only normal CI policy. AI Companion, M11, OQ-015 content, provider catalog redesign, deployment, and merge remain out of scope.
