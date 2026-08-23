@@ -130,24 +130,31 @@ final class AiModelDiscoveryTest extends TestCase
     {
         [$organization] = $this->organizationFixture('cache-clinic');
         $provider = $this->providerWithCredential($organization, 'openrouter');
-        Cache::flush();
+        $cacheManager = Cache::getFacadeRoot();
+        Cache::swap(Cache::store('array'));
+
         Http::fake([
             'https://openrouter.ai/api/v1/models' => Http::sequence()
                 ->push(['data' => [$this->discoveredModel('cached/model')]], 200)
                 ->push(['error' => 'temporarily unavailable'], 503),
         ]);
 
-        $service = app(AiModelDiscoveryService::class);
-        self::assertFalse($service->discover($provider->load('credential'))->stale);
-        CarbonImmutable::setTestNow(now()->addSeconds(601));
-        $stale = $service->discover($provider->fresh('credential'));
+        try {
+            Cache::flush();
+            $service = app(AiModelDiscoveryService::class);
+            self::assertFalse($service->discover($provider->load('credential'))->stale);
+            CarbonImmutable::setTestNow(now()->addSeconds(601));
+            $stale = $service->discover($provider->fresh('credential'));
 
-        self::assertTrue($stale->stale);
-        self::assertTrue($stale->hasError());
-        self::assertSame('cached/model', $stale->models()[0]->modelName);
-        self::assertStringNotContainsString('openrouter-secret', (string) $stale->error);
-        Http::assertSentCount(2);
-        CarbonImmutable::setTestNow();
+            self::assertTrue($stale->stale);
+            self::assertTrue($stale->hasError());
+            self::assertSame('cached/model', $stale->models()[0]->modelName);
+            self::assertStringNotContainsString('openrouter-secret', (string) $stale->error);
+            Http::assertSentCount(2);
+        } finally {
+            CarbonImmutable::setTestNow();
+            Cache::swap($cacheManager);
+        }
     }
 
     public function test_credentialless_openai_compatible_discovery_returns_active_models_without_inventing_price(): void
