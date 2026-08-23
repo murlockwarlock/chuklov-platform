@@ -1,5 +1,14 @@
 # Project Status
 
+## 2026-08-23 — Stage 10.1 AI Evaluation Quality / Observability — IN_PROGRESS
+
+- Candidate branch: `codex/ai-eval-quality-observability`, based exactly on `44a4ba09f01803a740b299786fabc6ad2a0ad49a`.
+- Extends the accepted M10 evaluation foundation with a bounded server-owned assertion registry for required/forbidden text, output presence, JSON schema, required fields, bounded values, and RAG source provenance. Unknown assertion types fail closed.
+- Evaluation runs now retain immutable suite/case/assertion/schema/prompt/model/capability snapshots and safe case-level typed results. Run metrics distinguish answer quality from execution errors and aggregate pass rate, RAG checks, token usage, Chuklov estimated cost, provider-reported cost, latency, retry/failover, and human-review decisions without decrypting medical payloads.
+- Filament `Искусственный интеллект → Проверки AI` adds Russian quality history, safe failure detail, and compatible-run comparison. Protected AI traces remain behind the existing authorization boundary. The optional judge layer is explicitly disabled and produces no scores unless a later configured extension is added.
+- AI Companion remains the next separate slice after 10.1; M11 is not advanced. M8 remains blocked by OQ-015. No provider catalog redesign, real-provider CI evaluation, deployment, or merge is part of this candidate.
+
+
 ## UX-A — Client Workspace + ordinary client/global search — IMPLEMENTATION CANDIDATE — 2026-08-18
 
 - Candidate branch: `ux-a-client-workspace-search`, based exactly on `90ceb3c5da1dd970315f2d82512e1cf6a11119e9`.

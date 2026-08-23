@@ -52,7 +52,7 @@ final class EvalInputPrivacyValidator
         }
     }
 
-    /** @param array<string, mixed> $input */
+    /** @param array<int|string, mixed> $input */
     public function validate(array $input): void
     {
         $encoded = json_encode($input, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

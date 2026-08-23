@@ -2,6 +2,8 @@
 
 namespace App\Modules\AI\Domain\Models;
 
+use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
+use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -23,6 +25,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $configuration_key
  * @property-read Organization $organization
  * @property-read AiRun $run
+ * @property-read KnowledgeSource|null $source
+ * @property-read KnowledgeChunk|null $chunk
  */
 #[Fillable([
     'organization_id',
@@ -49,6 +53,18 @@ class AiRunRagReference extends Model
     public function run(): BelongsTo
     {
         return $this->belongsTo(AiRun::class, 'ai_run_id');
+    }
+
+    /** @return BelongsTo<KnowledgeSource, $this> */
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(KnowledgeSource::class, 'knowledge_source_id');
+    }
+
+    /** @return BelongsTo<KnowledgeChunk, $this> */
+    public function chunk(): BelongsTo
+    {
+        return $this->belongsTo(KnowledgeChunk::class, 'knowledge_chunk_id');
     }
 
     /** @return BelongsTo<AiRunToolCall, $this> */
