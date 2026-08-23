@@ -47,6 +47,7 @@ class FilamentFoundationTest extends TestCase
             'Команда и услуги',
             'Коммуникации',
             'Контент и знания',
+            'Искусственный интеллект',
             'Финансы',
         ], $panel->getNavigationGroups());
         self::assertNotContains(FilamentInfoWidget::class, $panel->getWidgets());

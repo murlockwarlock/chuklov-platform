@@ -21,6 +21,7 @@ use App\Modules\AI\Infrastructure\Engine\LaravelAiWorkflowEngine;
 use App\Modules\AI\Infrastructure\Output\JsonSchemaOutputValidator;
 use App\Modules\AI\Infrastructure\Pricing\DefaultAiPricingCalculator;
 use App\Modules\AI\Infrastructure\Prompt\SafePromptRenderer;
+use App\Modules\AI\Infrastructure\Providers\AiProviderEndpointGuard;
 use App\Modules\AI\Infrastructure\Providers\BoundedBedrockProvider;
 use App\Modules\AI\Infrastructure\Safety\AtomicAiSafetyBudgetManager;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
@@ -114,15 +115,19 @@ use App\Policies\SpecialistServiceAssignmentPolicy;
 use App\Policies\SurveyAttemptPolicy;
 use App\Policies\SurveyDefinitionPolicy;
 use App\Policies\UnavailablePeriodPolicy;
+use Closure;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Ai\AiManager;
+use Psr\Http\Message\RequestInterface;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -188,6 +193,15 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Http::globalMiddleware(static function (callable $handler): Closure {
+            return static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
+                $request = AiProviderEndpointGuard::guardRequest($request);
+                $options['allow_redirects'] = false;
+
+                return $handler($request, AiProviderEndpointGuard::pinDns($request, $options));
+            };
+        });
+
         Event::listen(OrganizationCredentialReplaced::class, static function (OrganizationCredentialReplaced $event): void {
             app(InvalidateAiProviderHealthForCredential::class)->handle(
                 organizationId: $event->organizationId,

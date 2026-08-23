@@ -631,6 +631,50 @@ final class SessionCockpitTest extends TestCase
         self::assertNull($select->getOptionLabel(false));
     }
 
+    public function test_create_session_specialist_select_uses_filament_dynamic_search_beyond_initial_options(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+
+        for ($index = 1; $index <= 55; $index++) {
+            Specialist::factory()->forOrganization($organization)->create([
+                'display_name' => 'A Specialist '.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            ]);
+        }
+
+        $target = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Z Target Specialist',
+        ]);
+        $otherOrganization = Organization::factory()->create();
+        $foreign = Specialist::factory()->forOrganization($otherOrganization)->create([
+            'display_name' => 'Z Target Specialist',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        $select = $component->instance()->getSchemaComponent('form.specialist_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertTrue($select->hasDynamicOptions());
+        self::assertTrue($select->hasDynamicSearchResults());
+
+        $initialOptions = $select->getOptionsForJs();
+        self::assertCount(50, $initialOptions);
+        self::assertFalse(collect($initialOptions)->contains('value', (string) $target->getKey()));
+
+        $searchResults = $component->instance()->callSchemaComponentMethod(
+            'form.specialist_id',
+            'getSearchResultsForJs',
+            ['search' => 'Z Target Specialist'],
+        );
+
+        self::assertSame([
+            ['label' => 'Z Target Specialist (активен)', 'value' => (string) $target->getKey(), 'isDisabled' => false],
+        ], $searchResults);
+        self::assertFalse(collect($searchResults)->contains('value', (string) $foreign->getKey()));
+        self::assertStringContainsString('hasDynamicSearchResults: true', $component->html());
+    }
+
     public function test_booking_select_narrowed_to_parent_client_and_selected_specialist(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

@@ -3,33 +3,41 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
-use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 final class CreateAndActivateModelRelease
 {
     public function __construct(
+        private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly ?AiModelDiscoveryService $modelDiscovery = null,
     ) {}
 
     /** @param array<string, mixed> $data */
     public function handle(User $actor, AiModelConfiguration $modelConfig, array $data): AiModelRelease
     {
-        $organization = $modelConfig->organization;
+        $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ActivateAiReleases);
 
         $providerManagementKeys = [
+            'model_selection',
             'model_name',
             'display_name',
             'capabilities',
+            'model_modalities',
             'pricing_snapshot',
             'input_cost_per_million',
             'output_cost_per_million',
@@ -46,7 +54,22 @@ final class CreateAndActivateModelRelease
             $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
         }
 
-        return DB::transaction(function () use ($organization, $actor, $modelConfig, $data, $providerManagementKeys): AiModelRelease {
+        $providerForDiscovery = $modelConfig->providerConfiguration;
+        if ($providerForDiscovery === null
+            || (int) $providerForDiscovery->organization_id !== (int) $organization->getKey()) {
+            throw new AuthorizationException('Model provider configuration is outside the current organization.');
+        }
+
+        if (AiProviderCatalog::isSpecialized($providerForDiscovery->provider_name)) {
+            throw new InvalidArgumentException('Embedding, reranking and audio providers use their specialized configuration.');
+        }
+
+        $discoveredDefinition = ($this->modelDiscovery ?? app(AiModelDiscoveryService::class))->definitionFor(
+            provider: $providerForDiscovery,
+            model: $data['model_selection'] ?? null,
+        );
+
+        return DB::transaction(function () use ($organization, $actor, $modelConfig, $data, $providerManagementKeys, $discoveredDefinition): AiModelRelease {
             $lockedConfig = AiModelConfiguration::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($modelConfig->getKey())
@@ -63,55 +86,11 @@ final class CreateAndActivateModelRelease
                 throw new AuthorizationException('Model provider configuration is outside the current organization.');
             }
 
-            $pricing = isset($data['pricing_snapshot']) && is_array($data['pricing_snapshot'])
-                ? $data['pricing_snapshot']
-                : (array) $lockedConfig->pricing_snapshot;
-            if (array_intersect([
-                'input_cost_per_million',
-                'output_cost_per_million',
-                'cache_read_input_cost_per_million',
-                'cache_write_input_cost_per_million',
-                'reasoning_cost_per_million',
-                'fixed_request_cost_applicable',
-                'fixed_request_cost_minor_units',
-                'unsupported_meters',
-            ], array_keys($data)) !== []) {
-                $existingPricing = AiPricingSnapshot::fromArray($pricing);
-                $pricing = (new AiPricingSnapshot(
-                    currency: $existingPricing->currency,
-                    inputCostPerMillionMinorUnits: array_key_exists('input_cost_per_million', $data)
-                        ? max(0, (int) $data['input_cost_per_million'])
-                        : $existingPricing->inputCostPerMillionMinorUnits,
-                    outputCostPerMillionMinorUnits: array_key_exists('output_cost_per_million', $data)
-                        ? max(0, (int) $data['output_cost_per_million'])
-                        : $existingPricing->outputCostPerMillionMinorUnits,
-                    cacheReadInputCostPerMillionMinorUnits: array_key_exists('cache_read_input_cost_per_million', $data)
-                        ? self::optionalCost($data, 'cache_read_input_cost_per_million')
-                        : $existingPricing->cacheReadInputCostPerMillionMinorUnits,
-                    cacheWriteInputCostPerMillionMinorUnits: array_key_exists('cache_write_input_cost_per_million', $data)
-                        ? self::optionalCost($data, 'cache_write_input_cost_per_million')
-                        : $existingPricing->cacheWriteInputCostPerMillionMinorUnits,
-                    reasoningCostPerMillionMinorUnits: array_key_exists('reasoning_cost_per_million', $data)
-                        ? self::optionalCost($data, 'reasoning_cost_per_million')
-                        : $existingPricing->reasoningCostPerMillionMinorUnits,
-                    fixedRequestCostApplicable: array_key_exists('fixed_request_cost_applicable', $data)
-                        ? (bool) $data['fixed_request_cost_applicable']
-                        : $existingPricing->fixedRequestCostApplicable,
-                    fixedRequestCostMinorUnits: array_key_exists('fixed_request_cost_minor_units', $data)
-                        ? self::optionalCost($data, 'fixed_request_cost_minor_units')
-                        : $existingPricing->fixedRequestCostMinorUnits,
-                    unsupportedMeters: array_key_exists('unsupported_meters', $data)
-                        ? self::unsupportedMeters($data['unsupported_meters'])
-                        : $existingPricing->unsupportedMeters,
-                ))->toArray();
-            }
-
-            $pricingSnapshot = AiPricingSnapshot::fromArray($pricing);
-            $pricingSnapshot->assertComplete();
-            $pricing = $pricingSnapshot->toArray();
-
-            $modelName = (string) ($data['model_name'] ?? $lockedConfig->model_name);
-            $capabilities = array_values(array_map('strval', (array) ($data['capabilities'] ?? $lockedConfig->capabilities ?? [])));
+            $input = AiModelConfigurationInput::forRelease($lockedConfig, $data, $discoveredDefinition);
+            $input->pricing->assertComplete();
+            $pricing = $input->pricing->toArray();
+            $modelName = $input->modelName;
+            $capabilities = $input->capabilities;
             $releaseNumber = ((int) AiModelRelease::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('model_config_id', $lockedConfig->getKey())
@@ -138,17 +117,17 @@ final class CreateAndActivateModelRelease
 
             $configUpdates = [
                 'active_release_id' => $release->getKey(),
-                'is_enabled' => true,
+                'is_enabled' => $input->isEnabled,
                 'lifecycle_status' => 'active',
             ];
             if (array_intersect($providerManagementKeys, array_keys($data)) !== []) {
                 $configUpdates = [
                     ...$configUpdates,
                     'model_name' => $modelName,
-                    'display_name' => (string) ($data['display_name'] ?? $lockedConfig->display_name),
+                    'display_name' => $input->displayName,
                     'capabilities' => $capabilities,
                     'pricing_snapshot' => $pricing,
-                    'failover_priority' => max(1, (int) ($data['failover_priority'] ?? $lockedConfig->failover_priority)),
+                    'failover_priority' => $input->failoverPriority,
                 ];
             }
             $lockedConfig->update($configUpdates);
@@ -167,24 +146,5 @@ final class CreateAndActivateModelRelease
 
             return $release;
         });
-    }
-
-    /** @param array<string, mixed> $data */
-    private static function optionalCost(array $data, string $key, ?int $default = null): ?int
-    {
-        return array_key_exists($key, $data) ? max(0, (int) $data[$key]) : $default;
-    }
-
-    /** @return list<string> */
-    private static function unsupportedMeters(mixed $value): array
-    {
-        $values = is_array($value)
-            ? $value
-            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
-
-        return array_values(array_unique(array_filter(
-            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
-            static fn (string $meter): bool => $meter !== '',
-        )));
     }
 }

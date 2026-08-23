@@ -37,6 +37,7 @@ use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Registry\AiCapabilityDefinition;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
@@ -542,11 +543,16 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         $query->whereNotIn('provider_name', $safetyControls->disabled_providers);
                     }
 
-                    $query->whereHas('credential', static function (Builder $credentialQuery): void {
-                        $credentialQuery
-                            ->where('status', CredentialStatus::Active->value)
-                            ->whereColumn('organization_credentials.provider', 'ai_provider_configurations.provider_name')
-                            ->whereColumn('organization_credentials.revision_id', 'ai_provider_configurations.tested_credential_revision');
+                    $query->where(function (Builder $credentialScope): void {
+                        $credentialScope
+                            ->whereIn('provider_name', ['ollama', 'openai_compatible'])
+                            ->whereNull('tested_credential_revision')
+                            ->orWhereHas('credential', static function (Builder $credentialQuery): void {
+                                $credentialQuery
+                                    ->where('status', CredentialStatus::Active->value)
+                                    ->whereColumn('organization_credentials.provider', 'ai_provider_configurations.provider_name')
+                                    ->whereColumn('organization_credentials.revision_id', 'ai_provider_configurations.tested_credential_revision');
+                            });
                     });
                 })
                 ->with(['providerConfiguration.credential', 'activeRelease'])
@@ -582,11 +588,15 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             }
 
             $credential = $providerConfig->credential;
-            if ($credential === null
-                || $credential->provider !== $providerConfig->provider_name
+            $credentiallessProvider = ! AiProviderExecutionConfiguration::providerRequiresSecret($providerConfig->provider_name);
+            if ($credential === null) {
+                if (! $credentiallessProvider || $providerConfig->tested_credential_revision !== null) {
+                    continue;
+                }
+            } elseif ($credential->provider !== $providerConfig->provider_name
                 || $credential->status !== CredentialStatus::Active
                 || $credential->revision_id === null
-                || $providerConfig->tested_credential_revision === null) {
+                || $providerConfig->tested_credential_revision !== $credential->revision_id) {
                 continue;
             }
 
@@ -599,13 +609,14 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 continue;
             }
 
-            if ($providerConfig->tested_credential_revision !== $credential->revision_id
+            if ($providerConfig->tested_credential_revision !== ($credential?->revision_id)
                 || $providerConfig->tested_configuration_digest !== $configurationDigest) {
                 continue;
             }
 
             $pricing = $release->getPricingSnapshot();
-            if (! $pricing->isComplete()) {
+            if (! $pricing->isComplete()
+                || AiModelCatalog::pricingIsStale($release->provider_name, $release->model_name, $pricing)) {
                 continue;
             }
 
@@ -614,10 +625,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 'model' => $release->model_name,
                 'release' => $release,
                 'credential' => $credential,
-                'credential_id' => $credential->id,
-                'credential_revision' => $credential->revision_id,
+                'credential_id' => $credential->id ?? 0,
+                'credential_revision' => (string) ($credential->revision_id ?? 'none'),
                 'provider_configuration_id' => $providerConfig->id,
                 'provider_configuration_digest' => $configurationDigest,
+                'provider_options' => (array) ($providerConfig->options ?? []),
                 'pricing' => $pricing,
                 'failover_priority' => $config->failover_priority,
             ];
@@ -951,6 +963,9 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     providerName: $candidate['provider'],
                     credential: $candidate['credential'],
                     agent: $agent,
+                    extraConfig: [
+                        'provider_options' => (array) ($candidate['provider_options'] ?? []),
+                    ],
                 );
 
                 $agentPrompt = new AgentPrompt(

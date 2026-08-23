@@ -52,14 +52,15 @@ final class AiPromptResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('name')->label('Название')->searchable()->sortable(),
-                TextColumn::make('key')->label('Ключ')->searchable()->sortable(),
                 TextColumn::make('capability')
-                    ->label('Возможность')
+                    ->label('Используется для')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
                 TextColumn::make('activeVersion.version')->label('Активная версия')->placeholder('Нет активной'),
                 TextColumn::make('versions_count')->counts('versions')->label('Всего версий'),
                 TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
             ])
+            ->emptyStateHeading('Промптов пока нет')
+            ->emptyStateDescription('Промпты определяют, как AI должен вести себя в разных сценариях.')
             ->recordActions([
                 EditAction::make(),
                 Action::make('playground')
@@ -68,7 +69,8 @@ final class AiPromptResource extends Resource
                     ->icon(Heroicon::OutlinedPlay)
                     ->form([
                         Textarea::make('test_input')
-                            ->label('Тестовый ввод (JSON или текст)')
+                            ->label('Пример запроса')
+                            ->helperText('Можно написать обычным текстом или использовать JSON для сложного сценария.')
                             ->rows(4)
                             ->default('{"query": "Тестовый запрос"}'),
                     ])

@@ -654,6 +654,9 @@ class AiEvaluationSuiteTest extends TestCase
             'capabilities' => [AiCapability::ClientCompanion->value],
             'input_cost_per_million' => 250,
             'output_cost_per_million' => 1000,
+            'cache_read_input_cost_per_million' => 0,
+            'cache_write_input_cost_per_million' => 0,
+            'reasoning_cost_per_million' => 0,
         ]);
 
         $this->assertSame('retired', $releaseA->refresh()->status);

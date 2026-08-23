@@ -3,19 +3,29 @@
 namespace App\Filament\Resources\AiProviders\Pages;
 
 use App\Filament\Resources\AiProviders\AiProviderResource;
-use App\Modules\Organizations\Application\OrganizationContext;
+use App\Models\User;
+use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Database\Eloquent\Model;
 
 class CreateAiProvider extends CreateRecord
 {
     protected static string $resource = AiProviderResource::class;
 
-    protected static ?string $title = 'Подключить AI-провайдера';
+    protected static ?string $title = 'Подключить сервис AI';
 
-    protected function mutateFormDataBeforeCreate(array $data): array
+    protected function handleRecordCreation(array $data): Model
     {
-        $data['organization_id'] = app(OrganizationContext::class)->id();
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
 
-        return $data;
+        return app(ConnectAiProvider::class)->create($actor, $data);
+    }
+
+    protected function afterCreate(): void
+    {
+        if (is_array($this->data)) {
+            unset($this->data['api_key']);
+        }
     }
 }

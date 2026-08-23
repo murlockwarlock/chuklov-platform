@@ -7,6 +7,7 @@ enum ModelLifecycleStatus: string
     case Active = 'active';
     case Preview = 'preview';
     case Deprecated = 'deprecated';
+    case Retired = 'retired';
 
     public function label(): string
     {
@@ -14,6 +15,12 @@ enum ModelLifecycleStatus: string
             self::Active => 'Активна',
             self::Preview => 'Предварительная версия (Preview)',
             self::Deprecated => 'Устарела (Deprecated)',
+            self::Retired => 'Снята с использования',
         };
+    }
+
+    public function isSelectableForNewConfiguration(): bool
+    {
+        return $this === self::Active;
     }
 }

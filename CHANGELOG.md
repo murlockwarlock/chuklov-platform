@@ -6,6 +6,19 @@ All notable implementation changes are recorded here. Requirement changes belong
 
 ## [Unreleased]
 
+- Independent UX-C5 closeout remediation (requires fresh review) now fails closed on unknown billable meters, preserves exact fixed-point pricing without compatibility truncation, rejects unsafe custom endpoint targets and redirects, keeps Gemini credentials out of URLs, bounds and capability-conserves dynamic discovery, rejects provider-incompatible modalities, hides unwired Knowledge/specialized provider settings, and marks scheduled-shutdown Gemini 3.1 Flash-Lite as historical-only. No hosted CI, deployment, or merge was performed.
+
+- UX-C5 remediation now uses a runtime-verified provider capability matrix, current guided catalogs for mainstream providers including DeepSeek, official bounded discovery for OpenRouter/OpenAI-compatible/Ollama, separate Knowledge embeddings/reranking choices, modality-compatible direct-attachment failover, exact fixed-point pricing with conservative tiered budget reservation, immutable pricing provenance, and tenant-safe credential-bounded discovery. No hosted CI, deployment, or merge was performed.
+
+- UX-C5 AI Administration (implementation candidate):
+  - Productized organization-scoped AI safety, provider, model/release, prompt/version, and evaluation administration with human labels, bounded lookups, immutable technical identities, exact monetary hydration, and preserved application/runtime lifecycle boundaries.
+  - Added the shared 12-provider catalog used by CRM and the provider factory, exact decimal-to-minor-unit conversion for budgets/pricing, safe OrganizationCredential selection, normal/advanced model and prompt settings, and focused Feature coverage. No migration, OQ-015 content, M11, Finance, Portal, Playwright, benchmark, hosted CI, deployment, or merge work was added.
+  - Verified the prior Filament lookup P1 against the installed 5.7.6 Select implementation and actual dynamic-search path: `CODEX P1 NOT REPRODUCIBLE`; CRM production code was unchanged.
+  - Staging remediation adds owner-facing provider connection, catalog-first model selection with custom fallback, catalog/manual/unknown pricing states, human capability and failover controls, generated prompt/evaluation identities, progressive-disclosure generation and safety settings, and regression coverage for secrecy, tenant scope, exact values, and immutable runtime contracts.
+  - Independent self-service hardening scrubs API-key state after create, rejects malformed catalog minor units, resets catalog/custom metadata at identity transitions including manual overrides and stale modalities, preserves legacy manual modalities, and aligns bundled Anthropic/Gemini pricing and document support with current provider documentation.
+  - Final model-state remediation makes guided, custom, and legacy transitions explicit across create/edit/release paths; preserves user-owned display, failover, use-case, and enabled state; validates technical modalities and exact money boundaries; persists catalog pricing provenance; and fails closed on stale catalog metadata, retired selections, identity collisions, and historical-release mutation.
+  - Follow-up verification remediation keeps current catalog modalities, pricing, and provenance authoritative for omitted and forged same-guided edits while preserving user-owned configuration state.
+
 - CRM lookup/navigation cleanup:
   - Fixed Client view title and breadcrumbs to use the client name without the generic `Просмотр` level, with an ID fallback for blank names.
   - Added bounded, organization-scoped initial choices to Bookings, Session Specialist, Specialist-Service Assignment, and Session attachment lookups while preserving search and selected IDs.

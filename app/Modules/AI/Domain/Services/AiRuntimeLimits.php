@@ -254,10 +254,27 @@ final class AiRuntimeLimits
                 continue;
             }
 
-            $value = (int) $values[$key];
+            $value = self::integerValue($values[$key], $key);
             if ($value < $minimum || $value > $maximum) {
                 throw new InvalidArgumentException("{$key} must be between {$minimum} and {$maximum}.");
             }
         }
+    }
+
+    private static function integerValue(mixed $value, string $key): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_float($value) && is_finite($value) && floor($value) === $value) {
+            return (int) $value;
+        }
+
+        if (is_string($value) && preg_match('/^-?[0-9]+$/', $value) === 1) {
+            return (int) $value;
+        }
+
+        throw new InvalidArgumentException("{$key} must be an integer.");
     }
 }

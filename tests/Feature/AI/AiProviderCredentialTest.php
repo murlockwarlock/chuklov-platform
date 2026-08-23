@@ -10,6 +10,7 @@ use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
+use App\Modules\AI\Domain\Exceptions\AiProviderProbeUnsupportedException;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -18,6 +19,8 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
+use App\Modules\AI\Infrastructure\Providers\AiProviderConnectivityProbe;
+use App\Modules\AI\Infrastructure\Providers\AiProviderEndpointGuard;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -27,6 +30,7 @@ use App\Modules\Security\Application\ReplaceOrganizationCredential;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use GuzzleHttp\Psr7\Uri;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -256,6 +260,9 @@ class AiProviderCredentialTest extends TestCase
             'display_name' => 'GPT-4o Standard',
             'input_cost_per_million' => 250,
             'output_cost_per_million' => 1000,
+            'cache_read_input_cost_per_million' => 0,
+            'cache_write_input_cost_per_million' => 0,
+            'reasoning_cost_per_million' => 0,
             'capabilities' => [AiCapability::ClientCompanion->value],
         ]);
 
@@ -476,6 +483,114 @@ class AiProviderCredentialTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_non_local_custom_provider_endpoints_reject_private_and_alternate_ip_targets(): void
+    {
+        foreach ([
+            'http://2130706433/v1',
+            'http://0177.0.0.1/v1',
+            'http://0x7f.0x0.0x0.0x1/v1',
+            'http://127.1/v1',
+            'http://127.0.0.1:8080/v1',
+            'http://10.0.0.2/v1',
+            'http://localhost/v1',
+            'http://[::1]/v1',
+            'http://[fd00:ec2::254]/v1',
+            'http://169.254.169.254/latest',
+        ] as $endpoint) {
+            try {
+                AiProviderExecutionConfiguration::normalizeOptions('openai_compatible', ['base_url' => $endpoint]);
+                self::fail("Unsafe endpoint was accepted: {$endpoint}");
+            } catch (AiProviderProbeUnsupportedException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function test_ollama_explicitly_allows_a_loopback_endpoint(): void
+    {
+        self::assertSame(
+            ['base_url' => 'http://127.0.0.1:11434'],
+            AiProviderExecutionConfiguration::normalizeOptions('ollama', [
+                'base_url' => 'http://127.0.0.1:11434',
+            ]),
+        );
+    }
+
+    public function test_ollama_rejects_metadata_endpoints_but_allows_private_networks(): void
+    {
+        foreach (['http://169.254.169.254:11434', 'http://[fd00:ec2::254]:11434'] as $endpoint) {
+            try {
+                AiProviderExecutionConfiguration::normalizeOptions('ollama', ['base_url' => $endpoint]);
+                self::fail("Metadata endpoint was accepted: {$endpoint}");
+            } catch (AiProviderProbeUnsupportedException) {
+                self::assertTrue(true);
+            }
+        }
+
+        self::assertSame(
+            ['base_url' => 'http://192.168.1.20:11434'],
+            AiProviderExecutionConfiguration::normalizeOptions('ollama', [
+                'base_url' => 'http://192.168.1.20:11434',
+            ]),
+        );
+    }
+
+    public function test_provider_endpoints_reject_url_components_and_unsafe_ollama_targets(): void
+    {
+        foreach ([
+            'https://example.com/v1?secret=should-not-leak',
+            'https://user@example.com/v1',
+            'https://user:password@example.com/v1',
+            'https://example.com/v1#secret',
+        ] as $endpoint) {
+            foreach (['openai_compatible', 'ollama'] as $provider) {
+                try {
+                    AiProviderExecutionConfiguration::normalizeOptions($provider, ['base_url' => $endpoint]);
+                    self::fail("Unsafe URL component was accepted for {$provider}: {$endpoint}");
+                } catch (AiProviderProbeUnsupportedException) {
+                    self::assertTrue(true);
+                }
+            }
+        }
+
+        foreach ([
+            'http://169.254.1.1:11434',
+            'http://[fe80::1]:11434',
+            'http://2852039166:11434',
+            'http://0x7f000001:11434',
+        ] as $endpoint) {
+            try {
+                AiProviderExecutionConfiguration::normalizeOptions('ollama', ['base_url' => $endpoint]);
+                self::fail("Unsafe Ollama endpoint was accepted: {$endpoint}");
+            } catch (AiProviderProbeUnsupportedException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function test_dns_pinning_uses_the_actual_default_port_for_ollama_http_endpoints(): void
+    {
+        $pinningPort = new \ReflectionMethod(AiProviderEndpointGuard::class, 'pinningPort');
+
+        self::assertSame(80, $pinningPort->invoke(null, new Uri('http://ollama.example')));
+        self::assertSame(443, $pinningPort->invoke(null, new Uri('https://ollama.example')));
+        self::assertSame(11434, $pinningPort->invoke(null, new Uri('http://ollama.example:11434')));
+    }
+
+    public function test_gemini_probe_sends_the_credential_in_a_header_not_the_query_string(): void
+    {
+        Http::fake([
+            'https://generativelanguage.googleapis.com/v1beta/models' => Http::response(['models' => []], 200),
+        ]);
+
+        app(AiProviderConnectivityProbe::class)->probe('gemini', 'gemini-secret');
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://generativelanguage.googleapis.com/v1beta/models'
+            && $request->hasHeader('x-goog-api-key', 'gemini-secret')
+            && ! str_contains($request->url(), 'key=')
+            && ! $request->hasHeader('Authorization'));
+    }
+
     public function test_canonical_probe_does_not_follow_redirects_with_credentials(): void
     {
         Http::fake([
@@ -509,32 +624,27 @@ class AiProviderCredentialTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'attacker.example'));
     }
 
-    public function test_unsupported_probe_remains_unknown_instead_of_false_healthy(): void
+    public function test_credentialless_ollama_probe_uses_the_local_models_endpoint(): void
     {
-        $credential = new OrganizationCredential([
-            'provider' => 'ollama',
-            'credential_name' => 'Ollama Health Test',
-            'revision_id' => '00000000-0000-4000-8000-000000000030',
+        Http::fake([
+            'http://localhost:11434/api/tags' => Http::response(['models' => []], 200),
         ]);
-        $credential->organization_id = $this->organizationA->id;
-        $credential->credentials = ['api_key' => 'local-secret'];
-        $credential->status = CredentialStatus::Active;
-        $credential->save();
 
         $provider = AiProviderConfiguration::create([
             'organization_id' => $this->organizationA->id,
             'provider_name' => 'ollama',
             'display_name' => 'Ollama',
             'is_enabled' => true,
-            'credential_id' => $credential->id,
         ]);
 
         $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
 
-        $this->assertFalse($result['success']);
+        $this->assertTrue($result['success']);
+        Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => $request->url() === 'http://localhost:11434/api/tags');
         $provider->refresh();
-        $this->assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
-        $this->assertStringContainsString('not supported', strtolower((string) $provider->last_health_error));
+        $this->assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
+        $this->assertNull($provider->tested_credential_revision);
     }
 
     public function test_failed_authenticated_probe_is_degraded_with_sanitized_error(): void

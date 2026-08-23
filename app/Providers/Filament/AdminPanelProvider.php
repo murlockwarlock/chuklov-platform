@@ -47,6 +47,7 @@ class AdminPanelProvider extends PanelProvider
                 'Команда и услуги',
                 'Коммуникации',
                 'Контент и знания',
+                'Искусственный интеллект',
                 'Финансы',
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')

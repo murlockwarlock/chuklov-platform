@@ -3,10 +3,13 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Data\AiModelConfigurationInput;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
-use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\ModelDiscovery\AiModelDiscoveryService;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -15,47 +18,41 @@ use InvalidArgumentException;
 final class CreateModelConfiguration
 {
     public function __construct(
+        private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly ?AiModelDiscoveryService $modelDiscovery = null,
     ) {}
 
     /** @param array<string, mixed> $data */
     public function handle(User $actor, AiProviderConfiguration $provider, array $data): AiModelConfiguration
     {
-        $organization = $provider->organization;
+        $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiProviders);
 
         if ((int) $provider->organization_id !== (int) $organization->getKey()) {
             throw new AuthorizationException('Provider configuration is outside the current organization.');
         }
 
-        $modelName = trim((string) ($data['model_name'] ?? ''));
-        $displayName = trim((string) ($data['display_name'] ?? ''));
-        if ($modelName === '' || $displayName === '') {
-            throw new InvalidArgumentException('Model name and display name are required.');
+        if (AiProviderCatalog::isSpecialized($provider->provider_name)) {
+            throw new InvalidArgumentException('Embedding, reranking and audio providers use their specialized configuration.');
         }
 
-        $pricing = new AiPricingSnapshot(
-            currency: 'USD',
-            inputCostPerMillionMinorUnits: max(0, (int) ($data['input_cost_per_million'] ?? 0)),
-            outputCostPerMillionMinorUnits: max(0, (int) ($data['output_cost_per_million'] ?? 0)),
-            cacheReadInputCostPerMillionMinorUnits: self::optionalCost($data, 'cache_read_input_cost_per_million'),
-            cacheWriteInputCostPerMillionMinorUnits: self::optionalCost($data, 'cache_write_input_cost_per_million'),
-            reasoningCostPerMillionMinorUnits: self::optionalCost($data, 'reasoning_cost_per_million'),
-            fixedRequestCostApplicable: (bool) ($data['fixed_request_cost_applicable'] ?? false),
-            fixedRequestCostMinorUnits: self::optionalCost($data, 'fixed_request_cost_minor_units', 0),
-            unsupportedMeters: self::unsupportedMeters($data['unsupported_meters'] ?? []),
+        $discoveredDefinition = ($this->modelDiscovery ?? app(AiModelDiscoveryService::class))->definitionFor(
+            provider: $provider,
+            model: $data['model_selection'] ?? null,
         );
+        $input = AiModelConfigurationInput::forCreate($provider, $data, $discoveredDefinition);
         $model = AiModelConfiguration::create([
             'organization_id' => $organization->getKey(),
             'provider_config_id' => $provider->getKey(),
-            'model_name' => $modelName,
-            'display_name' => $displayName,
-            'is_enabled' => false,
+            'model_name' => $input->modelName,
+            'display_name' => $input->displayName,
+            'is_enabled' => $input->isEnabled,
             'lifecycle_status' => 'preview',
-            'capabilities' => array_values(array_map('strval', (array) ($data['capabilities'] ?? []))),
-            'pricing_snapshot' => $pricing->toArray(),
-            'failover_priority' => max(1, (int) ($data['failover_priority'] ?? 1)),
+            'capabilities' => $input->capabilities,
+            'pricing_snapshot' => $input->pricing->toArray(),
+            'failover_priority' => $input->failoverPriority,
         ]);
 
         $this->audit->handle(
@@ -71,24 +68,5 @@ final class CreateModelConfiguration
         );
 
         return $model;
-    }
-
-    /** @param array<string, mixed> $data */
-    private static function optionalCost(array $data, string $key, ?int $default = null): ?int
-    {
-        return array_key_exists($key, $data) ? max(0, (int) $data[$key]) : $default;
-    }
-
-    /** @return list<string> */
-    private static function unsupportedMeters(mixed $value): array
-    {
-        $values = is_array($value)
-            ? $value
-            : (is_string($value) ? preg_split('/\\s*,\\s*/', $value) ?: [] : []);
-
-        return array_values(array_unique(array_filter(
-            array_map(static fn (mixed $meter): string => trim((string) $meter), $values),
-            static fn (string $meter): bool => $meter !== '',
-        )));
     }
 }
