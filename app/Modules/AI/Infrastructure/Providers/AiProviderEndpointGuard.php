@@ -4,6 +4,7 @@ namespace App\Modules\AI\Infrastructure\Providers;
 
 use App\Modules\AI\Domain\Exceptions\AiProviderProbeUnsupportedException;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\UriInterface;
 use RuntimeException;
 
 final class AiProviderEndpointGuard
@@ -110,7 +111,7 @@ final class AiProviderEndpointGuard
         }
 
         $addresses = self::dnsAddresses($host, $provider === 'ollama');
-        $port = $uri->getPort() ?? 443;
+        $port = self::pinningPort($uri);
         $resolve = array_map(
             static fn (string $address): string => $host.':'.$port.':'.(
                 str_contains($address, ':') ? '['.$address.']' : $address
@@ -122,6 +123,11 @@ final class AiProviderEndpointGuard
         $options['curl'] = $curlOptions;
 
         return $options;
+    }
+
+    private static function pinningPort(UriInterface $uri): int
+    {
+        return $uri->getPort() ?? (strtolower($uri->getScheme()) === 'http' ? 80 : 443);
     }
 
     private static function isForbiddenHost(string $host): bool

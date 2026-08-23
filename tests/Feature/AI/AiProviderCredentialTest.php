@@ -20,6 +20,7 @@ use App\Modules\AI\Domain\Models\AiRunAttempt;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Providers\AiProviderConnectivityProbe;
+use App\Modules\AI\Infrastructure\Providers\AiProviderEndpointGuard;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -29,6 +30,7 @@ use App\Modules\Security\Application\ReplaceOrganizationCredential;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use GuzzleHttp\Psr7\Uri;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -564,6 +566,15 @@ class AiProviderCredentialTest extends TestCase
                 self::assertTrue(true);
             }
         }
+    }
+
+    public function test_dns_pinning_uses_the_actual_default_port_for_ollama_http_endpoints(): void
+    {
+        $pinningPort = new \ReflectionMethod(AiProviderEndpointGuard::class, 'pinningPort');
+
+        self::assertSame(80, $pinningPort->invoke(null, new Uri('http://ollama.example')));
+        self::assertSame(443, $pinningPort->invoke(null, new Uri('https://ollama.example')));
+        self::assertSame(11434, $pinningPort->invoke(null, new Uri('http://ollama.example:11434')));
     }
 
     public function test_gemini_probe_sends_the_credential_in_a_header_not_the_query_string(): void
