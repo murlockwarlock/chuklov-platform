@@ -142,15 +142,15 @@ final class AiEvaluationAssertionRegistry
     {
         return match ($type) {
             'contains_text', 'required_text' => array_map(
-                fn (string $text): array => $this->definition('required_text', ['value' => $text]),
+                fn (mixed $text): array => $this->definition('required_text', ['value' => $text]),
                 $this->textList($value),
             ),
             'forbidden_text' => array_map(
-                fn (string $text): array => $this->definition('forbidden_text', ['value' => $text]),
+                fn (mixed $text): array => $this->definition('forbidden_text', ['value' => $text]),
                 $this->textList($value),
             ),
             'required_field' => array_map(
-                fn (string $path): array => $this->definition('required_field', ['path' => $path]),
+                fn (mixed $path): array => $this->definition('required_field', ['path' => $path]),
                 $this->pathList($value),
             ),
             default => [$this->definition($type, is_array($value) ? $value : ['value' => $value])],
@@ -169,6 +169,8 @@ final class AiEvaluationAssertionRegistry
             'output_presence' => 'output_present',
             default => $type,
         };
+
+        $this->validateDefinitionKeys($type, $definition);
 
         return match ($type) {
             'required_text', 'forbidden_text' => [
@@ -202,6 +204,16 @@ final class AiEvaluationAssertionRegistry
         $operator = $definition['operator'] ?? 'equals';
         if (! is_string($operator) || ! in_array($operator, ['equals', 'enum', 'boolean', 'number_between'], true)) {
             throw new InvalidArgumentException('Evaluation field value operator is not supported.');
+        }
+
+        $allowedKeys = match ($operator) {
+            'equals', 'boolean' => ['type', 'path', 'operator', 'value'],
+            'enum' => ['type', 'path', 'operator', 'values', 'allowed'],
+            'number_between' => ['type', 'path', 'operator', 'minimum', 'maximum'],
+        };
+        $this->assertAllowedKeys($definition, $allowedKeys);
+        if ($operator === 'enum' && array_key_exists('values', $definition) && array_key_exists('allowed', $definition)) {
+            throw new InvalidArgumentException('Evaluation enum assertion must use one values field.');
         }
 
         return match ($operator) {
@@ -238,7 +250,17 @@ final class AiEvaluationAssertionRegistry
      */
     private function source(string $type, array $definition): array
     {
-        $source = $definition['source'] ?? $definition;
+        if (array_key_exists('source', $definition)) {
+            $this->assertAllowedKeys($definition, ['type', 'source']);
+        } else {
+            $this->assertAllowedKeys($definition, ['type', 'value', 'source_id', 'source_title', 'source_reference']);
+            if (array_key_exists('value', $definition)
+                && count(array_intersect(array_keys($definition), ['source_id', 'source_title', 'source_reference'])) > 0) {
+                throw new InvalidArgumentException('Evaluation source criteria must use one representation.');
+            }
+        }
+
+        $source = $definition['source'] ?? array_diff_key($definition, ['type' => true]);
         if (! array_key_exists('source', $definition)
             && array_key_exists('value', $definition)
             && ! array_key_exists('source_id', $definition)
@@ -249,12 +271,20 @@ final class AiEvaluationAssertionRegistry
         if (! is_array($source)) {
             throw new InvalidArgumentException('Evaluation source definition is invalid.');
         }
+        $this->assertAllowedKeys($source, ['source_id', 'source_title', 'source_reference']);
 
         $result = ['type' => $type];
         if (array_key_exists('source_id', $source)) {
             $sourceId = $source['source_id'];
             if (is_string($sourceId)) {
-                if (strlen($sourceId) > 19 || ! ctype_digit($sourceId)) {
+                $normalizedSourceId = ltrim($sourceId, '0');
+                if ($normalizedSourceId === '') {
+                    $normalizedSourceId = '0';
+                }
+                if (strlen($normalizedSourceId) > strlen((string) PHP_INT_MAX)
+                    || (strlen($normalizedSourceId) === strlen((string) PHP_INT_MAX)
+                        && strcmp($normalizedSourceId, (string) PHP_INT_MAX) > 0)
+                    || ! ctype_digit($sourceId)) {
                     throw new InvalidArgumentException('Evaluation source ID is invalid.');
                 }
 
@@ -401,6 +431,35 @@ final class AiEvaluationAssertionRegistry
         }
 
         return ['minimum' => $minimum, 'maximum' => $maximum];
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $definition
+     * @param  list<string>  $allowedKeys
+     */
+    private function assertAllowedKeys(array $definition, array $allowedKeys): void
+    {
+        foreach (array_keys($definition) as $key) {
+            if (! is_string($key) || ! in_array($key, $allowedKeys, true)) {
+                throw new InvalidArgumentException('Evaluation assertion contains an unsupported field.');
+            }
+        }
+    }
+
+    /** @param array<int|string, mixed> $definition */
+    private function validateDefinitionKeys(string $type, array $definition): void
+    {
+        $allowedKeys = match ($type) {
+            'required_text', 'forbidden_text' => ['type', 'value'],
+            'output_present' => ['type'],
+            'required_field' => ['type', 'path'],
+            'json_schema' => ['type', 'schema'],
+            default => null,
+        };
+
+        if (is_array($allowedKeys)) {
+            $this->assertAllowedKeys($definition, $allowedKeys);
+        }
     }
 
     /** @param array<string, mixed> $schema */

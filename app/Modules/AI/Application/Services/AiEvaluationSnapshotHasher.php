@@ -2,11 +2,16 @@
 
 namespace App\Modules\AI\Application\Services;
 
+use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use InvalidArgumentException;
 
 final class AiEvaluationSnapshotHasher
 {
+    public function __construct(
+        private readonly AiEvaluationAssertionRegistry $assertionRegistry,
+    ) {}
+
     /** @param array<string, mixed> $testInputs */
     public function testInputsDigest(array $testInputs): string
     {
@@ -40,9 +45,12 @@ final class AiEvaluationSnapshotHasher
             }
             $caseIds[$caseId] = true;
 
+            $assertions = $this->assertionRegistry->normalize($case['assertions']);
+            $this->assertionRegistry->validateSchema($case['expected_output_schema']);
+
             $normalizedCases[] = [
                 'id' => $caseId,
-                'assertions' => $case['assertions'],
+                'assertions' => $assertions,
                 'expected_output_schema' => $case['expected_output_schema'],
                 'test_inputs_digest' => $case['test_inputs_digest'],
             ];

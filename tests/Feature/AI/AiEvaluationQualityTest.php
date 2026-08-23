@@ -220,6 +220,14 @@ final class AiEvaluationQualityTest extends TestCase
         self::assertFalse($schemaIncompatible->compatible);
         self::assertStringContainsString('Наборы примеров отличаются', $schemaIncompatible->message);
 
+        $malformedSnapshot = $runOne->provenance_snapshot;
+        $malformedSnapshot['cases'][0]['assertions'] = [['type' => 'output_present', 'unexpected' => true]];
+        $runOne->update(['provenance_snapshot' => $malformedSnapshot]);
+        $runTwo->update(['provenance_snapshot' => $malformedSnapshot]);
+        $malformedIncompatible = app(CompareAiEvaluationRuns::class)->handle($local['user'], [$runOne->getKey(), $runTwo->getKey()]);
+        self::assertFalse($malformedIncompatible->compatible);
+        self::assertStringContainsString('нет полного снимка', $malformedIncompatible->message);
+
         $foreign = $this->evaluationFixture('comparison_foreign');
         $foreignRun = $this->evaluationRunRecord($foreign, 70.0, 'foreign');
         app(OrganizationContext::class)->set($local['organization']);

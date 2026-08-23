@@ -133,6 +133,23 @@ final class AiEvaluationAssertionRegistryTest extends TestCase
         $this->registry->normalize([['type' => 'arbitrary_expression', 'expression' => '1 == 1']]);
     }
 
+    public function test_assertion_definitions_reject_unsupported_fields_and_malformed_legacy_values(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->registry->normalize([['type' => 'output_present', 'unexpected' => true]]);
+    }
+
+    public function test_malformed_legacy_assertion_values_fail_with_a_configuration_error(): void
+    {
+        try {
+            $this->registry->normalize(['contains_text' => [new \stdClass]]);
+            self::fail('Malformed legacy assertions must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertSame('Evaluation assertion text is invalid.', $exception->getMessage());
+        }
+    }
+
     public function test_rag_source_ids_are_bounded_and_integer_like(): void
     {
         $this->expectException(InvalidArgumentException::class);

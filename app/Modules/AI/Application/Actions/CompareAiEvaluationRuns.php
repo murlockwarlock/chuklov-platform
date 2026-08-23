@@ -115,7 +115,7 @@ final class CompareAiEvaluationRuns
     {
         try {
             return $this->snapshotHasher->casesDigest($cases);
-        } catch (InvalidArgumentException) {
+        } catch (\Throwable) {
             return null;
         }
     }
