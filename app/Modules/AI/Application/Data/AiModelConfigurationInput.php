@@ -131,6 +131,13 @@ final readonly class AiModelConfigurationInput
             && (! $sameManualIdentity
                 || ($explicitCustomSelection
                     && $existingPricing?->pricingSource === AiPricingSnapshot::SOURCE_CATALOG));
+        $resetExistingUnpricedDiscoveredState = $existing !== null
+            && $definition !== null
+            && $definition->pricing === null
+            && AiModelCatalog::isDiscoveredDefinition($definition)
+            && ($existingModelName !== $modelName
+                || ! AiModelCatalog::isImmutableDiscoveredPricing($provider, $existingPricing ?? self::unknownPricing()));
+        $resetExistingPricingState = $resetExistingCustomState || $resetExistingUnpricedDiscoveredState;
         $definitionAuthoritative = $definition !== null;
         $catalogPricingAuthoritative = $definition?->pricing !== null;
         $catalogDisplayName = $definition === null ? null : $definition->displayName;
@@ -149,7 +156,7 @@ final readonly class AiModelConfigurationInput
             existing: $existingPricing,
             catalogPricing: $definition?->pricing,
             catalogAuthoritative: $catalogPricingAuthoritative,
-            resetExistingCustomState: $resetExistingCustomState,
+            resetExistingCustomState: $resetExistingPricingState,
         );
 
         return new self(

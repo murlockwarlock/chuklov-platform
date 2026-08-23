@@ -533,6 +533,39 @@ class AiProviderCredentialTest extends TestCase
         );
     }
 
+    public function test_provider_endpoints_reject_url_components_and_unsafe_ollama_targets(): void
+    {
+        foreach ([
+            'https://example.com/v1?secret=should-not-leak',
+            'https://user@example.com/v1',
+            'https://user:password@example.com/v1',
+            'https://example.com/v1#secret',
+        ] as $endpoint) {
+            foreach (['openai_compatible', 'ollama'] as $provider) {
+                try {
+                    AiProviderExecutionConfiguration::normalizeOptions($provider, ['base_url' => $endpoint]);
+                    self::fail("Unsafe URL component was accepted for {$provider}: {$endpoint}");
+                } catch (AiProviderProbeUnsupportedException) {
+                    self::assertTrue(true);
+                }
+            }
+        }
+
+        foreach ([
+            'http://169.254.1.1:11434',
+            'http://[fe80::1]:11434',
+            'http://2852039166:11434',
+            'http://0x7f000001:11434',
+        ] as $endpoint) {
+            try {
+                AiProviderExecutionConfiguration::normalizeOptions('ollama', ['base_url' => $endpoint]);
+                self::fail("Unsafe Ollama endpoint was accepted: {$endpoint}");
+            } catch (AiProviderProbeUnsupportedException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
     public function test_gemini_probe_sends_the_credential_in_a_header_not_the_query_string(): void
     {
         Http::fake([

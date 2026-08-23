@@ -330,6 +330,15 @@ final class AiModelDiscoveryService
             return null;
         }
 
+        foreach (['input_cache_read', 'input_cache_write'] as $meter) {
+            if (array_key_exists($meter, $pricing)
+                && $pricing[$meter] !== null
+                && $pricing[$meter] !== ''
+                && $this->perTokenRate($pricing[$meter]) === null) {
+                return null;
+            }
+        }
+
         return [
             'currency' => 'USD',
             'input_rate_per_million_units' => $prompt,

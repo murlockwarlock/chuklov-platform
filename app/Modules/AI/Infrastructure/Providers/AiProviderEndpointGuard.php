@@ -18,7 +18,10 @@ final class AiProviderEndpointGuard
         if (! is_array($parts)
             || ! in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
             || ! is_string($parts['host'] ?? null)
-            || isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment'])) {
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
+            || array_key_exists('query', $parts)
+            || array_key_exists('fragment', $parts)) {
             throw new AiProviderProbeUnsupportedException("The provider option {$field} must be an HTTP(S) URL without credentials or query parameters.");
         }
 
@@ -28,7 +31,11 @@ final class AiProviderEndpointGuard
         }
 
         $host = trim(strtolower(rtrim($parts['host'], '.')), '[]');
-        if ($host === '' || self::isMetadataHost($host) || self::isLiteralMetadataIp($host)) {
+        if ($host === ''
+            || self::isMetadataHost($host)
+            || self::isLiteralMetadataIp($host)
+            || self::isLiteralLinkLocalIp($host)
+            || self::isAlternativeIpLiteral($host)) {
             throw new AiProviderProbeUnsupportedException('The provider endpoint is not allowed.');
         }
 
@@ -60,7 +67,12 @@ final class AiProviderEndpointGuard
         if (! in_array(strtolower($uri->getScheme()), ['http', 'https'], true)
             || $host === ''
             || self::isMetadataHost($host)
-            || self::isLiteralMetadataIp($host)) {
+            || self::isLiteralMetadataIp($host)
+            || self::isLiteralLinkLocalIp($host)
+            || self::isAlternativeIpLiteral($host)
+            || $uri->getUserInfo() !== ''
+            || $uri->getQuery() !== ''
+            || $uri->getFragment() !== '') {
             throw new RuntimeException('The provider endpoint is not allowed.');
         }
 
@@ -123,11 +135,7 @@ final class AiProviderEndpointGuard
             return self::isForbiddenIp($host);
         }
 
-        if (preg_match('/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/i', $host) === 1) {
-            return true;
-        }
-
-        return false;
+        return self::isAlternativeIpLiteral($host);
     }
 
     private static function isLiteralSpecialIp(string $host): bool
@@ -140,6 +148,18 @@ final class AiProviderEndpointGuard
     {
         return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6) !== false
             && self::isMetadataIp($host);
+    }
+
+    private static function isLiteralLinkLocalIp(string $host): bool
+    {
+        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6) !== false
+            && self::isLinkLocalIp($host);
+    }
+
+    private static function isAlternativeIpLiteral(string $host): bool
+    {
+        return filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6) === false
+            && preg_match('/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/i', $host) === 1;
     }
 
     /** @return list<string> */
@@ -160,6 +180,7 @@ final class AiProviderEndpointGuard
 
             if (self::isMetadataIp($address)
                 || self::isSpecialIp($address)
+                || self::isLinkLocalIp($address)
                 || (! $allowPrivate && self::isForbiddenIp($address))) {
                 throw new RuntimeException('The provider endpoint resolved to a forbidden network.');
             }
@@ -212,6 +233,32 @@ final class AiProviderEndpointGuard
             '169.254.170.2',
             'fd00:ec2::254',
         ], true);
+    }
+
+    private static function isLinkLocalIp(string $ip): bool
+    {
+        $mappedIpv4 = self::mappedIpv4($ip);
+        if ($mappedIpv4 !== null) {
+            return self::isLinkLocalIp($mappedIpv4);
+        }
+
+        $normalized = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6);
+        if ($normalized === false) {
+            return true;
+        }
+
+        $packed = inet_pton($normalized);
+        if ($packed === false) {
+            return true;
+        }
+
+        if (strlen($packed) === 4) {
+            return str_starts_with($normalized, '169.254.');
+        }
+
+        $firstWord = (ord($packed[0]) << 8) | ord($packed[1]);
+
+        return ($firstWord & 0xFFC0) === 0xFE80;
     }
 
     private static function isSpecialIp(string $ip): bool

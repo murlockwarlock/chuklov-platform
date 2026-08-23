@@ -505,6 +505,89 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         }
     }
 
+    public function test_discovered_model_transitions_do_not_reuse_stale_pricing(): void
+    {
+        [$organization] = $this->organizationFixture();
+        $provider = $this->provider('openai_compatible');
+        $manualPricing = new AiPricingSnapshot(
+            inputCostPerMillionMinorUnits: 125,
+            outputCostPerMillionMinorUnits: 500,
+            cacheReadInputCostPerMillionMinorUnits: 10,
+            cacheWriteInputCostPerMillionMinorUnits: 20,
+            reasoningCostPerMillionMinorUnits: 30,
+        );
+        $custom = new AiModelConfiguration([
+            'organization_id' => $organization->getKey(),
+            'provider_config_id' => $provider->getKey(),
+            'model_name' => 'shared-model',
+            'display_name' => 'Custom model',
+            'is_enabled' => true,
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'pricing_snapshot' => $manualPricing->toArray(),
+            'failover_priority' => 1,
+        ]);
+        $custom->setRelation('providerConfiguration', $provider);
+        $discovered = AiModelDefinition::fromArray([
+            'provider' => 'openai_compatible',
+            'model' => 'shared-model',
+            'display_name' => 'Discovered model',
+            'family' => 'Connected catalog',
+            'supported_capabilities' => [],
+            'modalities' => [],
+            'lifecycle' => 'active',
+            'catalog_source' => 'https://platform.openai.com/docs/api-reference/models/list',
+        ]);
+
+        $customToDiscovered = AiModelConfigurationInput::forRelease(
+            $custom,
+            ['model_selection' => 'shared-model'],
+            $discovered,
+        );
+
+        self::assertSame(AiPricingSnapshot::SOURCE_UNKNOWN, $customToDiscovered->pricing->pricingSource);
+        self::assertFalse($customToDiscovered->pricing->isComplete());
+
+        $historicalDiscovered = new AiModelConfiguration([
+            'organization_id' => $organization->getKey(),
+            'provider_config_id' => $provider->getKey(),
+            'model_name' => 'old-discovered-model',
+            'display_name' => 'Historical discovered model',
+            'is_enabled' => true,
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+            'pricing_snapshot' => (new AiPricingSnapshot(
+                inputCostPerMillionMinorUnits: 100,
+                outputCostPerMillionMinorUnits: 400,
+                cacheReadInputCostPerMillionMinorUnits: 0,
+                cacheWriteInputCostPerMillionMinorUnits: 0,
+                reasoningCostPerMillionMinorUnits: 0,
+                pricingSource: AiPricingSnapshot::SOURCE_CATALOG,
+                catalogSource: 'https://platform.openai.com/docs/api-reference/models/list',
+                catalogPricingAsOf: '2026-08-23',
+            ))->toArray(),
+            'failover_priority' => 1,
+        ]);
+        $historicalDiscovered->setRelation('providerConfiguration', $provider);
+        $newDiscovered = AiModelDefinition::fromArray([
+            'provider' => 'openai_compatible',
+            'model' => 'new-discovered-model',
+            'display_name' => 'New discovered model',
+            'family' => 'Connected catalog',
+            'supported_capabilities' => [],
+            'modalities' => [],
+            'lifecycle' => 'active',
+            'catalog_source' => 'https://platform.openai.com/docs/api-reference/models/list',
+        ]);
+
+        $discoveredToDiscovered = AiModelConfigurationInput::forRelease(
+            $historicalDiscovered,
+            ['model_selection' => 'new-discovered-model'],
+            $newDiscovered,
+        );
+
+        self::assertSame(AiPricingSnapshot::SOURCE_UNKNOWN, $discoveredToDiscovered->pricing->pricingSource);
+        self::assertFalse($discoveredToDiscovered->pricing->isComplete());
+    }
+
     public function test_partial_guided_release_rehydrates_current_catalog_state_after_stale_model_data(): void
     {
         [, $owner] = $this->organizationFixture();

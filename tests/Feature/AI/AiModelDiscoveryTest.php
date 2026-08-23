@@ -250,6 +250,35 @@ final class AiModelDiscoveryTest extends TestCase
         self::assertNull($definition->pricing);
     }
 
+    public function test_discovery_rejects_malformed_optional_openrouter_pricing(): void
+    {
+        [$organization] = $this->organizationFixture('malformed-cache-pricing-clinic');
+        $provider = $this->providerWithCredential($organization, 'openrouter');
+        Cache::flush();
+        Http::fake([
+            'https://openrouter.ai/api/v1/models' => Http::response([
+                'data' => [[
+                    'id' => 'tenant/malformed-cache-price',
+                    'name' => 'Tenant model',
+                    'architecture' => [
+                        'input_modalities' => ['text'],
+                        'output_modalities' => ['text'],
+                    ],
+                    'pricing' => [
+                        'prompt' => '0.000001',
+                        'completion' => '0.000002',
+                        'input_cache_read' => 'not-a-price',
+                    ],
+                ]],
+            ], 200),
+        ]);
+
+        $definition = app(AiModelDiscoveryService::class)->discover($provider->load('credential'))->models()[0] ?? null;
+
+        self::assertNotNull($definition);
+        self::assertNull($definition->pricing);
+    }
+
     public function test_discovery_rejects_unsafe_legacy_endpoint_options_without_making_a_request(): void
     {
         [$organization] = $this->organizationFixture('unsafe-endpoint-clinic');

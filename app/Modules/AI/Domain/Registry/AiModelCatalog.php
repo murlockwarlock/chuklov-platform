@@ -166,6 +166,21 @@ final class AiModelCatalog
             return false;
         }
 
+        return self::isDiscoveredCatalogSource($provider, $pricing->catalogSource);
+    }
+
+    public static function isDiscoveredDefinition(?AiModelDefinition $definition): bool
+    {
+        return $definition !== null
+            && self::isDiscoveredCatalogSource($definition->provider, $definition->catalogSource);
+    }
+
+    private static function isDiscoveredCatalogSource(mixed $provider, ?string $catalogSource): bool
+    {
+        if ($catalogSource === null) {
+            return false;
+        }
+
         $provider = AiProviderCatalog::normalize($provider);
         $allowedSources = match ($provider) {
             'openrouter' => ['https://openrouter.ai/docs/api/api-reference/models/get-models'],
@@ -174,7 +189,7 @@ final class AiModelCatalog
             default => [],
         };
 
-        return in_array($pricing->catalogSource, $allowedSources, true);
+        return in_array($catalogSource, $allowedSources, true);
     }
 
     /** @return list<string> */
