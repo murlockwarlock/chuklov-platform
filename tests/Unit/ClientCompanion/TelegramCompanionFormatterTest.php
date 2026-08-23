@@ -114,4 +114,32 @@ final class TelegramCompanionFormatterTest extends TestCase
         $lastBody = json_decode((string) array_values($lastRequest)[0]->getBody(), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('Ответ', $lastBody['text']);
     }
+
+    public function test_transport_failure_is_unknown_instead_of_automatically_retryable(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = FakeNutgram::instance(null, [
+            new Response(500, [], json_encode(['ok' => false, 'error_code' => 500, 'description' => 'gateway timeout'], JSON_THROW_ON_ERROR)),
+        ]);
+        $channel = new TelegramMessagingChannel($bot);
+
+        $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', 'Ответ', 0, 1, 'ru'));
+
+        self::assertSame(NotificationDeliveryOutcome::Unknown, $result->outcome);
+        self::assertSame('telegram_api_error', $result->errorCode);
+    }
+
+    public function test_provider_rate_limit_is_a_confirmed_bounded_retryable_rejection(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = FakeNutgram::instance(null, [
+            new Response(429, [], json_encode(['ok' => false, 'error_code' => 429, 'description' => 'too many requests'], JSON_THROW_ON_ERROR)),
+        ]);
+        $channel = new TelegramMessagingChannel($bot);
+
+        $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', 'Ответ', 0, 1, 'ru'));
+
+        self::assertSame(NotificationDeliveryOutcome::Retryable, $result->outcome);
+        self::assertSame('telegram_rate_limited', $result->errorCode);
+    }
 }

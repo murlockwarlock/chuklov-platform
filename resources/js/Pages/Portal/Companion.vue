@@ -20,13 +20,14 @@ type TimelineItem = {
 };
 
 type CompanionState = {
-    conversation: { id: number } | null;
+    conversation: null;
     messages: TimelineItem[];
     hasOlder: boolean;
     nextBeforeMessageId: number | null;
     state: 'ai_active' | 'human_handoff';
     stateLabel: string;
     pending: boolean;
+    canReinspectRecentImages: boolean;
     openEscalation: { reasonLabel: string; openedAt: string } | null;
 };
 
@@ -39,7 +40,12 @@ const props = defineProps<{
 const { t, locale } = usePortalLocale();
 const body = ref('');
 const olderLoading = ref(false);
-const sendForm = useForm<{ body: string; idempotency_key: string; images: File[] }>({ body: '', idempotency_key: '', images: [] });
+const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
+    body: '',
+    idempotency_key: '',
+    images: [],
+    reinspect_recent_images: false,
+});
 let poller: number | undefined;
 
 function newIdempotencyKey(): string {
@@ -56,12 +62,14 @@ function send(): void {
         return;
     }
     sendForm.body = text;
+    sendForm.reinspect_recent_images = sendForm.images.length === 0 && sendForm.reinspect_recent_images;
     sendForm.idempotency_key = newIdempotencyKey();
     sendForm.post(props.urls.send, {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: () => {
             body.value = '';
+            sendForm.reinspect_recent_images = false;
         },
     });
 }
@@ -69,6 +77,9 @@ function send(): void {
 function selectImages(event: Event): void {
     const input = event.target as HTMLInputElement;
     sendForm.images = input.files ? Array.from(input.files).slice(0, 10) : [];
+    if (sendForm.images.length) {
+        sendForm.reinspect_recent_images = false;
+    }
 }
 
 function loadOlder(): void {
@@ -258,6 +269,16 @@ onUnmounted(() => {
           >
             {{ t('companion.selectedImages', { count: sendForm.images.length }) }}
           </p>
+          <label
+            v-if="props.companion.canReinspectRecentImages && !sendForm.images.length"
+            class="flex items-center gap-2 text-sm text-[var(--portal-color-ink-soft)]"
+          >
+            <input
+              v-model="sendForm.reinspect_recent_images"
+              type="checkbox"
+            >
+            <span>{{ t('companion.reinspectRecentImage') }}</span>
+          </label>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <p
               v-if="sendForm.errors.body || sendForm.errors.idempotency_key"

@@ -15,14 +15,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $chunk_index
  * @property int $chunk_count
  * @property int $attempt_count
+ * @property string|null $processing_lease_token
  * @property CarbonInterface|null $processing_lease_expires_at
  * @property CarbonInterface|null $next_attempt_at
  * @property CarbonInterface|null $delivered_at
+ * @property CarbonInterface|null $uncertain_at
  */
 #[Fillable([
     'organization_id', 'turn_id', 'conversation_message_id', 'channel', 'recipient_external_id',
     'chunk_index', 'chunk_count', 'status', 'attempt_count', 'provider_reference', 'last_error_code',
     'processing_lease_token', 'processing_lease_expires_at', 'next_attempt_at', 'delivered_at',
+    'uncertain_at',
 ])]
 class CompanionDelivery extends Model
 {
@@ -60,6 +63,7 @@ class CompanionDelivery extends Model
             'processing_lease_expires_at' => 'datetime',
             'next_attempt_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'uncertain_at' => 'datetime',
         ];
     }
 }

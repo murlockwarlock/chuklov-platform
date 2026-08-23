@@ -4,6 +4,8 @@ namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
@@ -30,6 +32,7 @@ final class AcceptCompanionMessage
         private readonly OrganizationContext $context,
         private readonly GetOrCreateClientCompanionConversation $conversationResolver,
         private readonly RecordCompanionMessage $recordMessage,
+        private readonly CompanionMessageBodyReader $bodyReader,
     ) {}
 
     /** @param list<int> $attachmentIds */
@@ -46,6 +49,8 @@ final class AcceptCompanionMessage
         ?int $sourceOrdinal = null,
         ?string $payloadHash = null,
         ?string $inputFailureCode = null,
+        CompanionImageReferenceMode $imageReferenceMode = CompanionImageReferenceMode::None,
+        ?int $imageReferenceMessageId = null,
     ): CompanionTurn {
         $organizationId = $this->context->id();
         if ((int) $client->organization_id !== $organizationId) {
@@ -88,6 +93,7 @@ final class AcceptCompanionMessage
                 'idempotency_key' => $idempotencyKey,
                 'origin_external_id' => $originExternalId,
                 'media_group_id' => $mediaGroupId,
+                'image_reference_mode' => $imageReferenceMode->value,
                 'attachment_ids' => $attachments->pluck('id')->map(static fn (mixed $id): int => (int) $id)->values()->all(),
             ], JSON_THROW_ON_ERROR));
 
@@ -113,6 +119,8 @@ final class AcceptCompanionMessage
                 $sourceOrdinal,
                 $requestHash,
                 $inputFailureCode,
+                $imageReferenceMode,
+                $imageReferenceMessageId,
             ): CompanionTurn {
                 $existing = CompanionTurn::query()
                     ->where('organization_id', $organizationId)
@@ -124,7 +132,9 @@ final class AcceptCompanionMessage
                     ->first();
 
                 if ($existing instanceof CompanionTurn) {
-                    if ((int) $existing->client_id !== (int) $client->getKey() || $existing->request_hash !== $requestHash) {
+                    if ((int) $existing->client_id !== (int) $client->getKey()
+                        || (int) $existing->conversation_id !== (int) $conversation->getKey()
+                        || $existing->request_hash !== $requestHash) {
                         throw new AuthorizationException('The idempotency key cannot be reused for another message.');
                     }
 
@@ -143,16 +153,29 @@ final class AcceptCompanionMessage
                             ->where('organization_id', $organizationId)
                             ->where('conversation_message_id', $existingMessage->getKey())
                             ->first();
-                        if (! $existingTurnMessage instanceof CompanionTurnMessage
-                            || $existingTurnMessage->request_hash !== $requestHash) {
+                        if ($existingTurnMessage instanceof CompanionTurnMessage) {
+                            if ($existingTurnMessage->request_hash !== $requestHash) {
+                                throw new AuthorizationException('The transport message identity cannot be reused for different content.');
+                            }
+
+                            return CompanionTurn::query()
+                                ->where('organization_id', $organizationId)
+                                ->whereKey($existingTurnMessage->turn_id)
+                                ->lockForUpdate()
+                                ->firstOrFail();
+                        }
+
+                        if ((int) $existingMessage->client_id !== (int) $client->getKey()
+                            || (int) $existingMessage->conversation_id !== (int) $conversation->getKey()
+                            || $existingMessage->direction !== ConversationDirection::Inbound
+                            || $existingMessage->author_type !== ConversationAuthorType::Client
+                            || $imageReferenceMode !== CompanionImageReferenceMode::None
+                            || $attachments->isNotEmpty()
+                            || $this->bodyReader->read($organizationId, $existingMessage) !== $body) {
                             throw new AuthorizationException('The transport message identity cannot be reused for different content.');
                         }
 
-                        return CompanionTurn::query()
-                            ->where('organization_id', $organizationId)
-                            ->whereKey($existingTurnMessage->turn_id)
-                            ->lockForUpdate()
-                            ->firstOrFail();
+                        return $this->legacyDuplicateMarker($organizationId, $client, $conversation, $existingMessage, $channel, $originExternalId, $requestHash);
                     }
                 }
 
@@ -163,10 +186,19 @@ final class AcceptCompanionMessage
                     ->lockForUpdate()
                     ->firstOrFail();
 
+                if ($imageReferenceMode === CompanionImageReferenceMode::RecentTurn
+                    && ($attachments->isNotEmpty() || ! $this->hasRecentImageTurn($organizationId, $lockedConversation, $imageReferenceMessageId))) {
+                    throw ValidationException::withMessages(['body' => 'Предыдущее изображение больше недоступно для уточнения.']);
+                }
+
                 $pendingCount = CompanionTurn::query()
                     ->where('organization_id', $organizationId)
                     ->where('conversation_id', $lockedConversation->getKey())
-                    ->whereIn('status', [CompanionTurnStatus::Pending, CompanionTurnStatus::Processing])
+                    ->whereIn('status', [
+                        CompanionTurnStatus::Assembling,
+                        CompanionTurnStatus::Pending,
+                        CompanionTurnStatus::Processing,
+                    ])
                     ->count();
                 if ($pendingCount >= (int) config('ai.companion.maximum_pending_turns', 4)) {
                     throw new TooManyRequestsHttpException(null, 'Companion processing is temporarily busy.');
@@ -187,10 +219,36 @@ final class AcceptCompanionMessage
                         'message_type' => $attachments->isNotEmpty() ? 'image' : 'text',
                         'attachment_count' => $attachments->count(),
                         'media_group_id' => $mediaGroupId,
+                        'source_ordinal' => $sourceOrdinal,
                         'locale' => $locale,
                         'transport' => $channel,
                     ],
                 );
+
+                if ($mediaGroupId !== null) {
+                    $lateTurn = CompanionTurn::query()
+                        ->where('organization_id', $organizationId)
+                        ->where('conversation_id', $lockedConversation->getKey())
+                        ->where('context_epoch', $lockedConversation->context_epoch)
+                        ->where('media_group_id', $mediaGroupId)
+                        ->whereIn('status', [
+                            CompanionTurnStatus::Pending,
+                            CompanionTurnStatus::Processing,
+                            CompanionTurnStatus::Completed,
+                            CompanionTurnStatus::Failed,
+                            CompanionTurnStatus::Escalated,
+                            CompanionTurnStatus::Paused,
+                            CompanionTurnStatus::Cancelled,
+                        ])
+                        ->latest('sequence')
+                        ->lockForUpdate()
+                        ->first();
+                    if ($lateTurn instanceof CompanionTurn) {
+                        $message->update(['metadata' => array_merge($message->metadata ?? [], ['ingest_state' => 'late_media_group_item'])]);
+
+                        return $lateTurn;
+                    }
+                }
 
                 $maxImages = max(1, (int) config('ai.companion.maximum_images_per_turn', 10));
                 $maxTotalBytes = max(1, (int) config('ai.companion.maximum_image_total_bytes', 20_971_520));
@@ -198,7 +256,7 @@ final class AcceptCompanionMessage
                 $maxBurstCharacters = max(1, (int) config('ai.companion.maximum_burst_characters', 12000));
                 $burst = $this->findBurst($organizationId, $lockedConversation, $mediaGroupId);
                 $burstWouldExceed = $burst instanceof CompanionTurn
-                    && ((int) $burst->burst_message_count + 1 > $maxBurstMessages
+                    && (($mediaGroupId === null && (int) $burst->burst_message_count + 1 > $maxBurstMessages)
                         || (int) $burst->burst_text_characters + mb_strlen($body) > $maxBurstCharacters
                         || (int) $burst->input_item_count + $attachments->count() > $maxImages
                         || (int) $burst->input_total_bytes + $attachments->sum('size_bytes') > $maxTotalBytes);
@@ -228,7 +286,7 @@ final class AcceptCompanionMessage
 
                 $status = $lockedConversation->automation_state === ConversationAutomationState::HumanHandoff
                     ? CompanionTurnStatus::Paused
-                    : CompanionTurnStatus::Pending;
+                    : ($mediaGroupId === null ? CompanionTurnStatus::Pending : CompanionTurnStatus::Assembling);
                 $turn = CompanionTurn::query()->create([
                     'organization_id' => $organizationId,
                     'client_id' => $client->getKey(),
@@ -245,12 +303,13 @@ final class AcceptCompanionMessage
                     'idempotency_key' => $idempotencyKey,
                     'request_hash' => $requestHash,
                     'status' => $status,
-                    'burst_expires_at' => $status === CompanionTurnStatus::Pending && ! $burstWouldExceed
+                    'burst_expires_at' => in_array($status, [CompanionTurnStatus::Assembling, CompanionTurnStatus::Pending], true) && ! $burstWouldExceed
                         ? now()->addMilliseconds(max(250, (int) config('ai.companion.burst_window_milliseconds', 1200)))
                         : null,
                     'burst_message_count' => 0,
                     'burst_text_characters' => 0,
                     'input_modality' => $attachments->isNotEmpty() ? 'image' : 'text',
+                    'image_reference_mode' => $imageReferenceMode,
                     'media_group_id' => $mediaGroupId,
                     'input_item_count' => 0,
                     'input_total_bytes' => 0,
@@ -270,8 +329,12 @@ final class AcceptCompanionMessage
                     requestHash: $requestHash,
                 );
 
-                if ($status === CompanionTurnStatus::Pending) {
-                    ProcessCompanionTurn::dispatch($organizationId, $turn->getKey())->afterCommit();
+                if (in_array($status, [CompanionTurnStatus::Assembling, CompanionTurnStatus::Pending], true)) {
+                    $job = ProcessCompanionTurn::dispatch($organizationId, $turn->getKey());
+                    if ($turn->burst_expires_at !== null) {
+                        $job->delay($turn->burst_expires_at);
+                    }
+                    $job->afterCommit();
                 }
 
                 return $turn->refresh();
@@ -335,8 +398,10 @@ final class AcceptCompanionMessage
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
             ->where('context_epoch', $conversation->context_epoch)
-            ->where('status', CompanionTurnStatus::Pending)
-            ->where('burst_expires_at', '>', now())
+            ->whereIn('status', $mediaGroupId === null
+                ? [CompanionTurnStatus::Pending]
+                : [CompanionTurnStatus::Assembling])
+            ->when($mediaGroupId === null, fn ($query) => $query->where('burst_expires_at', '>', now()))
             ->when(
                 $mediaGroupId !== null,
                 fn ($query) => $query->where('media_group_id', $mediaGroupId),
@@ -345,6 +410,49 @@ final class AcceptCompanionMessage
             ->latest('sequence')
             ->lockForUpdate()
             ->first();
+    }
+
+    private function legacyDuplicateMarker(
+        int $organizationId,
+        Client $client,
+        Conversation $conversation,
+        ConversationMessage $message,
+        string $channel,
+        ?string $originExternalId,
+        string $requestHash,
+    ): CompanionTurn {
+        return CompanionTurn::query()->create([
+            'organization_id' => $organizationId,
+            'client_id' => $client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'sequence' => ((int) CompanionTurn::query()
+                ->where('organization_id', $organizationId)
+                ->where('conversation_id', $conversation->getKey())
+                ->max('sequence')) + 1,
+            'context_epoch' => (int) $conversation->context_epoch,
+            'inbound_message_id' => $message->getKey(),
+            'origin_channel' => $channel,
+            'origin_external_id' => $originExternalId,
+            'request_hash' => $requestHash,
+            'status' => CompanionTurnStatus::Cancelled,
+            'input_failure_code' => 'legacy_adopted_duplicate',
+            'accepted_at' => now(),
+            'completed_at' => now(),
+        ]);
+    }
+
+    private function hasRecentImageTurn(int $organizationId, Conversation $conversation, ?int $sourceMessageId = null): bool
+    {
+        return CompanionTurn::query()
+            ->where('organization_id', $organizationId)
+            ->where('conversation_id', $conversation->getKey())
+            ->where('context_epoch', $conversation->context_epoch)
+            ->when($sourceMessageId !== null, fn ($query) => $query->where('outbound_message_id', $sourceMessageId))
+            ->where('status', CompanionTurnStatus::Completed)
+            ->where('input_modality', 'image')
+            ->where('completed_at', '>=', now()->subMinutes(max(1, (int) config('ai.companion.recent_image_max_age_minutes', 1440))))
+            ->whereHas('attachments')
+            ->exists();
     }
 
     /** @param Collection<int, MedicalAttachment> $attachments */

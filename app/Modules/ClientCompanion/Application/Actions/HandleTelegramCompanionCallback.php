@@ -3,6 +3,7 @@
 namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -15,6 +16,7 @@ final class HandleTelegramCompanionCallback
 {
     public function __construct(
         private readonly OrganizationContext $context,
+        private readonly AcceptCompanionMessage $accept,
         private readonly RecordCompanionFeedback $feedback,
         private readonly RequestCompanionHandoff $handoff,
     ) {}
@@ -29,6 +31,10 @@ final class HandleTelegramCompanionCallback
         } elseif (preg_match('/^cc:human:(\d+)$/', $data, $handoffMatch) === 1) {
             $action = 'human';
             $messageId = (int) $handoffMatch[1];
+            $value = null;
+        } elseif (preg_match('/^cc:reinspect:(\d+)$/', $data, $reinspectMatch) === 1) {
+            $action = 'reinspect';
+            $messageId = (int) $reinspectMatch[1];
             $value = null;
         } else {
             $bot->answerCallbackQuery(text: 'Действие недоступно.');
@@ -61,6 +67,26 @@ final class HandleTelegramCompanionCallback
             if ($action === 'feedback') {
                 $this->feedback->handle($client, $messageId, $value);
                 $bot->answerCallbackQuery(text: $value === CompanionFeedbackValue::Helpful ? 'Спасибо!' : 'Спасибо за обратную связь.');
+            } elseif ($action === 'reinspect') {
+                $chatId = $bot->chat()?->id;
+                if ($chatId === null) {
+                    throw new \RuntimeException('Telegram chat is unavailable.');
+                }
+                $this->accept->handle(
+                    client: $client,
+                    channel: 'telegram',
+                    body: str_starts_with(strtolower((string) $user->language_code), 'ru')
+                        ? 'Уточните, пожалуйста, по предыдущему фото.'
+                        : 'Please clarify the previous photo.',
+                    idempotencyKey: null,
+                    originExternalId: 'reinspect:'.$user->id.':'.$messageId,
+                    transportChatId: (string) $chatId,
+                    locale: (string) ($user->language_code ?? 'en'),
+                    payloadHash: hash('sha256', 'reinspect|'.$client->getKey().'|'.$messageId),
+                    imageReferenceMode: CompanionImageReferenceMode::RecentTurn,
+                    imageReferenceMessageId: $messageId,
+                );
+                $bot->answerCallbackQuery(text: 'Уточнение принято.');
             } else {
                 $this->handoff->handle($client, $messageId);
                 $bot->answerCallbackQuery(text: 'Запрос передан специалисту.');

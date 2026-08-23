@@ -10,6 +10,7 @@ use App\Modules\ClientCompanion\Application\Actions\ResetCompanionContext;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionImages;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -54,7 +55,12 @@ final class CompanionController extends Controller
 
             return is_string($checksum) ? $checksum : 'invalid';
         }, $files);
-        $payloadHash = hash('sha256', json_encode(['body' => $body, 'checksums' => $checksums], JSON_THROW_ON_ERROR));
+        $reinspectRecentImages = $request->boolean('reinspect_recent_images');
+        $payloadHash = hash('sha256', json_encode([
+            'body' => $body,
+            'checksums' => $checksums,
+            'reinspect_recent_images' => $reinspectRecentImages,
+        ], JSON_THROW_ON_ERROR));
         $organizationId = app(OrganizationContext::class)->id();
         $existing = CompanionTurn::query()
             ->where('organization_id', $organizationId)
@@ -76,6 +82,7 @@ final class CompanionController extends Controller
             locale: app()->getLocale(),
             attachmentIds: array_map(static fn ($attachment): int => (int) $attachment->getKey(), $attachments),
             payloadHash: $payloadHash,
+            imageReferenceMode: $reinspectRecentImages ? CompanionImageReferenceMode::RecentTurn : CompanionImageReferenceMode::None,
         );
 
         return back()->with('companion_message_accepted', true);

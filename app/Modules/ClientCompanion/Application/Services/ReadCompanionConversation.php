@@ -64,6 +64,7 @@ final class ReadCompanionConversation
                 'state' => 'ai_active',
                 'stateLabel' => 'AI-помощник активен',
                 'pending' => false,
+                'canReinspectRecentImages' => false,
                 'openEscalation' => null,
             ];
         }
@@ -188,11 +189,20 @@ final class ReadCompanionConversation
         $pending = CompanionTurn::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
-            ->whereIn('status', ['pending', 'processing'])
+            ->whereIn('status', ['assembling', 'pending', 'processing'])
+            ->exists();
+        $canReinspectRecentImages = CompanionTurn::query()
+            ->where('organization_id', $organizationId)
+            ->where('conversation_id', $conversation->getKey())
+            ->where('context_epoch', $conversation->context_epoch)
+            ->where('status', 'completed')
+            ->where('input_modality', 'image')
+            ->where('completed_at', '>=', now()->subMinutes(max(1, (int) config('ai.companion.recent_image_max_age_minutes', 1440))))
+            ->whereHas('attachments')
             ->exists();
 
         return [
-            'conversation' => ['id' => $conversation->getKey()],
+            'conversation' => $staff ? ['id' => $conversation->getKey()] : null,
             'messages' => $timeline,
             'hasOlder' => $hasOlder,
             'nextBeforeMessageId' => $hasOlder ? $oldestMessage?->getKey() : null,
@@ -201,6 +211,7 @@ final class ReadCompanionConversation
                 ? 'AI временно приостановлен'
                 : 'AI-помощник активен',
             'pending' => $pending,
+            'canReinspectRecentImages' => $canReinspectRecentImages,
             'openEscalation' => $openEscalation === null ? null : [
                 'reason' => $openEscalation->reason->value,
                 'reasonLabel' => $openEscalation->reasonLabel(),

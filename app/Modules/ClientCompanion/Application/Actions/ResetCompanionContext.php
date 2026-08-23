@@ -60,12 +60,14 @@ final class ResetCompanionContext
                 ->where('organization_id', $organizationId)
                 ->where('conversation_id', $conversation->getKey())
                 ->where('context_epoch', '<', $nextEpoch)
-                ->whereIn('status', ['pending', 'processing', 'paused'])
+                ->whereIn('status', ['assembling', 'pending', 'processing', 'paused'])
                 ->update([
                     'status' => 'cancelled',
                     'typing_active' => false,
                     'processing_lease_token' => null,
                     'processing_lease_expires_at' => null,
+                    'typing_owner_token' => null,
+                    'typing_chat_id' => null,
                     'completed_at' => now(),
                 ]);
 

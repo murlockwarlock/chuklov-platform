@@ -32,21 +32,28 @@ final class RequestCompanionHandoff
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $client->getKey())
                 ->whereKey($messageId)
-                ->lockForUpdate()
                 ->first();
             if ($message === null || ! $message->conversation()->where('conversation_type', ConversationType::ClientCompanion)->exists()) {
                 throw new AuthorizationException('The Companion action is not available.');
             }
-            $turn = CompanionTurn::query()
-                ->where('organization_id', $organizationId)
-                ->where('conversation_id', $message->conversation_id)
-                ->where('outbound_message_id', $message->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
             $conversation = Conversation::query()
                 ->where('organization_id', $organizationId)
                 ->whereKey($message->conversation_id)
                 ->where('client_id', $client->getKey())
+                ->where('conversation_type', ConversationType::ClientCompanion)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $message = ConversationMessage::query()
+                ->where('organization_id', $organizationId)
+                ->where('client_id', $client->getKey())
+                ->where('conversation_id', $conversation->getKey())
+                ->whereKey($messageId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $turn = CompanionTurn::query()
+                ->where('organization_id', $organizationId)
+                ->where('conversation_id', $message->conversation_id)
+                ->where('outbound_message_id', $message->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
             if ($conversation->automation_state === ConversationAutomationState::HumanHandoff) {
@@ -62,12 +69,14 @@ final class RequestCompanionHandoff
                 return;
             }
 
-            if (in_array($turn->status, [CompanionTurnStatus::Pending, CompanionTurnStatus::Processing], true)) {
+            if (in_array($turn->status, [CompanionTurnStatus::Assembling, CompanionTurnStatus::Pending, CompanionTurnStatus::Processing], true)) {
                 $turn->update([
                     'status' => CompanionTurnStatus::Escalated,
                     'typing_active' => false,
                     'processing_lease_token' => null,
                     'processing_lease_expires_at' => null,
+                    'typing_owner_token' => null,
+                    'typing_chat_id' => null,
                     'escalated_at' => now(),
                 ]);
             }

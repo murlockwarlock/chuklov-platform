@@ -19,7 +19,17 @@ use InvalidArgumentException;
 final class RecordCompanionMessage
 {
     /** @var list<string> */
-    private const METADATA_KEYS = ['provider_message_id', 'chat_type', 'message_type', 'locale', 'transport', 'safe_actions'];
+    private const METADATA_KEYS = [
+        'provider_message_id',
+        'chat_type',
+        'message_type',
+        'locale',
+        'transport',
+        'safe_actions',
+        'media_group_id',
+        'source_ordinal',
+        'ingest_state',
+    ];
 
     public function __construct(private readonly MedicalEncryptorInterface $encryptor) {}
 

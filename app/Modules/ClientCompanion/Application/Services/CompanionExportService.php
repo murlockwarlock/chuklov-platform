@@ -24,6 +24,8 @@ use RuntimeException;
 
 final class CompanionExportService
 {
+    private const MAX_EXPORT_MESSAGES = 2000;
+
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
@@ -73,7 +75,7 @@ final class CompanionExportService
             ->where('organization_id', $organization->getKey())
             ->where('conversation_id', $conversationId)
             ->orderBy('sequence')
-            ->limit((int) config('ai.companion.maximum_export_messages', 10000))
+            ->limit($this->exportLimit())
             ->get();
         $turnIds = $turns->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
         $escalations = CompanionEscalation::query()
@@ -192,7 +194,7 @@ final class CompanionExportService
             ];
         }
 
-        $limit = (int) config('ai.companion.maximum_export_messages', 10000);
+        $limit = $this->exportLimit();
         $messages = ConversationMessage::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
@@ -236,12 +238,9 @@ final class CompanionExportService
             ->orderBy('opened_at')
             ->get();
 
-        return [
-            'schema_version' => 'client_companion_history_v1',
-            'identity' => $this->identity($client, $identified),
-            'conversation' => ['logical' => $identified ? 'client_'.$client->getKey() : 'client_1'],
-            'messages' => $messages->map(function (ConversationMessage $message) use ($organizationId, $turnByMessage, $feedback, $attachmentCounts): array {
-                $turn = $turnByMessage[(int) $message->getKey()] ?? null;
+        $messageItems = [];
+        foreach ($messages->chunk(200) as $messageBatch) {
+            foreach ($messageBatch as $message) {
                 $item = [
                     'role' => match ($message->author_type) {
                         ConversationAuthorType::Client => 'client',
@@ -259,9 +258,15 @@ final class CompanionExportService
                 if ($messageFeedback instanceof CompanionFeedback) {
                     $item['feedback'] = ['value' => $messageFeedback->value->value, 'reason' => $messageFeedback->reason];
                 }
+                $messageItems[] = $item;
+            }
+        }
 
-                return $item;
-            })->values()->all(),
+        return [
+            'schema_version' => 'client_companion_history_v1',
+            'identity' => $this->identity($client, $identified),
+            'conversation' => ['logical' => $identified ? 'client_'.$client->getKey() : 'client_1'],
+            'messages' => $messageItems,
             'events' => $events->map(fn (CompanionEscalation $event): array => [
                 'type' => 'handoff',
                 'reason' => $event->reason->value,
@@ -335,5 +340,10 @@ final class CompanionExportService
         if ((int) $client->organization_id !== $organizationId) {
             throw new AuthorizationException('The client is outside the organization.');
         }
+    }
+
+    private function exportLimit(): int
+    {
+        return min(self::MAX_EXPORT_MESSAGES, max(1, (int) config('ai.companion.maximum_export_messages', self::MAX_EXPORT_MESSAGES)));
     }
 }

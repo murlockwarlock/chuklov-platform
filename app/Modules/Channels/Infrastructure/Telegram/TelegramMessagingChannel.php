@@ -55,7 +55,7 @@ final class TelegramMessagingChannel implements MessagingChannel
             return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
         } catch (Throwable $exception) {
             if (! $this->isEntityParseFailure($exception)) {
-                return NotificationDeliveryResult::retryable('telegram_api_error');
+                return $this->providerFailure($exception, 'telegram_api_error');
             }
 
             try {
@@ -63,17 +63,23 @@ final class TelegramMessagingChannel implements MessagingChannel
                 $sent = $this->bot->sendMessage($fixed, $chunk->recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $this->keyboard($chunk));
 
                 return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
-            } catch (Throwable) {
+            } catch (Throwable $fixedException) {
+                if (! $this->isEntityParseFailure($fixedException)) {
+                    return $this->providerFailure($fixedException, 'telegram_repaired_html_error');
+                }
+
                 try {
                     $sent = $this->bot->sendMessage($formatter->plainText($html), $chunk->recipientExternalId, reply_markup: $this->keyboard($chunk));
 
                     return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
-                } catch (Throwable) {
-                    return NotificationDeliveryResult::retryable('telegram_formatting_delivery_error');
+                } catch (Throwable $plainException) {
+                    if (! $this->isEntityParseFailure($plainException)) {
+                        return $this->providerFailure($plainException, 'telegram_plain_text_error');
+                    }
+
+                    return NotificationDeliveryResult::permanentFailure('telegram_formatting_rejected');
                 }
             }
-        } catch (Throwable) {
-            return NotificationDeliveryResult::retryable('channel_error');
         }
     }
 
@@ -94,6 +100,19 @@ final class TelegramMessagingChannel implements MessagingChannel
     {
         return $exception->getCode() === 400
             && preg_match('/parse|entity|markup|tag/i', $exception->getMessage()) === 1;
+    }
+
+    private function providerFailure(Throwable $exception, string $fallbackCode): NotificationDeliveryResult
+    {
+        $code = (int) $exception->getCode();
+        if ($code === 429) {
+            return NotificationDeliveryResult::retryable('telegram_rate_limited');
+        }
+        if (in_array($code, [400, 401, 403, 404, 409], true)) {
+            return NotificationDeliveryResult::permanentFailure('telegram_provider_rejected');
+        }
+
+        return NotificationDeliveryResult::unknown($fallbackCode);
     }
 
     private function keyboard(CompanionOutboundChunk $chunk): ?InlineKeyboardMarkup

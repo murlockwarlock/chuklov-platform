@@ -101,10 +101,11 @@ final class ReplyToCompanion
             return $ids;
         });
 
-        foreach ($deliveryIds as $deliveryId) {
+        $firstDeliveryId = $deliveryIds[0] ?? null;
+        if ($firstDeliveryId !== null) {
             DeliverCompanionMessage::dispatch(
                 $organization->getKey(),
-                $deliveryId,
+                $firstDeliveryId,
             )->afterCommit();
         }
     }

@@ -19,6 +19,7 @@ final class RecordPortalCompanionMessageRequest extends FormRequest
             'idempotency_key' => ['required', 'string', 'regex:/^[A-Za-z0-9._:-]{16,128}$/'],
             'images' => ['nullable', 'array', 'max:10'],
             'images.*' => ['file', 'max:10240', 'mimes:jpg,jpeg,png,webp'],
+            'reinspect_recent_images' => ['sometimes', 'boolean'],
         ];
     }
 }

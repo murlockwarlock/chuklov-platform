@@ -3,6 +3,7 @@
 namespace App\Modules\ClientCompanion\Domain\Models;
 
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
@@ -25,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $origin_channel
  * @property string|null $transport_chat_id
  * @property string|null $input_modality
+ * @property CompanionImageReferenceMode $image_reference_mode
  * @property CarbonInterface|null $accepted_at
  * @property CarbonInterface|null $processing_started_at
  * @property CarbonInterface|null $completed_at
@@ -39,7 +41,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'outbound_message_id', 'ai_run_id', 'origin_channel', 'origin_external_id', 'transport_chat_id',
     'idempotency_key', 'request_hash', 'status', 'failure_code', 'processing_lease_token',
     'burst_expires_at', 'burst_message_count', 'burst_text_characters',
-    'input_modality', 'media_group_id', 'input_item_count', 'input_total_bytes', 'input_failure_code', 'sealed_at',
+    'input_modality', 'image_reference_mode', 'media_group_id', 'input_item_count', 'input_total_bytes', 'input_failure_code', 'sealed_at',
     'processing_lease_expires_at', 'typing_owner_token', 'typing_heartbeat_sequence', 'typing_active',
     'typing_chat_id', 'accepted_at', 'processing_started_at', 'completed_at', 'failed_at', 'escalated_at',
 ])]
@@ -113,7 +115,7 @@ class CompanionTurn extends Model
 
     public function isActive(): bool
     {
-        return in_array($this->status, [CompanionTurnStatus::Pending, CompanionTurnStatus::Processing], true);
+        return $this->status->isActive();
     }
 
     public function leaseIsExpired(?CarbonInterface $now = null): bool
@@ -126,6 +128,7 @@ class CompanionTurn extends Model
     {
         return [
             'status' => CompanionTurnStatus::class,
+            'image_reference_mode' => CompanionImageReferenceMode::class,
             'context_epoch' => 'integer',
             'sequence' => 'integer',
             'typing_heartbeat_sequence' => 'integer',

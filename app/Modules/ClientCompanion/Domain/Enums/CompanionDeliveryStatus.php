@@ -8,4 +8,5 @@ enum CompanionDeliveryStatus: string
     case Processing = 'processing';
     case Delivered = 'delivered';
     case Failed = 'failed';
+    case Uncertain = 'uncertain';
 }

@@ -1,20 +1,20 @@
 # Project Status
 
-## 2026-08-23 — Stage 10.2 AI Companion — IMPLEMENTATION CANDIDATE
+## 2026-08-24 — Stage 10.2 AI Companion — IMPLEMENTATION / REMEDIATION CANDIDATE
 
-- Candidate branch: `codex/ai-companion`, based exactly on `4214ed39918f5dc1da844d7f88e5a06fc20c1b57`.
+- Candidate branch: `codex/ai-companion`, remediation starts exactly at `b6f885e6e0156ce4bab767a40484a6d19edc01b2`, based on accepted `4214ed39918f5dc1da844d7f88e5a06fc20c1b57`.
 - Implemented one organization/client-scoped logical Companion Conversation shared by authenticated Portal, Telegram Mini App, and verified private Telegram DM. Existing M2 messages remain readable; new Companion content is encrypted through the medical encryption boundary, with bounded CRM/client history reads and protected staff access.
 - Added durable Companion turns, burst/media-group assembly, identifier-only queued processing/delivery/typing jobs, PostgreSQL ownership/idempotency constraints, context epochs, first/recent exchange selection, hard context bounds, structured safety results, typed escalation/pause/resume, feedback, exports, and client-record CRM history/handoff actions.
 - Added fail-closed client-safe Knowledge opt-in, server-side RAG audience filtering, Telegram-safe semantic formatting/chunking/fallback, direct ordinary verified private-DM routing, and image input through the existing `ClientCompanion` capability plus `AiModelModality::ImageInput` candidate resolution. Albums are one bounded multimodal turn; voice/TTS, MAX/Instagram, and arbitrary CRM mutations remain out of scope.
-- Focused local PHPUnit passes 109 tests / 547 assertions for Companion, Conversation, Portal, Telegram, AI attachment/modality, and RAG regression coverage; AI Feature/Unit passes 239 / 1,406; Knowledge Feature/Unit passes 49 / 242. PostgreSQL integration/concurrency passes 122 tests / 430 assertions, including the new Companion process-isolation suite (3 / 8). Full PHPStan level 8 passes with a 1 GB analyzer limit; Pint, PHP syntax, Blade cache, TypeScript, ESLint, Vite build, Composer audit, npm audit, and git diff --check pass. Hosted CI, deployment, and merge are not part of this implementation turn. Independent review remains separate. M11 is not started; OQ-015 content is not fabricated.
+- Remediation local evidence: Client Companion plus Telegram formatter passes 65 tests / 299 assertions; AI plus Knowledge/RAG passes 288 / 1,648; Portal/M2/Telegram/privacy/security passes 92 / 634; and the complete M2 Feature/Unit group passes 43 / 276 (overlapping groups are reported separately). PostgreSQL integration/concurrency passes 14 tests / 75 assertions for `ClientCompanionPostgresTest.php` and `MilestoneTenConcurrencyTest.php`, including process-isolated idempotency, album assembly, adoption, stale completion, and tenant-lock coverage. Full PHPStan level 8 passes with a 1 GB analyzer limit; Pint, changed-file PHP syntax, Blade cache, TypeScript, ESLint, Vite build, Composer audit, npm audit, and git diff --check pass. Hosted CI, staging, deployment, and merge were not performed. Independent re-review remains separate. M11 is not started; OQ-015 content is not fabricated.
 
-## 2026-08-23 — Stage 10.1 AI Evaluation Quality / Observability — IN_PROGRESS
+## 2026-08-23 — Stage 10.1 AI Evaluation Quality / Observability — CLOSED / ACCEPTED
 
 - Candidate branch: `codex/ai-eval-quality-observability`, based exactly on `44a4ba09f01803a740b299786fabc6ad2a0ad49a`.
 - Extends the accepted M10 evaluation foundation with a bounded server-owned assertion registry for required/forbidden text, output presence, JSON schema, required fields, bounded values, and RAG source provenance. Unknown assertion types fail closed.
 - Evaluation runs now retain immutable suite/case/assertion/schema/prompt/model/capability snapshots and safe case-level typed results. Run metrics distinguish answer quality from execution errors and aggregate pass rate, RAG checks, token usage, Chuklov estimated cost, provider-reported cost, latency, retry/failover, and human-review decisions without decrypting medical payloads.
 - Filament `Искусственный интеллект → Проверки AI` adds Russian quality history, safe failure detail, and compatible-run comparison. Protected AI traces remain behind the existing authorization boundary. The optional judge layer is explicitly disabled and produces no scores unless a later configured extension is added.
-- AI Companion remains the next separate slice after 10.1; M11 is not advanced. M8 remains blocked by OQ-015. No provider catalog redesign, real-provider CI evaluation, deployment, or merge is part of this candidate.
+- Stage 10.1 is closed before Stage 10.2. M11 is not advanced. M8 remains blocked by OQ-015. No provider catalog redesign, real-provider CI evaluation, deployment, or merge is part of this remediation.
 
 
 ## UX-A — Client Workspace + ordinary client/global search — IMPLEMENTATION CANDIDATE — 2026-08-18
@@ -59,10 +59,10 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-18
+- Last updated: 2026-08-24
 - Current phase: Phase 1 foundation
 - Current milestone: Stage 10.2 — AI Companion (implementation candidate)
-- Status: M0–M7 and M9–M10 are CLOSED / ACCEPTED. Stage 10.1 and Stage 10.2 remain implementation candidates pending independent/hosted acceptance. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources.
+- Status: M0–M7, M9–M10, and Stage 10.1 are CLOSED / ACCEPTED. Stage 10.2 remains an implementation-remediation candidate pending fresh independent/hosted acceptance. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

@@ -7,6 +7,7 @@ use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ConversationType $conversation_type
  * @property ConversationAutomationState $automation_state
  * @property int $context_epoch
+ * @property CarbonInterface|null $started_at
+ * @property CarbonInterface|null $last_message_at
  */
 #[Fillable(['channel', 'external_key', 'conversation_type', 'automation_state', 'context_epoch', 'started_at', 'last_message_at'])]
 class Conversation extends Model

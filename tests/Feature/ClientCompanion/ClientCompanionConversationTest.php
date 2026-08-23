@@ -166,6 +166,23 @@ final class ClientCompanionConversationTest extends TestCase
         self::assertSame([], $foreignHistory['messages']);
     }
 
+    public function test_ordinary_client_history_does_not_expose_internal_conversation_id(): void
+    {
+        app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Безопасный вопрос',
+            idempotencyKey: 'portal-safe-id-0001',
+            originExternalId: 'portal:safe-id-0001',
+        );
+
+        $history = app(ReadCompanionConversation::class)->forClient($this->client);
+
+        self::assertNull($history['conversation']);
+        self::assertArrayNotHasKey('aiRunId', $history);
+        self::assertArrayNotHasKey('providerId', $history);
+    }
+
     public function test_burst_limits_split_later_messages_without_dropping_them(): void
     {
         config()->set('ai.companion.maximum_burst_messages', 2);

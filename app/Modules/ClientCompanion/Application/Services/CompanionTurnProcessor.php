@@ -14,6 +14,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionSafeAction;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
@@ -64,6 +65,7 @@ final class CompanionTurnProcessor
         $turn = $claimed['turn'];
         /** @var Conversation $conversation */
         $conversation = $claimed['conversation'];
+        $leaseToken = $claimed['lease_token'];
         $this->startTyping($turn);
         $locale = 'en';
 
@@ -73,14 +75,14 @@ final class CompanionTurnProcessor
             $inputFailure = CompanionFailureCode::tryFrom((string) $turn->input_failure_code);
             if ($inputFailure instanceof CompanionFailureCode
                 && in_array($inputFailure, [CompanionFailureCode::ImageUnavailable, CompanionFailureCode::InputLimitExceeded], true)) {
-                $this->failSafely($organizationId, $turn->getKey(), $inputFailure, $locale);
+                $this->failSafely($organizationId, $turn->getKey(), $leaseToken, $inputFailure, $locale);
 
                 return;
             }
             $context = $this->contextAssembler->handle($organizationId, $conversation, $turn);
             $directReason = $this->safetyClassifier->classify($context['current_message']);
             if ($directReason !== null) {
-                $this->handoff($organizationId, $turn->getKey(), $directReason, null, $locale);
+                $this->handoff($organizationId, $turn->getKey(), $leaseToken, $directReason, null, $locale);
 
                 return;
             }
@@ -109,59 +111,50 @@ final class CompanionTurnProcessor
             ));
 
             if ($result->runId > 0) {
-                $this->attachRun($organizationId, $turn->getKey(), $result->runId);
+                if (! $this->attachRun($organizationId, $turn->getKey(), $leaseToken, $result->runId)) {
+                    return;
+                }
             }
 
             $response = $this->responseContract->parse($result);
             if ($response['decision'] === 'handoff_required') {
                 $reason = $this->reasonFromModel($response['handoff_reason']);
-                $this->handoff($organizationId, $turn->getKey(), $reason, $result->runId, $locale);
+                $this->handoff($organizationId, $turn->getKey(), $leaseToken, $reason, $result->runId, $locale);
 
                 return;
             }
 
-            $this->complete($organizationId, $turn->getKey(), $response['reply'], $locale, $response['suggested_safe_actions']);
+            $this->complete($organizationId, $turn->getKey(), $leaseToken, $response['reply'], $locale, $response['suggested_safe_actions']);
         } catch (Throwable $exception) {
-            $this->failSafely($organizationId, $turn->getKey(), $this->failureCode($exception), $locale);
+            $this->failSafely($organizationId, $turn->getKey(), $leaseToken, $this->failureCode($exception), $locale);
         }
     }
 
     public function handleFailureFromQueue(int $organizationId, int $turnId): void
     {
-        $turn = CompanionTurn::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($turnId)
-            ->first();
-        if (! $turn instanceof CompanionTurn || $turn->status->isTerminal()) {
+        $claimed = $this->claim($organizationId, $turnId);
+        if ($claimed === null || $claimed['wait']) {
             return;
         }
 
+        $turn = $claimed['turn'];
         $locale = (string) ($turn->inboundMessage()->first()?->metadata['locale'] ?? 'en');
-        $this->failSafely($organizationId, $turnId, CompanionFailureCode::QueueFailure, $locale);
+        $this->failSafely($organizationId, $turnId, $claimed['lease_token'], CompanionFailureCode::QueueFailure, $locale);
     }
 
-    /** @return array{wait: bool, turn: CompanionTurn, conversation: Conversation}|null */
+    /** @return array{wait: true, turn: CompanionTurn, conversation: Conversation, lease_token: ''}|array{wait: false, turn: CompanionTurn, conversation: Conversation, lease_token: non-empty-string}|null */
     private function claim(int $organizationId, int $turnId): ?array
     {
         $token = (string) Str::uuid();
 
         return DB::transaction(function () use ($organizationId, $turnId, $token): ?array {
-            $turn = CompanionTurn::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turnId)
-                ->lockForUpdate()
-                ->first();
-            if (! $turn instanceof CompanionTurn || $turn->status->isTerminal()) {
+            $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
+            if ($aggregate === null) {
                 return null;
             }
-
-            $conversation = Conversation::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turn->conversation_id)
-                ->where('client_id', $turn->client_id)
-                ->lockForUpdate()
-                ->first();
-            if (! $conversation instanceof Conversation) {
+            $turn = $aggregate['turn'];
+            $conversation = $aggregate['conversation'];
+            if ($turn->status->isTerminal()) {
                 return null;
             }
 
@@ -169,6 +162,10 @@ final class CompanionTurnProcessor
                 $turn->update([
                     'status' => CompanionTurnStatus::Cancelled,
                     'typing_active' => false,
+                    'processing_lease_token' => null,
+                    'processing_lease_expires_at' => null,
+                    'typing_owner_token' => null,
+                    'typing_chat_id' => null,
                     'completed_at' => now(),
                 ]);
 
@@ -176,7 +173,14 @@ final class CompanionTurnProcessor
             }
 
             if ($conversation->automation_state === ConversationAutomationState::HumanHandoff) {
-                $turn->update(['status' => CompanionTurnStatus::Paused, 'typing_active' => false]);
+                $turn->update([
+                    'status' => CompanionTurnStatus::Paused,
+                    'typing_active' => false,
+                    'processing_lease_token' => null,
+                    'processing_lease_expires_at' => null,
+                    'typing_owner_token' => null,
+                    'typing_chat_id' => null,
+                ]);
 
                 return null;
             }
@@ -185,10 +189,22 @@ final class CompanionTurnProcessor
                 return null;
             }
 
+            if ($turn->status === CompanionTurnStatus::Assembling) {
+                if ($turn->burst_expires_at !== null && $turn->burst_expires_at->isFuture()) {
+                    return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation, 'lease_token' => ''];
+                }
+
+                $turn->update([
+                    'status' => CompanionTurnStatus::Pending,
+                    'sealed_at' => $turn->sealed_at ?? now(),
+                ]);
+                $turn->refresh();
+            }
+
             if ($turn->status === CompanionTurnStatus::Pending
                 && $turn->burst_expires_at !== null
                 && $turn->burst_expires_at->isFuture()) {
-                return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation];
+                return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation, 'lease_token' => ''];
             }
 
             $earlier = CompanionTurn::query()
@@ -196,11 +212,15 @@ final class CompanionTurnProcessor
                 ->where('conversation_id', $conversation->getKey())
                 ->where('context_epoch', $turn->context_epoch)
                 ->where('sequence', '<', $turn->sequence)
-                ->whereIn('status', [CompanionTurnStatus::Pending->value, CompanionTurnStatus::Processing->value])
+                ->whereIn('status', [
+                    CompanionTurnStatus::Assembling->value,
+                    CompanionTurnStatus::Pending->value,
+                    CompanionTurnStatus::Processing->value,
+                ])
                 ->orderBy('sequence')
                 ->first();
             if ($earlier instanceof CompanionTurn) {
-                return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation];
+                return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation, 'lease_token' => ''];
             }
 
             $typing = $turn->origin_channel === 'telegram' && $turn->transport_chat_id !== null;
@@ -222,7 +242,12 @@ final class CompanionTurnProcessor
                 return null;
             }
 
-            return ['wait' => false, 'turn' => $freshTurn, 'conversation' => $freshConversation];
+            return [
+                'wait' => false,
+                'turn' => $freshTurn,
+                'conversation' => $freshConversation,
+                'lease_token' => $token,
+            ];
         });
     }
 
@@ -247,37 +272,51 @@ final class CompanionTurnProcessor
         }
     }
 
-    private function attachRun(int $organizationId, int $turnId, int $runId): void
+    private function attachRun(int $organizationId, int $turnId, string $leaseToken, int $runId): bool
     {
-        CompanionTurn::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($turnId)
-            ->update(['ai_run_id' => $runId]);
+        return DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $runId): bool {
+            $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
+            if ($aggregate === null) {
+                return false;
+            }
+            $turn = $aggregate['turn'];
+            $conversation = $aggregate['conversation'];
+            if (! $this->ownsProcessingLease($turn, $leaseToken)
+                || (int) $conversation->context_epoch !== (int) $turn->context_epoch
+                || $conversation->automation_state !== ConversationAutomationState::AiActive) {
+                return false;
+            }
+
+            $turn->update(['ai_run_id' => $runId]);
+
+            return true;
+        });
     }
 
     /** @param list<string> $safeActions */
-    private function complete(int $organizationId, int $turnId, string $reply, string $locale, array $safeActions = []): void
+    private function complete(int $organizationId, int $turnId, string $leaseToken, string $reply, string $locale, array $safeActions = []): void
     {
-        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $reply, $locale, $safeActions): array {
-            $turn = CompanionTurn::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turnId)
-                ->lockForUpdate()
-                ->first();
-            if (! $turn instanceof CompanionTurn || $turn->status !== CompanionTurnStatus::Processing) {
+        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $reply, $locale, $safeActions): array {
+            $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
+            if ($aggregate === null) {
+                return [];
+            }
+            $turn = $aggregate['turn'];
+            $conversation = $aggregate['conversation'];
+            if (! $this->ownsProcessingLease($turn, $leaseToken)
+                || $conversation->automation_state !== ConversationAutomationState::AiActive
+                || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
+                if ($this->ownsProcessingLease($turn, $leaseToken)) {
+                    $this->cancelOwnedTurn($turn, $conversation->automation_state === ConversationAutomationState::HumanHandoff);
+                }
+
                 return [];
             }
 
-            $conversation = Conversation::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turn->conversation_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            if ($conversation->automation_state !== ConversationAutomationState::AiActive
-                || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
-                $turn->update(['status' => CompanionTurnStatus::Cancelled, 'typing_active' => false, 'completed_at' => now()]);
-
-                return [];
+            $safeActions = array_values(array_unique(array_filter($safeActions, static fn (string $action): bool => CompanionSafeAction::tryFrom($action) !== null
+                && $action !== CompanionSafeAction::ReinspectRecentImage->value)));
+            if ($turn->input_modality === 'image') {
+                $safeActions[] = CompanionSafeAction::ReinspectRecentImage->value;
             }
 
             $message = $this->recordMessage->handle(
@@ -314,23 +353,24 @@ final class CompanionTurnProcessor
         $this->dispatchDeliveries($organizationId, $deliveryIds);
     }
 
-    private function handoff(int $organizationId, int $turnId, CompanionEscalationReason $reason, ?int $aiRunId, string $locale): void
+    private function handoff(int $organizationId, int $turnId, string $leaseToken, CompanionEscalationReason $reason, ?int $aiRunId, string $locale): void
     {
-        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $reason, $aiRunId, $locale): array {
-            $turn = CompanionTurn::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turnId)
-                ->lockForUpdate()
-                ->first();
-            if (! $turn instanceof CompanionTurn || $turn->status->isTerminal()) {
+        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $reason, $aiRunId, $locale): array {
+            $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
+            if ($aggregate === null) {
                 return [];
             }
+            $turn = $aggregate['turn'];
+            $conversation = $aggregate['conversation'];
+            if (! $this->ownsProcessingLease($turn, $leaseToken)
+                || $conversation->automation_state !== ConversationAutomationState::AiActive
+                || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
+                if ($this->ownsProcessingLease($turn, $leaseToken)) {
+                    $this->cancelOwnedTurn($turn, $conversation->automation_state === ConversationAutomationState::HumanHandoff);
+                }
 
-            $conversation = Conversation::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turn->conversation_id)
-                ->lockForUpdate()
-                ->firstOrFail();
+                return [];
+            }
             $client = Client::query()->where('organization_id', $organizationId)->whereKey($turn->client_id)->firstOrFail();
             $message = CompanionClientMessage::from($locale);
             $outbound = $this->recordMessage->handle(
@@ -376,7 +416,7 @@ final class CompanionTurnProcessor
         $this->dispatchDeliveries($organizationId, $deliveryIds);
     }
 
-    private function failSafely(int $organizationId, int $turnId, CompanionFailureCode $failureCode, string $locale): void
+    private function failSafely(int $organizationId, int $turnId, string $leaseToken, CompanionFailureCode $failureCode, string $locale): void
     {
         $currentTurn = CompanionTurn::query()
             ->where('organization_id', $organizationId)
@@ -397,21 +437,27 @@ final class CompanionTurnProcessor
             ->where('created_at', '>=', now()->subDay())
             ->exists();
         if ($shouldHandoff) {
-            $this->handoff($organizationId, $turnId, CompanionEscalationReason::RepeatedExecutionFailure, null, $locale);
+            $this->handoff($organizationId, $turnId, $leaseToken, CompanionEscalationReason::RepeatedExecutionFailure, null, $locale);
 
             return;
         }
 
-        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $failureCode, $locale): array {
-            $turn = CompanionTurn::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($turnId)
-                ->lockForUpdate()
-                ->first();
-            if (! $turn instanceof CompanionTurn || $turn->status->isTerminal()) {
+        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $failureCode, $locale): array {
+            $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
+            if ($aggregate === null) {
                 return [];
             }
-            $conversation = Conversation::query()->where('organization_id', $organizationId)->whereKey($turn->conversation_id)->lockForUpdate()->firstOrFail();
+            $turn = $aggregate['turn'];
+            $conversation = $aggregate['conversation'];
+            if (! $this->ownsProcessingLease($turn, $leaseToken)
+                || $conversation->automation_state !== ConversationAutomationState::AiActive
+                || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
+                if ($this->ownsProcessingLease($turn, $leaseToken)) {
+                    $this->cancelOwnedTurn($turn, $conversation->automation_state === ConversationAutomationState::HumanHandoff);
+                }
+
+                return [];
+            }
             $client = Client::query()->where('organization_id', $organizationId)->whereKey($turn->client_id)->firstOrFail();
             $message = CompanionClientMessage::from($locale);
             $failureMessage = match ($failureCode) {
@@ -480,9 +526,66 @@ final class CompanionTurnProcessor
     /** @param list<int> $deliveryIds */
     private function dispatchDeliveries(int $organizationId, array $deliveryIds): void
     {
-        foreach ($deliveryIds as $deliveryId) {
-            DeliverCompanionMessage::dispatch($organizationId, $deliveryId)->afterCommit();
+        $firstDeliveryId = $deliveryIds[0] ?? null;
+        if ($firstDeliveryId !== null) {
+            DeliverCompanionMessage::dispatch($organizationId, $firstDeliveryId)->afterCommit();
         }
+    }
+
+    private function ownsProcessingLease(CompanionTurn $turn, string $leaseToken): bool
+    {
+        return $turn->status === CompanionTurnStatus::Processing
+            && $leaseToken !== ''
+            && ! $turn->leaseIsExpired()
+            && hash_equals((string) $turn->processing_lease_token, $leaseToken);
+    }
+
+    /** @return array{turn: CompanionTurn, conversation: Conversation}|null */
+    private function lockTurnAggregate(int $organizationId, int $turnId): ?array
+    {
+        $candidate = CompanionTurn::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($turnId)
+            ->first();
+        if (! $candidate instanceof CompanionTurn) {
+            return null;
+        }
+
+        $conversation = Conversation::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($candidate->conversation_id)
+            ->where('client_id', $candidate->client_id)
+            ->lockForUpdate()
+            ->first();
+        if (! $conversation instanceof Conversation) {
+            return null;
+        }
+
+        $turn = CompanionTurn::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($turnId)
+            ->where('conversation_id', $conversation->getKey())
+            ->where('client_id', $conversation->client_id)
+            ->lockForUpdate()
+            ->first();
+        if (! $turn instanceof CompanionTurn) {
+            return null;
+        }
+
+        return ['turn' => $turn, 'conversation' => $conversation];
+    }
+
+    private function cancelOwnedTurn(CompanionTurn $turn, bool $paused): void
+    {
+        $turn->update([
+            'status' => $paused ? CompanionTurnStatus::Paused : CompanionTurnStatus::Cancelled,
+            'typing_active' => false,
+            'typing_owner_token' => null,
+            'typing_chat_id' => null,
+            'processing_lease_token' => null,
+            'processing_lease_expires_at' => null,
+            'completed_at' => $paused ? null : now(),
+        ]);
     }
 
     private function reasonFromModel(?string $reason): CompanionEscalationReason

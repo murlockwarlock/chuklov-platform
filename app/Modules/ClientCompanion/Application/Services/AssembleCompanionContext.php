@@ -3,6 +3,7 @@
 namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurnMessage;
@@ -179,10 +180,15 @@ final class AssembleCompanionContext
     private function boundedAttachmentIds(int $organizationId, Conversation $conversation, CompanionTurn $current, Collection $recentTurns): array
     {
         $turns = collect([$current]);
-        $recentImageTurns = $recentTurns->filter(fn (CompanionTurn $turn): bool => $turn->input_modality === 'image')
-            ->sortByDesc('sequence')
-            ->take(max(0, (int) config('ai.companion.recent_image_turns', 1)));
-        $turns = $turns->merge($recentImageTurns);
+        if ($current->image_reference_mode === CompanionImageReferenceMode::RecentTurn) {
+            $cutoff = now()->subMinutes(max(1, (int) config('ai.companion.recent_image_max_age_minutes', 1440)));
+            $recentImageTurns = $recentTurns
+                ->filter(fn (CompanionTurn $turn): bool => $turn->input_modality === 'image'
+                    && ($turn->completed_at?->greaterThanOrEqualTo($cutoff) ?? false))
+                ->sortByDesc('sequence')
+                ->take(max(0, (int) config('ai.companion.recent_image_turns', 1)));
+            $turns = $turns->merge($recentImageTurns);
+        }
         $ids = [];
         $totalBytes = 0;
         $maxImages = max(1, (int) config('ai.companion.maximum_images_per_turn', 10));

@@ -12,8 +12,12 @@ use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionImages;
 use App\Modules\ClientCompanion\Application\Services\AssembleCompanionContext;
 use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\Conversations\Application\RecordCompanionMessage;
+use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
@@ -174,6 +178,32 @@ final class ClientCompanionImageTest extends TestCase
         self::assertStringContainsString('[Изображение: 1]', $context['current_message']);
     }
 
+    public function test_ten_photo_album_stays_one_turn_when_image_limits_are_not_exceeded(): void
+    {
+        $accept = app(AcceptCompanionMessage::class);
+        $turn = null;
+
+        for ($index = 1; $index <= 10; $index++) {
+            $attachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('album-'.$index.'.jpg')])[0];
+            $turn = $accept->handle(
+                client: $this->client,
+                channel: 'telegram',
+                body: $index === 1 ? 'Десять фотографий' : '',
+                idempotencyKey: null,
+                originExternalId: 'ten-photo-album:'.$index,
+                transportChatId: 'ten-photo-chat',
+                attachmentIds: [$attachment->getKey()],
+                mediaGroupId: 'ten-photo-album',
+                sourceOrdinal: $index,
+            );
+        }
+
+        self::assertInstanceOf(CompanionTurn::class, $turn);
+        self::assertSame(1, CompanionTurn::query()->where('media_group_id', 'ten-photo-album')->count());
+        self::assertSame(10, $turn->fresh()->input_item_count);
+        self::assertNull($turn->fresh()->input_failure_code);
+    }
+
     public function test_standalone_photo_and_text_can_coalesce_but_an_album_is_not_mutated_by_text(): void
     {
         $attachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('standalone.jpg')])[0];
@@ -259,6 +289,78 @@ final class ClientCompanionImageTest extends TestCase
         self::assertSame($turn->getKey(), $sameTurn->getKey());
         self::assertSame('input_limit_exceeded', $sameTurn->fresh()->input_failure_code);
         self::assertSame(2, CompanionMessageAttachment::query()->count());
+    }
+
+    public function test_text_follow_up_keeps_semantic_history_without_resenting_the_previous_image(): void
+    {
+        $attachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('continuity.jpg')])[0];
+        $accept = app(AcceptCompanionMessage::class);
+        $imageTurn = $accept->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Вот тут болит',
+            idempotencyKey: null,
+            originExternalId: 'continuity-chat:1',
+            transportChatId: 'continuity-chat',
+            attachmentIds: [$attachment->getKey()],
+        );
+        $conversation = $imageTurn->conversation()->firstOrFail();
+        $outbound = app(RecordCompanionMessage::class)->handle(
+            organizationId: $this->organization->getKey(),
+            client: $this->client,
+            conversation: $conversation,
+            channel: 'telegram',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'Предыдущий ответ по изображению.',
+            contextEpoch: $imageTurn->context_epoch,
+            metadata: ['message_type' => 'companion_reply', 'transport' => 'telegram'],
+        );
+        $imageTurn->update([
+            'status' => 'completed',
+            'outbound_message_id' => $outbound->getKey(),
+            'completed_at' => now(),
+            'burst_expires_at' => now()->subSecond(),
+        ]);
+
+        $textTurn = $accept->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Это появилось вчера',
+            idempotencyKey: 'continuity-text-0001',
+            originExternalId: 'portal:continuity-text-0001',
+        );
+        $textContext = app(AssembleCompanionContext::class)->handle($this->organization->getKey(), $conversation->fresh(), $textTurn->fresh());
+
+        self::assertSame([], $textContext['attachment_ids']);
+        self::assertSame([], $textContext['required_modalities']);
+        self::assertStringContainsString('Вот тут болит', $textContext['conversation_history']);
+        self::assertStringContainsString('Предыдущий ответ по изображению.', $textContext['conversation_history']);
+
+        $textTurn->update(['burst_expires_at' => now()->subSecond()]);
+        $reinspect = $accept->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Что справа на фото?',
+            idempotencyKey: 'continuity-image-0001',
+            originExternalId: 'portal:continuity-image-0001',
+            imageReferenceMode: CompanionImageReferenceMode::RecentTurn,
+        );
+        $reinspectContext = app(AssembleCompanionContext::class)->handle($this->organization->getKey(), $conversation->fresh(), $reinspect->fresh());
+
+        self::assertSame([$attachment->getKey()], $reinspectContext['attachment_ids']);
+        self::assertSame(['image_input'], array_map(static fn ($modality): string => $modality->value, $reinspectContext['required_modalities']));
+
+        $this->expectException(ValidationException::class);
+        $accept->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Проверить недоступный ответ',
+            idempotencyKey: 'reinspect-invalid-source-1',
+            originExternalId: 'portal:reinspect-invalid-source-1',
+            imageReferenceMode: CompanionImageReferenceMode::RecentTurn,
+            imageReferenceMessageId: $outbound->getKey() + 100,
+        );
     }
 
     private function image(string $name): UploadedFile

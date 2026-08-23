@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scheduling\Application\PruneBookingIdempotencyKeys;
 use Illuminate\Support\Facades\Artisan;
@@ -20,6 +21,12 @@ Artisan::command('ai:runs-reclaim', function (ReclaimExpiredAiRuns $reclaimer): 
 })->purpose('Reclaim expired AI run leases and safely requeue stranded work.');
 
 Schedule::command('ai:runs-reclaim')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('companion:adopt-legacy', function (AdoptLegacyCompanionConversations $adopter): void {
+    $result = $adopter->handle();
+
+    $this->info("Adopted {$result['adopted']} legacy conversation(s); skipped {$result['skipped']}; ambiguous {$result['ambiguous']}.");
+})->purpose('Adopt only deterministic legacy M2 conversations into Client Companion.');
 
 Artisan::command('scenarios:run', function (ScheduleScenarioWork $scheduler): void {
     $result = $scheduler->handle();
