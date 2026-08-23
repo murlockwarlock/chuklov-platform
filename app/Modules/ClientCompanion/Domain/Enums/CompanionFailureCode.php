@@ -14,4 +14,6 @@ enum CompanionFailureCode: string
     case RateLimited = 'rate_limited';
     case ImageUnavailable = 'image_unavailable';
     case InputLimitExceeded = 'input_limit_exceeded';
+    case MediaGroupIncomplete = 'media_group_incomplete';
+    case ExecutionDeadlineExceeded = 'execution_deadline_exceeded';
 }

@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientCompanion\Infrastructure\Jobs;
 
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\ClientCompanion\Application\Services\CompanionTurnProcessor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,8 +19,11 @@ final class ProcessCompanionTurn implements ShouldQueue
 
     public int $tries = 3;
 
+    public int $timeout;
+
     public function __construct(public readonly int $organizationId, public readonly int $turnId)
     {
+        $this->timeout = AiRuntimeLimits::PLATFORM_QUEUE_JOB_TIMEOUT_SECONDS;
         $this->onQueue('ai-companion');
     }
 

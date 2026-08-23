@@ -8,6 +8,7 @@ use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
@@ -29,6 +30,7 @@ use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -288,6 +290,106 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, ConversationMessage::query()->where('author_type', 'ai')->count());
     }
 
+    public function test_valid_ai_execution_beyond_the_old_180_second_lease_boundary_keeps_one_owner(): void
+    {
+        $startedAt = Carbon::create(2026, 8, 24, 12, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $engine = new RecordingCompanionEngine(
+                new AiRunResult(
+                    runId: 0,
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['decision' => 'reply', 'reply' => 'Долгий ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+                ),
+                function () use ($startedAt): void {
+                    Carbon::setTestNow($startedAt->copy()->addSeconds(181));
+                },
+            );
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $turn = $this->accept('Длинный запуск');
+            $turn->update(['burst_expires_at' => $startedAt->copy()->subSecond()]);
+
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+            self::assertSame(CompanionTurnStatus::Completed, $turn->fresh()->status);
+            self::assertSame(1, $engine->calls);
+            self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
+            self::assertSame(
+                $startedAt->copy()->addSeconds(AiRuntimeLimits::wholeRunSeconds())->getPreciseTimestamp(6),
+                $engine->request?->executionDeadlineAt?->getPreciseTimestamp(6),
+            );
+            self::assertGreaterThan(180, AiRuntimeLimits::companionProcessingLeaseSeconds());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_processing_recovery_after_the_authoritative_deadline_fails_once_without_ai_replay(): void
+    {
+        $now = Carbon::create(2026, 8, 24, 13, 0, 0, 'UTC');
+        Carbon::setTestNow($now);
+        try {
+            $engine = new RecordingCompanionEngine(new AiRunResult(
+                runId: 0,
+                status: AiRunStatus::Succeeded,
+                outputPayload: ['decision' => 'reply', 'reply' => 'Не должно выполниться', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ));
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $turn = $this->accept('Просроченный запуск');
+            $turn->update([
+                'status' => CompanionTurnStatus::Processing,
+                'processing_lease_token' => 'dead-worker',
+                'processing_lease_expires_at' => $now->copy()->subSecond(),
+                'execution_deadline_at' => $now->copy()->subSecond(),
+                'burst_expires_at' => null,
+            ]);
+
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+            $turn->refresh();
+            self::assertSame(CompanionTurnStatus::Failed, $turn->status);
+            self::assertSame('execution_deadline_exceeded', $turn->failure_code);
+            self::assertSame(0, $engine->calls);
+            self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
+            self::assertNull($turn->processing_lease_token);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_failover_window_beyond_the_old_lease_boundary_keeps_terminal_fencing(): void
+    {
+        $startedAt = Carbon::create(2026, 8, 24, 14, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $engine = new RecordingCompanionEngine(
+                new AiRunResult(
+                    runId: 0,
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['decision' => 'reply', 'reply' => 'Ответ после failover', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+                ),
+                function () use ($startedAt): void {
+                    Carbon::setTestNow($startedAt->copy()->addSeconds(181));
+                },
+            );
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $turn = $this->accept('Проверка failover');
+            $turn->update(['burst_expires_at' => $startedAt->copy()->subSecond()]);
+
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+            self::assertSame(CompanionTurnStatus::Completed, $turn->fresh()->status);
+            self::assertSame(1, $engine->calls);
+            self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_human_handoff_during_processing_prevents_late_ai_output(): void
     {
         $turn = $this->accept('Пауза специалистом');
@@ -459,7 +561,140 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
     }
 
-    public function test_late_media_group_item_is_history_only_after_authoritative_seal(): void
+    public function test_album_items_separated_by_more_than_the_old_window_stay_one_turn_until_the_new_quiet_deadline(): void
+    {
+        $startedAt = Carbon::create(2026, 8, 24, 15, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $engine = new RecordingCompanionEngine(new AiRunResult(
+                runId: 0,
+                status: AiRunStatus::Succeeded,
+                outputPayload: ['decision' => 'reply', 'reply' => 'Весь альбом', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ));
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $first = $this->acceptAlbumItem('album-spacing:1', 'album-spacing', 'первое', 1);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(2));
+            $second = $this->acceptAlbumItem('album-spacing:2', 'album-spacing', 'второе', 2);
+
+            self::assertSame($first->getKey(), $second->getKey());
+            self::assertSame(CompanionTurnStatus::Assembling, $first->fresh()->status);
+            self::assertSame(2, CompanionTurnMessage::query()->where('turn_id', $first->getKey())->count());
+            self::assertSame(0, $engine->calls);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(5));
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+            self::assertSame(CompanionTurnStatus::Assembling, $first->fresh()->status);
+            self::assertSame(0, $engine->calls);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(8));
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+
+            self::assertSame(CompanionTurnStatus::Completed, $first->fresh()->status);
+            self::assertSame(1, $engine->calls);
+            self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_album_item_just_before_the_quiet_boundary_refreshes_the_authoritative_deadline(): void
+    {
+        $startedAt = Carbon::create(2026, 8, 24, 16, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $engine = new RecordingCompanionEngine(new AiRunResult(
+                runId: 0,
+                status: AiRunStatus::Succeeded,
+                outputPayload: ['decision' => 'reply', 'reply' => 'Граница альбома', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ));
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $first = $this->acceptAlbumItem('album-boundary:1', 'album-boundary', 'первое', 1);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(4));
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+            $second = $this->acceptAlbumItem('album-boundary:2', 'album-boundary', 'второе', 2);
+
+            self::assertSame($first->getKey(), $second->getKey());
+            self::assertSame(2, CompanionTurnMessage::query()->where('turn_id', $first->getKey())->count());
+            self::assertSame(0, $engine->calls);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(10));
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+            self::assertSame(CompanionTurnStatus::Completed, $first->fresh()->status);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_late_album_item_during_ai_execution_cancels_the_old_run_before_it_can_publish(): void
+    {
+        $engine = new InterleavingCompanionEngine(
+            new AiRunResult(
+                runId: 0,
+                status: AiRunStatus::Succeeded,
+                outputPayload: ['decision' => 'reply', 'reply' => 'Неполный ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ),
+            function (): void {
+                $turn = CompanionTurn::query()->where('media_group_id', 'album-during-run')->sole();
+                app(AcceptCompanionMessage::class)->handle(
+                    client: $this->client,
+                    channel: 'telegram',
+                    body: 'позднее фото',
+                    idempotencyKey: null,
+                    originExternalId: 'album-during-run:2',
+                    transportChatId: 'run-chat',
+                    locale: 'ru',
+                    mediaGroupId: 'album-during-run',
+                    sourceOrdinal: 2,
+                );
+                self::assertSame(CompanionTurnStatus::Cancelled, $turn->fresh()->status);
+            },
+        );
+        $this->app->instance(AiWorkflowEngine::class, $engine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+        $turn = $this->acceptAlbumItem('album-during-run:1', 'album-during-run', 'первое фото', 1);
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Cancelled, $turn->fresh()->status);
+        self::assertNotNull($turn->fresh()->album_recovery_message_id);
+        self::assertSame(0, ConversationMessage::query()->where('author_type', 'ai')->count());
+        self::assertSame(1, $engine->calls);
+    }
+
+    public function test_album_hard_assembly_deadline_fails_closed_without_silent_partial_analysis(): void
+    {
+        config()->set('ai.companion.album_max_assembly_seconds', 5);
+        $startedAt = Carbon::create(2026, 8, 24, 17, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $engine = new RecordingCompanionEngine(new AiRunResult(
+                runId: 0,
+                status: AiRunStatus::Succeeded,
+                outputPayload: ['decision' => 'reply', 'reply' => 'Не запускать', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ));
+            $this->app->instance(AiWorkflowEngine::class, $engine);
+            $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+            $turn = $this->acceptAlbumItem('album-hard-limit:1', 'album-hard-limit', 'первое', 1);
+
+            Carbon::setTestNow($startedAt->copy()->addSeconds(6));
+            app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+            $turn->refresh();
+            self::assertSame(CompanionTurnStatus::Failed, $turn->status);
+            self::assertSame('media_group_incomplete', $turn->failure_code);
+            self::assertSame(0, $engine->calls);
+            self::assertNotNull($turn->album_recovery_message_id);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_late_media_group_item_invalidates_an_incomplete_result_without_repeating_ai(): void
     {
         $engine = new RecordingCompanionEngine(new AiRunResult(
             runId: 0,
@@ -497,6 +732,15 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(1, $engine->calls);
         self::assertSame(1, CompanionTurn::query()->where('media_group_id', 'album-late')->count());
         self::assertSame(1, CompanionTurnMessage::query()->where('turn_id', $turn->getKey())->count());
+        self::assertNotNull($turn->fresh()->album_recovery_message_id);
+        self::assertSame(1, ConversationMessage::query()->where('author_type', 'ai')->count());
+        self::assertStringContainsString(
+            'Фотоальбом получен не полностью',
+            app(CompanionMessageBodyReader::class)->read(
+                $this->organization->getKey(),
+                ConversationMessage::query()->findOrFail($turn->fresh()->album_recovery_message_id),
+            ),
+        );
         self::assertSame('late_media_group_item', ConversationMessage::query()->where('external_id', 'album-late:2')->firstOrFail()->metadata['ingest_state'] ?? null);
     }
 
@@ -512,6 +756,21 @@ final class ClientCompanionProcessingTest extends TestCase
             locale: 'ru',
         );
     }
+
+    private function acceptAlbumItem(string $externalId, string $mediaGroupId, string $body, int $sourceOrdinal): CompanionTurn
+    {
+        return app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: $body,
+            idempotencyKey: null,
+            originExternalId: $externalId,
+            transportChatId: 'album-chat',
+            locale: 'ru',
+            mediaGroupId: $mediaGroupId,
+            sourceOrdinal: $sourceOrdinal,
+        );
+    }
 }
 
 final class RecordingCompanionEngine implements AiWorkflowEngine
@@ -520,12 +779,18 @@ final class RecordingCompanionEngine implements AiWorkflowEngine
 
     public ?AiRunRequest $request = null;
 
-    public function __construct(private readonly AiRunResult $result) {}
+    public function __construct(
+        private readonly AiRunResult $result,
+        private readonly ?\Closure $beforeReturn = null,
+    ) {}
 
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
     {
         $this->calls++;
         $this->request = $request;
+        if ($this->beforeReturn !== null) {
+            ($this->beforeReturn)();
+        }
 
         return $this->result;
     }

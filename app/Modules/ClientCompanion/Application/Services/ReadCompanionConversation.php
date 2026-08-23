@@ -4,6 +4,8 @@ namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Models\User;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
+use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionFeedback;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
@@ -56,8 +58,7 @@ final class ReadCompanionConversation
             ->first();
 
         if (! $conversation instanceof Conversation) {
-            return [
-                'conversation' => null,
+            $empty = [
                 'messages' => [],
                 'hasOlder' => false,
                 'nextBeforeMessageId' => null,
@@ -67,6 +68,11 @@ final class ReadCompanionConversation
                 'canReinspectRecentImages' => false,
                 'openEscalation' => null,
             ];
+            if ($staff) {
+                $empty['conversation'] = null;
+            }
+
+            return $empty;
         }
 
         $pageSize = min(50, max(1, (int) config('ai.companion.history_page_size', 30)));
@@ -97,6 +103,15 @@ final class ReadCompanionConversation
         $hasOlder = $messages->count() > $pageSize;
         $messages = $messages->take($pageSize)->reverse()->values();
         $messageIds = $messages->pluck('id')->map(static fn (mixed $id): int => (int) $id)->values()->all();
+        $uncertainMessageIds = $staff && $messageIds !== []
+            ? CompanionDelivery::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('conversation_message_id', $messageIds)
+                ->where('status', CompanionDeliveryStatus::Uncertain->value)
+                ->pluck('conversation_message_id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->flip()
+            : collect();
         $attachmentCounts = $messageIds === [] ? collect() : CompanionMessageAttachment::query()
             ->where('organization_id', $organizationId)
             ->whereIn('conversation_message_id', $messageIds)
@@ -153,6 +168,10 @@ final class ReadCompanionConversation
                 'transportLabel' => $message->channel === 'telegram' ? 'Telegram' : 'Портал',
                 'feedback' => $feedbackForMessage?->value?->value,
                 'attachmentCount' => (int) ($attachmentCounts->get($message->getKey()) ?? 0),
+                'deliveryNotice' => $uncertainMessageIds->has($message->getKey()) ? [
+                    'title' => 'Доставка в Telegram не подтверждена',
+                    'body' => 'Telegram не подтвердил результат отправки. Сообщение могло быть доставлено, поэтому система не отправляет его повторно автоматически. Если ответа нет, свяжитесь с клиентом другим способом.',
+                ] : null,
                 'traceUrl' => $traceAllowed && $message->author_type === ConversationAuthorType::Ai && $turn?->ai_run_id !== null
                     ? AiRunResource::getUrl('view', ['record' => $turn->ai_run_id])
                     : null,
@@ -171,6 +190,7 @@ final class ReadCompanionConversation
                     'transportLabel' => null,
                     'feedback' => null,
                     'attachmentCount' => 0,
+                    'deliveryNotice' => null,
                     'traceUrl' => null,
                 ];
             }
@@ -201,8 +221,7 @@ final class ReadCompanionConversation
             ->whereHas('attachments')
             ->exists();
 
-        return [
-            'conversation' => $staff ? ['id' => $conversation->getKey()] : null,
+        $result = [
             'messages' => $timeline,
             'hasOlder' => $hasOlder,
             'nextBeforeMessageId' => $hasOlder ? $oldestMessage?->getKey() : null,
@@ -218,6 +237,11 @@ final class ReadCompanionConversation
                 'openedAt' => $openEscalation->opened_at->toIso8601String(),
             ],
         ];
+        if ($staff) {
+            $result['conversation'] = ['id' => $conversation->getKey()];
+        }
+
+        return $result;
     }
 
     private function assertClientOrganization(Client $client, int $organizationId): void

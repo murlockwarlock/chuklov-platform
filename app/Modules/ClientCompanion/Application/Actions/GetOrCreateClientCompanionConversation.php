@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientCompanion\Application\Actions;
 
+use App\Modules\Conversations\Application\ConversationOwnershipLock;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -15,7 +16,10 @@ use InvalidArgumentException;
 
 final class GetOrCreateClientCompanionConversation
 {
-    public function __construct(private readonly OrganizationContext $context) {}
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly ConversationOwnershipLock $ownershipLock,
+    ) {}
 
     public function handle(Client $client, string $channel, string $externalKey): Conversation
     {
@@ -30,61 +34,81 @@ final class GetOrCreateClientCompanionConversation
             throw new InvalidArgumentException('The Companion transport binding is invalid.');
         }
 
-        try {
-            return DB::transaction(function () use ($organizationId, $client, $channel, $externalKey): Conversation {
-                $binding = ConversationBinding::query()
-                    ->where('organization_id', $organizationId)
-                    ->where('channel', $channel)
-                    ->where('external_key', $externalKey)
-                    ->lockForUpdate()
-                    ->first();
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                return DB::transaction(function () use ($organizationId, $client, $channel, $externalKey): Conversation {
+                    $this->ownershipLock->forClient($organizationId, (int) $client->getKey());
+                    $this->ownershipLock->forBinding($organizationId, $channel, $externalKey);
 
-                if ($binding instanceof ConversationBinding) {
-                    if ((int) $binding->client_id !== (int) $client->getKey()) {
-                        throw new AuthorizationException('The Companion binding belongs to another client.');
+                    $binding = ConversationBinding::query()
+                        ->where('organization_id', $organizationId)
+                        ->where('channel', $channel)
+                        ->where('external_key', $externalKey)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($binding instanceof ConversationBinding) {
+                        if ((int) $binding->client_id !== (int) $client->getKey()) {
+                            throw new AuthorizationException('The Companion binding belongs to another client.');
+                        }
+
+                        $conversation = Conversation::query()
+                            ->where('organization_id', $organizationId)
+                            ->whereKey($binding->conversation_id)
+                            ->lockForUpdate()
+                            ->firstOrFail();
+                        if ($conversation->conversation_type !== ConversationType::ClientCompanion
+                            || (int) $conversation->client_id !== (int) $client->getKey()) {
+                            throw new AuthorizationException('The Companion binding points to an invalid conversation.');
+                        }
+
+                        return $conversation;
                     }
 
-                    return Conversation::query()
+                    $conversations = Conversation::query()
                         ->where('organization_id', $organizationId)
-                        ->whereKey($binding->conversation_id)
+                        ->where('client_id', $client->getKey())
+                        ->where('conversation_type', ConversationType::ClientCompanion)
+                        ->orderBy('id')
                         ->lockForUpdate()
-                        ->firstOrFail();
-                }
+                        ->get();
+                    if ($conversations->count() > 1) {
+                        throw new AuthorizationException('The client has multiple Companion conversations.');
+                    }
 
-                $conversation = Conversation::query()
-                    ->where('organization_id', $organizationId)
-                    ->where('client_id', $client->getKey())
-                    ->where('conversation_type', ConversationType::ClientCompanion)
-                    ->lockForUpdate()
-                    ->first();
+                    $conversation = $conversations->first();
+                    if (! $conversation instanceof Conversation) {
+                        $conversation = new Conversation;
+                        $conversation->forceFill([
+                            'organization_id' => $organizationId,
+                            'client_id' => $client->getKey(),
+                            'channel' => 'companion',
+                            'external_key' => 'client:'.$client->getKey(),
+                            'conversation_type' => ConversationType::ClientCompanion,
+                            'automation_state' => ConversationAutomationState::AiActive,
+                            'context_epoch' => 1,
+                            'started_at' => now(),
+                        ]);
+                        $conversation->save();
+                    }
 
-                if (! $conversation instanceof Conversation) {
-                    $conversation = new Conversation;
-                    $conversation->forceFill([
+                    ConversationBinding::query()->create([
                         'organization_id' => $organizationId,
+                        'conversation_id' => $conversation->getKey(),
                         'client_id' => $client->getKey(),
-                        'channel' => 'companion',
-                        'external_key' => 'client:'.$client->getKey(),
-                        'conversation_type' => ConversationType::ClientCompanion,
-                        'automation_state' => ConversationAutomationState::AiActive,
-                        'context_epoch' => 1,
-                        'started_at' => now(),
+                        'channel' => $channel,
+                        'external_key' => $externalKey,
                     ]);
-                    $conversation->save();
+
+                    return $conversation->refresh();
+                }, attempts: 3);
+            } catch (UniqueConstraintViolationException $exception) {
+                if ($attempt === 2) {
+                    throw $exception;
                 }
-
-                ConversationBinding::query()->create([
-                    'organization_id' => $organizationId,
-                    'conversation_id' => $conversation->getKey(),
-                    'client_id' => $client->getKey(),
-                    'channel' => $channel,
-                    'external_key' => $externalKey,
-                ]);
-
-                return $conversation->refresh();
-            });
-        } catch (UniqueConstraintViolationException) {
-            return $this->handle($client, $channel, $externalKey);
+            }
         }
+
+        throw new \LogicException('The Companion conversation could not be resolved.');
     }
 }

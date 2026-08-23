@@ -87,7 +87,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
     {
-        $executionDeadlineAt = Carbon::now()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+        $maximumExecutionDeadlineAt = AiRuntimeLimits::executionDeadline();
+        $executionDeadlineAt = $request->executionDeadlineAt !== null
+            && $request->executionDeadlineAt->lessThan($maximumExecutionDeadlineAt)
+            ? $request->executionDeadlineAt
+            : $maximumExecutionDeadlineAt;
         $capabilityDef = AiCapabilityRegistry::get($request->capability);
 
         $this->inputReferenceValidator->validate(

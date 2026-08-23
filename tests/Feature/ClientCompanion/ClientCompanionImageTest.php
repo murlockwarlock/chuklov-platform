@@ -24,6 +24,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\Carbon;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -180,28 +181,74 @@ final class ClientCompanionImageTest extends TestCase
 
     public function test_ten_photo_album_stays_one_turn_when_image_limits_are_not_exceeded(): void
     {
-        $accept = app(AcceptCompanionMessage::class);
-        $turn = null;
+        $startedAt = Carbon::create(2026, 8, 24, 18, 0, 0, 'UTC');
+        Carbon::setTestNow($startedAt);
+        try {
+            $accept = app(AcceptCompanionMessage::class);
+            $turn = null;
 
-        for ($index = 1; $index <= 10; $index++) {
-            $attachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('album-'.$index.'.jpg')])[0];
-            $turn = $accept->handle(
-                client: $this->client,
-                channel: 'telegram',
-                body: $index === 1 ? 'Десять фотографий' : '',
-                idempotencyKey: null,
-                originExternalId: 'ten-photo-album:'.$index,
-                transportChatId: 'ten-photo-chat',
-                attachmentIds: [$attachment->getKey()],
-                mediaGroupId: 'ten-photo-album',
-                sourceOrdinal: $index,
-            );
+            for ($index = 1; $index <= 10; $index++) {
+                Carbon::setTestNow($startedAt->copy()->addSeconds(($index - 1) * 2));
+                $attachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('album-'.$index.'.jpg')])[0];
+                $turn = $accept->handle(
+                    client: $this->client,
+                    channel: 'telegram',
+                    body: $index === 1 ? 'Десять фотографий' : '',
+                    idempotencyKey: null,
+                    originExternalId: 'ten-photo-album:'.$index,
+                    transportChatId: 'ten-photo-chat',
+                    attachmentIds: [$attachment->getKey()],
+                    mediaGroupId: 'ten-photo-album',
+                    sourceOrdinal: $index,
+                );
+            }
+
+            self::assertInstanceOf(CompanionTurn::class, $turn);
+            self::assertSame(1, CompanionTurn::query()->where('media_group_id', 'ten-photo-album')->count());
+            self::assertSame(10, $turn->fresh()->input_item_count);
+            self::assertNull($turn->fresh()->input_failure_code);
+        } finally {
+            Carbon::setTestNow();
         }
+    }
 
-        self::assertInstanceOf(CompanionTurn::class, $turn);
-        self::assertSame(1, CompanionTurn::query()->where('media_group_id', 'ten-photo-album')->count());
-        self::assertSame(10, $turn->fresh()->input_item_count);
-        self::assertNull($turn->fresh()->input_failure_code);
+    public function test_same_media_group_id_is_scoped_to_organization_and_client(): void
+    {
+        $accept = app(AcceptCompanionMessage::class);
+        $firstAttachment = app(UploadCompanionImages::class)->handle($this->client, [$this->image('scoped-first.jpg')])[0];
+        $first = $accept->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Первая организация',
+            idempotencyKey: null,
+            originExternalId: 'shared-media:1',
+            transportChatId: 'shared-chat',
+            attachmentIds: [$firstAttachment->getKey()],
+            mediaGroupId: 'shared-media-group',
+            sourceOrdinal: 1,
+        );
+
+        $otherOrganization = Organization::factory()->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        $secondAttachment = app(UploadCompanionImages::class)->handle($otherClient, [$this->image('scoped-second.jpg')])[0];
+        $second = $accept->handle(
+            client: $otherClient,
+            channel: 'telegram',
+            body: 'Вторая организация',
+            idempotencyKey: null,
+            originExternalId: 'shared-media:1',
+            transportChatId: 'shared-chat',
+            attachmentIds: [$secondAttachment->getKey()],
+            mediaGroupId: 'shared-media-group',
+            sourceOrdinal: 1,
+        );
+
+        self::assertNotSame($first->getKey(), $second->getKey());
+        self::assertSame(2, CompanionTurn::query()->where('media_group_id', 'shared-media-group')->count());
+        self::assertSame($this->client->getKey(), $first->fresh()->client_id);
+        self::assertSame($otherClient->getKey(), $second->fresh()->client_id);
+        self::assertNotSame($first->conversation_id, $second->conversation_id);
     }
 
     public function test_standalone_photo_and_text_can_coalesce_but_an_album_is_not_mutated_by_text(): void

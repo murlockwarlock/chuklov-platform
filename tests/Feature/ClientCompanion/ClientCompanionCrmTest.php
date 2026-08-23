@@ -9,9 +9,11 @@ use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
@@ -110,6 +112,34 @@ final class ClientCompanionCrmTest extends TestCase
         $foreignAdmin = User::factory()->forOrganization($otherOrganization)->create();
         $this->expectException(AuthorizationException::class);
         app(ReadCompanionConversation::class)->forStaff($foreignAdmin, $this->client);
+    }
+
+    public function test_uncertain_telegram_delivery_is_explained_in_human_terms_to_staff(): void
+    {
+        [$conversation, $turn, $aiMessage] = $this->seedHandoffHistory();
+        CompanionDelivery::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'turn_id' => $turn->getKey(),
+            'conversation_message_id' => $aiMessage->getKey(),
+            'channel' => 'telegram',
+            'recipient_external_id' => 'crm-telegram-history',
+            'chunk_index' => 0,
+            'chunk_count' => 1,
+            'status' => CompanionDeliveryStatus::Uncertain,
+            'attempt_count' => 1,
+            'uncertain_at' => now(),
+        ]);
+
+        $history = app(ReadCompanionConversation::class)->forStaff($this->admin, $this->client);
+        $message = collect($history['messages'])->first(
+            static fn (array $item): bool => $item['type'] === 'message' && $item['id'] === $aiMessage->getKey(),
+        );
+
+        self::assertIsArray($message);
+        self::assertSame('Доставка в Telegram не подтверждена', $message['deliveryNotice']['title']);
+        self::assertStringContainsString('Сообщение могло быть доставлено', $message['deliveryNotice']['body']);
+        self::assertStringNotContainsString('uncertain', json_encode($message, JSON_THROW_ON_ERROR));
+        self::assertSame($conversation->getKey(), $turn->conversation_id);
     }
 
     public function test_history_exports_are_stable_and_pseudonymized_without_plaintext_in_audit_metadata(): void

@@ -162,7 +162,7 @@ final class ClientCompanionConversationTest extends TestCase
 
         $foreign = Client::factory()->forOrganization($this->organization)->create();
         $foreignHistory = app(ReadCompanionConversation::class)->forClient($foreign);
-        self::assertNull($foreignHistory['conversation']);
+        self::assertArrayNotHasKey('conversation', $foreignHistory);
         self::assertSame([], $foreignHistory['messages']);
     }
 
@@ -178,7 +178,7 @@ final class ClientCompanionConversationTest extends TestCase
 
         $history = app(ReadCompanionConversation::class)->forClient($this->client);
 
-        self::assertNull($history['conversation']);
+        self::assertArrayNotHasKey('conversation', $history);
         self::assertArrayNotHasKey('aiRunId', $history);
         self::assertArrayNotHasKey('providerId', $history);
     }

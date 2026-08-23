@@ -33,17 +33,21 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property CarbonInterface|null $failed_at
  * @property CarbonInterface|null $escalated_at
  * @property CarbonInterface|null $burst_expires_at
+ * @property CarbonInterface|null $album_assembly_deadline_at
+ * @property int|null $album_recovery_message_id
+ * @property CarbonInterface|null $album_incomplete_at
+ * @property CarbonInterface|null $execution_deadline_at
  * @property CarbonInterface|null $processing_lease_expires_at
  * @property CarbonInterface|null $sealed_at
  */
 #[Fillable([
     'organization_id', 'client_id', 'conversation_id', 'sequence', 'context_epoch', 'inbound_message_id',
-    'outbound_message_id', 'ai_run_id', 'origin_channel', 'origin_external_id', 'transport_chat_id',
+    'outbound_message_id', 'album_recovery_message_id', 'ai_run_id', 'origin_channel', 'origin_external_id', 'transport_chat_id',
     'idempotency_key', 'request_hash', 'status', 'failure_code', 'processing_lease_token',
-    'burst_expires_at', 'burst_message_count', 'burst_text_characters',
+    'burst_expires_at', 'album_assembly_deadline_at', 'burst_message_count', 'burst_text_characters',
     'input_modality', 'image_reference_mode', 'media_group_id', 'input_item_count', 'input_total_bytes', 'input_failure_code', 'sealed_at',
-    'processing_lease_expires_at', 'typing_owner_token', 'typing_heartbeat_sequence', 'typing_active',
-    'typing_chat_id', 'accepted_at', 'processing_started_at', 'completed_at', 'failed_at', 'escalated_at',
+    'processing_lease_expires_at', 'execution_deadline_at', 'typing_owner_token', 'typing_heartbeat_sequence', 'typing_active',
+    'typing_chat_id', 'accepted_at', 'processing_started_at', 'completed_at', 'failed_at', 'album_incomplete_at', 'escalated_at',
 ])]
 class CompanionTurn extends Model
 {
@@ -133,6 +137,7 @@ class CompanionTurn extends Model
             'sequence' => 'integer',
             'typing_heartbeat_sequence' => 'integer',
             'burst_expires_at' => 'datetime',
+            'album_assembly_deadline_at' => 'datetime',
             'burst_message_count' => 'integer',
             'burst_text_characters' => 'integer',
             'input_item_count' => 'integer',
@@ -141,8 +146,10 @@ class CompanionTurn extends Model
             'accepted_at' => 'datetime',
             'processing_started_at' => 'datetime',
             'processing_lease_expires_at' => 'datetime',
+            'execution_deadline_at' => 'datetime',
             'completed_at' => 'datetime',
             'failed_at' => 'datetime',
+            'album_incomplete_at' => 'datetime',
             'escalated_at' => 'datetime',
             'sealed_at' => 'datetime',
         ];

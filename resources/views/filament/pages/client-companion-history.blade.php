@@ -19,7 +19,7 @@
                     <a class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" href="{{ $urls['export'] }}?format=json&identity=pseudonymized">JSON без прямых идентификаторов</a>
                 @endif
                 @if($canExportMetadata)
-                    <a class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" href="{{ $urls['metadataExport'] }}">Метаданные</a>
+                    <a class="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" href="{{ $urls['metadataExport'] }}">Расширенные технические метаданные</a>
                 @endif
             </div>
         </div>
@@ -49,6 +49,12 @@
                     <p class="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800 dark:text-slate-200">{{ $message['content'] }}</p>
                     @if($message['attachmentCount'] > 0)
                         <p class="mt-2 text-sm text-slate-500">{{ $message['attachmentCount'] === 1 ? 'Изображение' : $message['attachmentCount'].' изображений' }}</p>
+                    @endif
+                    @if($message['deliveryNotice'])
+                        <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100">
+                            <p class="font-semibold">{{ $message['deliveryNotice']['title'] }}</p>
+                            <p class="mt-1 leading-5">{{ $message['deliveryNotice']['body'] }}</p>
+                        </div>
                     @endif
                     @if($message['traceUrl'])
                         <a class="mt-3 inline-block text-xs font-medium text-indigo-600 hover:underline" href="{{ $message['traceUrl'] }}">Открыть защищённый AI-трейс</a>

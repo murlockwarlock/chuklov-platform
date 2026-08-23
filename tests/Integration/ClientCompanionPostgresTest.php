@@ -174,6 +174,128 @@ final class ClientCompanionPostgresTest extends TestCase
         self::assertSame(1, Conversation::query()->where('organization_id', $organization->id)->where('client_id', $client->id)->where('conversation_type', ConversationType::ClientCompanion)->count());
     }
 
+    public function test_postgres_adoption_and_live_telegram_message_share_one_binding_and_history(): void
+    {
+        $this->requirePostgres('Adoption/live Telegram concurrency requires PostgreSQL advisory and row locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $legacy = $this->createLegacyConversation($organization, $client, 'telegram', 'pg-live-telegram', 'old-telegram', 'Старое Telegram сообщение');
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            fn (): array => self::acceptTelegramMessage($organization->id, $client->id, 301, 'pg-live-telegram', 'Новое Telegram сообщение', 'pg-live-telegram'),
+        ]);
+
+        self::assertCount(2, $results);
+        $companion = Conversation::query()
+            ->where('organization_id', $organization->id)
+            ->where('client_id', $client->id)
+            ->where('conversation_type', ConversationType::ClientCompanion)
+            ->sole();
+        self::assertSame($companion->id, ConversationMessage::query()->findOrFail($legacy['message_id'])->conversation_id);
+        self::assertSame(2, ConversationMessage::query()->where('organization_id', $organization->id)->where('conversation_id', $companion->id)->count());
+        self::assertSame(1, ConversationBinding::query()->where('organization_id', $organization->id)->count());
+        self::assertSame($companion->id, ConversationBinding::query()->where('organization_id', $organization->id)->sole()->conversation_id);
+        self::assertNull(ConversationMessage::query()->findOrFail($legacy['message_id'])->body);
+        self::assertNotNull(ConversationMessage::query()->findOrFail($legacy['message_id'])->encrypted_body);
+    }
+
+    public function test_postgres_adoption_and_live_portal_binding_creation_are_idempotent(): void
+    {
+        $this->requirePostgres('Adoption/Portal binding concurrency requires PostgreSQL advisory and row locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $legacy = $this->createLegacyConversation($organization, $client, 'portal', 'client:'.$client->id, 'old-portal', 'Старое сообщение портала');
+
+        Concurrency::driver('process')->run([
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            fn (): array => self::acceptPortalMessage($organization->id, $client->id, 'pg-live-portal-'.Str::uuid()),
+        ]);
+
+        $companion = Conversation::query()
+            ->where('organization_id', $organization->id)
+            ->where('client_id', $client->id)
+            ->where('conversation_type', ConversationType::ClientCompanion)
+            ->sole();
+        self::assertSame($companion->id, ConversationMessage::query()->findOrFail($legacy['message_id'])->conversation_id);
+        self::assertSame(2, ConversationMessage::query()->where('organization_id', $organization->id)->where('conversation_id', $companion->id)->count());
+        self::assertSame(1, ConversationBinding::query()->where('organization_id', $organization->id)->where('channel', 'portal')->count());
+        self::assertSame($companion->id, ConversationBinding::query()->where('organization_id', $organization->id)->sole()->conversation_id);
+    }
+
+    public function test_postgres_two_adoption_workers_are_idempotent_for_one_legacy_conversation(): void
+    {
+        $this->requirePostgres('Concurrent adoption requires PostgreSQL advisory and row locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $legacy = $this->createLegacyConversation($organization, $client, 'telegram', 'pg-two-adopters', 'two-adopter-message', 'Один раз сохранить');
+
+        Concurrency::driver('process')->run([
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+        ]);
+
+        self::assertSame(1, Conversation::query()->where('organization_id', $organization->id)->where('client_id', $client->id)->where('conversation_type', ConversationType::ClientCompanion)->count());
+        self::assertSame(1, ConversationBinding::query()->where('organization_id', $organization->id)->count());
+        self::assertSame(1, ConversationMessage::query()->where('organization_id', $organization->id)->count());
+        self::assertNull(ConversationMessage::query()->findOrFail($legacy['message_id'])->body);
+    }
+
+    public function test_postgres_adoption_with_existing_target_and_live_message_keeps_one_canonical_conversation(): void
+    {
+        $this->requirePostgres('Adoption with an existing target requires PostgreSQL row locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $existing = self::acceptPortalMessage($organization->id, $client->id, 'pg-existing-target-'.Str::uuid());
+        $legacy = $this->createLegacyConversation($organization, $client, 'telegram', 'pg-existing-telegram', 'existing-target-old', 'История до цели');
+
+        Concurrency::driver('process')->run([
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            fn (): array => self::acceptTelegramMessage($organization->id, $client->id, 302, 'pg-existing-telegram', 'Новое после цели', 'pg-existing-telegram'),
+        ]);
+
+        $companion = Conversation::query()
+            ->where('organization_id', $organization->id)
+            ->where('client_id', $client->id)
+            ->where('conversation_type', ConversationType::ClientCompanion)
+            ->sole();
+        self::assertSame($companion->id, CompanionTurn::query()->findOrFail($existing['turn_id'])->conversation_id);
+        self::assertSame($companion->id, ConversationMessage::query()->findOrFail($legacy['message_id'])->conversation_id);
+        self::assertSame(3, ConversationMessage::query()->where('organization_id', $organization->id)->where('conversation_id', $companion->id)->count());
+        self::assertSame(2, ConversationBinding::query()->where('organization_id', $organization->id)->count());
+    }
+
+    public function test_postgres_same_client_channel_adoptions_and_different_clients_remain_isolated(): void
+    {
+        $this->requirePostgres('Per-client adoption serialization requires PostgreSQL advisory locks.');
+
+        $organization = Organization::factory()->create();
+        $clientA = Client::factory()->forOrganization($organization)->create();
+        $clientB = Client::factory()->forOrganization($organization)->create();
+        $legacyTelegram = $this->createLegacyConversation($organization, $clientA, 'telegram', 'pg-client-a-telegram', 'client-a-telegram', 'A Telegram');
+        $legacyPortal = $this->createLegacyConversation($organization, $clientA, 'portal', 'client:'.$clientA->id, 'client-a-portal', 'A Portal');
+        $legacyB = $this->createLegacyConversation($organization, $clientB, 'telegram', 'pg-client-b-telegram', 'client-b-telegram', 'B Telegram');
+
+        Concurrency::driver('process')->run([
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+            static fn (): array => app(AdoptLegacyCompanionConversations::class)->handle(),
+        ]);
+
+        self::assertSame(2, Conversation::query()->where('organization_id', $organization->id)->where('conversation_type', ConversationType::ClientCompanion)->count());
+        self::assertSame(3, ConversationBinding::query()->where('organization_id', $organization->id)->count());
+        foreach ([$legacyTelegram, $legacyPortal, $legacyB] as $legacy) {
+            self::assertNull(ConversationMessage::query()->findOrFail($legacy['message_id'])->body);
+            self::assertNotNull(ConversationMessage::query()->findOrFail($legacy['message_id'])->encrypted_body);
+        }
+        self::assertSame(1, Conversation::query()->where('organization_id', $organization->id)->where('client_id', $clientA->id)->where('conversation_type', ConversationType::ClientCompanion)->count());
+        self::assertSame(1, Conversation::query()->where('organization_id', $organization->id)->where('client_id', $clientB->id)->where('conversation_type', ConversationType::ClientCompanion)->count());
+    }
+
     public function test_postgres_stale_companion_completion_cannot_publish_after_lease_replacement(): void
     {
         $this->requirePostgres('Companion terminal fencing requires PostgreSQL row locks.');
@@ -272,6 +394,7 @@ final class ClientCompanionPostgresTest extends TestCase
         int $messageId,
         string $mediaGroupId,
         string $body,
+        string $transportChatId = 'chat',
     ): array {
         Queue::fake();
         $organization = Organization::query()->findOrFail($organizationId);
@@ -282,14 +405,52 @@ final class ClientCompanionPostgresTest extends TestCase
             channel: 'telegram',
             body: $body,
             idempotencyKey: null,
-            originExternalId: 'chat:'.$messageId,
-            transportChatId: 'chat',
+            originExternalId: 'chat:'.$transportChatId.':'.$messageId,
+            transportChatId: $transportChatId,
             locale: 'ru',
             mediaGroupId: $mediaGroupId,
             sourceOrdinal: $messageId,
         );
 
         return ['turn_id' => (int) $turn->getKey(), 'message_id' => (int) $turn->inbound_message_id];
+    }
+
+    /** @return array{conversation_id: int, message_id: int} */
+    private function createLegacyConversation(
+        Organization $organization,
+        Client $client,
+        string $channel,
+        string $externalKey,
+        string $externalMessageId,
+        string $body,
+    ): array {
+        $legacy = new Conversation;
+        $legacy->forceFill([
+            'organization_id' => $organization->id,
+            'client_id' => $client->id,
+            'channel' => $channel,
+            'external_key' => $externalKey,
+            'conversation_type' => ConversationType::Channel,
+            'started_at' => now()->subMinute(),
+        ]);
+        $legacy->save();
+
+        $message = new ConversationMessage;
+        $message->forceFill([
+            'organization_id' => $organization->id,
+            'conversation_id' => $legacy->id,
+            'client_id' => $client->id,
+            'channel' => $channel,
+            'direction' => ConversationDirection::Inbound,
+            'author_type' => ConversationAuthorType::Client,
+            'external_id' => $externalMessageId,
+            'body' => $body,
+            'metadata' => ['source' => 'legacy-concurrency-test'],
+            'occurred_at' => now()->subMinute(),
+        ]);
+        $message->save();
+
+        return ['conversation_id' => (int) $legacy->getKey(), 'message_id' => (int) $message->getKey()];
     }
 }
 

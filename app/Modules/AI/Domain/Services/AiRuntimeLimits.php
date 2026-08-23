@@ -64,6 +64,16 @@ final class AiRuntimeLimits
             + self::PLATFORM_EXECUTION_MARGIN_SECONDS;
     }
 
+    public static function executionDeadline(?CarbonInterface $startedAt = null): CarbonInterface
+    {
+        return ($startedAt ?? now())->copy()->addSeconds(self::wholeRunSeconds());
+    }
+
+    public static function companionProcessingLeaseSeconds(): int
+    {
+        return self::wholeRunSeconds() + self::PLATFORM_LEASE_GRACE_SECONDS;
+    }
+
     public static function providerAttemptSeconds(int $providerSteps, int $providerStepTimeout, int $toolCalls): int
     {
         return (min(self::PLATFORM_MAX_PROVIDER_STEPS, max(1, $providerSteps)) * min(self::PLATFORM_MAX_TIMEOUT_SECONDS, max(1, $providerStepTimeout)))

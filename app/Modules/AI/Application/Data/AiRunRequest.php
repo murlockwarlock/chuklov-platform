@@ -8,6 +8,7 @@ use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
+use Carbon\CarbonInterface;
 
 final readonly class AiRunRequest
 {
@@ -30,6 +31,7 @@ final readonly class AiRunRequest
         public array $requiredModalities = [],
         public ?string $idempotencyKey = null,
         public ?int $timeoutSeconds = null,
+        public ?CarbonInterface $executionDeadlineAt = null,
         public ?User $actor = null,
     ) {}
 
@@ -49,6 +51,7 @@ final readonly class AiRunRequest
             requiredModalities: $this->requiredModalities,
             idempotencyKey: $this->idempotencyKey,
             timeoutSeconds: $this->timeoutSeconds,
+            executionDeadlineAt: $this->executionDeadlineAt,
             actor: $actor,
         );
     }

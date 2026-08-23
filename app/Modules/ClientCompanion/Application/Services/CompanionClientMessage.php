@@ -40,4 +40,11 @@ final class CompanionClientMessage
             ? 'В одном сообщении можно обработать меньше изображений. Отправьте их несколькими сообщениями.'
             : 'This message contains too many images to process. Please send fewer images at a time.';
     }
+
+    public function albumIncomplete(): string
+    {
+        return $this->locale === 'ru'
+            ? 'Фотоальбом получен не полностью. Чтобы учесть все изображения вместе, отправьте, пожалуйста, весь альбом ещё раз.'
+            : 'The photo album was not received completely. Please send the whole album again so all images can be considered together.';
+    }
 }

@@ -20,7 +20,6 @@ type TimelineItem = {
 };
 
 type CompanionState = {
-    conversation: null;
     messages: TimelineItem[];
     hasOlder: boolean;
     nextBeforeMessageId: number | null;

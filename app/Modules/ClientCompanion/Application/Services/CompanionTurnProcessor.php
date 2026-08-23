@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramCompanionFormatter;
@@ -74,8 +75,24 @@ final class CompanionTurnProcessor
             $locale = (string) ($inbound->metadata['locale'] ?? 'en');
             $inputFailure = CompanionFailureCode::tryFrom((string) $turn->input_failure_code);
             if ($inputFailure instanceof CompanionFailureCode
-                && in_array($inputFailure, [CompanionFailureCode::ImageUnavailable, CompanionFailureCode::InputLimitExceeded], true)) {
+                && in_array($inputFailure, [
+                    CompanionFailureCode::ImageUnavailable,
+                    CompanionFailureCode::InputLimitExceeded,
+                    CompanionFailureCode::MediaGroupIncomplete,
+                ], true)) {
                 $this->failSafely($organizationId, $turn->getKey(), $leaseToken, $inputFailure, $locale);
+
+                return;
+            }
+            if ($turn->execution_deadline_at !== null
+                && ! AiRuntimeLimits::deadlineIsActive($turn->execution_deadline_at)) {
+                $this->failSafely(
+                    $organizationId,
+                    $turn->getKey(),
+                    $leaseToken,
+                    CompanionFailureCode::ExecutionDeadlineExceeded,
+                    $locale,
+                );
 
                 return;
             }
@@ -108,15 +125,38 @@ final class CompanionTurnProcessor
                 requiredModalities: $context['required_modalities'],
                 idempotencyKey: 'companion-turn:'.$turn->getKey(),
                 timeoutSeconds: 120,
+                executionDeadlineAt: $turn->execution_deadline_at,
             ));
 
             if ($result->runId > 0) {
+                if (! $this->executionWindowIsActive($turn)) {
+                    $this->failSafely(
+                        $organizationId,
+                        $turn->getKey(),
+                        $leaseToken,
+                        CompanionFailureCode::ExecutionDeadlineExceeded,
+                        $locale,
+                    );
+
+                    return;
+                }
                 if (! $this->attachRun($organizationId, $turn->getKey(), $leaseToken, $result->runId)) {
                     return;
                 }
             }
 
             $response = $this->responseContract->parse($result);
+            if (! $this->executionWindowIsActive($turn)) {
+                $this->failSafely(
+                    $organizationId,
+                    $turn->getKey(),
+                    $leaseToken,
+                    CompanionFailureCode::ExecutionDeadlineExceeded,
+                    $locale,
+                );
+
+                return;
+            }
             if ($response['decision'] === 'handoff_required') {
                 $reason = $this->reasonFromModel($response['handoff_reason']);
                 $this->handoff($organizationId, $turn->getKey(), $leaseToken, $reason, $result->runId, $locale);
@@ -190,6 +230,16 @@ final class CompanionTurnProcessor
             }
 
             if ($turn->status === CompanionTurnStatus::Assembling) {
+                if ($turn->album_assembly_deadline_at !== null
+                    && ! $turn->album_assembly_deadline_at->isFuture()
+                    && $turn->input_failure_code === null) {
+                    $turn->update([
+                        'input_failure_code' => CompanionFailureCode::MediaGroupIncomplete->value,
+                        'album_incomplete_at' => now(),
+                        'burst_expires_at' => now(),
+                    ]);
+                    $turn->refresh();
+                }
                 if ($turn->burst_expires_at !== null && $turn->burst_expires_at->isFuture()) {
                     return ['wait' => true, 'turn' => $turn, 'conversation' => $conversation, 'lease_token' => ''];
                 }
@@ -224,10 +274,16 @@ final class CompanionTurnProcessor
             }
 
             $typing = $turn->origin_channel === 'telegram' && $turn->transport_chat_id !== null;
+            $executionDeadlineAt = $turn->execution_deadline_at ?? AiRuntimeLimits::executionDeadline();
+            $processingLeaseExpiresAt = $executionDeadlineAt->copy()->addSeconds(AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS);
+            if ($executionDeadlineAt->lessThanOrEqualTo(now())) {
+                $processingLeaseExpiresAt = now()->addSeconds(AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS);
+            }
             $turn->update([
                 'status' => CompanionTurnStatus::Processing,
                 'processing_lease_token' => $token,
-                'processing_lease_expires_at' => now()->addSeconds((int) config('ai.companion.processing_lease_seconds', 180)),
+                'processing_lease_expires_at' => $processingLeaseExpiresAt,
+                'execution_deadline_at' => $executionDeadlineAt,
                 'processing_started_at' => $turn->processing_started_at ?? now(),
                 'sealed_at' => $turn->sealed_at ?? now(),
                 'typing_owner_token' => $typing ? $token : null,
@@ -281,7 +337,7 @@ final class CompanionTurnProcessor
             }
             $turn = $aggregate['turn'];
             $conversation = $aggregate['conversation'];
-            if (! $this->ownsProcessingLease($turn, $leaseToken)
+            if (! $this->executionWindowIsActive($turn, $leaseToken)
                 || (int) $conversation->context_epoch !== (int) $turn->context_epoch
                 || $conversation->automation_state !== ConversationAutomationState::AiActive) {
                 return false;
@@ -303,7 +359,7 @@ final class CompanionTurnProcessor
             }
             $turn = $aggregate['turn'];
             $conversation = $aggregate['conversation'];
-            if (! $this->ownsProcessingLease($turn, $leaseToken)
+            if (! $this->executionWindowIsActive($turn, $leaseToken)
                 || $conversation->automation_state !== ConversationAutomationState::AiActive
                 || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
                 if ($this->ownsProcessingLease($turn, $leaseToken)) {
@@ -362,7 +418,7 @@ final class CompanionTurnProcessor
             }
             $turn = $aggregate['turn'];
             $conversation = $aggregate['conversation'];
-            if (! $this->ownsProcessingLease($turn, $leaseToken)
+            if (! $this->executionWindowIsActive($turn, $leaseToken)
                 || $conversation->automation_state !== ConversationAutomationState::AiActive
                 || (int) $conversation->context_epoch !== (int) $turn->context_epoch) {
                 if ($this->ownsProcessingLease($turn, $leaseToken)) {
@@ -463,6 +519,7 @@ final class CompanionTurnProcessor
             $failureMessage = match ($failureCode) {
                 CompanionFailureCode::ImageUnavailable => $message->imageFailure(),
                 CompanionFailureCode::InputLimitExceeded => $message->imageLimitFailure(),
+                CompanionFailureCode::MediaGroupIncomplete => $message->albumIncomplete(),
                 default => $message->failure,
             };
             $outbound = $this->recordMessage->handle(
@@ -487,6 +544,12 @@ final class CompanionTurnProcessor
                 'processing_lease_token' => null,
                 'processing_lease_expires_at' => null,
                 'failed_at' => now(),
+                'album_incomplete_at' => $failureCode === CompanionFailureCode::MediaGroupIncomplete
+                    ? ($turn->album_incomplete_at ?? now())
+                    : $turn->album_incomplete_at,
+                'album_recovery_message_id' => $failureCode === CompanionFailureCode::MediaGroupIncomplete
+                    ? $outbound->getKey()
+                    : $turn->album_recovery_message_id,
             ]);
 
             return $deliveryIds;
@@ -538,6 +601,12 @@ final class CompanionTurnProcessor
             && $leaseToken !== ''
             && ! $turn->leaseIsExpired()
             && hash_equals((string) $turn->processing_lease_token, $leaseToken);
+    }
+
+    private function executionWindowIsActive(CompanionTurn $turn, ?string $leaseToken = null): bool
+    {
+        return ($leaseToken === null || $this->ownsProcessingLease($turn, $leaseToken))
+            && ($turn->execution_deadline_at === null || AiRuntimeLimits::deadlineIsActive($turn->execution_deadline_at));
     }
 
     /** @return array{turn: CompanionTurn, conversation: Conversation}|null */
