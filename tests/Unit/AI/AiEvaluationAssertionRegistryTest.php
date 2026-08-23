@@ -3,6 +3,7 @@
 namespace Tests\Unit\AI;
 
 use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 final class AiEvaluationAssertionRegistryTest extends TestCase
@@ -128,8 +129,18 @@ final class AiEvaluationAssertionRegistryTest extends TestCase
         self::assertTrue($rag[1]->passed);
         self::assertSame('rag', $rag[0]->category->value);
 
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->registry->normalize([['type' => 'arbitrary_expression', 'expression' => '1 == 1']]);
+    }
+
+    public function test_rag_source_ids_are_bounded_and_integer_like(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->registry->normalize([[
+            'type' => 'required_source',
+            'source_id' => str_repeat('9', 20),
+        ]]);
     }
 
     public function test_single_canonical_assertion_object_is_normalized_without_treating_its_fields_as_types(): void
@@ -140,5 +151,135 @@ final class AiEvaluationAssertionRegistryTest extends TestCase
             'type' => 'required_text',
             'value' => 'approved',
         ]));
+    }
+
+    public function test_text_matching_is_normalized_and_structured_values_are_strict_with_null_and_missing_distinguished(): void
+    {
+        $results = $this->registry->evaluate(
+            definitions: [
+                ['type' => 'required_text', 'value' => '  Согласие   специалиста '],
+                ['type' => 'forbidden_text', 'value' => 'подтверждённый  диагноз'],
+                ['type' => 'required_field', 'path' => 'nullable'],
+                ['type' => 'required_field', 'path' => 'missing'],
+                ['type' => 'field_value', 'path' => 'nullable', 'operator' => 'equals', 'value' => null],
+                ['type' => 'field_value', 'path' => 'number', 'operator' => 'number_between', 'minimum' => 1, 'maximum' => 5],
+                ['type' => 'field_value', 'path' => 'flag', 'operator' => 'boolean', 'value' => true],
+            ],
+            expectedSchema: null,
+            outputText: 'СОГЛАСИЕ специалиста получено; диагноз не подтверждён.',
+            outputPayload: [
+                'nullable' => null,
+                'number' => '3',
+                'flag' => 1,
+            ],
+            ragReferences: [],
+        );
+
+        self::assertTrue($results[0]->passed);
+        self::assertTrue($results[1]->passed);
+        self::assertTrue($results[2]->passed);
+        self::assertFalse($results[3]->passed);
+        self::assertTrue($results[4]->passed);
+        self::assertFalse($results[5]->passed);
+        self::assertFalse($results[6]->passed);
+    }
+
+    public function test_schema_is_bounded_and_unknown_keywords_fail_closed(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->registry->validateSchema([
+            'type' => 'object',
+            'properties' => [
+                'nested' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'deeper' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'too_deep' => ['type' => 'string'],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'unknown_keyword' => true,
+        ]);
+    }
+
+    public function test_schema_depth_and_assertion_count_overflow_are_rejected(): void
+    {
+        $schema = ['type' => 'object'];
+        for ($depth = 0; $depth < 10; $depth++) {
+            $schema = ['type' => 'object', 'properties' => ['nested' => $schema]];
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->registry->validateSchema($schema);
+    }
+
+    public function test_assertion_count_overflow_is_rejected(): void
+    {
+        $assertions = [];
+        for ($index = 0; $index < 33; $index++) {
+            $assertions[] = ['type' => 'required_text', 'value' => 'value '.$index];
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->registry->normalize($assertions);
+    }
+
+    public function test_malformed_schema_evaluation_does_not_pass_silently(): void
+    {
+        $results = $this->registry->evaluate(
+            definitions: [],
+            expectedSchema: ['type' => 'object', 'unsupported' => true],
+            outputText: '{}',
+            outputPayload: [],
+            ragReferences: [],
+        );
+
+        self::assertCount(1, $results);
+        self::assertFalse($results[0]->passed);
+        self::assertSame('invalid_assertion_definition', $results[0]->failureCode);
+    }
+
+    public function test_expected_schema_is_not_reported_twice_when_the_same_schema_is_explicitly_asserted(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'required' => ['summary'],
+            'properties' => ['summary' => ['type' => 'string']],
+        ];
+        $results = $this->registry->evaluate(
+            definitions: [['type' => 'json_schema', 'schema' => $schema]],
+            expectedSchema: $schema,
+            outputText: '{"summary":"ok"}',
+            outputPayload: ['summary' => 'ok'],
+            ragReferences: [],
+        );
+
+        self::assertCount(1, $results);
+        self::assertTrue($results[0]->passed);
+    }
+
+    public function test_json_schema_supports_strict_scalar_json_outputs(): void
+    {
+        $stringResult = $this->registry->evaluate(
+            definitions: [['type' => 'json_schema', 'schema' => ['type' => 'string']]],
+            expectedSchema: null,
+            outputText: '"approved"',
+            outputPayload: null,
+            ragReferences: [],
+        );
+        $numberResult = $this->registry->evaluate(
+            definitions: [['type' => 'json_schema', 'schema' => ['type' => 'number']]],
+            expectedSchema: null,
+            outputText: '3.5',
+            outputPayload: null,
+            ragReferences: [],
+        );
+
+        self::assertTrue($stringResult[0]->passed);
+        self::assertTrue($numberResult[0]->passed);
     }
 }

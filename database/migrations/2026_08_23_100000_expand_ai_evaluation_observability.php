@@ -27,6 +27,8 @@ return new class extends Migration
             $table->index(['organization_id', 'eval_suite_id', 'created_at']);
         });
 
+        DB::statement('UPDATE ai_eval_runs SET pass_percentage = CASE WHEN total_cases > 0 THEN ROUND((passed_cases * 100.0) / total_cases, 2) ELSE 0 END');
+
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('ALTER TABLE ai_eval_runs ADD CONSTRAINT ai_eval_runs_pass_percentage_check CHECK (pass_percentage >= 0 AND pass_percentage <= 100)');
         }

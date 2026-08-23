@@ -30,12 +30,6 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
             $output = $decoded;
         }
 
-        if (! is_array($output)) {
-            $this->lastError = 'Output must be an array or object structure.';
-
-            return false;
-        }
-
         return $this->validateNode($output, $schema);
     }
 
@@ -49,6 +43,12 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
      */
     private function validateNode(mixed $data, array $schema): bool
     {
+        if (array_key_exists('enum', $schema) && ! in_array($data, (array) $schema['enum'], true)) {
+            $this->lastError = 'Value is not in the allowed enum.';
+
+            return false;
+        }
+
         $expectedType = $schema['type'] ?? null;
 
         if ($expectedType !== null) {
@@ -99,7 +99,7 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
                 $this->lastError = 'Expected integer value.';
 
                 return false;
-            } elseif ($expectedType === 'number' && ! is_numeric($data)) {
+            } elseif ($expectedType === 'number' && (! is_int($data) && ! is_float($data) || ! is_finite((float) $data))) {
                 $this->lastError = 'Expected number value.';
 
                 return false;

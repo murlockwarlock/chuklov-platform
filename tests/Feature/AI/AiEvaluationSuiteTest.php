@@ -443,6 +443,50 @@ class AiEvaluationSuiteTest extends TestCase
         ]);
     }
 
+    public function test_update_eval_case_rejects_malformed_assertion_and_schema_json(): void
+    {
+        $suite = AiEvalSuite::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'malformed_definition_suite',
+            'name' => 'Malformed definition suite',
+            'capability' => AiCapability::PostureAnalysis,
+        ]);
+        $case = AiEvalCase::create([
+            'organization_id' => $this->organization->id,
+            'eval_suite_id' => $suite->id,
+            'name' => 'Valid fixture',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic'],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+        $action = app(UpdateEvalCase::class);
+
+        try {
+            $action->execute($this->user, $case, [
+                'expected_assertions' => '{"type":"required_text"',
+                'is_synthetic' => true,
+                'is_deidentified' => false,
+            ]);
+            self::fail('Malformed assertion JSON must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('valid JSON', $exception->getMessage());
+        }
+
+        try {
+            $action->execute($this->user, $case, [
+                'expected_assertions' => [],
+                'expected_output_schema' => '{"type":"object"',
+                'is_synthetic' => true,
+                'is_deidentified' => false,
+            ]);
+            self::fail('Malformed output schema JSON must be rejected.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertStringContainsString('valid JSON', $exception->getMessage());
+        }
+    }
+
     public function test_evaluation_revalidates_nested_privacy_before_execution_after_direct_database_write(): void
     {
         $prompt = AiPrompt::create([
@@ -571,7 +615,7 @@ class AiEvaluationSuiteTest extends TestCase
     {
         $otherOrganization = Organization::factory()->create();
         $otherPrompt = AiPrompt::create([
-            'organization_id' => $otherOrganization->id,
+            'organization_id' => $otherOrganization->getKey(),
             'key' => 'other_org_prompt',
             'name' => 'Other organization prompt',
             'capability' => AiCapability::PostureAnalysis,

@@ -90,17 +90,22 @@ final class AiEvaluationAssertionRegistry
         try {
             $assertions = $this->normalize($definitions);
             $this->validateSchema($expectedSchema);
-        } catch (InvalidArgumentException) {
+        } catch (InvalidArgumentException $exception) {
+            $unknownType = str_contains($exception->getMessage(), 'Unknown evaluation assertion type');
+
             return [new AiEvaluationAssertionResult(
                 type: 'unknown',
                 category: AiEvaluationCheckCategory::Assertion,
                 passed: false,
-                failureCode: 'unknown_assertion_type',
-                explanation: 'Тип проверки не поддерживается и не был выполнен.',
+                failureCode: $unknownType ? 'unknown_assertion_type' : 'invalid_assertion_definition',
+                explanation: $unknownType
+                    ? 'Тип проверки не поддерживается и не был выполнен.'
+                    : 'Определение проверки некорректно и не было выполнено.',
             )];
         }
 
         $results = [];
+        $expectedSchemaFingerprint = $expectedSchema === null ? null : $this->schemaFingerprint($expectedSchema);
         if ($expectedSchema !== null) {
             $schemaPassed = $this->schemaValidator->validate($outputPayload ?? $outputText, $expectedSchema);
             $results[] = new AiEvaluationAssertionResult(
@@ -120,6 +125,12 @@ final class AiEvaluationAssertionRegistry
             : ($structuredOutput === null ? '' : (json_encode($structuredOutput, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: ''));
 
         foreach ($assertions as $assertion) {
+            if ($expectedSchemaFingerprint !== null
+                && ($assertion['type'] ?? null) === 'json_schema'
+                && $expectedSchemaFingerprint === $this->schemaFingerprint((array) $assertion['schema'])) {
+                continue;
+            }
+
             $results[] = $this->evaluateOne($assertion, $searchableOutput, $structuredOutput, $ragReferences);
         }
 
@@ -242,10 +253,16 @@ final class AiEvaluationAssertionRegistry
         $result = ['type' => $type];
         if (array_key_exists('source_id', $source)) {
             $sourceId = $source['source_id'];
-            if (! is_int($sourceId) && ! (is_string($sourceId) && ctype_digit($sourceId))) {
+            if (is_string($sourceId)) {
+                if (strlen($sourceId) > 19 || ! ctype_digit($sourceId)) {
+                    throw new InvalidArgumentException('Evaluation source ID is invalid.');
+                }
+
+                $sourceId = (int) $sourceId;
+            }
+            if (! is_int($sourceId)) {
                 throw new InvalidArgumentException('Evaluation source ID is invalid.');
             }
-            $sourceId = (int) $sourceId;
             if ($sourceId < 1) {
                 throw new InvalidArgumentException('Evaluation source ID is invalid.');
             }
@@ -389,29 +406,55 @@ final class AiEvaluationAssertionRegistry
     /** @param array<string, mixed> $schema */
     private function validateSchemaNode(array $schema, int $depth): void
     {
+        if ($schema === []) {
+            throw new InvalidArgumentException('Evaluation JSON schema cannot be empty.');
+        }
+
         if ($depth > self::MAX_SCHEMA_DEPTH) {
             throw new InvalidArgumentException('Evaluation JSON schema is too deeply nested.');
+        }
+
+        foreach (array_keys($schema) as $key) {
+            if (! in_array($key, ['type', 'required', 'properties', 'items', 'enum'], true)) {
+                throw new InvalidArgumentException('Evaluation JSON schema contains an unsupported keyword.');
+            }
         }
 
         if (array_key_exists('type', $schema) && (! is_string($schema['type']) || ! in_array($schema['type'], ['object', 'array', 'string', 'integer', 'number', 'boolean'], true))) {
             throw new InvalidArgumentException('Evaluation JSON schema type is unsupported.');
         }
 
+        $type = $schema['type'] ?? null;
+        if ($type === null && ! array_key_exists('enum', $schema)) {
+            throw new InvalidArgumentException('Evaluation JSON schema type is required.');
+        }
+        if ($type !== 'object' && (array_key_exists('required', $schema) || array_key_exists('properties', $schema))) {
+            throw new InvalidArgumentException('Evaluation JSON schema object keywords require an object type.');
+        }
+        if ($type !== 'array' && array_key_exists('items', $schema)) {
+            throw new InvalidArgumentException('Evaluation JSON schema items require an array type.');
+        }
+
         if (array_key_exists('required', $schema) && (! is_array($schema['required']) || ! array_is_list($schema['required']) || count($schema['required']) > self::MAX_ASSERTIONS)) {
             throw new InvalidArgumentException('Evaluation JSON schema required fields are invalid.');
         }
+        $requiredFields = [];
         foreach ((array) ($schema['required'] ?? []) as $field) {
             if (! is_string($field) || $this->text($field) === '') {
                 throw new InvalidArgumentException('Evaluation JSON schema required fields are invalid.');
             }
+            if (isset($requiredFields[$field])) {
+                throw new InvalidArgumentException('Evaluation JSON schema required fields must be unique.');
+            }
+            $requiredFields[$field] = true;
         }
 
         if (array_key_exists('properties', $schema)) {
             if (! is_array($schema['properties']) || array_is_list($schema['properties']) || count($schema['properties']) > self::MAX_ASSERTIONS) {
                 throw new InvalidArgumentException('Evaluation JSON schema properties are invalid.');
             }
-            foreach ($schema['properties'] as $property) {
-                if (! is_array($property)) {
+            foreach ($schema['properties'] as $propertyName => $property) {
+                if (! is_string($propertyName) || $this->text($propertyName) === '' || ! is_array($property)) {
                     throw new InvalidArgumentException('Evaluation JSON schema property is invalid.');
                 }
                 $this->validateSchemaNode($property, $depth + 1);
@@ -611,6 +654,41 @@ final class AiEvaluationAssertionRegistry
         $value = mb_strtolower(trim($value));
 
         return preg_replace('/\s+/u', ' ', $value) ?? $value;
+    }
+
+    /** @param array<string, mixed> $schema */
+    private function schemaFingerprint(array $schema): string
+    {
+        return hash('sha256', (string) json_encode(
+            $this->canonicalizeSchema($schema),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        ));
+    }
+
+    private function canonicalizeSchema(mixed $value, ?string $key = null): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        foreach ($value as $itemKey => $item) {
+            $value[$itemKey] = $this->canonicalizeSchema($item, is_string($itemKey) ? $itemKey : $key);
+        }
+
+        if (array_is_list($value)) {
+            if (in_array($key, ['required', 'enum'], true)) {
+                usort($value, static fn (mixed $left, mixed $right): int => strcmp(
+                    (string) json_encode($left, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    (string) json_encode($right, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ));
+            }
+
+            return $value;
+        }
+
+        ksort($value, SORT_STRING);
+
+        return $value;
     }
 
     /**

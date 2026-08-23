@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Data\AiEvaluationCaseResult;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Services\AiEvaluationRunMetricsAggregator;
+use App\Modules\AI\Application\Services\AiEvaluationSnapshotHasher;
 use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
@@ -29,6 +30,7 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -43,6 +45,8 @@ final class RunEvaluationSuite
         private readonly EvalInputPrivacyValidator $privacyValidator,
         private readonly AiEvaluationAssertionRegistry $assertionRegistry,
         private readonly AiEvaluationRunMetricsAggregator $metricsAggregator,
+        private readonly AiEvaluationSnapshotHasher $snapshotHasher,
+        private readonly RecordAuditEvent $audit,
     ) {}
 
     public function handle(
@@ -188,16 +192,19 @@ final class RunEvaluationSuite
             ->where('organization_id', $organization->getKey())
             ->whereIn('ai_run_id', $runIds)
             ->orderBy('attempt_number')
+            ->limit(max(1, count($runIds)) * AiRuntimeLimits::PLATFORM_MAX_FAILOVER_ATTEMPTS)
             ->get()
             ->groupBy('ai_run_id');
         $ragReferences = AiRunRagReference::query()
             ->where('organization_id', $organization->getKey())
             ->whereIn('ai_run_id', $runIds)
+            ->where('reference_index', '<=', AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS)
             ->with([
                 'source:id,organization_id,title',
                 'chunk:id,organization_id,source_reference',
             ])
             ->orderBy('reference_index')
+            ->limit(max(1, count($runIds)) * AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS)
             ->get()
             ->groupBy('ai_run_id');
 
@@ -255,14 +262,16 @@ final class RunEvaluationSuite
                 $failureCategory = AiEvaluationCheckCategory::Schema->value;
                 $failureCode = 'schema_invalid';
                 $failureExplanation = 'Ответ AI не соответствует ожидаемому формату.';
-            } elseif ($this->hasRagAssertion($execution['assertions']) && $result->errorCategory === AiErrorCategory::ToolExecutionFailed) {
+            } elseif ($this->hasRagAssertion($execution['assertions'])
+                && (($actualRun instanceof AiRun && $actualRun->error_category === AiErrorCategory::ToolExecutionFailed)
+                    || $result->errorCategory === AiErrorCategory::ToolExecutionFailed)) {
                 $status = AiEvaluationCaseStatus::RagFailed;
                 $failureCategory = AiEvaluationCheckCategory::Rag->value;
                 $failureCode = 'rag_execution_failed';
                 $failureExplanation = 'Не удалось проверить ответ по разрешённым источникам.';
             }
 
-            $providerCost = $caseAttempts->sum(static fn (AiRunAttempt $attempt): int => (int) ($attempt->provider_cost_minor_units ?? 0));
+            $providerCost = $this->providerCostData($caseAttempts);
             $executionStatus = $actualRun instanceof AiRun ? $actualRun->status->value : $result->status->value;
             $executionErrorCategory = $actualRun instanceof AiRun && $actualRun->error_category instanceof AiErrorCategory
                 ? $actualRun->error_category->value
@@ -272,7 +281,9 @@ final class RunEvaluationSuite
                 ? $actualRun->getTokenUsage()->toArray()
                 : $result->tokenUsage->toArray();
             $executionCost = $actualRun instanceof AiRun ? $actualRun->settled_estimated_cost_minor_units : null;
-            $executionCurrency = $actualRun instanceof AiRun ? $actualRun->cost_currency : $result->costCurrency;
+            $executionCurrency = $actualRun instanceof AiRun && $executionCost !== null
+                ? $this->metricsAggregator->estimatedCurrency($actualRun, $caseAttempts)
+                : null;
             $executionData = [
                 'status' => $executionStatus,
                 'provider' => $actualRun?->actual_provider,
@@ -282,8 +293,11 @@ final class RunEvaluationSuite
                 'error_category' => $executionErrorCategory,
                 'token_usage' => $executionTokenUsage,
                 'estimated_cost_minor_units' => $executionCost,
-                'provider_cost_minor_units' => $caseAttempts->isEmpty() ? null : $providerCost,
-                'cost_currency' => strtoupper((string) $executionCurrency),
+                'provider_cost_minor_units' => $providerCost['minor_units'],
+                'provider_cost_by_currency' => $providerCost['by_currency'],
+                'provider_cost_unknown_count' => $providerCost['unknown_count'],
+                'provider_cost_currency_unknown_count' => $providerCost['currency_unknown_count'],
+                'cost_currency' => $this->currency($executionCurrency),
             ];
 
             $caseResults[] = new AiEvaluationCaseResult(
@@ -340,6 +354,20 @@ final class RunEvaluationSuite
         ]);
         $evalRun->save();
 
+        $this->audit->handle(
+            organization: $organization,
+            actor: $actor,
+            action: 'ai.evaluation_run.completed',
+            targetType: AiEvalRun::class,
+            targetId: (string) $evalRun->getKey(),
+            metadata: [
+                'eval_suite_id' => (string) $suite->getKey(),
+                'total_cases' => $totalCases,
+                'passed_cases' => $passedCases,
+                'failed_cases' => $failedCases,
+            ],
+        );
+
         return $evalRun;
     }
 
@@ -374,6 +402,54 @@ final class RunEvaluationSuite
     }
 
     /**
+     * @param  Collection<int, AiRunAttempt>  $attempts
+     * @return array{minor_units: int|null, by_currency: array<string, int>, unknown_count: int, currency_unknown_count: int}
+     */
+    private function providerCostData(Collection $attempts): array
+    {
+        $byCurrency = [];
+        $unknownCount = 0;
+        $currencyUnknownCount = 0;
+
+        foreach ($attempts as $attempt) {
+            if ($attempt->provider_cost_minor_units === null) {
+                $unknownCount++;
+
+                continue;
+            }
+
+            $snapshot = $attempt->pricing_snapshot;
+            $currency = $this->currency($snapshot['currency'] ?? null);
+            if ($currency === null) {
+                $unknownCount++;
+                $currencyUnknownCount++;
+
+                continue;
+            }
+
+            $byCurrency[$currency] = ($byCurrency[$currency] ?? 0) + (int) $attempt->provider_cost_minor_units;
+        }
+
+        return [
+            'minor_units' => $unknownCount === 0 && count($byCurrency) === 1 ? (int) array_values($byCurrency)[0] : null,
+            'by_currency' => $byCurrency,
+            'unknown_count' => $unknownCount,
+            'currency_unknown_count' => $currencyUnknownCount,
+        ];
+    }
+
+    private function currency(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = strtoupper(trim($value));
+
+        return preg_match('/^[A-Z]{3}$/', $value) === 1 ? $value : null;
+    }
+
+    /**
      * @param  Collection<int, AiEvalCase>  $cases
      * @param  array<int, list<array<string, mixed>>>  $assertionsByCase
      * @return array<string, mixed>
@@ -387,18 +463,19 @@ final class RunEvaluationSuite
         string $executedAt,
     ): array {
         return [
-            'schema_version' => 1,
+            'schema_version' => 2,
             'suite' => [
                 'id' => (int) $suite->getKey(),
                 'key' => $suite->key,
                 'name' => $suite->name,
                 'capability' => $suite->capability->value,
             ],
-            'cases' => $cases->map(static fn (AiEvalCase $case): array => [
+            'cases' => $cases->map(fn (AiEvalCase $case): array => [
                 'id' => (int) $case->getKey(),
                 'name' => $case->name,
                 'assertions' => $assertionsByCase[$case->getKey()] ?? [],
                 'expected_output_schema' => $case->expected_output_schema,
+                'test_inputs_digest' => $this->snapshotHasher->testInputsDigest((array) $case->test_inputs),
             ])->values()->all(),
             'prompt_version' => [
                 'id' => (int) $promptVersion->getKey(),

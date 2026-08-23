@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AiEvaluations\RelationManagers;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CompareAiEvaluationRuns;
+use App\Modules\AI\Application\Services\AiEvaluationRunMetricsReader;
 use App\Modules\AI\Domain\Models\AiEvalRun;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -16,7 +17,6 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Contracts\View\View;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
@@ -34,20 +34,17 @@ class RunsRelationManager extends RelationManager
         $suite = $this->getOwnerRecord();
 
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with(['promptVersion', 'modelRelease']))
             ->columns([
                 TextColumn::make('created_at')
                     ->label('Когда')
                     ->dateTime('d.m.Y H:i')
                     ->sortable(),
-                TextColumn::make('promptVersion.version')
+                TextColumn::make('prompt')
                     ->label('Промпт')
-                    ->formatStateUsing(fn ($state): string => $state === null ? '—' : 'v'.$state),
-                TextColumn::make('modelRelease')
+                    ->state(fn (AiEvalRun $record): string => self::promptLabel($record)),
+                TextColumn::make('model')
                     ->label('Модель')
-                    ->state(fn (AiEvalRun $record): string => $record->modelRelease === null
-                        ? '—'
-                        : $record->modelRelease->provider_name.' · '.$record->modelRelease->model_name.' · выпуск '.$record->modelRelease->release_number),
+                    ->state(fn (AiEvalRun $record): string => self::modelLabel($record)),
                 TextColumn::make('pass_percentage')
                     ->label('Результат')
                     ->formatStateUsing(fn ($state): string => number_format((float) $state, 2, ',', '').'%'),
@@ -60,15 +57,19 @@ class RunsRelationManager extends RelationManager
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => self::money($state, $record, 'provider_reported_by_currency')),
                 TextColumn::make('average_latency_ms')
                     ->label('Среднее время')
-                    ->formatStateUsing(fn ($state): string => self::duration((int) $state)),
+                    ->formatStateUsing(fn ($state, AiEvalRun $record): string => is_array($record->metrics_payload)
+                        ? self::duration((int) $state)
+                        : 'нет данных'),
                 TextColumn::make('reliability')
                     ->label('Ошибки и повторы')
-                    ->state(fn (AiEvalRun $record): string => sprintf(
-                        'ошибки %d · повторы %d · резерв %d',
-                        $record->execution_error_count,
-                        $record->retry_count,
-                        $record->failover_count,
-                    )),
+                    ->state(fn (AiEvalRun $record): string => is_array($record->metrics_payload)
+                        ? sprintf(
+                            'ошибки %d · повторы %d · резерв %d',
+                            $record->execution_error_count,
+                            $record->retry_count,
+                            $record->failover_count,
+                        )
+                        : 'нет данных'),
             ])
             ->headerActions([
                 Action::make('compare_runs')
@@ -110,6 +111,7 @@ class RunsRelationManager extends RelationManager
                     ->modalCancelActionLabel('Закрыть')
                     ->modalContent(fn (AiEvalRun $record): View => view('filament.resources.ai-evaluations.run-details', [
                         'run' => $record,
+                        'metrics' => app(AiEvaluationRunMetricsReader::class)->forRun($record),
                     ])),
             ])
             ->defaultSort('created_at', 'desc')
@@ -123,18 +125,40 @@ class RunsRelationManager extends RelationManager
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->where('eval_suite_id', $suite->getKey())
             ->whereNotNull('provenance_snapshot')
-            ->with(['promptVersion', 'modelRelease'])
             ->latest('created_at')
             ->limit(40)
             ->get()
             ->mapWithKeys(static function (AiEvalRun $run): array {
-                $prompt = 'v'.$run->promptVersion->version;
-                $model = $run->modelRelease === null ? 'модель недоступна' : $run->modelRelease->model_name.' · выпуск '.$run->modelRelease->release_number;
+                $prompt = self::promptLabel($run);
+                $model = self::modelLabel($run);
                 $date = $run->created_at instanceof Carbon ? $run->created_at->format('d.m.Y H:i') : 'дата недоступна';
 
                 return [$run->getKey() => $date.' · '.$prompt.' · '.$model.' · '.number_format((float) $run->pass_percentage, 2, ',', '').'%'];
             })
             ->all();
+    }
+
+    private static function promptLabel(AiEvalRun $run): string
+    {
+        $snapshot = is_array($run->provenance_snapshot) ? $run->provenance_snapshot : [];
+        $promptVersion = is_array($snapshot['prompt_version'] ?? null) ? $snapshot['prompt_version'] : [];
+
+        return is_scalar($promptVersion['version'] ?? null)
+            ? 'v'.(int) $promptVersion['version']
+            : 'промпт недоступен';
+    }
+
+    private static function modelLabel(AiEvalRun $run): string
+    {
+        $snapshot = is_array($run->provenance_snapshot) ? $run->provenance_snapshot : [];
+        $modelRelease = is_array($snapshot['model_release'] ?? null) ? $snapshot['model_release'] : [];
+        if (! is_scalar($modelRelease['provider'] ?? null)
+            || ! is_scalar($modelRelease['model'] ?? null)
+            || ! is_scalar($modelRelease['release_number'] ?? null)) {
+            return 'модель недоступна';
+        }
+
+        return $modelRelease['provider'].' · '.$modelRelease['model'].' · выпуск '.$modelRelease['release_number'];
     }
 
     private static function duration(int $milliseconds): string
@@ -146,11 +170,20 @@ class RunsRelationManager extends RelationManager
 
     private static function money(mixed $state, AiEvalRun $run, string $metricKey): string
     {
-        if ($state === null) {
-            return '—';
+        $metrics = is_array($run->metrics_payload) ? $run->metrics_payload : [];
+        $unknownCount = (int) ($metrics['cost'][$metricKey === 'estimated_by_currency'
+            ? 'estimated_currency_unknown_count'
+            : 'provider_reported_unknown_count']
+            ?? $metrics['cost']['provider_reported_currency_unknown_count']
+            ?? 0);
+        if ($unknownCount > 0) {
+            return 'нет данных: стоимость не сообщена или валюта неизвестна';
         }
 
-        $metrics = is_array($run->metrics_payload) ? $run->metrics_payload : [];
+        if ($state === null) {
+            return 'нет данных';
+        }
+
         $costs = $metrics['cost'][$metricKey] ?? [];
         if (! is_array($costs) || $costs === []) {
             return 'нет данных';

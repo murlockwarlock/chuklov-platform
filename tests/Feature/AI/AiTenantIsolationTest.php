@@ -3,9 +3,12 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\CreateEvalCase;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
+use App\Modules\AI\Application\Actions\UpdateEvalCase;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
@@ -18,6 +21,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Policies\AiPromptPolicy;
 use App\Policies\AiRunPolicy;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -121,6 +125,59 @@ class AiTenantIsolationTest extends TestCase
             evalSuiteId: $suiteB->id,
             promptVersionId: $versionB->id,
         );
+    }
+
+    public function test_user_a_cannot_create_or_update_evaluation_case_in_organization_b(): void
+    {
+        $suiteB = AiEvalSuite::create([
+            'organization_id' => $this->organizationB->id,
+            'key' => 'case_suite_b',
+            'name' => 'Примеры Б',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $caseB = AiEvalCase::create([
+            'organization_id' => $this->organizationB->id,
+            'eval_suite_id' => $suiteB->id,
+            'name' => 'Пример Б',
+            'is_synthetic' => true,
+            'is_deidentified' => false,
+            'test_inputs' => ['query' => 'synthetic'],
+            'expected_assertions' => [],
+            'is_active' => true,
+        ]);
+
+        $creationException = null;
+
+        try {
+            app(CreateEvalCase::class)->execute(
+                actor: $this->userA,
+                organization: $this->organizationB,
+                suiteId: $suiteB->id,
+                name: 'Чужой пример',
+                testInputs: ['query' => 'synthetic'],
+                expectedAssertions: [],
+                isSynthetic: true,
+                isDeidentified: false,
+            );
+            self::fail('Cross-organization evaluation case creation must be denied.');
+        } catch (AuthorizationException $exception) {
+            $creationException = $exception;
+        }
+
+        $updateException = null;
+
+        try {
+            app(UpdateEvalCase::class)->execute($this->userA, $caseB, [
+                'is_synthetic' => true,
+                'is_deidentified' => false,
+            ]);
+            self::fail('Cross-organization evaluation case update must be denied.');
+        } catch (AuthorizationException $exception) {
+            $updateException = $exception;
+        }
+
+        self::assertInstanceOf(AuthorizationException::class, $creationException);
+        self::assertInstanceOf(AuthorizationException::class, $updateException);
     }
 
     public function test_cross_organization_client_reference_cannot_be_persisted_in_ai_run(): void
