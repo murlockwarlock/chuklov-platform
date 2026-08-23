@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
+/** @extends Factory<Organization> */
 class OrganizationFactory extends Factory
 {
     protected $model = Organization::class;

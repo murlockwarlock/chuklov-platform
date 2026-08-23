@@ -69,6 +69,10 @@ class ViewClient extends ViewRecord
                 ->label('Редактировать клиента')
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
+            Action::make('companionHistory')
+                ->label('AI-компаньон / История общения')
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')

@@ -5,6 +5,7 @@ namespace App\Modules\AI\Application\Validation;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -42,6 +43,7 @@ final class AiInputReferenceValidator
 
             $referenceClientId = match ($reference->type) {
                 'client' => $this->findClient($organizationId, $reference->id)->id,
+                'companion_attachment' => $this->findCompanionAttachment($organizationId, $reference->id)->client_id,
                 'medical_session' => $this->findMedicalSession($organizationId, $reference->id)->client_id,
                 'medical_attachment' => $this->findMedicalAttachment($organizationId, $reference->id)->client_id,
                 'survey_attempt' => $this->findSurveyAttempt($organizationId, $reference->id)->client_id,
@@ -92,6 +94,22 @@ final class AiInputReferenceValidator
 
         if (! $attachment->isAvailable()) {
             throw new InvalidArgumentException('AI medical attachment input reference is not available for processing.');
+        }
+
+        return $attachment;
+    }
+
+    private function findCompanionAttachment(int $organizationId, int $id): MedicalAttachment
+    {
+        $attachment = MedicalAttachment::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($id)
+            ->where('attachment_type', AttachmentType::CompanionImage->value)
+            ->first()
+            ?? throw new InvalidArgumentException('AI Companion image reference was not found in the current organization.');
+
+        if (! $attachment->isAvailable()) {
+            throw new InvalidArgumentException('AI Companion image reference is not available for processing.');
         }
 
         return $attachment;

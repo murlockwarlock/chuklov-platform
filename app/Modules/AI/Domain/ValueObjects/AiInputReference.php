@@ -8,6 +8,7 @@ final readonly class AiInputReference
 {
     public const ALLOWED_TYPES = [
         'client',
+        'companion_attachment',
         'medical_session',
         'medical_attachment',
         'survey_attempt',

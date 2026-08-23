@@ -11,13 +11,17 @@ enum OrganizationSettingKey: string
     case HomeVisitTransportDepositAmountMinor = 'home_visit_transport_deposit_amount_minor';
     case HomeVisitTransportDepositCurrency = 'home_visit_transport_deposit_currency';
     case OfficeLocation = 'office_location';
+    case CompanionContextFirstExchanges = 'companion_context_first_exchanges';
+    case CompanionContextRecentExchanges = 'companion_context_recent_exchanges';
 
     public function type(): OrganizationSettingType
     {
         return match ($this) {
             self::BookingLeadTimeMinutes,
             self::BookingCancellationCutoffMinutes,
-            self::HomeVisitTransportDepositAmountMinor => OrganizationSettingType::Integer,
+            self::HomeVisitTransportDepositAmountMinor,
+            self::CompanionContextFirstExchanges,
+            self::CompanionContextRecentExchanges => OrganizationSettingType::Integer,
             default => OrganizationSettingType::String,
         };
     }

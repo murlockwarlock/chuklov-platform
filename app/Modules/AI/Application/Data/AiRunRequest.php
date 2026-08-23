@@ -5,6 +5,7 @@ namespace App\Modules\AI\Application\Data;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 
@@ -13,6 +14,7 @@ final readonly class AiRunRequest
     /**
      * @param  array<string, mixed>  $inputVariables
      * @param  list<AiInputReference>  $inputReferences
+     * @param  list<AiModelModality>  $requiredModalities
      */
     public function __construct(
         public AiCapability $capability,
@@ -25,6 +27,7 @@ final readonly class AiRunRequest
         public ?int $modelReleaseId = null,
         public array $inputVariables = [],
         public array $inputReferences = [],
+        public array $requiredModalities = [],
         public ?string $idempotencyKey = null,
         public ?int $timeoutSeconds = null,
         public ?User $actor = null,
@@ -43,6 +46,7 @@ final readonly class AiRunRequest
             modelReleaseId: $this->modelReleaseId,
             inputVariables: $this->inputVariables,
             inputReferences: $this->inputReferences,
+            requiredModalities: $this->requiredModalities,
             idempotencyKey: $this->idempotencyKey,
             timeoutSeconds: $this->timeoutSeconds,
             actor: $actor,

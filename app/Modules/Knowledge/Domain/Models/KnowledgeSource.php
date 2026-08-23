@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $title
  * @property string|null $category
  * @property KnowledgeSourceStatus $status
+ * @property bool $client_companion_enabled
  * @property int|null $active_revision_id
  * @property-read Organization $organization
  * @property-read KnowledgeRevision|null $activeRevision
@@ -31,6 +32,7 @@ class KnowledgeSource extends Model
         return [
             'type' => KnowledgeSourceType::class,
             'status' => KnowledgeSourceStatus::class,
+            'client_companion_enabled' => 'boolean',
             'retired_at' => 'immutable_datetime',
         ];
     }

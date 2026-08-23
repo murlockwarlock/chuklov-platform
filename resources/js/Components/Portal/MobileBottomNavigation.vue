@@ -12,6 +12,7 @@ const items = [
     { key: 'home', label: 'shell.home', icon: '⌂' },
     { key: 'bookings', label: 'shell.bookings', icon: '▣' },
     { key: 'surveys', label: 'shell.surveys', icon: '✓' },
+    { key: 'companion', label: 'shell.companion', icon: '✦' },
     { key: 'finance', label: 'shell.finance', icon: '₽' },
     { key: 'profile', label: 'shell.profile', icon: '○' },
 ] as const;

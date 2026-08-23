@@ -173,10 +173,101 @@ body {
     bottom: 0;
     left: 0;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     padding: 0.375rem 0.5rem max(0.375rem, env(safe-area-inset-bottom));
     border-top: 1px solid var(--portal-color-border);
     background: rgb(255 255 255 / 96%);
+}
+
+.portal-companion {
+    display: grid;
+    min-height: 32rem;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-lg);
+    background: var(--portal-color-surface);
+    box-shadow: var(--portal-shadow-panel);
+}
+
+.portal-companion__history {
+    display: flex;
+    min-height: 22rem;
+    max-height: 60svh;
+    flex-direction: column;
+    gap: var(--portal-space-4);
+    overflow-y: auto;
+    padding: var(--portal-space-5);
+}
+
+.portal-companion__message {
+    max-width: min(90%, 42rem);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border-radius: var(--portal-radius-md);
+    padding: var(--portal-space-4);
+}
+
+.portal-companion__message--client {
+    align-self: flex-end;
+    background: var(--portal-color-brand-soft);
+}
+
+.portal-companion__message--ai,
+.portal-companion__message--staff {
+    align-self: flex-start;
+    background: var(--portal-color-surface-muted);
+}
+
+.portal-companion__composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--portal-space-3);
+    border-top: 1px solid var(--portal-color-border);
+    padding: var(--portal-space-4);
+}
+
+.portal-companion__textarea {
+    width: 100%;
+    min-height: 5rem;
+    resize: vertical;
+    border: 1px solid var(--portal-color-border-strong);
+    border-radius: var(--portal-radius-md);
+    background: var(--portal-color-surface);
+    padding: var(--portal-space-3) var(--portal-space-4);
+    color: var(--portal-color-ink);
+}
+
+.portal-companion__textarea:focus {
+    outline: 2px solid var(--portal-color-focus);
+    outline-offset: 1px;
+}
+
+.portal-companion__upload {
+    display: inline-flex;
+    width: fit-content;
+    cursor: pointer;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--portal-color-ink-soft);
+    font-size: 0.875rem;
+    font-weight: 650;
+}
+
+.portal-companion__upload input {
+    max-width: 15rem;
+    font-size: 0.75rem;
+}
+
+@media (max-width: 40rem) {
+    .portal-companion__history {
+        max-height: 58svh;
+        padding: var(--portal-space-3);
+    }
+
+    .portal-companion__message {
+        max-width: 96%;
+    }
 }
 
 .portal-bottom-nav__link {

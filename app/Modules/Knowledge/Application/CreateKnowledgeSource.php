@@ -33,6 +33,7 @@ final class CreateKnowledgeSource
         $title = is_string($data['title'] ?? null) ? trim($data['title']) : '';
         $category = is_string($data['category'] ?? null) ? trim($data['category']) : null;
         $sourceReference = is_string($data['source_reference'] ?? null) ? trim($data['source_reference']) : null;
+        $clientCompanionEnabled = (bool) ($data['client_companion_enabled'] ?? false);
         if (! $type instanceof KnowledgeSourceType || $title === '' || mb_strlen($title) > 200 || ($category !== null && mb_strlen($category) > 80) || ($sourceReference !== null && mb_strlen($sourceReference) > 500)) {
             throw ValidationException::withMessages(['source' => 'Укажите корректный тип и название источника.']);
         }
@@ -84,13 +85,14 @@ final class CreateKnowledgeSource
 
         $checksum = hash('sha256', (string) $content);
         try {
-            $source = DB::transaction(function () use ($actor, $organization, $type, $title, $category, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum): KnowledgeSource {
+            $source = DB::transaction(function () use ($actor, $organization, $type, $title, $category, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum, $clientCompanionEnabled): KnowledgeSource {
                 $source = KnowledgeSource::query()->create([
                     'organization_id' => $organization->getKey(),
                     'type' => $type,
                     'title' => $title,
                     'category' => $category,
                     'status' => 'active',
+                    'client_companion_enabled' => $clientCompanionEnabled,
                 ]);
                 KnowledgeRevision::query()->create([
                     'organization_id' => $organization->getKey(),
@@ -107,7 +109,10 @@ final class CreateKnowledgeSource
                     'source_reference' => $sourceReference,
                     'created_by_user_id' => $actor->getKey(),
                 ]);
-                $this->audit->handle($organization, $actor, 'knowledge.source.created', KnowledgeSource::class, (string) $source->getKey(), ['source_type' => $type->value]);
+                $this->audit->handle($organization, $actor, 'knowledge.source.created', KnowledgeSource::class, (string) $source->getKey(), [
+                    'source_type' => $type->value,
+                    'client_companion_enabled' => $clientCompanionEnabled,
+                ]);
 
                 return $source->refresh();
             });

@@ -87,7 +87,7 @@ class RecordAuditEvent
         'survey.definition.updated' => ['definition_key', 'version'],
         'survey.version.published' => ['definition_key', 'version'],
         'survey.attempt.completed' => ['definition_key', 'version', 'tag_count', 'metric_count'],
-        'knowledge.source.created' => ['source_type'],
+        'knowledge.source.created' => ['source_type', 'client_companion_enabled'],
         'knowledge.source.updated' => ['fields'],
         'knowledge.revision.created' => ['source_id', 'version'],
         'knowledge.ingestion.retry_requested' => ['source_id', 'revision_id', 'ingestion_run_id', 'attempt_number'],
@@ -101,6 +101,12 @@ class RecordAuditEvent
         'knowledge.source.reactivated' => ['active_revision_id'],
         'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
         'attachment.downloaded' => ['source'],
+        'knowledge.source.client_companion_scope.updated' => ['enabled'],
+        'companion.context.reset' => ['new_epoch'],
+        'companion.feedback.recorded' => ['value'],
+        'companion.export.created' => ['format', 'identified', 'metadata_only'],
+        'companion.handoff.resolved' => ['reason'],
+        'companion.ai.resumed' => ['source'],
     ];
 
     /** @param array<array-key, mixed> $metadata */

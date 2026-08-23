@@ -17,6 +17,16 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
+### 10.2 — AI Companion
+
+- Objective: deliver the organization/client-scoped text and image Companion through the shared Portal/Mini App and verified private Telegram DM, with one logical Conversation, protected CRM history, durable turns, bounded context, safe RAG, handoff, feedback, exports, and multimodal failover.
+- Starting SHA: `4214ed39918f5dc1da844d7f88e5a06fc20c1b57`.
+- Candidate branch: `codex/ai-companion`.
+- Non-goals: OQ-015 clinical prompt content, voice/TTS, MAX/Instagram, general staff copilot, arbitrary CRM mutations, a second AI/RAG/conversation subsystem, hosted CI, deployment, staging, merge, and M11.
+- Data impact: additive logical conversation bindings, encrypted Companion message/attachment relationships, durable turns/deliveries/escalations/feedback, context epochs, client-safe Knowledge opt-in, and the minimal AI origin extension. Existing M2 records remain readable.
+- Boundaries: all execution uses `AiWorkflowEngine` and `AiCapability::ClientCompanion`; image turns require existing `ImageInput` modality candidates; private cleared image storage and the medical encryption/protected-trace boundary are reused; jobs carry identifiers only.
+- Verification: focused Companion, Conversation, Portal, Telegram, AI, Knowledge/RAG, privacy, static, frontend, syntax, Blade, and dependency checks pass locally. PostgreSQL integration/concurrency passes through the new Companion suite and the repository target; hosted CI remains explicitly unrun here.
+
 ### UX-A — Client Workspace + ordinary client/global search
 
 - Objective: make the opened Client the daily CRM workspace and make the Clients list and global search bounded identity-only finders.

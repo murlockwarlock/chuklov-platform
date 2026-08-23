@@ -34,4 +34,8 @@ enum OrganizationPermission: string
     case ActivateAiReleases = 'activate_ai_releases';
     case ManageAiProviders = 'manage_ai_providers';
     case UseAiPlayground = 'use_ai_playground';
+    case ViewCompanionHistory = 'view_companion_history';
+    case ExportCompanionHistory = 'export_companion_history';
+    case ExportCompanionMetadata = 'export_companion_metadata';
+    case ManageCompanionHandoff = 'manage_companion_handoff';
 }

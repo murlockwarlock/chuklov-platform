@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients;
 
+use App\Filament\Resources\Clients\Pages\ClientCompanionHistory;
 use App\Filament\Resources\Clients\Pages\CreateClient;
 use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Filament\Resources\Clients\Pages\ListClients;
@@ -125,6 +126,7 @@ class ClientResource extends Resource
             'index' => ListClients::route('/'),
             'create' => CreateClient::route('/create'),
             'view' => ViewClient::route('/{record}'),
+            'companion' => ClientCompanionHistory::route('/{record}/companion'),
             'edit' => EditClient::route('/{record}/edit'),
             'sessions' => ManageClientSessions::route('/{record}/sessions'),
         ];

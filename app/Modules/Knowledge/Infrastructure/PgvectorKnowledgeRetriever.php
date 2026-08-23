@@ -8,6 +8,7 @@ use App\Modules\Knowledge\Application\Data\RetrievalResult;
 use App\Modules\Knowledge\Application\KnowledgeAuthorization;
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -85,6 +86,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
             ->where('knowledge_chunks.organization_id', $orgId)
             ->where('knowledge_sources.organization_id', $orgId)
             ->where('knowledge_sources.status', 'active')
+            ->when($query->audience === KnowledgeAudience::ClientCompanion, fn (Builder $builder): Builder => $builder->where('knowledge_sources.client_companion_enabled', true))
             ->whereColumn('knowledge_sources.active_revision_id', 'knowledge_chunks.knowledge_revision_id')
             ->where('knowledge_revisions.status', 'ready')
             ->where('knowledge_ingestion_runs.status', 'ready')
@@ -115,6 +117,8 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
                     fn (): int => (int) KnowledgeSource::query()
                         ->where('organization_id', $organizationId)
                         ->whereIn('id', $query->sourceIds)
+                        ->where('status', 'active')
+                        ->when($query->audience === KnowledgeAudience::ClientCompanion, fn (Builder $builder): Builder => $builder->where('client_companion_enabled', true))
                         ->count(),
                 );
                 if ($count !== count(array_unique($query->sourceIds))) {
@@ -168,6 +172,7 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
             })
             ->where('knowledge_sources.organization_id', $organizationId)
             ->where('knowledge_sources.status', 'active')
+            ->when($query->audience === KnowledgeAudience::ClientCompanion, fn (Builder $builder): Builder => $builder->where('knowledge_sources.client_companion_enabled', true))
             ->where('knowledge_revisions.status', 'ready')
             ->when($query->sourceIds !== [], fn (Builder $builder): Builder => $builder->whereIn('knowledge_sources.id', $query->sourceIds))
             ->when($query->sourceType !== null, fn (Builder $builder): Builder => $builder->where('knowledge_sources.type', $query->sourceType))

@@ -32,6 +32,8 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attachments\Infrastructure\Scanning\FailClosedAttachmentScanner;
 use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\Contracts\MessagingChannel;
+use App\Modules\Channels\Infrastructure\Telegram\TelegramMessagingChannel;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
@@ -147,6 +149,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(GetMedicalProfile::class);
         $this->app->scoped(GetSession::class);
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
+        $this->app->bind(MessagingChannel::class, TelegramMessagingChannel::class);
         $this->app->singleton(
             NotificationChannelRegistry::class,
             fn (Application $app): NotificationChannelRegistry => new NotificationChannelRegistry([
@@ -220,6 +223,12 @@ class AppServiceProvider extends ServiceProvider
             ->by('portal-telegram-web-request|'.$request->ip()));
         RateLimiter::for('portal-telegram-web-status', static fn (Request $request): Limit => Limit::perMinute(120)
             ->by('portal-telegram-web-status|'.$request->session()->getId()));
+        RateLimiter::for('portal-companion-send', static function (Request $request): Limit {
+            $clientId = (string) $request->session()->get('client_portal.client_id', 'anonymous');
+
+            return Limit::perMinute((int) config('ai.companion.portal_rate_limit_per_minute', 12))
+                ->by('portal-companion-send|'.$clientId.'|'.$request->ip());
+        });
 
         Gate::policy(Service::class, ServicePolicy::class);
         Gate::policy(Client::class, ClientPolicy::class);

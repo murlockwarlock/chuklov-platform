@@ -26,6 +26,7 @@ enum OrganizationRole: string
                 OrganizationPermission::ViewAiRuns,
                 OrganizationPermission::ReviewAiProposals,
                 OrganizationPermission::UseAiPlayground,
+                OrganizationPermission::ViewCompanionHistory,
             ], true),
         };
     }

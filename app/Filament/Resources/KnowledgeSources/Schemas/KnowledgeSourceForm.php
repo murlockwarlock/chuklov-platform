@@ -7,6 +7,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -25,6 +26,10 @@ final class KnowledgeSourceForm
                         KnowledgeSourceType::UploadedText->value => 'TXT или Markdown',
                     ])->required()->live()->disabledOn('edit'),
                     TextInput::make('category')->label('Категория')->maxLength(80),
+                    Toggle::make('client_companion_enabled')
+                        ->label('Можно использовать в ответах клиентского AI-помощника')
+                        ->helperText('Включайте только материалы, которые безопасно показывать клиентам.')
+                        ->default(false),
                 ])->columns(2)->columnSpanFull(),
             Section::make('Материал')->schema([
                 Textarea::make('content')->label('Текст')->rows(18)->maxLength(500000)->required(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->visible(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->columnSpanFull(),
