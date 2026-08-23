@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
+use JsonException;
 
 /**
  * @phpstan-type EvaluationSnapshot array{
@@ -38,16 +39,10 @@ final class CompareAiEvaluationRuns
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
 
-        $ids = array_values(array_unique(array_filter(array_map(static function (mixed $value): ?int {
-            if (is_int($value) && $value > 0) {
-                return $value;
-            }
-            if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
-                return (int) $value;
-            }
-
-            return null;
-        }, $runIds))));
+        $ids = array_values(array_unique(array_filter(array_map(
+            fn (mixed $value): ?int => $this->positiveId($value),
+            $runIds,
+        ))));
         if (count($ids) < 2 || count($ids) > 4) {
             throw new InvalidArgumentException('Выберите от двух до четырёх завершённых запусков.');
         }
@@ -115,7 +110,7 @@ final class CompareAiEvaluationRuns
     {
         try {
             return $this->snapshotHasher->casesDigest($cases);
-        } catch (\Throwable) {
+        } catch (InvalidArgumentException|JsonException) {
             return null;
         }
     }
@@ -164,7 +159,7 @@ final class CompareAiEvaluationRuns
     private function snapshot(AiEvalRun $run): ?array
     {
         $snapshot = $run->provenance_snapshot;
-        $schemaVersion = is_array($snapshot) ? ($snapshot['schema_version'] ?? null) : null;
+        $schemaVersion = $this->positiveId(is_array($snapshot) ? ($snapshot['schema_version'] ?? null) : null);
         $suite = is_array($snapshot) ? ($snapshot['suite'] ?? null) : null;
         $capability = is_array($snapshot) ? ($snapshot['capability'] ?? null) : null;
         $cases = is_array($snapshot) ? ($snapshot['cases'] ?? null) : null;
@@ -177,10 +172,11 @@ final class CompareAiEvaluationRuns
         if (! is_array($suite)
             || $suiteId === null
             || $suiteId !== (int) $run->eval_suite_id
-            || (! is_int($schemaVersion) && ! (is_string($schemaVersion) && ctype_digit($schemaVersion)))
-            || (int) $schemaVersion < 2
+            || $schemaVersion === null
+            || $schemaVersion < 2
             || ! is_string($capability)
             || ! is_array($cases)
+            || ! array_is_list($cases)
             || count($cases) > AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES
             || ! is_array($promptVersion)
             || ! is_array($modelRelease)
@@ -225,10 +221,18 @@ final class CompareAiEvaluationRuns
             return $value;
         }
 
-        if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
-            return (int) $value;
+        if (! is_string($value) || ! ctype_digit($value)) {
+            return null;
         }
 
-        return null;
+        $normalized = ltrim($value, '0');
+        if ($normalized === ''
+            || strlen($normalized) > strlen((string) PHP_INT_MAX)
+            || (strlen($normalized) === strlen((string) PHP_INT_MAX)
+                && strcmp($normalized, (string) PHP_INT_MAX) > 0)) {
+            return null;
+        }
+
+        return (int) $normalized;
     }
 }

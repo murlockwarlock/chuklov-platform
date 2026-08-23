@@ -18,10 +18,10 @@ final class AiEvaluationSnapshotHasher
         return $this->digest($this->canonicalize($testInputs));
     }
 
-    /** @param list<array<string, mixed>> $cases */
+    /** @param array<int|string, mixed> $cases */
     public function casesDigest(array $cases): string
     {
-        if (count($cases) > AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES) {
+        if (! array_is_list($cases) || count($cases) > AiRuntimeLimits::PLATFORM_MAX_EVALUATION_CASES) {
             throw new InvalidArgumentException('Evaluation provenance exceeds the case limit.');
         }
 
@@ -29,6 +29,10 @@ final class AiEvaluationSnapshotHasher
         $caseIds = [];
 
         foreach ($cases as $case) {
+            if (! is_array($case)) {
+                throw new InvalidArgumentException('Evaluation provenance does not contain a complete case snapshot.');
+            }
+
             $caseId = $this->positiveId($case['id'] ?? null);
             if ($caseId === null
                 || ! array_key_exists('assertions', $case)
@@ -74,11 +78,19 @@ final class AiEvaluationSnapshotHasher
             return $value;
         }
 
-        if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
-            return (int) $value;
+        if (! is_string($value) || ! ctype_digit($value)) {
+            return null;
         }
 
-        return null;
+        $normalized = ltrim($value, '0');
+        if ($normalized === ''
+            || strlen($normalized) > strlen((string) PHP_INT_MAX)
+            || (strlen($normalized) === strlen((string) PHP_INT_MAX)
+                && strcmp($normalized, (string) PHP_INT_MAX) > 0)) {
+            return null;
+        }
+
+        return (int) $normalized;
     }
 
     private function digest(mixed $value): string

@@ -327,6 +327,10 @@ final class AiEvaluationAssertionRegistry
     /** @return list<string> */
     private function textList(mixed $value): array
     {
+        if (is_array($value) && ! array_is_list($value)) {
+            throw new InvalidArgumentException('Evaluation assertion text list is invalid.');
+        }
+
         $values = is_array($value) ? array_values($value) : [$value];
         if ($values === [] || count($values) > self::MAX_ASSERTIONS) {
             throw new InvalidArgumentException('Evaluation assertion text list is invalid.');
@@ -353,6 +357,10 @@ final class AiEvaluationAssertionRegistry
     /** @return list<string> */
     private function pathList(mixed $value): array
     {
+        if (is_array($value) && ! array_is_list($value)) {
+            throw new InvalidArgumentException('Evaluation JSON path list is invalid.');
+        }
+
         $values = is_array($value) ? array_values($value) : [$value];
         if ($values === [] || count($values) > self::MAX_ASSERTIONS) {
             throw new InvalidArgumentException('Evaluation JSON path list is invalid.');

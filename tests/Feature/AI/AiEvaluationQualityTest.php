@@ -228,6 +228,26 @@ final class AiEvaluationQualityTest extends TestCase
         self::assertFalse($malformedIncompatible->compatible);
         self::assertStringContainsString('нет полного снимка', $malformedIncompatible->message);
 
+        $runOne->update(['provenance_snapshot' => $originalSnapshot]);
+        $runTwo->update(['provenance_snapshot' => $originalSnapshot]);
+        $overflowSnapshot = $originalSnapshot;
+        $overflowSnapshot['cases'][0]['id'] = '999999999999999999999';
+        $runOne->update(['provenance_snapshot' => $overflowSnapshot]);
+        $runTwo->update(['provenance_snapshot' => $overflowSnapshot]);
+        $overflowIncompatible = app(CompareAiEvaluationRuns::class)->handle($local['user'], [$runOne->getKey(), $runTwo->getKey()]);
+        self::assertFalse($overflowIncompatible->compatible);
+        self::assertStringContainsString('нет полного снимка', $overflowIncompatible->message);
+
+        $runOne->update(['provenance_snapshot' => $originalSnapshot]);
+        $runTwo->update(['provenance_snapshot' => $originalSnapshot]);
+        $nonListSnapshot = $originalSnapshot;
+        $nonListSnapshot['cases'] = ['case' => $nonListSnapshot['cases'][0]];
+        $runOne->update(['provenance_snapshot' => $nonListSnapshot]);
+        $runTwo->update(['provenance_snapshot' => $nonListSnapshot]);
+        $nonListIncompatible = app(CompareAiEvaluationRuns::class)->handle($local['user'], [$runOne->getKey(), $runTwo->getKey()]);
+        self::assertFalse($nonListIncompatible->compatible);
+        self::assertStringContainsString('нет полного снимка', $nonListIncompatible->message);
+
         $foreign = $this->evaluationFixture('comparison_foreign');
         $foreignRun = $this->evaluationRunRecord($foreign, 70.0, 'foreign');
         app(OrganizationContext::class)->set($local['organization']);
@@ -447,6 +467,13 @@ final class AiEvaluationQualityTest extends TestCase
             $hasher->testInputsDigest(['second' => 2, 'first' => 1]),
             $hasher->testInputsDigest(['first' => 1, 'second' => 2]),
         );
+    }
+
+    public function test_snapshot_hasher_rejects_non_array_cases_with_a_configuration_error(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        app(AiEvaluationSnapshotHasher::class)->casesDigest([null]);
     }
 
     /** @return array{organization: Organization, user: User, model: AiModelConfiguration, prompt: AiPrompt, version: AiPromptVersion, suite: AiEvalSuite, case: AiEvalCase, release: AiModelRelease} */

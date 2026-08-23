@@ -133,11 +133,45 @@ final class AiEvaluationAssertionRegistryTest extends TestCase
         $this->registry->normalize([['type' => 'arbitrary_expression', 'expression' => '1 == 1']]);
     }
 
-    public function test_assertion_definitions_reject_unsupported_fields_and_malformed_legacy_values(): void
+    public function test_assertion_definitions_reject_unsupported_fields(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $definitions = [
+            [['type' => 'output_present', 'unexpected' => true]],
+            [['type' => 'required_text', 'value' => 'x', 'path' => 'foo']],
+            [['type' => 'field_value', 'path' => 'x', 'operator' => 'equals', 'value' => 1, 'minimum' => 0]],
+            [['type' => 'field_value', 'path' => 'x', 'operator' => 'enum', 'values' => [1], 'allowed' => [1]]],
+            [['type' => 'required_source', 'source' => ['source_id' => 1, 'unexpected' => true]]],
+            [['type' => 'required_source', 'source_id' => 1, 'unexpected' => true]],
+            [['type' => 'required_source', 'value' => 'title', 'source_id' => 1]],
+        ];
 
-        $this->registry->normalize([['type' => 'output_present', 'unexpected' => true]]);
+        foreach ($definitions as $definition) {
+            try {
+                $this->registry->normalize($definition);
+                self::fail('Unsupported assertion fields must be rejected.');
+            } catch (InvalidArgumentException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    public function test_malformed_legacy_assertion_lists_fail_with_configuration_errors(): void
+    {
+        $definitions = [
+            [['contains_text' => ['value' => 'x', 'unexpected' => 'y']], 'Evaluation assertion text list is invalid.'],
+            [['required_text' => ['value' => 'x', 'unexpected' => 'y']], 'Evaluation assertion text list is invalid.'],
+            [['forbidden_text' => ['value' => 'x', 'unexpected' => 'y']], 'Evaluation assertion text list is invalid.'],
+            [['required_field' => ['path' => 'x', 'unexpected' => 'y']], 'Evaluation JSON path list is invalid.'],
+        ];
+
+        foreach ($definitions as [$definition, $message]) {
+            try {
+                $this->registry->normalize($definition);
+                self::fail('Malformed legacy assertion lists must be rejected.');
+            } catch (InvalidArgumentException $exception) {
+                self::assertSame($message, $exception->getMessage());
+            }
+        }
     }
 
     public function test_malformed_legacy_assertion_values_fail_with_a_configuration_error(): void
