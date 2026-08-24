@@ -74,11 +74,11 @@ final class ClientWorkspaceInfolist
                                 ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
                                 ->wrap(),
                             TextEntry::make('lead_source')
-                                ->label('Legacy source (compatibility)')
+                                ->label('Источник визита')
                                 ->placeholder('Не указан')
                                 ->wrap(),
                             TextEntry::make('referral_code')
-                                ->label('Legacy referral field (not resolver)')
+                                ->label('Устаревший код рекомендации')
                                 ->fontFamily('mono')
                                 ->placeholder('Не указан')
                                 ->wrap(),

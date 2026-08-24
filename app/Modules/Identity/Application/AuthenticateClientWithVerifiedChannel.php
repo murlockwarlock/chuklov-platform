@@ -19,10 +19,14 @@ class AuthenticateClientWithVerifiedChannel
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly RegisterClientAcquisition $registerAcquisition,
     ) {}
 
-    public function handle(VerifiedChannelIdentity $verifiedIdentity): Client
-    {
+    public function handle(
+        VerifiedChannelIdentity $verifiedIdentity,
+        ?string $acquisitionSessionId = null,
+        ?int $acquisitionRequestId = null,
+    ): Client {
         $organization = $this->context->organization();
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
 
@@ -37,17 +41,20 @@ class AuthenticateClientWithVerifiedChannel
         }
 
         try {
-            return $this->persist($verifiedIdentity);
+            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId);
         } catch (UniqueConstraintViolationException) {
-            return $this->persist($verifiedIdentity);
+            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId);
         }
     }
 
-    private function persist(VerifiedChannelIdentity $verifiedIdentity): Client
-    {
+    private function persist(
+        VerifiedChannelIdentity $verifiedIdentity,
+        ?string $acquisitionSessionId,
+        ?int $acquisitionRequestId,
+    ): Client {
         $organization = $this->context->organization();
 
-        return DB::transaction(function () use ($organization, $verifiedIdentity): Client {
+        return DB::transaction(function () use ($organization, $verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId): Client {
             $identity = ClientChannelIdentity::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('channel', $verifiedIdentity->channel)
@@ -77,6 +84,15 @@ class AuthenticateClientWithVerifiedChannel
                 targetId: (string) $client->getKey(),
                 metadata: ['source' => $verifiedIdentity->channel],
             );
+
+            if ($acquisitionSessionId !== null || $acquisitionRequestId !== null) {
+                $this->registerAcquisition->handle(
+                    organization: $organization,
+                    client: $client,
+                    sessionId: $acquisitionSessionId,
+                    telegramAuthenticationRequestId: $acquisitionRequestId,
+                );
+            }
 
             $identity = new ClientChannelIdentity;
             $identity->forceFill([

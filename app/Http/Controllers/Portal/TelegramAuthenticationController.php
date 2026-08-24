@@ -40,7 +40,10 @@ class TelegramAuthenticationController extends Controller
                     captureContext: 'telegram_start_param',
                 );
             }
-            $client = $authenticate->handle($identity);
+            $client = $authenticate->handle(
+                verifiedIdentity: $identity,
+                acquisitionSessionId: $request->session()->getId(),
+            );
         } catch (InvalidTelegramInitData|AuthorizationException) {
             return to_route('portal.home')->with(
                 'telegram_auth_error',
@@ -48,7 +51,7 @@ class TelegramAuthenticationController extends Controller
             );
         }
 
-        $finalizeAcquisition->handle($client, $request->session()->getId(), $client->wasRecentlyCreated);
+        $finalizeAcquisition->handle($client, $request->session()->getId());
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $this->applySessionLocale($request, $client, $applyLocale);

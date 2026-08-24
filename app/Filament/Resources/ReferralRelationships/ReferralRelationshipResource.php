@@ -64,10 +64,14 @@ final class ReferralRelationshipResource extends Resource
             ->columns([
                 TextColumn::make('referrer.full_name')->label('Кто пригласил')->searchable()->wrap(),
                 TextColumn::make('referred.full_name')->label('Приглашённый клиент')->searchable()->wrap(),
-                TextColumn::make('referralIdentity.public_code')
-                    ->label('Публичный код')
-                    ->fontFamily('mono')
-                    ->copyable()
+                TextColumn::make('establishment_method')
+                    ->label('Способ установления')
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'automatic_referral_link' => 'Автоматическая ссылка',
+                        'manual_crm' => 'Назначено в CRM',
+                        default => 'Неизвестно',
+                    })
+                    ->badge()
                     ->visibleFrom('sm'),
                 TextColumn::make('referred.attribution.source')
                     ->label('Источник')
@@ -75,13 +79,13 @@ final class ReferralRelationshipResource extends Resource
                     ->wrap()
                     ->visibleFrom('md'),
                 TextColumn::make('registered_at')->label('Регистрация')->dateTime('d.m.Y H:i')->sortable(),
-                TextColumn::make('conversion_observations_count')
-                    ->label('Оплаченная конверсия')
-                    ->state(fn (ReferralRelationship $record): string => (int) ($record->conversion_observations_count ?? 0) > 0 ? 'Подтверждена' : 'Не подтверждена')
+                TextColumn::make('commercial_evidence_count')
+                    ->label('Финансовое событие')
+                    ->state(fn (ReferralRelationship $record): string => (int) ($record->commercial_evidence_count ?? 0) > 0 ? 'Оплата зафиксирована' : 'Пока нет')
                     ->badge()
-                    ->color(fn (string $state): string => $state === 'Подтверждена' ? 'success' : 'gray'),
-                TextColumn::make('conversion_observations_max_observed_at')
-                    ->label('Подтверждено')
+                    ->color(fn (string $state): string => $state === 'Оплата зафиксирована' ? 'success' : 'gray'),
+                TextColumn::make('commercial_evidence_max_observed_at')
+                    ->label('Дата зафиксированной оплаты')
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('—')
                     ->visibleFrom('lg'),

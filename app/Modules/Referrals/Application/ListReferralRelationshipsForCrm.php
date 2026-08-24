@@ -27,10 +27,9 @@ final class ListReferralRelationshipsForCrm
             ->with([
                 'referrer:id,full_name',
                 'referred:id,full_name',
-                'referralIdentity:id,public_code',
                 'referred.attribution',
             ])
-            ->withCount('conversionObservations')
-            ->withMax('conversionObservations', 'observed_at');
+            ->withCount('commercialEvidence')
+            ->withMax('commercialEvidence', 'observed_at');
     }
 }

@@ -2,15 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Identity\Application\ConsumeTelegramWebAuthentication;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientTelegramAuthenticationRequest;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use SergiX44\Nutgram\Nutgram;
@@ -79,6 +84,45 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
 
         self::assertSame(1, Client::query()->count());
         self::assertSame('Сохранённое имя', $client->refresh()->full_name);
+    }
+
+    public function test_consumed_web_auth_can_retry_acquisition_finalization_after_a_process_boundary(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        app(OrganizationContext::class)->set($organization);
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($referrer);
+
+        $this->post(route('portal.telegram.web.request'))->assertRedirect(route('portal.home'));
+        $sessionId = session()->getId();
+        app(CapturePreAuthAttribution::class)->handle(
+            sessionId: $sessionId,
+            input: ['referral_code' => $identity->public_code],
+            captureChannel: 'portal',
+            captureContext: 'referral_link',
+        );
+        $requestId = session('telegram_web_auth.request_id');
+        $browserBinding = session('telegram_web_auth.browser_binding');
+        self::assertIsInt($requestId);
+        self::assertIsString($browserBinding);
+
+        $bot = $this->fakeBot(720006, 'Повтор', 'Вход');
+        $bot->hearText('/start web_'.$this->tokenFromUrl((string) session('telegram_web_auth.url')))->reply();
+        $client = Client::query()->where('id', '<>', $referrer->getKey())->sole();
+
+        $consumedClient = app(ConsumeTelegramWebAuthentication::class)->handle($requestId, $browserBinding);
+        self::assertInstanceOf(Client::class, $consumedClient);
+        self::assertSame($client->getKey(), $consumedClient->getKey());
+        self::assertNotNull(ClientTelegramAuthenticationRequest::query()->findOrFail($requestId)->consumed_at);
+        $retryClient = app(ConsumeTelegramWebAuthentication::class)->handle($requestId, $browserBinding);
+        self::assertInstanceOf(Client::class, $retryClient);
+        self::assertSame($client->getKey(), $retryClient->getKey());
+        app(FinalizeClientAcquisition::class)->handle($retryClient, $sessionId, $requestId);
+
+        self::assertSame($referrer->getKey(), ReferralRelationship::query()
+            ->where('referred_client_id', $client->getKey())
+            ->value('referrer_client_id'));
     }
 
     public function test_token_is_single_use_and_only_the_bound_browser_session_can_consume_it(): void

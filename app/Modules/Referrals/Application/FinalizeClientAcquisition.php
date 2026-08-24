@@ -6,7 +6,9 @@ use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Attribution\Domain\Models\PreAuthAttribution;
 use App\Modules\Attribution\Domain\ValueObjects\AttributionData;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientAcquisitionRegistration;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -20,80 +22,111 @@ final class FinalizeClientAcquisition
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(Client $client, string $sessionId, bool $newlyCreated = false): Client
-    {
+    public function handle(
+        Client $client,
+        string $sessionId,
+        ?int $telegramAuthenticationRequestId = null,
+    ): Client {
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
         $this->ensureIdentity->handle($client);
         $sessionHash = hash('sha256', trim($sessionId));
 
-        return DB::transaction(function () use ($organization, $client, $sessionHash, $newlyCreated): Client {
+        return DB::transaction(function () use (
+            $organization,
+            $client,
+            $sessionHash,
+            $telegramAuthenticationRequestId,
+        ): Client {
             $lockedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($client->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $registration = ClientAcquisitionRegistration::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $lockedClient->getKey())
+                ->where(function ($query) use ($sessionHash, $telegramAuthenticationRequestId): void {
+                    $query->where('session_hash', $sessionHash);
+
+                    if ($telegramAuthenticationRequestId !== null) {
+                        $query->orWhere('telegram_authentication_request_id', $telegramAuthenticationRequestId);
+                    }
+                })
+                ->lockForUpdate()
+                ->first();
+
+            if (! $registration instanceof ClientAcquisitionRegistration) {
+                return $lockedClient;
+            }
+
+            if ($registration->finalized_at !== null) {
+                return $lockedClient;
+            }
+
             $preAuth = PreAuthAttribution::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('session_hash', $sessionHash)
                 ->lockForUpdate()
                 ->first();
 
-            if (! $preAuth instanceof PreAuthAttribution
-                || $preAuth->consumed_at !== null
-                || $preAuth->expires_at->isPast()) {
-                return $lockedClient;
-            }
-
-            $data = $preAuth->attributionData();
-            $acceptedReferral = $this->acceptReferral(
-                organizationId: (int) $organization->getKey(),
-                client: $lockedClient,
-                data: $data,
-                newlyCreated: $newlyCreated,
-            );
-            $acceptedData = $this->acceptedData($data, $acceptedReferral);
-
-            if ($acceptedData instanceof AttributionData
-                && ! ClientAttribution::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->where('client_id', $lockedClient->getKey())
-                    ->exists()) {
-                $attribution = new ClientAttribution;
-                $attribution->forceFill([
-                    'organization_id' => $organization->getKey(),
-                    'client_id' => $lockedClient->getKey(),
-                    ...$acceptedData->toArray(),
-                    'capture_channel' => $preAuth->capture_channel,
-                    'capture_context' => $preAuth->capture_context,
-                    'captured_at' => $preAuth->captured_at,
-                    'accepted_at' => now(),
-                ]);
-                $attribution->save();
-                $this->audit->handle(
-                    organization: $organization,
-                    actor: null,
-                    action: 'attribution.accepted',
-                    targetType: ClientAttribution::class,
-                    targetId: (string) $attribution->getKey(),
-                    metadata: [
-                        'source_type' => $acceptedData->sourceType,
-                        'capture_channel' => $preAuth->capture_channel,
-                        'has_referral' => $acceptedData->referralCode !== null,
-                        'has_utm' => $this->hasUtm($acceptedData),
-                    ],
+            if ($preAuth instanceof PreAuthAttribution
+                && $preAuth->consumed_at === null
+                && ! $preAuth->expires_at->isPast()) {
+                $data = $preAuth->attributionData();
+                $acceptedReferral = $this->acceptReferral(
+                    organizationId: (int) $organization->getKey(),
+                    client: $lockedClient,
+                    data: $data,
                 );
+                $acceptedData = $this->acceptedData($data, $acceptedReferral);
 
-                if (trim((string) $lockedClient->lead_source) === '') {
-                    $lockedClient->forceFill([
-                        'lead_source' => $acceptedData->source ?? $acceptedData->sourceType,
-                    ])->save();
+                if ($acceptedData instanceof AttributionData
+                    && ! ClientAttribution::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('client_id', $lockedClient->getKey())
+                        ->exists()) {
+                    $attribution = new ClientAttribution;
+                    $attribution->forceFill([
+                        'organization_id' => $organization->getKey(),
+                        'client_id' => $lockedClient->getKey(),
+                        ...$acceptedData->toArray(),
+                        'capture_channel' => $preAuth->capture_channel,
+                        'capture_context' => $preAuth->capture_context,
+                        'captured_at' => $preAuth->captured_at,
+                        'accepted_at' => now(),
+                    ]);
+                    $attribution->save();
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: null,
+                        action: 'attribution.accepted',
+                        targetType: ClientAttribution::class,
+                        targetId: (string) $attribution->getKey(),
+                        metadata: [
+                            'source_type' => $acceptedData->sourceType,
+                            'capture_channel' => $preAuth->capture_channel,
+                            'has_referral' => $acceptedData->referralCode !== null,
+                            'has_utm' => $this->hasUtm($acceptedData),
+                        ],
+                    );
+
+                    if (trim((string) $lockedClient->lead_source) === '') {
+                        $lockedClient->forceFill([
+                            'lead_source' => $acceptedData->source ?? $acceptedData->sourceType,
+                        ])->save();
+                    }
                 }
+
+                $preAuth->forceFill([
+                    'consumed_at' => now(),
+                    'consumed_client_id' => $lockedClient->getKey(),
+                    'updated_at' => now(),
+                ])->save();
             }
 
-            $preAuth->forceFill([
-                'consumed_at' => now(),
-                'consumed_client_id' => $lockedClient->getKey(),
+            $registration->forceFill([
+                'finalized_at' => now(),
                 'updated_at' => now(),
             ])->save();
 
@@ -105,9 +138,8 @@ final class FinalizeClientAcquisition
         int $organizationId,
         Client $client,
         AttributionData $data,
-        bool $newlyCreated,
     ): ?ClientReferralIdentity {
-        if (! $newlyCreated || $data->referralCode === null) {
+        if ($data->referralCode === null) {
             return null;
         }
 
@@ -121,6 +153,24 @@ final class FinalizeClientAcquisition
             return null;
         }
 
+        $firstTouch = ClientAttribution::query()
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $client->getKey())
+            ->lockForUpdate()
+            ->first();
+
+        if ($firstTouch?->source_type === 'referral') {
+            $firstTouchIdentity = ClientReferralIdentity::query()
+                ->where('organization_id', $organizationId)
+                ->where('public_code', $firstTouch->referral_code)
+                ->first();
+
+            if (! $firstTouchIdentity instanceof ClientReferralIdentity
+                || (int) $firstTouchIdentity->client_id !== (int) $identity->client_id) {
+                return null;
+            }
+        }
+
         $existing = ReferralRelationship::query()
             ->where('organization_id', $organizationId)
             ->where('referred_client_id', $client->getKey())
@@ -128,20 +178,15 @@ final class FinalizeClientAcquisition
             ->first();
 
         if ($existing instanceof ReferralRelationship) {
-            return ClientReferralIdentity::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($existing->referral_identity_id)
-                ->first();
+            return null;
         }
 
         $relationship = new ReferralRelationship;
         $relationship->forceFill([
             'organization_id' => $organizationId,
-            'referral_identity_id' => $identity->getKey(),
             'referrer_client_id' => $identity->client_id,
             'referred_client_id' => $client->getKey(),
-            'attribution_source_type' => 'referral',
-            'attribution_source' => $data->source,
+            'establishment_method' => ReferralEstablishmentMethod::AutomaticReferralLink,
             'registered_at' => now(),
         ]);
         $relationship->save();
@@ -154,7 +199,7 @@ final class FinalizeClientAcquisition
             metadata: [
                 'referrer_client_id' => $identity->client_id,
                 'referred_client_id' => $client->getKey(),
-                'source_type' => 'referral',
+                'establishment_method' => ReferralEstablishmentMethod::AutomaticReferralLink->value,
             ],
         );
 

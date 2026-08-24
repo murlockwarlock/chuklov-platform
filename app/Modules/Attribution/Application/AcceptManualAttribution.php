@@ -20,9 +20,11 @@ final class AcceptManualAttribution
     {
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
-        $source = strtolower(trim($source));
+        $source = trim($source);
+        $canonicalSource = strtolower($source);
+        $allowedSources = array_map('strtolower', config('attribution.manual_sources', []));
 
-        if (! in_array($source, config('attribution.manual_sources', []), true)) {
+        if (! in_array($canonicalSource, $allowedSources, true)) {
             throw ValidationException::withMessages(['source' => 'Выберите источник из списка.']);
         }
 

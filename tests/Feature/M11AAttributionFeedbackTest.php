@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Feedback\Application\FeedbackRequestFingerprint;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Identity\Application\RegisterClientAcquisition;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -15,10 +17,13 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
 use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use App\Modules\Referrals\Application\ListReferralRelationshipsForCrm;
+use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -39,17 +44,18 @@ final class M11AAttributionFeedbackTest extends TestCase
 
         $sessionId = session()->getId();
         $client = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
-        app(FinalizeClientAcquisition::class)->handle($client, $sessionId, true);
+        app(RegisterClientAcquisition::class)->handle($organization, $client, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($client, $sessionId);
 
         $attribution = ClientAttribution::query()->where('client_id', $client->id)->sole();
         self::assertSame('utm', $attribution->source_type);
-        self::assertSame('newsletter', $attribution->utm_source);
+        self::assertSame('Newsletter', $attribution->utm_source);
 
         app(CapturePreAuthAttribution::class)->handle($sessionId, [
             'utm_source' => 'later-source',
             'utm_campaign' => 'later-campaign',
         ]);
-        self::assertSame('newsletter', $attribution->fresh()->utm_source);
+        self::assertSame('Newsletter', $attribution->fresh()->utm_source);
     }
 
     public function test_manual_source_is_offered_only_when_automatic_attribution_is_absent(): void
@@ -84,6 +90,154 @@ final class M11AAttributionFeedbackTest extends TestCase
         self::assertSame('social', ClientAttribution::query()->where('client_id', $manualClient->id)->value('source'));
     }
 
+    public function test_acquisition_retry_after_client_commit_finalizes_the_original_intent_once(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($referrer);
+        $sessionId = 'm11a-crash-retry-session';
+        app(CapturePreAuthAttribution::class)->handle(
+            sessionId: $sessionId,
+            input: ['referral_code' => $identity->public_code],
+            captureChannel: 'portal',
+            captureContext: 'referral_route',
+        );
+        $referred = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+        app(RegisterClientAcquisition::class)->handle($organization, $referred, $sessionId);
+
+        $retryClient = Client::query()->whereKey($referred->getKey())->firstOrFail();
+        app(FinalizeClientAcquisition::class)->handle($retryClient, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($retryClient, $sessionId);
+
+        self::assertSame(1, ReferralRelationship::query()->where('referred_client_id', $referred->getKey())->count());
+        self::assertSame('referral', ClientAttribution::query()->where('client_id', $referred->getKey())->value('source_type'));
+        self::assertNotNull(DB::table('client_acquisition_registrations')->where('client_id', $referred->getKey())->value('finalized_at'));
+    }
+
+    public function test_existing_client_cannot_acquire_from_a_later_login(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($referrer);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $sessionId = 'm11a-returning-client-session';
+        app(CapturePreAuthAttribution::class)->handle(
+            sessionId: $sessionId,
+            input: ['referral_code' => $identity->public_code],
+            captureChannel: 'portal',
+            captureContext: 'referral_route',
+        );
+
+        app(FinalizeClientAcquisition::class)->handle($client, $sessionId);
+
+        self::assertDatabaseMissing('referral_relationships', ['referred_client_id' => $client->getKey()]);
+        self::assertDatabaseMissing('client_attributions', ['client_id' => $client->getKey()]);
+    }
+
+    public function test_manual_referral_assignment_is_authorized_product_neutral_and_does_not_rewrite_first_touch(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $actor = User::factory()->forOrganization($organization)->create();
+        $referrer = Client::factory()->forOrganization($organization)->create(['full_name' => 'Реферер']);
+        $referred = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент']);
+        ClientAttribution::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $referred->getKey(),
+            'source_type' => 'utm',
+            'utm_source' => 'OriginalCampaign',
+            'capture_channel' => 'portal',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ]);
+
+        $relationship = app(EstablishManualReferralRelationship::class)->handle(
+            actor: $actor,
+            referrerClientId: $referrer->getKey(),
+            referredClientId: $referred->getKey(),
+        );
+
+        self::assertSame(ReferralEstablishmentMethod::ManualCrm, $relationship->establishment_method);
+        self::assertSame('OriginalCampaign', ClientAttribution::query()->where('client_id', $referred->getKey())->value('utm_source'));
+        self::assertSame(1, DB::table('audit_events')->where('action', 'referral.relationship.created')->count());
+
+        $this->expectException(ValidationException::class);
+        app(EstablishManualReferralRelationship::class)->handle($actor, $referrer->getKey(), $referred->getKey());
+    }
+
+    public function test_manual_referral_rejects_self_and_foreign_clients(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $actor = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        try {
+            app(EstablishManualReferralRelationship::class)->handle($actor, $client->getKey(), $client->getKey());
+            self::fail('A client must not refer itself.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        $foreignOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        $this->expectException(ModelNotFoundException::class);
+        app(EstablishManualReferralRelationship::class)->handle($actor, $foreignClient->getKey(), $client->getKey());
+    }
+
+    public function test_manual_referral_does_not_contradict_an_accepted_referral_first_touch(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $actor = User::factory()->forOrganization($organization)->create();
+        $firstReferrer = Client::factory()->forOrganization($organization)->create();
+        $manualReferrer = Client::factory()->forOrganization($organization)->create();
+        $referred = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($firstReferrer);
+        ClientAttribution::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $referred->getKey(),
+            'source_type' => 'referral',
+            'referral_code' => $identity->public_code,
+            'capture_channel' => 'portal',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ]);
+
+        $this->expectException(ValidationException::class);
+        app(EstablishManualReferralRelationship::class)->handle(
+            actor: $actor,
+            referrerClientId: $manualReferrer->getKey(),
+            referredClientId: $referred->getKey(),
+        );
+    }
+
+    public function test_feedback_fingerprint_is_keyed_and_same_key_different_payload_conflicts(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $fingerprint = app(FeedbackRequestFingerprint::class)->handle([
+            'client_id' => $client->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'Private feedback',
+            'source' => 'portal',
+        ]);
+        self::assertNotSame(hash('sha256', json_encode([
+            'client_id' => $client->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'Private feedback',
+            'source' => 'portal',
+        ], JSON_THROW_ON_ERROR)), $fingerprint);
+        self::assertStringNotContainsString('Private feedback', $fingerprint);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.feedback.store'), [
+            'score' => 9,
+            'idempotency_key' => 'm11a-hmac-conflict',
+        ])->assertRedirect(route('portal.feedback'));
+        $this->post(route('portal.feedback.store'), [
+            'score' => 8,
+            'idempotency_key' => 'm11a-hmac-conflict',
+        ])->assertInvalid('idempotency_key');
+    }
+
     public function test_referral_link_registration_is_same_organization_first_wins_and_idempotent(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -93,8 +247,9 @@ final class M11AAttributionFeedbackTest extends TestCase
         $sessionId = session()->getId();
         $referred = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
 
-        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId, true);
-        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId, true);
+        app(RegisterClientAcquisition::class)->handle($organization, $referred, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId);
 
         self::assertSame(1, ReferralRelationship::query()->where('referred_client_id', $referred->id)->count());
         self::assertSame('referral', ClientAttribution::query()->where('client_id', $referred->id)->value('source_type'));
@@ -105,6 +260,33 @@ final class M11AAttributionFeedbackTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('Portal/Referrals')
                 ->where('referrals.link', route('portal.referral', ['referralCode' => $identity->public_code])));
+    }
+
+    public function test_portal_referral_projection_exposes_neutral_finance_evidence_without_reward_fields(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $referred = Client::factory()->forOrganization($organization)->create(['full_name' => 'Приглашённый']);
+        $relationship = new ReferralRelationship;
+        $relationship->forceFill([
+            'organization_id' => $organization->getKey(),
+            'referrer_client_id' => $referrer->getKey(),
+            'referred_client_id' => $referred->getKey(),
+            'establishment_method' => ReferralEstablishmentMethod::ManualCrm,
+            'registered_at' => now(),
+        ])->save();
+
+        $this->withSession(['client_portal.client_id' => $referrer->getKey()])
+            ->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Referrals')
+                ->where('referrals.registrations.0.name', 'Приглашённый')
+                ->where('referrals.registrations.0.financeEvidenceRecorded', false)
+                ->missing('referrals.registrations.0.reward')
+                ->missing('referrals.registrations.0.bonus')
+                ->missing('referrals.registrations.0.points')
+                ->missing('referrals.registrations.0.payout')
+                ->missing('referrals.registrations.0.conversionQualified'));
     }
 
     public function test_foreign_and_self_referrals_fail_closed(): void
@@ -118,13 +300,19 @@ final class M11AAttributionFeedbackTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
         $this->get(route('portal.referral', ['referralCode' => $foreignIdentity->public_code]))->assertRedirect();
         $sessionId = session()->getId();
-        app(FinalizeClientAcquisition::class)->handle($client, $sessionId, true);
+        app(RegisterClientAcquisition::class)->handle($organization, $client, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($client, $sessionId);
         self::assertSame(0, ReferralRelationship::query()->where('referred_client_id', $client->id)->count());
 
-        $this->withSession([]);
+        $selfSessionId = 'm11a-self-referral-session';
         $ownIdentity = app(EnsureReferralIdentity::class)->handle($client);
-        $this->get(route('portal.referral', ['referralCode' => $ownIdentity->public_code]))->assertRedirect();
-        app(FinalizeClientAcquisition::class)->handle($client, session()->getId(), true);
+        app(CapturePreAuthAttribution::class)->handle(
+            sessionId: $selfSessionId,
+            input: ['referral_code' => $ownIdentity->public_code],
+            captureChannel: 'portal',
+            captureContext: 'referral_route',
+        );
+        app(FinalizeClientAcquisition::class)->handle($client, $selfSessionId);
         self::assertSame(0, ReferralRelationship::query()->where('referred_client_id', $client->id)->count());
     }
 
@@ -261,19 +449,17 @@ final class M11AAttributionFeedbackTest extends TestCase
         $relationship = new ReferralRelationship;
         $relationship->forceFill([
             'organization_id' => $organization->getKey(),
-            'referral_identity_id' => $identity->getKey(),
             'referrer_client_id' => $referrer->getKey(),
             'referred_client_id' => $referred->getKey(),
-            'attribution_source_type' => 'referral',
+            'establishment_method' => 'automatic_referral_link',
             'registered_at' => now(),
         ])->save();
         $otherRelationship = new ReferralRelationship;
         $otherRelationship->forceFill([
             'organization_id' => $otherOrganization->getKey(),
-            'referral_identity_id' => $otherIdentity->getKey(),
             'referrer_client_id' => $otherReferrer->getKey(),
             'referred_client_id' => $otherReferred->getKey(),
-            'attribution_source_type' => 'referral',
+            'establishment_method' => 'automatic_referral_link',
             'registered_at' => now(),
         ])->save();
         FeedbackSubmission::query()->forceCreate([

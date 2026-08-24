@@ -21,8 +21,8 @@ final class GetClientReferralOverview
             ->where('organization_id', $this->context->id())
             ->where('referrer_client_id', $client->getKey())
             ->with(['referred:id,full_name'])
-            ->withCount('conversionObservations')
-            ->withMax('conversionObservations', 'observed_at')
+            ->withCount('commercialEvidence')
+            ->withMax('commercialEvidence', 'observed_at')
             ->orderByDesc('registered_at')
             ->limit(50)
             ->get();
@@ -32,8 +32,8 @@ final class GetClientReferralOverview
             'registrations' => $relationships->map(static fn (ReferralRelationship $relationship): array => [
                 'name' => $relationship->referred?->full_name ?: '—',
                 'registeredAt' => $relationship->registered_at?->toIso8601String(),
-                'paidConversionObserved' => (int) ($relationship->conversion_observations_count ?? 0) > 0,
-                'paidConversionAt' => $relationship->conversion_observations_max_observed_at?->toIso8601String(),
+                'financeEvidenceRecorded' => (int) ($relationship->commercial_evidence_count ?? 0) > 0,
+                'financeEvidenceAt' => $relationship->commercial_evidence_max_observed_at?->toIso8601String(),
             ])->values()->all(),
         ];
     }

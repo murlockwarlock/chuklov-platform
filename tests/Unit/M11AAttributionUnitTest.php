@@ -19,7 +19,7 @@ final class M11AAttributionUnitTest extends TestCase
 
         self::assertNotNull($data);
         self::assertSame('referral', $data->sourceType);
-        self::assertSame('partner', $data->source);
+        self::assertSame('Partner', $data->source);
         self::assertSame(str_repeat('R', 43), $data->referralCode);
         self::assertArrayNotHasKey('unexpected', $data->toArray());
     }
@@ -34,7 +34,7 @@ final class M11AAttributionUnitTest extends TestCase
 
         self::assertNotNull($data);
         self::assertSame('utm', $data->sourceType);
-        self::assertSame('search', $data->utmSource);
+        self::assertSame('Search', $data->utmSource);
         self::assertSame(160, mb_strlen((string) $data->utmCampaign));
     }
 

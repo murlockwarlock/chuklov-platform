@@ -36,6 +36,7 @@ class EmailAuthenticationController extends Controller
             $client = $authenticate->handle(
                 email: $request->validated('email'),
                 code: $request->validated('code'),
+                acquisitionSessionId: $request->session()->getId(),
             );
         } catch (InvalidEmailAuthenticationCode) {
             $request->session()->flash('email_code_sent', true);
@@ -45,7 +46,7 @@ class EmailAuthenticationController extends Controller
             ]);
         }
 
-        $finalizeAcquisition->handle($client, $request->session()->getId(), $client->wasRecentlyCreated);
+        $finalizeAcquisition->handle($client, $request->session()->getId());
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $this->applySessionLocale($request, $client, $applyLocale);

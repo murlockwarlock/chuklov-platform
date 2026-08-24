@@ -8,8 +8,8 @@ import type { PortalShell } from '../../types/portal';
 type Registration = {
     name: string;
     registeredAt: string | null;
-    paidConversionObserved: boolean;
-    paidConversionAt: string | null;
+    financeEvidenceRecorded: boolean;
+    financeEvidenceAt: string | null;
 };
 
 const props = defineProps<{
@@ -91,7 +91,7 @@ async function copyLink(): Promise<void> {
           >
             <strong class="text-[var(--portal-color-ink)]">{{ registration.name }}</strong>
             <span class="portal-card__summary">{{ t('referrals.registered') }}</span>
-            <span class="portal-card__summary">{{ registration.paidConversionObserved ? t('referrals.paid') : t('referrals.notPaid') }}</span>
+            <span class="portal-card__summary">{{ registration.financeEvidenceRecorded ? t('referrals.financeEvidence') : t('referrals.financeEvidenceMissing') }}</span>
           </article>
         </div>
         <p

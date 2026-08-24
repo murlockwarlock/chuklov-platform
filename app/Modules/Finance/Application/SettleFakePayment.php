@@ -14,8 +14,6 @@ use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
 use App\Modules\Finance\Domain\ValueObjects\Money;
-use App\Modules\Referrals\Application\ObserveReferredPaidConversion;
-use App\Modules\Referrals\Domain\ValueObjects\PaidConversionEvidence;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +27,7 @@ final class SettleFakePayment
         private readonly CurrencyConfigurationService $configuration,
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly RecordAuditEvent $audit,
-        private readonly ObserveReferredPaidConversion $conversionObserver,
+        private readonly RecordFinancialSettlementEvent $settlementEvents,
     ) {}
 
     public function handle(GatewaySettlementEvidence $evidence): FinancialLedgerEntry
@@ -153,14 +151,9 @@ final class SettleFakePayment
                 'updated_at' => now(),
             ])->save();
             $settled = $this->reconciliation->handle($evidence->organizationId, (int) $obligation->getKey(), true);
-            $this->conversionObserver->handle(new PaidConversionEvidence(
-                organizationId: $evidence->organizationId,
-                clientId: (int) $obligation->client_id,
-                obligationId: (int) $obligation->getKey(),
-                ledgerEntryId: (int) $entry->getKey(),
-                financeStatus: $settled->status->value,
-                authoritativeSettled: $settled->isSettled(),
-            ));
+            if (! $current->isSettled() && $settled->isSettled()) {
+                $this->settlementEvents->handle($obligation, $entry, now()->toImmutable());
+            }
             $organization = $obligation->organization()->firstOrFail();
             $this->audit->handle(
                 organization: $organization,

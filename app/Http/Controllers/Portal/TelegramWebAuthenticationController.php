@@ -57,7 +57,11 @@ class TelegramWebAuthenticationController extends Controller
             return response()->json(['status' => 'pending']);
         }
 
-        $finalizeAcquisition->handle($client, $request->session()->getId(), $client->wasRecentlyCreated);
+        $finalizeAcquisition->handle(
+            client: $client,
+            sessionId: $request->session()->getId(),
+            telegramAuthenticationRequestId: (int) $requestId,
+        );
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $request->session()->forget('telegram_web_auth');

@@ -17,6 +17,7 @@ final class RecordNpsSubmission
         private readonly OrganizationContext $context,
         private readonly GetFeedbackConfiguration $configuration,
         private readonly RecordAuditEvent $audit,
+        private readonly FeedbackRequestFingerprint $fingerprint,
     ) {}
 
     public function handle(
@@ -63,12 +64,12 @@ final class RecordNpsSubmission
             $internalFeedback = null;
         }
 
-        $requestHash = hash('sha256', json_encode([
+        $requestHash = $this->fingerprint->handle([
             'client_id' => $client->getKey(),
             'score' => $score,
             'internal_feedback' => $internalFeedback,
             'source' => $source,
-        ], JSON_THROW_ON_ERROR));
+        ]);
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {

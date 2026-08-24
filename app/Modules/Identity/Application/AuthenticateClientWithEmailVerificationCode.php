@@ -23,9 +23,10 @@ class AuthenticateClientWithEmailVerificationCode
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly RegisterClientAcquisition $registerAcquisition,
     ) {}
 
-    public function handle(string $email, string $code): Client
+    public function handle(string $email, string $code, ?string $acquisitionSessionId = null): Client
     {
         $organization = $this->context->organization();
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
@@ -37,15 +38,19 @@ class AuthenticateClientWithEmailVerificationCode
         }
 
         try {
-            return $this->persist($organization, $normalizedEmail, $code);
+            return $this->persist($organization, $normalizedEmail, $code, $acquisitionSessionId);
         } catch (UniqueConstraintViolationException) {
-            return $this->persist($organization, $normalizedEmail, $code);
+            return $this->persist($organization, $normalizedEmail, $code, $acquisitionSessionId);
         }
     }
 
-    private function persist(Organization $organization, string $email, string $code): Client
-    {
-        $client = DB::transaction(function () use ($organization, $email, $code): ?Client {
+    private function persist(
+        Organization $organization,
+        string $email,
+        string $code,
+        ?string $acquisitionSessionId,
+    ): Client {
+        $client = DB::transaction(function () use ($organization, $email, $code, $acquisitionSessionId): ?Client {
             $challenge = ClientEmailAuthChallenge::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('email', $email)
@@ -129,6 +134,13 @@ class AuthenticateClientWithEmailVerificationCode
             ]);
             $identity->save();
             $this->recordVerifiedIdentity($organization, $identity);
+            if ($acquisitionSessionId !== null) {
+                $this->registerAcquisition->handle(
+                    organization: $organization,
+                    client: $client,
+                    sessionId: $acquisitionSessionId,
+                );
+            }
 
             return $client->refresh();
         });

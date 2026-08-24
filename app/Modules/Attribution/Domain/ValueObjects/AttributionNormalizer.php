@@ -53,7 +53,7 @@ final class AttributionNormalizer
             return null;
         }
 
-        return Str::lower(Str::limit($value, $maximumLength, ''));
+        return Str::limit($value, $maximumLength, '');
     }
 
     private function referralCode(mixed $value): ?string

@@ -7,7 +7,6 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([])]
 class ClientReferralIdentity extends Model
@@ -22,11 +21,5 @@ class ClientReferralIdentity extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
-    }
-
-    /** @return HasMany<ReferralRelationship, $this> */
-    public function relationships(): HasMany
-    {
-        return $this->hasMany(ReferralRelationship::class, 'referral_identity_id');
     }
 }

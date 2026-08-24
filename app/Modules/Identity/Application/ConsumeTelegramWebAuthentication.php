@@ -4,6 +4,7 @@ namespace App\Modules\Identity\Application;
 
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientAcquisitionRegistration;
 use App\Modules\Identity\Domain\Models\ClientTelegramAuthenticationRequest;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Illuminate\Support\Facades\DB;
@@ -25,8 +26,18 @@ class ConsumeTelegramWebAuthentication
 
             if (! $authenticationRequest instanceof ClientTelegramAuthenticationRequest
                 || ! hash_equals($authenticationRequest->browser_session_hash, hash('sha256', $browserBinding))
-                || $authenticationRequest->consumed_at !== null
                 || $authenticationRequest->expires_at->isPast()) {
+                throw new InvalidTelegramWebAuthentication('The Telegram authentication request is invalid or expired.');
+            }
+
+            if ($authenticationRequest->consumed_at !== null
+                && ($authenticationRequest->client_id === null
+                    || ! ClientAcquisitionRegistration::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('telegram_authentication_request_id', $authenticationRequest->getKey())
+                        ->where('client_id', $authenticationRequest->client_id)
+                        ->whereNull('finalized_at')
+                        ->exists())) {
                 throw new InvalidTelegramWebAuthentication('The Telegram authentication request is invalid or expired.');
             }
 

@@ -9,6 +9,49 @@ return new class extends Migration
 {
     public function up(): void
     {
+        Schema::table('client_telegram_authentication_requests', function (Blueprint $table): void {
+            $table->unique(
+                ['organization_id', 'id'],
+                'client_telegram_auth_requests_org_id_id_unique',
+            );
+        });
+
+        Schema::table('financial_obligations', function (Blueprint $table): void {
+            $table->unique(
+                ['organization_id', 'id', 'client_id'],
+                'financial_obligations_org_id_id_client_unique',
+            );
+        });
+
+        Schema::table('financial_ledger_entries', function (Blueprint $table): void {
+            $table->unique(
+                ['organization_id', 'id', 'obligation_id'],
+                'financial_ledger_entries_org_id_id_obligation_unique',
+            );
+        });
+
+        Schema::create('client_acquisition_registrations', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('client_id');
+            $table->char('session_hash', 64)->nullable();
+            $table->foreignId('telegram_authentication_request_id')->nullable();
+            $table->timestampTz('finalized_at')->nullable();
+            $table->timestampsTz();
+            $table->unique(['organization_id', 'id']);
+            $table->unique(['organization_id', 'client_id']);
+            $table->unique(['organization_id', 'session_hash']);
+            $table->unique(['organization_id', 'telegram_authentication_request_id']);
+            $table->foreign(['organization_id', 'client_id'])
+                ->references(['organization_id', 'id'])
+                ->on('clients')
+                ->restrictOnDelete();
+            $table->foreign(['organization_id', 'telegram_authentication_request_id'])
+                ->references(['organization_id', 'id'])
+                ->on('client_telegram_authentication_requests')
+                ->restrictOnDelete();
+        });
+
         Schema::create('client_attributions', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
@@ -60,7 +103,7 @@ return new class extends Migration
             $table->foreign(['organization_id', 'consumed_client_id'])
                 ->references(['organization_id', 'id'])
                 ->on('clients')
-                ->nullOnDelete();
+                ->restrictOnDelete();
         });
 
         Schema::create('client_referral_identities', function (Blueprint $table): void {
@@ -82,20 +125,18 @@ return new class extends Migration
         Schema::create('referral_relationships', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
-            $table->foreignId('referral_identity_id');
             $table->foreignId('referrer_client_id');
             $table->foreignId('referred_client_id');
-            $table->string('attribution_source_type', 32);
-            $table->string('attribution_source', 120)->nullable();
+            $table->string('establishment_method', 32);
             $table->timestampTz('registered_at')->useCurrent();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
             $table->unique(['organization_id', 'referred_client_id']);
+            $table->unique(
+                ['organization_id', 'id', 'referred_client_id'],
+                'referral_relationships_org_id_id_referred_unique',
+            );
             $table->index(['organization_id', 'referrer_client_id', 'registered_at']);
-            $table->foreign(['organization_id', 'referral_identity_id', 'referrer_client_id'])
-                ->references(['organization_id', 'id', 'client_id'])
-                ->on('client_referral_identities')
-                ->restrictOnDelete();
             $table->foreign(['organization_id', 'referrer_client_id'])
                 ->references(['organization_id', 'id'])
                 ->on('clients')
@@ -106,30 +147,67 @@ return new class extends Migration
                 ->restrictOnDelete();
         });
 
-        Schema::create('referral_conversion_observations', function (Blueprint $table): void {
+        Schema::create('integration_events', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
-            $table->foreignId('referral_relationship_id');
+            $table->string('event_type', 100);
+            $table->string('aggregate_type', 120);
+            $table->unsignedBigInteger('aggregate_id');
+            $table->string('idempotency_key', 191);
+            $table->json('payload');
+            $table->string('status', 32)->default('pending');
+            $table->unsignedInteger('attempt_count')->default(0);
+            $table->timestampTz('occurred_at');
+            $table->timestampTz('available_at')->useCurrent();
+            $table->timestampTz('processing_started_at')->nullable();
+            $table->char('processing_token', 64)->nullable();
+            $table->timestampTz('processed_at')->nullable();
+            $table->timestampsTz();
+            $table->unique(['organization_id', 'id']);
+            $table->unique(['organization_id', 'idempotency_key']);
+            $table->index(['status', 'available_at']);
+            $table->index(['organization_id', 'event_type', 'status', 'available_at']);
+        });
+
+        Schema::create('referral_commercial_evidence', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('integration_event_id');
+            $table->foreignId('referral_relationship_id')->nullable();
+            $table->foreignId('referred_client_id');
             $table->foreignId('financial_obligation_id');
             $table->foreignId('financial_ledger_entry_id');
-            $table->string('finance_status', 32);
+            $table->string('evidence_type', 64);
             $table->string('observation_source', 40);
             $table->timestampTz('observed_at')->useCurrent();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'referral_relationship_id', 'financial_obligation_id']);
+            $table->unique(['organization_id', 'integration_event_id']);
+            $table->unique(['organization_id', 'financial_obligation_id']);
             $table->unique(['organization_id', 'financial_ledger_entry_id']);
-            $table->index(['organization_id', 'referral_relationship_id', 'observed_at']);
+            $table->index(['organization_id', 'referred_client_id', 'observed_at']);
+            $table->foreign(['organization_id', 'integration_event_id'])
+                ->references(['organization_id', 'id'])
+                ->on('integration_events')
+                ->restrictOnDelete();
             $table->foreign(['organization_id', 'referral_relationship_id'])
                 ->references(['organization_id', 'id'])
                 ->on('referral_relationships')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_obligation_id'])
+            $table->foreign(['organization_id', 'referral_relationship_id', 'referred_client_id'])
+                ->references(['organization_id', 'id', 'referred_client_id'])
+                ->on('referral_relationships')
+                ->restrictOnDelete();
+            $table->foreign(['organization_id', 'referred_client_id'])
                 ->references(['organization_id', 'id'])
+                ->on('clients')
+                ->restrictOnDelete();
+            $table->foreign(['organization_id', 'financial_obligation_id', 'referred_client_id'])
+                ->references(['organization_id', 'id', 'client_id'])
                 ->on('financial_obligations')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_ledger_entry_id'])
-                ->references(['organization_id', 'id'])
+            $table->foreign(['organization_id', 'financial_ledger_entry_id', 'financial_obligation_id'])
+                ->references(['organization_id', 'id', 'obligation_id'])
                 ->on('financial_ledger_entries')
                 ->restrictOnDelete();
         });
@@ -168,10 +246,15 @@ return new class extends Migration
         });
 
         if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE client_acquisition_registrations ADD CONSTRAINT client_acquisition_registrations_source_check CHECK (session_hash IS NOT NULL OR telegram_authentication_request_id IS NOT NULL)');
             DB::statement("ALTER TABLE client_attributions ADD CONSTRAINT client_attributions_source_type_check CHECK (source_type IN ('legacy', 'manual', 'source', 'referral', 'utm'))");
             DB::statement("ALTER TABLE pre_auth_attributions ADD CONSTRAINT pre_auth_attributions_source_type_check CHECK (source_type IN ('source', 'referral', 'utm'))");
+            DB::statement("ALTER TABLE referral_relationships ADD CONSTRAINT referral_relationships_method_check CHECK (establishment_method IN ('automatic_referral_link', 'manual_crm'))");
             DB::statement('ALTER TABLE referral_relationships ADD CONSTRAINT referral_relationships_no_self_check CHECK (referrer_client_id <> referred_client_id)');
-            DB::statement("ALTER TABLE referral_conversion_observations ADD CONSTRAINT referral_conversion_observations_status_check CHECK (finance_status = 'settled')");
+            DB::statement("ALTER TABLE integration_events ADD CONSTRAINT integration_events_type_check CHECK (event_type = 'finance.obligation.settled')");
+            DB::statement("ALTER TABLE integration_events ADD CONSTRAINT integration_events_status_check CHECK (status IN ('pending', 'processing', 'retryable', 'processed', 'failed'))");
+            DB::statement("ALTER TABLE referral_commercial_evidence ADD CONSTRAINT referral_commercial_evidence_type_check CHECK (evidence_type = 'finance_obligation_settled')");
+            DB::statement("ALTER TABLE referral_commercial_evidence ADD CONSTRAINT referral_commercial_evidence_source_check CHECK (observation_source = 'finance')");
             DB::statement('ALTER TABLE feedback_configurations ADD CONSTRAINT feedback_configurations_threshold_check CHECK (positive_threshold BETWEEN 1 AND 10)');
             DB::statement('ALTER TABLE feedback_submissions ADD CONSTRAINT feedback_submissions_score_check CHECK (score BETWEEN 1 AND 10)');
         }
@@ -181,10 +264,22 @@ return new class extends Migration
     {
         Schema::dropIfExists('feedback_submissions');
         Schema::dropIfExists('feedback_configurations');
-        Schema::dropIfExists('referral_conversion_observations');
+        Schema::dropIfExists('referral_commercial_evidence');
+        Schema::dropIfExists('integration_events');
         Schema::dropIfExists('referral_relationships');
         Schema::dropIfExists('client_referral_identities');
         Schema::dropIfExists('pre_auth_attributions');
         Schema::dropIfExists('client_attributions');
+        Schema::dropIfExists('client_acquisition_registrations');
+
+        Schema::table('financial_ledger_entries', function (Blueprint $table): void {
+            $table->dropUnique('financial_ledger_entries_org_id_id_obligation_unique');
+        });
+        Schema::table('financial_obligations', function (Blueprint $table): void {
+            $table->dropUnique('financial_obligations_org_id_id_client_unique');
+        });
+        Schema::table('client_telegram_authentication_requests', function (Blueprint $table): void {
+            $table->dropUnique('client_telegram_auth_requests_org_id_id_unique');
+        });
     }
 };
