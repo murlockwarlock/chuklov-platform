@@ -1,0 +1,319 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\User;
+use App\Modules\Attribution\Application\CapturePreAuthAttribution;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
+use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
+use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
+use App\Modules\Referrals\Application\ListReferralRelationshipsForCrm;
+use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Inertia\Testing\AssertableInertia;
+use Tests\TestCase;
+
+final class M11AAttributionFeedbackTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_portal_automatic_attribution_is_captured_and_first_touch_is_immutable(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $this->get(route('portal.home', ['utm_source' => 'Newsletter', 'utm_campaign' => 'Spring']))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('Portal/Entry'));
+
+        $sessionId = session()->getId();
+        $client = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+        app(FinalizeClientAcquisition::class)->handle($client, $sessionId, true);
+
+        $attribution = ClientAttribution::query()->where('client_id', $client->id)->sole();
+        self::assertSame('utm', $attribution->source_type);
+        self::assertSame('newsletter', $attribution->utm_source);
+
+        app(CapturePreAuthAttribution::class)->handle($sessionId, [
+            'utm_source' => 'later-source',
+            'utm_campaign' => 'later-campaign',
+        ]);
+        self::assertSame('newsletter', $attribution->fresh()->utm_source);
+    }
+
+    public function test_manual_source_is_offered_only_when_automatic_attribution_is_absent(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $automaticClient = Client::factory()->forOrganization($organization)->create();
+        ClientAttribution::query()->forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $automaticClient->id,
+            'source_type' => 'utm',
+            'utm_source' => 'newsletter',
+            'capture_channel' => 'portal',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ]);
+        $this->withSession(['client_portal.client_id' => $automaticClient->id]);
+        $this->get(route('portal.home'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('attribution.needsManualSource', false));
+
+        $manualClient = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+        $this->withSession(['client_portal.client_id' => $manualClient->id]);
+        $this->get(route('portal.home'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('attribution.needsManualSource', true));
+        $this->post(route('portal.attribution.update'), ['source' => 'social'])
+            ->assertRedirect(route('portal.home'));
+
+        self::assertSame('manual', ClientAttribution::query()->where('client_id', $manualClient->id)->value('source_type'));
+        $this->post(route('portal.attribution.update'), ['source' => 'search'])
+            ->assertRedirect(route('portal.home'));
+        self::assertSame('social', ClientAttribution::query()->where('client_id', $manualClient->id)->value('source'));
+    }
+
+    public function test_referral_link_registration_is_same_organization_first_wins_and_idempotent(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($referrer);
+        $this->get(route('portal.referral', ['referralCode' => $identity->public_code]))->assertRedirect(route('portal.home'));
+        $sessionId = session()->getId();
+        $referred = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+
+        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId, true);
+        app(FinalizeClientAcquisition::class)->handle($referred, $sessionId, true);
+
+        self::assertSame(1, ReferralRelationship::query()->where('referred_client_id', $referred->id)->count());
+        self::assertSame('referral', ClientAttribution::query()->where('client_id', $referred->id)->value('source_type'));
+        self::assertSame(1, ClientReferralIdentity::query()->where('client_id', $referred->id)->count());
+
+        $this->withSession(['client_portal.client_id' => $referrer->id])
+            ->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Referrals')
+                ->where('referrals.link', route('portal.referral', ['referralCode' => $identity->public_code])));
+    }
+
+    public function test_foreign_and_self_referrals_fail_closed(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $otherOrganization = Organization::factory()->create();
+        $otherReferrer = Client::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        $foreignIdentity = app(EnsureReferralIdentity::class)->handle($otherReferrer);
+        app(OrganizationContext::class)->set($organization);
+        $client = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+        $this->get(route('portal.referral', ['referralCode' => $foreignIdentity->public_code]))->assertRedirect();
+        $sessionId = session()->getId();
+        app(FinalizeClientAcquisition::class)->handle($client, $sessionId, true);
+        self::assertSame(0, ReferralRelationship::query()->where('referred_client_id', $client->id)->count());
+
+        $this->withSession([]);
+        $ownIdentity = app(EnsureReferralIdentity::class)->handle($client);
+        $this->get(route('portal.referral', ['referralCode' => $ownIdentity->public_code]))->assertRedirect();
+        app(FinalizeClientAcquisition::class)->handle($client, session()->getId(), true);
+        self::assertSame(0, ReferralRelationship::query()->where('referred_client_id', $client->id)->count());
+    }
+
+    public function test_feedback_high_and_low_flows_are_idempotent_and_text_is_encrypted(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: 'https://reviews.example.test/ru',
+            reviewUrlEn: 'https://reviews.example.test/en',
+        );
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->get(route('portal.feedback'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Feedback')
+                ->where('feedback.positiveThreshold', 8));
+
+        $this->post(route('portal.feedback.store'), [
+            'score' => 9,
+            'idempotency_key' => 'feedback-high',
+        ])->assertRedirect(route('portal.feedback'));
+        $this->assertDatabaseHas('feedback_submissions', ['client_id' => $client->id, 'score' => 9]);
+
+        $this->post(route('portal.feedback.store'), [
+            'score' => 4,
+            'idempotency_key' => 'feedback-low',
+        ])->assertInvalid('internal_feedback');
+        $this->post(route('portal.feedback.store'), [
+            'score' => 4,
+            'internal_feedback' => 'Слишком долго ждал',
+            'idempotency_key' => 'feedback-low',
+        ])->assertRedirect(route('portal.feedback'));
+        $this->post(route('portal.feedback.store'), [
+            'score' => 4,
+            'internal_feedback' => 'Слишком долго ждал',
+            'idempotency_key' => 'feedback-low',
+        ])->assertRedirect(route('portal.feedback'));
+
+        $submission = FeedbackSubmission::query()->where('idempotency_key', 'feedback-low')->sole();
+        self::assertSame('Слишком долго ждал', $submission->internal_feedback);
+        self::assertStringNotContainsString('Слишком долго ждал', (string) DB::table('feedback_submissions')->whereKey($submission->id)->value('internal_feedback'));
+        self::assertStringNotContainsString('Слишком долго ждал', DB::table('audit_events')->pluck('metadata')->implode('|'));
+        self::assertSame(2, FeedbackSubmission::query()->where('client_id', $client->id)->count());
+    }
+
+    public function test_feedback_configuration_rejects_non_https_review_urls_without_fetching_them(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $admin = User::factory()->forOrganization($organization)->create();
+
+        $this->expectException(ValidationException::class);
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: 'http://127.0.0.1/private',
+            reviewUrlEn: null,
+        );
+    }
+
+    public function test_portal_drops_a_forged_foreign_client_session(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $otherOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($otherOrganization)->create();
+
+        $this->withSession(['client_portal.client_id' => $foreignClient->getKey()])
+            ->get(route('portal.home'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('Portal/Entry'))
+            ->assertSessionMissing('client_portal.client_id');
+    }
+
+    public function test_profile_updates_cannot_mutate_legacy_attribution_fields(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create(['lead_source' => 'verified-source']);
+
+        $this->expectException(\InvalidArgumentException::class);
+        app(UpdateClientProfileFromPortal::class)->handle($client, ['lead_source' => 'forged'], []);
+    }
+
+    public function test_legacy_attribution_adoption_is_bounded_repeatable_and_preserves_compatibility_fields(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $first = Client::factory()->forOrganization($organization)->create([
+            'lead_source' => 'old-campaign',
+            'referral_code' => 'legacy-code',
+        ]);
+        $second = Client::factory()->forOrganization($organization)->create(['lead_source' => 'old-partner']);
+
+        Artisan::call('clients:adopt-attribution', ['--limit' => 1]);
+        self::assertSame(1, ClientAttribution::query()->count());
+        self::assertSame('legacy', ClientAttribution::query()->value('source_type'));
+        self::assertSame('legacy-code', $first->fresh()->referral_code);
+
+        Artisan::call('clients:adopt-attribution', ['--limit' => 100]);
+        self::assertSame(2, ClientAttribution::query()->count());
+        self::assertSame(1, ClientAttribution::query()->where('client_id', $first->getKey())->count());
+        self::assertSame(1, ClientAttribution::query()->where('client_id', $second->getKey())->count());
+
+        Artisan::call('clients:adopt-referral-identities', ['--limit' => 1]);
+        self::assertSame(1, ClientReferralIdentity::query()->count());
+        Artisan::call('clients:adopt-referral-identities', ['--limit' => 100]);
+        self::assertSame(2, ClientReferralIdentity::query()->count());
+    }
+
+    public function test_crm_queries_are_explicitly_scoped_to_the_current_organization(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $otherOrganization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $referred = Client::factory()->forOrganization($organization)->create();
+        $otherReferrer = Client::factory()->forOrganization($otherOrganization)->create();
+        $otherReferred = Client::factory()->forOrganization($otherOrganization)->create();
+        $identity = new ClientReferralIdentity;
+        $identity->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $referrer->getKey(),
+            'public_code' => str_repeat('A', 32),
+        ])->save();
+        $otherIdentity = new ClientReferralIdentity;
+        $otherIdentity->forceFill([
+            'organization_id' => $otherOrganization->getKey(),
+            'client_id' => $otherReferrer->getKey(),
+            'public_code' => str_repeat('B', 32),
+        ])->save();
+        $relationship = new ReferralRelationship;
+        $relationship->forceFill([
+            'organization_id' => $organization->getKey(),
+            'referral_identity_id' => $identity->getKey(),
+            'referrer_client_id' => $referrer->getKey(),
+            'referred_client_id' => $referred->getKey(),
+            'attribution_source_type' => 'referral',
+            'registered_at' => now(),
+        ])->save();
+        $otherRelationship = new ReferralRelationship;
+        $otherRelationship->forceFill([
+            'organization_id' => $otherOrganization->getKey(),
+            'referral_identity_id' => $otherIdentity->getKey(),
+            'referrer_client_id' => $otherReferrer->getKey(),
+            'referred_client_id' => $otherReferred->getKey(),
+            'attribution_source_type' => 'referral',
+            'registered_at' => now(),
+        ])->save();
+        FeedbackSubmission::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $referred->getKey(),
+            'score' => 9,
+            'source' => 'portal',
+            'idempotency_key' => 'crm-a',
+            'request_hash' => hash('sha256', 'crm-a'),
+            'submitted_at' => now(),
+        ]);
+        FeedbackSubmission::query()->forceCreate([
+            'organization_id' => $otherOrganization->getKey(),
+            'client_id' => $otherReferred->getKey(),
+            'score' => 4,
+            'source' => 'portal',
+            'idempotency_key' => 'crm-b',
+            'request_hash' => hash('sha256', 'crm-b'),
+            'submitted_at' => now(),
+        ]);
+
+        $relationships = app(ListReferralRelationshipsForCrm::class)->query($admin)->get();
+        $feedback = app(ListFeedbackSubmissionsForCrm::class)->query($admin)->get();
+
+        self::assertCount(1, $relationships);
+        self::assertSame($organization->getKey(), $relationships->sole()->organization_id);
+        self::assertCount(1, $feedback);
+        self::assertSame($organization->getKey(), $feedback->sole()->organization_id);
+    }
+
+    private function organizationWithClientRecords(): Organization
+    {
+        $organization = Organization::factory()->create();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        config()->set('tenancy.default_organization_id', $organization->id);
+        app(OrganizationContext::class)->set($organization);
+
+        return $organization;
+    }
+}

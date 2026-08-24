@@ -24,8 +24,6 @@ class UpdateClientProfileFromPortal
         'phone',
         'language',
         'timezone',
-        'lead_source',
-        'referral_code',
     ];
 
     public function __construct(
@@ -148,10 +146,6 @@ class UpdateClientProfileFromPortal
                 } catch (InvalidArgumentException) {
                     throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
                 }
-            }
-
-            if (in_array($field, ['lead_source', 'referral_code'], true) && $value !== null && mb_strlen($value) > ($field === 'lead_source' ? 120 : 160)) {
-                throw new InvalidArgumentException('The client attribution value is invalid.');
             }
 
             $normalized[$field] = $value;

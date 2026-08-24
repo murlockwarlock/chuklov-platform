@@ -9,6 +9,7 @@ use App\Modules\Identity\Application\ConsumeTelegramWebAuthentication;
 use App\Modules\Identity\Application\InitiateTelegramWebAuthentication;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,6 +34,7 @@ class TelegramWebAuthenticationController extends Controller
         ConsumeTelegramWebAuthentication $consume,
         StartClientOnboarding $startOnboarding,
         ApplyClientPortalLocale $applyLocale,
+        FinalizeClientAcquisition $finalizeAcquisition,
     ): JsonResponse {
         $requestId = $request->session()->get('telegram_web_auth.request_id');
         $browserBinding = $request->session()->get('telegram_web_auth.browser_binding');
@@ -55,6 +57,7 @@ class TelegramWebAuthenticationController extends Controller
             return response()->json(['status' => 'pending']);
         }
 
+        $finalizeAcquisition->handle($client, $request->session()->getId(), $client->wasRecentlyCreated);
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $request->session()->forget('telegram_web_auth');

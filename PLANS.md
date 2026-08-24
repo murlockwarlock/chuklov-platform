@@ -17,15 +17,16 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-### 10.2 — AI Companion remediation
+### M11A — Attribution, referral tracking, and NPS/feedback foundation
 
-- Objective: remediate the accepted Stage 10.2 candidate without broadening scope: adopt deterministic legacy M2 history, fence turn terminal writes, durably seal Telegram albums, prevent blind replay after uncertain Telegram sends, remove implicit image reuse and client-facing internal IDs, bound exports, and restore truthful status documents.
-- Starting SHA: `b6f885e6e0156ce4bab767a40484a6d19edc01b2`.
-- Candidate branch: `codex/ai-companion`.
-- Non-goals: OQ-015 clinical prompt content, voice/TTS, MAX/Instagram, general staff copilot, arbitrary CRM mutations, a second AI/RAG/conversation subsystem, hosted CI, deployment, staging, merge, and M11.
-- Data impact: additive adoption state and binding/index changes, encryption of adopted legacy Companion messages in bounded batches, explicit assembling/uncertain states, recent-image reference mode, and delivery uncertainty timestamps. Existing message IDs/provenance are preserved; ambiguous M2 rows remain legacy.
-- Boundaries: all execution uses `AiWorkflowEngine` and `AiCapability::ClientCompanion`; image turns require existing `ImageInput` modality candidates; private cleared image storage and the medical encryption/protected-trace boundary are reused; jobs carry identifiers only.
-- Verification: focused Companion, Conversation, Portal, Telegram, AI, Knowledge/RAG, privacy, static, frontend, syntax, Blade, and dependency checks are required locally. PostgreSQL integration/concurrency is required where available; hosted CI, staging, deployment, and merge remain explicitly out of scope.
+- Objective: implement the unblocked M11A acquisition/referral/feedback foundation for `REQ-ATTRIBUTION-001`, `REQ-REFERRAL-001`, `REQ-FEEDBACK-001`, and `REQ-PORTAL-006` while preserving the modular-monolith boundaries and existing M2/M5/M6/M7/M10 foundations.
+- Starting SHA: `6df5ac5b2c95adf6faf7a69a3b551d2c0f1cb713`.
+- Candidate branch: `codex/m11a-acquisition-referrals-feedback`.
+- Scope: bounded first-touch/pre-auth attribution, manual-source fallback, stable opaque referral identities and same-organization registration relationships, authoritative paid-conversion observation, organization-scoped NPS configuration/submissions, encrypted internal feedback, Portal/Mini App and authorized CRM visibility, and additive compatibility adoption for legacy Client fields.
+- Non-goals: referral reward amount/points/currency/expiry/redemption/cash-out/refund-reversal semantics, reward ledger, Broadcast Engine, campaign scheduler, segmentation, marketing-consent preference center, analytics dashboard, bulk marketing, and any M8/OQ-015 content. OQ-007 remains open and blocks only the reward-ledger semantics.
+- Data impact: additive PostgreSQL organization-scoped attribution, pre-auth handoff, referral identity/relationship/conversion-observation, feedback configuration/submission tables with composite tenant constraints and bounded indexes. Legacy `clients.lead_source` and `clients.referral_code` remain preserved compatibility fields; new M11A behavior reads normalized attribution/referral tables.
+- Privacy and security: organization context is server-derived; automatic attribution is allowlisted and bounded; first-touch is immutable after acceptance; referral claims are same-organization, self-referral-resistant, and idempotent; feedback text uses Laravel encrypted casting and never enters audit/log metadata or global search.
+- Verification: focused PHPUnit, affected Identity/Portal/Telegram/Scenario/Finance regressions, Pint, syntax, Larastan, frontend lint/typecheck/build, and diff checks are required locally. PostgreSQL constraint/concurrency tests are present but are `EXISTS — NOT RUN LOCALLY` under the repository's SQLite test configuration. Hosted CI, deployment, staging, and merge remain out of scope.
 
 ### UX-A — Client Workspace + ordinary client/global search
 

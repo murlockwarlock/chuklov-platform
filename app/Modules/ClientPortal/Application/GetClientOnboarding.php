@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -14,6 +15,7 @@ class GetClientOnboarding
         private readonly StartClientOnboarding $startOnboarding,
         private readonly ListPublishedServices $services,
         private readonly ListPublishedLegalDocuments $legalDocuments,
+        private readonly GetClientAttribution $getAttribution,
     ) {}
 
     /** @return array<string, mixed> */
@@ -25,7 +27,6 @@ class GetClientOnboarding
             'full_name' => $client->full_name,
             'email' => $client->email,
             'phone' => $client->phone,
-            'lead_source' => $client->lead_source,
         ];
         $verifiedFields = $client->channelIdentities()
             ->where('verification_status', ChannelIdentityStatus::Verified)
@@ -50,7 +51,7 @@ class GetClientOnboarding
             'profile' => $profile,
             'verifiedFields' => $verifiedFields,
             'completed' => $onboarding->completed_at !== null,
-            'askLeadSource' => $client->lead_source === null || $client->lead_source === '',
+            'askLeadSource' => $this->getAttribution->handle($client) === null,
             'legalDocuments' => $legalDocuments,
             'services' => $this->services->handle()->map(static fn ($service): array => [
                 'id' => $service->getKey(),

@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-08-24 — Stage 10.2 closeout and M11A implementation candidate
+
+- Stage 10.2 is `DONE / CLOSED / ACCEPTED` at main SHA `6df5ac5b2c95adf6faf7a69a3b551d2c0f1cb713`; PR #21 was squash-merged after final hosted CI GREEN. The earlier Stage 10.2 remediation entries below are retained as historical evidence and no longer describe the current milestone.
+- M11 is `IN_PROGRESS`. The active M11A candidate branch is `codex/m11a-acquisition-referrals-feedback`, starting from the accepted SHA above, and implements only the unblocked attribution, referral-tracking, paid-conversion-observation, and NPS/feedback foundation.
+- OQ-007 remains OPEN and blocks only referral reward-ledger economics. No bonus amount, points, currency, expiry, redemption, cash-out, automatic credit, or refund-reversal semantics are defined here. M8 remains `BLOCKED` by OQ-015; no 9-systems/MSQ content is fabricated.
+- M11A adds organization-scoped normalized attribution/referral/feedback tables, compatibility adoption for legacy `clients.lead_source`/`clients.referral_code`, Portal/Mini App and bounded CRM surfaces, and PostgreSQL-only constraint/concurrency coverage. It does not add Broadcast Engine, full segmentation, marketing-consent preferences, analytics, or reward controls.
+- Local candidate evidence: the focused M11A PHPUnit run passes 13 tests / 107 assertions; the broader affected Identity/Portal/Telegram/Scenario/Finance/privacy regression batch passes 110 tests / 703 assertions; Pint, PHP syntax, Larastan, ESLint, `vue-tsc`, Vite build, and `git diff --check` pass. Five M11A PostgreSQL constraint/concurrency tests exist but are skipped locally because the repository test configuration uses SQLite; no PostgreSQL pass is claimed. Hosted CI, deployment, merge, and independent acceptance remain unperformed.
+
 ## 2026-08-24 — Stage 10.2 Knowledge Filament lifecycle remediation candidate
 
 - Starts exactly at `5cfb300baf501f25459baa44d88a49933d011ace`. The hosted-green PostgreSQL ambiguity remediation remains intact; staging then exposed a separate Filament 5.7.6 lazy RelationManager lifecycle failure. `RevisionsRelationManager` now opts out of lazy loading through Filament's supported API, with no Companion application changes.
@@ -74,8 +82,8 @@
 
 - Last updated: 2026-08-24
 - Current phase: Phase 1 foundation
-- Current milestone: Stage 10.2 — AI Companion (implementation candidate)
-- Status: M0–M7, M9–M10, and Stage 10.1 are CLOSED / ACCEPTED. Stage 10.2 remains an implementation-remediation candidate pending fresh independent/hosted acceptance. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources.
+- Current milestone: M11A — Attribution, referral tracking, and NPS/feedback foundation (implementation candidate)
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

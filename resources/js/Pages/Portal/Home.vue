@@ -36,6 +36,7 @@ const props = defineProps<{
     portal: PortalShell;
     upcomingBooking: Booking | null;
     services: Service[];
+    attribution: { needsManualSource: boolean };
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -117,6 +118,43 @@ const { locale, t } = usePortalLocale();
         >
           {{ t('home.noServices') }}
         </p>
+      </section>
+
+      <section class="portal-grid portal-grid--cards">
+        <Link
+          :href="props.portal.urls.referrals"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+        >
+          <strong class="portal-heading portal-heading--section">
+            {{ t('home.referrals') }}
+          </strong>
+          <span class="portal-card__summary">
+            {{ t('home.referralsDescription') }}
+          </span>
+        </Link>
+        <Link
+          :href="props.portal.urls.feedback"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+        >
+          <strong class="portal-heading portal-heading--section">
+            {{ t('home.feedback') }}
+          </strong>
+          <span class="portal-card__summary">
+            {{ t('home.feedbackDescription') }}
+          </span>
+        </Link>
+        <Link
+          v-if="props.attribution.needsManualSource"
+          :href="props.portal.urls.attribution"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+        >
+          <strong class="portal-heading portal-heading--section">
+            {{ t('home.sourceQuestion') }}
+          </strong>
+          <span class="portal-card__summary">
+            {{ t('home.sourceQuestionDescription') }}
+          </span>
+        </Link>
       </section>
     </section>
   </AppShell>

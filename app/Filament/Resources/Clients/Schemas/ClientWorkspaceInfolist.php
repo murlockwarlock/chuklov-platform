@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Schemas;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
 use App\Modules\Finance\Domain\ValueObjects\Money;
@@ -73,13 +74,20 @@ final class ClientWorkspaceInfolist
                                 ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
                                 ->wrap(),
                             TextEntry::make('lead_source')
-                                ->label('Источник обращения')
+                                ->label('Legacy source (compatibility)')
                                 ->placeholder('Не указан')
                                 ->wrap(),
                             TextEntry::make('referral_code')
-                                ->label('Код рекомендации')
+                                ->label('Legacy referral field (not resolver)')
                                 ->fontFamily('mono')
                                 ->placeholder('Не указан')
+                                ->wrap(),
+                            TextEntry::make('attribution_source')
+                                ->label('Принятая первая атрибуция')
+                                ->state(fn (Client $record): string => ($record->getRelation('attribution') instanceof ClientAttribution
+                                    ? ($record->getRelation('attribution')->source ?? $record->getRelation('attribution')->source_type)
+                                    : null) ?? 'Не указана')
+                                ->placeholder('Не указана')
                                 ->wrap(),
                         ])
                         ->columns(1),

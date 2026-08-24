@@ -27,8 +27,6 @@ class UpdateClientProfileFromCrm
         'phone',
         'language',
         'timezone',
-        'lead_source',
-        'referral_code',
     ];
 
     public function __construct(
@@ -154,14 +152,6 @@ class UpdateClientProfileFromCrm
                 } catch (InvalidArgumentException) {
                     throw new InvalidArgumentException('The client timezone must be an IANA timezone.');
                 }
-            }
-
-            if ($field === 'lead_source' && $value !== null && mb_strlen($value) > 120) {
-                throw new InvalidArgumentException('The client lead source is invalid.');
-            }
-
-            if ($field === 'referral_code' && $value !== null && mb_strlen($value) > 160) {
-                throw new InvalidArgumentException('The client referral code is invalid.');
             }
 
             $normalized[$field] = $value;

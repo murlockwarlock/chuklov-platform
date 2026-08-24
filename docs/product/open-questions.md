@@ -15,6 +15,8 @@ Questions block only their dependent work.
 
 No open question blocks Milestone 0.
 
+OQ-007 remains OPEN for M11A. This slice deliberately does not define or record any bonus amount, points, currency, expiry, redemption threshold, automatic credit, cash-out, or refund-reversal rule; it only records stable referral identity/registration and authoritative paid-conversion observation.
+
 ## Resolved M2 decisions
 
 ### OQ-001 — RESOLVED 2026-08-12

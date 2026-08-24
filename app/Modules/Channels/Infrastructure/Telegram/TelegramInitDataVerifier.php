@@ -64,6 +64,7 @@ class TelegramInitDataVerifier
             externalId: (string) $data->user->id,
             displayName: mb_substr($displayName, 0, 160),
             language: $language,
+            startParameter: is_string($data->start_param) ? mb_substr(trim($data->start_param), 0, 128) : null,
         );
     }
 

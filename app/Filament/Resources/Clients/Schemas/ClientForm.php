@@ -42,12 +42,6 @@ class ClientForm
                     ->searchable()
                     ->required()
                     ->helperText('Выберите город, по которому показывать время клиенту.'),
-                TextInput::make('lead_source')
-                    ->label('Источник обращения')
-                    ->maxLength(120),
-                TextInput::make('referral_code')
-                    ->label('Код рекомендации')
-                    ->maxLength(160),
             ]);
     }
 }

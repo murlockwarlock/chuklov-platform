@@ -3,9 +3,13 @@
 namespace App\Modules\Identity\Domain\Models;
 
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -47,6 +51,36 @@ class Client extends Model
     public function channelIdentities(): HasMany
     {
         return $this->hasMany(ClientChannelIdentity::class);
+    }
+
+    /** @return HasOne<ClientAttribution, $this> */
+    public function attribution(): HasOne
+    {
+        return $this->hasOne(ClientAttribution::class, 'client_id');
+    }
+
+    /** @return HasOne<ClientReferralIdentity, $this> */
+    public function referralIdentity(): HasOne
+    {
+        return $this->hasOne(ClientReferralIdentity::class, 'client_id');
+    }
+
+    /** @return HasOne<ReferralRelationship, $this> */
+    public function referralRelationship(): HasOne
+    {
+        return $this->hasOne(ReferralRelationship::class, 'referred_client_id');
+    }
+
+    /** @return HasMany<ReferralRelationship, $this> */
+    public function referredClients(): HasMany
+    {
+        return $this->hasMany(ReferralRelationship::class, 'referrer_client_id');
+    }
+
+    /** @return HasMany<FeedbackSubmission, $this> */
+    public function feedbackSubmissions(): HasMany
+    {
+        return $this->hasMany(FeedbackSubmission::class);
     }
 
     /** @return HasMany<ClientConsent, $this> */

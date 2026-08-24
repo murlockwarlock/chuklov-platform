@@ -10,6 +10,7 @@ use App\Modules\Identity\Application\AuthenticateClientWithEmailVerificationCode
 use App\Modules\Identity\Application\InvalidEmailAuthenticationCode;
 use App\Modules\Identity\Application\RequestClientEmailVerificationCode;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -29,6 +30,7 @@ class EmailAuthenticationController extends Controller
         VerifyClientEmailCodeRequest $request,
         AuthenticateClientWithEmailVerificationCode $authenticate,
         ApplyClientPortalLocale $applyLocale,
+        FinalizeClientAcquisition $finalizeAcquisition,
     ): RedirectResponse {
         try {
             $client = $authenticate->handle(
@@ -43,6 +45,7 @@ class EmailAuthenticationController extends Controller
             ]);
         }
 
+        $finalizeAcquisition->handle($client, $request->session()->getId(), $client->wasRecentlyCreated);
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $this->applySessionLocale($request, $client, $applyLocale);

@@ -21,5 +21,8 @@ Current Phase 1 modules:
 - Attachments: private storage boundary, server-side MIME sniffing, raw DICOM rejection, deterministic scanner/quarantine lifecycle, streaming downloads, and organization ownership enforcement.
 - Surveys: organization-scoped versioned declarative definitions, encrypted immutable attempts/results/reports, deterministic scoring and compatible repeat comparison, structured CRM management, shared Portal flow, and typed Scenario events. It contains no AI behavior.
 - Knowledge: organization-scoped authored/private-upload sources, immutable revisions, durable idempotent ingestion runs, deterministic chunking, provider-neutral embeddings, PostgreSQL/pgvector retrieval through `KnowledgeRetriever`, structured provenance, and untrusted-content boundaries. It contains no end-user AI answer generation.
+- Attribution: bounded allowlisted first-touch and pre-auth provenance, immutable organization/client acceptance, and manual-source fallback. It owns normalized attribution; legacy Client source fields remain compatibility projections only.
+- Referrals: stable opaque organization-scoped referral identities, first-valid registration relationships, paid-conversion observation evidence, and Portal/CRM projections. Reward economics and the final bonus ledger remain blocked by OQ-007.
+- Feedback: organization-scoped NPS configuration and client submissions, with encrypted internal feedback and bounded CRM visibility. External review links are display-only HTTPS configuration and are never fetched by the server.
 
 Planned bounded contexts are those listed in the master plan. Add a module only with relevant REQ IDs. Cross-module writes go through Application actions; do not reach through another module’s infrastructure.

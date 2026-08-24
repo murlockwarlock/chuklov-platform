@@ -116,6 +116,7 @@ class ClientResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->with('attribution')
             ->with('activeBookingRestriction')
             ->withCount('channelIdentities');
     }

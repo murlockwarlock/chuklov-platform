@@ -14,6 +14,8 @@ use App\Modules\Finance\Domain\Models\FinancialReceipt;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Referrals\Application\ObserveReferredPaidConversion;
+use App\Modules\Referrals\Domain\ValueObjects\PaidConversionEvidence;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -34,6 +36,7 @@ final class RecordManualPayment
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly ReceiptStorage $receipts,
         private readonly RecordAuditEvent $audit,
+        private readonly ObserveReferredPaidConversion $conversionObserver,
     ) {}
 
     public function handle(
@@ -214,6 +217,16 @@ final class RecordManualPayment
                     ]);
                     $receiptRecord->save();
                 }
+
+                $settled = $this->reconciliation->handle((int) $organization->getKey(), (int) $lockedObligation->getKey(), true);
+                $this->conversionObserver->handle(new PaidConversionEvidence(
+                    organizationId: (int) $organization->getKey(),
+                    clientId: (int) $lockedObligation->client_id,
+                    obligationId: (int) $lockedObligation->getKey(),
+                    ledgerEntryId: (int) $entry->getKey(),
+                    financeStatus: $settled->status->value,
+                    authoritativeSettled: $settled->isSettled(),
+                ));
 
                 $idempotency->forceFill([
                     'result_type' => FinancialLedgerEntry::class,
