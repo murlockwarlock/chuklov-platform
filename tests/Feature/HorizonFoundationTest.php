@@ -28,7 +28,13 @@ class HorizonFoundationTest extends TestCase
         self::assertSame(2, $configuration['maxProcesses']);
         self::assertSame(1, $configuration['balanceMaxShift']);
         self::assertSame(3, $configuration['balanceCooldown']);
-        self::assertSame(['default', 'scenarios'], config('horizon.defaults.supervisor-1.queue'));
+        self::assertSame([
+            'default',
+            'scenarios',
+            'ai-companion',
+            'ai-companion-delivery',
+            'telegram-typing',
+        ], config('horizon.defaults.supervisor-1.queue'));
     }
 
     public function test_horizon_requires_a_privileged_membership_in_the_server_organization(): void
