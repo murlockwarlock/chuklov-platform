@@ -9,6 +9,7 @@ use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
 use App\Modules\Knowledge\Application\StartPendingKnowledgeIngestion;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
@@ -34,10 +35,12 @@ final class RevisionsRelationManager extends RelationManager
         abort_unless($source instanceof KnowledgeSource, 404);
         $source->loadMissing('latestRevision');
         $presentation = app(KnowledgeSourcePresentation::class);
+        $revisionTable = (new KnowledgeRevision)->getTable();
+        $ingestionRunTable = (new KnowledgeIngestionRun)->getTable();
 
         return $table
             ->columns([
-                TextColumn::make('version')->label('Версия')->sortable(),
+                TextColumn::make('version')->label('Версия')->sortable(["{$revisionTable}.version"]),
                 TextColumn::make('original_filename')
                     ->label('Материал')
                     ->state(fn (KnowledgeRevision $record): string => $presentation->materialName($record))
@@ -55,54 +58,54 @@ final class RevisionsRelationManager extends RelationManager
                     ->placeholder('—'),
                 TextColumn::make('created_at')->label('Создана')->dateTime('d.m.Y H:i'),
             ])
-            ->modifyQueryUsing(function (Builder $query): Builder {
+            ->modifyQueryUsing(function (Builder $query) use ($revisionTable, $ingestionRunTable): Builder {
                 $configuration = EmbeddingConfiguration::active();
                 $processingStaleCutoff = now()->subSeconds((int) config('rag.processing_stale_after_seconds'));
 
                 return $query
                     ->select([
-                        'id',
-                        'organization_id',
-                        'knowledge_source_id',
-                        'version',
-                        'status',
-                        'original_filename',
-                        'storage_disk',
-                        'storage_path',
-                        'mime_type',
-                        'size_bytes',
-                        'created_at',
+                        "{$revisionTable}.id",
+                        "{$revisionTable}.organization_id",
+                        "{$revisionTable}.knowledge_source_id",
+                        "{$revisionTable}.version",
+                        "{$revisionTable}.status",
+                        "{$revisionTable}.original_filename",
+                        "{$revisionTable}.storage_disk",
+                        "{$revisionTable}.storage_path",
+                        "{$revisionTable}.mime_type",
+                        "{$revisionTable}.size_bytes",
+                        "{$revisionTable}.created_at",
                     ])
                     ->withExists([
-                        'ingestionRuns as has_compatible_ready_run' => function (Builder $query) use ($configuration): void {
+                        'ingestionRuns as has_compatible_ready_run' => function (Builder $query) use ($configuration, $ingestionRunTable): void {
                             $query
-                                ->where('status', 'ready')
-                                ->where('embedding_provider', $configuration->provider)
-                                ->where('embedding_model', $configuration->model)
-                                ->where('embedding_dimensions', $configuration->dimensions)
-                                ->where('embedding_configuration_version', $configuration->version);
+                                ->where("{$ingestionRunTable}.status", 'ready')
+                                ->where("{$ingestionRunTable}.embedding_provider", $configuration->provider)
+                                ->where("{$ingestionRunTable}.embedding_model", $configuration->model)
+                                ->where("{$ingestionRunTable}.embedding_dimensions", $configuration->dimensions)
+                                ->where("{$ingestionRunTable}.embedding_configuration_version", $configuration->version);
                         },
-                        'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration, $processingStaleCutoff): void {
+                        'ingestionRuns as has_compatible_processing_run' => function (Builder $query) use ($configuration, $processingStaleCutoff, $ingestionRunTable): void {
                             $query
-                                ->where('status', 'processing')
-                                ->whereNotNull('processing_started_at')
-                                ->where('processing_started_at', '>=', $processingStaleCutoff)
-                                ->where('embedding_provider', $configuration->provider)
-                                ->where('embedding_model', $configuration->model)
-                                ->where('embedding_dimensions', $configuration->dimensions)
-                                ->where('embedding_configuration_version', $configuration->version);
+                                ->where("{$ingestionRunTable}.status", 'processing')
+                                ->whereNotNull("{$ingestionRunTable}.processing_started_at")
+                                ->where("{$ingestionRunTable}.processing_started_at", '>=', $processingStaleCutoff)
+                                ->where("{$ingestionRunTable}.embedding_provider", $configuration->provider)
+                                ->where("{$ingestionRunTable}.embedding_model", $configuration->model)
+                                ->where("{$ingestionRunTable}.embedding_dimensions", $configuration->dimensions)
+                                ->where("{$ingestionRunTable}.embedding_configuration_version", $configuration->version);
                         },
                     ])
                     ->with([
-                        'latestIngestionRun' => function (Relation $query): void {
+                        'latestIngestionRun' => function (Relation $query) use ($ingestionRunTable): void {
                             $query->select([
-                                'id',
-                                'organization_id',
-                                'knowledge_source_id',
-                                'knowledge_revision_id',
-                                'status',
-                                'error_code',
-                                'completed_at',
+                                "{$ingestionRunTable}.id",
+                                "{$ingestionRunTable}.organization_id",
+                                "{$ingestionRunTable}.knowledge_source_id",
+                                "{$ingestionRunTable}.knowledge_revision_id",
+                                "{$ingestionRunTable}.status",
+                                "{$ingestionRunTable}.error_code",
+                                "{$ingestionRunTable}.completed_at",
                             ]);
                         },
                     ]);
@@ -139,7 +142,10 @@ final class RevisionsRelationManager extends RelationManager
                         Notification::make()->title('Подготовка для поиска запущена')->success()->send();
                     }),
             ])
-            ->defaultSort('version', 'desc')
+            ->defaultSort(
+                fn (Builder $query): Builder => $query->orderBy("{$revisionTable}.version", 'desc'),
+                'desc',
+            )
             ->paginated([10, 25]);
     }
 }

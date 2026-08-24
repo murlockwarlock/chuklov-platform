@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-24 — Stage 10.2 Knowledge Filament PostgreSQL remediation candidate
+
+- Starts exactly at `4de4a198f9e0dc4e4bef398d50f27a99727d3dfc` and fixes the staging-found PostgreSQL `42702 ambiguous_column` in Knowledge source/revision Filament projections without changing Companion state machines.
+- The real Filament regression test is added under `tests/Integration/KnowledgeRevisionsFilamentPostgresTest.php`; its PostgreSQL execution, fresh independent review, exact-SHA staging redeploy, hosted CI, and merge remain pending. Local PostgreSQL was unavailable; the SQLite execution was supplementary only.
+- Stage 10.2 remains an implementation-remediation candidate. M11 is not started and OQ-015 content is not fabricated.
+
 ## 2026-08-24 — Stage 10.2 AI Companion — SECOND REMEDIATION CANDIDATE
 
 - Candidate branch: `codex/ai-companion`; this remediation starts exactly at `468fdb82a6eb4073393d3d0952651bc6d6571a4f`, based on accepted Stage 10.2 base `4214ed39918f5dc1da844d7f88e5a06fc20c1b57`. Previous implementation candidate `b6f885e6e0156ce4bab767a40484a6d19edc01b2` remains historical context only.
