@@ -59,15 +59,31 @@ final class ConsumeFinanceSettlementEvent
                 return null;
             }
 
-            if ($event->status === IntegrationEventStatus::Processed
-                || $event->status === IntegrationEventStatus::Failed) {
+            $status = $event->getRawOriginal('status');
+
+            if (in_array($status, [
+                IntegrationEventStatus::Processed->value,
+                IntegrationEventStatus::Failed->value,
+            ], true)) {
                 return null;
             }
 
-            $staleAt = CarbonImmutable::now()->subSeconds((int) config('referrals.events.stale_after_seconds', 300));
-            if ($event->status === IntegrationEventStatus::Processing
-                && $event->processing_started_at !== null
-                && $event->processing_started_at->greaterThan($staleAt)) {
+            $now = CarbonImmutable::now();
+            $staleAt = $now->subSeconds((int) config('referrals.events.stale_after_seconds', 300));
+
+            if (in_array($status, [
+                IntegrationEventStatus::Pending->value,
+                IntegrationEventStatus::Retryable->value,
+            ], true)) {
+                if ($event->getRawOriginal('available_at') === null || $event->available_at->greaterThan($now)) {
+                    return null;
+                }
+            } elseif ($status === IntegrationEventStatus::Processing->value) {
+                if ($event->processing_started_at === null
+                    || $event->processing_started_at->greaterThan($staleAt)) {
+                    return null;
+                }
+            } else {
                 return null;
             }
 
@@ -161,7 +177,7 @@ final class ConsumeFinanceSettlementEvent
                 ->first();
 
             if ($existing instanceof ReferralCommercialEvidence) {
-                $this->markProcessed($lockedEvent);
+                $this->markProcessed((int) $lockedEvent->getKey(), $organizationId, $token);
 
                 return $existing;
             }
@@ -200,7 +216,7 @@ final class ConsumeFinanceSettlementEvent
                     'source' => 'finance',
                 ],
             );
-            $this->markProcessed($lockedEvent);
+            $this->markProcessed((int) $lockedEvent->getKey(), $organizationId, $token);
 
             return $evidence->refresh();
         });
@@ -229,15 +245,20 @@ final class ConsumeFinanceSettlementEvent
         throw new InvalidFinanceSettlementEvent('The finance settlement event identifier is invalid.');
     }
 
-    private function markProcessed(IntegrationEvent $event): void
+    private function markProcessed(int $eventId, int $organizationId, string $token): void
     {
-        $event->forceFill([
-            'status' => IntegrationEventStatus::Processed,
-            'processed_at' => now(),
-            'processing_started_at' => null,
-            'processing_token' => null,
-            'updated_at' => now(),
-        ])->save();
+        IntegrationEvent::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($eventId)
+            ->where('status', IntegrationEventStatus::Processing->value)
+            ->where('processing_token', $token)
+            ->update([
+                'status' => IntegrationEventStatus::Processed->value,
+                'processed_at' => now(),
+                'processing_started_at' => null,
+                'processing_token' => null,
+                'updated_at' => now(),
+            ]);
     }
 
     private function markFailed(int $eventId, int $organizationId, string $token): void
@@ -245,6 +266,7 @@ final class ConsumeFinanceSettlementEvent
         IntegrationEvent::query()
             ->where('organization_id', $organizationId)
             ->whereKey($eventId)
+            ->where('status', IntegrationEventStatus::Processing->value)
             ->where('processing_token', $token)
             ->update([
                 'status' => IntegrationEventStatus::Failed->value,
@@ -259,6 +281,7 @@ final class ConsumeFinanceSettlementEvent
         IntegrationEvent::query()
             ->where('organization_id', $organizationId)
             ->whereKey($eventId)
+            ->where('status', IntegrationEventStatus::Processing->value)
             ->where('processing_token', $token)
             ->update([
                 'status' => IntegrationEventStatus::Retryable->value,

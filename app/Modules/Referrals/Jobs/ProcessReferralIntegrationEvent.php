@@ -16,7 +16,7 @@ final class ProcessReferralIntegrationEvent implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 1;
 
     public function __construct(public readonly int $integrationEventId) {}
 

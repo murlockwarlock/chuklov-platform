@@ -128,6 +128,46 @@ final class MilestoneElevenADatabaseTest extends TestCase
         ));
     }
 
+    public function test_postgresql_evidence_rejects_event_a_with_obligation_b_provenance(): void
+    {
+        $this->requirePostgres();
+        [$organization, $referrer, $referred] = $this->clientFixture();
+        $relationship = new ReferralRelationship;
+        $relationship->forceFill([
+            'organization_id' => $organization->getKey(),
+            'referrer_client_id' => $referrer->getKey(),
+            'referred_client_id' => $referred->getKey(),
+            'establishment_method' => 'automatic_referral_link',
+            'registered_at' => now(),
+        ])->save();
+        [$obligationA] = $this->financeFixture($organization, $referred, 'event-a');
+        [$obligationB, $ledgerB] = $this->financeFixture($organization, $referred, 'obligation-b');
+        $eventA = new IntegrationEvent;
+        $eventA->forceFill([
+            'organization_id' => $organization->getKey(),
+            'event_type' => 'finance.obligation.settled',
+            'aggregate_type' => 'financial_obligation',
+            'aggregate_id' => $obligationA->getKey(),
+            'idempotency_key' => 'm11a-forged-event-obligation-provenance',
+            'payload' => ['obligation_id' => $obligationA->getKey()],
+            'status' => 'pending',
+            'attempt_count' => 0,
+            'occurred_at' => now(),
+            'available_at' => now(),
+        ])->save();
+
+        $this->expectException(QueryException::class);
+        DB::table('referral_commercial_evidence')->insert($this->evidenceRow(
+            organization: $organization,
+            event: $eventA,
+            relationship: $relationship,
+            referred: $referred,
+            obligation: $obligationB,
+            ledger: $ledgerB,
+            suffix: 'forged-event-obligation',
+        ));
+    }
+
     public function test_postgresql_feedback_key_uniqueness_and_score_checks_are_database_authority(): void
     {
         $this->requirePostgres();
