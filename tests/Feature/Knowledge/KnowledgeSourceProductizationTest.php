@@ -4,6 +4,8 @@ namespace Tests\Feature\Knowledge;
 
 use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Resources\KnowledgeSources\Pages\EditKnowledgeSource;
+use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
 use App\Modules\Knowledge\Application\ClaimKnowledgeIngestionRun;
@@ -15,6 +17,7 @@ use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
 use App\Modules\Knowledge\Application\StartPendingKnowledgeIngestion;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource;
 use App\Modules\Knowledge\Domain\Exceptions\KnowledgeRevisionFileUnavailable;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
@@ -34,6 +37,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -638,6 +643,85 @@ final class KnowledgeSourceProductizationTest extends TestCase
             ->assertDontSee('similarity');
     }
 
+    public function test_knowledge_revision_relation_renders_full_table_without_lazy_placeholder(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Rendered knowledge source',
+            'type' => 'uploaded_text',
+            'file' => UploadedFile::fake()->createWithContent('rendered-guide.txt', 'booking content'),
+        ]);
+        $revision = $source->revisions()->sole();
+        $this->createIngestionRun($source, $revision, 'pending');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        /** @var Testable<RevisionsRelationManager> $revisions */
+        $revisions = Livewire::actingAs($actor)->test(RevisionsRelationManager::class, [
+            ...RevisionsRelationManager::getDefaultProperties(),
+            'ownerRecord' => $source->fresh(),
+            'pageClass' => EditKnowledgeSource::class,
+        ]);
+
+        $revisions
+            ->assertSuccessful()
+            ->assertSee('Версия')
+            ->assertSee('Материал')
+            ->assertSee('Состояние')
+            ->assertSee('Результат обработки')
+            ->assertSee('Обработана')
+            ->assertSee('Создана')
+            ->assertSee((string) $revision->version)
+            ->assertSee('rendered-guide.txt')
+            ->assertSee('Ожидает обработки')
+            ->assertSee('Нет зарегистрированной ошибки')
+            ->assertSee('—')
+            ->assertTableActionVisible('download', $revision)
+            ->assertTableActionVisible('startPending', $revision)
+            ->assertTableActionHidden('retry', $revision)
+            ->assertTableActionHidden('reprocessForSearch', $revision);
+        self::assertStringContainsString('<table', $revisions->html());
+
+        $this->actingAs($actor)
+            ->get(KnowledgeSourceResource::getUrl('edit', ['record' => $source]))
+            ->assertOk()
+            ->assertSee('Версия')
+            ->assertSee('rendered-guide.txt')
+            ->assertSee('Ожидает обработки');
+
+        $failedSource = $this->createAuthoredSource($actor, 'failed booking content');
+        $failedRevision = $failedSource->revisions()->sole();
+        $failedRevision->update(['status' => 'failed']);
+        $this->createIngestionRun($failedSource, $failedRevision, 'failed', 'embedding_or_persistence_failed');
+
+        /** @var Testable<RevisionsRelationManager> $failedRevisions */
+        $failedRevisions = $this->renderRevisions($actor, $failedSource);
+        $failedRevisions
+            ->assertSuccessful()
+            ->assertSee('Текст вручную')
+            ->assertSee('Не обработана')
+            ->assertSee('Обработка не завершена')
+            ->assertTableActionVisible('retry', $failedRevision)
+            ->assertTableActionHidden('download', $failedRevision)
+            ->assertTableActionHidden('startPending', $failedRevision)
+            ->assertTableActionHidden('reprocessForSearch', $failedRevision);
+
+        $reprocessSource = $this->createAuthoredSource($actor, 'search reprocessing content');
+        $reprocessRevision = $reprocessSource->revisions()->sole();
+        $reprocessRevision->update(['status' => 'ready', 'ready_at' => now()]);
+        $reprocessSource->update(['active_revision_id' => $reprocessRevision->getKey()]);
+
+        /** @var Testable<RevisionsRelationManager> $reprocessRevisions */
+        $reprocessRevisions = $this->renderRevisions($actor, $reprocessSource);
+        $reprocessRevisions
+            ->assertSuccessful()
+            ->assertSee('Текст вручную')
+            ->assertSee('Готова')
+            ->assertTableActionVisible('reprocessForSearch', $reprocessRevision)
+            ->assertTableActionHidden('download', $reprocessRevision)
+            ->assertTableActionHidden('retry', $reprocessRevision)
+            ->assertTableActionHidden('startPending', $reprocessRevision);
+    }
+
     public function test_retrieval_inspector_uses_human_fragment_count_label(): void
     {
         [, $actor] = $this->fixture();
@@ -672,6 +756,47 @@ final class KnowledgeSourceProductizationTest extends TestCase
             'title' => 'Guide',
             'type' => 'authored_text',
             'content' => $content,
+        ]);
+    }
+
+    private function createIngestionRun(
+        KnowledgeSource $source,
+        KnowledgeRevision $revision,
+        string $status,
+        ?string $errorCode = null,
+    ): KnowledgeIngestionRun {
+        $embedding = EmbeddingConfiguration::active();
+        $chunking = ChunkingConfiguration::active();
+
+        return KnowledgeIngestionRun::query()->create([
+            'organization_id' => $source->organization_id,
+            'knowledge_source_id' => $source->getKey(),
+            'knowledge_revision_id' => $revision->getKey(),
+            'configuration_key' => hash('sha256', "filament-feature-{$revision->getKey()}-{$status}"),
+            'status' => $status,
+            'chunk_strategy' => $chunking->strategy,
+            'chunk_version' => $chunking->version,
+            'chunk_target_characters' => $chunking->targetCharacters,
+            'chunk_maximum_characters' => $chunking->maximumCharacters,
+            'chunk_overlap_characters' => $chunking->overlapCharacters,
+            'embedding_provider' => $embedding->provider,
+            'embedding_model' => $embedding->model,
+            'embedding_dimensions' => $embedding->dimensions,
+            'embedding_configuration_version' => $embedding->version,
+            'attempts' => 1,
+            'error_code' => $errorCode,
+            'processing_started_at' => $status === 'processing' ? now()->subMinute() : null,
+            'completed_at' => $status === 'ready' ? now()->subMinute() : null,
+        ]);
+    }
+
+    /** @return Testable<RevisionsRelationManager> */
+    private function renderRevisions(User $actor, KnowledgeSource $source): Testable
+    {
+        return Livewire::actingAs($actor)->test(RevisionsRelationManager::class, [
+            ...RevisionsRelationManager::getDefaultProperties(),
+            'ownerRecord' => $source->fresh(),
+            'pageClass' => EditKnowledgeSource::class,
         ]);
     }
 }

@@ -2,6 +2,34 @@
 
 return [
 
+    'companion' => [
+        'maximum_message_characters' => (int) env('AI_COMPANION_MAX_MESSAGE_CHARACTERS', 8000),
+        'maximum_pending_turns' => (int) env('AI_COMPANION_MAX_PENDING_TURNS', 4),
+        'burst_window_milliseconds' => (int) env('AI_COMPANION_BURST_WINDOW_MILLISECONDS', 1200),
+        'album_quiet_window_milliseconds' => (int) env('AI_COMPANION_ALBUM_QUIET_WINDOW_MILLISECONDS', 5000),
+        'album_max_assembly_seconds' => (int) env('AI_COMPANION_ALBUM_MAX_ASSEMBLY_SECONDS', 30),
+        'maximum_burst_messages' => (int) env('AI_COMPANION_MAX_BURST_MESSAGES', 4),
+        'maximum_burst_characters' => (int) env('AI_COMPANION_MAX_BURST_CHARACTERS', 12000),
+        'context_message_limit' => (int) env('AI_COMPANION_CONTEXT_MESSAGE_LIMIT', 24),
+        'context_first_exchanges' => (int) env('AI_COMPANION_CONTEXT_FIRST_EXCHANGES', 2),
+        'context_recent_exchanges' => (int) env('AI_COMPANION_CONTEXT_RECENT_EXCHANGES', 10),
+        'context_max_characters' => (int) env('AI_COMPANION_CONTEXT_MAX_CHARACTERS', 12000),
+        'context_max_input_characters' => (int) env('AI_COMPANION_CONTEXT_MAX_INPUT_CHARACTERS', 24000),
+        'maximum_images_per_turn' => (int) env('AI_COMPANION_MAX_IMAGES_PER_TURN', 10),
+        'maximum_image_bytes' => (int) env('AI_COMPANION_MAX_IMAGE_BYTES', 10_485_760),
+        'maximum_image_total_bytes' => (int) env('AI_COMPANION_MAX_IMAGE_TOTAL_BYTES', 20_971_520),
+        'maximum_image_pixels' => (int) env('AI_COMPANION_MAX_IMAGE_PIXELS', 25_000_000),
+        'recent_image_turns' => (int) env('AI_COMPANION_RECENT_IMAGE_TURNS', 1),
+        'maximum_export_messages' => (int) env('AI_COMPANION_MAX_EXPORT_MESSAGES', 2000),
+        'history_page_size' => (int) env('AI_COMPANION_HISTORY_PAGE_SIZE', 30),
+        'typing_heartbeat_seconds' => (int) env('AI_COMPANION_TYPING_HEARTBEAT_SECONDS', 4),
+        'delivery_lease_seconds' => (int) env('AI_COMPANION_DELIVERY_LEASE_SECONDS', 60),
+        'delivery_max_attempts' => (int) env('AI_COMPANION_DELIVERY_MAX_ATTEMPTS', 3),
+        'delivery_retry_after_seconds' => (int) env('AI_COMPANION_DELIVERY_RETRY_AFTER_SECONDS', 5),
+        'recent_image_max_age_minutes' => (int) env('AI_COMPANION_RECENT_IMAGE_MAX_AGE_MINUTES', 1440),
+        'portal_rate_limit_per_minute' => (int) env('AI_COMPANION_PORTAL_RATE_LIMIT_PER_MINUTE', 12),
+    ],
+
     'platform' => [
         'max_daily_spend_minor_units' => (int) env(
             'AI_PLATFORM_MAX_DAILY_SPEND_MINOR_UNITS',

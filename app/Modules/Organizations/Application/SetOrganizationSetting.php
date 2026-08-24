@@ -64,6 +64,13 @@ class SetOrganizationSetting
             throw new InvalidArgumentException('The integer setting value is invalid.');
         }
 
+        if (in_array($key, [
+            OrganizationSettingKey::CompanionContextFirstExchanges,
+            OrganizationSettingKey::CompanionContextRecentExchanges,
+        ], true) && (! is_int($value) || $value > 20)) {
+            throw new InvalidArgumentException('The Companion context setting is outside the platform safety bounds.');
+        }
+
         if ($key->value === OrganizationSettingKey::DefaultLanguage->value) {
             if (! is_string($value) || preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/', $value) !== 1) {
                 throw new InvalidArgumentException('The default language must be a valid language tag.');

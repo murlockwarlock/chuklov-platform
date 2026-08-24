@@ -10,6 +10,7 @@ use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiRunExecutionContext;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
@@ -40,6 +41,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
         private readonly float $minimumSimilarity = 0.0,
         array $allowedKnowledgeSourceIds = [],
         int $policyMaxResults = AiRuntimeLimits::PLATFORM_MAX_RAG_CHUNKS,
+        private readonly ?KnowledgeAudience $audience = null,
     ) {
         $this->maxToolCalls = min(AiRuntimeLimits::PLATFORM_MAX_TOOL_CALLS, max(0, $maxToolCalls));
         $this->allowedKnowledgeSourceIds = array_values(array_unique(array_map('intval', $allowedKnowledgeSourceIds)));
@@ -108,6 +110,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
                     executionDeadlineAt: $toolDeadline,
                     executionTimeoutSeconds: $executionTimeoutSeconds,
                     embeddingSnapshot: $embeddingSnapshot,
+                    audience: $this->audience,
                 );
             if (! AiRuntimeLimits::deadlineIsActive($toolDeadline)) {
                 throw new AiRagRetrievalException(

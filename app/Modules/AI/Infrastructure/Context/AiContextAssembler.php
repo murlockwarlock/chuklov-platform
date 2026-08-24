@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
@@ -64,7 +65,12 @@ class AiContextAssembler implements AiContextAssemblerInterface
             }
         }
 
-        if (array_filter($inputReferences, static fn ($reference): bool => $reference->type === 'medical_attachment') !== []) {
+        if ($capability === AiCapability::ClientCompanion
+            && ($policy->includeMedicalSummary || $policy->includeRecentSessionsCount > 0)) {
+            throw new InvalidArgumentException('Client Companion context cannot include protected medical records or session history.');
+        }
+
+        if (array_filter($inputReferences, static fn ($reference): bool => in_array($reference->type, ['medical_attachment', 'companion_attachment'], true)) !== []) {
             if ($capability === null) {
                 throw new InvalidArgumentException('AI attachment context requires a capability.');
             }
@@ -75,6 +81,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
                 capability: $capability,
                 references: $inputReferences,
                 actor: $actor,
+                clientId: $clientId,
             );
         }
 
@@ -94,8 +101,10 @@ class AiContextAssembler implements AiContextAssemblerInterface
 
             if ($client !== null) {
                 if ($policy->includeClientProfile) {
-                    $variables['client_name'] = $client->name ?? 'Клиент';
-                    $variables['client_id'] = (string) $client->id;
+                    $variables['client_name'] = (string) ($client->full_name ?: 'Клиент');
+                    if ($capability !== AiCapability::ClientCompanion) {
+                        $variables['client_id'] = (string) $client->id;
+                    }
                     $provenanceSummary['client_included'] = true;
                 }
 
@@ -190,6 +199,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
                         executionDeadlineAt: $executionDeadlineAt,
                         executionTimeoutSeconds: $executionTimeoutSeconds,
                         embeddingSnapshot: $embeddingSnapshot,
+                        audience: $capability === AiCapability::ClientCompanion ? KnowledgeAudience::ClientCompanion : null,
                     );
                     $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
 

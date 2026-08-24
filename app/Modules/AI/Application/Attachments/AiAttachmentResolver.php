@@ -18,8 +18,6 @@ use Laravel\Ai\Files\Image;
 
 final class AiAttachmentResolver
 {
-    private const MAX_ATTACHMENTS = 3;
-
     /** @var list<string> */
     private const IMAGE_MIMES = [
         'image/jpeg',
@@ -47,8 +45,9 @@ final class AiAttachmentResolver
         AiCapability $capability,
         array $references,
         ?User $actor,
+        ?int $clientId = null,
     ): array {
-        return $this->resolve($organizationId, $capability, $references, $actor)['provenance'];
+        return $this->resolve($organizationId, $capability, $references, $actor, $clientId)['provenance'];
     }
 
     /**
@@ -60,13 +59,14 @@ final class AiAttachmentResolver
         AiCapability $capability,
         array $references,
         ?User $actor,
+        ?int $clientId = null,
     ): array {
         $attachmentReferences = array_values(array_filter(
             $references,
-            static fn (AiInputReference $reference): bool => $reference->type === 'medical_attachment',
+            static fn (AiInputReference $reference): bool => in_array($reference->type, ['medical_attachment', 'companion_attachment'], true),
         ));
 
-        if ($capability === AiCapability::PostureAnalysis && count($attachmentReferences) !== self::MAX_ATTACHMENTS) {
+        if ($capability === AiCapability::PostureAnalysis && count($attachmentReferences) !== 3) {
             throw new InvalidArgumentException('Posture analysis requires exactly three medical attachments.');
         }
 
@@ -74,7 +74,10 @@ final class AiAttachmentResolver
             return ['files' => [], 'provenance' => []];
         }
 
-        if (count($attachmentReferences) > self::MAX_ATTACHMENTS) {
+        $maxAttachments = $capability === AiCapability::ClientCompanion
+            ? max(1, (int) config('ai.companion.maximum_images_per_turn', 10))
+            : 3;
+        if (count($attachmentReferences) > $maxAttachments) {
             throw new InvalidArgumentException('AI execution accepts at most three medical attachments.');
         }
 
@@ -99,24 +102,35 @@ final class AiAttachmentResolver
 
         $files = [];
         $provenance = [];
-        foreach ($ids as $id) {
-            /** @var MedicalAttachment $attachment */
-            $attachment = $attachments->get($id);
-            if (! $actor instanceof User) {
-                throw new InvalidArgumentException('An explicit authorized actor is required for protected medical attachments.');
+        foreach ($attachmentReferences as $reference) {
+            $attachment = $attachments->get($reference->id);
+            if (! $attachment instanceof MedicalAttachment) {
+                throw new InvalidArgumentException('AI medical attachment input reference was not found in the current organization.');
             }
 
-            $this->authorization->authorizeAiProcessing($actor, $attachment, $organization);
-            $this->assertCompatible($capability, $attachment, count($ids));
-            $provenance[] = $this->safeProvenance($attachment);
-            $files[] = $this->toSdkFile($attachment);
+            if ($reference->type === 'companion_attachment') {
+                if ($capability !== AiCapability::ClientCompanion
+                    || $clientId === null
+                    || (int) $attachment->client_id !== $clientId
+                    || $attachment->attachment_type !== AttachmentType::CompanionImage) {
+                    throw new InvalidArgumentException('AI Companion image input is outside the current client context.');
+                }
+            } elseif (! $actor instanceof User) {
+                throw new InvalidArgumentException('An explicit authorized actor is required for protected medical attachments.');
+            } else {
+                $this->authorization->authorizeAiProcessing($actor, $attachment, $organization);
+            }
+
+            $this->assertCompatible($capability, $attachment, count($ids), $reference->type);
+            $provenance[] = $this->safeProvenance($attachment, $reference->type);
+            $files[] = $this->toSdkFile($attachment, $reference->type === 'companion_attachment');
         }
 
         return ['files' => $files, 'provenance' => $provenance];
     }
 
     /** @return array<string, mixed> */
-    private function safeProvenance(MedicalAttachment $attachment): array
+    private function safeProvenance(MedicalAttachment $attachment, string $referenceType): array
     {
         if ($attachment->disk !== 'private'
             || ! str_starts_with($attachment->storage_path, 'medical/attachments/'.((int) $attachment->organization_id).'/')) {
@@ -158,20 +172,26 @@ final class AiAttachmentResolver
             'sha256_checksum' => $checksum,
             'mime_type' => (string) $attachment->mime_type,
             'size_bytes' => $actualSize,
+            'reference_type' => $referenceType,
         ];
     }
 
-    private function assertCompatible(AiCapability $capability, MedicalAttachment $attachment, int $count): void
+    private function assertCompatible(AiCapability $capability, MedicalAttachment $attachment, int $count, string $referenceType): void
     {
         $type = $attachment->attachment_type;
         $mime = strtolower(trim($attachment->mime_type));
 
         if ($capability === AiCapability::PostureAnalysis) {
-            if ($count !== self::MAX_ATTACHMENTS || $type !== AttachmentType::PosturePhoto || ! in_array($mime, self::IMAGE_MIMES, true)) {
+            if ($count !== 3 || $type !== AttachmentType::PosturePhoto || ! in_array($mime, self::IMAGE_MIMES, true)) {
                 throw new InvalidArgumentException('Posture analysis accepts exactly three cleared posture images.');
             }
 
             return;
+        }
+
+        if ($referenceType === 'companion_attachment'
+            && ($capability !== AiCapability::ClientCompanion || $type !== AttachmentType::CompanionImage || ! in_array($mime, self::IMAGE_MIMES, true))) {
+            throw new InvalidArgumentException('AI Companion accepts cleared image input only.');
         }
 
         if ($capability === AiCapability::ClinicalDocumentExtraction && $type !== AttachmentType::MedicalReport) {
@@ -183,8 +203,15 @@ final class AiAttachmentResolver
         }
     }
 
-    private function toSdkFile(MedicalAttachment $attachment): File
+    private function toSdkFile(MedicalAttachment $attachment, bool $stripMetadata): File
     {
+        if ($stripMetadata) {
+            $normalized = $this->normalizedImage($attachment);
+
+            return Image::fromBase64(base64_encode($normalized), $attachment->mime_type)
+                ->as($attachment->original_filename);
+        }
+
         $file = in_array(strtolower($attachment->mime_type), self::IMAGE_MIMES, true)
             ? Image::fromStorage($attachment->storage_path, $attachment->disk)
             : Document::fromStorage($attachment->storage_path, $attachment->disk);
@@ -192,5 +219,43 @@ final class AiAttachmentResolver
         return $file
             ->as($attachment->original_filename)
             ->withMimeType($attachment->mime_type);
+    }
+
+    private function normalizedImage(MedicalAttachment $attachment): string
+    {
+        $raw = Storage::disk($attachment->disk)->get($attachment->storage_path);
+        if (! is_string($raw) || $raw === '') {
+            throw new InvalidArgumentException('Companion image content is unavailable.');
+        }
+
+        $imageInfo = @getimagesizefromstring($raw);
+        if (! is_array($imageInfo) || $imageInfo[0] < 1 || $imageInfo[1] < 1) {
+            throw new InvalidArgumentException('Companion image content is invalid.');
+        }
+
+        if (! function_exists('imagecreatefromstring')) {
+            return $raw;
+        }
+
+        $image = @imagecreatefromstring($raw);
+        if ($image === false) {
+            throw new InvalidArgumentException('Companion image content is invalid.');
+        }
+
+        ob_start();
+        $mime = strtolower((string) $attachment->mime_type);
+        $encoded = match ($mime) {
+            'image/png' => imagepng($image, null, 6),
+            'image/webp' => function_exists('imagewebp') ? imagewebp($image, null, 85) : imagejpeg($image, null, 85),
+            default => imagejpeg($image, null, 85),
+        };
+        $result = ob_get_clean();
+        imagedestroy($image);
+
+        if ($encoded !== true || ! is_string($result) || $result === '') {
+            throw new InvalidArgumentException('Companion image normalization failed.');
+        }
+
+        return $result;
     }
 }

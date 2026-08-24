@@ -2,6 +2,7 @@
 
 namespace App\Modules\Knowledge\Application\Data;
 
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use Carbon\CarbonInterface;
@@ -26,6 +27,7 @@ final readonly class RetrievalQuery
         public ?CarbonInterface $executionDeadlineAt = null,
         public ?int $executionTimeoutSeconds = null,
         public ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        public ?KnowledgeAudience $audience = null,
     ) {
         $maximumTopK = (int) config('rag.retrieval.maximum_top_k', 20);
 

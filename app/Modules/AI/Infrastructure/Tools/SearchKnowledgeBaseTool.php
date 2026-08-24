@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use Carbon\CarbonInterface;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -64,6 +65,7 @@ class SearchKnowledgeBaseTool implements AiToolInterface
         ?CarbonInterface $executionDeadlineAt = null,
         ?int $executionTimeoutSeconds = null,
         ?EmbeddingExecutionSnapshot $embeddingSnapshot = null,
+        ?KnowledgeAudience $audience = null,
     ): array {
         $query = trim((string) ($input['query'] ?? ''));
         if ($query === '') {
@@ -83,6 +85,7 @@ class SearchKnowledgeBaseTool implements AiToolInterface
                 executionDeadlineAt: $executionDeadlineAt,
                 executionTimeoutSeconds: $executionTimeoutSeconds,
                 embeddingSnapshot: $embeddingSnapshot,
+                audience: $audience,
             );
             $results = $this->knowledgeRetriever->retrieveForOrganization($organizationId, $retrievalQuery);
         } catch (AuthorizationException $e) {

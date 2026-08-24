@@ -22,6 +22,7 @@ const navigation = [
     { key: 'bookings', label: 'shell.bookings' },
     { key: 'finance', label: 'shell.finance' },
     { key: 'surveys', label: 'shell.surveys' },
+    { key: 'companion', label: 'shell.companion' },
     { key: 'profile', label: 'shell.profile' },
 ] as const;
 

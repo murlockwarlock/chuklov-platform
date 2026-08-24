@@ -2,6 +2,9 @@
 
 use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
+use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionCallback;
+use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto;
+use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionText;
 use App\Modules\Identity\Application\CompleteTelegramWebAuthentication;
 use App\Modules\Identity\Application\ConnectTelegramClientIdentity;
 use App\Modules\Identity\Application\InvalidTelegramLinkToken;
@@ -66,3 +69,15 @@ $bot->onCommand('start', function (Nutgram $bot, GetTelegramMenu $menu): void {
         reply_markup: $keyboard,
     );
 })->description('Запустить приложение');
+
+$bot->onText('^(?!/).+', function (Nutgram $bot, HandleTelegramCompanionText $handler): void {
+    $handler->handle($bot);
+});
+
+$bot->onPhoto(function (Nutgram $bot, HandleTelegramCompanionPhoto $handler): void {
+    $handler->handle($bot);
+});
+
+$bot->onCallbackQueryData('/^cc:(?:feedback:(?:helpful|not_helpful)|human):\d+$/', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
+    $handler->handle($bot);
+});

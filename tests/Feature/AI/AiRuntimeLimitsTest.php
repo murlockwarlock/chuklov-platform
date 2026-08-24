@@ -41,6 +41,11 @@ final class AiRuntimeLimitsTest extends TestCase
             AiRuntimeLimits::wholeRunSeconds(),
             AiRuntimeLimits::wholeRunSeconds() + AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS,
         );
+        $this->assertSame(
+            AiRuntimeLimits::wholeRunSeconds() + AiRuntimeLimits::PLATFORM_LEASE_GRACE_SECONDS,
+            AiRuntimeLimits::companionProcessingLeaseSeconds(),
+        );
+        $this->assertGreaterThan(180, AiRuntimeLimits::companionProcessingLeaseSeconds());
     }
 
     public function test_worst_case_provider_exposure_accounts_for_accumulated_multi_step_history(): void

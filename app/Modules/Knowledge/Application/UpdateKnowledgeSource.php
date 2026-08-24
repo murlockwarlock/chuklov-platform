@@ -35,6 +35,10 @@ final class UpdateKnowledgeSource
         $sourceReference = $hasExplicitSourceReference
             ? (is_string($data['source_reference']) ? trim($data['source_reference']) : null)
             : null;
+        $hasCompanionScope = array_key_exists('client_companion_enabled', $data);
+        $clientCompanionEnabled = $hasCompanionScope
+            ? (bool) $data['client_companion_enabled']
+            : null;
 
         if ($title === '' || mb_strlen($title) > 200 || ($category !== null && mb_strlen($category) > 80) || ($hasExplicitSourceReference && $sourceReference !== null && mb_strlen($sourceReference) > 500)) {
             throw ValidationException::withMessages(['source' => 'Проверьте название и категорию источника.']);
@@ -89,7 +93,7 @@ final class UpdateKnowledgeSource
         $checksum = $materialProvided ? hash('sha256', (string) $content) : null;
 
         try {
-            $result = DB::transaction(function () use ($actor, $source, $organization, $title, $category, $hasExplicitSourceReference, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum, $materialProvided): KnowledgeSourceUpdateResult {
+            $result = DB::transaction(function () use ($actor, $source, $organization, $title, $category, $hasExplicitSourceReference, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum, $materialProvided, $hasCompanionScope, $clientCompanionEnabled): KnowledgeSourceUpdateResult {
                 $lockedSource = KnowledgeSource::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($source->getKey())
@@ -120,8 +124,15 @@ final class UpdateKnowledgeSource
                 if ($lockedSource->category !== $category) {
                     $changedFields[] = 'category';
                 }
+                if ($hasCompanionScope && (bool) $lockedSource->client_companion_enabled !== $clientCompanionEnabled) {
+                    $changedFields[] = 'client_companion_enabled';
+                }
                 if ($changedFields !== []) {
-                    $lockedSource->update(['title' => $title, 'category' => $category]);
+                    $lockedSource->update([
+                        'title' => $title,
+                        'category' => $category,
+                        ...($hasCompanionScope ? ['client_companion_enabled' => $clientCompanionEnabled] : []),
+                    ]);
                     $this->audit->handle(
                         organization: $organization,
                         actor: $actor,

@@ -244,6 +244,39 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
         $this->assertLessThanOrEqual(3, $attempts->count());
     }
 
+    public function test_client_companion_image_request_skips_text_primary_and_keeps_configured_image_candidate(): void
+    {
+        [$textConfig, $textRelease] = $this->candidateWithCapabilities(
+            providerName: 'openai',
+            credentialName: 'OpenAI Companion text primary',
+            modelName: 'companion-text-primary',
+            priority: 1,
+        );
+        [, $imageRelease] = $this->candidateWithCapabilities(
+            providerName: 'anthropic',
+            credentialName: 'Anthropic Companion image fallback',
+            modelName: 'companion-image-fallback',
+            priority: 2,
+            modalities: [AiModelModality::ImageInput],
+        );
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'client-companion-image-modality',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'image question'],
+            requiredModalities: [AiModelModality::ImageInput],
+        ));
+
+        $snapshot = $run->fresh()->execution_candidate_snapshot;
+        self::assertCount(1, $snapshot);
+        self::assertSame($imageRelease->id, $snapshot[0]['model_release_id']);
+        self::assertNotSame($textRelease->id, $snapshot[0]['model_release_id']);
+        self::assertSame($textConfig->id, $textRelease->model_config_id);
+        self::assertContains(AiModelModality::ImageInput->value, $snapshot[0]['capabilities']);
+    }
+
     public function test_async_worker_fails_closed_after_snapshotted_credential_rotation(): void
     {
         [$modelConfig, $release] = $this->candidate('openai', 'OpenAI rotating', 'gpt-4o-mini', 1);

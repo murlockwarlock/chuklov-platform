@@ -20,6 +20,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -50,6 +51,7 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeAudience;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
@@ -59,8 +61,8 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use InvalidArgumentException;
+use Laravel\Ai\Files\Image;
 use Laravel\Ai\Files\StoredDocument;
-use Laravel\Ai\Files\StoredImage;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\TextResponse;
@@ -85,7 +87,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
     {
-        $executionDeadlineAt = Carbon::now()->addSeconds(AiRuntimeLimits::wholeRunSeconds());
+        $maximumExecutionDeadlineAt = AiRuntimeLimits::executionDeadline();
+        $executionDeadlineAt = $request->executionDeadlineAt !== null
+            && $request->executionDeadlineAt->lessThan($maximumExecutionDeadlineAt)
+            ? $request->executionDeadlineAt
+            : $maximumExecutionDeadlineAt;
         $capabilityDef = AiCapabilityRegistry::get($request->capability);
 
         $this->inputReferenceValidator->validate(
@@ -128,6 +134,14 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         ->first();
 
                     $outputPayload = null;
+                    $outputText = null;
+                    if ($payload?->encrypted_output_text !== null) {
+                        $outputText = $this->medicalEncryptor->decryptField(
+                            $organizationId,
+                            $payload->encrypted_output_text,
+                            $payload->encryption_key_version,
+                        );
+                    }
                     if ($payload?->encrypted_output_payload !== null) {
                         $decrypted = $this->medicalEncryptor->decryptField(
                             $organizationId,
@@ -145,6 +159,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     return new AiRunResult(
                         runId: $existingRun->id,
                         status: $existingRun->status,
+                        outputText: $outputText,
                         outputPayload: $outputPayload,
                         tokenUsage: $existingRun->getTokenUsage(),
                         settledEstimatedCostMinorUnits: $existingRun->settled_estimated_cost_minor_units ?? 0,
@@ -251,6 +266,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 capability: $request->capability,
             );
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
+            if ($capabilityDef->systemSafetyPolicy !== null) {
+                $renderedSystemPrompt = $renderedSystemPrompt
+                    ."\n\n[SYSTEM-OWNED SAFETY POLICY]\n"
+                    .$capabilityDef->systemSafetyPolicy;
+            }
             $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
             AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
@@ -467,7 +487,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         $attachmentResolution = ['files' => [], 'provenance' => []];
         $attachmentActor = null;
         if ($run->capability === AiCapability::PostureAnalysis
-            || array_filter($inputReferences, static fn (AiInputReference $reference): bool => $reference->type === 'medical_attachment') !== []) {
+            || array_filter($inputReferences, static fn (AiInputReference $reference): bool => in_array($reference->type, ['medical_attachment', 'companion_attachment'], true)) !== []) {
             try {
                 $attachmentActor = $run->initiated_by_user_id !== null
                     ? User::query()->whereKey($run->initiated_by_user_id)->first()
@@ -477,6 +497,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     capability: $run->capability,
                     references: $inputReferences,
                     actor: $attachmentActor,
+                    clientId: $run->client_id,
                 );
 
                 $runProvenance = is_array($run->context_provenance ?? null) ? $run->context_provenance : [];
@@ -697,6 +718,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     minimumSimilarity: $contextPolicy->ragMinSimilarity,
                     allowedKnowledgeSourceIds: $contextPolicy->ragKnowledgeSourceIds,
                     policyMaxResults: $contextPolicy->ragMaxChunks,
+                    audience: $run->capability === AiCapability::ClientCompanion ? KnowledgeAudience::ClientCompanion : null,
                 );
             }
         }
@@ -891,6 +913,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                         capability: $run->capability,
                         references: $inputReferences,
                         actor: $attachmentActor,
+                        clientId: $run->client_id,
                     );
                     if ($freshAttachments['provenance'] !== $attachmentResolution['provenance']) {
                         throw new InvalidArgumentException('Protected attachment provenance changed before provider execution.');
@@ -1007,7 +1030,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
 
                 $outputPayload = null;
-                $outputSchema = $promptVersion->output_schema;
+                $outputSchema = $promptVersion->output_schema
+                    ?? ($run->origin === AiRunOrigin::ClientCompanion ? $capabilityDef->defaultOutputSchema : null);
                 $isValid = true;
 
                 if ($outputSchema !== null) {
@@ -1018,7 +1042,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 }
 
                 $encodedPayload = $outputPayload !== null ? json_encode($outputPayload) : null;
-                $humanReviewStatus = ($capabilityDef->requiresHumanReview || $promptVersion->output_schema !== null)
+                $humanReviewStatus = ($capabilityDef->requiresHumanReview || $outputSchema !== null)
                     ? HumanReviewStatus::PendingReview
                     : HumanReviewStatus::NotRequired;
 
@@ -1272,8 +1296,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         $modalities = [];
         foreach ($files as $file) {
             $modality = match (true) {
+                $file instanceof Image => AiModelModality::ImageInput,
                 $file instanceof StoredDocument => AiModelModality::DocumentInput,
-                $file instanceof StoredImage => AiModelModality::ImageInput,
                 default => null,
             };
 

@@ -17,6 +17,16 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
+### 10.2 — AI Companion remediation
+
+- Objective: remediate the accepted Stage 10.2 candidate without broadening scope: adopt deterministic legacy M2 history, fence turn terminal writes, durably seal Telegram albums, prevent blind replay after uncertain Telegram sends, remove implicit image reuse and client-facing internal IDs, bound exports, and restore truthful status documents.
+- Starting SHA: `b6f885e6e0156ce4bab767a40484a6d19edc01b2`.
+- Candidate branch: `codex/ai-companion`.
+- Non-goals: OQ-015 clinical prompt content, voice/TTS, MAX/Instagram, general staff copilot, arbitrary CRM mutations, a second AI/RAG/conversation subsystem, hosted CI, deployment, staging, merge, and M11.
+- Data impact: additive adoption state and binding/index changes, encryption of adopted legacy Companion messages in bounded batches, explicit assembling/uncertain states, recent-image reference mode, and delivery uncertainty timestamps. Existing message IDs/provenance are preserved; ambiguous M2 rows remain legacy.
+- Boundaries: all execution uses `AiWorkflowEngine` and `AiCapability::ClientCompanion`; image turns require existing `ImageInput` modality candidates; private cleared image storage and the medical encryption/protected-trace boundary are reused; jobs carry identifiers only.
+- Verification: focused Companion, Conversation, Portal, Telegram, AI, Knowledge/RAG, privacy, static, frontend, syntax, Blade, and dependency checks are required locally. PostgreSQL integration/concurrency is required where available; hosted CI, staging, deployment, and merge remain explicitly out of scope.
+
 ### UX-A — Client Workspace + ordinary client/global search
 
 - Objective: make the opened Client the daily CRM workspace and make the Clients list and global search bounded identity-only finders.
@@ -28,15 +38,3 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 - Data impact: nullable `clients.phone_search_key`, organization/phone B-tree index, PostgreSQL trigram extension/indexes for ordinary name/email fragments, and a bounded `clients:backfill-phone-search-keys` command. The migration performs no legacy bulk rewrite.
 - Privacy/performance: global search contains no medical data; medical profile decryption is explicit and bounded; attachment metadata is paginated and access URLs are generated only on an authorized user action; all client datasets remain organization-scoped and server-side.
 - Verification: focused PHPUnit, Larastan, Pint, PHP syntax, `git diff --check`, and Playwright test listing are run locally. PostgreSQL-specific integration, hosted CI, and full browser execution remain pending. This is an implementation candidate pending independent acceptance; do not mark UX-A closed.
-
-### 10.1 — AI Evaluation Quality / Observability
-
-- Objective: extend the accepted M10 evaluation foundation into a deterministic, explainable quality-control workflow for practice owners and administrators.
-- Starting SHA: `44a4ba09f01803a740b299786fabc6ad2a0ad49a`.
-- Candidate branch: `codex/ai-eval-quality-observability`.
-- Scope: typed server-owned assertions, structured/RAG quality results, immutable evaluation provenance, run-level cost/latency/failover metrics, human-review aggregates, compatible-run comparison, and bounded Russian Filament history/detail UX under `Искусственный интеллект → Проверки AI`.
-- Non-goals: UX-C5 provider/model administration redesign, AI Companion, Telegram/Mini App chat, practitioner copilot or mutations, M11/M12 work, new provider catalog work, OQ-015 content, semantic judge scores, arbitrary scripting, generic BI, and real-provider CI evaluation.
-- Affected requirements/modules: `REQ-AI-001`–`REQ-AI-008`, `REQ-RAG-001`–`REQ-RAG-004`; AI, Knowledge provenance, Organizations authorization, Security/privacy, and Filament CRM adapters.
-- Data impact: additive evaluation-run provenance/metrics storage only; existing `AiRun`, `AiRunAttempt`, `AiRunRagReference`, and `AiRunHumanReview` remain the sources of execution, cost, retrieval, and review evidence. Historical runs are never recomputed from mutable suites, cases, releases, or pricing.
-- Compatibility/privacy: preserve exact prompt/model pinning, synthetic-only input validation, organization-scoped composite ownership, encrypted protected trace access, sanitized errors, and normal fake-only AI tests. Assertion definitions and schemas are bounded and stored as evaluation evidence, not copied into logs or decrypted medical analytics.
-- Verification: focused PHPUnit plus relevant AI/Knowledge/RAG tests, Pint, Larastan/PHP syntax, `git diff --check`, dependency/security audits, and any available PostgreSQL evaluation/concurrency integration target. Hosted CI, deployment, and merge are explicitly not part of this candidate.

@@ -9,6 +9,7 @@ enum AiRunOrigin: string
     case Playground = 'playground';
     case Evaluation = 'evaluation';
     case ClientPortal = 'client_portal';
+    case ClientCompanion = 'client_companion';
 
     public function label(): string
     {
@@ -18,6 +19,7 @@ enum AiRunOrigin: string
             self::Playground => 'Песочница (Playground)',
             self::Evaluation => 'Тестирование (Evaluation)',
             self::ClientPortal => 'Клиентский портал',
+            self::ClientCompanion => 'Клиентский AI-компаньон',
         };
     }
 }

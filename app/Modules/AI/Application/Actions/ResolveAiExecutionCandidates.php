@@ -4,6 +4,7 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -13,6 +14,7 @@ use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
+use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
@@ -60,6 +62,10 @@ final class ResolveAiExecutionCandidates
             );
 
             if ($candidate === null) {
+                continue;
+            }
+
+            if (! $this->supportsRequiredModalities($candidate, $request->requiredModalities)) {
                 continue;
             }
 
@@ -325,6 +331,23 @@ final class ResolveAiExecutionCandidates
             'pricing_snapshot' => $pricing->toArray(),
             'failover_priority' => (int) $candidate['failover_priority'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     * @param  list<AiModelModality>  $requiredModalities
+     */
+    private function supportsRequiredModalities(array $candidate, array $requiredModalities): bool
+    {
+        if ($requiredModalities === []) {
+            return true;
+        }
+
+        return AiProviderFactory::supportsAttachments(
+            providerName: (string) $candidate['provider'],
+            release: $candidate['release'],
+            requiredModalities: $requiredModalities,
+        );
     }
 
     /**

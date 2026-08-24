@@ -1,11 +1,14 @@
 <?php
 
+use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
+use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\BookingController;
+use App\Http\Controllers\Portal\CompanionController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
@@ -38,6 +41,18 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware(Authenticate::class)
         ->whereNumber(['knowledgeSourceId', 'knowledgeRevisionId'])
         ->name('admin.knowledge.revision.download');
+    Route::post('/admin/clients/{client}/companion/reply', [AdminCompanionController::class, 'reply'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reply');
+    Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve');
+    Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resume');
+    Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reset');
+    Route::get('/admin/clients/{client}/companion/export', [CompanionExportController::class, 'history'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.export');
+    Route::get('/admin/clients/{client}/companion/metadata-export', [CompanionExportController::class, 'metadata'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.metadata-export');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
@@ -67,6 +82,15 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
+            Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
+            Route::post('/portal/companion/messages', [CompanionController::class, 'send'])
+                ->middleware('throttle:portal-companion-send')
+                ->name('portal.companion.send');
+            Route::post('/portal/companion/feedback/{messageId}', [CompanionController::class, 'feedback'])
+                ->whereNumber('messageId')
+                ->name('portal.companion.feedback');
+            Route::post('/portal/companion/reset', [CompanionController::class, 'reset'])
+                ->name('portal.companion.reset');
             Route::post('/portal/surveys/{definitionId}/start', [SurveyController::class, 'start'])->whereNumber('definitionId')->name('portal.surveys.start');
             Route::get('/portal/survey-attempts/{attemptId}', [SurveyController::class, 'show'])->whereNumber('attemptId')->name('portal.surveys.show');
             Route::post('/portal/survey-attempts/{attemptId}/save', [SurveyController::class, 'save'])->whereNumber('attemptId')->name('portal.surveys.save');
