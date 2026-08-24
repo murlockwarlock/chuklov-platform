@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-24 — Stage 10.2 Knowledge Filament lifecycle remediation candidate
+
+- Starts exactly at `5cfb300baf501f25459baa44d88a49933d011ace`. The hosted-green PostgreSQL ambiguity remediation remains intact; staging then exposed a separate Filament 5.7.6 lazy RelationManager lifecycle failure. `RevisionsRelationManager` now opts out of lazy loading through Filament's supported API, with no Companion application changes.
+- Full relation-manager and parent Edit page render coverage now exercises the table HTML, revision fields, ingestion presentation, and download/retry/pending-start/search-reprocess visibility. Local SQLite Feature coverage passes; the PostgreSQL regression remains present but is `EXISTS — NOT RUN LOCALLY` because PHPUnit forces SQLite.
+- This is still a remediation candidate pending fresh independent review, exact-SHA hosted PostgreSQL/staging verification, and final CI. No deployment, hosted CI, merge, M11, or OQ-015 content was added. M8 remains blocked on OQ-015.
+
 ## 2026-08-24 — Stage 10.2 Knowledge Filament PostgreSQL remediation candidate
 
 - Starts exactly at `4de4a198f9e0dc4e4bef398d50f27a99727d3dfc` and fixes the staging-found PostgreSQL `42702 ambiguous_column` in Knowledge source/revision Filament projections without changing Companion state machines.

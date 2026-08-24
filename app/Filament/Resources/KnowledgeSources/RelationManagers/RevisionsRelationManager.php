@@ -23,6 +23,8 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 
 final class RevisionsRelationManager extends RelationManager
 {
+    protected static bool $isLazy = false;
+
     protected static string $relationship = 'revisions';
 
     protected static ?string $title = 'История материалов';

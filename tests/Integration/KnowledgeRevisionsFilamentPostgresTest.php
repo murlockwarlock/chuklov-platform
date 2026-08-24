@@ -13,6 +13,7 @@ use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
@@ -57,11 +58,26 @@ final class KnowledgeRevisionsFilamentPostgresTest extends TestCase
 
         /** @var Testable<RevisionsRelationManager> $revisions */
         $revisions = Livewire::actingAs($admin)->test(new RevisionsRelationManager, [
+            ...RevisionsRelationManager::getDefaultProperties(),
             'ownerRecord' => $source->refresh(),
             'pageClass' => EditKnowledgeSource::class,
         ]);
 
+        self::assertNotNull($revisionTwoReadyRun->completed_at);
+        self::assertNotNull($revisionTwo->created_at);
         $revisions->assertSuccessful();
+        $revisions
+            ->assertSee('Версия')
+            ->assertSee((string) $revisionTwo->version)
+            ->assertSee('Текст вручную')
+            ->assertSee('Готова')
+            ->assertSee('Обработка не завершена')
+            ->assertSee('Нет зарегистрированной ошибки')
+            ->assertSee('Обработана')
+            ->assertSee('Создана')
+            ->assertSee(CarbonImmutable::parse($revisionTwoReadyRun->completed_at)->format('d.m.Y H:i'))
+            ->assertSee($revisionTwo->created_at->format('d.m.Y H:i'));
+        self::assertStringContainsString('<table', $revisions->html());
         $revisions->loadTable();
         $records = $this->tableRecords($revisions->instance());
         $revisionOneRecord = $this->tableRevision($records, $revisionOne->getKey());
