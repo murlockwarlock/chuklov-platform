@@ -171,7 +171,8 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
         }
 
         self::assertDatabaseHas('financial_ledger_entries', ['id' => $entry->getKey()]);
-        self::assertSame('retryable', IntegrationEvent::query()->whereKey($event->getKey())->value('status'));
+        $event->refresh();
+        self::assertSame(IntegrationEventStatus::Retryable, $event->status);
         self::assertDatabaseCount('referral_commercial_evidence', 0);
     }
 
@@ -179,7 +180,7 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
     {
         $this->requirePostgres();
         [$organization, , $referred] = $this->referralFixture();
-        [$obligation, $entry] = $this->financeFixture($organization, $referred, 'stale-worker');
+        [$obligation, $entry] = $this->financeFixture($organization, $referred);
         app(RecordFinancialSettlementEvent::class)->handle($obligation, $entry, $entry->occurred_at);
         $event = IntegrationEvent::query()->where('aggregate_id', $obligation->getKey())->firstOrFail();
 
@@ -204,8 +205,9 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
 
         self::assertContains('processed:'.$event->getKey(), $results);
         self::assertContains('stale-fenced', $results);
-        self::assertSame(IntegrationEventStatus::Processed->value, IntegrationEvent::query()->whereKey($event->getKey())->value('status'));
-        self::assertNull(IntegrationEvent::query()->whereKey($event->getKey())->value('processing_token'));
+        $event->refresh();
+        self::assertSame(IntegrationEventStatus::Processed, $event->status);
+        self::assertNull($event->processing_token);
         self::assertSame(1, ReferralCommercialEvidence::query()
             ->where('integration_event_id', $event->getKey())
             ->count());
@@ -313,14 +315,14 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
         $deadline = microtime(true) + 10;
         do {
             $status = IntegrationEvent::query()->whereKey($eventId)->value('status');
-            if ($status === IntegrationEventStatus::Processed->value) {
+            if ($status === IntegrationEventStatus::Processed) {
                 break;
             }
 
             usleep(20000);
         } while (microtime(true) < $deadline);
 
-        if ($status !== IntegrationEventStatus::Processed->value) {
+        if ($status !== IntegrationEventStatus::Processed) {
             return 'error:worker-b-did-not-finish';
         }
 
