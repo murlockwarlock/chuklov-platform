@@ -11,6 +11,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
@@ -274,7 +275,12 @@ final class MilestoneElevenADatabaseTest extends TestCase
             'price_minor' => 10000,
             'price_currency' => 'USD',
         ]);
-        $booking = Booking::factory()->forClient($client)->forService($service)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
         $snapshot = [
             'source_amount_minor' => '10000',
             'source_currency' => 'USD',
