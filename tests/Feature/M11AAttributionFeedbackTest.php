@@ -358,7 +358,7 @@ final class M11AAttributionFeedbackTest extends TestCase
 
         $submission = FeedbackSubmission::query()->where('idempotency_key', 'feedback-low')->sole();
         self::assertSame('Слишком долго ждал', $submission->internal_feedback);
-        self::assertStringNotContainsString('Слишком долго ждал', (string) DB::table('feedback_submissions')->whereKey($submission->id)->value('internal_feedback'));
+        self::assertStringNotContainsString('Слишком долго ждал', (string) DB::table('feedback_submissions')->where('id', $submission->getKey())->value('internal_feedback'));
         self::assertStringNotContainsString('Слишком долго ждал', DB::table('audit_events')->pluck('metadata')->implode('|'));
         self::assertSame(2, FeedbackSubmission::query()->where('client_id', $client->id)->count());
     }
