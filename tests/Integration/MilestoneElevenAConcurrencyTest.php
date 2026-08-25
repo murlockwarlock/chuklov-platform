@@ -23,6 +23,7 @@ use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
@@ -381,7 +382,14 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
             'price_minor' => 10000,
             'price_currency' => 'USD',
         ]);
-        $booking = Booking::factory()->forClient($client)->forService($service)->create();
+        $specialist = Specialist::factory()
+            ->forOrganization($organization)
+            ->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
         $snapshot = [
             'source_amount_minor' => '10000',
             'source_currency' => 'USD',
