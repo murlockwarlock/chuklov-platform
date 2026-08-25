@@ -32,21 +32,29 @@ return new class extends Migration
 
         Schema::create('client_acquisition_registrations', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'client_acq_reg_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('client_id');
             $table->char('session_hash', 64)->nullable();
             $table->foreignId('telegram_authentication_request_id')->nullable();
             $table->timestampTz('finalized_at')->nullable();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'client_id']);
-            $table->unique(['organization_id', 'session_hash']);
-            $table->unique(['organization_id', 'telegram_authentication_request_id']);
-            $table->foreign(['organization_id', 'client_id'])
+            $table->unique(['organization_id', 'id'], 'client_acq_reg_org_id_unique');
+            $table->unique(['organization_id', 'client_id'], 'client_acq_reg_org_client_unique');
+            $table->unique(['organization_id', 'session_hash'], 'client_acq_reg_org_session_unique');
+            $table->unique(
+                ['organization_id', 'telegram_authentication_request_id'],
+                'client_acq_reg_org_tg_auth_unique',
+            );
+            $table->foreign(['organization_id', 'client_id'], 'client_acq_reg_org_client_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'telegram_authentication_request_id'])
+            $table->foreign(
+                ['organization_id', 'telegram_authentication_request_id'],
+                'client_acq_reg_org_tg_auth_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('client_telegram_authentication_requests')
                 ->restrictOnDelete();
@@ -54,7 +62,9 @@ return new class extends Migration
 
         Schema::create('client_attributions', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'client_attr_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('client_id');
             $table->string('source_type', 32);
             $table->string('source', 120)->nullable();
@@ -69,10 +79,13 @@ return new class extends Migration
             $table->timestampTz('captured_at')->useCurrent();
             $table->timestampTz('accepted_at')->useCurrent();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'client_id']);
-            $table->index(['organization_id', 'source_type', 'captured_at']);
-            $table->foreign(['organization_id', 'client_id'])
+            $table->unique(['organization_id', 'id'], 'client_attr_org_id_unique');
+            $table->unique(['organization_id', 'client_id'], 'client_attr_org_client_unique');
+            $table->index(
+                ['organization_id', 'source_type', 'captured_at'],
+                'client_attr_org_source_captured_index',
+            );
+            $table->foreign(['organization_id', 'client_id'], 'client_attr_org_client_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -80,7 +93,9 @@ return new class extends Migration
 
         Schema::create('pre_auth_attributions', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'pre_auth_attr_org_fk')
+                ->restrictOnDelete();
             $table->char('session_hash', 64);
             $table->string('source_type', 32);
             $table->string('source', 120)->nullable();
@@ -97,10 +112,16 @@ return new class extends Migration
             $table->timestampTz('consumed_at')->nullable();
             $table->foreignId('consumed_client_id')->nullable();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'session_hash']);
-            $table->index(['organization_id', 'expires_at', 'consumed_at']);
-            $table->foreign(['organization_id', 'consumed_client_id'])
+            $table->unique(['organization_id', 'id'], 'pre_auth_attr_org_id_unique');
+            $table->unique(['organization_id', 'session_hash'], 'pre_auth_attr_org_session_unique');
+            $table->index(
+                ['organization_id', 'expires_at', 'consumed_at'],
+                'pre_auth_attr_org_expiry_consume_index',
+            );
+            $table->foreign(
+                ['organization_id', 'consumed_client_id'],
+                'pre_auth_attr_org_client_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -108,15 +129,20 @@ return new class extends Migration
 
         Schema::create('client_referral_identities', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'ref_identity_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('client_id');
             $table->string('public_code', 128);
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'client_id']);
-            $table->unique(['organization_id', 'id', 'client_id']);
-            $table->unique(['organization_id', 'public_code']);
-            $table->foreign(['organization_id', 'client_id'])
+            $table->unique(['organization_id', 'id'], 'ref_identity_org_id_unique');
+            $table->unique(['organization_id', 'client_id'], 'ref_identity_org_client_unique');
+            $table->unique(
+                ['organization_id', 'id', 'client_id'],
+                'ref_identity_org_id_client_unique',
+            );
+            $table->unique(['organization_id', 'public_code'], 'ref_identity_org_code_unique');
+            $table->foreign(['organization_id', 'client_id'], 'ref_identity_org_client_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -124,24 +150,38 @@ return new class extends Migration
 
         Schema::create('referral_relationships', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'ref_rel_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('referrer_client_id');
             $table->foreignId('referred_client_id');
             $table->string('establishment_method', 32);
             $table->timestampTz('registered_at')->useCurrent();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'referred_client_id']);
+            $table->unique(['organization_id', 'id'], 'ref_rel_org_id_unique');
+            $table->unique(
+                ['organization_id', 'referred_client_id'],
+                'ref_rel_org_referred_unique',
+            );
             $table->unique(
                 ['organization_id', 'id', 'referred_client_id'],
                 'referral_relationships_org_id_id_referred_unique',
             );
-            $table->index(['organization_id', 'referrer_client_id', 'registered_at']);
-            $table->foreign(['organization_id', 'referrer_client_id'])
+            $table->index(
+                ['organization_id', 'referrer_client_id', 'registered_at'],
+                'ref_rel_org_referrer_registered_index',
+            );
+            $table->foreign(
+                ['organization_id', 'referrer_client_id'],
+                'ref_rel_org_referrer_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'referred_client_id'])
+            $table->foreign(
+                ['organization_id', 'referred_client_id'],
+                'ref_rel_org_referred_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -149,7 +189,9 @@ return new class extends Migration
 
         Schema::create('integration_events', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'integration_events_org_fk')
+                ->restrictOnDelete();
             $table->string('event_type', 100);
             $table->string('aggregate_type', 120);
             $table->unsignedBigInteger('aggregate_id');
@@ -163,15 +205,26 @@ return new class extends Migration
             $table->char('processing_token', 64)->nullable();
             $table->timestampTz('processed_at')->nullable();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'idempotency_key']);
-            $table->index(['status', 'available_at']);
-            $table->index(['organization_id', 'event_type', 'status', 'available_at']);
+            $table->unique(['organization_id', 'id'], 'integration_events_org_id_unique');
+            $table->unique(
+                ['organization_id', 'idempotency_key'],
+                'integration_events_org_idempotency_unique',
+            );
+            $table->index(
+                ['status', 'available_at'],
+                'integration_events_status_available_index',
+            );
+            $table->index(
+                ['organization_id', 'event_type', 'status', 'available_at'],
+                'integration_events_org_type_status_available_index',
+            );
         });
 
         Schema::create('referral_commercial_evidence', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'ref_evidence_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('integration_event_id');
             $table->foreignId('referral_relationship_id')->nullable();
             $table->foreignId('referred_client_id');
@@ -181,32 +234,62 @@ return new class extends Migration
             $table->string('observation_source', 40);
             $table->timestampTz('observed_at')->useCurrent();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'integration_event_id']);
-            $table->unique(['organization_id', 'financial_obligation_id']);
-            $table->unique(['organization_id', 'financial_ledger_entry_id']);
-            $table->index(['organization_id', 'referred_client_id', 'observed_at']);
-            $table->foreign(['organization_id', 'integration_event_id'])
+            $table->unique(['organization_id', 'id'], 'ref_evidence_org_id_unique');
+            $table->unique(
+                ['organization_id', 'integration_event_id'],
+                'ref_evidence_org_event_unique',
+            );
+            $table->unique(
+                ['organization_id', 'financial_obligation_id'],
+                'ref_evidence_org_obligation_unique',
+            );
+            $table->unique(
+                ['organization_id', 'financial_ledger_entry_id'],
+                'ref_evidence_org_ledger_unique',
+            );
+            $table->index(
+                ['organization_id', 'referred_client_id', 'observed_at'],
+                'ref_evidence_org_referred_observed_index',
+            );
+            $table->foreign(
+                ['organization_id', 'integration_event_id'],
+                'ref_evidence_org_event_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('integration_events')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'referral_relationship_id'])
+            $table->foreign(
+                ['organization_id', 'referral_relationship_id'],
+                'ref_evidence_org_relationship_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('referral_relationships')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'referral_relationship_id', 'referred_client_id'])
+            $table->foreign(
+                ['organization_id', 'referral_relationship_id', 'referred_client_id'],
+                'ref_evidence_org_relationship_client_fk',
+            )
                 ->references(['organization_id', 'id', 'referred_client_id'])
                 ->on('referral_relationships')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'referred_client_id'])
+            $table->foreign(
+                ['organization_id', 'referred_client_id'],
+                'ref_evidence_org_client_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_obligation_id', 'referred_client_id'])
+            $table->foreign(
+                ['organization_id', 'financial_obligation_id', 'referred_client_id'],
+                'ref_evidence_org_obligation_client_fk',
+            )
                 ->references(['organization_id', 'id', 'client_id'])
                 ->on('financial_obligations')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_ledger_entry_id', 'financial_obligation_id'])
+            $table->foreign(
+                ['organization_id', 'financial_ledger_entry_id', 'financial_obligation_id'],
+                'ref_evidence_org_ledger_obligation_fk',
+            )
                 ->references(['organization_id', 'id', 'obligation_id'])
                 ->on('financial_ledger_entries')
                 ->restrictOnDelete();
@@ -214,20 +297,24 @@ return new class extends Migration
 
         Schema::create('feedback_configurations', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'feedback_config_org_fk')
+                ->restrictOnDelete();
             $table->boolean('enabled')->default(true);
             $table->unsignedTinyInteger('positive_threshold')->default(8);
             $table->boolean('low_score_feedback_required')->default(true);
             $table->string('review_url_ru', 2048)->nullable();
             $table->string('review_url_en', 2048)->nullable();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique('organization_id');
+            $table->unique(['organization_id', 'id'], 'feedback_config_org_id_unique');
+            $table->unique('organization_id', 'feedback_config_org_unique');
         });
 
         Schema::create('feedback_submissions', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
+            $table->foreignId('organization_id')
+                ->constrained('organizations', 'id', 'feedback_submissions_org_fk')
+                ->restrictOnDelete();
             $table->foreignId('client_id');
             $table->unsignedTinyInteger('score');
             $table->string('source', 40);
@@ -236,10 +323,19 @@ return new class extends Migration
             $table->text('internal_feedback')->nullable();
             $table->timestampTz('submitted_at')->useCurrent();
             $table->timestampsTz();
-            $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'client_id', 'idempotency_key']);
-            $table->index(['organization_id', 'client_id', 'submitted_at']);
-            $table->foreign(['organization_id', 'client_id'])
+            $table->unique(['organization_id', 'id'], 'feedback_submissions_org_id_unique');
+            $table->unique(
+                ['organization_id', 'client_id', 'idempotency_key'],
+                'feedback_submissions_org_client_key_unique',
+            );
+            $table->index(
+                ['organization_id', 'client_id', 'submitted_at'],
+                'feedback_submissions_org_client_submitted_index',
+            );
+            $table->foreign(
+                ['organization_id', 'client_id'],
+                'feedback_submissions_org_client_fk',
+            )
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
