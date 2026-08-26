@@ -4,11 +4,14 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Models\User;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRuleConfiguration;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class UpdateScenarioRule
 {
@@ -27,16 +30,17 @@ final class UpdateScenarioRule
         $this->conditions->validate($configuration->conditions);
         $this->authorization->assertRecipientStrategy($configuration->recipientStrategy);
 
-        abort_unless(
-            NotificationTemplateVersion::query()
+        if (! NotificationTemplateVersion::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey($configuration->templateVersionId)
+            ->where('status', NotificationTemplateStatus::Published->value)
+            ->whereHas('template', fn ($query) => $query
                 ->where('organization_id', $organization->getKey())
-                ->whereKey($configuration->templateVersionId)
-                ->where('status', NotificationTemplateStatus::Published->value)
-                ->whereHas('template', fn ($query) => $query->where('is_active', true))
-                ->exists(),
-            422,
-            'The selected notification template version is not available.',
-        );
+                ->where('is_active', true)
+                ->where('purpose', $configuration->purpose->value))
+            ->exists()) {
+            throw ValidationException::withMessages(['template_version_id' => 'Выбранный шаблон не соответствует назначению правила.']);
+        }
 
         return DB::transaction(function () use ($actor, $configuration, $organization, $rule): ScenarioRule {
             $lockedRule = ScenarioRule::query()
@@ -44,6 +48,7 @@ final class UpdateScenarioRule
                 ->whereKey($rule->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->assertTemplateLocked($organization->getKey(), $configuration->templateVersionId, $configuration->purpose);
 
             $lockedRule->forceFill([
                 ...$configuration->attributes(),
@@ -74,5 +79,35 @@ final class UpdateScenarioRule
 
             return $lockedRule->refresh();
         });
+    }
+
+    private function assertTemplateLocked(int $organizationId, int $templateVersionId, ScenarioRulePurpose $purpose): void
+    {
+        $version = NotificationTemplateVersion::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($templateVersionId)
+            ->first();
+        $template = $version === null
+            ? null
+            : NotificationTemplate::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($version->template_id)
+                ->lockForUpdate()
+                ->first();
+        $lockedVersion = $version === null
+            ? null
+            : NotificationTemplateVersion::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($templateVersionId)
+                ->lockForUpdate()
+                ->first();
+
+        if ($lockedVersion === null
+            || $template === null
+            || $lockedVersion->status !== NotificationTemplateStatus::Published
+            || ! $template->is_active
+            || $template->purpose !== $purpose->value) {
+            throw ValidationException::withMessages(['template_version_id' => 'Выбранный шаблон не соответствует назначению правила.']);
+        }
     }
 }

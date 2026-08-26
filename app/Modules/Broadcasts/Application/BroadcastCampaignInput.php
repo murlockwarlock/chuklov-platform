@@ -2,10 +2,14 @@
 
 namespace App\Modules\Broadcasts\Application;
 
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use DateTimeZone;
 use Illuminate\Validation\ValidationException;
 
 final readonly class BroadcastCampaignInput
@@ -48,7 +52,8 @@ final readonly class BroadcastCampaignInput
         $scheduledAt = null;
         if ($mode === 'scheduled') {
             try {
-                $scheduledAt = CarbonImmutable::parse((string) ($attributes['scheduled_at'] ?? ''))->utc();
+                $timezone = Organization::query()->findOrFail($organizationId)->defaultTimezone();
+                $scheduledAt = $this->scheduledInstant($attributes['scheduled_at'] ?? null, $timezone);
             } catch (\Throwable) {
                 throw ValidationException::withMessages(['scheduled_at' => 'Укажите корректные дату и время отправки.']);
             }
@@ -69,6 +74,36 @@ final readonly class BroadcastCampaignInput
         ];
     }
 
+    private function scheduledInstant(mixed $value, string $timezone): CarbonImmutable
+    {
+        $wallClock = $value instanceof DateTimeInterface
+            ? CarbonImmutable::instance($value)->setTimezone(new DateTimeZone($timezone))->format('Y-m-d H:i:s')
+            : trim((string) $value);
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(?::(\d{2}))?$/D', $wallClock, $matches) !== 1) {
+            throw new \InvalidArgumentException('The scheduled wall-clock value is invalid.');
+        }
+
+        $seconds = isset($matches[6]) ? (int) $matches[6] : 0;
+        $local = CarbonImmutable::createSafe(
+            (int) $matches[1],
+            (int) $matches[2],
+            (int) $matches[3],
+            (int) $matches[4],
+            (int) $matches[5],
+            $seconds,
+            new DateTimeZone($timezone),
+        );
+        if (! $local instanceof CarbonImmutable) {
+            throw new \InvalidArgumentException('The scheduled wall-clock value is invalid.');
+        }
+        $expectedFormat = isset($matches[6]) ? 'Y-m-d H:i:s' : 'Y-m-d H:i';
+        if ($local->format($expectedFormat) !== $wallClock) {
+            throw new \InvalidArgumentException('The scheduled wall-clock value is invalid.');
+        }
+
+        return $local->utc();
+    }
+
     private function template(int $organizationId, mixed $id, string $locale): ?NotificationTemplateVersion
     {
         if ($id === null || $id === '') {
@@ -81,6 +116,19 @@ final readonly class BroadcastCampaignInput
         $version = NotificationTemplateVersion::query()->where('organization_id', $organizationId)->whereKey((int) $id)->where('status', NotificationTemplateStatus::Published->value)->whereHas('template', fn ($query) => $query->where('organization_id', $organizationId)->where('locale', $locale)->where('purpose', ScenarioRulePurpose::Marketing->value)->where('is_active', true))->first();
         if ($version === null) {
             throw ValidationException::withMessages(["template_version_{$locale}_id" => 'Шаблон недоступен для маркетинговой рассылки.']);
+        }
+
+        $variables = $version->variables;
+        if (array_diff($variables, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
+            throw ValidationException::withMessages(["template_version_{$locale}_id" => 'Шаблон содержит данные, недоступные для рассылки.']);
+        }
+        try {
+            $used = ScenarioTemplateVariableCatalog::used($version->body, (string) $version->subject);
+        } catch (\InvalidArgumentException) {
+            throw ValidationException::withMessages(["template_version_{$locale}_id" => 'Шаблон содержит неподдерживаемые данные.']);
+        }
+        if (array_diff($used, $variables) !== []) {
+            throw ValidationException::withMessages(["template_version_{$locale}_id" => 'Шаблон содержит незаявленные данные.']);
         }
 
         return $version;

@@ -8,6 +8,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
+use Throwable;
 
 final class ProcessBroadcastBatch implements ShouldQueue
 {
@@ -20,16 +22,29 @@ final class ProcessBroadcastBatch implements ShouldQueue
     /** @var list<int> */
     public array $backoff = [60, 300];
 
-    public function __construct(public readonly int $organizationId, public readonly int $batchId)
+    public readonly string $leaseToken;
+
+    public function __construct(public readonly int $organizationId, public readonly int $batchId, ?string $leaseToken = null)
     {
+        $this->leaseToken = $leaseToken === null || $leaseToken === '' ? (string) Str::uuid() : $leaseToken;
         $this->onQueue('broadcasts');
     }
 
     public function handle(Processor $processor): void
     {
-        if ($processor->handle($this->organizationId, $this->batchId)) {
+        if ($processor->handle($this->organizationId, $this->batchId, $this->leaseToken)) {
             $this->release(300);
         }
+    }
+
+    public function failed(?Throwable $exception): void
+    {
+        app(Processor::class)->markJobFailed(
+            $this->organizationId,
+            $this->batchId,
+            $exception === null ? null : 'queue_job_failed',
+            $this->leaseToken,
+        );
     }
 
     /** @return list<string> */

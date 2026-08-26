@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $render_context
  * @property Carbon|null $claimed_at
  * @property Carbon|null $next_attempt_at
+ * @property string|null $last_error_code
  */
 class BroadcastRecipient extends Model
 {

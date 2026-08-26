@@ -15,6 +15,8 @@ use Illuminate\Support\Carbon;
  * @property string $state
  * @property string|null $lease_token
  * @property Carbon|null $claimed_at
+ * @property Carbon|null $available_at
+ * @property int $dispatch_attempt_count
  */
 class BroadcastBatch extends Model
 {
@@ -28,6 +30,13 @@ class BroadcastBatch extends Model
 
     protected function casts(): array
     {
-        return ['claimed_at' => 'datetime', 'completed_at' => 'datetime', 'sequence' => 'integer'];
+        return [
+            'claimed_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'available_at' => 'datetime',
+            'last_dispatched_at' => 'datetime',
+            'sequence' => 'integer',
+            'dispatch_attempt_count' => 'integer',
+        ];
     }
 }

@@ -28,10 +28,20 @@ final readonly class StartBroadcastCampaign
         $snapshot = $this->materializer->handle($campaign);
         DB::transaction(function () use ($actor, $campaign, $organization, $snapshot): void {
             $locked = BroadcastCampaign::query()->where('organization_id', $organization->getKey())->whereKey($campaign->getKey())->lockForUpdate()->firstOrFail();
-            if ($locked->state !== BroadcastCampaignState::Draft || (int) $locked->audience_snapshot_id !== $snapshot->getKey()) {
+            if ($locked->state !== BroadcastCampaignState::Draft
+                || (int) $locked->audience_snapshot_id !== $snapshot->getKey()
+                || (int) $snapshot->draft_version !== (int) $locked->draft_version) {
                 throw ValidationException::withMessages(['campaign' => 'Состояние рассылки изменилось. Обновите страницу.']);
             }
-            $when = $locked->send_mode === 'scheduled' ? CarbonImmutable::parse((string) $locked->scheduled_at)->utc() : CarbonImmutable::now();
+            if ($locked->send_mode === 'scheduled' && $locked->scheduled_at === null) {
+                throw ValidationException::withMessages(['scheduled_at' => 'Для запланированной рассылки не указано время.']);
+            }
+            if ($locked->send_mode === 'scheduled' && $locked->scheduled_at->lessThanOrEqualTo(now())) {
+                throw ValidationException::withMessages(['scheduled_at' => 'Время запланированной отправки должно быть в будущем.']);
+            }
+            $when = $locked->send_mode === 'scheduled'
+                ? CarbonImmutable::instance($locked->scheduled_at)->utc()
+                : CarbonImmutable::now();
             $locked->forceFill(['state' => BroadcastCampaignState::Scheduled, 'scheduled_at' => $when])->save();
             $this->audit->handle($organization, $actor, $locked->send_mode === 'scheduled' ? 'broadcast.campaign.scheduled' : 'broadcast.campaign.started', BroadcastCampaign::class, (string) $locked->getKey(), ['audience_count' => $snapshot->matched_count, 'eligible_count' => $snapshot->eligible_count, 'scheduled_at' => $when->toIso8601String()]);
         });

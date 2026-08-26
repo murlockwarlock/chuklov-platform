@@ -23,9 +23,15 @@ final readonly class BroadcastEligibilityPolicy
             return ['eligible' => false, 'reason' => 'organization_mismatch', 'channel' => null, 'external_id' => null];
         }
 
-        $consent = ClientConsent::query()->where('organization_id', $organizationId)->where('client_id', $client->getKey())->where('subject', ConsentSubject::Marketing->value)->latest('recorded_at')->value('granted');
+        $consent = ClientConsent::query()
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $client->getKey())
+            ->where('subject', ConsentSubject::Marketing->value)
+            ->orderByDesc('recorded_at')
+            ->orderByDesc('id')
+            ->value('granted');
 
-        if ($consent !== true && $consent !== 1) {
+        if ($consent !== true && $consent !== 1 && $consent !== '1') {
             return ['eligible' => false, 'reason' => $consent === null ? 'marketing_consent_missing' : 'marketing_suppressed', 'channel' => null, 'external_id' => null];
         }
 

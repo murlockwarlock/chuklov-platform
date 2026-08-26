@@ -208,8 +208,12 @@ final class DeliverCompanionMessage implements ShouldQueue
                 return [false, null];
             }
 
+            $outcome = $result->outcome === NotificationDeliveryOutcome::InFlight
+                ? NotificationDeliveryOutcome::Unknown
+                : $result->outcome;
+
             $retry = false;
-            if ($result->outcome === NotificationDeliveryOutcome::Delivered) {
+            if ($outcome === NotificationDeliveryOutcome::Delivered) {
                 $locked->update([
                     'status' => CompanionDeliveryStatus::Delivered,
                     'provider_reference' => $result->providerReference,
@@ -219,18 +223,18 @@ final class DeliverCompanionMessage implements ShouldQueue
                     'next_attempt_at' => null,
                     'delivered_at' => now(),
                 ]);
-            } elseif ($result->outcome === NotificationDeliveryOutcome::Unknown) {
+            } elseif ($outcome === NotificationDeliveryOutcome::Unknown) {
                 $locked->update([
                     'status' => CompanionDeliveryStatus::Uncertain,
                     'provider_reference' => $result->providerReference,
-                    'last_error_code' => $result->errorCode ?? 'delivery_outcome_unknown',
+                    'last_error_code' => 'delivery_outcome_unknown',
                     'processing_lease_token' => null,
                     'processing_lease_expires_at' => null,
                     'next_attempt_at' => null,
                     'uncertain_at' => now(),
                 ]);
             } else {
-                $retry = $result->outcome === NotificationDeliveryOutcome::Retryable
+                $retry = $outcome === NotificationDeliveryOutcome::Retryable
                     && $locked->attempt_count < $this->maxAttempts();
                 $locked->update([
                     'status' => CompanionDeliveryStatus::Failed,
@@ -242,7 +246,7 @@ final class DeliverCompanionMessage implements ShouldQueue
             }
 
             $nextDeliveryId = null;
-            $delivered = $result->outcome === NotificationDeliveryOutcome::Delivered;
+            $delivered = $outcome === NotificationDeliveryOutcome::Delivered;
             if ($delivered) {
                 $nextDeliveryId = CompanionDelivery::query()
                     ->where('organization_id', $this->organizationId)

@@ -6,13 +6,16 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\Pages\EditBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\Pages\ListBroadcastCampaigns;
 use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign;
+use App\Filament\Resources\BroadcastCampaigns\RelationManagers\RecipientsRelationManager;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use BackedEnum;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -68,7 +71,13 @@ final class BroadcastCampaignResource extends Resource
             ])->columnSpanFull(),
             Section::make('Запуск')->schema([
                 Select::make('send_mode')->label('Когда отправить')->options(['immediate' => 'Сразу после подтверждения', 'scheduled' => 'В выбранное время'])->default('immediate')->required()->live(),
-                DateTimePicker::make('scheduled_at')->label('Дата и время')->seconds(false)->visible(fn (Get $get): bool => $get('send_mode') === 'scheduled')->required(fn (Get $get): bool => $get('send_mode') === 'scheduled'),
+                DateTimePicker::make('scheduled_at')
+                    ->label(fn (): string => 'Дата и время ('.app(OrganizationContext::class)->defaultTimezone().')')
+                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                    ->seconds(false)
+                    ->helperText(fn (): string => 'Время указывается по часовому поясу организации: '.app(OrganizationContext::class)->defaultTimezone().'.')
+                    ->visible(fn (Get $get): bool => $get('send_mode') === 'scheduled')
+                    ->required(fn (Get $get): bool => $get('send_mode') === 'scheduled'),
             ])->columns(2)->columnSpanFull(),
         ]);
     }
@@ -79,12 +88,12 @@ final class BroadcastCampaignResource extends Resource
             TextEntry::make('name')->label('Рассылка'),
             TextEntry::make('state')->label('Состояние')->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))->badge(),
             TextEntry::make('segment_summary')->label('Получатели')->columnSpanFull(),
-            TextEntry::make('scheduled_at')->label('Запланировано')->dateTime('d.m.Y H:i')->placeholder('Сразу'),
+            TextEntry::make('scheduled_at')->label(fn (): string => 'Запланировано ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу'),
             TextEntry::make('audience_count')->label('Найдено'),
             TextEntry::make('delivered_count')->label('Доставлено'),
             TextEntry::make('failed_count')->label('Ошибки'),
             TextEntry::make('suppressed_count')->label('Исключено'),
-            TextEntry::make('audienceSnapshot.materialized_at')->label('Список получателей зафиксирован')->dateTime('d.m.Y H:i')->placeholder('Ещё не зафиксирован'),
+            TextEntry::make('audienceSnapshot.materialized_at')->label('Список получателей зафиксирован')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Ещё не зафиксирован'),
             TextEntry::make('failure_summary')->label('Последние ошибки')->state(fn (BroadcastCampaign $record): string => $record->recipients()->whereNotNull('last_error_code')->latest('updated_at')->limit(10)->pluck('last_error_code')->unique()->implode(', ') ?: 'Нет')->columnSpanFull(),
             TextEntry::make('creator.name')->label('Создал')->placeholder('Сотрудник удалён'),
             TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
@@ -97,7 +106,7 @@ final class BroadcastCampaignResource extends Resource
         return $table->columns([
             TextColumn::make('name')->label('Рассылка')->searchable()->sortable(),
             TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state))),
-            TextColumn::make('scheduled_at')->label('Запуск')->dateTime('d.m.Y H:i')->placeholder('Сразу')->sortable(),
+            TextColumn::make('scheduled_at')->label(fn (): string => 'Запуск ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу')->sortable(),
             TextColumn::make('audience_count')->label('Получатели')->numeric()->sortable(),
             TextColumn::make('delivery_summary')->label('Результат')->state(fn (BroadcastCampaign $record): string => "Доставлено {$record->delivered_count} · ошибок {$record->failed_count} · исключено {$record->suppressed_count}"),
             TextColumn::make('creator.name')->label('Создал')->placeholder('—'),
@@ -134,10 +143,43 @@ final class BroadcastCampaignResource extends Resource
         return ['index' => ListBroadcastCampaigns::route('/'), 'create' => CreateBroadcastCampaign::route('/create'), 'view' => ViewBroadcastCampaign::route('/{record}'), 'edit' => EditBroadcastCampaign::route('/{record}/edit')];
     }
 
+    public static function getRelations(): array
+    {
+        return [RecipientsRelationManager::class];
+    }
+
     /** @return array<string, string> */
     private static function templateOptions(string $locale): array
     {
-        return NotificationTemplateVersion::query()->where('organization_id', app(OrganizationContext::class)->id())->where('status', 'published')->whereHas('template', fn ($query) => $query->where('locale', $locale)->where('purpose', 'marketing')->where('is_active', true))->with('template')->latest('id')->get()->mapWithKeys(fn ($version): array => [$version->getKey() => ($version->template?->name ?: 'Сообщение').' · версия '.$version->version])->all();
+        $organizationId = app(OrganizationContext::class)->id();
+
+        return NotificationTemplateVersion::query()
+            ->where('organization_id', $organizationId)
+            ->where('status', 'published')
+            ->whereHas('template', fn ($query) => $query
+                ->where('organization_id', $organizationId)
+                ->where('locale', $locale)
+                ->where('purpose', 'marketing')
+                ->where('is_active', true))
+            ->with('template')
+            ->latest('id')
+            ->get()
+            ->filter(static function (NotificationTemplateVersion $version): bool {
+                if (array_diff($version->variables, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
+                    return false;
+                }
+
+                try {
+                    return array_diff(
+                        ScenarioTemplateVariableCatalog::used($version->body, (string) $version->subject),
+                        $version->variables,
+                    ) === [];
+                } catch (\InvalidArgumentException) {
+                    return false;
+                }
+            })
+            ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [$version->getKey() => ($version->template?->name ?: 'Сообщение').' · версия '.$version->version])
+            ->all();
     }
 
     /** @return array<string, string> */

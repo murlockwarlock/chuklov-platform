@@ -84,6 +84,10 @@ final class SegmentDefinition
                 throw ValidationException::withMessages(['segment_definition' => 'Количество визитов должно быть целым числом.']);
             }
 
+            if ((int) $value < 0) {
+                throw ValidationException::withMessages(['segment_definition' => 'Количество визитов не может быть отрицательным.']);
+            }
+
             return min((int) $value, 100000);
         }
 
@@ -111,7 +115,7 @@ final class SegmentDefinition
             if (! is_string($item) || trim($item) === '' || mb_strlen(trim($item)) > 120) {
                 throw ValidationException::withMessages(['segment_definition' => 'Значение условия имеет неверный формат.']);
             }
-            $normalized[] = trim($item);
+            $normalized[] = $key === 'tag' ? mb_strtolower(trim($item)) : trim($item);
         }
 
         if ($key === 'booking_status' && array_diff($normalized, array_column(BookingStatus::cases(), 'value')) !== []) {

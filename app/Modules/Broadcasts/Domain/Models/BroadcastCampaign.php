@@ -33,6 +33,9 @@ use Illuminate\Support\Carbon;
  * @property int $suppressed_count
  * @property Carbon|null $scheduled_at
  * @property Carbon|null $dispatch_started_at
+ * @property int $dispatch_attempt_count
+ * @property Carbon|null $next_dispatch_at
+ * @property string|null $last_dispatch_error_code
  */
 #[Fillable(['name', 'send_mode', 'channel_priority', 'segment_definition', 'segment_summary', 'template_version_ru_id', 'template_version_en_id', 'scheduled_at'])]
 class BroadcastCampaign extends Model
@@ -81,6 +84,7 @@ class BroadcastCampaign extends Model
             'segment_definition' => 'array',
             'scheduled_at' => 'datetime',
             'dispatch_started_at' => 'datetime',
+            'next_dispatch_at' => 'datetime',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'draft_version' => 'integer',
@@ -89,6 +93,7 @@ class BroadcastCampaign extends Model
             'delivered_count' => 'integer',
             'failed_count' => 'integer',
             'suppressed_count' => 'integer',
+            'dispatch_attempt_count' => 'integer',
         ];
     }
 }

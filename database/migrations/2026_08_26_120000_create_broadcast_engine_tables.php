@@ -53,6 +53,9 @@ return new class extends Migration
             $table->timestampTz('dispatch_started_at')->nullable();
             $table->timestampTz('completed_at')->nullable();
             $table->timestampTz('cancelled_at')->nullable();
+            $table->unsignedSmallInteger('dispatch_attempt_count')->default(0);
+            $table->timestampTz('next_dispatch_at')->nullable();
+            $table->string('last_dispatch_error_code', 64)->nullable();
             $table->unsignedBigInteger('audience_count')->default(0);
             $table->unsignedBigInteger('sent_count')->default(0);
             $table->unsignedBigInteger('delivered_count')->default(0);
@@ -63,6 +66,7 @@ return new class extends Migration
             $table->foreign(['organization_id', 'template_version_ru_id'], 'bc_campaign_ru_template_fk')->references(['organization_id', 'id'])->on('notification_template_versions')->restrictOnDelete();
             $table->foreign(['organization_id', 'template_version_en_id'], 'bc_campaign_en_template_fk')->references(['organization_id', 'id'])->on('notification_template_versions')->restrictOnDelete();
             $table->index(['organization_id', 'state', 'scheduled_at'], 'bc_campaign_due_ix');
+            $table->index(['state', 'next_dispatch_at', 'scheduled_at', 'id'], 'bc_campaign_global_due_ix');
         });
 
         Schema::create('broadcast_audience_snapshots', function (Blueprint $table): void {
@@ -70,6 +74,7 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained('organizations', 'id', 'bc_snapshot_org_fk')->restrictOnDelete();
             $table->foreignId('campaign_id');
             $table->unsignedInteger('version');
+            $table->unsignedInteger('draft_version')->default(1);
             $table->jsonb('segment_definition');
             $table->string('segment_summary', 500);
             $table->jsonb('channel_priority');
@@ -102,6 +107,10 @@ return new class extends Migration
             $table->string('state', 20)->default('pending');
             $table->uuid('lease_token')->nullable();
             $table->timestampTz('claimed_at')->nullable();
+            $table->timestampTz('available_at')->nullable();
+            $table->unsignedSmallInteger('dispatch_attempt_count')->default(0);
+            $table->timestampTz('last_dispatched_at')->nullable();
+            $table->string('last_dispatch_error_code', 64)->nullable();
             $table->timestampTz('completed_at')->nullable();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id'], 'bc_batch_org_id_uq');
@@ -136,6 +145,7 @@ return new class extends Migration
             $table->string('provider_reference', 255)->nullable();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id'], 'bc_recipient_org_id_uq');
+            $table->unique(['organization_id', 'id', 'campaign_id', 'snapshot_id'], 'bc_recipient_org_scope_uq');
             $table->unique(['organization_id', 'campaign_id', 'client_id', 'kind', 'snapshot_id'], 'bc_recipient_logical_uq');
             $table->unique(['organization_id', 'idempotency_key'], 'bc_recipient_idem_uq');
             $table->foreign(['organization_id', 'campaign_id'], 'bc_recipient_org_campaign_fk')->references(['organization_id', 'id'])->on('broadcast_campaigns')->restrictOnDelete();
@@ -149,14 +159,26 @@ return new class extends Migration
             $table->id();
             $table->foreignId('organization_id')->constrained('organizations', 'id', 'bc_attempt_org_fk')->restrictOnDelete();
             $table->foreignId('recipient_id');
+            $table->foreignId('campaign_id');
+            $table->foreignId('snapshot_id');
+            $table->foreignId('batch_id')->nullable();
+            $table->string('channel', 40)->nullable();
+            $table->char('idempotency_key', 64);
             $table->unsignedSmallInteger('attempt_number');
             $table->string('outcome', 32);
             $table->string('error_code', 64)->nullable();
             $table->string('provider_reference', 255)->nullable();
+            $table->timestampTz('started_at');
             $table->timestampTz('attempted_at');
+            $table->timestampTz('completed_at')->nullable();
             $table->timestampTz('created_at')->useCurrent();
             $table->unique(['organization_id', 'recipient_id', 'attempt_number'], 'bc_attempt_org_recipient_no_uq');
             $table->foreign(['organization_id', 'recipient_id'], 'bc_attempt_org_recipient_fk')->references(['organization_id', 'id'])->on('broadcast_recipients')->restrictOnDelete();
+            $table->foreign(['organization_id', 'recipient_id', 'campaign_id', 'snapshot_id'], 'bc_attempt_org_recipient_scope_fk')->references(['organization_id', 'id', 'campaign_id', 'snapshot_id'])->on('broadcast_recipients')->restrictOnDelete();
+            $table->foreign(['organization_id', 'campaign_id'], 'bc_attempt_org_campaign_fk')->references(['organization_id', 'id'])->on('broadcast_campaigns')->restrictOnDelete();
+            $table->foreign(['organization_id', 'campaign_id', 'snapshot_id'], 'bc_attempt_org_snapshot_fk')->references(['organization_id', 'campaign_id', 'id'])->on('broadcast_audience_snapshots')->restrictOnDelete();
+            $table->foreign(['organization_id', 'campaign_id', 'snapshot_id', 'batch_id'], 'bc_attempt_org_batch_fk')->references(['organization_id', 'campaign_id', 'snapshot_id', 'id'])->on('broadcast_batches')->restrictOnDelete();
+            $table->index(['organization_id', 'campaign_id', 'attempted_at'], 'bc_attempt_campaign_time_ix');
         });
 
         if (DB::getDriverName() === 'pgsql') {
@@ -164,7 +186,8 @@ return new class extends Migration
             DB::statement("ALTER TABLE broadcast_campaigns ADD CONSTRAINT bc_campaign_mode_ck CHECK (send_mode IN ('immediate','scheduled'))");
             DB::statement("ALTER TABLE broadcast_recipients ADD CONSTRAINT bc_recipient_kind_ck CHECK (kind IN ('production','test'))");
             DB::statement("ALTER TABLE broadcast_recipients ADD CONSTRAINT bc_recipient_state_ck CHECK (state IN ('pending','suppressed','claimed','delivered','failed'))");
-            DB::statement("ALTER TABLE broadcast_batches ADD CONSTRAINT bc_batch_state_ck CHECK (state IN ('pending','claimed','completed'))");
+            DB::statement("ALTER TABLE broadcast_batches ADD CONSTRAINT bc_batch_state_ck CHECK (state IN ('pending','claimed','completed','failed'))");
+            DB::statement("ALTER TABLE broadcast_delivery_attempts ADD CONSTRAINT bc_attempt_outcome_ck CHECK (outcome IN ('in_flight','delivered','retryable','permanent_failure','unavailable','suppressed','unknown'))");
         }
     }
 
@@ -174,12 +197,13 @@ return new class extends Migration
         Schema::dropIfExists('broadcast_recipients');
         Schema::dropIfExists('broadcast_batches');
         Schema::table('broadcast_campaigns', function (Blueprint $table): void {
-            if (DB::getDriverName() === 'pgsql') {
-                $table->dropForeign('bc_campaign_org_snapshot_fk');
-            } else {
+            if (DB::getDriverName() === 'sqlite') {
                 $table->dropForeign(['organization_id', 'id', 'audience_snapshot_id']);
+            } else {
+                $table->dropForeign('bc_campaign_org_snapshot_fk');
             }
             $table->dropColumn('audience_snapshot_id');
+            $table->dropColumn(['dispatch_attempt_count', 'next_dispatch_at', 'last_dispatch_error_code']);
         });
         Schema::dropIfExists('broadcast_audience_snapshots');
         Schema::dropIfExists('broadcast_campaigns');

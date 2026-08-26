@@ -21,6 +21,14 @@ final class BroadcastSegmentDefinitionTest extends TestCase
         self::assertTrue($filters[2]['value']);
     }
 
+    public function test_visit_count_cannot_be_negative(): void
+    {
+        $this->expectException(ValidationException::class);
+        app(SegmentDefinition::class)->validate([
+            ['key' => 'visit_count', 'operator' => 'gte', 'value' => -1],
+        ]);
+    }
+
     #[DataProvider('forbiddenFilters')]
     public function test_arbitrary_and_sensitive_health_filters_fail_closed(string $key): void
     {

@@ -6,10 +6,12 @@ use App\Models\User;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\NotificationTemplateConfiguration;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class UpdateNotificationTemplate
 {
@@ -36,6 +38,14 @@ final class UpdateNotificationTemplate
                 ->lockForUpdate()
                 ->firstOrFail();
             $latest = $lockedTemplate->versions()->latest('version')->firstOrFail();
+
+            if ($lockedTemplate->purpose !== $configuration->purpose->value
+                && ScenarioRule::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereIn('template_version_id', $lockedTemplate->versions()->select('id'))
+                    ->exists()) {
+                throw ValidationException::withMessages(['purpose' => 'Назначение шаблона нельзя изменить, пока он используется правилом сообщений.']);
+            }
 
             $lockedTemplate->forceFill([
                 'name' => $configuration->name,

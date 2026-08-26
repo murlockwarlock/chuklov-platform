@@ -8,36 +8,64 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 
 final class BroadcastSegmentQuery
 {
+    public function __construct(private readonly SegmentDefinition $definitions) {}
+
     /**
      * @param  list<array{key: string, operator: string, value: mixed}>  $filters
      * @return Builder<Client>
      */
     public function build(int $organizationId, array $filters): Builder
     {
-        $query = Client::query()->where('clients.organization_id', $organizationId);
+        $filters = $this->definitions->validate($filters);
+        $query = Client::query()
+            ->select(['clients.id', 'clients.organization_id', 'clients.full_name', 'clients.language'])
+            ->where('clients.organization_id', $organizationId);
 
         foreach ($filters as $filter) {
             $values = $filter['operator'] === 'in' ? $filter['value'] : [$filter['value']];
 
             match ($filter['key']) {
-                'tag' => $query->whereExists(fn ($sub) => $sub->selectRaw('1')->from('broadcast_client_tags as bct')->whereColumn('bct.client_id', 'clients.id')->whereColumn('bct.organization_id', 'clients.organization_id')->whereIn('bct.tag', $values)),
-                'b2b_role' => $query->whereExists(fn ($sub) => $sub->selectRaw('1')->from('broadcast_client_profiles as bcp')->whereColumn('bcp.client_id', 'clients.id')->whereColumn('bcp.organization_id', 'clients.organization_id')->whereIn('bcp.b2b_role', $values)),
-                'survey_completed' => $this->booleanExists($query, (bool) $filter['value'], fn ($sub) => $sub->selectRaw('1')->from('survey_attempts as sa')->whereColumn('sa.client_id', 'clients.id')->whereColumn('sa.organization_id', 'clients.organization_id')->where('sa.status', SurveyAttemptStatus::Completed->value)),
-                'visit_count' => $query->whereRaw('(SELECT COUNT(*) FROM bookings b WHERE b.organization_id = clients.organization_id AND b.client_id = clients.id AND b.status = ?) >= ?', [BookingStatus::Completed->value, $filter['value']]),
-                'booking_status' => $query->whereExists(fn ($sub) => $sub->selectRaw('1')->from('bookings as bs')->whereColumn('bs.client_id', 'clients.id')->whereColumn('bs.organization_id', 'clients.organization_id')->whereIn('bs.status', $values)),
-                'last_visit' => $query->whereRaw('(SELECT MAX(bv.starts_at) FROM bookings bv WHERE bv.organization_id = clients.organization_id AND bv.client_id = clients.id AND bv.status = ?) '.($filter['operator'] === 'before' ? '<' : '>').' ?', [BookingStatus::Completed->value, $filter['value']]),
-                'no_future_booking' => $this->booleanExists($query, ! (bool) $filter['value'], fn ($sub) => $sub->selectRaw('1')->from('bookings as bf')->whereColumn('bf.client_id', 'clients.id')->whereColumn('bf.organization_id', 'clients.organization_id')->whereIn('bf.status', BookingStatus::qualifyingFutureValues())->where('bf.starts_at', '>', now())),
-                'referral_relationship' => $this->booleanExists($query, (bool) $filter['value'], fn ($sub) => $sub->selectRaw('1')->from('referral_relationships as rr')->whereColumn('rr.referred_client_id', 'clients.id')->whereColumn('rr.organization_id', 'clients.organization_id')),
-                'attribution_source' => $query->whereExists(fn ($sub) => $sub->selectRaw('1')->from('client_attributions as ca')->whereColumn('ca.client_id', 'clients.id')->whereColumn('ca.organization_id', 'clients.organization_id')->where(function ($source) use ($values): void {
-                    $source->whereIn('ca.source_type', $values)->orWhereIn('ca.source', $values)->orWhereIn('ca.utm_source', $values);
-                })),
+                'tag' => $query->whereExists(fn ($sub) => $sub
+                    ->from('broadcast_client_tags as bct')
+                    ->whereColumn('bct.client_id', 'clients.id')
+                    ->whereColumn('bct.organization_id', 'clients.organization_id')
+                    ->whereIn('bct.tag', $values)),
+                'b2b_role' => $query->whereExists(fn ($sub) => $sub
+                    ->from('broadcast_client_profiles as bcp')
+                    ->whereColumn('bcp.client_id', 'clients.id')
+                    ->whereColumn('bcp.organization_id', 'clients.organization_id')
+                    ->whereIn('bcp.b2b_role', $values)),
+                'survey_completed' => $this->booleanExists($query, (bool) $filter['value'], fn ($sub) => $sub
+                    ->from('survey_attempts as sa')
+                    ->whereColumn('sa.client_id', 'clients.id')
+                    ->whereColumn('sa.organization_id', 'clients.organization_id')
+                    ->where('sa.status', SurveyAttemptStatus::Completed->value)),
+                'visit_count' => $query->whereHas('bookings', fn ($booking) => $booking
+                    ->whereColumn('bookings.organization_id', 'clients.organization_id')
+                    ->where('bookings.status', BookingStatus::Completed->value), '>=', (int) $filter['value']),
+                'booking_status' => $query->whereHas('bookings', fn ($booking) => $booking
+                    ->whereColumn('bookings.organization_id', 'clients.organization_id')
+                    ->whereIn('bookings.status', $values)),
+                'last_visit' => $this->applyLastVisit($query, $filter['operator'], (string) $filter['value']),
+                'no_future_booking' => $this->applyFutureBooking($query, (bool) $filter['value']),
+                'referral_relationship' => $this->booleanRelation($query, 'referralRelationship', (bool) $filter['value'], fn ($relationship) => $relationship
+                    ->whereColumn('referral_relationships.organization_id', 'clients.organization_id')),
+                'attribution_source' => $query->whereHas('attribution', fn ($attribution) => $attribution
+                    ->whereColumn('client_attributions.organization_id', 'clients.organization_id')
+                    ->where(function ($source) use ($values): void {
+                        $source->whereIn('client_attributions.source_type', $values)
+                            ->orWhereIn('client_attributions.source', $values)
+                            ->orWhereIn('client_attributions.utm_source', $values);
+                    })),
                 'language' => $query->whereIn('clients.language', $values),
-                'verified_channel' => $query->whereExists(fn ($sub) => $sub->selectRaw('1')->from('client_channel_identities as ci')->whereColumn('ci.client_id', 'clients.id')->whereColumn('ci.organization_id', 'clients.organization_id')->where('ci.channel', $filter['value'])->where('ci.verification_status', ChannelIdentityStatus::Verified->value)),
-                default => $query,
+                'verified_channel' => $query->whereHas('channelIdentities', fn ($identity) => $identity
+                    ->whereColumn('client_channel_identities.organization_id', 'clients.organization_id')
+                    ->where('client_channel_identities.channel', $filter['value'])
+                    ->where('client_channel_identities.verification_status', ChannelIdentityStatus::Verified->value)),
+                default => throw new \LogicException('Unsupported persisted broadcast segment filter.'),
             };
         }
 
@@ -46,7 +74,52 @@ final class BroadcastSegmentQuery
 
     /**
      * @param  Builder<Client>  $query
-     * @param  Closure(QueryBuilder): QueryBuilder  $callback
+     * @return Builder<Client>
+     */
+    private function applyLastVisit(Builder $query, string $operator, string $value): Builder
+    {
+        $completed = fn ($booking) => $booking
+            ->whereColumn('bookings.organization_id', 'clients.organization_id')
+            ->where('bookings.status', BookingStatus::Completed->value);
+
+        if ($operator === 'before') {
+            return $query
+                ->whereHas('bookings', $completed)
+                ->whereDoesntHave('bookings', fn ($booking) => $completed($booking)->where('bookings.starts_at', '>=', $value));
+        }
+
+        return $query->whereHas('bookings', fn ($booking) => $completed($booking)->where('bookings.starts_at', '>', $value));
+    }
+
+    /**
+     * @param  Builder<Client>  $query
+     * @return Builder<Client>
+     */
+    private function applyFutureBooking(Builder $query, bool $hasNoFutureBooking): Builder
+    {
+        $future = fn ($booking) => $booking
+            ->whereColumn('bookings.organization_id', 'clients.organization_id')
+            ->whereIn('bookings.status', BookingStatus::qualifyingFutureValues())
+            ->where('bookings.starts_at', '>', now());
+
+        return $hasNoFutureBooking
+            ? $query->whereDoesntHave('bookings', $future)
+            : $query->whereHas('bookings', $future);
+    }
+
+    /**
+     * @param  Builder<Client>  $query
+     * @return Builder<Client>
+     */
+    private function booleanRelation(Builder $query, string $relation, bool $exists, Closure $callback): Builder
+    {
+        return $exists
+            ? $query->whereHas($relation, $callback)
+            : $query->whereDoesntHave($relation, $callback);
+    }
+
+    /**
+     * @param  Builder<Client>  $query
      * @return Builder<Client>
      */
     private function booleanExists(Builder $query, bool $exists, Closure $callback): Builder

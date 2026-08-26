@@ -3,20 +3,30 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign as CreateBroadcastCampaignPage;
+use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Broadcasts\Application\BroadcastEligibilityPolicy;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
+use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign;
+use App\Modules\Broadcasts\Application\MaterializeBroadcastAudience;
 use App\Modules\Broadcasts\Application\PreviewBroadcastCampaign;
+use App\Modules\Broadcasts\Application\ProcessBroadcastBatch;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
+use App\Modules\Broadcasts\Application\SetBroadcastClientClassification;
 use App\Modules\Broadcasts\Application\StartBroadcastCampaign;
 use App\Modules\Broadcasts\Application\TestBroadcastCampaign;
+use App\Modules\Broadcasts\Application\UpdateBroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
+use App\Modules\Broadcasts\Domain\Models\BroadcastDeliveryAttempt;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
@@ -27,18 +37,27 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
+use App\Modules\Scenarios\Application\CreateScenarioRule;
+use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
+use App\Modules\Scenarios\Domain\ValueObjects\NotificationTemplateConfiguration;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use Livewire\Livewire;
 use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
 
@@ -170,15 +189,79 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         app(StartBroadcastCampaign::class)->handle($actor, $campaign);
 
         self::assertCount(0, $this->channel->messages);
-        self::assertSame(BroadcastRecipientState::Suppressed, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole()->state);
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
+        self::assertSame(BroadcastRecipientState::Suppressed, $recipient->state);
+        self::assertSame([], $recipient->render_context);
     }
 
-    public function test_sensitive_or_unknown_filter_and_non_marketing_template_are_rejected(): void
+    public function test_withdrawal_after_snapshot_is_rechecked_before_delivery(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        ClientConsent::factory()->forClient($client)->create([
+            'subject' => ConsentSubject::Marketing->value,
+            'is_required' => false,
+            'granted' => false,
+            'recorded_at' => now()->addSecond(),
+        ]);
+        $campaign->forceFill(['state' => BroadcastCampaignState::Dispatching, 'dispatch_started_at' => now()])->save();
+        $batchId = (int) DB::table('broadcast_batches')->where('campaign_id', $campaign->getKey())->value('id');
+
+        app(ProcessBroadcastBatch::class)->handle($organization->getKey(), $batchId);
+
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
+        self::assertSame(BroadcastRecipientState::Suppressed, $recipient->state);
+        self::assertSame('marketing_suppressed', $recipient->exclusion_code);
+        self::assertSame([], $recipient->render_context);
+        self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_cancelling_scheduled_campaign_closes_unfinished_work_and_prevents_later_dispatch(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, [], 'scheduled', now()->addHour());
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $campaign->forceFill(['state' => BroadcastCampaignState::Scheduled])->save();
+
+        app(CancelBroadcastCampaign::class)->handle($actor, $campaign);
+        app(ScheduleBroadcastWork::class)->handle();
+
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
+        self::assertSame(BroadcastCampaignState::Cancelled, $campaign->refresh()->state);
+        self::assertSame(BroadcastRecipientState::Failed, $recipient->state);
+        self::assertSame('campaign_cancelled', $recipient->last_error_code);
+        self::assertSame([], $recipient->render_context);
+        self::assertSame('failed', DB::table('broadcast_batches')->where('campaign_id', $campaign->getKey())->value('state'));
+        self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_sensitive_segment_key_is_rejected_independently(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([['key' => 'medical.diagnosis', 'operator' => 'equals', 'value' => 'x']]);
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $data);
+    }
+
+    public function test_unknown_survey_result_segment_key_is_rejected_independently(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([['key' => 'survey.result_category', 'operator' => 'equals', 'value' => 'x']]);
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $data);
+    }
+
+    public function test_non_marketing_template_is_rejected_independently(): void
     {
         [$organization, $actor] = $this->fixture();
         $template = NotificationTemplate::factory()->forOrganization($organization)->create(['purpose' => ScenarioRulePurpose::Service->value, 'locale' => 'ru']);
         $version = NotificationTemplateVersion::factory()->forTemplate($template)->create();
-        $data = $this->campaignData([['key' => 'medical.diagnosis', 'operator' => 'equals', 'value' => 'x']]);
+        $data = $this->campaignData([]);
         $data['template_version_ru_id'] = $version->getKey();
 
         $this->expectException(ValidationException::class);
@@ -219,6 +302,367 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame('provider_error', $recipient->last_error_code);
         self::assertNotContains('Bearer secret token', DB::table('audit_events')->pluck('metadata')->all());
         self::assertContains('broadcasts', config('horizon.defaults.supervisor-1.queue'));
+    }
+
+    public function test_delivery_attempt_is_persisted_before_provider_call_and_ambiguous_outcome_is_terminal(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        $seenBeforeCall = null;
+        $this->channel->onSend = function () use (&$seenBeforeCall): void {
+            $seenBeforeCall = BroadcastDeliveryAttempt::query()->sole()->outcome;
+        };
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertSame(NotificationDeliveryOutcome::InFlight, $seenBeforeCall);
+        self::assertSame(NotificationDeliveryOutcome::Delivered, BroadcastDeliveryAttempt::query()->sole()->outcome);
+
+        $this->channel = new RecordingNotificationChannel;
+        $this->channel->throwAfterSend = true;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
+        $secondCampaign = $this->campaign($actor, []);
+        app(StartBroadcastCampaign::class)->handle($actor, $secondCampaign);
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $secondCampaign->getKey())->sole();
+
+        self::assertSame(BroadcastRecipientState::Failed, $recipient->state);
+        self::assertSame('delivery_outcome_unknown', $recipient->last_error_code);
+        self::assertSame('unknown', BroadcastDeliveryAttempt::query()->where('recipient_id', $recipient->getKey())->sole()->outcome->value);
+        self::assertCount(1, $this->channel->messages);
+        app(ScheduleBroadcastWork::class)->handle();
+        self::assertCount(1, $this->channel->messages);
+    }
+
+    public function test_definite_pre_send_failure_is_bounded_retryable_and_suppressed_context_is_minimized(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $suppressed = $this->client($organization, consent: false, verified: true, language: 'ru');
+        $eligible = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $this->channel->throwBeforeSend = true;
+        $campaign = $this->campaign($actor, []);
+        $snapshot = app(MaterializeBroadcastAudience::class)->handle($campaign);
+
+        $suppressedRecipient = BroadcastRecipient::query()->where('snapshot_id', $snapshot->getKey())->where('client_id', $suppressed->getKey())->sole();
+        self::assertSame([], $suppressedRecipient->render_context);
+
+        $campaign->forceFill(['state' => BroadcastCampaignState::Dispatching, 'dispatch_started_at' => now()])->save();
+        $batchId = (int) DB::table('broadcast_batches')->where('campaign_id', $campaign->getKey())->value('id');
+        app(ProcessBroadcastBatch::class)->handle($organization->getKey(), $batchId);
+        $recipient = BroadcastRecipient::query()->where('client_id', $eligible->getKey())->where('campaign_id', $campaign->getKey())->sole();
+
+        self::assertSame(BroadcastRecipientState::Pending, $recipient->state);
+        self::assertSame('retryable', BroadcastDeliveryAttempt::query()->where('recipient_id', $recipient->getKey())->sole()->outcome->value);
+        self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_deactivated_marketing_template_stops_delivery_after_snapshot(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $templateId = $campaign->template_version_ru_id;
+        $template = NotificationTemplateVersion::query()->findOrFail($templateId)->template;
+        self::assertNotNull($template);
+        $template->forceFill(['is_active' => false])->save();
+        $campaign->forceFill(['state' => BroadcastCampaignState::Dispatching, 'dispatch_started_at' => now()])->save();
+        $batchId = (int) DB::table('broadcast_batches')->where('campaign_id', $campaign->getKey())->value('id');
+
+        app(ProcessBroadcastBatch::class)->handle($organization->getKey(), $batchId);
+
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
+        self::assertSame(BroadcastRecipientState::Failed, $recipient->state);
+        self::assertSame('template_inactive_or_channel_unavailable', $recipient->last_error_code);
+        self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_stale_snapshot_revision_cannot_start(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $campaign->forceFill(['draft_version' => 2])->save();
+
+        $this->expectException(ValidationException::class);
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign->refresh());
+    }
+
+    public function test_scheduler_cannot_launch_a_snapshot_from_an_older_draft_revision(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $campaign->forceFill([
+            'draft_version' => 2,
+            'state' => BroadcastCampaignState::Scheduled,
+            'scheduled_at' => now()->subMinute(),
+        ])->save();
+
+        app(ScheduleBroadcastWork::class)->handle();
+
+        self::assertSame(BroadcastCampaignState::Cancelled, $campaign->refresh()->state);
+        self::assertSame('snapshot_superseded', $campaign->last_dispatch_error_code);
+        self::assertSame('failed', DB::table('broadcast_batches')->where('campaign_id', $campaign->getKey())->value('state'));
+        self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_draft_update_supersedes_old_snapshot_and_cannot_launch_old_batches(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        $oldSnapshot = app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $oldBatchId = (int) DB::table('broadcast_batches')->where('snapshot_id', $oldSnapshot->getKey())->value('id');
+        $data = [
+            'name' => 'Обновлённая рассылка',
+            'send_mode' => 'immediate',
+            'channel_priority' => ['telegram'],
+            'segment_definition' => [],
+            'template_version_ru_id' => $campaign->template_version_ru_id,
+            'template_version_en_id' => null,
+            'scheduled_at' => null,
+        ];
+
+        $updated = app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $data);
+
+        self::assertNull($updated->audience_snapshot_id);
+        self::assertSame('failed', DB::table('broadcast_batches')->where('id', $oldBatchId)->value('state'));
+        self::assertSame('snapshot_superseded', BroadcastRecipient::query()->where('snapshot_id', $oldSnapshot->getKey())->sole()->last_error_code);
+
+        app(StartBroadcastCampaign::class)->handle($actor, $updated);
+
+        self::assertSame(2, (int) $updated->refresh()->draft_version);
+        self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->where('state', BroadcastRecipientState::Delivered->value)->count());
+        self::assertCount(1, $this->channel->messages);
+    }
+
+    public function test_tag_assignment_and_segment_query_use_canonical_case(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        app(SetBroadcastClientClassification::class)->handle($actor, $client, null, [' VIP ']);
+
+        $ids = app(BroadcastSegmentQuery::class)->build($organization->getKey(), [['key' => 'tag', 'operator' => 'equals', 'value' => 'VIP']])->pluck('id')->all();
+
+        self::assertSame([$client->getKey()], $ids);
+        self::assertSame('vip', BroadcastClientTag::query()->where('client_id', $client->getKey())->value('tag'));
+    }
+
+    public function test_equal_timestamp_marketing_consent_order_is_deterministic(): void
+    {
+        [$organization] = $this->fixture();
+        $withdrawn = Client::factory()->forOrganization($organization)->create(['language' => 'ru']);
+        ClientChannelIdentity::factory()->forClient($withdrawn)->create(['channel' => 'telegram', 'external_id' => 'equal-time-withdrawn', 'verification_status' => ChannelIdentityStatus::Verified->value, 'verification_method' => 'test', 'verified_at' => now()]);
+        $timestamp = now()->startOfSecond();
+        ClientConsent::factory()->forClient($withdrawn)->create(['subject' => ConsentSubject::Marketing->value, 'is_required' => false, 'granted' => true, 'recorded_at' => $timestamp]);
+        ClientConsent::factory()->forClient($withdrawn)->create(['subject' => ConsentSubject::Marketing->value, 'is_required' => false, 'granted' => false, 'recorded_at' => $timestamp]);
+        self::assertFalse(app(BroadcastEligibilityPolicy::class)->evaluate($withdrawn, $organization->getKey(), ['telegram'])['eligible']);
+
+        $granted = Client::factory()->forOrganization($organization)->create(['language' => 'ru']);
+        ClientChannelIdentity::factory()->forClient($granted)->create(['channel' => 'telegram', 'external_id' => 'equal-time-granted', 'verification_status' => ChannelIdentityStatus::Verified->value, 'verification_method' => 'test', 'verified_at' => now()]);
+        ClientConsent::factory()->forClient($granted)->create(['subject' => ConsentSubject::Marketing->value, 'is_required' => false, 'granted' => false, 'recorded_at' => $timestamp]);
+        ClientConsent::factory()->forClient($granted)->create(['subject' => ConsentSubject::Marketing->value, 'is_required' => false, 'granted' => true, 'recorded_at' => $timestamp]);
+        self::assertTrue(app(BroadcastEligibilityPolicy::class)->evaluate($granted, $organization->getKey(), ['telegram'])['eligible']);
+    }
+
+    public function test_organization_timezone_is_used_for_scheduled_campaign_input(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $actor = User::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        $wallClock = CarbonImmutable::now('Asia/Almaty')->addDay()->setTime(10, 30)->format('Y-m-d H:i');
+        $data = $this->campaignData([]);
+        $data['send_mode'] = 'scheduled';
+        $data['scheduled_at'] = $wallClock;
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $scheduledAt = $campaign->scheduled_at;
+        self::assertNotNull($scheduledAt);
+        self::assertTrue($scheduledAt->equalTo(CarbonImmutable::parse($wallClock, 'Asia/Almaty')->utc()));
+    }
+
+    public function test_scheduled_campaign_rejects_invalid_or_past_wall_clock_values(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['send_mode'] = 'scheduled';
+        $data['scheduled_at'] = 'not-a-date';
+
+        try {
+            app(CreateBroadcastCampaign::class)->handle($actor, $data);
+            self::fail('Invalid wall-clock values must be rejected.');
+        } catch (ValidationException) {
+            self::assertSame(0, BroadcastCampaign::query()->count());
+        }
+
+        $data['scheduled_at'] = CarbonImmutable::now($organization->defaultTimezone())->subMinute()->format('Y-m-d H:i');
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $data);
+    }
+
+    public function test_persisted_unknown_segment_definition_fails_closed(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill(['segment_definition' => [['key' => 'unknown.persisted', 'operator' => 'equals', 'value' => 'x']]])->save();
+
+        $this->expectException(ValidationException::class);
+        app(BroadcastSegmentQuery::class)->build($organization->getKey(), $campaign->refresh()->segment_definition);
+    }
+
+    public function test_marketing_template_variables_are_limited_to_broadcast_context(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        NotificationTemplateConfiguration::from([
+            'template_key' => 'marketing-variable-test',
+            'name' => 'Marketing variable test',
+            'locale' => 'ru',
+            'purpose' => 'marketing',
+            'is_active' => true,
+            'body' => 'Запись {{ booking.starts_at }}',
+            'variables' => ['booking.starts_at'],
+        ]);
+    }
+
+    public function test_marketing_template_cannot_enter_m5_scenario_create_or_update_paths(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $marketing = NotificationTemplate::factory()->forOrganization($organization)->create(['purpose' => ScenarioRulePurpose::Marketing->value]);
+        $marketingVersion = NotificationTemplateVersion::factory()->forTemplate($marketing)->create();
+        $service = NotificationTemplate::factory()->forOrganization($organization)->create(['purpose' => ScenarioRulePurpose::Service->value]);
+        $serviceVersion = NotificationTemplateVersion::factory()->forTemplate($service)->create();
+        $attributes = [
+            'rule_key' => 'broadcast-not-scenario',
+            'name' => 'Broadcast not scenario',
+            'trigger_event' => 'booking.completed',
+            'is_enabled' => true,
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'purpose' => 'service',
+            'conditions' => [],
+            'recipient_strategy' => ['type' => 'client'],
+            'channel_priority' => ['telegram'],
+            'template_version_id' => $marketingVersion->getKey(),
+        ];
+
+        try {
+            app(CreateScenarioRule::class)->handle($actor, $attributes);
+            self::fail('A marketing template must not be accepted by an M5 scenario rule.');
+        } catch (ValidationException) {
+            self::assertSame(0, ScenarioRule::query()->count());
+        }
+
+        $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($serviceVersion)->create();
+        $this->expectException(ValidationException::class);
+        app(UpdateScenarioRule::class)->handle($actor, $rule, [...$attributes, 'rule_key' => $rule->rule_key, 'template_version_id' => $marketingVersion->getKey()]);
+    }
+
+    public function test_scenario_rule_template_choices_exclude_marketing_templates(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $marketing = NotificationTemplate::factory()->forOrganization($organization)->create(['purpose' => ScenarioRulePurpose::Marketing->value, 'locale' => 'ru']);
+        $marketingVersion = NotificationTemplateVersion::factory()->forTemplate($marketing)->create();
+        $service = NotificationTemplate::factory()->forOrganization($organization)->create(['purpose' => ScenarioRulePurpose::Service->value, 'locale' => 'ru']);
+        $serviceVersion = NotificationTemplateVersion::factory()->forTemplate($service)->create();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($actor)->test(CreateScenarioRulePage::class);
+        $component->fillForm(['purpose' => ScenarioRulePurpose::Service->value]);
+        $select = $component->instance()->getSchemaComponent('form.template_version_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertArrayHasKey($serviceVersion->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($marketingVersion->getKey(), $select->getOptions());
+    }
+
+    public function test_broadcast_template_choices_exclude_unsupported_marketing_variables(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $unsupported = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'purpose' => ScenarioRulePurpose::Marketing->value,
+            'locale' => 'ru',
+        ]);
+        $unsupportedVersion = NotificationTemplateVersion::factory()->forTemplate($unsupported)->create([
+            'body' => 'Запись {{ booking.starts_at }}',
+            'variables' => ['booking.starts_at'],
+        ]);
+        $supported = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'purpose' => ScenarioRulePurpose::Marketing->value,
+            'locale' => 'ru',
+        ]);
+        $supportedVersion = NotificationTemplateVersion::factory()->forTemplate($supported)->create([
+            'body' => 'Здравствуйте, {{ client.full_name }}!',
+            'variables' => ['client.full_name'],
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($actor)->test(CreateBroadcastCampaignPage::class);
+        $select = $component->instance()->getSchemaComponent('form.template_version_ru_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertArrayHasKey($supportedVersion->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($unsupportedVersion->getKey(), $select->getOptions());
+    }
+
+    public function test_revoked_creator_authority_blocks_scheduled_execution(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, [], 'scheduled', now()->addHour());
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $campaign->forceFill(['state' => BroadcastCampaignState::Scheduled, 'scheduled_at' => now()->subMinute()])->save();
+        $membership = $actor->membershipFor($organization);
+        self::assertNotNull($membership);
+        $membership->forceFill(['is_active' => false])->save();
+
+        app(ScheduleBroadcastWork::class)->handle();
+
+        self::assertSame(BroadcastCampaignState::Cancelled, $campaign->refresh()->state);
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(BroadcastRecipientState::Failed, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole()->state);
+        self::assertSame('authorization_revoked', BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole()->last_error_code);
+        self::assertSame(1, DB::table('audit_events')->where('action', 'broadcast.campaign.execution_blocked')->count());
+    }
+
+    public function test_failed_test_send_is_not_a_success_audit(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $this->channel = new RecordingNotificationChannel('telegram', NotificationDeliveryResult::permanentFailure('provider rejected'));
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
+        $campaign = $this->campaign($actor, []);
+
+        app(TestBroadcastCampaign::class)->handle($actor, $campaign, $target->getKey());
+
+        self::assertSame(0, DB::table('audit_events')->where('action', 'broadcast.campaign.test_sent')->count());
+        self::assertSame(1, DB::table('audit_events')->where('action', 'broadcast.campaign.test_failed')->count());
+    }
+
+    public function test_queue_dispatch_failure_is_backed_off_and_does_not_hot_loop_scheduler(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        app(MaterializeBroadcastAudience::class)->handle($campaign);
+        $campaign->forceFill(['state' => BroadcastCampaignState::Dispatching, 'scheduled_at' => now(), 'dispatch_started_at' => now()])->save();
+
+        $dispatcher = $this->createMock(Dispatcher::class);
+        $dispatcher->method('dispatch')->willThrowException(new \RuntimeException('queue unavailable'));
+        $this->app->instance(Dispatcher::class, $dispatcher);
+
+        $first = app(ScheduleBroadcastWork::class)->handle();
+        $second = app(ScheduleBroadcastWork::class)->handle();
+
+        self::assertSame(1, $first['campaigns']);
+        self::assertSame(0, $first['batches']);
+        self::assertSame(0, $second['campaigns']);
+        self::assertSame('pending', DB::table('broadcast_batches')->value('state'));
+        self::assertSame('queue_dispatch_failed', DB::table('broadcast_batches')->value('last_dispatch_error_code'));
+        self::assertNotNull(BroadcastCampaign::query()->value('next_dispatch_at'));
     }
 
     /** @return array{Organization, User} */

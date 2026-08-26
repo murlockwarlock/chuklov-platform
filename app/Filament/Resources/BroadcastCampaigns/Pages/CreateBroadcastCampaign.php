@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign as Action;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 final class CreateBroadcastCampaign extends CreateRecord
 {
@@ -28,11 +29,15 @@ final class CreateBroadcastCampaign extends CreateRecord
      */
     public static function normalizeSegment(array $data): array
     {
-        $filters = is_array($data['segment_definition'] ?? null) ? $data['segment_definition'] : [];
+        if (array_key_exists('segment_definition', $data)
+            && (! is_array($data['segment_definition']) || ! array_is_list($data['segment_definition']))) {
+            throw ValidationException::withMessages(['segment_definition' => 'Сегмент имеет неверный формат.']);
+        }
+        $filters = $data['segment_definition'] ?? [];
         $normalized = [];
         foreach ($filters as $filter) {
             if (! is_array($filter)) {
-                continue;
+                throw ValidationException::withMessages(['segment_definition' => 'Условие сегмента имеет неверный формат.']);
             }
             $key = is_string($filter['key'] ?? null) ? $filter['key'] : '';
             $operator = is_string($filter['operator'] ?? null) ? $filter['operator'] : '';

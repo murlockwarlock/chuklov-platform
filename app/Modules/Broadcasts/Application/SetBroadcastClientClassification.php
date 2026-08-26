@@ -46,6 +46,11 @@ final readonly class SetBroadcastClientClassification
         }
 
         DB::transaction(function () use ($actor, $client, $organization, $role, $normalizedTags): void {
+            Client::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($client->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
             BroadcastClientProfile::query()->updateOrCreate(['organization_id' => $organization->getKey(), 'client_id' => $client->getKey()], ['b2b_role' => $role]);
             BroadcastClientTag::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->whereNotIn('tag', $normalizedTags)->delete();
             foreach ($normalizedTags as $tag) {

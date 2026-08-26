@@ -55,6 +55,12 @@ final readonly class NotificationTemplateConfiguration
         $normalizedVariables = array_values(array_unique($normalizedVariables));
         $usedVariables = ScenarioTemplateVariableCatalog::used($body, $subject ?? '');
 
+        $allowedVariables = self::allowedVariables($purpose);
+        if (array_diff($normalizedVariables, $allowedVariables) !== []
+            || array_diff($usedVariables, $allowedVariables) !== []) {
+            throw new InvalidArgumentException('The notification template uses data unavailable for its purpose.');
+        }
+
         if (array_diff($usedVariables, $normalizedVariables) !== []) {
             throw new InvalidArgumentException('The notification template must declare every used variable.');
         }
@@ -84,5 +90,11 @@ final readonly class NotificationTemplateConfiguration
         }
 
         return $parsed;
+    }
+
+    /** @return list<string> */
+    private static function allowedVariables(ScenarioRulePurpose $purpose): array
+    {
+        return ScenarioTemplateVariableCatalog::allowedForPurpose($purpose);
     }
 }

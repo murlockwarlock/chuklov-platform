@@ -4,7 +4,12 @@ namespace App\Modules\Broadcasts\Application;
 
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
+use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
+use App\Modules\Broadcasts\Domain\Models\BroadcastBatch;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
+use App\Modules\Broadcasts\Domain\Models\BroadcastDeliveryAttempt;
+use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +33,70 @@ final readonly class UpdateBroadcastCampaign
             if ($locked->state !== BroadcastCampaignState::Draft) {
                 throw ValidationException::withMessages(['name' => 'После запуска рассылку нельзя изменить.']);
             }
-            $locked->forceFill([...$normalized, 'draft_version' => $locked->draft_version + 1])->save();
+            $previousSnapshotId = $locked->audience_snapshot_id;
+            if ($previousSnapshotId !== null) {
+                $oldBatchIds = BroadcastBatch::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('campaign_id', $locked->getKey())
+                    ->where('snapshot_id', $previousSnapshotId)
+                    ->pluck('id');
+                if ($oldBatchIds->isNotEmpty()) {
+                    $oldRecipients = BroadcastRecipient::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->whereIn('batch_id', $oldBatchIds)
+                        ->whereIn('state', [BroadcastRecipientState::Pending->value, BroadcastRecipientState::Claimed->value])
+                        ->lockForUpdate()
+                        ->get();
+                    foreach ($oldRecipients as $recipient) {
+                        if ($recipient->state === BroadcastRecipientState::Claimed) {
+                            $attempt = BroadcastDeliveryAttempt::query()
+                                ->where('organization_id', $organization->getKey())
+                                ->where('recipient_id', $recipient->getKey())
+                                ->where('attempt_number', $recipient->attempt_count)
+                                ->lockForUpdate()
+                                ->first();
+                            if ($attempt?->outcome === NotificationDeliveryOutcome::InFlight) {
+                                $attempt->forceFill([
+                                    'outcome' => NotificationDeliveryOutcome::Unknown,
+                                    'error_code' => 'delivery_outcome_unknown',
+                                    'completed_at' => now(),
+                                ])->save();
+                            }
+                        }
+                        $recipient->forceFill([
+                            'state' => BroadcastRecipientState::Failed->value,
+                            'lease_token' => null,
+                            'claimed_at' => null,
+                            'next_attempt_at' => null,
+                            'last_error_code' => 'snapshot_superseded',
+                            'render_context' => [],
+                        ])->save();
+                    }
+                    BroadcastBatch::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->whereIn('id', $oldBatchIds)
+                        ->whereIn('state', ['pending', 'claimed'])
+                        ->update([
+                            'state' => 'failed',
+                            'lease_token' => null,
+                            'claimed_at' => null,
+                            'available_at' => null,
+                            'last_dispatch_error_code' => 'snapshot_superseded',
+                            'completed_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                }
+            }
+            $locked->forceFill([
+                ...$normalized,
+                'draft_version' => $locked->draft_version + 1,
+                'audience_snapshot_id' => null,
+                'audience_count' => 0,
+                'sent_count' => 0,
+                'delivered_count' => 0,
+                'failed_count' => 0,
+                'suppressed_count' => 0,
+            ])->save();
             $this->audit->handle($organization, $actor, 'broadcast.campaign.updated', BroadcastCampaign::class, (string) $locked->getKey(), ['draft_version' => $locked->draft_version]);
 
             return $locked->refresh();
