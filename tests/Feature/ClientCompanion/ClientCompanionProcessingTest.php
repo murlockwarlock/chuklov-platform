@@ -10,6 +10,7 @@ use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
@@ -439,6 +440,33 @@ final class ClientCompanionProcessingTest extends TestCase
 
         self::assertSame(CompanionDeliveryStatus::Uncertain, $delivery->fresh()->status);
         self::assertSame('delivery_send_exception_unknown', $delivery->fresh()->last_error_code);
+        self::assertCount(1, $channel->chunks);
+    }
+
+    public function test_generic_unknown_without_error_code_uses_safe_fallback_without_replay(): void
+    {
+        $delivery = $this->createDeliveries('Не дублировать неизвестный результат')->sole();
+        $channel = new FixedOutcomeCompanionChannel(NotificationDeliveryOutcome::Unknown);
+        $job = new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey());
+
+        $job->handle($channel, app(CompanionMessageBodyReader::class));
+        $job->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Uncertain, $delivery->fresh()->status);
+        self::assertSame('delivery_outcome_unknown', $delivery->fresh()->last_error_code);
+        self::assertCount(1, $channel->chunks);
+    }
+
+    public function test_in_flight_delivery_result_is_coerced_to_unknown_with_safe_fallback(): void
+    {
+        $delivery = $this->createDeliveries('Сохранить неизвестный результат')->sole();
+        $channel = new FixedOutcomeCompanionChannel(NotificationDeliveryOutcome::InFlight);
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Uncertain, $delivery->fresh()->status);
+        self::assertSame('delivery_outcome_unknown', $delivery->fresh()->last_error_code);
         self::assertCount(1, $channel->chunks);
     }
 
@@ -889,6 +917,18 @@ final class CrashAfterExternalSideEffectCompanionChannel extends RecordingCompan
     {
         $this->chunks[] = $chunk;
         throw new \RuntimeException('Telegram accepted the message before the worker crashed.');
+    }
+}
+
+final class FixedOutcomeCompanionChannel extends RecordingCompanionChannel
+{
+    public function __construct(private readonly NotificationDeliveryOutcome $outcome) {}
+
+    public function sendCompanionChunk(CompanionOutboundChunk $chunk): NotificationDeliveryResult
+    {
+        $this->chunks[] = $chunk;
+
+        return new NotificationDeliveryResult($this->outcome);
     }
 }
 

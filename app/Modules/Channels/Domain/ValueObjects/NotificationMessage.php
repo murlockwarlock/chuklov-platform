@@ -10,5 +10,6 @@ final readonly class NotificationMessage
         public ?string $subject,
         public string $locale,
         public string $idempotencyKey,
+        public bool $requireKnownExternalOutcome = false,
     ) {}
 }

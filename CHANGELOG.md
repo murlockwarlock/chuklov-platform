@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-26 — M11B Broadcast Engine remediation candidate
+
+- Added an organization-scoped Broadcasts module with draft, preview, isolated test-send, immediate/scheduled dispatch, cancellation-before-dispatch, immutable audience/template snapshots, bounded batches, durable claims, recipient idempotency, normalized delivery outcomes, sanitized errors, aggregate counts, and audit evidence through the existing M5 Channel boundary.
+- Remediated external delivery ambiguity: attempts are persisted before channel I/O, Telegram transport/acknowledgement loss is terminal `unknown` with no blind replay, and bounded retries are reserved for failures proven to occur before external send.
+- Bound production snapshots to exact draft revisions, revalidated active marketing templates, creator authority, consent, and verified targets at execution, and added durable scheduler/queue recovery with lease fencing and bounded backoff.
+- Added typed allowlisted segmentation for minimal CRM tags/B2B roles, generic survey completion, bookings/visits/last visit/no future booking, M11A referral/source, language, and verified channel availability. Arbitrary SQL, user-controlled columns/operators, survey-result targeting, and sensitive medical/clinical/free-text filters fail closed.
+- Kept marketing templates Broadcast-only, limited Broadcast variables to the guaranteed client context, and added Russian-facing Filament campaign list/draft/preview/test/detail/paginated-recipient/history workflows plus minimal audited Client broadcast classification fields. The dedicated `broadcasts` queue remains Horizon-consumed.
+- This remains an in-review stacked candidate: no provider-backed Telegram idempotency, exactly-once external-delivery claim, preference center, quiet hours, frequency caps, invented unsubscribe/legal behavior, M11C analytics, reward economics, OQ-007 closure, OQ-015 resolution, deployment, hosted CI, or merge is claimed.
+- Added focused Unit/Feature coverage and hosted PostgreSQL concurrency/constraint coverage. `REQ-NOTIFY-008`, OQ-007 reward economics, M11C analytics, OQ-015 content, M12+, real providers, deployment, and acceptance remain outside this candidate.
+
 - CI policy now uses a manually dispatched heavy candidate gate instead of automatic `push` and `pull_request` runs. Quality/integration, privacy/secret scanning, and Docker/runtime job contents are unchanged; Playwright remains separate, nightly/manual, and non-blocking.
 
 All notable implementation changes are recorded here. Requirement changes belong in `docs/product/requirements-changelog.md`; architectural rationale belongs in ADRs.

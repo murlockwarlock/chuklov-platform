@@ -200,7 +200,7 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default', 'scenarios', 'ai-companion', 'ai-companion-delivery', 'telegram-typing', 'referrals'],
+            'queue' => ['default', 'scenarios', 'broadcasts', 'ai-companion', 'ai-companion-delivery', 'telegram-typing', 'referrals'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,

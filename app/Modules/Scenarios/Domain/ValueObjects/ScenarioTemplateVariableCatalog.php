@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Domain\ValueObjects;
 
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use InvalidArgumentException;
 
 final class ScenarioTemplateVariableCatalog
@@ -30,6 +31,20 @@ final class ScenarioTemplateVariableCatalog
         return self::ALLOWED;
     }
 
+    /** @return list<string> */
+    public static function allowedForPurpose(ScenarioRulePurpose|string $purpose): array
+    {
+        $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
+
+        if ($purpose === null) {
+            return [];
+        }
+
+        return $purpose === ScenarioRulePurpose::Marketing
+            ? ['client.full_name', 'client.language']
+            : self::ALLOWED;
+    }
+
     /** @return array<string, string> */
     public static function labels(): array
     {
@@ -49,6 +64,18 @@ final class ScenarioTemplateVariableCatalog
             'survey.version' => 'Версия теста',
             'survey.completed_at' => 'Время завершения теста',
         ];
+    }
+
+    /** @return array<string, string> */
+    public static function labelsForPurpose(ScenarioRulePurpose|string|null $purpose): array
+    {
+        if ($purpose === null || $purpose === '') {
+            return self::labels();
+        }
+
+        $allowed = self::allowedForPurpose($purpose);
+
+        return array_intersect_key(self::labels(), array_flip($allowed));
     }
 
     /** @return list<string> */

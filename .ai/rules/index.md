@@ -5,6 +5,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | Applies to | Rule file |
 | --- | --- |
 | {app/Models/**,app/Http/**,app/Filament/**,app/Jobs/**,database/migrations/**,tests/Unit/**,tests/Feature/**,tests/Integration/**,tests/Support/**,app/Modules/*/Domain/**,app/Modules/*/Infrastructure/**,app/Modules/*/Jobs/**,app/Modules/*/Application/**} | .ai/rules/application.md |
+| app/Modules/Broadcasts/** | .ai/rules/broadcasts.md |
 | app/Filament/** | .ai/rules/filament.md |
 | {.dockerignore,docker/**,scripts/check-docker-context.sh}, {Makefile,composer.json,scripts/initialize-app-key.sh,scripts/check-app-key-idempotence.sh} | .ai/rules/general.md |
 | {app/Modules/**,app/Jobs/**,database/migrations/**,tests/Integration/**} | .ai/rules/integration.md |

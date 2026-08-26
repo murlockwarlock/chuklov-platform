@@ -226,6 +226,7 @@ final class ScenarioActionResource extends Resource
             'permanent_failure' => 'не отправлено',
             'unavailable' => 'канал недоступен',
             'suppressed' => 'получатель отключил сообщения',
+            'in_flight' => 'результат не определён',
             default => 'результат не определён',
         };
     }

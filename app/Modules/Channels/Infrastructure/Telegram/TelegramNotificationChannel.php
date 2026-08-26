@@ -36,10 +36,26 @@ final class TelegramNotificationChannel implements NotificationChannel
             return NotificationDeliveryResult::delivered(
                 $sent?->message_id === null ? null : (string) $sent->message_id,
             );
-        } catch (TelegramException) {
-            return NotificationDeliveryResult::retryable('telegram_api_error');
+        } catch (TelegramException $exception) {
+            $code = $exception->getCode();
+            if ($code === 429) {
+                return $message->requireKnownExternalOutcome
+                    ? NotificationDeliveryResult::retryable('telegram_rate_limited')
+                    : NotificationDeliveryResult::retryable('telegram_api_error');
+            }
+            if ($code >= 400 && $code < 500) {
+                return $message->requireKnownExternalOutcome
+                    ? NotificationDeliveryResult::permanentFailure('telegram_provider_rejected')
+                    : NotificationDeliveryResult::retryable('telegram_api_error');
+            }
+
+            return $message->requireKnownExternalOutcome
+                ? NotificationDeliveryResult::unknown('delivery_outcome_unknown')
+                : NotificationDeliveryResult::retryable('telegram_api_error');
         } catch (Throwable) {
-            return NotificationDeliveryResult::retryable('channel_error');
+            return $message->requireKnownExternalOutcome
+                ? NotificationDeliveryResult::unknown('delivery_outcome_unknown')
+                : NotificationDeliveryResult::retryable('channel_error');
         }
     }
 }

@@ -32,6 +32,11 @@ final readonly class NotificationDeliveryResult
         return new self(NotificationDeliveryOutcome::Unavailable, errorCode: $errorCode);
     }
 
+    public static function suppressed(string $errorCode): self
+    {
+        return new self(NotificationDeliveryOutcome::Suppressed, errorCode: $errorCode);
+    }
+
     public static function unknown(string $errorCode): self
     {
         return new self(NotificationDeliveryOutcome::Unknown, errorCode: $errorCode);

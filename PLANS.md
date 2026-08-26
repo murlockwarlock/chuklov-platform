@@ -17,6 +17,18 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
+### M11B — Broadcast Engine, segmentation, and marketing governance
+
+- Objective: implement `REQ-BROADCAST-001`–`REQ-BROADCAST-003` as a stacked candidate on M11A, reusing the M5 provider-neutral channel/delivery boundary.
+- Remediation starting SHA: `170ed7784e5fda5401e11d54ebaabd54332edd62`; candidate branch: `codex/m11b-broadcast-engine`; exact stacked base SHA: `45b3eb0189cab63ad60309474c4bb614b4bf1f15` on `codex/m11a-acquisition-referrals-feedback`.
+- Scope: authorized CRM drafts, RU/EN immutable marketing template versions, typed allowlisted filters, preview/test send, deterministic audience materialization, immediate/scheduled dispatch, bounded batches, verified-channel and affirmative marketing-consent eligibility, durable claims/idempotency, sanitized outcomes, audit evidence, and PostgreSQL concurrency coverage.
+- Data impact: additive organization-scoped campaign, immutable audience snapshot, batch, recipient, delivery-attempt, and minimal Client broadcast-classification tables with composite tenant foreign keys and explicit PostgreSQL-safe identifiers.
+- Remediation: production snapshots are bound to exact draft revisions; delivery attempts are created before channel I/O and Telegram acknowledgement ambiguity is terminal unknown with no blind replay; scheduler/queue recovery is PostgreSQL-state-driven with bounded backoff and fenced leases; execution revalidates creator authority, consent, verified targets, and active marketing templates.
+- Governance: marketing templates are Broadcast-only with a capability-aware variable allowlist; scenario rules remain service/transactional-only; organization-timezone wall-clock scheduling converts to authoritative instants; recipient history is paginated and sanitized.
+- Privacy/security: clinical and free-text health targeting fails closed; survey completion may be used as a non-clinical engagement fact, while encrypted survey results/categories remain unavailable pending separate legal/privacy approval and OQ-015-backed content. `REQ-NOTIFY-008` remains future and no preference center, quiet hours, frequency cap, or new unsubscribe semantics are introduced.
+- Non-goals: M11C analytics, reward economics/OQ-007, M12–M14, real providers, AI workflows, and fabricated survey definitions or result meanings.
+- Verification: focused Unit/Feature and M5/M11A regressions, changed-code Larastan/Pint, frontend/build/audits, migration identifier/static preflight, and real PostgreSQL race tests wired to the hosted concurrency scope. No hosted CI, staging, deployment, or merge is authorized for this task.
+
 ### M11A — Attribution, referral tracking, and NPS/feedback foundation
 
 - Objective: implement the unblocked M11A acquisition/referral/feedback foundation for `REQ-ATTRIBUTION-001`, `REQ-REFERRAL-001`, `REQ-FEEDBACK-001`, and `REQ-PORTAL-006` while preserving the modular-monolith boundaries and existing M2/M5/M6/M7/M10 foundations.

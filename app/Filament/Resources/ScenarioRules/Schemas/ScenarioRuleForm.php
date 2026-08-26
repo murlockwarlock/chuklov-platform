@@ -163,12 +163,17 @@ final class ScenarioRuleForm
                                 ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
                             ])
                             ->helperText('Категория сообщения. Сама по себе не определяет получателя или канал связи.')
+                            ->live()
                             ->required(),
                         Select::make('template_version_id')
                             ->label('Шаблон сообщения')
-                            ->options(fn (): array => NotificationTemplateVersion::query()
+                            ->options(fn (Get $get): array => NotificationTemplateVersion::query()
                                 ->where('organization_id', app(OrganizationContext::class)->id())
                                 ->where('status', NotificationTemplateStatus::Published->value)
+                                ->whereHas('template', fn ($query) => $query
+                                    ->where('organization_id', app(OrganizationContext::class)->id())
+                                    ->where('purpose', (string) $get('purpose'))
+                                    ->where('is_active', true))
                                 ->with('template')
                                 ->orderByDesc('id')
                                 ->get()

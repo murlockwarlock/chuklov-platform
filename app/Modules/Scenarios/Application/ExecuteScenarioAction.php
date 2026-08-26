@@ -10,6 +10,7 @@ use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
@@ -121,7 +122,9 @@ final class ExecuteScenarioAction
             $template = $action->templateVersion;
 
             if ($template === null || $template->template === null || ! $template->template->is_active
-                || $template->status === NotificationTemplateStatus::Archived) {
+                || $template->status === NotificationTemplateStatus::Archived
+                || $template->template->purpose !== $action->purpose->value
+                || $action->purpose === ScenarioRulePurpose::Marketing) {
                 return NotificationDeliveryResult::permanentFailure('template_unavailable');
             }
 
@@ -244,6 +247,10 @@ final class ExecuteScenarioAction
                 return $result->outcome;
             }
 
+            $outcome = $result->outcome === NotificationDeliveryOutcome::InFlight
+                ? NotificationDeliveryOutcome::Unknown
+                : $result->outcome;
+
             $attempt = ScenarioDeliveryAttempt::query()
                 ->where('organization_id', $delivery->organization_id)
                 ->where('scenario_delivery_id', $delivery->getKey())
@@ -251,29 +258,29 @@ final class ExecuteScenarioAction
                 ->lockForUpdate()
                 ->firstOrFail();
             $attempt->forceFill([
-                'outcome' => $result->outcome,
-                'error_code' => $this->safeCode($result->errorCode),
+                'outcome' => $outcome,
+                'error_code' => $this->safeCode($outcome === NotificationDeliveryOutcome::Unknown ? 'delivery_outcome_unknown' : $result->errorCode),
                 'provider_reference' => $this->safeReference($result->providerReference),
             ])->save();
 
-            $retryable = $result->outcome === NotificationDeliveryOutcome::Retryable
+            $retryable = $outcome === NotificationDeliveryOutcome::Retryable
                 && $delivery->attempt_count < (int) config('scenarios.deliveries.max_attempts', 3);
-            $effectiveOutcome = $result->outcome === NotificationDeliveryOutcome::Retryable && ! $retryable
+            $effectiveOutcome = $outcome === NotificationDeliveryOutcome::Retryable && ! $retryable
                 ? NotificationDeliveryOutcome::PermanentFailure
-                : $result->outcome;
-            $deliveryStatus = $result->outcome === NotificationDeliveryOutcome::Retryable && ! $retryable
+                : $outcome;
+            $deliveryStatus = $outcome === NotificationDeliveryOutcome::Retryable && ! $retryable
                 ? ScenarioDeliveryStatus::PermanentFailure
-                : $this->deliveryStatus($result->outcome);
+                : $this->deliveryStatus($outcome);
 
             $delivery->forceFill([
                 'status' => $deliveryStatus,
                 'processing_started_at' => null,
-                'delivered_at' => $result->outcome === NotificationDeliveryOutcome::Delivered ? now() : null,
+                'delivered_at' => $outcome === NotificationDeliveryOutcome::Delivered ? now() : null,
                 'next_attempt_at' => $retryable
                     ? now()->addSeconds((int) config('scenarios.deliveries.retry_after_seconds', 300))
                     : null,
-                'last_error_code' => $this->safeCode($result->errorCode),
-                'terminal_reason' => $this->terminalReason($result->outcome, $delivery->attempt_count),
+                'last_error_code' => $this->safeCode($outcome === NotificationDeliveryOutcome::Unknown ? 'delivery_outcome_unknown' : $result->errorCode),
+                'terminal_reason' => $this->terminalReason($outcome, $delivery->attempt_count),
                 'provider_reference' => $this->safeReference($result->providerReference),
             ])->save();
 
@@ -283,7 +290,7 @@ final class ExecuteScenarioAction
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($result->outcome === NotificationDeliveryOutcome::Delivered) {
+            if ($outcome === NotificationDeliveryOutcome::Delivered) {
                 $action->forceFill([
                     'status' => ScenarioActionStatus::Delivered,
                     'processing_started_at' => null,
@@ -291,7 +298,7 @@ final class ExecuteScenarioAction
                     'terminal_reason' => null,
                 ])->save();
                 $this->nextActions->handle($action->refresh());
-            } elseif ($result->outcome === NotificationDeliveryOutcome::Retryable
+            } elseif ($outcome === NotificationDeliveryOutcome::Retryable
                 && $delivery->attempt_count < (int) config('scenarios.deliveries.max_attempts', 3)) {
                 $action->forceFill([
                     'status' => ScenarioActionStatus::Retryable,
@@ -299,7 +306,7 @@ final class ExecuteScenarioAction
                     'scheduled_for' => $delivery->next_attempt_at,
                     'terminal_reason' => null,
                 ])->save();
-            } elseif ($result->outcome === NotificationDeliveryOutcome::Suppressed) {
+            } elseif ($outcome === NotificationDeliveryOutcome::Suppressed) {
                 $action->forceFill([
                     'status' => ScenarioActionStatus::Suppressed,
                     'processing_started_at' => null,
@@ -437,6 +444,7 @@ final class ExecuteScenarioAction
             NotificationDeliveryOutcome::PermanentFailure => ScenarioDeliveryStatus::PermanentFailure,
             NotificationDeliveryOutcome::Unavailable => ScenarioDeliveryStatus::Unavailable,
             NotificationDeliveryOutcome::Suppressed, NotificationDeliveryOutcome::Unknown => ScenarioDeliveryStatus::Suppressed,
+            NotificationDeliveryOutcome::InFlight => ScenarioDeliveryStatus::Suppressed,
         };
     }
 
@@ -451,6 +459,7 @@ final class ExecuteScenarioAction
             NotificationDeliveryOutcome::Unavailable => 'channel_unavailable',
             NotificationDeliveryOutcome::Suppressed => 'suppressed',
             NotificationDeliveryOutcome::Unknown => 'delivery_outcome_unknown',
+            NotificationDeliveryOutcome::InFlight => 'delivery_outcome_unknown',
         };
     }
 

@@ -47,7 +47,7 @@ final readonly class ScenarioRuleConfiguration
             throw new InvalidArgumentException('The scenario rule key is invalid.');
         }
 
-        if ($name === '' || mb_strlen($name) > 160 || $triggerEvent === null || $delayUnit === null || $purpose === null) {
+        if ($name === '' || mb_strlen($name) > 160 || $triggerEvent === null || $delayUnit === null || $purpose === null || $purpose === ScenarioRulePurpose::Marketing) {
             throw new InvalidArgumentException('The scenario rule configuration is invalid.');
         }
 

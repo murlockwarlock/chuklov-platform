@@ -40,8 +40,10 @@ final class NotificationTemplateForm
                             ->options([
                                 ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
                                 ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
+                                ScenarioRulePurpose::Marketing->value => 'Маркетинговая рассылка',
                             ])
                             ->helperText('Категория сообщения. Сама по себе не определяет получателя, время отправки или канал связи — они настраиваются в правиле.')
+                            ->live()
                             ->required(),
                         Toggle::make('is_active')
                             ->label('Включён')
@@ -65,16 +67,18 @@ final class NotificationTemplateForm
                             ->required()
                             ->rows(10)
                             ->maxLength(100000)
-                            ->helperText('Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
+                            ->helperText(fn (Get $get): string => $get('purpose') === ScenarioRulePurpose::Marketing->value
+                                ? 'Для маркетинговой рассылки доступны только имя и язык клиента: {{ client.full_name }}, {{ client.language }}.'
+                                : 'Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
                             ->columnSpanFull(),
                         Select::make('insert_variable')
                             ->label('Добавить данные')
-                            ->options(ScenarioTemplateVariableCatalog::labels())
+                            ->options(fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')))
                             ->placeholder('Выберите данные для вставки')
                             ->live()
                             ->dehydrated(false)
                             ->afterStateUpdated(function (Get $get, Set $set, ?string $state): void {
-                                if ($state === null || ! in_array($state, ScenarioTemplateVariableCatalog::allowed(), true)) {
+                                if ($state === null || ! in_array($state, ScenarioTemplateVariableCatalog::allowedForPurpose((string) ($get('purpose') ?: '')), true)) {
                                     $set('insert_variable', null);
 
                                     return;

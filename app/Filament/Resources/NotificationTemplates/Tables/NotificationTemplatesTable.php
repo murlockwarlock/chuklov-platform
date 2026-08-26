@@ -49,6 +49,7 @@ final class NotificationTemplatesTable
         return match ($purpose) {
             ScenarioRulePurpose::Service => 'Сервисное',
             ScenarioRulePurpose::Transactional => 'Системное',
+            ScenarioRulePurpose::Marketing => 'Маркетинговое',
             default => 'Не указано',
         };
     }

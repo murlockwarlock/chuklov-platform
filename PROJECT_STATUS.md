@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-08-26 — M11B stacked remediation candidate
+
+- `REQ-BROADCAST-001`–`REQ-BROADCAST-003` are implemented as an in-review remediation candidate with pre-I/O delivery attempts, terminal unknown outcomes for Telegram acknowledgement ambiguity, no blind replay, exact draft-revision-bound snapshots, active-template/consent/verified-target/creator-authority revalidation, bounded durable dispatch recovery, and organization-safe paginated recipient history. M11A PR #22 remains unmodified and unmerged; M11 remains `IN_PROGRESS`, not accepted or closed.
+- Typed segmentation covers tags, B2B role, generic survey completion as a non-clinical engagement fact, booking status/completed-visit count/last visit/no future rebooking, M11A referral/source, language, and verified channel availability. Encrypted survey result categories and every clinical/medical/free-text filter fail closed; no OQ-015 content or sensitive-health marketing authority is fabricated.
+- Marketing templates are Broadcast-only for current scope. Scenario rules remain service/transactional-only, Broadcast variables are limited to `client.full_name` and `client.language`, and organization-timezone scheduling uses authoritative IANA instants. No provider-backed Telegram idempotency or exactly-once external-delivery guarantee is claimed.
+- Focused local evidence: M11B Feature `32` tests / `102` assertions, M11B Unit segment `9` / `10`, and migration identifier/symmetry `1` / `118` (combined `42` / `231`); the latest M5/M11A regression batch `82` / `514`; Pint, changed-file PHP syntax, Larastan (`errors=0`), ESLint, `vue-tsc`, Vite build, Composer audit, npm audit, and `git diff --check` pass. PostgreSQL/concurrency suites contain `16` M11B tests and `12` M11A tests, but are `EXISTS — NOT RUN LOCALLY` because the local SQLite-only environment has no PostgreSQL/Docker service; no PostgreSQL pass is claimed. SQLite migration up/one-step down round-trip passes for the broadcast migration. `make quality` reaches the full Unit pass (`108` / `568`) but the Feature subprocess hits the repository's local PHP `128 MiB` limit in `MedicalAttachmentTest::test_default_runtime_scanner_fails_closed_and_quarantines_uploads`; hosted CI was not dispatched.
+- `REQ-NOTIFY-008` remains FUTURE: no preference center, per-channel preferences, quiet hours, frequency caps, or new unsubscribe/legal semantics were added. OQ-007 remains OPEN; no rewards, M11C analytics, M12 subscription, deployment, or merge work is included.
+
 ## 2026-08-25 — M11A final narrow remediation candidate
 
 - Stage 10.2 is `DONE / CLOSED / ACCEPTED` at main SHA `6df5ac5b2c95adf6faf7a69a3b551d2c0f1cb713`; PR #21 was squash-merged after final hosted CI GREEN. The earlier Stage 10.2 remediation entries below are retained as historical evidence and do not describe this milestone.
@@ -80,10 +88,10 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-24
+- Last updated: 2026-08-26
 - Current phase: Phase 1 foundation
-- Current milestone: M11A — Attribution, referral tracking, and NPS/feedback foundation (implementation candidate)
-- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
+- Current milestone: M11B — CRM Broadcast Engine, segmentation, and marketing governance (stacked remediation candidate)
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS and M11B remains pending independent re-review and hosted gates; M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 
