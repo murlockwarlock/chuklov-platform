@@ -1,6 +1,13 @@
 # Changelog
 
-## 2026-08-26 — M11B Broadcast Engine remediation candidate
+## 2026-08-27 — M11C CRM analytics dashboard implementation candidate
+
+- Added read-only organization-scoped analytics projections to the existing Filament `Инфопанель`, preserving `UpcomingBookingsWidget` and adding a shared Today/7/30/90-day/custom period filter using organization IANA timezone boundaries.
+- Added acquisition/source, scheduling, finance, AI-failure, and Knowledge-ingestion widgets. Metrics use Client, normalized first-touch attribution, Booking/BookingEvent, signed Finance ledger/obligation, logical AiRun, and KnowledgeIngestionRun source records; finance is base-currency and fails closed on invalid reconciliation.
+- Defined realized historical LTV for the selected client acquisition cohort and operational retention as rebooking after a completed visit. No Analytics tables, ETL, warehouse, external analytics, referral reward economics, clinical/survey content, M12, deployment, hosted CI, or merge work was added.
+- Added focused Unit/Feature coverage, PostgreSQL integration coverage wired to the foundation target (`EXISTS — NOT RUN LOCALLY` under the local SQLite configuration), and updated M11C requirement/status traceability.
+
+## 2026-08-26 — M11B Broadcast Engine remediation candidate (historical entry)
 
 - Added an organization-scoped Broadcasts module with draft, preview, isolated test-send, immediate/scheduled dispatch, cancellation-before-dispatch, immutable audience/template snapshots, bounded batches, durable claims, recipient idempotency, normalized delivery outcomes, sanitized errors, aggregate counts, and audit evidence through the existing M5 Channel boundary.
 - Remediated external delivery ambiguity: attempts are persisted before channel I/O, Telegram transport/acknowledgement loss is terminal `unknown` with no blind replay, and bounded retries are reserved for failures proven to occur before external send.

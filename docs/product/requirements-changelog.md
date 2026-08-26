@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-08-27 — REQ-CRM-002 implementation
+
+- Marked `REQ-CRM-002` `IMPLEMENTED` after adding the read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions.
+- No requirement scope was expanded. M11A/M11B semantics, OQ-007, OQ-015, and M12 remain unchanged.
+
 ## 2026-08-24 — Owner-confirmed product-neutral referrals
 
 - Updated `REQ-REFERRAL-001`: one durable organization-scoped referrer Client → referred Client relationship may be established automatically through a referral link or manually by authorized CRM staff, with bounded provenance, audit, first-touch protection, and no silent reassignment.

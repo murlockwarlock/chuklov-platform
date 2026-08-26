@@ -1,6 +1,14 @@
 # Project Status
 
-## 2026-08-26 — M11B stacked remediation candidate
+## 2026-08-27 — M11C CRM analytics dashboard implementation candidate
+
+- M11A and M11B are merged in the requested starting main revision. M11C is implemented on branch `codex/m11c-crm-analytics-dashboard` from exact starting SHA `42c1d66987862fa819d581a803995fdfab2b8b7b`; the existing Filament `Инфопанель` retains `UpcomingBookingsWidget` and now has one shared organization-timezone period filter plus least-privilege analytics widgets.
+- `REQ-CRM-002` is marked `IMPLEMENTED`. Analytics is read-only: SQL aggregates query organization-scoped Clients, normalized first-touch attributions, Bookings, immutable BookingEvents, Finance obligations/ledger entries, logical AI runs, and Knowledge ingestion runs. Finance uses signed base-currency snapshots and fails closed on invalid reconciliation/configuration. Retention is operational rebooking after a selected-period completed visit; LTV is realized historical value for the selected acquisition cohort.
+- Focused M11C Unit/Feature coverage includes period/DST boundaries, source buckets, booking/event semantics, finance payments/corrections/FX/debt/LTV, AI and ingestion failures, retention, empty states, permissions, upcoming bookings, and bounded query counts. M11A/M11B, Finance, Scheduling, AI, and Knowledge regression batches were run; one unrelated existing Finance UX test remains SQLite-decimal-format sensitive and is documented in the handoff.
+- PostgreSQL coverage exists in `tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php` and is wired into `test-integration-foundation`, but is `EXISTS — NOT RUN LOCALLY` because the repository test environment is SQLite-only and no local PostgreSQL service is available. No PostgreSQL pass, hosted CI, staging, deployment, merge, or owner acceptance is claimed.
+- OQ-007 remains OPEN, OQ-015 remains unresolved, and no referral reward economics, clinical/survey content, M12, marketing-health analytics, warehouse, ETL, or external analytics service was added. PR #23 remains untouched.
+
+## 2026-08-26 — M11B stacked remediation candidate (historical state)
 
 - `REQ-BROADCAST-001`–`REQ-BROADCAST-003` are implemented as an in-review remediation candidate with pre-I/O delivery attempts, terminal unknown outcomes for Telegram acknowledgement ambiguity, no blind replay, exact draft-revision-bound snapshots, active-template/consent/verified-target/creator-authority revalidation, bounded durable dispatch recovery, and organization-safe paginated recipient history. M11A PR #22 remains unmodified and unmerged; M11 remains `IN_PROGRESS`, not accepted or closed.
 - Typed segmentation covers tags, B2B role, generic survey completion as a non-clinical engagement fact, booking status/completed-visit count/last visit/no future rebooking, M11A referral/source, language, and verified channel availability. Encrypted survey result categories and every clinical/medical/free-text filter fail closed; no OQ-015 content or sensitive-health marketing authority is fabricated.
