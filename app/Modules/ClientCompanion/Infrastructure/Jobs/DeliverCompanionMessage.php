@@ -227,7 +227,7 @@ final class DeliverCompanionMessage implements ShouldQueue
                 $locked->update([
                     'status' => CompanionDeliveryStatus::Uncertain,
                     'provider_reference' => $result->providerReference,
-                    'last_error_code' => 'delivery_outcome_unknown',
+                    'last_error_code' => $result->errorCode ?? 'delivery_outcome_unknown',
                     'processing_lease_token' => null,
                     'processing_lease_expires_at' => null,
                     'next_attempt_at' => null,

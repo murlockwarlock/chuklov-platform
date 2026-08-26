@@ -70,6 +70,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('queue.default', 'sync');
         $this->channel = new RecordingNotificationChannel;
         $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
     }
