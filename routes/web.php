@@ -6,22 +6,27 @@ use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\BookingController;
 use App\Http\Controllers\Portal\CompanionController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
+use App\Http\Controllers\Portal\FeedbackController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
+use App\Http\Controllers\Portal\ReferralController;
+use App\Http\Controllers\Portal\ReferralRedirectController;
 use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
 use App\Http\Controllers\Portal\SurveyController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
+use App\Http\Middleware\CapturePortalAttribution;
 use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
@@ -69,8 +74,11 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('throttle:portal-telegram-web-status')
         ->name('portal.telegram.web.status');
 
-    Route::middleware(ResolveClientPortalSession::class)->group(function (): void {
+    Route::middleware([ResolveClientPortalSession::class, CapturePortalAttribution::class])->group(function (): void {
         Route::post('/portal/locale', LocaleController::class)->name('portal.locale.update');
+        Route::get('/r/{referralCode}', ReferralRedirectController::class)
+            ->where('referralCode', '[A-Za-z0-9_-]{16,128}')
+            ->name('portal.referral');
         Route::get('/', HomeController::class)->name('portal.home');
         Route::get('/portal/services', ServiceIndexController::class)->name('portal.services.index');
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
@@ -81,6 +89,11 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
+            Route::get('/portal/feedback', [FeedbackController::class, 'index'])->name('portal.feedback');
+            Route::post('/portal/feedback', [FeedbackController::class, 'store'])->name('portal.feedback.store');
+            Route::get('/portal/attribution', [AttributionController::class, 'show'])->name('portal.attribution');
+            Route::post('/portal/attribution', [AttributionController::class, 'update'])->name('portal.attribution.update');
             Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
             Route::post('/portal/companion/messages', [CompanionController::class, 'send'])

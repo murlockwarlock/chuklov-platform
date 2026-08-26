@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-08-24 — Owner-confirmed product-neutral referrals
+
+- Updated `REQ-REFERRAL-001`: one durable organization-scoped referrer Client → referred Client relationship may be established automatically through a referral link or manually by authorized CRM staff, with bounded provenance, audit, first-touch protection, and no silent reassignment.
+- Confirmed that the relationship is reusable across current paid practitioner/healer services and future paid bot subscriptions, courses, and bot sales; it does not belong to Booking, Service, Finance, subscription, course, or bot commerce.
+- Clarified that M11A records neutral commercial/finance evidence separately from future conversion qualification and reward accounting. OQ-007 remains OPEN for product/program qualification and all reward economics and lifecycle rules.
+
 ## 2026-08-16 - M8 survey source provenance blocker
 
 - Verified that the approved local v2.2 specification and changelog require “9 systems” and MSQ but do not contain their full questions, answer options, scoring, thresholds, tags, or result text; the changelog says the long questionnaires were moved to separate documents that are not present locally.

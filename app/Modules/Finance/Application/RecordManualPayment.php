@@ -34,6 +34,7 @@ final class RecordManualPayment
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly ReceiptStorage $receipts,
         private readonly RecordAuditEvent $audit,
+        private readonly RecordFinancialSettlementEvent $settlementEvents,
     ) {}
 
     public function handle(
@@ -213,6 +214,11 @@ final class RecordManualPayment
                         'uploaded_by_user_id' => $actor->getKey(),
                     ]);
                     $receiptRecord->save();
+                }
+
+                $settled = $this->reconciliation->handle((int) $organization->getKey(), (int) $lockedObligation->getKey(), true);
+                if (! $current->isSettled() && $settled->isSettled()) {
+                    $this->settlementEvents->handle($lockedObligation, $entry, $occurred);
                 }
 
                 $idempotency->forceFill([

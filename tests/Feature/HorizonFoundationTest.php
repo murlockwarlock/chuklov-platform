@@ -34,7 +34,26 @@ class HorizonFoundationTest extends TestCase
             'ai-companion',
             'ai-companion-delivery',
             'telegram-typing',
+            'referrals',
         ], config('horizon.defaults.supervisor-1.queue'));
+    }
+
+    public function test_every_m11a_production_queue_is_consumed_by_the_bounded_supervisor(): void
+    {
+        $configuration = config('horizon.defaults.supervisor-1');
+
+        self::assertIsArray($configuration);
+        self::assertSame([
+            'default',
+            'scenarios',
+            'ai-companion',
+            'ai-companion-delivery',
+            'telegram-typing',
+            config('referrals.queue'),
+        ], $configuration['queue']);
+        self::assertSame(10, config('horizon.environments.production.supervisor-1.maxProcesses'));
+        self::assertSame(1, config('horizon.environments.production.supervisor-1.balanceMaxShift'));
+        self::assertSame(3, config('horizon.environments.production.supervisor-1.balanceCooldown'));
     }
 
     public function test_horizon_requires_a_privileged_membership_in_the_server_organization(): void

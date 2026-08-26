@@ -11,10 +11,17 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
+use App\Modules\Referrals\Application\SearchClientsForReferralAssignment;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
@@ -69,6 +76,7 @@ class ViewClient extends ViewRecord
                 ->label('Редактировать клиента')
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
+            $this->assignReferrerAction(),
             Action::make('companionHistory')
                 ->label('AI-компаньон / История общения')
                 ->icon('heroicon-o-chat-bubble-left-right')
@@ -146,6 +154,57 @@ class ViewClient extends ViewRecord
 
                 app(BlockClientSelfBooking::class)->handle($actor, $client, (string) $data['reason']);
                 $client->load('activeBookingRestriction');
+            });
+    }
+
+    private function assignReferrerAction(): Action
+    {
+        return Action::make('assignReferrer')
+            ->label('Назначить реферера')
+            ->icon('heroicon-o-user-plus')
+            ->schema([
+                Select::make('referrer_client_id')
+                    ->label('Реферер')
+                    ->searchable()
+                    ->native(false)
+                    ->options([])
+                    ->optionsLimit(50)
+                    ->getSearchResultsUsing(function (string $search): array {
+                        $actor = auth()->user();
+                        $client = $this->clientRecord();
+
+                        return $actor instanceof User
+                            ? app(SearchClientsForReferralAssignment::class)->handle($actor, $search, (int) $client->getKey())
+                            : [];
+                    })
+                    ->getOptionLabelUsing(function (mixed $value): ?string {
+                        $actor = auth()->user();
+
+                        return $actor instanceof User
+                            ? app(SearchClientsForReferralAssignment::class)->optionLabel($actor, $value)
+                            : null;
+                    })
+                    ->required(),
+            ])
+            ->visible(function (): bool {
+                $actor = auth()->user();
+
+                return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+                    $actor,
+                    app(OrganizationContext::class)->organization(),
+                    OrganizationPermission::ManageClients,
+                );
+            })
+            ->action(function (array $data): void {
+                $actor = auth()->user();
+                abort_unless($actor instanceof User, 403);
+
+                app(EstablishManualReferralRelationship::class)->handle(
+                    actor: $actor,
+                    referrerClientId: (int) $data['referrer_client_id'],
+                    referredClientId: (int) $this->clientRecord()->getKey(),
+                );
+                Notification::make()->title('Реферер назначен')->success()->send();
             });
     }
 

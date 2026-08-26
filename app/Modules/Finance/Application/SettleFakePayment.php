@@ -27,6 +27,7 @@ final class SettleFakePayment
         private readonly CurrencyConfigurationService $configuration,
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly RecordAuditEvent $audit,
+        private readonly RecordFinancialSettlementEvent $settlementEvents,
     ) {}
 
     public function handle(GatewaySettlementEvidence $evidence): FinancialLedgerEntry
@@ -149,6 +150,10 @@ final class SettleFakePayment
                 'settled_at' => now(),
                 'updated_at' => now(),
             ])->save();
+            $settled = $this->reconciliation->handle($evidence->organizationId, (int) $obligation->getKey(), true);
+            if (! $current->isSettled() && $settled->isSettled()) {
+                $this->settlementEvents->handle($obligation, $entry, now()->toImmutable());
+            }
             $organization = $obligation->organization()->firstOrFail();
             $this->audit->handle(
                 organization: $organization,

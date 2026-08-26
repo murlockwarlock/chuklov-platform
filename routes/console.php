@@ -2,6 +2,7 @@
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scheduling\Application\PruneBookingIdempotencyKeys;
 use Illuminate\Support\Facades\Artisan;
@@ -35,3 +36,9 @@ Artisan::command('scenarios:run', function (ScheduleScenarioWork $scheduler): vo
 })->purpose('Dispatch due scenario events and notification actions.');
 
 Schedule::command('scenarios:run')->everyMinute()->withoutOverlapping();
+
+Artisan::command('referrals:run', function (ScheduleReferralIntegrationEvents $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' referral integration event(s).');
+})->purpose('Dispatch pending referral integration events with crash-safe retries.');
+
+Schedule::command('referrals:run')->everyMinute()->withoutOverlapping();

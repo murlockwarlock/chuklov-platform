@@ -37,7 +37,10 @@ class CompleteTelegramWebAuthentication
             }
 
             $this->organizationContext->set($authenticationRequest->organization);
-            $client = $this->authenticate->handle($verifiedIdentity);
+            $client = $this->authenticate->handle(
+                verifiedIdentity: $verifiedIdentity,
+                acquisitionRequestId: (int) $authenticationRequest->getKey(),
+            );
 
             if ((int) $client->organization_id !== (int) $authenticationRequest->organization_id) {
                 throw new InvalidTelegramWebAuthentication('The Telegram authentication organization does not match.');

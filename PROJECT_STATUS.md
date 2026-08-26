@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-08-25 — M11A final narrow remediation candidate
+
+- Stage 10.2 is `DONE / CLOSED / ACCEPTED` at main SHA `6df5ac5b2c95adf6faf7a69a3b551d2c0f1cb713`; PR #21 was squash-merged after final hosted CI GREEN. The earlier Stage 10.2 remediation entries below are retained as historical evidence and do not describe this milestone.
+- M11 is `IN_PROGRESS`. The active M11A remediation branch is `codex/m11a-acquisition-referrals-feedback`, beginning with requested SHA `251ee18a942cf0c374f7acf4ebfab7ebec118b99`; PR #22 currently carries the remediation candidate. The exact accepted candidate SHA will be recorded after hosted acceptance/merge. This batch is limited to Horizon referral queue consumption, durable retry/backoff authority, fenced terminal state, PostgreSQL event-to-obligation provenance, and real acquisition/referral concurrency and crash/retry coverage.
+- OQ-007 remains OPEN for product/program conversion qualification and all reward economics/lifecycle rules: amount, percentage, points, currency, earning eligibility, redemption, expiry, refund reversal, and cash-out. No qualification or reward behavior is implemented, and no 9-systems/MSQ content is fabricated.
+- M11A remains product-neutral: no Broadcast Engine, segmentation, analytics, reward controls, subscriptions, courses, or bot commerce. PostgreSQL database and concurrency tests remain wired into the existing `test-integration-foundation` and `test-integration-concurrency` targets.
+- Focused local PHPUnit passed 98 Unit/Feature tests / 694 assertions. Twelve PostgreSQL-only integration/concurrency tests were skipped because PHPUnit is configured for SQLite and local PostgreSQL/Docker was unavailable; these skips are not PostgreSQL proof. Pint, PHP syntax, changed-production Larastan (`errors=0`), and `git diff --check` passed. Hosted CI, deployment, merge, and independent acceptance are not claimed. PR #23 remains untouched.
+
 ## 2026-08-24 — Stage 10.2 Knowledge Filament lifecycle remediation candidate
 
 - Starts exactly at `5cfb300baf501f25459baa44d88a49933d011ace`. The hosted-green PostgreSQL ambiguity remediation remains intact; staging then exposed a separate Filament 5.7.6 lazy RelationManager lifecycle failure. `RevisionsRelationManager` now opts out of lazy loading through Filament's supported API, with no Companion application changes.
@@ -74,8 +82,8 @@
 
 - Last updated: 2026-08-24
 - Current phase: Phase 1 foundation
-- Current milestone: Stage 10.2 — AI Companion (implementation candidate)
-- Status: M0–M7, M9–M10, and Stage 10.1 are CLOSED / ACCEPTED. Stage 10.2 remains an implementation-remediation candidate pending fresh independent/hosted acceptance. M8 cannot close without the approved 9-systems and MSQ questionnaire/scoring sources.
+- Current milestone: M11A — Attribution, referral tracking, and NPS/feedback foundation (implementation candidate)
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

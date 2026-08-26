@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Channels\Infrastructure\Telegram\InvalidTelegramInitData;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramInitDataVerifier;
 use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -21,6 +23,8 @@ class TelegramAuthenticationController extends Controller
         AuthenticateClientWithVerifiedChannel $authenticate,
         StartClientOnboarding $startOnboarding,
         ApplyClientPortalLocale $applyLocale,
+        CapturePreAuthAttribution $captureAttribution,
+        FinalizeClientAcquisition $finalizeAcquisition,
     ): RedirectResponse {
         $validated = $request->validate([
             'initData' => ['required', 'string', 'max:8192'],
@@ -28,7 +32,18 @@ class TelegramAuthenticationController extends Controller
 
         try {
             $identity = $verifier->handle($validated['initData']);
-            $client = $authenticate->handle($identity);
+            if ($identity->startParameter !== null) {
+                $captureAttribution->handle(
+                    sessionId: $request->session()->getId(),
+                    input: ['referral_code' => $identity->startParameter],
+                    captureChannel: 'telegram_mini_app',
+                    captureContext: 'telegram_start_param',
+                );
+            }
+            $client = $authenticate->handle(
+                verifiedIdentity: $identity,
+                acquisitionSessionId: $request->session()->getId(),
+            );
         } catch (InvalidTelegramInitData|AuthorizationException) {
             return to_route('portal.home')->with(
                 'telegram_auth_error',
@@ -36,6 +51,7 @@ class TelegramAuthenticationController extends Controller
             );
         }
 
+        $finalizeAcquisition->handle($client, $request->session()->getId());
         $request->session()->regenerate();
         $request->session()->put('client_portal.client_id', $client->getKey());
         $this->applySessionLocale($request, $client, $applyLocale);

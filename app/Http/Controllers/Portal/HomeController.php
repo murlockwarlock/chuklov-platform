@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Identity\Domain\Models\Client;
@@ -21,6 +22,7 @@ class HomeController extends Controller
         ListPublishedServices $services,
         ListClientBookings $bookings,
         ProjectPortalService $serviceProjection,
+        GetClientAttribution $getAttribution,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -51,6 +53,9 @@ class HomeController extends Controller
                 ->map(fn ($service): array => $serviceProjection->handle($service, app()->getLocale()))
                 ->values()
                 ->all(),
+            'attribution' => [
+                'needsManualSource' => $getAttribution->handle($client) === null,
+            ],
         ]);
     }
 }

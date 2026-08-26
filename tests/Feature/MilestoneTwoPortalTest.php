@@ -2,17 +2,25 @@
 
 namespace Tests\Feature;
 
+use App\Modules\Attribution\Application\CapturePreAuthAttribution;
+use App\Modules\Channels\Infrastructure\Telegram\TelegramInitDataVerifier;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
+use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientAcquisitionRegistration;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\ClientConsent;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Application\FinalizeClientAcquisition;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
@@ -86,6 +94,50 @@ class MilestoneTwoPortalTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/Home')
                 ->where('portal.clientName', 'New Client'));
+    }
+
+    public function test_telegram_mini_app_acquisition_registration_survives_a_finalization_boundary_and_returning_retry(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        app(OrganizationContext::class)->set($organization);
+        $this->useTelegramToken();
+        $referrer = Client::factory()->forOrganization($organization)->create();
+        $identity = app(EnsureReferralIdentity::class)->handle($referrer);
+        $sessionId = 'telegram-mini-app-acquisition-session';
+        app(CapturePreAuthAttribution::class)->handle($sessionId, ['referral_code' => $identity->public_code]);
+
+        $verifiedIdentity = app(TelegramInitDataVerifier::class)->handle(
+            TelegramInitData::make(100010, now()->timestamp, firstName: 'Mini App'),
+        );
+        $client = app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            verifiedIdentity: $verifiedIdentity,
+            acquisitionSessionId: $sessionId,
+        );
+        $registration = ClientAcquisitionRegistration::query()->where('client_id', $client->getKey())->sole();
+
+        self::assertNull($registration->finalized_at);
+        self::assertSame(2, Client::query()->count());
+
+        $retryClient = Client::query()->whereKey($client->getKey())->firstOrFail();
+        app(FinalizeClientAcquisition::class)->handle($retryClient, $sessionId);
+        app(FinalizeClientAcquisition::class)->handle($retryClient, $sessionId);
+
+        self::assertNotNull($registration->refresh()->finalized_at);
+        self::assertSame(1, ReferralRelationship::query()->where('referred_client_id', $client->getKey())->count());
+
+        $returningSessionId = 'telegram-mini-app-returning-session';
+        app(CapturePreAuthAttribution::class)->handle($returningSessionId, ['referral_code' => $identity->public_code]);
+        $returningIdentity = app(TelegramInitDataVerifier::class)->handle(
+            TelegramInitData::make(100010, now()->addSecond()->timestamp, firstName: 'Changed'),
+        );
+        $returningClient = app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            verifiedIdentity: $returningIdentity,
+            acquisitionSessionId: $returningSessionId,
+        );
+
+        self::assertSame($client->getKey(), $returningClient->getKey());
+        self::assertSame(1, ClientAcquisitionRegistration::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(1, ReferralRelationship::query()->where('referred_client_id', $client->getKey())->count());
     }
 
     public function test_telegram_auth_keeps_client_records_feature_as_a_server_gate(): void
