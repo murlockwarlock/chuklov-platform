@@ -57,6 +57,8 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
     {
         $this->requirePostgres();
         [$organization, $actor, $campaign] = $this->fixture();
+        $this->eligibleClient($organization);
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([new RecordingNotificationChannel]));
         app(MaterializeBroadcastAudience::class)->handle($campaign);
         $campaign->forceFill(['state' => BroadcastCampaignState::Scheduled, 'scheduled_at' => now()->subMinute()])->save();
 
@@ -91,6 +93,7 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
         $this->requirePostgres();
         [$organization, $actor, $campaign] = $this->fixture();
         $this->eligibleClient($organization);
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([new RecordingNotificationChannel]));
         app(MaterializeBroadcastAudience::class)->handle($campaign);
         $campaign->forceFill(['state' => BroadcastCampaignState::Dispatching, 'dispatch_started_at' => now()])->save();
         $batchId = (int) DB::table('broadcast_batches')->where('campaign_id', $campaign->id)->value('id');
@@ -351,7 +354,9 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
         self::assertSame('pending', $failed->state);
         self::assertSame(1, $failed->dispatch_attempt_count);
 
+        $campaign->refresh();
         $campaign->forceFill(['next_dispatch_at' => null])->save();
+        $failed->refresh();
         $failed->forceFill(['available_at' => now()->subMinute()])->save();
         $second = app(ScheduleBroadcastWork::class)->handle();
 
@@ -372,7 +377,9 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
         $batch = BroadcastBatch::query()->where('snapshot_id', $snapshot->getKey())->sole();
 
         self::assertSame(1, app(ScheduleBroadcastWork::class)->handle()['batches']);
+        $batch->refresh();
         $batch->forceFill(['available_at' => now()->subMinute()])->save();
+        $campaign->refresh();
         $campaign->forceFill(['next_dispatch_at' => null])->save();
         self::assertSame(1, app(ScheduleBroadcastWork::class)->handle()['batches']);
         self::assertSame(2, $batch->refresh()->dispatch_attempt_count);
@@ -393,11 +400,15 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
         self::assertSame(0, app(ScheduleBroadcastWork::class)->handle()['batches']);
         self::assertSame(1, $batch->refresh()->dispatch_attempt_count);
 
+        $campaign->refresh();
         $campaign->forceFill(['state' => BroadcastCampaignState::Cancelled, 'cancelled_at' => now(), 'next_dispatch_at' => null])->save();
+        $batch->refresh();
         $batch->forceFill(['available_at' => now()->subMinute(), 'state' => 'pending'])->save();
         self::assertSame(0, app(ScheduleBroadcastWork::class)->handle()['campaigns']);
 
+        $campaign->refresh();
         $campaign->forceFill(['state' => BroadcastCampaignState::Completed, 'completed_at' => now()])->save();
+        $batch->refresh();
         $batch->forceFill(['available_at' => now()->subMinute(), 'state' => 'pending'])->save();
         self::assertSame(0, app(ScheduleBroadcastWork::class)->handle()['campaigns']);
     }
@@ -518,15 +529,16 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
     private function assertConstraintRejects(Closure $operation): void
     {
         DB::beginTransaction();
+        $rejection = null;
         try {
             $operation();
-        } catch (QueryException) {
+        } catch (QueryException $exception) {
+            $rejection = $exception;
+        } finally {
             DB::rollBack();
-
-            return;
         }
-        DB::rollBack();
-        self::fail('PostgreSQL composite constraint accepted an invalid cross-tenant row.');
+
+        self::assertInstanceOf(QueryException::class, $rejection, 'PostgreSQL composite constraint accepted an invalid cross-tenant row.');
     }
 
     /** @return array{Organization, User, BroadcastCampaign} */
