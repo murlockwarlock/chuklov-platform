@@ -31,6 +31,7 @@ class HorizonFoundationTest extends TestCase
         self::assertSame([
             'default',
             'scenarios',
+            'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
             'telegram-typing',
@@ -38,7 +39,7 @@ class HorizonFoundationTest extends TestCase
         ], config('horizon.defaults.supervisor-1.queue'));
     }
 
-    public function test_every_m11a_production_queue_is_consumed_by_the_bounded_supervisor(): void
+    public function test_every_m11_production_queue_is_consumed_by_the_bounded_supervisor(): void
     {
         $configuration = config('horizon.defaults.supervisor-1');
 
@@ -46,6 +47,7 @@ class HorizonFoundationTest extends TestCase
         self::assertSame([
             'default',
             'scenarios',
+            'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
             'telegram-typing',

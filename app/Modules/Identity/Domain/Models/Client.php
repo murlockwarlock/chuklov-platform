@@ -25,6 +25,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read Organization $organization
  * @property string|null $full_name
  * @property string|null $phone_search_key
+ * @property string|null $language
+ * @property int $organization_id
  */
 #[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'lead_source', 'referral_code'])]
 class Client extends Model

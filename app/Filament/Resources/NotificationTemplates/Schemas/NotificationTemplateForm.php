@@ -40,6 +40,7 @@ final class NotificationTemplateForm
                             ->options([
                                 ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
                                 ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
+                                ScenarioRulePurpose::Marketing->value => 'Маркетинговая рассылка',
                             ])
                             ->helperText('Категория сообщения. Сама по себе не определяет получателя, время отправки или канал связи — они настраиваются в правиле.')
                             ->required(),

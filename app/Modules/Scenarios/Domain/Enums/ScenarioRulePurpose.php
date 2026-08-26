@@ -6,4 +6,5 @@ enum ScenarioRulePurpose: string
 {
     case Service = 'service';
     case Transactional = 'transactional';
+    case Marketing = 'marketing';
 }

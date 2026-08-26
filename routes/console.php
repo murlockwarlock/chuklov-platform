@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
@@ -42,3 +43,10 @@ Artisan::command('referrals:run', function (ScheduleReferralIntegrationEvents $s
 })->purpose('Dispatch pending referral integration events with crash-safe retries.');
 
 Schedule::command('referrals:run')->everyMinute()->withoutOverlapping();
+
+Artisan::command('broadcasts:run', function (ScheduleBroadcastWork $scheduler): void {
+    $result = $scheduler->handle();
+    $this->info("Claimed {$result['campaigns']} campaign(s) and dispatched {$result['batches']} bounded batch job(s).");
+})->purpose('Claim due broadcast campaigns and dispatch bounded recipient batches.');
+
+Schedule::command('broadcasts:run')->everyMinute()->withoutOverlapping()->onOneServer();

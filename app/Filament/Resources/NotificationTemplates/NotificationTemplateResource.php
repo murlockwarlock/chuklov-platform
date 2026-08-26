@@ -139,6 +139,7 @@ final class NotificationTemplateResource extends Resource
         return match ($purpose) {
             ScenarioRulePurpose::Service => 'Сервисное сообщение',
             ScenarioRulePurpose::Transactional => 'Системное сообщение',
+            ScenarioRulePurpose::Marketing => 'Маркетинговая рассылка',
             default => 'Не указано',
         };
     }
