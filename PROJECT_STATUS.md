@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-08-26 — M11B stacked implementation candidate
+
+- M11B is implemented on `codex/m11b-broadcast-engine`, stacked from exact M11A candidate `45b3eb0189cab63ad60309474c4bb614b4bf1f15`; M11A PR #22 remains unmodified and unmerged. M11 remains `IN_PROGRESS`, not accepted or closed.
+- `REQ-BROADCAST-001`–`REQ-BROADCAST-003` now have a CRM-managed provider-neutral engine with draft/preview/test, immediate/scheduled lifecycle, immutable RU/EN template and deterministic audience snapshots, bounded batches, affirmative marketing-consent/verified-channel eligibility, durable recipient idempotency, sanitized outcomes, actor audit, and organization-safe CRM history.
+- Typed segmentation covers tags, B2B role, generic survey completion, booking status/completed-visit count/last visit/no future rebooking, M11A referral/source, language, and verified channel availability. Encrypted survey result categories and every clinical/medical/free-text filter fail closed; no OQ-015 content or sensitive-health marketing authority is fabricated.
+- The additive migration uses explicit PostgreSQL-safe identifiers and composite tenant foreign keys. Focused local M11B Unit/Feature coverage passes 18 tests / 40 assertions; relevant M5/M11A regression coverage passes 56 tests / 309 assertions. Six PostgreSQL-only concurrency tests exist but were skipped locally because PHPUnit uses SQLite and the local Docker/PostgreSQL runtime is unavailable; no PostgreSQL pass is claimed. Pint, PHP syntax, Larastan, ESLint, Vue typecheck, Vite build, Composer audit, npm audit, and `git diff --check` pass. `make quality` cannot complete under its fixed 128 MB PHPUnit subprocess limit; direct 512 MB execution exposes one unrelated pre-existing Finance SQLite numeric-format assertion. `make ci` is unavailable without Docker. Hosted CI was not dispatched.
+- `REQ-NOTIFY-008` remains FUTURE: no preference center, per-channel preferences, quiet hours, frequency caps, or new unsubscribe/legal semantics were added. OQ-007 remains OPEN; no rewards, M11C analytics, M12 subscription, deployment, or merge work is included.
+
 ## 2026-08-25 — M11A final narrow remediation candidate
 
 - Stage 10.2 is `DONE / CLOSED / ACCEPTED` at main SHA `6df5ac5b2c95adf6faf7a69a3b551d2c0f1cb713`; PR #21 was squash-merged after final hosted CI GREEN. The earlier Stage 10.2 remediation entries below are retained as historical evidence and do not describe this milestone.
