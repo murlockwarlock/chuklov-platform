@@ -1,6 +1,16 @@
 # Changelog
 
-## 2026-08-26 — M11B Broadcast Engine remediation candidate
+## 2026-08-27 — M11C CRM analytics dashboard implementation/remediation candidate
+
+- Added read-only organization-scoped analytics projections to the existing Filament `Инфопанель`, preserving `UpcomingBookingsWidget` and adding a shared Today/7/30/90-day/custom period filter using organization IANA timezone boundaries.
+- Added acquisition/source, scheduling, finance, AI-failure, and Knowledge-ingestion widgets. Metrics use Client, normalized first-touch attribution, Booking/BookingEvent, signed Finance ledger/obligation, logical AiRun, and KnowledgeIngestionRun source records; finance is base-currency and fails closed on invalid reconciliation.
+- Remediated source buckets so low-count unattributed clients remain explicit as `Не указан`, while `Другие` contains only overflow known sources and the result remains bounded.
+- Follow-up remediation carries known-versus-unknown attribution identity through SQL grouping and presents a known literal source `Не указан` as `Источник: Не указан`, without changing attribution authority or source counts.
+- Final source-identity follow-up carries semantic kind/value through source grouping, ranking, and overflow assignment; it derives collision-safe presentation namespaces so referral, UTM, direct literals, unknown, and generated overflow remain distinct while ordinary labels stay unchanged.
+- Defined realized historical LTV for the selected client acquisition cohort and operational retention as rebooking after a completed visit. No Analytics tables, ETL, warehouse, external analytics, referral reward economics, clinical/survey content, M12, deployment, hosted CI, or merge work was added.
+- Added focused Unit/Feature coverage, PostgreSQL integration coverage wired to the foundation target (`EXISTS — NOT RUN LOCALLY` under the local SQLite configuration), and recorded M11C as an implementation/remediation candidate. `REQ-CRM-002` remains pending required verification and acceptance.
+
+## 2026-08-26 — M11B Broadcast Engine remediation candidate (historical entry)
 
 - Added an organization-scoped Broadcasts module with draft, preview, isolated test-send, immediate/scheduled dispatch, cancellation-before-dispatch, immutable audience/template snapshots, bounded batches, durable claims, recipient idempotency, normalized delivery outcomes, sanitized errors, aggregate counts, and audit evidence through the existing M5 Channel boundary.
 - Remediated external delivery ambiguity: attempts are persisted before channel I/O, Telegram transport/acknowledgement loss is terminal `unknown` with no blind replay, and bounded retries are reserved for failures proven to occur before external send.

@@ -134,7 +134,8 @@ final class DashboardUpcomingBookingsTest extends TestCase
         $dashboard = new Dashboard;
 
         self::assertSame(1, $dashboard->getColumns());
-        self::assertSame([UpcomingBookingsWidget::class], $dashboard->getWidgets());
+        self::assertSame(UpcomingBookingsWidget::class, $dashboard->getWidgets()[0]);
+        self::assertContains(UpcomingBookingsWidget::class, $dashboard->getWidgets());
         self::assertNotContains(AccountWidget::class, $dashboard->getWidgets());
     }
 

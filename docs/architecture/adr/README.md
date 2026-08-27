@@ -21,5 +21,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 015 | Security and data protection | Accepted |
 | 016 | Finance and multi-currency core | Accepted |
 | 018 | Survey builder stable identities and canonical snapshots | Accepted |
+| 019 | Read-only CRM analytics projections | Accepted |
 
 Use `000-template.md` for new significant decisions.

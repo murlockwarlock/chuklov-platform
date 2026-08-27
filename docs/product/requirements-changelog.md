@@ -1,5 +1,13 @@
 # Requirements Changelog
 
+## 2026-08-27 — REQ-CRM-002 implementation/remediation candidate
+
+- Recorded the M11C implementation/remediation candidate for `REQ-CRM-002`: the read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions exist in code, but the requirement remains pending PostgreSQL verification, hosted exact-SHA CI, independent re-review, staging/manual acceptance, and owner acceptance.
+- Reserved the explicit `Не указан` source bucket so low-count unattributed clients cannot be folded into `Другие`; `Другие` contains only overflow known sources and the source result remains bounded.
+- Follow-up remediation keeps authoritative known-versus-unknown attribution identity separate from display text; a known literal source `Не указан` is presented as `Источник: Не указан` while the reserved unknown bucket remains `Не указан`.
+- Final source-identity remediation keeps structural semantic kind/value separate from presentation labels for referral, direct, UTM, unknown, and generated overflow buckets; collision-safe namespaces preserve unique user-visible labels without changing normalized attribution authority.
+- No requirement scope was expanded. M11A/M11B semantics, OQ-007, OQ-015, and M12 remain unchanged.
+
 ## 2026-08-24 — Owner-confirmed product-neutral referrals
 
 - Updated `REQ-REFERRAL-001`: one durable organization-scoped referrer Client → referred Client relationship may be established automatically through a referral link or manually by authorized CRM staff, with bounded provenance, audit, first-touch protection, and no silent reassignment.
