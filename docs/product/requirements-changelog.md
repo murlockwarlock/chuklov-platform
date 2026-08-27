@@ -1,8 +1,9 @@
 # Requirements Changelog
 
-## 2026-08-27 — REQ-CRM-002 implementation
+## 2026-08-27 — REQ-CRM-002 implementation/remediation candidate
 
-- Marked `REQ-CRM-002` `IMPLEMENTED` after adding the read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions.
+- Recorded the M11C implementation/remediation candidate for `REQ-CRM-002`: the read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions exist in code, but the requirement remains pending PostgreSQL verification, hosted exact-SHA CI, independent re-review, staging/manual acceptance, and owner acceptance.
+- Reserved the explicit `Не указан` source bucket so low-count unattributed clients cannot be folded into `Другие`; `Другие` contains only overflow known sources and the source result remains bounded.
 - No requirement scope was expanded. M11A/M11B semantics, OQ-007, OQ-015, and M12 remain unchanged.
 
 ## 2026-08-24 — Owner-confirmed product-neutral referrals

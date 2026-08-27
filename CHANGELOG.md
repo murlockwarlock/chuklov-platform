@@ -1,11 +1,12 @@
 # Changelog
 
-## 2026-08-27 — M11C CRM analytics dashboard implementation candidate
+## 2026-08-27 — M11C CRM analytics dashboard implementation/remediation candidate
 
 - Added read-only organization-scoped analytics projections to the existing Filament `Инфопанель`, preserving `UpcomingBookingsWidget` and adding a shared Today/7/30/90-day/custom period filter using organization IANA timezone boundaries.
 - Added acquisition/source, scheduling, finance, AI-failure, and Knowledge-ingestion widgets. Metrics use Client, normalized first-touch attribution, Booking/BookingEvent, signed Finance ledger/obligation, logical AiRun, and KnowledgeIngestionRun source records; finance is base-currency and fails closed on invalid reconciliation.
+- Remediated source buckets so low-count unattributed clients remain explicit as `Не указан`, while `Другие` contains only overflow known sources and the result remains bounded.
 - Defined realized historical LTV for the selected client acquisition cohort and operational retention as rebooking after a completed visit. No Analytics tables, ETL, warehouse, external analytics, referral reward economics, clinical/survey content, M12, deployment, hosted CI, or merge work was added.
-- Added focused Unit/Feature coverage, PostgreSQL integration coverage wired to the foundation target (`EXISTS — NOT RUN LOCALLY` under the local SQLite configuration), and updated M11C requirement/status traceability.
+- Added focused Unit/Feature coverage, PostgreSQL integration coverage wired to the foundation target (`EXISTS — NOT RUN LOCALLY` under the local SQLite configuration), and recorded M11C as an implementation/remediation candidate. `REQ-CRM-002` remains pending required verification and acceptance.
 
 ## 2026-08-26 — M11B Broadcast Engine remediation candidate (historical entry)
 

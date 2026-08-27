@@ -1,11 +1,11 @@
 # Project Status
 
-## 2026-08-27 — M11C CRM analytics dashboard implementation candidate
+## 2026-08-27 — M11C CRM analytics dashboard implementation/remediation candidate
 
-- M11A and M11B are merged in the requested starting main revision. M11C is implemented on branch `codex/m11c-crm-analytics-dashboard` from exact starting SHA `42c1d66987862fa819d581a803995fdfab2b8b7b`; the existing Filament `Инфопанель` retains `UpcomingBookingsWidget` and now has one shared organization-timezone period filter plus least-privilege analytics widgets.
-- `REQ-CRM-002` is marked `IMPLEMENTED`. Analytics is read-only: SQL aggregates query organization-scoped Clients, normalized first-touch attributions, Bookings, immutable BookingEvents, Finance obligations/ledger entries, logical AI runs, and Knowledge ingestion runs. Finance uses signed base-currency snapshots and fails closed on invalid reconciliation/configuration. Retention is operational rebooking after a selected-period completed visit; LTV is realized historical value for the selected acquisition cohort.
-- Focused M11C Unit/Feature coverage includes period/DST boundaries, source buckets, booking/event semantics, finance payments/corrections/FX/debt/LTV, AI and ingestion failures, retention, empty states, permissions, upcoming bookings, and bounded query counts. M11A/M11B, Finance, Scheduling, AI, and Knowledge regression batches were run; one unrelated existing Finance UX test remains SQLite-decimal-format sensitive and is documented in the handoff.
-- PostgreSQL coverage exists in `tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php` and is wired into `test-integration-foundation`, but is `EXISTS — NOT RUN LOCALLY` because the repository test environment is SQLite-only and no local PostgreSQL service is available. No PostgreSQL pass, hosted CI, staging, deployment, merge, or owner acceptance is claimed.
+- M11A and M11B are merged in the requested starting main revision. M11C implementation/remediation is on branch `codex/m11c-crm-analytics-dashboard` from exact remediation starting SHA `14dc6b06ee45fbd2b0a5a3f915e802790dd296fe`; the existing Filament `Инфопанель` retains `UpcomingBookingsWidget` and has one shared organization-timezone period filter plus least-privilege analytics widgets.
+- Analytics implementation exists as a read-only projection: SQL aggregates query organization-scoped Clients, normalized first-touch attributions, Bookings, immutable BookingEvents, Finance obligations/ledger entries, logical AI runs, and Knowledge ingestion runs. Source buckets reserve low-count unattributed clients as `Не указан`; `Другие` contains only overflow known sources, with a maximum of 10 source buckets. Finance uses signed base-currency snapshots and fails closed on invalid reconciliation/configuration. Retention is operational rebooking after a selected-period completed visit; LTV is realized historical value for the selected acquisition cohort.
+- `REQ-CRM-002` remains an accepted requirement scope, not an implementation closeout: it is not marked `IMPLEMENTED`, closed, or verified. Focused local PHPUnit coverage passes with 41 tests / 276 assertions: AnalyticsProjection 7/64, DashboardPeriod 2/9, AnalyticsDashboardWidget 5/37, UpcomingBookings 7/26, and M11A attribution Feature/Unit 20/140. The explicit unknown-vs-known-overflow regression is included in AnalyticsProjection. Pint, changed-file PHP syntax, affected-production PHPStan (0 errors), and `git diff --check` pass; no M11A/M11B behavior was changed.
+- PostgreSQL coverage exists in `tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php` and is wired into `test-integration-foundation`, but is `NOT RUN` / `EXISTS — NOT RUN LOCALLY`: the repository test configuration forces SQLite `:memory:`, and no service is listening on `127.0.0.1:5432`. Hosted exact-SHA CI is `NOT RUN`; staging is `NOT DEPLOYED` for this candidate; independent re-review and owner/manual acceptance are `NOT DONE`.
 - OQ-007 remains OPEN, OQ-015 remains unresolved, and no referral reward economics, clinical/survey content, M12, marketing-health analytics, warehouse, ETL, or external analytics service was added. PR #23 remains untouched.
 
 ## 2026-08-26 — M11B stacked remediation candidate (historical state)
@@ -96,10 +96,10 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-26
+- Last updated: 2026-08-27
 - Current phase: Phase 1 foundation
-- Current milestone: M11B — CRM Broadcast Engine, segmentation, and marketing governance (stacked remediation candidate)
-- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS and M11B remains pending independent re-review and hosted gates; M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
+- Current milestone: M11C — CRM analytics dashboard (implementation/remediation candidate)
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A and M11B are merged and preserved, while M11C remains pending independent re-review, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

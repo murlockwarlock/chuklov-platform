@@ -1,6 +1,6 @@
 # ADR-019: Read-Only CRM Analytics Projections
 
-- Status: Accepted
+- Status: Accepted as an architectural decision
 - Date: 2026-08-27
 
 ## Context
@@ -20,3 +20,4 @@ REQ-CRM-002 requires one operational CRM dashboard to report across Identity, At
 - Aggregate query count and memory usage remain independent of client, booking, and ledger row counts; reporting indexes are added only when query evidence justifies them.
 - Every widget has a narrow existing organization permission, and unauthorized financial, AI, or Knowledge data is not included in another widget's payload.
 - PostgreSQL remains the authoritative verification target; the repository's local SQLite test configuration can execute focused behavior tests but cannot claim PostgreSQL integration success.
+- ADR acceptance records the architecture decision only; M11C and `REQ-CRM-002` remain implementation candidates pending verification and acceptance.

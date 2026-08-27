@@ -73,6 +73,50 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         self::assertSame('1000000000', $finance->revenueMinor);
     }
 
+    public function test_postgresql_analytics_reserves_low_count_unknown_source_from_known_overflow(): void
+    {
+        $this->requirePostgres();
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $knownSources = [];
+
+        for ($sourceIndex = 1; $sourceIndex <= 9; $sourceIndex++) {
+            $source = sprintf('postgres-known-%02d', $sourceIndex);
+            $knownSources[] = $source;
+
+            for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+                $client = $this->client($organization, '2026-08-10 10:00:00');
+                $client->forceFill(['lead_source' => 'legacy-only'])->save();
+                $this->attribution($client, 'source', $source);
+            }
+        }
+
+        $unattributedClient = $this->client($organization, '2026-08-10 10:00:00');
+        $unattributedClient->forceFill(['lead_source' => 'legacy-only'])->save();
+
+        app(OrganizationContext::class)->set($organization);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-08-01', 'end_date' => '2026-08-27'],
+            'UTC',
+            $now,
+        );
+
+        $acquisition = app(AcquisitionAnalytics::class)->handle($admin, $period);
+        $sources = collect($acquisition->sources);
+        $sourceCounts = $sources->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
+        $labels = $sources->pluck('label')->all();
+
+        self::assertSame(19, $acquisition->newClients);
+        self::assertContains('Не указан', $labels);
+        self::assertSame(1, $sourceCounts->get('Не указан'));
+        self::assertContains('Другие', $labels);
+        self::assertSame(2, $sourceCounts->get('Другие'));
+        self::assertSame(['postgres-known-09'], array_values(array_diff($knownSources, $labels)));
+        self::assertSame(19, $sources->sum('count'));
+        self::assertCount(10, $acquisition->sources);
+        self::assertNotContains('legacy-only', $labels);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationWithAdmin(): array
     {

@@ -16,7 +16,9 @@ use Illuminate\Support\Facades\DB;
 
 final class AcquisitionAnalytics
 {
-    private const int MaximumVisibleSourceBuckets = 8;
+    private const int MaximumVisibleKnownSourceBuckets = 8;
+
+    private const int MaximumSourceResultBuckets = self::MaximumVisibleKnownSourceBuckets + 2;
 
     public function __construct(
         private readonly OrganizationContext $context,
@@ -69,11 +71,15 @@ final class AcquisitionAnalytics
             ->selectRaw($sourceLabel.' as source_label, COUNT(*) as source_count')
             ->groupByRaw($sourceLabel);
 
-        $ranked = DB::query()
+        $classified = DB::query()
             ->fromSub($grouped, 'source_buckets')
-            ->selectRaw('source_label, source_count, ROW_NUMBER() OVER (ORDER BY source_count DESC, source_label ASC) as source_rank');
+            ->selectRaw("source_label, source_count, CASE WHEN source_label = 'Не указан' THEN 1 ELSE 0 END as is_unknown");
 
-        $bucketLabel = 'CASE WHEN source_rank <= '.self::MaximumVisibleSourceBuckets.' THEN source_label ELSE NULL END';
+        $ranked = DB::query()
+            ->fromSub($classified, 'classified_sources')
+            ->selectRaw('source_label, source_count, is_unknown, ROW_NUMBER() OVER (PARTITION BY is_unknown ORDER BY source_count DESC, source_label ASC) as source_rank');
+
+        $bucketLabel = 'CASE WHEN is_unknown = 1 THEN source_label WHEN source_rank <= '.self::MaximumVisibleKnownSourceBuckets.' THEN source_label ELSE NULL END';
 
         return array_values(DB::query()
             ->fromSub($ranked, 'ranked_sources')
@@ -81,7 +87,7 @@ final class AcquisitionAnalytics
             ->groupByRaw($bucketLabel)
             ->orderByDesc('source_count')
             ->orderBy('source_label')
-            ->limit(self::MaximumVisibleSourceBuckets + 1)
+            ->limit(self::MaximumSourceResultBuckets)
             ->get()
             ->map(static fn (object $row): SourceBucket => new SourceBucket(
                 label: $row->source_label === null ? 'Другие' : (string) $row->source_label,

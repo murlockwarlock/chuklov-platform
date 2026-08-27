@@ -17,14 +17,14 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-### M11C — CRM analytics dashboard — implementation candidate
+### M11C — CRM analytics dashboard — implementation/remediation candidate
 
 - Objective: implement `REQ-CRM-002` as read-only aggregate projections on the existing Filament `Инфопанель`, preserving the accepted M11A/M11B source semantics and the existing `UpcomingBookingsWidget`.
-- Starting SHA: `42c1d66987862fa819d581a803995fdfab2b8b7b`; branch: `codex/m11c-crm-analytics-dashboard`.
+- Remediation starting SHA: `14dc6b06ee45fbd2b0a5a3f915e802790dd296fe`; branch: `codex/m11c-crm-analytics-dashboard`.
 - Scope: one shared organization-timezone period filter, acquisition/source, scheduling, finance, AI-failure, and knowledge-ingestion widgets with least-privilege permissions and deliberate empty states.
 - Metric authority: Client creation and normalized first-touch attribution; Booking creation and immutable BookingEvent history; completed BookingEvent transitions; HOME_VISIT Booking rows; signed base-currency Finance ledger/obligation records; logical AiRun and KnowledgeIngestionRun failures. Retention is explicitly operational rebooking after a completed visit; LTV is historical realized cohort value, not a forecast.
 - Architecture and privacy: SQL aggregates query authoritative organization-scoped records directly, with no Analytics tables, ETL, cached business truth, source mutation, payload decryption, raw failure text, or sensitive health content. Finance fails closed when existing currency/reconciliation authority is invalid.
-- Outcome: implementation is complete for independent review. Focused M11C Unit/Feature tests, Dashboard/upcoming-booking coverage, M11A/M11B, Scheduling, AI, and Knowledge regressions, Pint, syntax, Larastan, frontend checks, audits, and diff checks pass; the standalone Finance regression batch has one unrelated SQLite decimal-format assertion failure. PostgreSQL integration remains `EXISTS — NOT RUN LOCALLY` in the SQLite-only environment. No hosted CI, staging, deployment, merge, or M12 work is included.
+- Outcome: implementation/remediation is a candidate for independent re-review. The source projection reserves `Не указан` and keeps `Другие` limited to overflow known sources. Focused local PHPUnit checks pass with 41 tests / 276 assertions across Analytics, Dashboard, UpcomingBookings, and M11A attribution coverage; changed PHP syntax, Pint, affected-production PHPStan, and `git diff --check` pass. PostgreSQL remains `EXISTS — NOT RUN LOCALLY`: `phpunit.xml` forces SQLite `:memory:` and no service is listening on `127.0.0.1:5432`. Hosted exact-SHA CI, staging, deployment, merge, owner/manual acceptance, and M12 work remain out of scope.
 
 ### UX-A — Client Workspace + ordinary client/global search
 
