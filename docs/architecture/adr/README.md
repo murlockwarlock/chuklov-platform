@@ -22,5 +22,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 016 | Finance and multi-currency core | Accepted |
 | 018 | Survey builder stable identities and canonical snapshots | Accepted |
 | 019 | Read-only CRM analytics projections | Accepted |
+| 020 | B2B sales-call video projection and shared Specialist occupancy | Proposed for M11D review |
 
 Use `000-template.md` for new significant decisions.

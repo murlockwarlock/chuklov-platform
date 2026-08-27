@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
@@ -22,6 +23,11 @@ final class GetClientProfile
         $client = $this->clientContext->client();
         $documents = $this->legalDocuments->handle($this->locale($client->language));
         $consents = $this->consents($client, $documents);
+        $b2bProfile = BroadcastClientProfile::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->first();
+        $b2bAnswer = $b2bProfile?->getRawOriginal('b2b_specialist_answer');
 
         return [
             'profile' => [
@@ -40,6 +46,7 @@ final class GetClientProfile
                     ->where('verification_status', ChannelIdentityStatus::Verified)
                     ->exists(),
             ],
+            'b2bSpecialistAnswer' => $b2bAnswer,
             'legalDocuments' => $documents->map(function (LegalDocument $document) use ($consents): array {
                 $consent = $consents->get($document->getKey());
 
@@ -57,6 +64,7 @@ final class GetClientProfile
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
                 'telegramLink' => route('portal.telegram.link'),
+                'b2bAnswer' => route('portal.profile.b2b-answer'),
             ],
         ];
     }

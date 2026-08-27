@@ -2,6 +2,8 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
+use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
@@ -17,6 +19,7 @@ class SaveClientOnboardingStep
         private readonly StartClientOnboarding $startOnboarding,
         private readonly UpdateClientProfileFromPortal $updateProfile,
         private readonly RecordPortalClientConsents $recordConsents,
+        private readonly SetClientB2bSpecialistAnswer $setB2bAnswer,
     ) {}
 
     /**
@@ -32,6 +35,19 @@ class SaveClientOnboardingStep
     ): ClientOnboarding {
         $client = $this->clientContext->client();
         $onboarding = $this->startOnboarding->handle($client);
+        $b2bAnswer = null;
+
+        if ($stage === ClientOnboardingStage::Contacts && array_key_exists('b2b_specialist_answer', $attributes)) {
+            $rawAnswer = $attributes['b2b_specialist_answer'];
+            $b2bAnswer = is_string($rawAnswer) ? B2bSpecialistAnswer::tryFrom($rawAnswer) : null;
+            unset($attributes['b2b_specialist_answer']);
+
+            if (! $b2bAnswer instanceof B2bSpecialistAnswer) {
+                throw ValidationException::withMessages([
+                    'b2b_specialist_answer' => 'Choose yes or no for the B2B specialist question.',
+                ]);
+            }
+        }
 
         if ($stage === ClientOnboardingStage::Contacts) {
             $confirmedFields = $this->deriveConfirmedFields($client, $attributes, $confirmedFields);
@@ -62,9 +78,12 @@ class SaveClientOnboardingStep
             ]);
         }
 
-        return DB::transaction(function () use ($stage, $attributes, $confirmedFields, $consents, $onboarding, $client): ClientOnboarding {
+        return DB::transaction(function () use ($stage, $attributes, $confirmedFields, $consents, $onboarding, $client, $b2bAnswer): ClientOnboarding {
             if ($stage === ClientOnboardingStage::Contacts) {
                 $this->updateProfile->handle($client, $attributes, $confirmedFields);
+                if ($b2bAnswer instanceof B2bSpecialistAnswer) {
+                    $this->setB2bAnswer->handle($client, $client, $b2bAnswer, 'portal');
+                }
             }
 
             if ($stage === ClientOnboardingStage::Goals) {
@@ -72,14 +91,19 @@ class SaveClientOnboardingStep
             }
 
             $data = $onboarding->data ?? [];
+            $fields = array_keys($attributes);
+            if ($b2bAnswer instanceof B2bSpecialistAnswer) {
+                $fields[] = 'b2b_specialist_answer';
+            }
             $data[$stage->value] = [
                 'completed_at' => now()->toIso8601String(),
-                'fields' => array_keys($attributes),
+                'fields' => $fields,
                 'confirmed_fields' => $confirmedFields,
                 'consents' => array_map(
                     static fn (array $consent): int => (int) $consent['legal_document_id'],
                     $consents,
                 ),
+                'b2b_specialist_answer' => $b2bAnswer?->value,
             ];
             $nextStage = $stage->next();
 

@@ -20,6 +20,8 @@ final class ScenarioNotificationSeeder extends Seeder
             ->each(function (Organization $organization): void {
                 $this->seedLocale($organization, 'en', 'Thank you for your visit, {{ client.full_name }}.');
                 $this->seedLocale($organization, 'ru', 'Спасибо за ваш визит, {{ client.full_name }}.');
+                $this->seedB2b($organization, 'en', 'Your B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}). Join: {{ sales_call.join_url }}');
+                $this->seedB2b($organization, 'ru', 'Разговор о развитии бизнеса с клиентом {{ client.full_name }} (№{{ sales_call.id }}) запланирован на {{ sales_call.local_date }} в {{ sales_call.local_time }} ({{ sales_call.timezone }}). Ссылка: {{ sales_call.join_url }}');
             });
     }
 
@@ -113,5 +115,149 @@ final class ScenarioNotificationSeeder extends Seeder
                 ])->save();
             }
         }
+    }
+
+    private function seedB2b(Organization $organization, string $locale, string $body): void
+    {
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_key', 'b2b-sales-call-ready')
+            ->where('locale', $locale)
+            ->first();
+
+        if ($template === null) {
+            $template = new NotificationTemplate;
+            $template->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_key' => 'b2b-sales-call-ready',
+                'locale' => $locale,
+                'name' => 'B2B sales call ready',
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'is_active' => true,
+            ])->save();
+        }
+
+        $version = NotificationTemplateVersion::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_id', $template->getKey())
+            ->where('version', 1)
+            ->first();
+
+        if ($version === null) {
+            $version = new NotificationTemplateVersion;
+            $version->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_id' => $template->getKey(),
+                'version' => 1,
+                'status' => NotificationTemplateStatus::Published->value,
+                'body' => $body,
+                'variables' => ['client.full_name', 'sales_call.id', 'sales_call.local_date', 'sales_call.local_time', 'sales_call.timezone', 'sales_call.join_url'],
+                'created_by_user_id' => null,
+                'published_at' => now(),
+            ])->save();
+        }
+
+        $clientRuleKey = 'b2b-sales-call-ready-client-'.$locale;
+        if (! ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $clientRuleKey)->exists()) {
+            $rule = new ScenarioRule;
+            $rule->forceFill([
+                'organization_id' => $organization->getKey(),
+                'rule_key' => $clientRuleKey,
+                'name' => 'B2B sales call ready for client ('.$locale.')',
+                'trigger_event' => ScenarioEventType::B2bSalesCallReady->value,
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $version->getKey(),
+                'max_occurrences' => 1,
+                'repeat_interval_value' => null,
+                'repeat_interval_unit' => null,
+                'version' => 1,
+            ])->save();
+        }
+
+        if ($locale === 'en' && ! ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', 'b2b-sales-call-ready-specialist')->exists()) {
+            $specialistVersion = $this->ensureB2bTemplate(
+                organization: $organization,
+                templateKey: 'b2b-sales-call-ready-specialist',
+                locale: 'en',
+                name: 'B2B sales call ready for specialist',
+                body: 'B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}). Open CRM: {{ sales_call.crm_url }}',
+                variables: ['client.full_name', 'sales_call.id', 'sales_call.local_date', 'sales_call.local_time', 'sales_call.timezone', 'sales_call.crm_url'],
+            );
+            $rule = new ScenarioRule;
+            $rule->forceFill([
+                'organization_id' => $organization->getKey(),
+                'rule_key' => 'b2b-sales-call-ready-specialist',
+                'name' => 'B2B sales call ready for specialist',
+                'trigger_event' => ScenarioEventType::B2bSalesCallReady->value,
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'conditions' => [],
+                'recipient_strategy' => ['type' => 'assigned_specialist'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $specialistVersion->getKey(),
+                'max_occurrences' => 1,
+                'repeat_interval_value' => null,
+                'repeat_interval_unit' => null,
+                'version' => 1,
+            ])->save();
+        }
+    }
+
+    /** @param list<string> $variables */
+    private function ensureB2bTemplate(
+        Organization $organization,
+        string $templateKey,
+        string $locale,
+        string $name,
+        string $body,
+        array $variables,
+    ): NotificationTemplateVersion {
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_key', $templateKey)
+            ->where('locale', $locale)
+            ->first();
+
+        if ($template === null) {
+            $template = new NotificationTemplate;
+            $template->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_key' => $templateKey,
+                'locale' => $locale,
+                'name' => $name,
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'is_active' => true,
+            ])->save();
+        }
+
+        $version = NotificationTemplateVersion::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_id', $template->getKey())
+            ->where('version', 1)
+            ->first();
+
+        if ($version === null) {
+            $version = new NotificationTemplateVersion;
+            $version->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_id' => $template->getKey(),
+                'version' => 1,
+                'status' => NotificationTemplateStatus::Published->value,
+                'body' => $body,
+                'variables' => $variables,
+                'created_by_user_id' => null,
+                'published_at' => now(),
+            ])->save();
+        }
+
+        return $version;
     }
 }

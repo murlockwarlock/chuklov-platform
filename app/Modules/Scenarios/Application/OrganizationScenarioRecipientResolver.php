@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Collection;
 
 final class OrganizationScenarioRecipientResolver implements ScenarioRecipientResolver
@@ -24,6 +25,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             ScenarioAudienceType::Client => $this->clientRecipient($event),
             ScenarioAudienceType::Members => $this->memberRecipients($event, $this->memberIds($strategy)),
             ScenarioAudienceType::Roles => $this->roleRecipients($event, $strategy),
+            ScenarioAudienceType::AssignedSpecialist => $this->assignedSpecialistRecipient($event),
         };
     }
 
@@ -88,6 +90,32 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             ))
             ->values()
             ->all());
+    }
+
+    /** @return list<ScenarioRecipient> */
+    private function assignedSpecialistRecipient(ScenarioEvent $event): array
+    {
+        $specialistId = (int) ($event->payload['specialist_id'] ?? 0);
+        $specialist = Specialist::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($specialistId)
+            ->first();
+        $userId = $specialist?->staff_user_id;
+
+        if ($userId === null || ! OrganizationMembership::query()
+            ->where('organization_id', $event->organization_id)
+            ->where('user_id', $userId)
+            ->active()
+            ->exists()) {
+            return [];
+        }
+
+        return [new ScenarioRecipient(
+            type: 'internal',
+            clientId: null,
+            userId: (int) $userId,
+            locale: 'en',
+        )];
     }
 
     /** @param list<int> $userIds

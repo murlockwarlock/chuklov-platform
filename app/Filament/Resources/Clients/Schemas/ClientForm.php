@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Schemas;
 
 use App\Filament\Support\TimezoneOptions;
+use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
@@ -46,6 +47,13 @@ class ClientForm
                 TextInput::make('b2b_role')
                     ->label('B2B-роль')
                     ->maxLength(80),
+                Select::make('b2b_specialist_answer')
+                    ->label('B2B-сегмент')
+                    ->options([
+                        B2bSpecialistAnswer::Yes->value => '#Массажист_B2B',
+                        B2bSpecialistAnswer::No->value => 'Не специалист',
+                    ])
+                    ->nullable(),
                 TagsInput::make('broadcast_tags')
                     ->label('Метки для рассылок')
                     ->nestedRecursiveRules(['string', 'max:80'])

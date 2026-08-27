@@ -52,6 +52,8 @@ final class ScenarioRuleForm
                                 ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',
                                 ScenarioEventType::SurveyCompleted->value => 'Клиент завершил тест',
                                 ScenarioEventType::TestStagnationDetected->value => 'В повторном тесте нет снижения показателей',
+                                ScenarioEventType::B2bLeadSubmitted->value => 'Отправлен B2B-запрос',
+                                ScenarioEventType::B2bSalesCallReady->value => 'B2B-разговор готов к подключению',
                             ])
                             ->required()
                             ->columnSpanFull(),
@@ -201,6 +203,7 @@ final class ScenarioRuleForm
                                 'client' => 'Клиенту записи',
                                 'members' => 'Выбранным сотрудникам',
                                 'roles' => 'Сотрудникам по роли',
+                                'assigned_specialist' => 'Назначенному специалисту',
                             ])
                             ->required()
                             ->default('client')

@@ -43,6 +43,7 @@ class HandleInertiaRequests extends Middleware
                     'feedback' => route('portal.feedback'),
                     'attribution' => route('portal.attribution'),
                     'booking' => route('portal.bookings.create'),
+                    'b2b' => route('portal.b2b'),
                 ],
             ],
         ];

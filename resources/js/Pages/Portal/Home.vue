@@ -122,6 +122,17 @@ const { locale, t } = usePortalLocale();
 
       <section class="portal-grid portal-grid--cards">
         <Link
+          :href="props.portal.urls.b2b"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+        >
+          <strong class="portal-heading portal-heading--section">
+            {{ t('b2b.cta') }}
+          </strong>
+          <span class="portal-card__summary">
+            {{ t('b2b.ctaDescription') }}
+          </span>
+        </Link>
+        <Link
           :href="props.portal.urls.referrals"
           class="portal-card portal-card--interactive portal-stack portal-stack--tight"
         >

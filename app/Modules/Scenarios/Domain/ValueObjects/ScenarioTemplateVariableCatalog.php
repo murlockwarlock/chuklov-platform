@@ -23,6 +23,13 @@ final class ScenarioTemplateVariableCatalog
         'survey.title',
         'survey.version',
         'survey.completed_at',
+        'sales_call.id',
+        'sales_call.local_date',
+        'sales_call.local_time',
+        'sales_call.timezone',
+        'sales_call.join_url',
+        'sales_call.crm_url',
+        'sales_call.specialist_name',
     ];
 
     /** @return list<string> */
@@ -63,6 +70,13 @@ final class ScenarioTemplateVariableCatalog
             'survey.title' => 'Название теста',
             'survey.version' => 'Версия теста',
             'survey.completed_at' => 'Время завершения теста',
+            'sales_call.id' => 'Номер разговора',
+            'sales_call.local_date' => 'Дата разговора',
+            'sales_call.local_time' => 'Время разговора',
+            'sales_call.timezone' => 'Часовой пояс разговора',
+            'sales_call.join_url' => 'Ссылка участника Zoom',
+            'sales_call.crm_url' => 'Ссылка на B2B-лид в CRM',
+            'sales_call.specialist_name' => 'Имя специалиста',
         ];
     }
 

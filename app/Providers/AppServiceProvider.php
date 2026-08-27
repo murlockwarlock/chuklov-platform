@@ -31,6 +31,8 @@ use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attachments\Infrastructure\Scanning\FailClosedAttachmentScanner;
 use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
+use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
+use App\Modules\B2B\Infrastructure\Video\ZoomVideoMeetingProvider;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramMessagingChannel;
@@ -150,6 +152,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(GetSession::class);
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
         $this->app->bind(MessagingChannel::class, TelegramMessagingChannel::class);
+        $this->app->bind(VideoMeetingProvider::class, ZoomVideoMeetingProvider::class);
         $this->app->singleton(
             NotificationChannelRegistry::class,
             fn (Application $app): NotificationChannelRegistry => new NotificationChannelRegistry([

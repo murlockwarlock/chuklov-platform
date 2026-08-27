@@ -38,6 +38,11 @@ final class BroadcastSegmentQuery
                     ->whereColumn('bcp.client_id', 'clients.id')
                     ->whereColumn('bcp.organization_id', 'clients.organization_id')
                     ->whereIn('bcp.b2b_role', $values)),
+                'b2b_specialist_answer' => $query->whereExists(fn ($sub) => $sub
+                    ->from('broadcast_client_profiles as bcp')
+                    ->whereColumn('bcp.client_id', 'clients.id')
+                    ->whereColumn('bcp.organization_id', 'clients.organization_id')
+                    ->whereIn('bcp.b2b_specialist_answer', $values)),
                 'survey_completed' => $this->booleanExists($query, (bool) $filter['value'], fn ($sub) => $sub
                     ->from('survey_attempts as sa')
                     ->whereColumn('sa.client_id', 'clients.id')

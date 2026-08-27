@@ -36,9 +36,11 @@ const props = defineProps<{
         update: string;
         consents: string;
         telegramLink: string;
+        b2bAnswer: string;
     };
     saved: boolean;
     consentsSaved: boolean;
+    b2bSpecialistAnswer: 'yes' | 'no' | null;
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -60,6 +62,9 @@ const consentForm = useForm<{
     })),
 });
 const telegramLinkForm = useForm<Record<string, never>>({});
+const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
+    b2b_specialist_answer: props.b2bSpecialistAnswer,
+});
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
@@ -78,6 +83,12 @@ function saveConsents(): void {
 
 function requestTelegramLink(): void {
     telegramLinkForm.post(props.urls.telegramLink, {
+        preserveScroll: true,
+    });
+}
+
+function saveB2bAnswer(): void {
+    b2bAnswerForm.post(props.urls.b2bAnswer, {
         preserveScroll: true,
     });
 }
@@ -198,6 +209,47 @@ function requestTelegramLink(): void {
               {{ t('profile.saved') }}
             </p>
           </div>
+        </form>
+      </section>
+
+      <section class="portal-panel portal-stack">
+        <div class="portal-stack portal-stack--tight">
+          <h2 class="portal-heading portal-heading--card">
+            {{ t('b2b.questionTitle') }}
+          </h2>
+          <p class="portal-copy portal-copy--small">
+            {{ t('b2b.question') }}
+          </p>
+        </div>
+        <form
+          class="portal-stack"
+          @submit.prevent="saveB2bAnswer"
+        >
+          <label class="portal-confirm">
+            <input
+              v-model="b2bAnswerForm.b2b_specialist_answer"
+              type="radio"
+              value="yes"
+              class="portal-checkbox"
+            >
+            <span>{{ t('b2b.yes') }}</span>
+          </label>
+          <label class="portal-confirm">
+            <input
+              v-model="b2bAnswerForm.b2b_specialist_answer"
+              type="radio"
+              value="no"
+              class="portal-checkbox"
+            >
+            <span>{{ t('b2b.no') }}</span>
+          </label>
+          <button
+            type="submit"
+            class="portal-button portal-button--secondary self-start"
+            :disabled="b2bAnswerForm.processing"
+          >
+            {{ b2bAnswerForm.processing ? t('profile.saving') : t('profile.save') }}
+          </button>
         </form>
       </section>
 

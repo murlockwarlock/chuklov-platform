@@ -1,12 +1,20 @@
 # Project Status
 
-## 2026-08-27 — M11C CRM analytics dashboard implementation/remediation candidate
+## 2026-08-27 — M11D B2B lead funnel / Zoom sales handoff — implementation candidate
 
-- M11A and M11B are merged in the requested starting main revision. M11C implementation/remediation is on branch `codex/m11c-crm-analytics-dashboard` from exact remediation starting SHA `14dc6b06ee45fbd2b0a5a3f915e802790dd296fe`; the earlier source-identity follow-up starts at exact SHA `ce5c5801d29fb667ac17d9364dd1632b698ab49b`, and this final identity follow-up starts at exact SHA `c189349e70ef236e151d56ef5c914de9eec00a38`. The existing Filament `Инфопанель` retains `UpcomingBookingsWidget` and has one shared organization-timezone period filter plus least-privilege analytics widgets.
-- Analytics implementation exists as a read-only projection: SQL aggregates query organization-scoped Clients, normalized first-touch attributions, Bookings, immutable BookingEvents, Finance obligations/ledger entries, logical AI runs, and Knowledge ingestion runs. Source buckets carry structural known/unknown semantic kind and value through grouping and ranking; collision-safe presentation namespaces keep referral, UTM, direct literals, reserved `Не указан`, and generated `Другие` distinct. `Другие` contains only overflow known sources and the maximum remains 10 source buckets. Finance uses signed base-currency snapshots and fails closed on invalid reconciliation/configuration. Retention is operational rebooking after a selected-period completed visit; LTV is realized historical value for the selected acquisition cohort.
-- `REQ-CRM-002` remains an accepted requirement scope, not an implementation closeout: it is not marked `IMPLEMENTED`, closed, or verified. Focused local PHPUnit coverage passes with 42 tests / 294 assertions: AnalyticsProjection 8/82, DashboardPeriod 2/9, AnalyticsDashboardWidget 5/37, UpcomingBookings 7/26, and M11A attribution Feature/Unit 20/140. The low-count unknown-overflow and generalized semantic source-identity collision regressions are included in AnalyticsProjection. Pint, changed-file PHP syntax, affected-production PHPStan (0 errors), and `git diff --check` pass; no M11A/M11B behavior was changed.
-- PostgreSQL coverage exists in `tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php` and is wired into `test-integration-foundation`, but is `NOT RUN` / `EXISTS — NOT RUN LOCALLY`: the repository test configuration forces SQLite `:memory:`, and no usable repository PostgreSQL service is available at the configured `127.0.0.1:5432` endpoint. The only running local PostgreSQL container is mapped to `5433` and does not expose the repository's `chuklov/chuklov_test` role/database. Hosted exact-SHA CI is `NOT RUN`; staging is `NOT DEPLOYED` for this candidate; independent re-review and owner/manual acceptance are `NOT DONE`.
-- OQ-007 remains OPEN, OQ-015 remains unresolved, and no referral reward economics, clinical/survey content, M12, marketing-health analytics, warehouse, ETL, or external analytics service was added. PR #23 remains untouched.
+- Starting SHA is `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`, the accepted M11C merge revision. M11A, M11B, and M11C remain preserved; M11 stays `IN_PROGRESS` while this M11D candidate is reviewed.
+- `REQ-B2B-001` is implemented as a Phase 1 B2B acquisition vertical slice: explicit self-declared massage/bodywork specialist segmentation, the managed `🚀 Хочешь себе такого бота? / Развить бизнес` entry, one shared Telegram/Portal lead flow, durable sales-call requests, and bounded CRM handling. The requirement explicitly carries no Phase 2 white-label/SaaS implication.
+- B2B SalesCall is separate from Booking and Finance. Its typed linked `UnavailablePeriod` projection participates in the existing Specialist locking and availability authority, so Booking, B2B calls, and unavailability conflict without a parallel calendar and cancellation/rescheduling keeps the projection consistent.
+- Zoom uses the provider-neutral `VideoMeetingProvider` boundary and a Zoom Server-to-Server OAuth adapter. Local SalesCall state is authoritative; provider create/update/cancel/reconcile operations are durable, post-commit, retryable, and separately visible from operational call state. Host launch URLs are obtained only through an authorized server-side CRM action.
+- Focused local evidence: B2B PHPUnit `23` tests / `148` assertions; affected M11A/M11B, Scheduling, Portal, Telegram, and Filament regressions `114` tests / `787` assertions. Changed PHP syntax, Pint, scoped PHPStan, ESLint, `vue-tsc`, Vite build, and `git diff --check` are the local quality gates for this candidate.
+- PostgreSQL-specific B2B coverage exists in `tests/Integration/B2bSalesCallPostgresTest.php` and was invoked with the M11A/M11B/M11C PostgreSQL suites: `34` tests were skipped because the configured local PostgreSQL server is unavailable. This is `EXISTS — NOT RUN LOCALLY`, not a PostgreSQL pass. Hosted CI, staging, deployment, merge, independent re-review, and owner/manual acceptance are `NOT DONE` for M11D.
+- OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and no reward economics, medical marketing payload, Phase 2 tenant behavior, or unrelated CRM cleanup was added. PR #23 remains untouched.
+
+## 2026-08-27 — M11C CRM analytics dashboard — ACCEPTED / MERGED
+
+- M11C accepted head `0ce502eb2532a2f022c55baf58fd909fcda79c25` was merged into main at `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11A and M11B are also merged and preserved in that starting revision.
+- The existing Filament `Инфопанель` retains `UpcomingBookingsWidget` and the accepted read-only organization-scoped analytics projections, shared organization-timezone period filter, least-privilege widgets, source-record reconciliation, and historical/operational metric definitions.
+- `REQ-CRM-002` is accepted and merged. Its analytics source-of-truth and PostgreSQL verification history remain recorded in the M11C implementation evidence.
 
 ## 2026-08-26 — M11B stacked remediation candidate (historical state)
 
@@ -98,8 +106,8 @@
 
 - Last updated: 2026-08-27
 - Current phase: Phase 1 foundation
-- Current milestone: M11C — CRM analytics dashboard (implementation/remediation candidate)
-- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A and M11B are merged and preserved, while M11C remains pending independent re-review, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, and OQ-007 remains OPEN only for referral reward-ledger semantics.
+- Current milestone: M11D — B2B lead funnel / Zoom sales handoff (implementation candidate)
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A, M11B, and M11C are merged and preserved, while M11D remains pending independent re-review, PostgreSQL verification, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, OQ-007 remains OPEN, and M12 remains NOT_STARTED.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

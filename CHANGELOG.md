@@ -1,6 +1,14 @@
 # Changelog
 
-## 2026-08-27 — M11C CRM analytics dashboard implementation/remediation candidate
+## 2026-08-27 — M11D B2B lead funnel / Zoom sales handoff implementation candidate
+
+- Added `REQ-B2B-001` Phase 1 B2B acquisition behavior: explicit self-declared massage/bodywork specialist segmentation, managed Telegram/Portal bot-sales CTA, durable organization-scoped lead submission, and bounded Filament CRM handling.
+- Added the separate B2B SalesCall domain with operational lifecycle, UTC/IANA scheduling, typed `UnavailablePeriod` occupancy projection, shared Specialist locking, cancellation/rescheduling, and Booking/Finance isolation.
+- Added the provider-neutral `VideoMeetingProvider` boundary and Zoom Server-to-Server OAuth adapter with durable post-commit create/update/cancel/retry/reconciliation state. Client join URLs are retained only in the provider projection; host launch URLs are obtained server-side for authorized CRM actions.
+- Added shared Portal/Telegram Application submission, onboarding/profile segmentation, CRM manual scheduling and provider controls, Scenario/Notification templates for ready calls, and behavior plus PostgreSQL-specific constraint/concurrency coverage.
+- Focused B2B PHPUnit passes 23 tests / 148 assertions; affected M11A/M11B, Scheduling, Portal, Telegram, and Filament regressions pass 114 tests / 787 assertions. PostgreSQL remains `EXISTS — NOT RUN LOCALLY`; hosted CI, staging, deployment, merge, and M11D acceptance are not claimed. M12 and Phase 2 white-label/SaaS remain out of scope.
+
+## 2026-08-27 — M11C CRM analytics dashboard — ACCEPTED / MERGED
 
 - Added read-only organization-scoped analytics projections to the existing Filament `Инфопанель`, preserving `UpcomingBookingsWidget` and adding a shared Today/7/30/90-day/custom period filter using organization IANA timezone boundaries.
 - Added acquisition/source, scheduling, finance, AI-failure, and Knowledge-ingestion widgets. Metrics use Client, normalized first-touch attribution, Booking/BookingEvent, signed Finance ledger/obligation, logical AiRun, and KnowledgeIngestionRun source records; finance is base-currency and fails closed on invalid reconciliation.
@@ -8,7 +16,7 @@
 - Follow-up remediation carries known-versus-unknown attribution identity through SQL grouping and presents a known literal source `Не указан` as `Источник: Не указан`, without changing attribution authority or source counts.
 - Final source-identity follow-up carries semantic kind/value through source grouping, ranking, and overflow assignment; it derives collision-safe presentation namespaces so referral, UTM, direct literals, unknown, and generated overflow remain distinct while ordinary labels stay unchanged.
 - Defined realized historical LTV for the selected client acquisition cohort and operational retention as rebooking after a completed visit. No Analytics tables, ETL, warehouse, external analytics, referral reward economics, clinical/survey content, M12, deployment, hosted CI, or merge work was added.
-- Added focused Unit/Feature coverage, PostgreSQL integration coverage wired to the foundation target (`EXISTS — NOT RUN LOCALLY` under the local SQLite configuration), and recorded M11C as an implementation/remediation candidate. `REQ-CRM-002` remains pending required verification and acceptance.
+- Added focused Unit/Feature coverage and PostgreSQL integration coverage wired to the foundation target. M11C was accepted and merged into main at `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f` from accepted head `0ce502eb2532a2f022c55baf58fd909fcda79c25`.
 
 ## 2026-08-26 — M11B Broadcast Engine remediation candidate (historical entry)
 

@@ -17,16 +17,13 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
-### M11C — CRM analytics dashboard — implementation/remediation candidate
+### M11D — B2B lead funnel / Zoom sales handoff — implementation candidate
 
-- Objective: implement `REQ-CRM-002` as read-only aggregate projections on the existing Filament `Инфопанель`, preserving the accepted M11A/M11B source semantics and the existing `UpcomingBookingsWidget`.
-- Remediation starting SHA: `14dc6b06ee45fbd2b0a5a3f915e802790dd296fe`; branch: `codex/m11c-crm-analytics-dashboard`.
-- Source-identity follow-up starting SHA: `ce5c5801d29fb667ac17d9364dd1632b698ab49b`.
-- Final source-identity follow-up starting SHA: `c189349e70ef236e151d56ef5c914de9eec00a38`.
-- Scope: one shared organization-timezone period filter, acquisition/source, scheduling, finance, AI-failure, and knowledge-ingestion widgets with least-privilege permissions and deliberate empty states.
-- Metric authority: Client creation and normalized first-touch attribution; Booking creation and immutable BookingEvent history; completed BookingEvent transitions; HOME_VISIT Booking rows; signed base-currency Finance ledger/obligation records; logical AiRun and KnowledgeIngestionRun failures. Retention is explicitly operational rebooking after a completed visit; LTV is historical realized cohort value, not a forecast.
-- Architecture and privacy: SQL aggregates query authoritative organization-scoped records directly, with no Analytics tables, ETL, cached business truth, source mutation, payload decryption, raw failure text, or sensitive health content. Finance fails closed when existing currency/reconciliation authority is invalid.
-- Outcome: implementation/remediation is a candidate for independent re-review. The source projection carries structural semantic kind/value through grouping and ranking, reserves `Не указан`, keeps `Другие` limited to overflow known sources, and derives unique collision-safe presentation labels for direct literals that overlap referral, UTM, or reserved/system labels. Focused local PHPUnit checks pass with 42 tests / 294 assertions across Analytics, Dashboard, UpcomingBookings, and M11A attribution coverage; changed PHP syntax, Pint, affected-production PHPStan, and `git diff --check` pass. PostgreSQL remains `EXISTS — NOT RUN LOCALLY`: `phpunit.xml` forces SQLite `:memory:`, no usable repository service is available at `127.0.0.1:5432`, and the only running local PostgreSQL container is mapped to `5433` without the repository's `chuklov/chuklov_test` role/database. Hosted exact-SHA CI, staging, deployment, merge, owner/manual acceptance, and M12 work remain out of scope.
+- Objective: implement `REQ-B2B-001` as one Phase 1 B2B acquisition vertical slice for explicit specialist segmentation, the Telegram/Portal bot-sales CTA, durable leads, shared specialist scheduling, Zoom provisioning, and bounded CRM operations.
+- Non-goals: Phase 2 white-label/SaaS, tenant provisioning or billing, referral economics, M12 subscriptions, real payment providers, unrelated CRM cleanup, and independent Zoom calendar authority.
+- Architecture: B2B SalesCall is the local business source of truth; a provider-neutral `VideoMeetingProvider` boundary and Zoom Server-to-Server OAuth adapter are an external projection. SalesCall occupancy is a typed linked projection through the existing `UnavailablePeriod` scheduling authority, with the established Specialist lock discipline.
+- Data/security: all durable B2B records are organization-owned and client-scoped; identity/contact data is reused from existing projections; no medical payload is copied; provider secrets remain in organization credentials; external provider calls occur after local transactions and use durable operation fencing/retry state.
+- Verification: focused B2B PHPUnit passes 23 tests / 148 assertions, affected regression tests pass 114 tests / 787 assertions, and PostgreSQL coverage exists but is `EXISTS — NOT RUN LOCALLY` because the configured PostgreSQL server is unavailable. Pint, changed PHP syntax, scoped PHPStan, ESLint, `vue-tsc`, Vite build, and `git diff --check` are required final checks; hosted CI, staging, deployment, merge, and owner/manual acceptance are not claimed.
 
 ### UX-A — Client Workspace + ordinary client/global search
 

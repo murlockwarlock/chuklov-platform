@@ -2,6 +2,11 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
+use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\B2B\Domain\Models\B2bLead;
+use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -25,6 +30,8 @@ final class ScenarioContextFactory
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
             ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
+            ScenarioEventType::B2bLeadSubmitted => $this->b2bLeadContext($event, $evaluationEndsAt),
+            ScenarioEventType::B2bSalesCallReady => $this->b2bSalesCallContext($event, $evaluationEndsAt),
         };
     }
 
@@ -83,7 +90,29 @@ final class ScenarioContextFactory
             ];
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey'])) {
+        if ($context->b2bSalesCall !== null) {
+            $call = $context->b2bSalesCall;
+            $localStart = $call->startsAtUtc()->setTimezone((string) $call->schedule_timezone);
+            $joinUrl = $call->status === B2bSalesCallStatus::Scheduled
+                ? ($call->meeting_mode === VideoMeetingMode::Manual
+                    ? $call->manual_meeting_url
+                    : ($call->provider_sync_status === VideoMeetingSyncStatus::Ready ? $call->provider_join_url : null))
+                : null;
+            $renderContext['sales_call'] = [
+                'id' => (int) $call->getKey(),
+                'local_date' => $localStart->toDateString(),
+                'local_time' => $localStart->format('H:i'),
+                'timezone' => (string) $call->schedule_timezone,
+                'join_url' => $joinUrl,
+                'specialist_name' => $call->specialist->display_name,
+            ];
+
+            if ($recipient->type === 'internal') {
+                $renderContext['sales_call']['crm_url'] = url('/admin/b2b-leads/'.$call->lead_id);
+            }
+        }
+
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call'])) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -152,6 +181,42 @@ final class ScenarioContextFactory
             client: $attempt?->client,
             evaluationEndsAt: $evaluationEndsAt,
             surveyAttempt: $attempt,
+        );
+    }
+
+    private function b2bLeadContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $lead = B2bLead::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($this->payloadId($event, 'lead_id'))
+            ->with(['client', 'salesCall.specialist'])
+            ->first();
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $lead?->client,
+            evaluationEndsAt: $evaluationEndsAt,
+            b2bLead: $lead,
+            b2bSalesCall: $lead?->salesCall,
+        );
+    }
+
+    private function b2bSalesCallContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $call = B2bSalesCall::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($this->payloadId($event, 'sales_call_id'))
+            ->with(['client', 'specialist', 'lead'])
+            ->first();
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $call?->client,
+            evaluationEndsAt: $evaluationEndsAt,
+            b2bLead: $call?->lead,
+            b2bSalesCall: $call,
         );
     }
 

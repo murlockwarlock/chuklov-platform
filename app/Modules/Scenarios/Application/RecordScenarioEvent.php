@@ -2,6 +2,8 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\B2B\Domain\Models\B2bLead;
+use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
@@ -16,6 +18,56 @@ use Illuminate\Support\Facades\DB;
 
 final class RecordScenarioEvent
 {
+    public function b2bLeadSubmitted(B2bLead $lead, B2bSalesCall $salesCall, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::B2bLeadSubmitted,
+            aggregateType: B2bLead::class,
+            aggregateId: (string) $lead->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'lead_id' => (int) $lead->getKey(),
+                'client_id' => (int) $lead->client_id,
+                'sales_call_id' => (int) $salesCall->getKey(),
+                'specialist_id' => (int) $salesCall->specialist_id,
+                'source' => $lead->source_channel->value,
+                'starts_at' => $salesCall->startsAtUtc()->toIso8601String(),
+                'ends_at' => $salesCall->endsAtUtc()->toIso8601String(),
+                'schedule_timezone' => (string) $salesCall->schedule_timezone,
+                'requested_timezone' => (string) $salesCall->requested_timezone,
+            ],
+            idempotencyKey: 'b2b.lead.submitted:'.$lead->organization_id.':'.$lead->getKey().':'.$lead->event_version,
+            correlationId: 'b2b:lead:'.$lead->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $lead->organization_id, $data);
+    }
+
+    public function b2bSalesCallReady(B2bSalesCall $salesCall, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::B2bSalesCallReady,
+            aggregateType: B2bSalesCall::class,
+            aggregateId: (string) $salesCall->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'sales_call_id' => (int) $salesCall->getKey(),
+                'lead_id' => (int) $salesCall->lead_id,
+                'client_id' => (int) $salesCall->client_id,
+                'specialist_id' => (int) $salesCall->specialist_id,
+                'starts_at' => $salesCall->startsAtUtc()->toIso8601String(),
+                'ends_at' => $salesCall->endsAtUtc()->toIso8601String(),
+                'schedule_timezone' => (string) $salesCall->schedule_timezone,
+            ],
+            idempotencyKey: 'b2b.sales_call.ready:'.$salesCall->organization_id.':'.$salesCall->getKey().':'.$salesCall->provider_sync_version,
+            correlationId: 'b2b:sales-call:'.$salesCall->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $salesCall->organization_id, $data);
+    }
+
     public function surveyCompleted(SurveyAttempt $attempt, SurveyReport $report, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $data = new ScenarioEventData(

@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\B2B\Application\ScheduleB2bProviderSyncEvents;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
@@ -43,6 +44,12 @@ Artisan::command('referrals:run', function (ScheduleReferralIntegrationEvents $s
 })->purpose('Dispatch pending referral integration events with crash-safe retries.');
 
 Schedule::command('referrals:run')->everyMinute()->withoutOverlapping();
+
+Artisan::command('b2b:provider-sync', function (ScheduleB2bProviderSyncEvents $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' B2B provider event(s).');
+})->purpose('Dispatch pending B2B video meeting provider events with crash-safe retries.');
+
+Schedule::command('b2b:provider-sync')->everyMinute()->withoutOverlapping()->onOneServer();
 
 Artisan::command('broadcasts:run', function (ScheduleBroadcastWork $scheduler): void {
     $result = $scheduler->handle();
