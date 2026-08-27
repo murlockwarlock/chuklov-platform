@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-08-27 — REQ-B2B-001 remediation candidate status
+
+- Kept `REQ-B2B-001` in the truthful pre-acceptance `CANDIDATE` state after the independent M11D review returned `BLOCKED`; independent re-review, PostgreSQL verification, hosted CI, staging verification, and owner acceptance remain pending.
+- Clarified that B2B sales-call duration is an organization-scoped CRM setting with no source-backed implicit duration. The source-backed B2B flow is not the later M12 paid 15-minute mentoring offer.
+- Recorded the bounded remediation for documented Zoom agenda correlation, fail-closed unknown-create reconciliation, durable provider fencing/deadlines, shared scheduling availability, stale-ready suppression, preserved Scenario/Integration values, and typed specialist-answer authority. No requirement scope or M12 status changed.
+
 ## 2026-08-27 — REQ-B2B-001 M11D implementation candidate
 
 - Added `REQ-B2B-001` for the source-backed Phase 1 B2B acquisition slice: explicit self-declared massage/bodywork specialist segmentation, the managed bot-sales CTA, one durable organization-scoped lead form, a Zoom sales-call request, and bounded CRM lead handling.

@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
+use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
@@ -50,7 +51,7 @@ class SchedulingConfiguration extends Page
 
     protected static ?int $navigationSort = 2;
 
-    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
+    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, b2b_sales_call_duration_minutes: int|null, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
     public ?array $data = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
@@ -85,6 +86,7 @@ class SchedulingConfiguration extends Page
             'specialist_id' => $specialistId,
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
+            'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
             'office_location' => app(OrganizationContext::class)->organization()->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
@@ -117,6 +119,13 @@ class SchedulingConfiguration extends Page
                     ->minValue(0)
                     ->helperText('За сколько минут до визита клиент может бесплатно отменить или перенести запись.')
                     ->required(),
+                TextInput::make('b2b_sales_call_duration_minutes')
+                    ->label('Длительность B2B-разговора (минуты)')
+                    ->integer()
+                    ->minValue(1)
+                    ->maxValue(1440)
+                    ->helperText('Без этого значения клиентские слоты для разговора не публикуются.')
+                    ->nullable(),
                 TextInput::make('office_location')
                     ->label('Адрес клиники')
                     ->helperText('Адрес для очных визитов в клинике.')
@@ -187,6 +196,13 @@ class SchedulingConfiguration extends Page
             DB::transaction(function () use ($actor, $data, $specialist): void {
                 app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
                 app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
+                if (isset($data['b2b_sales_call_duration_minutes']) && $data['b2b_sales_call_duration_minutes'] !== '') {
+                    app(SetOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bSalesCallDurationMinutes,
+                        (int) $data['b2b_sales_call_duration_minutes'],
+                    );
+                }
                 if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
                     app(SetOrganizationSetting::class)->handle(
                         $actor,

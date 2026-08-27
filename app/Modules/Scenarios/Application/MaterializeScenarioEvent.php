@@ -25,6 +25,7 @@ final class MaterializeScenarioEvent
         private readonly ScenarioContextFactory $contextFactory,
         private readonly ConditionEvaluatorRegistry $conditions,
         private readonly ScenarioRecipientResolver $recipients,
+        private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
     ) {}
 
     public function handle(int $scenarioEventId): void
@@ -38,6 +39,17 @@ final class MaterializeScenarioEvent
         try {
             DB::transaction(function () use ($event): void {
                 $context = $this->contextFactory->evaluationContext($event);
+                if ($event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, $context->b2bSalesCall)) {
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => 'b2b_sales_call_changed',
+                    ])->save();
+
+                    return;
+                }
                 $rules = ScenarioRule::query()
                     ->where('organization_id', $event->organization_id)
                     ->where('trigger_event', $event->event_name->value)

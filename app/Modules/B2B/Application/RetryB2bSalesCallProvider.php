@@ -52,6 +52,9 @@ final class RetryB2bSalesCallProvider
             if ($locked->status === B2bSalesCallStatus::Cancelled
                 || $locked->meeting_mode === VideoMeetingMode::Manual) {
                 $operation = VideoMeetingOperation::Cancel;
+            } elseif ($locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                && $locked->provider_operation instanceof VideoMeetingOperation) {
+                $operation = $locked->provider_operation;
             } elseif ($locked->provider_operation === VideoMeetingOperation::Recreate
                 || $locked->provider_recreate_meeting_id !== null) {
                 $operation = VideoMeetingOperation::Recreate;
@@ -61,9 +64,11 @@ final class RetryB2bSalesCallProvider
                     : VideoMeetingOperation::Update;
             }
             $locked->forceFill([
-                'provider_sync_status' => $operation === VideoMeetingOperation::Cancel
-                    ? VideoMeetingSyncStatus::CancellationPending
-                    : VideoMeetingSyncStatus::Pending,
+                'provider_sync_status' => $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                    ? VideoMeetingSyncStatus::ReconciliationRequired
+                    : ($operation === VideoMeetingOperation::Cancel
+                        ? VideoMeetingSyncStatus::CancellationPending
+                        : VideoMeetingSyncStatus::Pending),
                 'provider_operation' => $operation,
                 'provider_recreate_meeting_id' => $operation === VideoMeetingOperation::Recreate
                     ? $locked->provider_recreate_meeting_id ?? $locked->provider_meeting_id
@@ -71,6 +76,10 @@ final class RetryB2bSalesCallProvider
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,
                 'provider_error_code' => null,
+                'provider_lease_token' => null,
+                'provider_lease_expires_at' => null,
+                'provider_lease_event_id' => null,
+                'provider_lease_processing_token' => null,
             ])->save();
             $this->providerEvents->handle($organization, $locked, $operation);
             $this->audit->handle(

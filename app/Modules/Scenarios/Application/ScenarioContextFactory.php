@@ -19,6 +19,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ScenarioContextFactory
@@ -204,11 +205,14 @@ final class ScenarioContextFactory
 
     private function b2bSalesCallContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
     {
-        $call = B2bSalesCall::query()
+        $query = B2bSalesCall::query()
             ->where('organization_id', $event->organization_id)
             ->whereKey($this->payloadId($event, 'sales_call_id'))
-            ->with(['client', 'specialist', 'lead'])
-            ->first();
+            ->with(['client', 'specialist', 'lead']);
+        if ($event->event_name === ScenarioEventType::B2bSalesCallReady && DB::transactionLevel() > 0) {
+            $query->lockForUpdate();
+        }
+        $call = $query->first();
 
         return new ScenarioEvaluationContext(
             event: $event,

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-27 — M11D independent-review remediation candidate
+
+- Removed Zoom `tracking_fields` from provider production code and correlation fakes. Documented agenda markers now support bounded, fail-closed reconciliation after unknown create results, including ambiguous and incomplete pagination outcomes.
+- Added durable database provider lease/fencing with one absolute remote-operation deadline, explicit organization-scoped B2B duration configuration, shared bounded client availability, and current-state revalidation for ready-call notifications.
+- Preserved all current Scenario and Integration event enum values, strengthened scheduling conflict classification, made typed `b2b_specialist_answer` the specialist-segmentation authority, and restricted authorized Zoom host launch URLs to validated Zoom hosts.
+- This remains a candidate pending independent re-review, PostgreSQL verification, hosted CI, staging/manual verification, and owner acceptance. No deployment, merge, M12, or PR #23 work is claimed.
+
 ## 2026-08-27 — M11D B2B lead funnel / Zoom sales handoff implementation candidate
 
 - Added `REQ-B2B-001` Phase 1 B2B acquisition behavior: explicit self-declared massage/bodywork specialist segmentation, managed Telegram/Portal bot-sales CTA, durable organization-scoped lead submission, and bounded Filament CRM handling.

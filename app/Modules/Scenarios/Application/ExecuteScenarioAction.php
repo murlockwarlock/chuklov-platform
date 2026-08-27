@@ -31,6 +31,7 @@ final class ExecuteScenarioAction
         private readonly NotificationChannelRegistry $channels,
         private readonly NotificationTemplateRenderer $renderer,
         private readonly ScheduleNextScenarioAction $nextActions,
+        private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -42,7 +43,12 @@ final class ExecuteScenarioAction
         }
 
         if (! $this->isEligible($action)) {
-            $this->suppress($action->getKey(), 'current_conditions_not_met');
+            $this->suppress(
+                $action->getKey(),
+                $action->trigger_event->value === 'b2b.sales_call.ready'
+                    ? 'b2b_sales_call_changed'
+                    : 'current_conditions_not_met',
+            );
 
             return;
         }
@@ -90,6 +96,11 @@ final class ExecuteScenarioAction
             return false;
         }
 
+        if ($event->event_name->value === 'b2b.sales_call.ready'
+            && ! $this->b2bReadyGuard->allows($event, $context->b2bSalesCall, $action->render_context)) {
+            return false;
+        }
+
         try {
             $conditionSnapshot = ScenarioConditionSet::from($action->condition_snapshot);
         } catch (InvalidArgumentException) {
@@ -107,6 +118,12 @@ final class ExecuteScenarioAction
                 ->where('organization_id', $delivery->organization_id)
                 ->with('templateVersion.template')
                 ->firstOrFail();
+            $event = $action->event()->first();
+            if ($event === null
+                || ($event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed('b2b_sales_call_changed');
+            }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
             if ($identity === null) {
@@ -130,6 +147,13 @@ final class ExecuteScenarioAction
 
             $locale = $template->template->locale;
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
+
+            $event = $action->event()->first();
+            if ($event === null
+                || ($event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed('b2b_sales_call_changed');
+            }
 
             return $channel->send(new NotificationMessage(
                 recipientExternalId: $identity->externalId,

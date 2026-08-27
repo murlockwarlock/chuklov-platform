@@ -3,6 +3,7 @@
 namespace App\Modules\B2B\Infrastructure\Video;
 
 use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingResult;
@@ -22,13 +23,16 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         return 'zoom';
     }
 
-    public function createMeeting(Organization $organization, VideoMeetingRequest $request): VideoMeetingResult
-    {
+    public function createMeeting(
+        Organization $organization,
+        VideoMeetingRequest $request,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
         $credentials = $this->credential($organization);
-        $token = $this->accessToken($credentials);
+        $token = $this->accessToken($credentials, $deadline);
 
         try {
-            $response = $this->api($token)->post(
+            $response = $this->api($token, $deadline)->post(
                 $this->url('/users/'.rawurlencode((string) $credentials['host_user_id']).'/meetings'),
                 $this->payload($request),
             );
@@ -40,19 +44,24 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             throw $this->responseException($response, 'zoom_create', true);
         }
 
-        return $this->result($response);
+        try {
+            return $this->result($response);
+        } catch (VideoMeetingException $exception) {
+            throw VideoMeetingException::reconciliationRequired($exception->safeCode);
+        }
     }
 
     public function updateMeeting(
         Organization $organization,
         VideoMeetingIdentity $identity,
         VideoMeetingRequest $request,
+        ProviderOperationDeadline $deadline,
     ): void {
         $credentials = $this->credential($organization);
-        $token = $this->accessToken($credentials);
+        $token = $this->accessToken($credentials, $deadline);
 
         try {
-            $response = $this->api($token)->patch(
+            $response = $this->api($token, $deadline)->patch(
                 $this->url('/meetings/'.rawurlencode($identity->meetingId)),
                 $this->payload($request),
             );
@@ -61,17 +70,24 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         if (! $response->successful()) {
+            if ($response->status() === 404) {
+                throw VideoMeetingException::reconciliationRequired('zoom_update_404');
+            }
+
             throw $this->responseException($response, 'zoom_update', true);
         }
     }
 
-    public function cancelMeeting(Organization $organization, VideoMeetingIdentity $identity): void
-    {
+    public function cancelMeeting(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        ProviderOperationDeadline $deadline,
+    ): void {
         $credentials = $this->credential($organization);
-        $token = $this->accessToken($credentials);
+        $token = $this->accessToken($credentials, $deadline);
 
         try {
-            $response = $this->api($token)->delete(
+            $response = $this->api($token, $deadline)->delete(
                 $this->url('/meetings/'.rawurlencode($identity->meetingId)),
             );
         } catch (ConnectionException) {
@@ -83,13 +99,16 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
     }
 
-    public function obtainHostLaunchUrl(Organization $organization, VideoMeetingIdentity $identity): string
-    {
+    public function obtainHostLaunchUrl(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        ProviderOperationDeadline $deadline,
+    ): string {
         $credentials = $this->credential($organization);
-        $token = $this->accessToken($credentials);
+        $token = $this->accessToken($credentials, $deadline);
 
         try {
-            $response = $this->api($token)->get(
+            $response = $this->api($token, $deadline)->get(
                 $this->url('/meetings/'.rawurlencode($identity->meetingId)),
             );
         } catch (ConnectionException) {
@@ -102,35 +121,42 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
 
         $startUrl = $response->json('start_url');
 
-        if (! is_string($startUrl) || ! str_starts_with($startUrl, 'https://')) {
-            throw VideoMeetingException::permanent('zoom_host_url_missing');
+        if (! is_string($startUrl) || ! $this->isAllowedHostUrl($startUrl)) {
+            throw VideoMeetingException::permanent('zoom_host_url_invalid');
         }
 
         return $startUrl;
     }
 
-    public function findMeeting(Organization $organization, VideoMeetingRequest $request): ?VideoMeetingResult
-    {
+    public function findMeeting(
+        Organization $organization,
+        VideoMeetingRequest $request,
+        ProviderOperationDeadline $deadline,
+    ): ?VideoMeetingResult {
         $credentials = $this->credential($organization);
-        $token = $this->accessToken($credentials);
-        $date = $request->startsAt->setTimezone('UTC');
+        $token = $this->accessToken($credentials, $deadline);
         $matches = [];
         $nextPageToken = null;
+        $maxPages = min(20, max(1, (int) config('b2b.provider.list_max_pages', 5)));
 
-        for ($page = 0; $page < 5; $page++) {
+        for ($page = 0; $page < $maxPages; $page++) {
             try {
-                $response = $this->api($token)->get(
+                $response = $this->api($token, $deadline)->get(
                     $this->url('/users/'.rawurlencode((string) $credentials['host_user_id']).'/meetings'),
                     [
                         'type' => 'scheduled',
-                        'from' => $date->subDay()->toDateString(),
-                        'to' => $date->addDay()->toDateString(),
-                        'page_size' => 300,
+                        'page_size' => min(300, max(1, (int) config('b2b.provider.list_page_size', 100))),
                         ...($nextPageToken === null ? [] : ['next_page_token' => $nextPageToken]),
                     ],
                 );
             } catch (ConnectionException) {
                 throw VideoMeetingException::retryable('zoom_find_connection');
+            } catch (VideoMeetingException $exception) {
+                if ($exception->safeCode === 'zoom_deadline_exhausted') {
+                    throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
+                }
+
+                throw $exception;
             }
 
             if (! $response->successful()) {
@@ -141,11 +167,12 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             $nextPageToken = $response->json('next_page_token');
 
             if (! is_string($nextPageToken) || $nextPageToken === '') {
+                $nextPageToken = null;
                 break;
             }
         }
 
-        if (is_string($nextPageToken) && $nextPageToken !== '') {
+        if ($nextPageToken !== null) {
             throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
         }
 
@@ -158,6 +185,33 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         return $this->resultFromMeeting($matches[0]);
+    }
+
+    public function getMeeting(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        ProviderOperationDeadline $deadline,
+    ): ?VideoMeetingResult {
+        $credentials = $this->credential($organization);
+        $token = $this->accessToken($credentials, $deadline);
+
+        try {
+            $response = $this->api($token, $deadline)->get(
+                $this->url('/meetings/'.rawurlencode($identity->meetingId)),
+            );
+        } catch (ConnectionException) {
+            throw VideoMeetingException::retryable('zoom_get_connection');
+        }
+
+        if ($response->status() === 404) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            throw $this->responseException($response, 'zoom_get', true);
+        }
+
+        return $this->result($response);
     }
 
     /** @return array<string, string> */
@@ -189,13 +243,11 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     }
 
     /** @param array<string, string> $credentials */
-    private function accessToken(array $credentials): string
+    private function accessToken(array $credentials, ProviderOperationDeadline $deadline): string
     {
         try {
-            $response = Http::asForm()
-                ->withoutRedirecting()
-                ->connectTimeout(3)
-                ->timeout((int) config('b2b.zoom.timeout_seconds'))
+            $response = $this->request($deadline)
+                ->asForm()
                 ->withBasicAuth($credentials['client_id'], $credentials['client_secret'])
                 ->post((string) config('b2b.zoom.oauth_url'), [
                     'grant_type' => 'account_credentials',
@@ -218,13 +270,23 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         return $token;
     }
 
-    private function api(string $token): PendingRequest
+    private function api(string $token, ProviderOperationDeadline $deadline): PendingRequest
     {
+        return $this->request($deadline)->withToken($token);
+    }
+
+    private function request(ProviderOperationDeadline $deadline): PendingRequest
+    {
+        $timeout = $deadline->timeoutSeconds((int) config('b2b.zoom.timeout_seconds'));
+
+        if ($timeout === null) {
+            throw VideoMeetingException::retryable('zoom_deadline_exhausted');
+        }
+
         return Http::acceptJson()
             ->withoutRedirecting()
-            ->connectTimeout(3)
-            ->timeout((int) config('b2b.zoom.timeout_seconds'))
-            ->withToken($token);
+            ->connectTimeout(min(3, $timeout))
+            ->timeout($timeout);
     }
 
     private function url(string $path): string
@@ -238,12 +300,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         return [
             'type' => 2,
             'topic' => $request->topic,
+            'agenda' => $this->agenda($request),
             'start_time' => $request->startsAt->utc()->format('Y-m-d\\TH:i:s\\Z'),
             'duration' => $request->durationMinutes,
             'timezone' => $request->timezone,
-            'tracking_fields' => [
-                ['field' => 'chuklov_sales_call', 'value' => $request->externalKey],
-            ],
             'settings' => [
                 'join_before_host' => false,
                 'waiting_room' => true,
@@ -251,24 +311,21 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         ];
     }
 
+    private function agenda(VideoMeetingRequest $request): string
+    {
+        $marker = 'CHUKLOV-B2B:'.$request->externalKey;
+        $topic = trim($request->topic);
+
+        return mb_substr($topic === '' ? $marker : $marker.' '.$topic, 0, 250);
+    }
+
     /** @param array<string, mixed> $meeting */
     private function matches(array $meeting, VideoMeetingRequest $request): bool
     {
-        $trackingFields = $meeting['tracking_fields'] ?? [];
+        $agenda = $meeting['agenda'] ?? null;
+        $marker = 'CHUKLOV-B2B:'.$request->externalKey;
 
-        if (! is_array($trackingFields)) {
-            return false;
-        }
-
-        foreach ($trackingFields as $field) {
-            if (is_array($field)
-                && ($field['field'] ?? null) === 'chuklov_sales_call'
-                && ($field['value'] ?? null) === $request->externalKey) {
-                return true;
-            }
-        }
-
-        return false;
+        return is_string($agenda) && ($agenda === $marker || str_starts_with($agenda, $marker.' '));
     }
 
     /** @param array<string, mixed> $meeting */
@@ -282,11 +339,26 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         $uuid = $meeting['uuid'] ?? null;
+        $startsAt = null;
+        if (is_string($meeting['start_time'] ?? null)) {
+            try {
+                $startsAt = CarbonImmutable::parse($meeting['start_time'])->utc();
+            } catch (\Throwable) {
+                throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
+            }
+        }
+        $duration = $meeting['duration'] ?? null;
 
         return new VideoMeetingResult(
             identity: new VideoMeetingIdentity((string) $id, is_string($uuid) ? $uuid : null),
             joinUrl: $joinUrl,
             synchronizedAt: CarbonImmutable::now('UTC'),
+            startsAt: $startsAt,
+            durationMinutes: is_int($duration) || (is_string($duration) && ctype_digit($duration))
+                ? (int) $duration
+                : null,
+            timezone: is_string($meeting['timezone'] ?? null) ? $meeting['timezone'] : null,
+            agenda: is_string($meeting['agenda'] ?? null) ? $meeting['agenda'] : null,
         );
     }
 
@@ -309,6 +381,24 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         return $matches;
+    }
+
+    private function isAllowedHostUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ! isset($parts['host'])
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
+            || array_key_exists('port', $parts)) {
+            return false;
+        }
+
+        $host = strtolower((string) $parts['host']);
+
+        return $host === 'zoom.us' || preg_match('/^[a-z0-9-]+\\.zoom\\.us$/', $host) === 1;
     }
 
     private function responseException(Response $response, string $operation, bool $unknown): VideoMeetingException

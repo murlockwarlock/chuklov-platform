@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /** @extends Factory<B2bSalesCall> */
 class B2bSalesCallFactory extends Factory
@@ -25,7 +26,7 @@ class B2bSalesCallFactory extends Factory
         return [
             'status' => B2bSalesCallStatus::Scheduled->value,
             'starts_at' => $start,
-            'ends_at' => $start->copy()->addHour(),
+            'ends_at' => $start->copy()->addMinute(),
             'schedule_timezone' => 'UTC',
             'requested_timezone' => 'UTC',
             'meeting_mode' => VideoMeetingMode::Automatic->value,
@@ -40,6 +41,11 @@ class B2bSalesCallFactory extends Factory
             'provider_synced_at' => null,
             'provider_error_code' => null,
             'provider_recreate_meeting_id' => null,
+            'provider_correlation_key' => Str::random(32),
+            'provider_lease_token' => null,
+            'provider_lease_expires_at' => null,
+            'provider_lease_event_id' => null,
+            'provider_lease_processing_token' => null,
             'event_version' => 1,
             'cancelled_at' => null,
         ];

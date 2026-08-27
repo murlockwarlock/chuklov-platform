@@ -41,6 +41,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property CarbonImmutable|null $provider_synced_at
  * @property string|null $provider_error_code
  * @property string|null $provider_recreate_meeting_id
+ * @property string|null $provider_correlation_key
+ * @property string|null $provider_lease_token
+ * @property CarbonImmutable|null $provider_lease_expires_at
+ * @property int|null $provider_lease_event_id
+ * @property string|null $provider_lease_processing_token
  * @property int $event_version
  * @property CarbonImmutable|null $cancelled_at
  * @property-read Organization $organization
@@ -122,8 +127,10 @@ class B2bSalesCall extends Model
             'ends_at' => 'datetime',
             'provider_synced_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'provider_lease_expires_at' => 'datetime',
             'provider_sync_version' => 'integer',
             'event_version' => 'integer',
+            'provider_lease_event_id' => 'integer',
         ];
     }
 

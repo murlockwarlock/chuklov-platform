@@ -8,20 +8,19 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingResult;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
 use App\Modules\Integration\Domain\Enums\IntegrationEventStatus;
-use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 use Throwable;
 
 final class SyncB2bSalesCallProvider
@@ -30,279 +29,355 @@ final class SyncB2bSalesCallProvider
         private readonly VideoMeetingProvider $provider,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
+        private readonly B2bProviderLeaseManager $leases,
     ) {}
 
     public function handle(int $eventId): void
     {
-        $claim = $this->claim($eventId);
+        $lease = $this->leases->claim($eventId);
 
-        if ($claim === null) {
+        if (! $lease instanceof ProviderOperationLease) {
             return;
         }
 
-        [$organizationId, $token, $operation] = $claim;
-        $event = IntegrationEvent::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($eventId)
-            ->firstOrFail();
+        $event = $this->event($lease);
         $payload = $event->payload;
-        $callId = $this->positiveInt($payload, 'sales_call_id');
-        $call = B2bSalesCall::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($callId)
-            ->firstOrFail();
-        $organization = Organization::query()->findOrFail($organizationId);
+        $call = $this->call($lease);
+        $organization = Organization::query()->findOrFail($lease->organizationId);
+        $deadline = ProviderOperationDeadline::fromNow((int) config('b2b.provider.operation_deadline_seconds', 90));
 
-        if (! $this->isCurrent($call, $payload, $operation)) {
-            $this->markProcessed($eventId, $organizationId, $token);
-
-            return;
-        }
-
-        if ($call->status === B2bSalesCallStatus::Cancelled && $operation !== VideoMeetingOperation::Cancel) {
-            $this->markProcessed($eventId, $organizationId, $token);
-
-            return;
-        }
-
-        $providerLock = Cache::lock(
-            'b2b-provider-call:'.$organizationId.':'.$callId,
-            max(30, (int) config('b2b.provider_lock_seconds')),
-        );
-        if (! $providerLock->get()) {
-            $this->markFailure(
-                eventId: $eventId,
-                organizationId: $organizationId,
-                token: $token,
-                callId: $callId,
-                payload: $payload,
-                exception: VideoMeetingException::retryable('provider_busy'),
-            );
+        if (! $this->isCurrent($call, $payload, $lease->operation)
+            || ($call->status === B2bSalesCallStatus::Cancelled && $lease->operation !== VideoMeetingOperation::Cancel)) {
+            $this->markProcessed($lease);
 
             return;
         }
 
         try {
-            $call = B2bSalesCall::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($callId)
-                ->firstOrFail();
-
-            if (! $this->isCurrent($call, $payload, $operation)) {
-                $this->markProcessed($eventId, $organizationId, $token);
-
-                return;
-            }
-
-            if ($call->status === B2bSalesCallStatus::Cancelled && $operation !== VideoMeetingOperation::Cancel) {
-                $this->markProcessed($eventId, $organizationId, $token);
-
-                return;
-            }
-
-            $result = $this->perform($organization, $call, $operation);
+            $result = $this->perform($organization, $call, $lease, $deadline);
 
             if ($result instanceof VideoMeetingResult) {
-                $active = $this->markReady(
-                    eventId: $eventId,
-                    organizationId: $organizationId,
-                    token: $token,
-                    callId: $callId,
-                    payload: $payload,
-                    result: $result,
-                );
+                $active = $this->markReady($lease, $payload, $result);
 
-                if (! $active && in_array($operation, [VideoMeetingOperation::Create, VideoMeetingOperation::Recreate], true)) {
-                    $this->provider->cancelMeeting($organization, $result->identity);
+                if (! $active
+                    && in_array($lease->operation, [VideoMeetingOperation::Create, VideoMeetingOperation::Recreate], true)
+                    && $this->leases->owns($lease)
+                    && $deadline->canStart()) {
+                    $this->provider->cancelMeeting($organization, $result->identity, $deadline);
                 }
 
                 return;
             }
 
-            $this->markCancelled(
-                eventId: $eventId,
-                organizationId: $organizationId,
-                token: $token,
-                callId: $callId,
-                payload: $payload,
-            );
-        } catch (VideoMeetingException $exception) {
-            $this->markFailure(
-                eventId: $eventId,
-                organizationId: $organizationId,
-                token: $token,
-                callId: $callId,
-                payload: $payload,
-                exception: $exception,
-            );
-
-            if ($exception->retryable) {
-                return;
-            }
-
+            $this->markCancelled($lease, $payload);
+        } catch (ProviderLeaseLost) {
             return;
+        } catch (VideoMeetingException $exception) {
+            $this->markFailure($lease, $payload, $exception);
         } catch (Throwable) {
-            $exception = VideoMeetingException::retryable('provider_unexpected', true);
             $this->markFailure(
-                eventId: $eventId,
-                organizationId: $organizationId,
-                token: $token,
-                callId: $callId,
-                payload: $payload,
-                exception: $exception,
+                $lease,
+                $payload,
+                VideoMeetingException::retryable('provider_unexpected', true),
             );
-        } finally {
-            $providerLock->release();
         }
-    }
-
-    /** @return array{0: int, 1: string, 2: VideoMeetingOperation}|null */
-    private function claim(int $eventId): ?array
-    {
-        return DB::transaction(function () use ($eventId): ?array {
-            $event = IntegrationEvent::query()->whereKey($eventId)->lockForUpdate()->first();
-
-            if (! $event instanceof IntegrationEvent
-                || $event->getRawOriginal('event_type') !== IntegrationEventType::B2bSalesCallProviderSync->value) {
-                return null;
-            }
-
-            $status = $event->getRawOriginal('status');
-            if (in_array($status, [IntegrationEventStatus::Processed->value, IntegrationEventStatus::Failed->value], true)) {
-                return null;
-            }
-
-            $now = CarbonImmutable::now('UTC');
-            $staleAt = $now->subSeconds((int) config('b2b.events.stale_after_seconds'));
-            if (in_array($status, [IntegrationEventStatus::Pending->value, IntegrationEventStatus::Retryable->value], true)) {
-                if ($event->available_at->greaterThan($now)) {
-                    return null;
-                }
-            } elseif ($status === IntegrationEventStatus::Processing->value) {
-                if ($event->processing_started_at === null || $event->processing_started_at->greaterThan($staleAt)) {
-                    return null;
-                }
-            } else {
-                return null;
-            }
-
-            if ((int) $event->attempt_count >= (int) config('b2b.events.max_attempts')) {
-                $event->forceFill(['status' => IntegrationEventStatus::Failed])->save();
-
-                return null;
-            }
-
-            $operation = VideoMeetingOperation::tryFrom((string) ($event->payload['operation'] ?? ''));
-            if (! $operation instanceof VideoMeetingOperation) {
-                $event->forceFill(['status' => IntegrationEventStatus::Failed])->save();
-
-                return null;
-            }
-
-            $token = bin2hex(random_bytes(32));
-            $event->forceFill([
-                'status' => IntegrationEventStatus::Processing,
-                'attempt_count' => (int) $event->attempt_count + 1,
-                'processing_started_at' => now(),
-                'processing_token' => $token,
-                'updated_at' => now(),
-            ])->save();
-
-            return [(int) $event->organization_id, $token, $operation];
-        });
     }
 
     private function perform(
         Organization $organization,
         B2bSalesCall $call,
-        VideoMeetingOperation $operation,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
     ): ?VideoMeetingResult {
-        if ($operation === VideoMeetingOperation::Cancel) {
-            $identity = $call->providerIdentity();
-            if ($identity instanceof VideoMeetingIdentity) {
-                $this->provider->cancelMeeting($organization, $identity);
-            } else {
-                $existing = $this->provider->findMeeting($organization, $this->request($call));
-                if ($existing instanceof VideoMeetingResult) {
-                    $this->provider->cancelMeeting($organization, $existing->identity);
-                }
-            }
+        return match ($lease->operation) {
+            VideoMeetingOperation::Create => $this->create($organization, $call, $lease, $deadline),
+            VideoMeetingOperation::Update => $this->update($organization, $call, $lease, $deadline),
+            VideoMeetingOperation::Cancel => $this->cancel($organization, $call, $lease, $deadline),
+            VideoMeetingOperation::Recreate => $this->recreate($organization, $call, $lease, $deadline),
+            VideoMeetingOperation::Reconcile => $this->reconcile($organization, $call, $deadline),
+        };
+    }
 
-            return null;
+    private function create(
+        Organization $organization,
+        B2bSalesCall $call,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        if ($call->providerIdentity() instanceof VideoMeetingIdentity) {
+            throw VideoMeetingException::reconciliationRequired('zoom_create_known_identity');
         }
 
         $request = $this->request($call);
-        $identity = $call->providerIdentity();
-        if ($operation === VideoMeetingOperation::Update && $identity instanceof VideoMeetingIdentity) {
-            $this->provider->updateMeeting($organization, $identity, $request);
-            $joinUrl = (string) $call->provider_join_url;
-            if ($joinUrl === '') {
-                $existing = $this->provider->findMeeting($organization, $request);
-                if (! $existing instanceof VideoMeetingResult) {
-                    throw VideoMeetingException::reconciliationRequired('zoom_updated_meeting_unavailable');
-                }
-
-                return $existing;
-            }
-
-            return new VideoMeetingResult(
-                identity: $identity,
-                joinUrl: $joinUrl,
-                synchronizedAt: CarbonImmutable::now('UTC'),
-            );
-        }
-
-        if ($operation === VideoMeetingOperation::Recreate) {
-            $meetingId = $call->provider_recreate_meeting_id;
-            $identity = $call->providerIdentity();
-            if (is_string($meetingId) && $meetingId !== '') {
-                $identity = new VideoMeetingIdentity($meetingId, $call->provider_meeting_uuid);
-            }
-            if ($identity instanceof VideoMeetingIdentity) {
-                $this->provider->cancelMeeting($organization, $identity);
-            }
-
-            $existing = $this->provider->findMeeting($organization, $request);
-            if ($existing instanceof VideoMeetingResult) {
-                if ($identity === null) {
-                    $this->provider->cancelMeeting($organization, $existing->identity);
-                } elseif ($existing->identity->meetingId !== $identity->meetingId) {
-                    return $existing;
-                } else {
-                    throw VideoMeetingException::reconciliationRequired('zoom_recreate_old_meeting_present');
-                }
-            }
-
-            return $this->provider->createMeeting($organization, $request);
-        }
-
-        $existing = $this->provider->findMeeting($organization, $request);
+        $existing = $this->provider->findMeeting($organization, $request, $deadline);
         if ($existing instanceof VideoMeetingResult) {
-            if (in_array($operation, [VideoMeetingOperation::Create, VideoMeetingOperation::Update], true)) {
-                $this->provider->updateMeeting($organization, $existing->identity, $request);
-
-                return new VideoMeetingResult(
-                    identity: $existing->identity,
-                    joinUrl: $existing->joinUrl,
-                    synchronizedAt: CarbonImmutable::now('UTC'),
-                );
+            if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                && ! $this->matchesRequest($existing, $request)) {
+                $this->assertCurrentGeneration($lease);
+                $this->provider->updateMeeting($organization, $existing->identity, $request, $deadline);
             }
 
             return $existing;
         }
 
-        return $this->provider->createMeeting($organization, $request);
+        if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+            throw VideoMeetingException::reconciliationRequired('zoom_create_unresolved');
+        }
+
+        $this->assertCurrentGeneration($lease);
+
+        return $this->provider->createMeeting($organization, $request, $deadline);
+    }
+
+    private function update(
+        Organization $organization,
+        B2bSalesCall $call,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $identity = $call->providerIdentity();
+        if (! $identity instanceof VideoMeetingIdentity) {
+            throw VideoMeetingException::reconciliationRequired('zoom_update_identity_missing');
+        }
+
+        $request = $this->request($call);
+        if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+            return $this->reconcileUpdate($organization, $identity, $request, $lease, $deadline);
+        }
+
+        try {
+            $this->assertCurrentGeneration($lease);
+            $this->provider->updateMeeting($organization, $identity, $request, $deadline);
+        } catch (VideoMeetingException $exception) {
+            if (! $exception->outcomeUnknown && ! $exception->requiresReconciliation) {
+                throw $exception;
+            }
+
+            return $this->reconcileUpdate($organization, $identity, $request, $lease, $deadline);
+        }
+
+        return $this->resultWithJoinUrl(
+            identity: $identity,
+            joinUrl: (string) $call->provider_join_url,
+            organization: $organization,
+            deadline: $deadline,
+        );
+    }
+
+    private function reconcileUpdate(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $remote = $this->provider->getMeeting($organization, $identity, $deadline);
+        if (! $remote instanceof VideoMeetingResult) {
+            throw VideoMeetingException::reconciliationRequired('zoom_update_identity_missing');
+        }
+
+        if (! $this->matchesRequest($remote, $request)) {
+            $this->assertCurrentGeneration($lease);
+            $this->provider->updateMeeting($organization, $identity, $request, $deadline);
+        }
+
+        return $this->resultWithJoinUrl(
+            identity: $identity,
+            joinUrl: $remote->joinUrl,
+            organization: $organization,
+            deadline: $deadline,
+            remote: $remote,
+        );
+    }
+
+    private function cancel(
+        Organization $organization,
+        B2bSalesCall $call,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): null {
+        $identity = $call->providerIdentity();
+        if ($identity instanceof VideoMeetingIdentity) {
+            if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+                $remote = $this->provider->getMeeting($organization, $identity, $deadline);
+                if ($remote instanceof VideoMeetingResult) {
+                    $this->assertCurrentGeneration($lease);
+                    $this->provider->cancelMeeting($organization, $identity, $deadline);
+                }
+
+                return null;
+            }
+
+            $this->assertCurrentGeneration($lease);
+            $this->provider->cancelMeeting($organization, $identity, $deadline);
+
+            return null;
+        }
+
+        $existing = $this->provider->findMeeting($organization, $this->request($call), $deadline);
+        if ($existing instanceof VideoMeetingResult) {
+            $this->assertCurrentGeneration($lease);
+            $this->provider->cancelMeeting($organization, $existing->identity, $deadline);
+
+            return null;
+        }
+
+        if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+            throw VideoMeetingException::reconciliationRequired('zoom_cancel_unresolved');
+        }
+
+        return null;
+    }
+
+    private function recreate(
+        Organization $organization,
+        B2bSalesCall $call,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $oldIdentity = $this->recreateIdentity($call);
+        if ($oldIdentity instanceof VideoMeetingIdentity) {
+            if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+                $oldRemote = $this->provider->getMeeting($organization, $oldIdentity, $deadline);
+                if ($oldRemote instanceof VideoMeetingResult) {
+                    $this->assertCurrentGeneration($lease);
+                    $this->provider->cancelMeeting($organization, $oldIdentity, $deadline);
+                }
+            } else {
+                $this->assertCurrentGeneration($lease);
+                $this->provider->cancelMeeting($organization, $oldIdentity, $deadline);
+            }
+        }
+
+        $request = $this->request($call);
+        $existing = $this->provider->findMeeting($organization, $request, $deadline);
+        if ($existing instanceof VideoMeetingResult) {
+            if ($oldIdentity instanceof VideoMeetingIdentity && $existing->identity->meetingId === $oldIdentity->meetingId) {
+                throw VideoMeetingException::reconciliationRequired('zoom_recreate_old_meeting_present');
+            }
+
+            return $existing;
+        }
+
+        if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
+            throw VideoMeetingException::reconciliationRequired('zoom_recreate_unresolved');
+        }
+
+        $this->assertCurrentGeneration($lease);
+
+        return $this->provider->createMeeting($organization, $request, $deadline);
+    }
+
+    private function reconcile(
+        Organization $organization,
+        B2bSalesCall $call,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $identity = $call->providerIdentity();
+        if ($identity instanceof VideoMeetingIdentity) {
+            $remote = $this->provider->getMeeting($organization, $identity, $deadline);
+
+            if ($remote instanceof VideoMeetingResult) {
+                return $remote;
+            }
+
+            throw VideoMeetingException::reconciliationRequired('zoom_identity_missing');
+        }
+
+        $remote = $this->provider->findMeeting($organization, $this->request($call), $deadline);
+        if (! $remote instanceof VideoMeetingResult) {
+            throw VideoMeetingException::reconciliationRequired('zoom_correlation_unresolved');
+        }
+
+        return $remote;
+    }
+
+    private function resultWithJoinUrl(
+        VideoMeetingIdentity $identity,
+        string $joinUrl,
+        Organization $organization,
+        ProviderOperationDeadline $deadline,
+        ?VideoMeetingResult $remote = null,
+    ): VideoMeetingResult {
+        if ($joinUrl === '' && $remote instanceof VideoMeetingResult) {
+            $joinUrl = $remote->joinUrl;
+        }
+
+        if ($joinUrl === '') {
+            $remote ??= $this->provider->getMeeting($organization, $identity, $deadline);
+            $joinUrl = $remote instanceof VideoMeetingResult ? $remote->joinUrl : '';
+        }
+
+        if ($joinUrl === '') {
+            throw VideoMeetingException::reconciliationRequired('zoom_join_url_missing');
+        }
+
+        return new VideoMeetingResult(
+            identity: $identity,
+            joinUrl: $joinUrl,
+            synchronizedAt: CarbonImmutable::now('UTC'),
+            startsAt: $remote?->startsAt,
+            durationMinutes: $remote?->durationMinutes,
+            timezone: $remote?->timezone,
+            agenda: $remote?->agenda,
+        );
+    }
+
+    private function event(ProviderOperationLease $lease): IntegrationEvent
+    {
+        return IntegrationEvent::query()
+            ->where('organization_id', $lease->organizationId)
+            ->whereKey($lease->eventId)
+            ->firstOrFail();
+    }
+
+    private function call(ProviderOperationLease $lease): B2bSalesCall
+    {
+        return B2bSalesCall::query()
+            ->where('organization_id', $lease->organizationId)
+            ->whereKey($lease->salesCallId)
+            ->firstOrFail();
     }
 
     private function request(B2bSalesCall $call): VideoMeetingRequest
     {
+        $correlationKey = $call->provider_correlation_key;
+        if (! is_string($correlationKey) || trim($correlationKey) === '') {
+            throw VideoMeetingException::reconciliationRequired('provider_correlation_missing');
+        }
+
+        $durationMinutes = (int) round($call->startsAtUtc()->diffInMinutes($call->endsAtUtc()));
+        if ($durationMinutes < 1) {
+            throw VideoMeetingException::reconciliationRequired('sales_call_interval_invalid');
+        }
+
         return new VideoMeetingRequest(
-            externalKey: 'b2b-sales-call:'.$call->organization_id.':'.$call->getKey(),
+            externalKey: $correlationKey,
             startsAt: $call->startsAtUtc(),
-            durationMinutes: max(1, (int) round($call->startsAtUtc()->diffInMinutes($call->endsAtUtc()))),
+            durationMinutes: $durationMinutes,
             timezone: (string) $call->schedule_timezone,
             topic: (string) config('b2b.zoom.topic'),
         );
+    }
+
+    private function recreateIdentity(B2bSalesCall $call): ?VideoMeetingIdentity
+    {
+        $meetingId = $call->provider_recreate_meeting_id;
+        if (is_string($meetingId) && trim($meetingId) !== '') {
+            return new VideoMeetingIdentity($meetingId, $call->provider_meeting_uuid);
+        }
+
+        return $call->providerIdentity();
+    }
+
+    private function matchesRequest(VideoMeetingResult $remote, VideoMeetingRequest $request): bool
+    {
+        return $remote->startsAt instanceof CarbonImmutable
+            && $remote->startsAt->equalTo($request->startsAt->utc())
+            && $remote->durationMinutes === $request->durationMinutes
+            && $remote->timezone === $request->timezone
+            && is_string($remote->agenda)
+            && str_starts_with($remote->agenda, 'CHUKLOV-B2B:'.$request->externalKey);
     }
 
     /** @param array<string, mixed> $payload */
@@ -312,27 +387,36 @@ final class SyncB2bSalesCallProvider
             && (int) ($payload['sales_call_id'] ?? 0) === (int) $call->getKey()
             && (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
             && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
+            && (! array_key_exists('provider_correlation_key', $payload)
+                || $payload['provider_correlation_key'] === $call->provider_correlation_key)
             && $operation === $call->provider_operation;
     }
 
     /** @param array<string, mixed> $payload */
     private function markReady(
-        int $eventId,
-        int $organizationId,
-        string $token,
-        int $callId,
+        ProviderOperationLease $lease,
         array $payload,
         VideoMeetingResult $result,
     ): bool {
-        return DB::transaction(function () use ($eventId, $organizationId, $token, $callId, $payload, $result): bool {
+        return DB::transaction(function () use ($lease, $payload, $result): bool {
             $call = B2bSalesCall::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($callId)
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->salesCallId)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $active = (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
-                && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
-                && $call->status === B2bSalesCallStatus::Scheduled;
+            $event = IntegrationEvent::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->eventId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $eventOwned = $event->getRawOriginal('status') === IntegrationEventStatus::Processing->value
+                && $event->getRawOriginal('processing_token') === $lease->eventProcessingToken;
+            $leaseActive = $this->leaseIsActive($call, $lease);
+            $active = $eventOwned
+                && $leaseActive
+                && $this->isCurrent($call, $payload, $lease->operation)
+                && $call->status === B2bSalesCallStatus::Scheduled
+                && $call->meeting_mode === VideoMeetingMode::Automatic;
 
             if ($active) {
                 $call->forceFill([
@@ -345,6 +429,7 @@ final class SyncB2bSalesCallProvider
                     'provider_synced_at' => $result->synchronizedAt,
                     'provider_error_code' => null,
                     'provider_recreate_meeting_id' => null,
+                    ...$this->clearLease(),
                 ])->save();
                 $this->scenarioEvents->b2bSalesCallReady($call, $result->synchronizedAt);
                 $this->audit->handle(
@@ -362,30 +447,42 @@ final class SyncB2bSalesCallProvider
                 );
             }
 
-            $this->markProcessed($eventId, $organizationId, $token);
+            if ($eventOwned && $leaseActive) {
+                $event->forceFill([
+                    'status' => IntegrationEventStatus::Processed,
+                    'processed_at' => now(),
+                    'processing_started_at' => null,
+                    'processing_token' => null,
+                    'updated_at' => now(),
+                ])->save();
+            }
 
             return $active;
         });
     }
 
     /** @param array<string, mixed> $payload */
-    private function markCancelled(
-        int $eventId,
-        int $organizationId,
-        string $token,
-        int $callId,
-        array $payload,
-    ): void {
-        DB::transaction(function () use ($eventId, $organizationId, $token, $callId, $payload): void {
+    private function markCancelled(ProviderOperationLease $lease, array $payload): void
+    {
+        DB::transaction(function () use ($lease, $payload): void {
             $call = B2bSalesCall::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($callId)
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->salesCallId)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $isCurrent = (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
-                && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
-                && $call->provider_operation === VideoMeetingOperation::Cancel;
-            if ($isCurrent && ($call->status === B2bSalesCallStatus::Cancelled || $call->meeting_mode === VideoMeetingMode::Manual)) {
+            $event = IntegrationEvent::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->eventId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $eventOwned = $event->getRawOriginal('status') === IntegrationEventStatus::Processing->value
+                && $event->getRawOriginal('processing_token') === $lease->eventProcessingToken;
+            $leaseActive = $this->leaseIsActive($call, $lease);
+            $current = $eventOwned
+                && $leaseActive
+                && $this->isCurrent($call, $payload, VideoMeetingOperation::Cancel);
+
+            if ($current && ($call->status === B2bSalesCallStatus::Cancelled || $call->meeting_mode === VideoMeetingMode::Manual)) {
                 $call->forceFill([
                     'provider_sync_status' => VideoMeetingSyncStatus::NotRequired,
                     'provider_operation' => null,
@@ -396,9 +493,11 @@ final class SyncB2bSalesCallProvider
                     'provider_meeting_uuid' => null,
                     'provider_join_url' => null,
                     'provider_recreate_meeting_id' => null,
+                    'provider_correlation_key' => $call->meeting_mode === VideoMeetingMode::Manual
+                        ? $call->provider_correlation_key
+                        : null,
+                    ...$this->clearLease(),
                 ])->save();
-            }
-            if ($isCurrent) {
                 $this->audit->handle(
                     organization: $call->organization,
                     actor: null,
@@ -413,33 +512,55 @@ final class SyncB2bSalesCallProvider
                     ],
                 );
             }
-            $this->markProcessed($eventId, $organizationId, $token);
+
+            if ($eventOwned && $leaseActive) {
+                $event->forceFill([
+                    'status' => IntegrationEventStatus::Processed,
+                    'processed_at' => now(),
+                    'processing_started_at' => null,
+                    'processing_token' => null,
+                    'updated_at' => now(),
+                ])->save();
+            }
         });
     }
 
     /** @param array<string, mixed> $payload */
     private function markFailure(
-        int $eventId,
-        int $organizationId,
-        string $token,
-        int $callId,
+        ProviderOperationLease $lease,
         array $payload,
         VideoMeetingException $exception,
     ): void {
-        DB::transaction(function () use ($eventId, $organizationId, $token, $callId, $payload, $exception): void {
+        DB::transaction(function () use ($lease, $payload, $exception): void {
             $call = B2bSalesCall::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($callId)
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->salesCallId)
                 ->lockForUpdate()
                 ->first();
-            if ($call instanceof B2bSalesCall
-                && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version) {
-                $status = $exception->outcomeUnknown
+            $event = IntegrationEvent::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->eventId)
+                ->lockForUpdate()
+                ->first();
+            if (! $event instanceof IntegrationEvent
+                || $event->getRawOriginal('status') !== IntegrationEventStatus::Processing->value
+                || $event->getRawOriginal('processing_token') !== $lease->eventProcessingToken
+                || ! $call instanceof B2bSalesCall
+                || ! $this->leaseIsActive($call, $lease)) {
+                return;
+            }
+
+            $current = (int) $call->provider_sync_version === $lease->providerSyncVersion;
+            if ($current) {
+                $status = $call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                    || $exception->outcomeUnknown
+                    || $exception->requiresReconciliation
                     ? VideoMeetingSyncStatus::ReconciliationRequired
                     : VideoMeetingSyncStatus::Failed;
                 $call->forceFill([
                     'provider_sync_status' => $status,
                     'provider_error_code' => $exception->safeCode,
+                    ...$this->clearLease(),
                 ])->save();
                 $this->audit->handle(
                     organization: $call->organization,
@@ -456,29 +577,10 @@ final class SyncB2bSalesCallProvider
                 );
             }
 
-            $event = IntegrationEvent::query()
-                ->where('organization_id', $organizationId)
-                ->whereKey($eventId)
-                ->where('status', IntegrationEventStatus::Processing->value)
-                ->where('processing_token', $token)
-                ->lockForUpdate()
-                ->first();
-            if (! $event instanceof IntegrationEvent) {
-                return;
-            }
-            if (! $exception->retryable || (int) $event->attempt_count >= (int) config('b2b.events.max_attempts')) {
-                $event->forceFill([
-                    'status' => IntegrationEventStatus::Failed,
-                    'processing_started_at' => null,
-                    'processing_token' => null,
-                    'updated_at' => now(),
-                ])->save();
-
-                return;
-            }
+            $retry = $exception->retryable && (int) $event->attempt_count < (int) config('b2b.events.max_attempts');
             $event->forceFill([
-                'status' => IntegrationEventStatus::Retryable,
-                'available_at' => now()->addSeconds((int) config('b2b.events.retry_after_seconds')),
+                'status' => $retry ? IntegrationEventStatus::Retryable : IntegrationEventStatus::Failed,
+                'available_at' => $retry ? now()->addSeconds((int) config('b2b.events.retry_after_seconds')) : $event->available_at,
                 'processing_started_at' => null,
                 'processing_token' => null,
                 'updated_at' => now(),
@@ -486,35 +588,62 @@ final class SyncB2bSalesCallProvider
         });
     }
 
-    private function markProcessed(int $eventId, int $organizationId, string $token): void
+    private function markProcessed(ProviderOperationLease $lease): void
     {
-        IntegrationEvent::query()
-            ->where('organization_id', $organizationId)
-            ->whereKey($eventId)
-            ->where('status', IntegrationEventStatus::Processing->value)
-            ->where('processing_token', $token)
-            ->update([
-                'status' => IntegrationEventStatus::Processed->value,
+        DB::transaction(function () use ($lease): void {
+            $call = B2bSalesCall::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->salesCallId)
+                ->lockForUpdate()
+                ->first();
+            $event = IntegrationEvent::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->eventId)
+                ->lockForUpdate()
+                ->first();
+            if (! $event instanceof IntegrationEvent
+                || $event->getRawOriginal('status') !== IntegrationEventStatus::Processing->value
+                || $event->getRawOriginal('processing_token') !== $lease->eventProcessingToken
+                || ! $call instanceof B2bSalesCall
+                || ! $this->leaseIsActive($call, $lease)) {
+                return;
+            }
+
+            $call->forceFill($this->clearLease())->save();
+            $event->forceFill([
+                'status' => IntegrationEventStatus::Processed,
                 'processed_at' => now(),
                 'processing_started_at' => null,
                 'processing_token' => null,
                 'updated_at' => now(),
-            ]);
+            ])->save();
+        });
     }
 
-    /** @param array<string, mixed> $payload */
-    private function positiveInt(array $payload, string $key): int
+    /** @return array{provider_lease_token: null, provider_lease_expires_at: null, provider_lease_event_id: null, provider_lease_processing_token: null} */
+    private function clearLease(): array
     {
-        $value = $payload[$key] ?? null;
+        return [
+            'provider_lease_token' => null,
+            'provider_lease_expires_at' => null,
+            'provider_lease_event_id' => null,
+            'provider_lease_processing_token' => null,
+        ];
+    }
 
-        if (is_int($value) && $value > 0) {
-            return $value;
+    private function assertCurrentGeneration(ProviderOperationLease $lease): void
+    {
+        if (! $this->leases->owns($lease)) {
+            throw new ProviderLeaseLost;
         }
+    }
 
-        if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
-            return (int) $value;
-        }
-
-        throw new InvalidArgumentException('The B2B provider event identifier is invalid.');
+    private function leaseIsActive(B2bSalesCall $call, ProviderOperationLease $lease): bool
+    {
+        return (string) $call->provider_lease_token === $lease->leaseToken
+            && (int) $call->provider_lease_event_id === $lease->eventId
+            && (string) $call->provider_lease_processing_token === $lease->eventProcessingToken
+            && $call->provider_lease_expires_at !== null
+            && CarbonImmutable::parse((string) $call->provider_lease_expires_at)->greaterThan(CarbonImmutable::now('UTC'));
     }
 }

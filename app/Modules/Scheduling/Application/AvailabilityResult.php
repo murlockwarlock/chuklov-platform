@@ -9,13 +9,13 @@ final readonly class AvailabilityResult
     /** @param list<AvailabilitySlot> $slots */
     public function __construct(
         public int $specialistId,
-        public int $serviceId,
+        public ?int $serviceId,
         public string $scheduleTimezone,
         public string $displayTimezone,
         public array $slots,
     ) {}
 
-    /** @return array{specialistId: int, serviceId: int, scheduleTimezone: string, displayTimezone: string, slots: list<array<string, string>>} */
+    /** @return array{specialistId: int, serviceId: int|null, scheduleTimezone: string, displayTimezone: string, slots: list<array<string, string>>} */
     public function toArray(): array
     {
         return [

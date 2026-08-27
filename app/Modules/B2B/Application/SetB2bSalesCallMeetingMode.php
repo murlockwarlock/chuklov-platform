@@ -71,13 +71,31 @@ final class SetB2bSalesCallMeetingMode
             $operation = null;
             $syncStatus = VideoMeetingSyncStatus::NotRequired;
             if ($mode === VideoMeetingMode::Automatic) {
+                if ($locked->meeting_mode === VideoMeetingMode::Manual
+                    && $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired) {
+                    throw ValidationException::withMessages([
+                        'provider' => 'Finish the previous provider reconciliation before enabling automatic meetings.',
+                    ]);
+                }
                 $operation = $identityExists && $locked->provider_join_url !== null
                     ? VideoMeetingOperation::Update
                     : ($identityExists ? VideoMeetingOperation::Recreate : VideoMeetingOperation::Create);
-                $syncStatus = VideoMeetingSyncStatus::Pending;
+                $syncStatus = $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                    ? VideoMeetingSyncStatus::ReconciliationRequired
+                    : VideoMeetingSyncStatus::Pending;
             } elseif ($requiresProviderCancellation) {
                 $operation = VideoMeetingOperation::Cancel;
-                $syncStatus = VideoMeetingSyncStatus::CancellationPending;
+                $syncStatus = $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                    ? VideoMeetingSyncStatus::ReconciliationRequired
+                    : VideoMeetingSyncStatus::CancellationPending;
+            }
+            $providerCorrelationKey = $locked->provider_correlation_key;
+            if ($mode === VideoMeetingMode::Automatic
+                && ($locked->meeting_mode === VideoMeetingMode::Manual || $operation === VideoMeetingOperation::Recreate)) {
+                $providerCorrelationKey = bin2hex(random_bytes(16));
+            }
+            if ($mode === VideoMeetingMode::Manual && ! $requiresProviderCancellation) {
+                $providerCorrelationKey = null;
             }
 
             $locked->forceFill([
@@ -89,10 +107,15 @@ final class SetB2bSalesCallMeetingMode
                 'provider_recreate_meeting_id' => $operation === VideoMeetingOperation::Recreate
                     ? $locked->provider_meeting_id
                     : null,
+                'provider_correlation_key' => $providerCorrelationKey,
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,
                 'provider_error_code' => null,
                 'provider_join_url' => $mode === VideoMeetingMode::Automatic ? $locked->provider_join_url : null,
+                'provider_lease_token' => null,
+                'provider_lease_expires_at' => null,
+                'provider_lease_event_id' => null,
+                'provider_lease_processing_token' => null,
             ])->save();
 
             if ($operation instanceof VideoMeetingOperation) {

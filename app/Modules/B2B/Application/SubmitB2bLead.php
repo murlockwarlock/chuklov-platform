@@ -11,8 +11,8 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\Broadcasts\Application\GetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
-use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -36,6 +36,8 @@ final class SubmitB2bLead
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly EnsureSpecialistIntervalAvailable $availability,
+        private readonly GetB2bSalesCallDuration $duration,
+        private readonly GetClientB2bSpecialistAnswer $specialistAnswer,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
@@ -82,8 +84,6 @@ final class SubmitB2bLead
             throw ValidationException::withMessages(['starts_at' => 'The sales-call time must use whole minutes.']);
         }
 
-        $durationMinutes = max(1, (int) config('b2b.sales_call.duration_minutes'));
-        $requestedEnd = $requestedStart->addMinutes($durationMinutes);
         $requestHash = $this->requestHash(
             clientId: (int) $client->getKey(),
             specialistId: (int) $specialist->getKey(),
@@ -99,7 +99,6 @@ final class SubmitB2bLead
                 $client,
                 $specialist,
                 $requestedStart,
-                $requestedEnd,
                 $requestedTimezone,
                 $idempotencyKey,
                 $requestHash,
@@ -113,12 +112,6 @@ final class SubmitB2bLead
                     ->whereKey($client->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
-                $profile = BroadcastClientProfile::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->where('client_id', $lockedClient->getKey())
-                    ->lockForUpdate()
-                    ->first();
-
                 $existingLead = B2bLead::query()
                     ->where('organization_id', $organization->getKey())
                     ->where('idempotency_key', $idempotencyKey)
@@ -137,7 +130,7 @@ final class SubmitB2bLead
                     }
                 }
 
-                if ($profile?->getRawOriginal('b2b_specialist_answer') !== B2bSpecialistAnswer::Yes->value) {
+                if ($this->specialistAnswer->handle($lockedClient) !== B2bSpecialistAnswer::Yes) {
                     throw ValidationException::withMessages([
                         'b2b_specialist_answer' => 'Confirm that you are a massage or bodywork specialist before submitting a B2B request.',
                     ]);
@@ -172,6 +165,16 @@ final class SubmitB2bLead
                     return $lead->refresh();
                 }
 
+                $durationMinutes = $this->duration->handle();
+
+                if ($durationMinutes === null) {
+                    throw ValidationException::withMessages([
+                        'configuration' => 'B2B sales-call availability is not configured yet. Contact the team.',
+                    ]);
+                }
+
+                $requestedEnd = $requestedStart->addMinutes($durationMinutes);
+
                 $lockedSpecialist = Specialist::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($specialist->getKey())
@@ -201,6 +204,13 @@ final class SubmitB2bLead
                     'provider_operation' => $meetingMode === VideoMeetingMode::Automatic
                         ? VideoMeetingOperation::Create
                         : null,
+                    'provider_correlation_key' => $meetingMode === VideoMeetingMode::Automatic
+                        ? bin2hex(random_bytes(16))
+                        : null,
+                    'provider_lease_token' => null,
+                    'provider_lease_expires_at' => null,
+                    'provider_lease_event_id' => null,
+                    'provider_lease_processing_token' => null,
                     'provider_sync_version' => 1,
                     'event_version' => 1,
                 ]);

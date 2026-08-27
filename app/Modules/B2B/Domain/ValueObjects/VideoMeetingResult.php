@@ -10,5 +10,9 @@ final readonly class VideoMeetingResult
         public VideoMeetingIdentity $identity,
         public string $joinUrl,
         public CarbonImmutable $synchronizedAt,
+        public ?CarbonImmutable $startsAt = null,
+        public ?int $durationMinutes = null,
+        public ?string $timezone = null,
+        public ?string $agenda = null,
     ) {}
 }

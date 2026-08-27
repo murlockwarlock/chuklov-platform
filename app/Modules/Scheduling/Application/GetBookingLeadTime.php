@@ -8,24 +8,33 @@ use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 
 class GetBookingLeadTime
 {
-    private static ?int $cached = null;
+    /** @var array<int, int> */
+    private static array $cached = [];
 
     public function __construct(private readonly OrganizationContext $context) {}
 
     public function handle(): int
     {
-        if (self::$cached !== null) {
-            return self::$cached;
+        $organizationId = $this->context->id();
+
+        if (array_key_exists($organizationId, self::$cached)) {
+            return self::$cached[$organizationId];
         }
 
-        return self::$cached = (int) (OrganizationSetting::query()
-            ->where('organization_id', $this->context->id())
+        return self::$cached[$organizationId] = (int) (OrganizationSetting::query()
+            ->where('organization_id', $organizationId)
             ->where('setting_key', OrganizationSettingKey::BookingLeadTimeMinutes->value)
             ->value('integer_value') ?? 0);
     }
 
-    public static function invalidate(): void
+    public static function invalidate(?int $organizationId = null): void
     {
-        self::$cached = null;
+        if ($organizationId === null) {
+            self::$cached = [];
+
+            return;
+        }
+
+        unset(self::$cached[$organizationId]);
     }
 }

@@ -38,6 +38,7 @@ final class RecordB2bProviderSyncEvent
                     'event_version' => (int) $salesCall->event_version,
                     'provider_sync_version' => $version,
                     'provider' => (string) ($salesCall->provider_name ?? 'zoom'),
+                    'provider_correlation_key' => $salesCall->provider_correlation_key,
                 ],
                 occurredAt: CarbonImmutable::now('UTC'),
             ),

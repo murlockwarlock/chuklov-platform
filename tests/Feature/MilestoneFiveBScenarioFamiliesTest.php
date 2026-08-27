@@ -319,8 +319,8 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         app(ScenarioNotificationSeeder::class)->run();
 
         self::assertSame('Owner customized', $rule->fresh()->name);
-        self::assertSame(6, ScenarioRule::query()->where('organization_id', $organization->id)->count());
-        self::assertSame(2, NotificationTemplate::query()->where('organization_id', $organization->id)->count());
+        self::assertSame(9, ScenarioRule::query()->where('organization_id', $organization->id)->count());
+        self::assertSame(5, NotificationTemplate::query()->where('organization_id', $organization->id)->count());
         self::assertSame(
             [24, 48, 72],
             ScenarioRule::query()

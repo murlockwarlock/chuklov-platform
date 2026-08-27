@@ -73,6 +73,11 @@ return new class extends Migration
             $table->timestampTz('provider_synced_at')->nullable();
             $table->string('provider_error_code', 120)->nullable();
             $table->string('provider_recreate_meeting_id', 128)->nullable();
+            $table->string('provider_correlation_key', 64)->nullable();
+            $table->char('provider_lease_token', 64)->nullable();
+            $table->timestampTz('provider_lease_expires_at')->nullable();
+            $table->unsignedBigInteger('provider_lease_event_id')->nullable();
+            $table->char('provider_lease_processing_token', 64)->nullable();
             $table->unsignedInteger('event_version')->default(1);
             $table->timestampTz('cancelled_at')->nullable();
             $table->timestampsTz();
@@ -98,6 +103,10 @@ return new class extends Migration
             $table->index(
                 ['organization_id', 'provider_sync_status', 'starts_at'],
                 'b2b_calls_provider_sync_ix',
+            );
+            $table->index(
+                ['organization_id', 'provider_lease_expires_at'],
+                'b2b_calls_provider_lease_ix',
             );
         });
 

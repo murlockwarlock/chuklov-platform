@@ -7,6 +7,7 @@ use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
 use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -42,11 +43,54 @@ final class GetB2bSalesCallHostLaunchUrl
         }
 
         try {
-            return $this->provider->obtainHostLaunchUrl($organization, $identity);
-        } catch (VideoMeetingException) {
+            $hostUrl = $this->provider->obtainHostLaunchUrl(
+                $organization,
+                $identity,
+                ProviderOperationDeadline::fromNow((int) config('b2b.provider.operation_deadline_seconds', 90)),
+            );
+
+            if ($this->provider->name() !== 'zoom' || ! $this->isAllowedZoomHostUrl($hostUrl)) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The Zoom host link is invalid. Retry from the CRM.',
+                ]);
+            }
+
+            return $hostUrl;
+        } catch (VideoMeetingException $exception) {
+            if ($exception->safeCode === 'zoom_host_url_404') {
+                app(MarkB2bSalesCallProviderReconciliationRequired::class)->handle(
+                    actor: $actor,
+                    salesCall: $salesCall,
+                    identity: $identity,
+                    errorCode: $exception->safeCode,
+                );
+
+                throw ValidationException::withMessages([
+                    'provider' => 'The Zoom meeting is no longer available. Reconcile or recreate it before launching.',
+                ]);
+            }
+
             throw ValidationException::withMessages([
                 'provider' => 'The Zoom host link is temporarily unavailable. Retry from the CRM.',
             ]);
         }
+    }
+
+    private function isAllowedZoomHostUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ! isset($parts['host'])
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
+            || array_key_exists('port', $parts)) {
+            return false;
+        }
+
+        $host = strtolower((string) $parts['host']);
+
+        return $host === 'zoom.us' || preg_match('/^[a-z0-9-]+\.zoom\.us$/', $host) === 1;
     }
 }

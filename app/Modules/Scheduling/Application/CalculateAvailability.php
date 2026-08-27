@@ -93,6 +93,54 @@ class CalculateAvailability
         );
     }
 
+    public function forB2b(
+        Client $client,
+        Specialist $specialist,
+        string $dateFrom,
+        string $dateTo,
+        int $durationMinutes,
+        ?string $displayTimezone = null,
+    ): AvailabilityResult {
+        $organization = $this->context->organization();
+
+        if ((int) $client->organization_id !== $organization->getKey()
+            || (int) $specialist->organization_id !== $organization->getKey()) {
+            throw new AuthorizationException('The scheduling records are outside the current organization.');
+        }
+
+        $requestedDateFrom = LocalDate::from($dateFrom);
+        $requestedDateTo = LocalDate::from($dateTo);
+        if ($this->dateCount($requestedDateFrom, $requestedDateTo) > 31) {
+            throw ValidationException::withMessages(['dateTo' => 'The availability range cannot exceed 31 days.']);
+        }
+
+        $scheduleTimezone = $this->scheduleTimezone($specialist);
+        $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
+        $displayRangeStart = $this->localBoundary($requestedDateFrom, $resolvedDisplayTimezone);
+        $displayRangeEnd = $this->localBoundary($requestedDateTo->nextDay(), $resolvedDisplayTimezone);
+        $scheduleDateFrom = LocalDate::from($displayRangeStart->setTimezone($scheduleTimezone)->toDateString());
+        $scheduleDateTo = LocalDate::from($displayRangeEnd->subSecond()->setTimezone($scheduleTimezone)->toDateString());
+
+        return $this->calculateForModels(
+            specialist: $specialist,
+            service: null,
+            dateFrom: $scheduleDateFrom,
+            dateTo: $scheduleDateTo,
+            format: VisitFormat::Online,
+            displayTimezone: $displayTimezone,
+            client: $client,
+            organizationId: $organization->getKey(),
+            displayRangeStart: $displayRangeStart,
+            displayRangeEnd: $displayRangeEnd,
+            displayDateFrom: $requestedDateFrom->value,
+            displayDateTo: $requestedDateTo->value,
+            maxDateCount: 33,
+            durationMinutes: $durationMinutes,
+            bufferMinutes: 0,
+            maxSlots: (int) config('b2b.availability.max_slots', 200),
+        );
+    }
+
     public function forBooking(
         Specialist $specialist,
         Service $service,
@@ -117,6 +165,8 @@ class CalculateAvailability
             ignoreBookingId: $ignoreBookingId,
             leadTimeMinutes: $leadTimeMinutes,
             now: $now,
+            durationMinutes: $service->durationMinutes() ?? 0,
+            bufferMinutes: $service->buffer_minutes,
         );
     }
 
@@ -220,12 +270,14 @@ class CalculateAvailability
             displayDateFrom: $datesInDisplayTimezone ? $requestedDateFrom->value : null,
             displayDateTo: $datesInDisplayTimezone ? $requestedDateTo->value : null,
             maxDateCount: $datesInDisplayTimezone ? 33 : 31,
+            durationMinutes: $service->durationMinutes() ?? 0,
+            bufferMinutes: $service->buffer_minutes,
         );
     }
 
     private function calculateForModels(
         Specialist $specialist,
-        Service $service,
+        ?Service $service,
         LocalDate $dateFrom,
         LocalDate $dateTo,
         VisitFormat $format,
@@ -240,6 +292,9 @@ class CalculateAvailability
         int $maxDateCount = 31,
         ?int $leadTimeMinutes = null,
         ?CarbonImmutable $now = null,
+        int $durationMinutes = 0,
+        int $bufferMinutes = 0,
+        ?int $maxSlots = null,
     ): AvailabilityResult {
         if ($dateFrom->value > $dateTo->value) {
             throw ValidationException::withMessages(['dateFrom' => 'The availability range is invalid.']);
@@ -252,14 +307,14 @@ class CalculateAvailability
         }
 
         if ((int) $specialist->organization_id !== $organizationId
-            || (int) $service->organization_id !== $organizationId) {
+            || ($service !== null && (int) $service->organization_id !== $organizationId)) {
             throw new AuthorizationException('The scheduling records are outside the current organization.');
         }
 
         $scheduleTimezone = $this->scheduleTimezone($specialist);
         $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
 
-        if (! $this->eligibility->exists($organizationId, $specialist->getKey(), $service->getKey())) {
+        if ($service !== null && ! $this->eligibility->exists($organizationId, $specialist->getKey(), $service->getKey())) {
             return new AvailabilityResult(
                 specialistId: $specialist->getKey(),
                 serviceId: $service->getKey(),
@@ -306,14 +361,16 @@ class CalculateAvailability
             ->all());
         $slots = [];
         $now = $now ?? CarbonImmutable::instance(now())->utc();
-        $durationMinutes = $service->durationMinutes();
         $leadTimeMinutes ??= $this->leadTime->handle();
 
-        if (! $specialist->is_active || ! $service->is_active || $service->catalogItemType() !== CatalogItemType::Service
-            || $durationMinutes === null || ! in_array($format->value, $service->supportedFormats(), true)) {
+        if (! $specialist->is_active
+            || ($service !== null && (! $service->is_active
+                || $service->catalogItemType() !== CatalogItemType::Service
+                || ! in_array($format->value, $service->supportedFormats(), true)))
+            || $durationMinutes < 1) {
             return new AvailabilityResult(
                 specialistId: $specialist->getKey(),
-                serviceId: $service->getKey(),
+                serviceId: $service?->getKey(),
                 scheduleTimezone: $scheduleTimezone,
                 displayTimezone: $resolvedDisplayTimezone,
                 slots: [],
@@ -348,7 +405,7 @@ class CalculateAvailability
                     unavailableIntervals: $unavailableIntervals,
                     bookingIntervals: $bookingIntervals,
                     durationMinutes: $durationMinutes,
-                    bufferMinutes: $service->buffer_minutes,
+                    bufferMinutes: $bufferMinutes,
                     leadTimeMinutes: $leadTimeMinutes,
                     now: $now,
                     format: $format,
@@ -386,10 +443,10 @@ class CalculateAvailability
 
         return new AvailabilityResult(
             specialistId: $specialist->getKey(),
-            serviceId: $service->getKey(),
+            serviceId: $service?->getKey(),
             scheduleTimezone: $scheduleTimezone,
             displayTimezone: $resolvedDisplayTimezone,
-            slots: $slots,
+            slots: $maxSlots === null ? $slots : array_slice($slots, 0, max(0, $maxSlots)),
         );
     }
 

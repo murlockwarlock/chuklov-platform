@@ -11,6 +11,7 @@ final class VideoMeetingException extends RuntimeException
         public readonly string $safeCode,
         public readonly bool $retryable = true,
         public readonly bool $outcomeUnknown = false,
+        public readonly bool $requiresReconciliation = false,
     ) {
         parent::__construct($message);
     }
@@ -27,6 +28,6 @@ final class VideoMeetingException extends RuntimeException
 
     public static function reconciliationRequired(string $code): self
     {
-        return new self('The video meeting provider response requires reconciliation.', $code, false, true);
+        return new self('The video meeting provider response requires reconciliation.', $code, false, true, true);
     }
 }

@@ -67,17 +67,24 @@ final class CancelB2bSalesCall
                 && ($hasProviderIdentity
                     || $locked->provider_operation !== null
                     || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired);
+            $providerSyncStatus = $requiresProviderCancellation
+                ? ($locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                    ? VideoMeetingSyncStatus::ReconciliationRequired
+                    : VideoMeetingSyncStatus::CancellationPending)
+                : VideoMeetingSyncStatus::NotRequired;
             $locked->forceFill([
                 'status' => B2bSalesCallStatus::Cancelled,
                 'cancelled_at' => now(),
-                'provider_sync_status' => $requiresProviderCancellation
-                    ? VideoMeetingSyncStatus::CancellationPending
-                    : VideoMeetingSyncStatus::NotRequired,
+                'provider_sync_status' => $providerSyncStatus,
                 'provider_operation' => $requiresProviderCancellation ? VideoMeetingOperation::Cancel : null,
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,
                 'provider_error_code' => null,
                 'provider_join_url' => null,
+                'provider_lease_token' => null,
+                'provider_lease_expires_at' => null,
+                'provider_lease_event_id' => null,
+                'provider_lease_processing_token' => null,
             ])->save();
 
             if ($requiresProviderCancellation) {

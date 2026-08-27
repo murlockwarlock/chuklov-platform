@@ -23,7 +23,13 @@ class SetOrganizationSetting
     public function handle(User $actor, OrganizationSettingKey $key, string|int|bool $value): OrganizationSetting
     {
         $organization = $this->context->organization();
-        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
+        $this->authorizer->authorize(
+            $actor,
+            $organization,
+            $key === OrganizationSettingKey::B2bSalesCallDurationMinutes
+                ? OrganizationPermission::ManageScheduling
+                : OrganizationPermission::ManageSettings,
+        );
         $this->validate($key, $value);
 
         return DB::transaction(function () use ($organization, $actor, $key, $value): OrganizationSetting {
@@ -62,6 +68,11 @@ class SetOrganizationSetting
         if ($key->type() === OrganizationSettingType::Integer
             && (! is_int($value) || $value < 0)) {
             throw new InvalidArgumentException('The integer setting value is invalid.');
+        }
+
+        if ($key === OrganizationSettingKey::B2bSalesCallDurationMinutes
+            && (! is_int($value) || $value < 1 || $value > 1440)) {
+            throw new InvalidArgumentException('The B2B sales-call duration is outside the supported range.');
         }
 
         if (in_array($key, [

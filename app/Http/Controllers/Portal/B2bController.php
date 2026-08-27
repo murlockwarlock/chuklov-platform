@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitB2bLeadRequest;
+use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
-use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ListPublishedContentSections;
@@ -30,6 +30,7 @@ final class B2bController extends Controller
         OrganizationContext $organizationContext,
         ListPublishedContentSections $sections,
         ContentImageUrlResolver $imageResolver,
+        ListB2bSalesCallAvailability $availability,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -37,12 +38,20 @@ final class B2bController extends Controller
             $client = null;
         }
         $locale = $this->locale($request, $client?->language);
-        $profile = $client === null
+        [$dateFrom, $dateTo] = $this->monthRange(
+            $request->query('date_from'),
+            $client?->timezone,
+        );
+        $specialistId = $this->nullablePositiveInteger($request->query('specialist_id'));
+        $projection = $client === null
             ? null
-            : BroadcastClientProfile::query()
-                ->where('organization_id', $organizationContext->id())
-                ->where('client_id', $client->getKey())
-                ->first();
+            : $availability->handle(
+                client: $client,
+                dateFrom: $dateFrom,
+                dateTo: $dateTo,
+                specialistId: $specialistId,
+                displayTimezone: (string) $client->timezone,
+            );
         $content = $sections->handle('b2b')
             ->filter(fn (ContentSection $section): bool => $section->locale === $locale)
             ->map(fn (ContentSection $section): array => [
@@ -55,26 +64,19 @@ final class B2bController extends Controller
 
         return Inertia::render('Portal/B2b', [
             'authenticated' => $client !== null,
-            'b2bSpecialistAnswer' => $client === null
-                ? null
-                : $profile?->getRawOriginal('b2b_specialist_answer'),
+            'b2bSpecialistAnswer' => $projection['specialistAnswer'] ?? null,
             'content' => $content,
-            'specialists' => $client === null
-                ? []
-                : Specialist::query()
-                    ->where('organization_id', $organizationContext->id())
-                    ->where('is_active', true)
-                    ->orderBy('display_name')
-                    ->limit(100)
-                    ->get(['id', 'display_name'])
-                    ->map(static fn (Specialist $specialist): array => [
-                        'id' => $specialist->getKey(),
-                        'displayName' => $specialist->display_name,
-                    ])
-                    ->values()
-                    ->all(),
+            'specialists' => $projection['specialists'] ?? [],
+            'selectedSpecialistId' => $projection['selectedSpecialistId'] ?? null,
+            'availability' => $projection['availability'] ?? null,
+            'availabilityRange' => $client === null ? null : [
+                'dateFrom' => $dateFrom,
+                'dateTo' => $dateTo,
+            ],
+            'configurationReady' => $projection['configurationReady'] ?? false,
             'urls' => [
                 'answer' => route('portal.profile.b2b-answer'),
+                'page' => route('portal.b2b'),
                 'submit' => route('portal.b2b.submit'),
                 'login' => route('portal.home'),
             ],
@@ -124,5 +126,33 @@ final class B2bController extends Controller
         $language ??= $request->session()->get('portal.locale');
 
         return str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
+    }
+
+    /** @return array{0: string, 1: string} */
+    private function monthRange(mixed $date, ?string $timezone): array
+    {
+        try {
+            $date = is_string($date) ? CarbonImmutable::createFromFormat('!Y-m-d', $date, 'UTC') : false;
+            $errors = CarbonImmutable::getLastErrors();
+            if (! $date instanceof CarbonImmutable
+                || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+                throw new \InvalidArgumentException('Invalid date.');
+            }
+        } catch (Throwable) {
+            $date = CarbonImmutable::now($timezone ?: 'UTC');
+        }
+
+        return [$date->startOfMonth()->toDateString(), $date->endOfMonth()->toDateString()];
+    }
+
+    private function nullablePositiveInteger(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) && (int) $value > 0 && (string) (int) $value === (string) $value
+            ? (int) $value
+            : null;
     }
 }

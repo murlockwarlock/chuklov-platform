@@ -84,7 +84,12 @@ final class RescheduleB2bSalesCall
                     ->where('b2b_sales_call_id', $locked->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
-                $durationMinutes = max(1, (int) round($locked->startsAtUtc()->diffInMinutes($locked->endsAtUtc())));
+                $durationMinutes = (int) round($locked->startsAtUtc()->diffInMinutes($locked->endsAtUtc()));
+                if ($durationMinutes < 1) {
+                    throw ValidationException::withMessages([
+                        'sales_call' => 'The stored sales-call interval is invalid and cannot be rescheduled.',
+                    ]);
+                }
                 $newEndsAt = $newStartsAt->addMinutes($durationMinutes);
                 $scheduleTimezone = $this->availability->handle(
                     specialist: $specialist,
@@ -99,10 +104,16 @@ final class RescheduleB2bSalesCall
                     $providerOperation = $hasProviderIdentity && $locked->provider_join_url !== null
                         ? VideoMeetingOperation::Update
                         : ($hasProviderIdentity ? VideoMeetingOperation::Recreate : VideoMeetingOperation::Create);
-                    $providerSyncStatus = VideoMeetingSyncStatus::Pending;
+                    $providerSyncStatus = $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
+                        ? VideoMeetingSyncStatus::ReconciliationRequired
+                        : VideoMeetingSyncStatus::Pending;
                 } elseif ($hasProviderIdentity) {
                     $providerOperation = VideoMeetingOperation::Cancel;
                     $providerSyncStatus = VideoMeetingSyncStatus::CancellationPending;
+                }
+                $providerCorrelationKey = $locked->provider_correlation_key;
+                if ($providerOperation === VideoMeetingOperation::Recreate) {
+                    $providerCorrelationKey = bin2hex(random_bytes(16));
                 }
                 $locked->forceFill([
                     'starts_at' => $newStartsAt,
@@ -114,6 +125,12 @@ final class RescheduleB2bSalesCall
                     'provider_recreate_meeting_id' => $providerOperation === VideoMeetingOperation::Recreate
                         ? $locked->provider_meeting_id
                         : null,
+                    'provider_correlation_key' => $providerCorrelationKey,
+                    'provider_join_url' => null,
+                    'provider_lease_token' => null,
+                    'provider_lease_expires_at' => null,
+                    'provider_lease_event_id' => null,
+                    'provider_lease_processing_token' => null,
                     'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                     'event_version' => (int) $locked->event_version + 1,
                     'provider_error_code' => null,
