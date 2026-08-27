@@ -15,12 +15,14 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class MarkB2bSalesCallProviderReconciliationRequired
 {
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -30,6 +32,8 @@ final class MarkB2bSalesCallProviderReconciliationRequired
         B2bSalesCall $salesCall,
         VideoMeetingIdentity $identity,
         string $errorCode,
+        ?int $expectedEventVersion = null,
+        ?int $expectedProviderSyncVersion = null,
     ): B2bSalesCall {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageB2bLeads);
@@ -38,7 +42,8 @@ final class MarkB2bSalesCallProviderReconciliationRequired
             throw new AuthorizationException('The sales call is outside the current organization.');
         }
 
-        return DB::transaction(function () use ($actor, $salesCall, $identity, $errorCode, $organization): B2bSalesCall {
+        $providerChangeBlocked = false;
+        $result = DB::transaction(function () use ($actor, $salesCall, $identity, $errorCode, $expectedEventVersion, $expectedProviderSyncVersion, $organization, &$providerChangeBlocked): B2bSalesCall {
             $locked = B2bSalesCall::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($salesCall->getKey())
@@ -48,6 +53,15 @@ final class MarkB2bSalesCallProviderReconciliationRequired
             if ($locked->status !== B2bSalesCallStatus::Scheduled
                 || $locked->meeting_mode !== VideoMeetingMode::Automatic
                 || ! $this->sameIdentity($locked->providerIdentity(), $identity)) {
+                return $locked->refresh();
+            }
+            if (($expectedEventVersion !== null && (int) $locked->event_version !== $expectedEventVersion)
+                || ($expectedProviderSyncVersion !== null && (int) $locked->provider_sync_version !== $expectedProviderSyncVersion)) {
+                return $locked->refresh();
+            }
+            if (! $this->providerMutationGuard->allowGenerationChange($locked, $actor)) {
+                $providerChangeBlocked = true;
+
                 return $locked->refresh();
             }
 
@@ -81,6 +95,12 @@ final class MarkB2bSalesCallProviderReconciliationRequired
 
             return $locked->refresh();
         });
+
+        if ($providerChangeBlocked) {
+            throw ValidationException::withMessages(['provider' => B2bProviderMutationGuard::LOST_MESSAGE]);
+        }
+
+        return $result;
     }
 
     private function sameIdentity(?VideoMeetingIdentity $current, VideoMeetingIdentity $expected): bool

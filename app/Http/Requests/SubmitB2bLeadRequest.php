@@ -17,7 +17,11 @@ class SubmitB2bLeadRequest extends FormRequest
     {
         return [
             'specialist_id' => ['required', 'integer', 'min:1'],
-            'starts_at' => ['required', 'date_format:Y-m-d\\TH:i'],
+            'starts_at' => [
+                'required',
+                'string',
+                'regex:/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:\\d{2})$/',
+            ],
             'submission_key' => ['required', 'string', 'max:128'],
         ];
     }

@@ -21,6 +21,7 @@ final class RetryB2bSalesCallProvider
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -33,7 +34,8 @@ final class RetryB2bSalesCallProvider
             throw new AuthorizationException('The sales call is outside the current organization.');
         }
 
-        return DB::transaction(function () use ($actor, $salesCall, $expectedEventVersion, $organization): B2bSalesCall {
+        $providerChangeBlocked = false;
+        $result = DB::transaction(function () use ($actor, $salesCall, $expectedEventVersion, $organization, &$providerChangeBlocked): B2bSalesCall {
             $locked = B2bSalesCall::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($salesCall->getKey())
@@ -43,6 +45,11 @@ final class RetryB2bSalesCallProvider
                 throw ValidationException::withMessages([
                     'expected_event_version' => 'This sales call changed before provider retry was applied. Refresh and try again.',
                 ]);
+            }
+            if (! $this->providerMutationGuard->allowGenerationChange($locked, $actor)) {
+                $providerChangeBlocked = true;
+
+                return $locked->refresh();
             }
             $hasProviderIdentity = $locked->providerIdentity() !== null;
             if ($locked->meeting_mode !== VideoMeetingMode::Automatic
@@ -98,5 +105,11 @@ final class RetryB2bSalesCallProvider
 
             return $locked->refresh();
         });
+
+        if ($providerChangeBlocked) {
+            throw ValidationException::withMessages(['provider' => B2bProviderMutationGuard::LOST_MESSAGE]);
+        }
+
+        return $result;
     }
 }

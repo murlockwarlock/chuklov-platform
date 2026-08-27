@@ -11,6 +11,7 @@ type Content = { title: string; body: string; media: string | null };
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
+    displayUtcOffset: string;
     displayTimezone: string;
     format: 'office' | 'home' | 'online';
 };
@@ -33,6 +34,7 @@ const props = defineProps<{
     availability: Availability | null;
     availabilityRange: AvailabilityRange | null;
     configurationReady: boolean;
+    configurationIssue: 'missing_duration' | 'zoom_duration_exceeds_capability' | null;
     urls: { answer: string; page: string; submit: string; login: string };
 }>();
 
@@ -89,24 +91,9 @@ function selectDate(date: string): void {
     leadForm.starts_at = '';
 }
 
-function localInputValue(value: string, timezone: string): string {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        day: '2-digit',
-        hour: '2-digit',
-        hourCycle: 'h23',
-        minute: '2-digit',
-        month: '2-digit',
-        timeZone: timezone,
-        year: 'numeric',
-    }).formatToParts(new Date(value));
-    const part = (type: string): string => parts.find((item) => item.type === type)?.value ?? '';
-
-    return `${part('year')}-${part('month')}-${part('day')}T${part('hour')}:${part('minute')}`;
-}
-
 function selectSlot(slot: AvailabilitySlot): void {
     selectedStart.value = slot.startsAt;
-    leadForm.starts_at = localInputValue(slot.startsAt, slot.displayTimezone);
+    leadForm.starts_at = slot.startsAt;
 }
 
 function submitLead(): void {
@@ -231,7 +218,7 @@ function submitLead(): void {
             class="portal-notice"
             role="status"
           >
-            {{ t('b2b.configurationNotReady') }}
+            {{ props.configurationIssue === 'zoom_duration_exceeds_capability' ? t('b2b.zoomDurationNotSupported') : t('b2b.configurationNotReady') }}
           </p>
           <p
             v-else-if="props.b2bSpecialistAnswer !== 'yes'"

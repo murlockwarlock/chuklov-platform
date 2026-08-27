@@ -28,6 +28,7 @@ final class RescheduleB2bSalesCall
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly EnsureSpecialistIntervalAvailable $availability,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
@@ -57,7 +58,8 @@ final class RescheduleB2bSalesCall
         }
 
         try {
-            return DB::transaction(function () use ($actor, $salesCall, $newStartsAt, $requestedTimezone, $expectedEventVersion, $organization): B2bSalesCall {
+            $providerChangeBlocked = false;
+            $result = DB::transaction(function () use ($actor, $salesCall, $newStartsAt, $requestedTimezone, $expectedEventVersion, $organization, &$providerChangeBlocked): B2bSalesCall {
                 $locked = B2bSalesCall::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($salesCall->getKey())
@@ -72,6 +74,11 @@ final class RescheduleB2bSalesCall
 
                 if ($locked->status !== B2bSalesCallStatus::Scheduled) {
                     throw ValidationException::withMessages(['sales_call' => 'A cancelled sales call cannot be rescheduled.']);
+                }
+                if (! $this->providerMutationGuard->allowGenerationChange($locked, $actor)) {
+                    $providerChangeBlocked = true;
+
+                    return $locked->refresh();
                 }
 
                 $specialist = Specialist::query()
@@ -112,7 +119,8 @@ final class RescheduleB2bSalesCall
                     $providerSyncStatus = VideoMeetingSyncStatus::CancellationPending;
                 }
                 $providerCorrelationKey = $locked->provider_correlation_key;
-                if ($providerOperation === VideoMeetingOperation::Recreate) {
+                if ($providerOperation === VideoMeetingOperation::Recreate
+                    && $locked->provider_sync_status !== VideoMeetingSyncStatus::ReconciliationRequired) {
                     $providerCorrelationKey = bin2hex(random_bytes(16));
                 }
                 $locked->forceFill([
@@ -159,6 +167,12 @@ final class RescheduleB2bSalesCall
 
                 return $locked->refresh();
             });
+
+            if ($providerChangeBlocked) {
+                throw ValidationException::withMessages(['provider' => B2bProviderMutationGuard::LOST_MESSAGE]);
+            }
+
+            return $result;
         } catch (QueryException $exception) {
             if ($this->isScheduleConflict($exception)) {
                 throw ValidationException::withMessages([

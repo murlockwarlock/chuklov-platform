@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\B2b;
 
+use App\Filament\Pages\SchedulingConfiguration;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\B2B\Application\B2bProviderLeaseManager;
+use App\Modules\B2B\Application\B2bProviderMutationGuard;
 use App\Modules\B2B\Application\CancelB2bSalesCall;
+use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallHostLaunchUrl;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
@@ -45,6 +48,7 @@ use App\Modules\ClientPortal\Application\GetClientProfile;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
+use App\Modules\Organizations\Application\ClearOrganizationSetting;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -64,12 +68,14 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Closure;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class B2bLeadFunnelTest extends TestCase
@@ -432,10 +438,10 @@ final class B2bLeadFunnelTest extends TestCase
     public function test_missing_b2b_duration_keeps_interest_visible_but_prevents_scheduling(): void
     {
         $fixture = $this->fixture();
-        DB::table('organization_settings')
-            ->where('organization_id', $fixture['organization']->getKey())
-            ->where('setting_key', OrganizationSettingKey::B2bSalesCallDurationMinutes->value)
-            ->delete();
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+        );
 
         $projection = app(ListB2bSalesCallAvailability::class)->handle(
             client: $fixture['client'],
@@ -460,6 +466,94 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(0, IntegrationEvent::query()->count());
     }
 
+    public function test_scheduling_configuration_clears_duration_through_the_organizations_application_boundary(): void
+    {
+        $fixture = $this->fixture();
+        $this->actingAs($fixture['admin']);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($fixture['admin'])
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'lead_time_minutes' => 0,
+                'cancellation_cutoff_minutes' => 0,
+                'b2b_sales_call_duration_minutes' => null,
+                'b2b_zoom_host_licensed' => true,
+                'office_location' => null,
+                'working_hours' => [[
+                    'weekday' => 1,
+                    'start_time' => '09:00',
+                    'end_time' => '19:00',
+                ]],
+                'acknowledge_impact' => false,
+                'impact_digest' => null,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(0, DB::table('organization_settings')
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('setting_key', OrganizationSettingKey::B2bSalesCallDurationMinutes->value)
+            ->count());
+        self::assertSame(1, DB::table('organization_settings')
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
+            ->count());
+    }
+
+    public function test_clearing_b2b_duration_is_audited_tenant_scoped_and_keeps_history_unchanged(): void
+    {
+        $first = $this->fixture();
+        $call = $this->submit($first, 'clear-duration-history')->salesCall()->firstOrFail();
+        $historicalStartsAt = $call->startsAtUtc()->toIso8601String();
+        $historicalEndsAt = $call->endsAtUtc()->toIso8601String();
+        $staff = User::factory()->forOrganization($first['organization'], OrganizationRole::Staff)->create();
+
+        try {
+            app(ClearOrganizationSetting::class)->handle(
+                $staff,
+                OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            );
+            self::fail('A staff member cleared the B2B scheduling duration.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        }
+
+        $second = $this->fixture();
+        $this->setOrganization($first['organization']);
+        app(ClearOrganizationSetting::class)->handle(
+            $first['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+        );
+
+        self::assertNull(app(GetB2bSalesCallDuration::class)->handle());
+        self::assertSame($historicalStartsAt, $call->fresh()->startsAtUtc()->toIso8601String());
+        self::assertSame($historicalEndsAt, $call->fresh()->endsAtUtc()->toIso8601String());
+        self::assertSame(0, DB::table('organization_settings')
+            ->where('organization_id', $first['organization']->getKey())
+            ->where('setting_key', OrganizationSettingKey::B2bSalesCallDurationMinutes->value)
+            ->count());
+        self::assertSame(1, DB::table('organization_settings')
+            ->where('organization_id', $second['organization']->getKey())
+            ->where('setting_key', OrganizationSettingKey::B2bSalesCallDurationMinutes->value)
+            ->count());
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $first['organization']->getKey())
+            ->where('action', 'organization.setting.removed')
+            ->count());
+
+        $projection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $first['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $first['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+        self::assertFalse($projection['configurationReady']);
+        self::assertNull($projection['availability']);
+    }
+
     public function test_configured_b2b_duration_is_used_by_availability_interval_and_zoom_request(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -481,6 +575,10 @@ final class B2bLeadFunnelTest extends TestCase
         $slot = collect($projection['availability']['slots'])->firstWhere('startsAt', '2026-08-31T15:00:00+00:00');
 
         self::assertIsArray($slot);
+        self::assertSame(45, (int) DB::table('organization_settings')
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('setting_key', OrganizationSettingKey::B2bSalesCallDurationMinutes->value)
+            ->value('integer_value'));
         self::assertSame('2026-08-31T15:45:00+00:00', $slot['endsAt']);
 
         $lead = $this->submit($fixture, 'duration-45');
@@ -490,6 +588,109 @@ final class B2bLeadFunnelTest extends TestCase
         app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
 
         self::assertSame(45, $provider->lastRequest?->durationMinutes);
+    }
+
+    public function test_zoom_basic_capability_limits_automatic_duration_without_truncating_business_duration(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+        );
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            40,
+        );
+
+        $basicProjection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $fixture['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $fixture['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+        self::assertTrue($basicProjection['configurationReady']);
+        $basicCall = $this->submit($fixture, 'zoom-basic-40')->salesCall()->firstOrFail();
+        self::assertSame('2026-08-31T15:40:00+00:00', $basicCall->endsAtUtc()->toIso8601String());
+
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            41,
+        );
+        $unsupportedProjection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $fixture['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $fixture['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+        self::assertFalse($unsupportedProjection['configurationReady']);
+        self::assertSame('zoom_duration_exceeds_capability', $unsupportedProjection['configurationIssue']);
+
+        try {
+            $this->submit($fixture, 'zoom-basic-41-rejected', 17);
+            self::fail('A Basic Zoom host accepted an automatic sales call longer than 40 minutes.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Automatic Zoom sales-call duration exceeds the current host capability of 40 minutes. Enable a licensed Zoom host or use a shorter business duration.', $exception->errors()['configuration'][0]);
+        }
+        self::assertSame(1, B2bSalesCall::query()->count());
+
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+            true,
+        );
+        $licensedProjection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $fixture['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $fixture['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+        self::assertTrue($licensedProjection['configurationReady']);
+        $licensedCall = $this->submit($fixture, 'zoom-licensed-41', 17)->salesCall()->firstOrFail();
+        self::assertSame('2026-08-31T17:41:00+00:00', $licensedCall->endsAtUtc()->toIso8601String());
+    }
+
+    public function test_zoom_host_capability_is_organization_scoped(): void
+    {
+        $basic = $this->fixture();
+        app(ClearOrganizationSetting::class)->handle(
+            $basic['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+        );
+        app(SetOrganizationSetting::class)->handle(
+            $basic['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            41,
+        );
+        $licensed = $this->fixture();
+
+        $this->setOrganization($basic['organization']);
+        $basicProjection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $basic['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $basic['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+        $this->setOrganization($licensed['organization']);
+        $licensedProjection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $licensed['client'],
+            dateFrom: '2026-08-31',
+            dateTo: '2026-08-31',
+            specialistId: $licensed['specialist']->getKey(),
+            displayTimezone: 'UTC',
+        );
+
+        self::assertFalse($basicProjection['configurationReady']);
+        self::assertSame('zoom_duration_exceeds_capability', $basicProjection['configurationIssue']);
+        self::assertTrue($licensedProjection['configurationReady']);
+        self::assertNull($licensedProjection['configurationIssue']);
     }
 
     public function test_changing_b2b_duration_does_not_rewrite_historical_calls(): void
@@ -680,6 +881,86 @@ final class B2bLeadFunnelTest extends TestCase
 
         self::assertSame('2026-11-02T14:00:00+00:00', $dst['availability']['slots'][0]['startsAt']);
         self::assertSame('2026-11-02T15:00:00+01:00', $dst['availability']['slots'][0]['displayStartsAt']);
+    }
+
+    public function test_portal_submission_preserves_the_second_dst_overlap_instant(): void
+    {
+        $fixture = $this->fixture(
+            specialistTimezone: 'America/New_York',
+            clientTimezone: 'America/New_York',
+        );
+        app(SetSpecialistWorkingHours::class)->handle($fixture['admin'], $fixture['specialist'], [[
+            'weekday' => 7,
+            'start_time' => '01:00',
+            'end_time' => '03:00',
+        ]]);
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            30,
+        );
+
+        $projection = app(ListB2bSalesCallAvailability::class)->handle(
+            client: $fixture['client'],
+            dateFrom: '2026-11-01',
+            dateTo: '2026-11-01',
+            specialistId: $fixture['specialist']->getKey(),
+            displayTimezone: 'America/New_York',
+        );
+        $overlapSlots = collect($projection['availability']['slots'])
+            ->filter(static fn (array $slot): bool => str_contains($slot['displayStartsAt'], 'T01:30:00'))
+            ->values();
+
+        self::assertCount(2, $overlapSlots);
+        self::assertSame([
+            '2026-11-01T05:30:00+00:00',
+            '2026-11-01T06:30:00+00:00',
+        ], $overlapSlots->pluck('startsAt')->all());
+        self::assertSame(['-04:00', '-05:00'], $overlapSlots->pluck('displayUtcOffset')->all());
+
+        $shortService = Service::factory()->forOrganization($fixture['organization'])->create([
+            'duration_minutes' => 30,
+            'buffer_minutes' => 0,
+            'formats' => ['office'],
+        ]);
+        app(AssignSpecialistToService::class)->handle($fixture['admin'], $fixture['specialist'], $shortService);
+        $bookingClient = $this->client($fixture);
+        app(CreateBooking::class)->handle(
+            actor: $bookingClient,
+            client: $bookingClient,
+            specialist: $fixture['specialist'],
+            service: $shortService,
+            startsAt: CarbonImmutable::parse('2026-11-01T05:30:00+00:00'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'dst-first-occurrence-occupied',
+        );
+
+        $this->withSession(['client_portal.client_id' => $fixture['client']->getKey()])
+            ->post(route('portal.b2b.submit'), [
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'starts_at' => '2026-11-01T06:30:00+00:00',
+                'submission_key' => 'dst-second-occurrence',
+            ])
+            ->assertRedirect(route('portal.b2b'));
+
+        $call = B2bSalesCall::query()->where('client_id', $fixture['client']->getKey())->sole();
+        self::assertSame('2026-11-01T06:30:00+00:00', $call->startsAtUtc()->toIso8601String());
+        self::assertSame('2026-11-01T07:00:00+00:00', $call->endsAtUtc()->toIso8601String());
+    }
+
+    public function test_portal_submission_rejects_a_timezone_naive_schedule_identity(): void
+    {
+        $fixture = $this->fixture();
+
+        $this->withSession(['client_portal.client_id' => $fixture['client']->getKey()])
+            ->post(route('portal.b2b.submit'), [
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'starts_at' => '2026-08-31T15:00',
+                'submission_key' => 'naive-schedule-identity',
+            ])
+            ->assertSessionHasErrors('starts_at');
+
+        self::assertSame(0, B2bSalesCall::query()->count());
     }
 
     public function test_stale_b2b_slot_display_is_revalidated_at_submission(): void
@@ -880,6 +1161,45 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(1, $provider->createCount);
         self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $retry->fresh()->provider_sync_status);
         self::assertNull($retry->fresh()->provider_meeting_id);
+    }
+
+    public function test_recreate_rejects_an_unresolved_unknown_create_without_rotating_generation(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->throwAfterCreate = true;
+        $provider->hideMeetingsFromSearch = true;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-unresolved-recreate');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $unresolved = $call->fresh();
+        $correlationKey = $unresolved->provider_correlation_key;
+        $providerSyncVersion = $unresolved->provider_sync_version;
+        $eventVersion = $unresolved->event_version;
+
+        try {
+            app(RecreateB2bSalesCallMeeting::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $unresolved,
+                expectedEventVersion: $eventVersion,
+            );
+            self::fail('Recreate was allowed to discard an unresolved provider generation.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'The current Zoom generation must be reconciled before the meeting can be recreated.',
+                $exception->errors()['provider'][0],
+            );
+        }
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertNull($final->provider_meeting_id);
+        self::assertSame($correlationKey, $final->provider_correlation_key);
+        self::assertSame($providerSyncVersion, $final->provider_sync_version);
+        self::assertSame($eventVersion, $final->event_version);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame(1, IntegrationEvent::query()->count());
     }
 
     public function test_cancelling_after_unknown_create_with_zero_match_remains_reconciliation_required(): void
@@ -1092,6 +1412,107 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
     }
 
+    public function test_active_provider_lease_blocks_every_local_generation_writer_until_worker_finalizes(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-active-lease-writers');
+        $call = $lead->salesCall()->firstOrFail();
+        $correlationKey = $call->provider_correlation_key;
+        $event = IntegrationEvent::query()->sole();
+        $blocked = [];
+        $provider->beforeCreate = function () use ($fixture, $call, &$blocked): void {
+            $attempts = [
+                'cancel' => fn (): B2bSalesCall => app(CancelB2bSalesCall::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call->fresh(),
+                    expectedEventVersion: $call->event_version,
+                ),
+                'reschedule' => fn (): B2bSalesCall => app(RescheduleB2bSalesCall::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call->fresh(),
+                    newStartsAt: $this->slot(17),
+                    requestedTimezone: 'UTC',
+                    expectedEventVersion: $call->event_version,
+                ),
+                'mode' => fn (): B2bSalesCall => app(SetB2bSalesCallMeetingMode::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call->fresh(),
+                    mode: VideoMeetingMode::Manual,
+                    manualMeetingUrl: 'https://meet.example.test/active-lease',
+                    expectedEventVersion: $call->event_version,
+                ),
+                'retry' => fn (): B2bSalesCall => app(RetryB2bSalesCallProvider::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call->fresh(),
+                    expectedEventVersion: $call->event_version,
+                ),
+                'recreate' => fn (): B2bSalesCall => app(RecreateB2bSalesCallMeeting::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call->fresh(),
+                    expectedEventVersion: $call->event_version,
+                ),
+            ];
+
+            foreach ($attempts as $name => $attempt) {
+                try {
+                    $attempt();
+                } catch (ValidationException $exception) {
+                    $blocked[$name] = $exception->errors()['provider'][0] ?? null;
+                }
+            }
+        };
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        self::assertSame([
+            'cancel' => B2bProviderMutationGuard::BLOCKED_MESSAGE,
+            'reschedule' => B2bProviderMutationGuard::BLOCKED_MESSAGE,
+            'mode' => B2bProviderMutationGuard::BLOCKED_MESSAGE,
+            'retry' => B2bProviderMutationGuard::BLOCKED_MESSAGE,
+            'recreate' => B2bProviderMutationGuard::BLOCKED_MESSAGE,
+        ], $blocked);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame($correlationKey, $call->fresh()->provider_correlation_key);
+        self::assertSame(1, $call->fresh()->provider_sync_version);
+        self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
+    }
+
+    public function test_expired_provider_lease_is_marked_lost_and_cannot_start_a_blind_recreate(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-expired-local-writer');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $lease = app(B2bProviderLeaseManager::class)->claim($event->getKey());
+        self::assertInstanceOf(ProviderOperationLease::class, $lease);
+        $before = $call->fresh();
+
+        $call->fresh()->forceFill(['provider_lease_expires_at' => now()->subSecond()])->save();
+
+        try {
+            app(RecreateB2bSalesCallMeeting::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $call->fresh(),
+                expectedEventVersion: $before->event_version,
+            );
+            self::fail('An expired provider lease allowed a blind recreate.');
+        } catch (ValidationException $exception) {
+            self::assertSame(B2bProviderMutationGuard::LOST_MESSAGE, $exception->errors()['provider'][0]);
+        }
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('provider_worker_lost', $final->provider_error_code);
+        self::assertSame($before->provider_correlation_key, $final->provider_correlation_key);
+        self::assertSame($before->provider_sync_version, $final->provider_sync_version);
+        self::assertSame(0, $provider->createCount);
+        self::assertNull($final->provider_lease_token);
+    }
+
     public function test_two_provider_workers_cannot_both_create_for_one_event(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -1154,6 +1575,105 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertStringNotContainsString('host', (string) $call->provider_join_url);
     }
 
+    public function test_host_launch_requires_a_current_ready_zoom_generation(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'host-current-state');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+
+        $states = [
+            VideoMeetingSyncStatus::ReconciliationRequired,
+            VideoMeetingSyncStatus::Pending,
+            VideoMeetingSyncStatus::Failed,
+            VideoMeetingSyncStatus::CancellationPending,
+        ];
+        $operations = [
+            VideoMeetingOperation::Reconcile,
+            VideoMeetingOperation::Update,
+            null,
+            VideoMeetingOperation::Cancel,
+        ];
+
+        foreach ($states as $index => $state) {
+            $call->fresh()->forceFill([
+                'provider_sync_status' => $state,
+                'provider_operation' => $operations[$index],
+            ])->save();
+
+            try {
+                app(GetB2bSalesCallHostLaunchUrl::class)->handle($fixture['admin'], $call->fresh());
+                self::fail('A non-ready provider state was allowed to launch a host meeting.');
+            } catch (ValidationException $exception) {
+                self::assertSame(
+                    'The Zoom host link is unavailable because the meeting is not in a current ready state. Refresh and retry from the CRM.',
+                    $exception->errors()['provider'][0],
+                );
+            }
+        }
+
+        self::assertSame(0, $provider->hostLaunchCount);
+    }
+
+    public function test_host_url_is_discarded_when_cancel_or_reschedule_changes_state_during_provider_read(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+
+        foreach (['cancel', 'reschedule', 'recreate'] as $transition) {
+            $fixture = $this->fixture();
+            $lead = $this->submit($fixture, 'host-race-'.$transition);
+            $call = $lead->salesCall()->firstOrFail();
+            app(SyncB2bSalesCallProvider::class)->handle(
+                IntegrationEvent::query()->where('organization_id', $fixture['organization']->getKey())->sole()->getKey(),
+            );
+            $ready = $call->fresh();
+            $provider->beforeHostLaunch = function () use ($fixture, $ready, $transition): void {
+                if ($transition === 'cancel') {
+                    app(CancelB2bSalesCall::class)->handle(
+                        actor: $fixture['admin'],
+                        salesCall: $ready->fresh(),
+                        expectedEventVersion: $ready->event_version,
+                    );
+
+                    return;
+                }
+
+                if ($transition === 'recreate') {
+                    app(RecreateB2bSalesCallMeeting::class)->handle(
+                        actor: $fixture['admin'],
+                        salesCall: $ready->fresh(),
+                        expectedEventVersion: $ready->event_version,
+                    );
+
+                    return;
+                }
+
+                app(RescheduleB2bSalesCall::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $ready->fresh(),
+                    newStartsAt: $this->slot(17),
+                    requestedTimezone: 'UTC',
+                    expectedEventVersion: $ready->event_version,
+                );
+            };
+
+            try {
+                app(GetB2bSalesCallHostLaunchUrl::class)->handle($fixture['admin'], $ready);
+                self::fail('A host URL fetched before a state transition was returned to the caller.');
+            } catch (ValidationException $exception) {
+                self::assertSame(
+                    'The Zoom host link became stale before launch. Refresh and retry from the CRM.',
+                    $exception->errors()['provider'][0],
+                );
+            }
+        }
+
+        self::assertSame(3, $provider->hostLaunchCount);
+    }
+
     public function test_host_launch_endpoint_rejects_an_untrusted_provider_url(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -1199,6 +1719,24 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertNull($reconciled->provider_join_url);
         self::assertSame(1, $provider->createCount);
         self::assertSame(2, IntegrationEvent::query()->count());
+    }
+
+    public function test_host_launch_rejects_a_cross_organization_sales_call(): void
+    {
+        $first = $this->fixture();
+        $second = $this->fixture();
+        $secondCall = $this->submit($second, 'host-cross-org')->salesCall()->firstOrFail();
+        $this->setOrganization($first['organization']);
+
+        try {
+            app(GetB2bSalesCallHostLaunchUrl::class)->handle(
+                $first['admin'],
+                $secondCall,
+            );
+            self::fail('A host launch crossed the organization boundary.');
+        } catch (AuthorizationException) {
+            self::assertTrue(true);
+        }
     }
 
     public function test_operational_state_transitions_fail_closed_and_crm_requires_b2b_permission(): void
@@ -1291,6 +1829,11 @@ final class B2bLeadFunnelTest extends TestCase
             OrganizationSettingKey::B2bSalesCallDurationMinutes,
             60,
         );
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::B2bZoomHostLicensed,
+            true,
+        );
         app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
         app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
             'weekday' => 1,
@@ -1363,7 +1906,11 @@ final class B2bLeadFunnelTest extends TestCase
 
 final class FakeVideoMeetingProvider implements VideoMeetingProvider
 {
+    public ?Closure $beforeCreate = null;
+
     public ?Closure $afterCreate = null;
+
+    public ?Closure $beforeHostLaunch = null;
 
     public ?VideoMeetingRequest $lastRequest = null;
 
@@ -1372,6 +1919,8 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
     public int $updateCount = 0;
 
     public int $cancelCount = 0;
+
+    public int $hostLaunchCount = 0;
 
     public bool $throwAfterCreate = false;
 
@@ -1408,6 +1957,11 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         ProviderOperationDeadline $deadline,
     ): VideoMeetingResult {
         $this->lastRequest = $request;
+
+        if ($this->beforeCreate instanceof Closure) {
+            ($this->beforeCreate)();
+            $this->beforeCreate = null;
+        }
 
         if ($this->failPermanently) {
             throw VideoMeetingException::permanent('zoom_rejected');
@@ -1477,6 +2031,12 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingIdentity $identity,
         ProviderOperationDeadline $deadline,
     ): string {
+        $this->hostLaunchCount++;
+        if ($this->beforeHostLaunch instanceof Closure) {
+            ($this->beforeHostLaunch)();
+            $this->beforeHostLaunch = null;
+        }
+
         if ($this->throwOnHostLaunch) {
             $this->throwOnHostLaunch = false;
             throw VideoMeetingException::permanent('zoom_host_url_404');

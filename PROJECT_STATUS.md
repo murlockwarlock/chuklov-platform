@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-08-28 — M11D independent-review remediation round 2 candidate
+
+- Round 2 starts exactly at reviewed candidate SHA `a1053c9eb94ce2a0a1ec69946c53f1ae15070e1a` on `codex/m11d-b2b-lead-funnel`, with accepted M11C preserved at main SHA `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
+- The bounded remediation closes the independent re-review findings for audited duration clearing, current-state-safe host launch, unresolved provider generations, exact offset-aware slot submission/DST overlap, centralized provider lease fencing, immutable historical migration values, and explicit Zoom Basic/licensed host capability.
+- Focused local evidence for this round: B2B plus scheduling-domain coverage `72` tests / `344` assertions; Scheduling/M5/M8 regression coverage `117` / `619` plus SurveyDefinitionBuilder `8` / `119` under the established 512 MiB PHP limit; M11A/M11B/M11C, Portal, Telegram, and Finance coverage `143` / `978`. Changed-file PHP syntax, Pint, scoped Larastan (`errors=0`), ESLint, `vue-tsc`, Vite build, and `git diff --check` pass.
+- PostgreSQL-specific migration, scheduling-race, and provider-lease coverage exists in `tests/Integration/B2bSalesCallPostgresTest.php`, but the local configured driver is SQLite; its `5` tests are `NOT RUN LOCALLY`/skipped and no PostgreSQL pass is claimed. Hosted CI, staging, deployment, merge, fresh independent re-review, and owner/manual acceptance remain `NOT DONE`.
+- OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched. No tracking fields, CRM timing benchmark, unrelated product work, or Phase 2 behavior was added.
+
 ## 2026-08-27 — M11D B2B lead funnel / Zoom sales handoff — remediation candidate
 
 - Remediation starts at reviewed candidate SHA `7cb7e15ba3ed4e5136f58943ad7305ce6fdf4565` on `codex/m11d-b2b-lead-funnel`; accepted M11C remains preserved at main SHA `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11 stays `IN_PROGRESS`.
@@ -105,7 +113,7 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-27
+- Last updated: 2026-08-28
 - Current phase: Phase 1 foundation
 - Current milestone: M11D — B2B lead funnel / Zoom sales handoff (implementation candidate)
 - Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A, M11B, and M11C are merged and preserved, while M11D remains pending independent re-review, PostgreSQL verification, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, OQ-007 remains OPEN, and M12 remains NOT_STARTED.

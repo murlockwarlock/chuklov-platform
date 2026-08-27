@@ -18,11 +18,12 @@ final class ListB2bSalesCallAvailability
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly GetB2bSalesCallDuration $duration,
+        private readonly GetB2bZoomHostCapability $zoomCapability,
         private readonly GetClientB2bSpecialistAnswer $specialistAnswer,
         private readonly CalculateAvailability $availability,
     ) {}
 
-    /** @return array{specialists: list<array{id: int, displayName: string}>, selectedSpecialistId: int|null, availability: array<string, mixed>|null, configurationReady: bool, specialistAnswer: string|null} */
+    /** @return array{specialists: list<array{id: int, displayName: string}>, selectedSpecialistId: int|null, availability: array<string, mixed>|null, configurationReady: bool, configurationIssue: string|null, specialistAnswer: string|null} */
     public function handle(
         Client $client,
         string $dateFrom,
@@ -49,11 +50,16 @@ final class ListB2bSalesCallAvailability
 
         $answer = $this->specialistAnswer->handle($client);
         $durationMinutes = $this->duration->handle();
+        $configurationIssue = $durationMinutes === null
+            ? 'missing_duration'
+            : (! $this->zoomCapability->supportsAutomaticDuration($durationMinutes)
+                ? 'zoom_duration_exceeds_capability'
+                : null);
         $result = null;
 
         if ($selectedSpecialist instanceof Specialist
             && $answer === B2bSpecialistAnswer::Yes
-            && $durationMinutes !== null) {
+            && $configurationIssue === null) {
             $result = $this->availability->forB2b(
                 client: $client,
                 specialist: $selectedSpecialist,
@@ -76,7 +82,8 @@ final class ListB2bSalesCallAvailability
                 ? (int) $selectedSpecialist->getKey()
                 : null,
             'availability' => $result,
-            'configurationReady' => $durationMinutes !== null,
+            'configurationReady' => $configurationIssue === null,
+            'configurationIssue' => $configurationIssue,
             'specialistAnswer' => $answer?->value,
         ];
     }

@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 final class B2bProviderLeaseManager
 {
+    public function __construct(private readonly B2bProviderMutationGuard $providerMutationGuard) {}
+
     public function claim(int $eventId): ?ProviderOperationLease
     {
         return DB::transaction(function () use ($eventId): ?ProviderOperationLease {
@@ -212,10 +214,7 @@ final class B2bProviderLeaseManager
         if ($leaseForEvent
             && $this->matchesCurrentGeneration($event, $call)
             && $call->provider_sync_status !== VideoMeetingSyncStatus::ReconciliationRequired) {
-            $call->forceFill([
-                'provider_sync_status' => VideoMeetingSyncStatus::ReconciliationRequired,
-                'provider_error_code' => 'provider_worker_lost',
-            ])->save();
+            $this->providerMutationGuard->markExpiredLeaseAsReconciliationRequired($call);
         }
 
         return true;

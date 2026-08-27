@@ -9,6 +9,7 @@ type VisitFormat = 'office' | 'home' | 'online';
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
+    displayUtcOffset: string;
     displayTimezone: string;
     format: VisitFormat;
 };
@@ -340,6 +341,7 @@ function selectSlot(slot: AvailabilitySlot): void {
               :locale="props.locale"
               mode="time"
             />
+            <span>UTC{{ slot.displayUtcOffset }}</span>
           </button>
         </div>
       </section>

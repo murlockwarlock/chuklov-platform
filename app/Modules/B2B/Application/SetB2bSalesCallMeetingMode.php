@@ -22,6 +22,7 @@ final class SetB2bSalesCallMeetingMode
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
@@ -43,7 +44,8 @@ final class SetB2bSalesCallMeetingMode
 
         $manualMeetingUrl = $this->manualUrl($mode, $manualMeetingUrl);
 
-        return DB::transaction(function () use ($actor, $salesCall, $mode, $manualMeetingUrl, $expectedEventVersion, $organization): B2bSalesCall {
+        $providerChangeBlocked = false;
+        $result = DB::transaction(function () use ($actor, $salesCall, $mode, $manualMeetingUrl, $expectedEventVersion, $organization, &$providerChangeBlocked): B2bSalesCall {
             $locked = B2bSalesCall::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($salesCall->getKey())
@@ -65,6 +67,11 @@ final class SetB2bSalesCallMeetingMode
                         || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired));
             $changed = $locked->meeting_mode !== $mode || $locked->manual_meeting_url !== $manualMeetingUrl;
             if (! $changed) {
+                return $locked->refresh();
+            }
+            if (! $this->providerMutationGuard->allowGenerationChange($locked, $actor)) {
+                $providerChangeBlocked = true;
+
                 return $locked->refresh();
             }
 
@@ -91,7 +98,8 @@ final class SetB2bSalesCallMeetingMode
             }
             $providerCorrelationKey = $locked->provider_correlation_key;
             if ($mode === VideoMeetingMode::Automatic
-                && ($locked->meeting_mode === VideoMeetingMode::Manual || $operation === VideoMeetingOperation::Recreate)) {
+                && ($locked->meeting_mode === VideoMeetingMode::Manual || $operation === VideoMeetingOperation::Recreate)
+                && $locked->provider_sync_status !== VideoMeetingSyncStatus::ReconciliationRequired) {
                 $providerCorrelationKey = bin2hex(random_bytes(16));
             }
             if ($mode === VideoMeetingMode::Manual && ! $requiresProviderCancellation) {
@@ -141,6 +149,12 @@ final class SetB2bSalesCallMeetingMode
 
             return $locked->refresh();
         });
+
+        if ($providerChangeBlocked) {
+            throw ValidationException::withMessages(['provider' => B2bProviderMutationGuard::LOST_MESSAGE]);
+        }
+
+        return $result;
     }
 
     private function manualUrl(VideoMeetingMode $mode, ?string $url): ?string

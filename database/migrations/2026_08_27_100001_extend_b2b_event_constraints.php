@@ -1,7 +1,5 @@
 <?php
 
-use App\Modules\Integration\Domain\Enums\IntegrationEventType;
-use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -60,25 +58,36 @@ return new class extends Migration
     /** @return list<string> */
     private function scenarioEventTypes(): array
     {
-        return array_map(
-            static fn (ScenarioEventType $event): string => $event->value,
-            ScenarioEventType::cases(),
-        );
+        return [
+            'booking.completed',
+            'onboarding.started',
+            'finance.obligation.created',
+            'survey.completed',
+            'TEST_STAGNATION_DETECTED',
+            'b2b.lead.submitted',
+            'b2b.sales_call.ready',
+        ];
     }
 
     /** @return list<string> */
     private function legacyScenarioEventTypes(): array
     {
-        return array_slice($this->scenarioEventTypes(), 0, 5);
+        return [
+            'booking.completed',
+            'onboarding.started',
+            'finance.obligation.created',
+            'survey.completed',
+            'TEST_STAGNATION_DETECTED',
+        ];
     }
 
     /** @return list<string> */
     private function integrationEventTypes(): array
     {
-        return array_map(
-            static fn (IntegrationEventType $event): string => $event->value,
-            IntegrationEventType::cases(),
-        );
+        return [
+            'finance.obligation.settled',
+            'b2b.sales_call.provider_sync',
+        ];
     }
 
     /** @return list<string> */

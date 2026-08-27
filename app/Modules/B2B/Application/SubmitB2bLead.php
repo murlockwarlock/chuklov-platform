@@ -37,6 +37,7 @@ final class SubmitB2bLead
         private readonly OrganizationAuthorizer $authorizer,
         private readonly EnsureSpecialistIntervalAvailable $availability,
         private readonly GetB2bSalesCallDuration $duration,
+        private readonly GetB2bZoomHostCapability $zoomCapability,
         private readonly GetClientB2bSpecialistAnswer $specialistAnswer,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
@@ -170,6 +171,13 @@ final class SubmitB2bLead
                 if ($durationMinutes === null) {
                     throw ValidationException::withMessages([
                         'configuration' => 'B2B sales-call availability is not configured yet. Contact the team.',
+                    ]);
+                }
+
+                if ($meetingMode === VideoMeetingMode::Automatic
+                    && ! $this->zoomCapability->supportsAutomaticDuration($durationMinutes)) {
+                    throw ValidationException::withMessages([
+                        'configuration' => $this->zoomCapability->configurationError(),
                     ]);
                 }
 

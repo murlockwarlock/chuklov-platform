@@ -64,14 +64,13 @@ class SlotCalculator
                         break;
                     }
 
-                    $candidate = $this->localInstant($date, $scheduleTimezone, $minute);
+                    foreach ($this->localInstants($date, $scheduleTimezone, $minute) as $candidate) {
+                        if (! $this->isBookableCandidate($candidate, $segment, $minimumStart, $durationMinutes, $bufferMinutes)) {
+                            continue;
+                        }
 
-                    if (! $candidate instanceof CarbonImmutable
-                        || ! $this->isBookableCandidate($candidate, $segment, $minimumStart, $durationMinutes, $bufferMinutes)) {
-                        continue;
+                        $slots[] = $this->slot($candidate, $durationMinutes, $bufferMinutes, $scheduleTimezone, $displayTimezone, $format);
                     }
-
-                    $slots[] = $this->slot($candidate, $durationMinutes, $bufferMinutes, $scheduleTimezone, $displayTimezone, $format);
                 }
             }
         }
@@ -170,33 +169,79 @@ class SlotCalculator
         string $timezone,
         WallClockInterval $interval,
     ): ?InstantInterval {
-        $start = $this->localInstant($date, $timezone, $interval->startMinutes());
-        $end = $this->localInstant($date, $timezone, $interval->endMinutes());
+        $startInstants = $this->localInstants($date, $timezone, $interval->startMinutes());
+        $endInstants = $this->localInstants($date, $timezone, $interval->endMinutes());
 
-        if (! $start instanceof CarbonImmutable || ! $end instanceof CarbonImmutable || $start->greaterThanOrEqualTo($end)) {
+        if ($startInstants === [] || $endInstants === []) {
+            return null;
+        }
+
+        $start = $startInstants[0];
+        $end = $endInstants[count($endInstants) - 1];
+
+        if ($start->greaterThanOrEqualTo($end)) {
             return null;
         }
 
         return InstantInterval::from($start, $end);
     }
 
-    private function localInstant(LocalDate $date, string $timezone, int $minute): ?CarbonImmutable
+    /** @return list<CarbonImmutable> */
+    private function localInstants(LocalDate $date, string $timezone, int $minute): array
     {
         [$year, $month, $day] = array_map('intval', explode('-', $date->value));
 
         try {
-            return CarbonImmutable::createSafe(
+            $wallTime = CarbonImmutable::createSafe(
                 $year,
                 $month,
                 $day,
                 intdiv($minute, 60),
                 $minute % 60,
                 0,
-                new DateTimeZone($timezone),
+                new DateTimeZone('UTC'),
             );
         } catch (Throwable) {
-            return null;
+            return [];
         }
+
+        if (! $wallTime instanceof CarbonImmutable) {
+            return [];
+        }
+
+        $wallTimestamp = $wallTime->getTimestamp();
+        $windowStart = $wallTimestamp - 172800;
+        $windowEnd = $wallTimestamp + 172800;
+
+        try {
+            $transitions = (new DateTimeZone($timezone))->getTransitions($windowStart, $windowEnd);
+        } catch (Throwable) {
+            return [];
+        }
+
+        if ($transitions === []) {
+            return [];
+        }
+
+        $instants = [];
+        $transitionCount = count($transitions);
+        foreach ($transitions as $index => $transition) {
+            $segmentStart = max($windowStart, (int) $transition['ts']);
+            $segmentEnd = $index + 1 < $transitionCount
+                ? min($windowEnd, (int) $transitions[$index + 1]['ts'])
+                : $windowEnd;
+            $candidateTimestamp = $wallTimestamp - (int) $transition['offset'];
+
+            if ($candidateTimestamp < $segmentStart || $candidateTimestamp >= $segmentEnd) {
+                continue;
+            }
+
+            $instants[$candidateTimestamp] = CarbonImmutable::createFromTimestampUTC($candidateTimestamp);
+        }
+
+        ksort($instants, SORT_NUMERIC);
+
+        return array_values($instants);
     }
 
     private function slot(

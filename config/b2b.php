@@ -19,6 +19,8 @@ return [
         'oauth_url' => env('ZOOM_OAUTH_URL', 'https://zoom.us/oauth/token'),
         'topic' => env('B2B_ZOOM_TOPIC', 'Chuklov B2B sales call'),
         'timeout_seconds' => max(1, (int) env('ZOOM_TIMEOUT_SECONDS', 15)),
+        'basic_max_duration_minutes' => 40,
+        'licensed_max_duration_minutes' => 1440,
     ],
     'events' => [
         'batch_size' => 100,

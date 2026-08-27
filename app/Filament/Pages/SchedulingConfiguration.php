@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\B2B\Application\GetB2bSalesCallDuration;
+use App\Modules\Organizations\Application\ClearOrganizationSetting;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
@@ -18,6 +19,7 @@ use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -51,7 +53,7 @@ class SchedulingConfiguration extends Page
 
     protected static ?int $navigationSort = 2;
 
-    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, b2b_sales_call_duration_minutes: int|null, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
+    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, b2b_sales_call_duration_minutes: int|null, b2b_zoom_host_licensed: bool, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
     public ?array $data = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
@@ -87,6 +89,9 @@ class SchedulingConfiguration extends Page
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
+            'b2b_zoom_host_licensed' => (bool) app(OrganizationContext::class)->organization()->settings()
+                ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
+                ->value('boolean_value'),
             'office_location' => app(OrganizationContext::class)->organization()->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
@@ -124,8 +129,11 @@ class SchedulingConfiguration extends Page
                     ->integer()
                     ->minValue(1)
                     ->maxValue(1440)
-                    ->helperText('Без этого значения клиентские слоты для разговора не публикуются.')
+                    ->helperText('Без этого значения клиентские слоты не публикуются. Бесплатный Zoom поддерживает автоматические разговоры до 40 минут; для большей длительности отметьте лицензированный хост.')
                     ->nullable(),
+                Checkbox::make('b2b_zoom_host_licensed')
+                    ->label('У Zoom-хоста есть лицензия Meetings')
+                    ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
                 TextInput::make('office_location')
                     ->label('Адрес клиники')
                     ->helperText('Адрес для очных визитов в клинике.')
@@ -201,6 +209,18 @@ class SchedulingConfiguration extends Page
                         $actor,
                         OrganizationSettingKey::B2bSalesCallDurationMinutes,
                         (int) $data['b2b_sales_call_duration_minutes'],
+                    );
+                } else {
+                    app(ClearOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bSalesCallDurationMinutes,
+                    );
+                }
+                if (array_key_exists('b2b_zoom_host_licensed', $data)) {
+                    app(SetOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bZoomHostLicensed,
+                        (bool) $data['b2b_zoom_host_licensed'],
                     );
                 }
                 if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {

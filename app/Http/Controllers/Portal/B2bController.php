@@ -74,6 +74,7 @@ final class B2bController extends Controller
                 'dateTo' => $dateTo,
             ],
             'configurationReady' => $projection['configurationReady'] ?? false,
+            'configurationIssue' => $projection['configurationIssue'] ?? null,
             'urls' => [
                 'answer' => route('portal.profile.b2b-answer'),
                 'page' => route('portal.b2b'),
@@ -92,16 +93,19 @@ final class B2bController extends Controller
         $validated = $request->validated();
 
         try {
-            $startsAt = CarbonImmutable::createFromFormat(
-                '!Y-m-d\\TH:i',
-                (string) $validated['starts_at'],
-                (string) $client->timezone,
-            );
+            $startsAtValue = (string) $validated['starts_at'];
+            $startsAtValue = str_ends_with($startsAtValue, 'Z')
+                ? substr($startsAtValue, 0, -1).'+00:00'
+                : $startsAtValue;
+            $startsAt = CarbonImmutable::createFromFormat('!Y-m-d\\TH:i:sP', $startsAtValue);
             $errors = CarbonImmutable::getLastErrors();
             if (! $startsAt instanceof CarbonImmutable
-                || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+                || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+                || $startsAt->second !== 0
+                || $startsAt->microsecond !== 0) {
                 throw new \InvalidArgumentException('Invalid date.');
             }
+            $startsAt = $startsAt->utc();
         } catch (Throwable) {
             throw ValidationException::withMessages(['starts_at' => 'Choose a valid date and time.']);
         }

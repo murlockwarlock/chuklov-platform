@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-28 — M11D independent-review remediation round 2 candidate
+
+- Added an audited Organizations Application action that transactionally clears the B2B duration setting, so empty scheduling configuration removes the source-of-truth setting without changing historical SalesCall intervals or other organization settings.
+- Added current-state/generation revalidation before returning Zoom host launch URLs, preserved unresolved provider correlation generations, and rejected recreate while reconciliation is required.
+- Added exact offset-aware Portal slot submission with DST-overlap disambiguation and a centralized non-revocable active provider lease guard with conservative expired-lease reconciliation.
+- Made the M11D event migration independent of runtime enum ordering and added an explicit organization-scoped Zoom host capability so Basic/free automation is capped at 40 minutes while business duration remains unchanged.
+- This remains a `REQ-B2B-001` candidate pending fresh independent re-review, PostgreSQL verification, hosted CI, staging/manual verification, and owner acceptance. No deployment, merge, M12, or PR #23 work is claimed.
+
 ## 2026-08-27 — M11D independent-review remediation candidate
 
 - Removed Zoom `tracking_fields` from provider production code and correlation fakes. Documented agenda markers now support bounded, fail-closed reconciliation after unknown create results, including ambiguous and incomplete pagination outcomes.

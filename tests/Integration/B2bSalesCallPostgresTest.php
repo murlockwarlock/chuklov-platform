@@ -3,21 +3,26 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\B2B\Application\B2bProviderLeaseManager;
+use App\Modules\B2B\Application\B2bProviderMutationGuard;
+use App\Modules\B2B\Application\CancelB2bSalesCall;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
+use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Models\B2bLead;
+use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Identity\Domain\Models\Client;
-use App\Modules\Integration\Domain\Enums\IntegrationEventType;
+use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
-use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
@@ -166,7 +171,66 @@ final class B2bSalesCallPostgresTest extends TestCase
         );
     }
 
-    public function test_postgresql_m11d_constraints_preserve_survey_stagnation_and_all_current_event_types(): void
+    public function test_postgresql_active_provider_lease_blocks_a_concurrent_generation_writer(): void
+    {
+        $this->requirePostgres();
+        $fixture = $this->schedulingFixture();
+        $this->setOrganization($fixture['organization']);
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+            true,
+        );
+        $start = CarbonImmutable::create(2030, 1, 7, 15, 0, 0, 'UTC');
+        $lead = app(SubmitB2bLead::class)->handle(
+            actor: $fixture['salesClient'],
+            client: $fixture['salesClient'],
+            specialist: $fixture['specialist'],
+            startsAt: $start,
+            requestedTimezone: 'UTC',
+            idempotencyKey: 'pg-provider-lease',
+            source: B2bLeadSource::Portal,
+            meetingMode: VideoMeetingMode::Automatic,
+        );
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('aggregate_id', $call->getKey())
+            ->sole();
+
+        $lease = app(B2bProviderLeaseManager::class)->claim($event->getKey());
+        self::assertInstanceOf(ProviderOperationLease::class, $lease);
+        $before = $call->fresh();
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::cancelSalesCallInProcess(
+                $fixture['organization']->getKey(),
+                $fixture['admin']->getKey(),
+                $call->getKey(),
+                $before->event_version,
+            ),
+            static fn (): string => self::ownsProviderLeaseInProcess(
+                $lease->organizationId,
+                $lease->salesCallId,
+                $lease->eventId,
+                $lease->eventProcessingToken,
+                $lease->leaseToken,
+                $lease->eventVersion,
+                $lease->providerSyncVersion,
+                $lease->operation->value,
+            ),
+        ]);
+
+        self::assertContains('blocked', $results);
+        self::assertContains('owned', $results);
+        $final = $call->fresh();
+        self::assertSame($before->provider_correlation_key, $final->provider_correlation_key);
+        self::assertSame($before->provider_sync_version, $final->provider_sync_version);
+        self::assertSame($before->event_version, $final->event_version);
+        self::assertSame($before->provider_lease_token, $final->provider_lease_token);
+    }
+
+    public function test_postgresql_m11d_constraints_preserve_historical_and_b2b_event_types(): void
     {
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
@@ -174,30 +238,39 @@ final class B2bSalesCallPostgresTest extends TestCase
         $template = NotificationTemplate::factory()->forOrganization($organization)->create();
         $templateVersion = NotificationTemplateVersion::factory()->forTemplate($template)->create();
 
-        foreach (ScenarioEventType::cases() as $eventType) {
+        $scenarioEventTypes = [
+            'booking.completed',
+            'onboarding.started',
+            'finance.obligation.created',
+            'survey.completed',
+            'TEST_STAGNATION_DETECTED',
+            'b2b.lead.submitted',
+            'b2b.sales_call.ready',
+        ];
+        foreach ($scenarioEventTypes as $eventType) {
             $rule = ScenarioRule::factory()
                 ->forOrganization($organization)
                 ->usingTemplate($templateVersion)
                 ->create([
-                    'rule_key' => 'constraint-'.str_replace('.', '-', strtolower($eventType->value)),
-                    'trigger_event' => $eventType->value,
+                    'rule_key' => 'constraint-'.str_replace('.', '-', strtolower($eventType)),
+                    'trigger_event' => $eventType,
                 ]);
             $event = ScenarioEvent::factory()->forOrganization($organization)->create([
-                'event_name' => $eventType->value,
-                'idempotency_key' => 'constraint-event-'.$eventType->value,
+                'event_name' => $eventType,
+                'idempotency_key' => 'constraint-event-'.$eventType,
             ]);
             ScenarioAction::factory()
                 ->forEvent($event)
                 ->forRule($rule)
                 ->forTemplate($templateVersion)
                 ->forClient($client)
-                ->create(['trigger_event' => $eventType->value]);
+                ->create(['trigger_event' => $eventType]);
         }
 
-        foreach (IntegrationEventType::cases() as $index => $eventType) {
+        foreach (['finance.obligation.settled', 'b2b.sales_call.provider_sync'] as $index => $eventType) {
             DB::table('integration_events')->insert([
                 'organization_id' => $organization->getKey(),
-                'event_type' => $eventType->value,
+                'event_type' => $eventType,
                 'aggregate_type' => 'constraint-test',
                 'aggregate_id' => $index + 1,
                 'idempotency_key' => 'constraint-integration-'.$index,
@@ -210,6 +283,13 @@ final class B2bSalesCallPostgresTest extends TestCase
                 'updated_at' => now(),
             ]);
         }
+
+        self::assertSame(count($scenarioEventTypes), ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->count());
+        self::assertSame(2, DB::table('integration_events')
+            ->where('organization_id', $organization->getKey())
+            ->count());
 
         try {
             DB::table('scenario_rules')->whereKey($rule->getKey())->update(['trigger_event' => 'not-supported']);
@@ -232,6 +312,30 @@ final class B2bSalesCallPostgresTest extends TestCase
             self::fail('PostgreSQL accepted an unsupported integration event type.');
         } catch (QueryException) {
             self::assertTrue(true);
+        }
+    }
+
+    public function test_postgresql_m11d_migration_down_restores_exact_legacy_event_sets(): void
+    {
+        $this->requirePostgres();
+        $migration = require base_path('database/migrations/2026_08_27_100001_extend_b2b_event_constraints.php');
+
+        try {
+            $migration->down();
+
+            $scenarioRulesConstraint = $this->constraintDefinition('scenario_rules_m6_trigger_event_check');
+            $scenarioActionsConstraint = $this->constraintDefinition('scenario_actions_m6_trigger_event_check');
+            $integrationConstraint = $this->constraintDefinition('integration_events_type_check');
+            foreach ([$scenarioRulesConstraint, $scenarioActionsConstraint] as $definition) {
+                self::assertStringContainsString("'survey.completed'", $definition);
+                self::assertStringContainsString("'TEST_STAGNATION_DETECTED'", $definition);
+                self::assertStringNotContainsString("'b2b.lead.submitted'", $definition);
+                self::assertStringNotContainsString("'b2b.sales_call.ready'", $definition);
+            }
+            self::assertStringContainsString("'finance.obligation.settled'", $integrationConstraint);
+            self::assertStringNotContainsString("'b2b.sales_call.provider_sync'", $integrationConstraint);
+        } finally {
+            $migration->up();
         }
     }
 
@@ -338,11 +442,72 @@ final class B2bSalesCallPostgresTest extends TestCase
         }
     }
 
+    private static function cancelSalesCallInProcess(
+        int $organizationId,
+        int $adminId,
+        int $salesCallId,
+        int $eventVersion,
+    ): string {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            app(CancelB2bSalesCall::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                salesCall: B2bSalesCall::query()->findOrFail($salesCallId),
+                expectedEventVersion: $eventVersion,
+            );
+
+            return 'cancelled';
+        } catch (ValidationException $exception) {
+            return ($exception->errors()['provider'][0] ?? null) === B2bProviderMutationGuard::BLOCKED_MESSAGE
+                ? 'blocked'
+                : 'validation-error';
+        } catch (Throwable) {
+            return 'error';
+        }
+    }
+
+    private static function ownsProviderLeaseInProcess(
+        int $organizationId,
+        int $salesCallId,
+        int $eventId,
+        string $eventProcessingToken,
+        string $leaseToken,
+        int $eventVersion,
+        int $providerSyncVersion,
+        string $operation,
+    ): string {
+        $lease = new ProviderOperationLease(
+            organizationId: $organizationId,
+            salesCallId: $salesCallId,
+            eventId: $eventId,
+            eventProcessingToken: $eventProcessingToken,
+            leaseToken: $leaseToken,
+            eventVersion: $eventVersion,
+            providerSyncVersion: $providerSyncVersion,
+            operation: VideoMeetingOperation::from($operation),
+        );
+
+        return app(B2bProviderLeaseManager::class)->owns($lease) ? 'owned' : 'lost';
+    }
+
     private function requirePostgres(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped('The B2B PostgreSQL integration tests require PostgreSQL.');
         }
+    }
+
+    private function constraintDefinition(string $constraintName): string
+    {
+        $constraint = DB::selectOne(
+            'SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = ?',
+            [$constraintName],
+        );
+
+        self::assertNotNull($constraint);
+
+        return (string) $constraint->definition;
     }
 
     private static function isSchedulingConflict(ValidationException $exception): bool

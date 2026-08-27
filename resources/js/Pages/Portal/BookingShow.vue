@@ -10,6 +10,7 @@ import type { PortalShell } from '../../types/portal';
 type Slot = {
     startsAt: string;
     endsAt: string;
+    displayUtcOffset: string;
     displayTimezone: string;
     format: 'office' | 'home' | 'online';
 };

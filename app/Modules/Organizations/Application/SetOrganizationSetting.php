@@ -26,7 +26,10 @@ class SetOrganizationSetting
         $this->authorizer->authorize(
             $actor,
             $organization,
-            $key === OrganizationSettingKey::B2bSalesCallDurationMinutes
+            in_array($key, [
+                OrganizationSettingKey::B2bSalesCallDurationMinutes,
+                OrganizationSettingKey::B2bZoomHostLicensed,
+            ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,
         );

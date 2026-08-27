@@ -12,6 +12,7 @@ class RecordAuditEvent
     /** @var array<string, list<string>> */
     private const ALLOWED_METADATA_KEYS = [
         'organization.setting.updated' => ['setting_key', 'value_type'],
+        'organization.setting.removed' => ['setting_key', 'value_type'],
         'organization.feature.updated' => ['feature_key', 'enabled'],
         'organization.credential.replaced' => ['provider', 'credential_name', 'status', 'old_revision_id', 'new_revision_id'],
         'ai.prompt.created' => ['prompt_key', 'capability'],
