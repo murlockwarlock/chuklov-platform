@@ -165,6 +165,98 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         self::assertNotContains('legacy-only', $labels);
     }
 
+    public function test_postgresql_analytics_separates_semantic_source_identity_from_display_labels(): void
+    {
+        $this->requirePostgres();
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $ordinarySources = [];
+
+        for ($sourceIndex = 1; $sourceIndex <= 9; $sourceIndex++) {
+            $source = sprintf('postgres-identity-%02d', $sourceIndex);
+            $ordinarySources[] = $source;
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', $source);
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'referral', null, 'ReferralCode123456');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'Реферальный переход');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'utm', null, null, 'facebook');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'UTM: facebook');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'Не указан');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'Источник: Не указан');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'Другие');
+        }
+
+        $unattributedClient = $this->client($organization, '2026-08-10 10:00:00');
+        $unattributedClient->forceFill(['lead_source' => 'legacy-only'])->save();
+
+        app(OrganizationContext::class)->set($organization);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-08-01', 'end_date' => '2026-08-27'],
+            'UTC',
+            $now,
+        );
+
+        $acquisition = app(AcquisitionAnalytics::class)->handle($admin, $period);
+        $sources = collect($acquisition->sources);
+        $sourceCounts = $sources->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
+        $labels = $sources->pluck('label')->all();
+
+        self::assertSame(24, $acquisition->newClients);
+        self::assertSame(2, $sourceCounts->get('Реферальный переход'));
+        self::assertSame(2, $sourceCounts->get('Источник: Реферальный переход'));
+        self::assertSame(2, $sourceCounts->get('UTM: facebook'));
+        self::assertSame(2, $sourceCounts->get('Источник: UTM: facebook'));
+        self::assertSame(1, $sourceCounts->get('Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Источник: Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Другие'));
+        self::assertSame(8, $sourceCounts->get('Другие'));
+        self::assertSame(['postgres-identity-02', 'postgres-identity-03', 'postgres-identity-04', 'postgres-identity-05', 'postgres-identity-06', 'postgres-identity-07', 'postgres-identity-08', 'postgres-identity-09'], array_values(array_diff($ordinarySources, $labels)));
+        self::assertSame(24, $sources->sum('count'));
+        self::assertSame($acquisition->newClients, $sources->sum('count'));
+        self::assertCount(10, $acquisition->sources);
+        self::assertSame(count($labels), count(array_unique($labels)));
+        self::assertSame(1, $sources->where('label', 'Не указан')->count());
+        self::assertSame(1, $sources->where('label', 'Другие')->count());
+        self::assertNotContains('legacy-only', $labels);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationWithAdmin(): array
     {
@@ -185,7 +277,7 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         return $client->refresh();
     }
 
-    private function attribution(Client $client, string $sourceType, string $source): void
+    private function attribution(Client $client, string $sourceType, ?string $source = null, ?string $referralCode = null, ?string $utmSource = null): void
     {
         $attribution = new ClientAttribution;
         $attribution->forceFill([
@@ -193,6 +285,8 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
             'client_id' => $client->getKey(),
             'source_type' => $sourceType,
             'source' => $source,
+            'referral_code' => $referralCode,
+            'utm_source' => $utmSource,
             'capture_channel' => 'portal',
             'capture_context' => 'postgres-test',
             'captured_at' => $client->created_at,

@@ -238,7 +238,43 @@ final class AnalyticsProjectionTest extends TestCase
         for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
             $client = $this->client($organization, '2026-08-10 10:00:00');
             $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'referral', referralCode: 'ReferralCode123456');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: 'Реферальный переход');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'utm', utmSource: 'facebook');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: 'UTM: facebook');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
             $this->attribution($client, 'source', source: 'Не указан');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: 'Источник: Не указан');
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: 'Другие');
         }
 
         $unattributedClient = $this->client($organization, '2026-08-10 10:00:00');
@@ -250,15 +286,23 @@ final class AnalyticsProjectionTest extends TestCase
         $sourceCounts = $sources->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
         $labels = $sources->pluck('label')->all();
 
-        self::assertSame(12, $result->newClients);
+        self::assertSame(24, $result->newClients);
+        self::assertSame(2, $sourceCounts->get('Реферальный переход'));
+        self::assertSame(2, $sourceCounts->get('Источник: Реферальный переход'));
+        self::assertSame(2, $sourceCounts->get('UTM: facebook'));
+        self::assertSame(2, $sourceCounts->get('Источник: UTM: facebook'));
         self::assertSame(1, $sourceCounts->get('Не указан'));
         self::assertSame(2, $sourceCounts->get('Источник: Не указан'));
-        self::assertSame(2, $sourceCounts->get('Другие'));
-        self::assertSame(['ordinary-source-08', 'ordinary-source-09'], array_values(array_diff($ordinarySources, $labels)));
-        self::assertSame(12, $sources->sum('count'));
+        self::assertSame(2, $sourceCounts->get('Источник: Источник: Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Другие'));
+        self::assertSame(8, $sourceCounts->get('Другие'));
+        self::assertSame(['ordinary-source-02', 'ordinary-source-03', 'ordinary-source-04', 'ordinary-source-05', 'ordinary-source-06', 'ordinary-source-07', 'ordinary-source-08', 'ordinary-source-09'], array_values(array_diff($ordinarySources, $labels)));
+        self::assertSame(24, $sources->sum('count'));
         self::assertSame($result->newClients, $sources->sum('count'));
         self::assertCount(10, $result->sources);
+        self::assertSame(count($labels), count(array_unique($labels)));
         self::assertSame(1, $sources->where('label', 'Не указан')->count());
+        self::assertSame(1, $sources->where('label', 'Другие')->count());
         self::assertNotContains('legacy-only', $labels);
     }
 
@@ -370,7 +414,7 @@ final class AnalyticsProjectionTest extends TestCase
         return $client->refresh();
     }
 
-    private function attribution(Client $client, string $sourceType, ?string $source = null, ?string $referralCode = null): ClientAttribution
+    private function attribution(Client $client, string $sourceType, ?string $source = null, ?string $referralCode = null, ?string $utmSource = null): ClientAttribution
     {
         $attribution = new ClientAttribution;
         $attribution->forceFill([
@@ -379,7 +423,7 @@ final class AnalyticsProjectionTest extends TestCase
             'source_type' => $sourceType,
             'source' => $source,
             'referral_code' => $referralCode,
-            'utm_source' => null,
+            'utm_source' => $utmSource,
             'utm_medium' => null,
             'utm_campaign' => null,
             'utm_content' => null,

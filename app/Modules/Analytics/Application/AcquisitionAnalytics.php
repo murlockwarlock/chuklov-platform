@@ -18,9 +18,23 @@ final class AcquisitionAnalytics
 {
     private const string UnknownSourceLabel = 'Не указан';
 
-    private const string DisambiguatedKnownSourceLabel = 'Источник: Не указан';
+    private const string ReferralSourceLabel = 'Реферальный переход';
+
+    private const string UtmSourceLabelPrefix = 'UTM: ';
+
+    private const string DirectSourceLabelPrefix = 'Источник: ';
 
     private const string OtherSourceLabel = 'Другие';
+
+    private const string SemanticKindUnknown = 'unknown';
+
+    private const string SemanticKindReferral = 'referral';
+
+    private const string SemanticKindDirect = 'direct';
+
+    private const string SemanticKindUtm = 'utm';
+
+    private const string BucketKindOverflow = 'overflow';
 
     private const int MaximumVisibleKnownSourceBuckets = 8;
 
@@ -55,33 +69,36 @@ final class AcquisitionAnalytics
     private function sourceBuckets(int $organizationId, DashboardPeriod $period, string $clientTable): array
     {
         $attributionTable = (new ClientAttribution)->getTable();
-        $unknownSourceLabel = self::UnknownSourceLabel;
-        $knownSourceCondition = "attribution.source_type = 'referral'
-            OR (
-                attribution.source_type IN ('legacy', 'source', 'manual')
-                AND NULLIF(TRIM(attribution.source), '') IS NOT NULL
-            )
-            OR (
-                attribution.source_type = 'utm'
-                AND NULLIF(TRIM(attribution.utm_source), '') IS NOT NULL
+        $directSourceCondition = "attribution.source_type IN ('legacy', 'source', 'manual')
+            AND NULLIF(TRIM(attribution.source), '') IS NOT NULL";
+        $utmSourceCondition = "attribution.source_type = 'utm'
+            AND NULLIF(TRIM(attribution.utm_source), '') IS NOT NULL";
+        $semanticKind = "CASE
+            WHEN attribution.source_type = 'referral' THEN '".self::SemanticKindReferral."'
+            WHEN {$directSourceCondition} THEN '".self::SemanticKindDirect."'
+            WHEN {$utmSourceCondition} THEN '".self::SemanticKindUtm."'
+            ELSE '".self::SemanticKindUnknown."'
+        END";
+        $semanticValue = "CASE
+            WHEN {$directSourceCondition} THEN attribution.source
+            WHEN {$utmSourceCondition} THEN attribution.utm_source
+            ELSE NULL
+        END";
+        $directSourceNeedsPrefix = "semantic_kind = '".self::SemanticKindDirect."'
+            AND (
+                semantic_value IN ('".self::UnknownSourceLabel."', '".self::ReferralSourceLabel."', '".self::OtherSourceLabel."')
+                OR semantic_value LIKE '".self::UtmSourceLabelPrefix."%'
+                OR semantic_value LIKE '".self::DirectSourceLabelPrefix."%'
             )";
         $sourceLabel = "CASE
-            WHEN attribution.source_type = 'referral' THEN 'Реферальный переход'
-            WHEN attribution.source_type IN ('legacy', 'source', 'manual')
-                AND NULLIF(TRIM(attribution.source), '') IS NOT NULL THEN attribution.source
-            WHEN attribution.source_type = 'utm'
-                AND NULLIF(TRIM(attribution.utm_source), '') IS NOT NULL THEN 'UTM: ' || attribution.utm_source
-            ELSE '{$unknownSourceLabel}'
-        END";
-        $isUnknown = "CASE WHEN {$knownSourceCondition} THEN 0 ELSE 1 END";
-        $hasKnownSourceLabelCollision = "CASE
-            WHEN attribution.source_type IN ('legacy', 'source', 'manual')
-                AND NULLIF(TRIM(attribution.source), '') IS NOT NULL
-                AND attribution.source = '{$unknownSourceLabel}' THEN 1
-            ELSE 0
+            WHEN semantic_kind = '".self::SemanticKindUnknown."' THEN '".self::UnknownSourceLabel."'
+            WHEN semantic_kind = '".self::SemanticKindReferral."' THEN '".self::ReferralSourceLabel."'
+            WHEN semantic_kind = '".self::SemanticKindUtm."' THEN '".self::UtmSourceLabelPrefix."' || semantic_value
+            WHEN {$directSourceNeedsPrefix} THEN '".self::DirectSourceLabelPrefix."' || semantic_value
+            ELSE semantic_value
         END";
 
-        $grouped = DB::query()
+        $classified = DB::query()
             ->from($clientTable.' as clients')
             ->leftJoin($attributionTable.' as attribution', function (JoinClause $join): void {
                 $join
@@ -91,34 +108,54 @@ final class AcquisitionAnalytics
             ->where('clients.organization_id', $organizationId)
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
-            ->selectRaw($sourceLabel.' as source_label, '.$isUnknown.' as is_unknown, '.$hasKnownSourceLabelCollision.' as has_known_source_label_collision, COUNT(*) as source_count')
-            ->groupByRaw($sourceLabel)
-            ->groupByRaw($isUnknown)
-            ->groupByRaw($hasKnownSourceLabelCollision);
+            ->selectRaw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value');
+
+        $grouped = DB::query()
+            ->fromSub($classified, 'classified_sources')
+            ->selectRaw('semantic_kind, semantic_value, COUNT(*) as source_count')
+            ->groupBy('semantic_kind', 'semantic_value');
+
+        $presented = DB::query()
+            ->fromSub($grouped, 'semantic_sources')
+            ->selectRaw("semantic_kind, semantic_value, source_count, {$sourceLabel} as source_label,
+                CASE WHEN semantic_kind = '".self::SemanticKindUnknown."' THEN 1 ELSE 0 END as is_unknown");
 
         $ranked = DB::query()
-            ->fromSub($grouped, 'source_buckets')
-            ->selectRaw('source_label, source_count, is_unknown, has_known_source_label_collision, ROW_NUMBER() OVER (PARTITION BY is_unknown ORDER BY source_count DESC, source_label ASC, has_known_source_label_collision ASC) as source_rank');
+            ->fromSub($presented, 'presented_sources')
+            ->selectRaw("semantic_kind, semantic_value, source_count, source_label, is_unknown,
+                ROW_NUMBER() OVER (
+                    PARTITION BY is_unknown
+                    ORDER BY source_count DESC, source_label ASC, semantic_kind ASC, COALESCE(semantic_value, '') ASC
+                ) as source_rank");
 
-        $bucketLabel = "CASE
-            WHEN is_unknown = 1 THEN '{$unknownSourceLabel}'
-            WHEN source_rank <= ".self::MaximumVisibleKnownSourceBuckets." THEN CASE
-                WHEN has_known_source_label_collision = 1 THEN '".self::DisambiguatedKnownSourceLabel."'
-                ELSE source_label
-            END
-            ELSE NULL
-        END";
+        $bucketed = DB::query()
+            ->fromSub($ranked, 'ranked_sources')
+            ->selectRaw("CASE
+                    WHEN is_unknown = 1 THEN '".self::SemanticKindUnknown."'
+                    WHEN source_rank <= ".self::MaximumVisibleKnownSourceBuckets." THEN semantic_kind
+                    ELSE '".self::BucketKindOverflow."'
+                END as bucket_kind,
+                CASE
+                    WHEN is_unknown = 1 OR source_rank > ".self::MaximumVisibleKnownSourceBuckets." THEN NULL
+                    ELSE semantic_value
+                END as bucket_value,
+                CASE
+                    WHEN is_unknown = 1 THEN '".self::UnknownSourceLabel."'
+                    WHEN source_rank <= ".self::MaximumVisibleKnownSourceBuckets." THEN source_label
+                    ELSE '".self::OtherSourceLabel."'
+                END as source_label,
+                source_count");
 
         return array_values(DB::query()
-            ->fromSub($ranked, 'ranked_sources')
-            ->selectRaw($bucketLabel.' as source_label, SUM(source_count) as source_count')
-            ->groupByRaw($bucketLabel)
+            ->fromSub($bucketed, 'bucketed_sources')
+            ->selectRaw('bucket_kind, bucket_value, source_label, SUM(source_count) as source_count')
+            ->groupBy('bucket_kind', 'bucket_value', 'source_label')
             ->orderByDesc('source_count')
             ->orderBy('source_label')
             ->limit(self::MaximumSourceResultBuckets)
             ->get()
             ->map(static fn (object $row): SourceBucket => new SourceBucket(
-                label: $row->source_label === null ? self::OtherSourceLabel : (string) $row->source_label,
+                label: (string) $row->source_label,
                 count: (int) $row->source_count,
             ))
             ->all());

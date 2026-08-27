@@ -13,6 +13,7 @@ REQ-CRM-002 requires one operational CRM dashboard to report across Identity, At
 2. The existing Filament `Инфопанель` composes the projections into permission-specific widgets. A shared Filament page filter supplies organization-local calendar dates converted to UTC half-open instants; the existing upcoming-bookings widget remains independent.
 3. Finance projections consume validated base-currency obligation and ledger snapshots and reuse the existing reconciliation authority. Invalid financial configuration or reconciliation fails closed for analytics.
 4. Historical realized LTV and operational rebooking retention remain explicitly labeled definitions. No predictive model, warehouse, ETL, cache of business truth, external analytics service, or sensitive payload projection is introduced.
+5. Source projections classify attribution rows by structural semantic kind and value before grouping, ranking, and overflow assignment. Presentation labels are derived afterward with collision-safe namespaces for direct literals, reserved labels, and generated overflow; display text is never the source-bucket identity.
 
 ## Consequences
 
