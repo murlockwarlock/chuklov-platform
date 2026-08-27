@@ -1,9 +1,16 @@
 # Project Status
 
+## 2026-08-28 — M11D independent-review remediation round 3 candidate
+
+- Round 3 starts exactly at reviewed candidate SHA `515068fb3cba96d567d2ea064b1898dbb47dd506` on `codex/m11d-b2b-lead-funnel`, with accepted M11C preserved at main SHA `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
+- The bounded N-03 remediation derives the provider deadline and lease expiry from one immutable UTC claim instant, carries both absolute instants in the provider lease, makes Sync consume the claim-time deadline, bounds timing configuration, and adds deterministic delayed-worker and writer-barrier evidence. N-03 is implemented for fresh independent re-review and is not independently accepted or closed.
+- Focused local lease/deadline/provider evidence passes `70` tests / `359` assertions. PostgreSQL-specific migration, scheduling-race, and provider-lease coverage exists, but the local configured driver is SQLite; PostgreSQL remains `NOT RUN LOCALLY` and no PostgreSQL pass is claimed.
+- Hosted exact-SHA CI remains `NOT RUN`; staging remains `NOT DEPLOYED`; owner/manual acceptance and fresh independent re-review remain `NOT DONE`. OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
+
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
 
 - Round 2 starts exactly at reviewed candidate SHA `a1053c9eb94ce2a0a1ec69946c53f1ae15070e1a` on `codex/m11d-b2b-lead-funnel`, with accepted M11C preserved at main SHA `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
-- The bounded remediation closes the independent re-review findings for audited duration clearing, current-state-safe host launch, unresolved provider generations, exact offset-aware slot submission/DST overlap, centralized provider lease fencing, immutable historical migration values, and explicit Zoom Basic/licensed host capability.
+- The bounded remediation addressed the independent re-review findings for audited duration clearing, current-state-safe host launch, unresolved provider generations, exact offset-aware slot submission/DST overlap, centralized provider lease fencing, immutable historical migration values, and explicit Zoom Basic/licensed host capability. Round 2 independent re-review accepted all listed areas except N-03, which required this Round 3 remediation.
 - Focused local evidence for this round: B2B plus scheduling-domain coverage `72` tests / `344` assertions; Scheduling/M5/M8 regression coverage `117` / `619` plus SurveyDefinitionBuilder `8` / `119` under the established 512 MiB PHP limit; M11A/M11B/M11C, Portal, Telegram, and Finance coverage `143` / `978`. Changed-file PHP syntax, Pint, scoped Larastan (`errors=0`), ESLint, `vue-tsc`, Vite build, and `git diff --check` pass.
 - PostgreSQL-specific migration, scheduling-race, and provider-lease coverage exists in `tests/Integration/B2bSalesCallPostgresTest.php`, but the local configured driver is SQLite; its `5` tests are `NOT RUN LOCALLY`/skipped and no PostgreSQL pass is claimed. Hosted CI, staging, deployment, merge, fresh independent re-review, and owner/manual acceptance remain `NOT DONE`.
 - OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched. No tracking fields, CRM timing benchmark, unrelated product work, or Phase 2 behavior was added.

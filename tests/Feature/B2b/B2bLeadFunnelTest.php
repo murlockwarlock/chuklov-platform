@@ -13,6 +13,7 @@ use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallHostLaunchUrl;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
+use App\Modules\B2B\Application\MarkB2bSalesCallProviderReconciliationRequired;
 use App\Modules\B2B\Application\RecordB2bProviderSyncEvent;
 use App\Modules\B2B\Application\RecreateB2bSalesCallMeeting;
 use App\Modules\B2B\Application\RescheduleB2bSalesCall;
@@ -1412,6 +1413,132 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
     }
 
+    public function test_provider_lease_uses_claim_time_for_a_delayed_worker_deadline(): void
+    {
+        config()->set('b2b.provider.operation_deadline_seconds', 10);
+        config()->set('b2b.provider.lease_margin_seconds', 5);
+        config()->set('b2b.provider.request_safety_seconds', 1);
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $base = CarbonImmutable::create(2026, 8, 27, 10, 0, 0, 'UTC');
+        CarbonImmutable::setTestNow($base);
+        $lead = $this->submit($fixture, 'provider-claim-time-deadline');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $claimedLeaseExpiresAt = null;
+        $workerDelayed = false;
+
+        B2bSalesCall::saved(function (B2bSalesCall $saved) use (&$claimedLeaseExpiresAt, &$workerDelayed, $base): void {
+            if ($workerDelayed || $saved->provider_lease_token === null) {
+                return;
+            }
+
+            $claimedLeaseExpiresAt = CarbonImmutable::parse((string) $saved->provider_lease_expires_at)->utc();
+            $workerDelayed = true;
+            CarbonImmutable::setTestNow($base->addSeconds(6));
+        });
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        self::assertTrue($workerDelayed);
+        self::assertNotNull($claimedLeaseExpiresAt);
+        self::assertTrue($claimedLeaseExpiresAt->equalTo($base->addSeconds(15)));
+        $deadline = $provider->lastDeadline;
+        self::assertInstanceOf(ProviderOperationDeadline::class, $deadline);
+        self::assertTrue($deadline->expiresAt->equalTo($base->addSeconds(10)));
+        self::assertEqualsWithDelta(4.0, $deadline->remainingSeconds(), 0.001);
+        self::assertSame(1, $provider->createCount);
+    }
+
+    public function test_provider_deadline_expires_before_the_lease_and_blocks_remote_mutation(): void
+    {
+        config()->set('b2b.provider.operation_deadline_seconds', 10);
+        config()->set('b2b.provider.lease_margin_seconds', 5);
+        config()->set('b2b.provider.request_safety_seconds', 1);
+        $provider = new FakeVideoMeetingProvider;
+        $fixture = $this->fixture();
+        $base = CarbonImmutable::create(2026, 8, 27, 10, 0, 0, 'UTC');
+        CarbonImmutable::setTestNow($base);
+        $lead = $this->submit($fixture, 'provider-deadline-before-lease');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $lease = app(B2bProviderLeaseManager::class)->claim($event->getKey());
+
+        self::assertInstanceOf(ProviderOperationLease::class, $lease);
+        $deadline = $lease->providerDeadline();
+        CarbonImmutable::setTestNow($base->addSeconds(11));
+        self::assertTrue($lease->leaseExpiresAt->greaterThan(CarbonImmutable::now('UTC')));
+        self::assertFalse($deadline->canStart());
+
+        try {
+            $provider->createMeeting(
+                $fixture['organization'],
+                new VideoMeetingRequest(
+                    externalKey: (string) $call->provider_correlation_key,
+                    startsAt: $call->startsAtUtc(),
+                    durationMinutes: 60,
+                    timezone: (string) $call->schedule_timezone,
+                    topic: 'Chuklov B2B sales call',
+                ),
+                $deadline,
+            );
+            self::fail('A provider mutation started after the claim-time deadline expired.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_deadline_exhausted', $exception->safeCode);
+        }
+
+        self::assertSame(0, $provider->createCount);
+
+        $beforeWriter = $call->fresh();
+        CarbonImmutable::setTestNow($base->addSeconds(16));
+
+        try {
+            app(RecreateB2bSalesCallMeeting::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $beforeWriter,
+                expectedEventVersion: $beforeWriter->event_version,
+            );
+            self::fail('An expired lease allowed a generation-changing writer to discard the current generation.');
+        } catch (ValidationException $exception) {
+            self::assertSame(B2bProviderMutationGuard::LOST_MESSAGE, $exception->errors()['provider'][0]);
+        }
+
+        $afterWriter = $call->fresh();
+        self::assertSame($beforeWriter->provider_correlation_key, $afterWriter->provider_correlation_key);
+        self::assertSame($beforeWriter->provider_sync_version, $afterWriter->provider_sync_version);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $afterWriter->provider_sync_status);
+        self::assertNull($afterWriter->provider_lease_token);
+        self::assertFalse($deadline->canStart());
+        self::assertSame(0, $provider->createCount);
+    }
+
+    public function test_worker_pause_after_authority_check_cannot_start_after_claim_deadline(): void
+    {
+        config()->set('b2b.provider.operation_deadline_seconds', 10);
+        config()->set('b2b.provider.lease_margin_seconds', 5);
+        config()->set('b2b.provider.request_safety_seconds', 1);
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $base = CarbonImmutable::create(2026, 8, 27, 10, 0, 0, 'UTC');
+        CarbonImmutable::setTestNow($base);
+        $lead = $this->submit($fixture, 'provider-deadline-authority-barrier');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $provider->beforeCreate = function () use ($base): void {
+            CarbonImmutable::setTestNow($base->addSeconds(11));
+        };
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        self::assertSame(0, $provider->createCount);
+        self::assertSame(VideoMeetingSyncStatus::Failed, $call->fresh()->provider_sync_status);
+        self::assertSame('zoom_deadline_exhausted', $call->fresh()->provider_error_code);
+        self::assertSame('retryable', $event->fresh()->status->value);
+        self::assertNull($call->fresh()->provider_lease_token);
+    }
+
     public function test_active_provider_lease_blocks_every_local_generation_writer_until_worker_finalizes(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -1477,6 +1604,54 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame($correlationKey, $call->fresh()->provider_correlation_key);
         self::assertSame(1, $call->fresh()->provider_sync_version);
         self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
+    }
+
+    public function test_active_provider_lease_blocks_host_reconciliation_without_rotating_generation(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-active-host-reconciliation');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $identity = $ready->providerIdentity();
+        self::assertInstanceOf(VideoMeetingIdentity::class, $identity);
+        $reconciliation = app(MarkB2bSalesCallProviderReconciliationRequired::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            identity: $identity,
+            errorCode: 'zoom_host_url_404',
+            expectedEventVersion: $ready->event_version,
+            expectedProviderSyncVersion: $ready->provider_sync_version,
+        );
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $lease = app(B2bProviderLeaseManager::class)->claim($event->getKey());
+        self::assertInstanceOf(ProviderOperationLease::class, $lease);
+        $before = $call->fresh();
+        $eventCount = IntegrationEvent::query()->count();
+
+        try {
+            app(MarkB2bSalesCallProviderReconciliationRequired::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $before,
+                identity: $identity,
+                errorCode: 'zoom_host_url_404_again',
+                expectedEventVersion: $before->event_version,
+                expectedProviderSyncVersion: $before->provider_sync_version,
+            );
+            self::fail('An active provider lease allowed a host reconciliation generation change.');
+        } catch (ValidationException $exception) {
+            self::assertSame(B2bProviderMutationGuard::BLOCKED_MESSAGE, $exception->errors()['provider'][0]);
+        }
+
+        $after = $call->fresh();
+        self::assertSame($before->provider_correlation_key, $after->provider_correlation_key);
+        self::assertSame($before->provider_sync_version, $after->provider_sync_version);
+        self::assertSame($before->event_version, $after->event_version);
+        self::assertSame($before->provider_lease_token, $after->provider_lease_token);
+        self::assertSame($eventCount, IntegrationEvent::query()->count());
+        self::assertSame($reconciliation->provider_correlation_key, $after->provider_correlation_key);
     }
 
     public function test_expired_provider_lease_is_marked_lost_and_cannot_start_a_blind_recreate(): void
@@ -1914,6 +2089,8 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
 
     public ?VideoMeetingRequest $lastRequest = null;
 
+    public ?ProviderOperationDeadline $lastDeadline = null;
+
     public int $createCount = 0;
 
     public int $updateCount = 0;
@@ -1956,12 +2133,15 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): VideoMeetingResult {
+        $this->lastDeadline = $deadline;
         $this->lastRequest = $request;
 
         if ($this->beforeCreate instanceof Closure) {
             ($this->beforeCreate)();
             $this->beforeCreate = null;
         }
+
+        $this->ensureDeadline($deadline);
 
         if ($this->failPermanently) {
             throw VideoMeetingException::permanent('zoom_rejected');
@@ -1998,6 +2178,8 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): void {
+        $this->lastDeadline = $deadline;
+        $this->ensureDeadline($deadline);
         $this->lastRequest = $request;
         $this->updateCount++;
 
@@ -2017,6 +2199,8 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingIdentity $identity,
         ProviderOperationDeadline $deadline,
     ): void {
+        $this->lastDeadline = $deadline;
+        $this->ensureDeadline($deadline);
         $this->cancelCount++;
         $this->cancelled[] = $identity->meetingId;
 
@@ -2079,5 +2263,12 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         }
 
         return null;
+    }
+
+    private function ensureDeadline(ProviderOperationDeadline $deadline): void
+    {
+        if (! $deadline->canStart()) {
+            throw VideoMeetingException::retryable('zoom_deadline_exhausted');
+        }
     }
 }

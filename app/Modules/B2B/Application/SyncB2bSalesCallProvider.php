@@ -44,7 +44,7 @@ final class SyncB2bSalesCallProvider
         $payload = $event->payload;
         $call = $this->call($lease);
         $organization = Organization::query()->findOrFail($lease->organizationId);
-        $deadline = ProviderOperationDeadline::fromNow((int) config('b2b.provider.operation_deadline_seconds', 90));
+        $deadline = $lease->providerDeadline();
 
         if (! $this->isCurrent($call, $payload, $lease->operation)
             || ($call->status === B2bSalesCallStatus::Cancelled && $lease->operation !== VideoMeetingOperation::Cancel)) {

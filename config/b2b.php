@@ -1,12 +1,37 @@
 <?php
 
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
+
+$operationDeadlineSeconds = min(
+    ProviderOperationTiming::MAX_OPERATION_DEADLINE_SECONDS,
+    max(
+        15,
+        (int) env('B2B_PROVIDER_OPERATION_DEADLINE_SECONDS', 90),
+    ),
+);
+$leaseMarginSeconds = min(
+    ProviderOperationTiming::MAX_LEASE_MARGIN_SECONDS,
+    max(
+        5,
+        (int) env('B2B_PROVIDER_LEASE_MARGIN_SECONDS', 15),
+    ),
+);
+$requestSafetySeconds = min(
+    ProviderOperationTiming::MAX_REQUEST_SAFETY_SECONDS,
+    max(
+        ProviderOperationTiming::MIN_REQUEST_SAFETY_SECONDS,
+        (int) env('B2B_PROVIDER_REQUEST_SAFETY_SECONDS', 2),
+    ),
+);
+$operationDeadlineSeconds = max($operationDeadlineSeconds, $requestSafetySeconds + 1);
+
 return [
     'queue' => env('B2B_QUEUE', 'integrations'),
     'credential_name' => env('B2B_ZOOM_CREDENTIAL_NAME', 'b2b_zoom'),
     'provider' => [
-        'operation_deadline_seconds' => max(15, (int) env('B2B_PROVIDER_OPERATION_DEADLINE_SECONDS', 90)),
-        'lease_margin_seconds' => max(5, (int) env('B2B_PROVIDER_LEASE_MARGIN_SECONDS', 15)),
-        'request_safety_seconds' => max(1, (int) env('B2B_PROVIDER_REQUEST_SAFETY_SECONDS', 2)),
+        'operation_deadline_seconds' => $operationDeadlineSeconds,
+        'lease_margin_seconds' => $leaseMarginSeconds,
+        'request_safety_seconds' => $requestSafetySeconds,
         'list_page_size' => min(300, max(1, (int) env('B2B_PROVIDER_LIST_PAGE_SIZE', 100))),
         'list_max_pages' => min(20, max(1, (int) env('B2B_PROVIDER_LIST_MAX_PAGES', 5))),
     ],

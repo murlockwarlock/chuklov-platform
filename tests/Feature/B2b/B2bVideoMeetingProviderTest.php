@@ -129,6 +129,30 @@ final class B2bVideoMeetingProviderTest extends TestCase
         Http::assertNotSent(fn (Request $sent): bool => str_ends_with($sent->url(), '/meetings'));
     }
 
+    public function test_nearly_exhausted_deadline_bounds_the_zoom_request_budget(): void
+    {
+        $organization = $this->organization();
+        $base = CarbonImmutable::create(2026, 8, 31, 10, 0, 0, 'UTC');
+        CarbonImmutable::setTestNow($base);
+        $deadline = new ProviderOperationDeadline($base->addSeconds(5), 1);
+        self::assertSame(4, $deadline->timeoutSeconds(30));
+        $this->fakeZoom([
+            'create' => [
+                'id' => 1,
+                'uuid' => 'uuid-1',
+                'join_url' => 'https://zoom.us/j/1',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->createMeeting($organization, $this->request(), $deadline);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+
+        Http::assertSentCount(2);
+    }
+
     public function test_one_absolute_deadline_spans_reconciliation_and_blocks_a_late_create(): void
     {
         $organization = $this->organization();

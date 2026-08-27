@@ -6,6 +6,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
 use App\Modules\Integration\Domain\Enums\IntegrationEventStatus;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
@@ -96,12 +97,13 @@ final class B2bProviderLeaseManager
                 return null;
             }
 
-            $now = CarbonImmutable::now('UTC');
-            if ($this->hasActiveLeaseForAnotherEvent($call, (int) $event->getKey(), $now)) {
+            $claimNow = CarbonImmutable::now('UTC');
+            $timing = ProviderOperationTiming::fromConfig();
+            if ($this->hasActiveLeaseForAnotherEvent($call, (int) $event->getKey(), $claimNow)) {
                 return null;
             }
 
-            if (! $this->isAvailable($event, $status, $call, $now)) {
+            if (! $this->isAvailable($event, $status, $call, $claimNow)) {
                 return null;
             }
 
@@ -118,17 +120,15 @@ final class B2bProviderLeaseManager
 
             $eventToken = bin2hex(random_bytes(32));
             $leaseToken = bin2hex(random_bytes(32));
-            $leaseExpiresAt = $now->addSeconds(
-                (int) config('b2b.provider.operation_deadline_seconds', 90)
-                + (int) config('b2b.provider.lease_margin_seconds', 15),
-            );
+            $providerDeadlineExpiresAt = $timing->providerDeadlineExpiresAt($claimNow);
+            $leaseExpiresAt = $timing->leaseExpiresAt($providerDeadlineExpiresAt);
             $eventVersion = (int) ($event->payload['event_version'] ?? 0);
             $providerSyncVersion = (int) ($event->payload['provider_sync_version'] ?? 0);
 
             $event->forceFill([
                 'status' => IntegrationEventStatus::Processing,
                 'attempt_count' => (int) $event->attempt_count + 1,
-                'processing_started_at' => $now,
+                'processing_started_at' => $claimNow,
                 'processing_token' => $eventToken,
                 'updated_at' => now(),
             ])->save();
@@ -148,6 +148,9 @@ final class B2bProviderLeaseManager
                 eventVersion: $eventVersion,
                 providerSyncVersion: $providerSyncVersion,
                 operation: $operation,
+                providerDeadlineExpiresAt: $providerDeadlineExpiresAt,
+                leaseExpiresAt: $leaseExpiresAt,
+                requestSafetySeconds: $timing->requestSafetySeconds,
             );
         });
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-28 — M11D independent-review remediation round 3 candidate
+
+- Anchored every provider lease's absolute provider deadline and lease expiry to one immutable UTC claim instant, and made the Sync worker consume that claim-time deadline instead of creating a fresh budget after claim.
+- Added bounded provider timing configuration and deterministic delayed-worker, deadline-boundary, and active host-reconciliation writer coverage. N-03 remains pending fresh independent re-review; PostgreSQL, hosted CI, staging, merge, M12, and owner acceptance are not claimed.
+
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
 
 - Added an audited Organizations Application action that transactionally clears the B2B duration setting, so empty scheduling configuration removes the source-of-truth setting without changing historical SalesCall intervals or other organization settings.

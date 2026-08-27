@@ -3,18 +3,31 @@
 namespace App\Modules\B2B\Domain\ValueObjects;
 
 use Carbon\CarbonImmutable;
+use InvalidArgumentException;
 
 final readonly class ProviderOperationDeadline
 {
     public function __construct(
         public CarbonImmutable $expiresAt,
         public int $safetySeconds = 2,
-    ) {}
+    ) {
+        if ($safetySeconds < 1) {
+            throw new InvalidArgumentException('The provider operation safety window is invalid.');
+        }
+    }
 
     public static function fromNow(int $seconds, ?int $safetySeconds = null): self
     {
         return new self(
             expiresAt: CarbonImmutable::now('UTC')->addSeconds($seconds),
+            safetySeconds: $safetySeconds ?? (int) config('b2b.provider.request_safety_seconds', 2),
+        );
+    }
+
+    public static function fromExpiresAt(CarbonImmutable $expiresAt, ?int $safetySeconds = null): self
+    {
+        return new self(
+            expiresAt: $expiresAt,
             safetySeconds: $safetySeconds ?? (int) config('b2b.provider.request_safety_seconds', 2),
         );
     }

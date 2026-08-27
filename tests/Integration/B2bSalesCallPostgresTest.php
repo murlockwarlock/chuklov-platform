@@ -218,6 +218,9 @@ final class B2bSalesCallPostgresTest extends TestCase
                 $lease->eventVersion,
                 $lease->providerSyncVersion,
                 $lease->operation->value,
+                $lease->providerDeadlineExpiresAt->toIso8601String(),
+                $lease->leaseExpiresAt->toIso8601String(),
+                $lease->requestSafetySeconds,
             ),
         ]);
 
@@ -476,6 +479,9 @@ final class B2bSalesCallPostgresTest extends TestCase
         int $eventVersion,
         int $providerSyncVersion,
         string $operation,
+        string $providerDeadlineExpiresAt,
+        string $leaseExpiresAt,
+        int $requestSafetySeconds,
     ): string {
         $lease = new ProviderOperationLease(
             organizationId: $organizationId,
@@ -486,6 +492,9 @@ final class B2bSalesCallPostgresTest extends TestCase
             eventVersion: $eventVersion,
             providerSyncVersion: $providerSyncVersion,
             operation: VideoMeetingOperation::from($operation),
+            providerDeadlineExpiresAt: CarbonImmutable::parse($providerDeadlineExpiresAt)->utc(),
+            leaseExpiresAt: CarbonImmutable::parse($leaseExpiresAt)->utc(),
+            requestSafetySeconds: $requestSafetySeconds,
         );
 
         return app(B2bProviderLeaseManager::class)->owns($lease) ? 'owned' : 'lost';
