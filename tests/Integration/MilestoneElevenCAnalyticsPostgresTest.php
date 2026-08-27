@@ -117,6 +117,54 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         self::assertNotContains('legacy-only', $labels);
     }
 
+    public function test_postgresql_analytics_keeps_known_source_literal_unknown_label_distinct_from_unattributed_clients(): void
+    {
+        $this->requirePostgres();
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $ordinarySources = [];
+
+        for ($sourceIndex = 1; $sourceIndex <= 9; $sourceIndex++) {
+            $source = sprintf('postgres-ordinary-%02d', $sourceIndex);
+            $ordinarySources[] = $source;
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', $source);
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', 'Не указан');
+        }
+
+        $unattributedClient = $this->client($organization, '2026-08-10 10:00:00');
+        $unattributedClient->forceFill(['lead_source' => 'legacy-only'])->save();
+
+        app(OrganizationContext::class)->set($organization);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-08-01', 'end_date' => '2026-08-27'],
+            'UTC',
+            $now,
+        );
+
+        $acquisition = app(AcquisitionAnalytics::class)->handle($admin, $period);
+        $sources = collect($acquisition->sources);
+        $sourceCounts = $sources->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
+        $labels = $sources->pluck('label')->all();
+
+        self::assertSame(12, $acquisition->newClients);
+        self::assertSame(1, $sourceCounts->get('Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Не указан'));
+        self::assertSame(2, $sourceCounts->get('Другие'));
+        self::assertSame(['postgres-ordinary-08', 'postgres-ordinary-09'], array_values(array_diff($ordinarySources, $labels)));
+        self::assertSame(12, $sources->sum('count'));
+        self::assertSame($acquisition->newClients, $sources->sum('count'));
+        self::assertCount(10, $acquisition->sources);
+        self::assertSame(1, $sources->where('label', 'Не указан')->count());
+        self::assertNotContains('legacy-only', $labels);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationWithAdmin(): array
     {

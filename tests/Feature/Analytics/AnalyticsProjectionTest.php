@@ -221,6 +221,47 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertNotContains('legacy-only', $labels);
     }
 
+    public function test_known_source_literal_unknown_label_remains_distinct_from_unattributed_clients(): void
+    {
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin('UTC');
+        $ordinarySources = [];
+
+        for ($sourceIndex = 1; $sourceIndex <= 9; $sourceIndex++) {
+            $source = sprintf('ordinary-source-%02d', $sourceIndex);
+            $ordinarySources[] = $source;
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: $source);
+        }
+
+        for ($clientIndex = 1; $clientIndex <= 2; $clientIndex++) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $client->forceFill(['lead_source' => 'legacy-only'])->save();
+            $this->attribution($client, 'source', source: 'Не указан');
+        }
+
+        $unattributedClient = $this->client($organization, '2026-08-10 10:00:00');
+        $unattributedClient->forceFill(['lead_source' => 'legacy-only'])->save();
+
+        app(OrganizationContext::class)->set($organization);
+        $result = app(AcquisitionAnalytics::class)->handle($admin, $this->customPeriod($organization, '2026-08-01', '2026-08-27', $now));
+        $sources = collect($result->sources);
+        $sourceCounts = $sources->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
+        $labels = $sources->pluck('label')->all();
+
+        self::assertSame(12, $result->newClients);
+        self::assertSame(1, $sourceCounts->get('Не указан'));
+        self::assertSame(2, $sourceCounts->get('Источник: Не указан'));
+        self::assertSame(2, $sourceCounts->get('Другие'));
+        self::assertSame(['ordinary-source-08', 'ordinary-source-09'], array_values(array_diff($ordinarySources, $labels)));
+        self::assertSame(12, $sources->sum('count'));
+        self::assertSame($result->newClients, $sources->sum('count'));
+        self::assertCount(10, $result->sources);
+        self::assertSame(1, $sources->where('label', 'Не указан')->count());
+        self::assertNotContains('legacy-only', $labels);
+    }
+
     public function test_invalid_finance_reconciliation_fails_closed_without_a_partial_total(): void
     {
         $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
