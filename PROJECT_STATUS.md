@@ -1,12 +1,18 @@
 # Project Status
 
+## 2026-08-28 — M11D URL-001 reviewer-found remediation candidate
+
+- Starting candidate `5174ddb402a5c741ac2b79573de9473a4e37151c` received independent review `GO`; that review found `URL-001` (`P2`) in Telegram external and canonical Mini App URL component validation.
+- This bounded remediation rejects username/password userinfo and any query or fragment on the canonical Mini App origin, adds focused regression coverage, and removes the volatile M11D SHA from the roadmap gate wording. The resulting SHA has not received independent re-review, hosted CI, deployment, or owner retest; staging remains on `782f8a9f07de5cda7466225da54b5a5632b3c6f5`.
+- `REQ-B2B-001` remains `CANDIDATE`; M11 remains `IN_PROGRESS`; OQ-007 remains `OPEN`; OQ-015 remains unresolved; M12 remains `NOT_STARTED`; PR #23 remains untouched.
+
 ## 2026-08-28 — M11D Telegram Mini App owner-acceptance remediation candidate
 
 - Application candidate `782f8a9f07de5cda7466225da54b5a5632b3c6f5` received independent `GO`. Hosted exact-SHA full CI run `33161376869` was `GREEN`, including `61` Integration concurrency tests / `344` assertions and all five `tests/Integration/B2bSalesCallPostgresTest.php` tests under PostgreSQL. Staging was then healthy at that exact SHA.
 - Owner manual acceptance subsequently failed on real Telegram staging UX: every internal menu button except the root portal opened an external browser, and direct B2B launch could show the page without a client portal session so submission returned HTTP `401`. The failure was caused by the root-only `web_app` heuristic and by bypassing `Portal/Entry` automatic Mini App authentication on `/portal/b2b`.
 - This remediation adds an explicit Telegram menu launch catalog, a canonical configured HTTPS Mini App URL, one allowlisted Mini App launch gateway, and bounded launch-key continuation through the existing verified Telegram initData authentication/session path. Protected `portal` and `b2b` entries use the seamless auth gateway; public `author`, `method`, and `partner` entries remain directly readable inside the Mini App. Current `portal`, `author`, `method`, `b2b`, and `partner` entries remain internal `mini_app` launches in RU and EN; genuinely external definitions retain ordinary URL buttons.
 - Focused local verification passes for the new menu/gateway/auth coverage and affected Portal, Telegram, attribution, and B2B regressions; PHP syntax, Pint, scoped Larastan, ESLint, `vue-tsc`, Vite build, and `git diff --check` pass. PostgreSQL is `NOT RUN LOCALLY` because no local PostgreSQL client/service is available. The added browser functional coverage is present but was not executed locally.
-- M11D remains `NOT owner-accepted`; `REQ-B2B-001` remains `CANDIDATE`; M11 remains `IN_PROGRESS`. Staging remains on the previous candidate SHA until this remediation receives independent review, fresh exact-SHA hosted CI, redeployment, and owner retest. OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
+- M11D remains `NOT owner-accepted`; `REQ-B2B-001` remains `CANDIDATE`; M11 remains `IN_PROGRESS`. The candidate described here later received independent review; the URL-001 follow-up above still requires fresh exact-SHA hosted CI, redeployment, owner retest, and independent re-review. OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
 
 ## 2026-08-28 — M11D CI test-isolation remediation candidate
 

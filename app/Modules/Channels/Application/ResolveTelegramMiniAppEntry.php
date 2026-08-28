@@ -100,13 +100,19 @@ final class ResolveTelegramMiniAppEntry
         }
 
         $parts = parse_url($url);
-        $scheme = is_array($parts) ? strtolower((string) ($parts['scheme'] ?? '')) : '';
-        $host = is_array($parts) ? ($parts['host'] ?? null) : null;
+
+        if (! is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = $parts['host'] ?? null;
 
         if (! in_array($scheme, ['http', 'https'], true)
             || ! is_string($host)
             || trim($host) === ''
-            || isset($parts['user'], $parts['pass'])) {
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)) {
             return null;
         }
 
@@ -144,15 +150,23 @@ final class ResolveTelegramMiniAppEntry
 
         $configuredUrl = trim($configuredUrl);
         $parts = parse_url($configuredUrl);
-        $scheme = is_array($parts) ? strtolower((string) ($parts['scheme'] ?? '')) : '';
-        $host = is_array($parts) ? ($parts['host'] ?? null) : null;
-        $path = is_array($parts) ? ($parts['path'] ?? '') : '';
+
+        if (! is_array($parts)) {
+            throw new LogicException('The Telegram Mini App URL is invalid.');
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = $parts['host'] ?? null;
+        $path = $parts['path'] ?? '';
 
         if ($scheme !== 'https'
             || ! is_string($host)
             || trim($host) === ''
             || ! in_array($path, ['', '/'], true)
-            || isset($parts['user'], $parts['pass'], $parts['query'], $parts['fragment'])) {
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)
+            || array_key_exists('query', $parts)
+            || array_key_exists('fragment', $parts)) {
             throw new LogicException('The Telegram Mini App URL is invalid.');
         }
 

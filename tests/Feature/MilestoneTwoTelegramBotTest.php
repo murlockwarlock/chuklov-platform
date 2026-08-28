@@ -35,7 +35,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         config()->set('portal.telegram.entries.external_demo', [
             'launch' => 'external_url',
-            'url' => 'https://external.example.test/help?source=telegram',
+            'url' => 'https://external.example.test/help?source=telegram#faq',
         ]);
         config()->set('portal.telegram.menu.en', [
             ...config('portal.telegram.menu.en'),
@@ -47,14 +47,68 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertIsArray($external);
         self::assertFalse($external['web_app']);
         self::assertSame('external_url', $external['launch']);
-        self::assertSame('https://external.example.test/help?source=telegram', $external['url']);
+        self::assertSame('https://external.example.test/help?source=telegram#faq', $external['url']);
+    }
+
+    public function test_external_menu_definitions_reject_unsafe_urls(): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $unsafeUrls = [
+            'https://user@external.example.test/help',
+            'https://user:pass@external.example.test/help',
+            'javascript:alert(1)',
+            'data:text/html,test',
+            '//external.example.test/help',
+            'https://?source=telegram',
+            'not-a-url',
+        ];
+        $entries = config('portal.telegram.entries');
+        $menu = config('portal.telegram.menu.en');
+
+        foreach ($unsafeUrls as $index => $url) {
+            $key = 'external_unsafe_'.$index;
+            $entries[$key] = [
+                'launch' => 'external_url',
+                'url' => $url,
+            ];
+            $menu[] = ['key' => $key, 'label' => 'Unsafe external '.$index];
+        }
+
+        config()->set('portal.telegram.entries', $entries);
+        config()->set('portal.telegram.menu.en', $menu);
+
+        $resolvedMenu = app(GetTelegramMenu::class)->handle('en');
+
+        foreach (array_keys($unsafeUrls) as $index) {
+            self::assertNull(collect($resolvedMenu)->firstWhere('key', 'external_unsafe_'.$index));
+        }
+    }
+
+    public function test_canonical_mini_app_origin_accepts_https_host_with_optional_trailing_slash(): void
+    {
+        foreach (['https://mini.example.test', 'https://mini.example.test/'] as $configuredUrl) {
+            config()->set('portal.telegram.portal_url', $configuredUrl);
+
+            self::assertCount(5, app(GetTelegramMenu::class)->handle('en'));
+        }
     }
 
     public function test_mini_app_entries_are_omitted_when_the_canonical_url_is_invalid(): void
     {
-        config()->set('portal.telegram.portal_url', 'http://mini.example.test');
+        foreach ([
+            'http://mini.example.test',
+            'https://user@mini.example.test',
+            'https://user:pass@mini.example.test',
+            'https://mini.example.test/path',
+            'https://mini.example.test/?source=telegram',
+            'https://mini.example.test/#fragment',
+            'https://mini.example.test?',
+            'https://mini.example.test#',
+        ] as $configuredUrl) {
+            config()->set('portal.telegram.portal_url', $configuredUrl);
 
-        self::assertSame([], app(GetTelegramMenu::class)->handle('ru'));
+            self::assertSame([], app(GetTelegramMenu::class)->handle('ru'));
+        }
     }
 
     /** @param array<string, string> $expected */
