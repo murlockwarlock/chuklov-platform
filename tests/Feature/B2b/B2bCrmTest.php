@@ -48,7 +48,9 @@ final class B2bCrmTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test(ListB2bLeads::class)
             ->assertCanSeeTableRecords([$ownLead])
-            ->assertCanNotSeeTableRecords([$foreignLead]);
+            ->assertCanNotSeeTableRecords([$foreignLead])
+            ->assertSee('Настроить слоты и Zoom')
+            ->assertSee('Длительность: Требуется действие');
 
         self::assertSame($organization->getKey(), $ownLead->organization_id);
         self::assertSame($foreignOrganization->getKey(), $foreignLead->organization_id);

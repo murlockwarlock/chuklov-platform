@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import PortalIcon from './PortalIcon.vue';
 import type { PortalNavKey, PortalShell } from '../../types/portal';
 import { portalText } from '../../locales/portal';
 
@@ -9,12 +10,12 @@ const props = defineProps<{
 }>();
 
 const items = [
-    { key: 'home', label: 'shell.home', icon: '⌂' },
-    { key: 'bookings', label: 'shell.bookings', icon: '▣' },
-    { key: 'surveys', label: 'shell.surveys', icon: '✓' },
-    { key: 'companion', label: 'shell.companion', icon: '✦' },
-    { key: 'finance', label: 'shell.finance', icon: '₽' },
-    { key: 'profile', label: 'shell.profile', icon: '○' },
+    { key: 'home', label: 'shell.home', icon: 'home' },
+    { key: 'bookings', label: 'shell.bookings', icon: 'calendar' },
+    { key: 'surveys', label: 'shell.surveys', icon: 'check' },
+    { key: 'companion', label: 'shell.companion', icon: 'sparkles' },
+    { key: 'finance', label: 'shell.finance', icon: 'wallet' },
+    { key: 'profile', label: 'shell.profile', icon: 'user' },
 ] as const;
 </script>
 
@@ -30,11 +31,10 @@ const items = [
       class="portal-bottom-nav__link"
       :class="{ 'portal-bottom-nav__link--active': props.active === item.key }"
     >
-      <span
-        class="portal-bottom-nav__icon"
-        aria-hidden="true"
-      >{{ item.icon }}</span>
-      <span>{{ portalText(portal.locale, item.label) }}</span>
+      <span class="portal-bottom-nav__icon">
+        <PortalIcon :name="item.icon" />
+      </span>
+      <span class="portal-bottom-nav__label">{{ portalText(portal.locale, item.label) }}</span>
     </Link>
   </nav>
 </template>

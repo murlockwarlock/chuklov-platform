@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-08-29 — M11D Portal/Mini App owner-UX remediation candidate
+
+- This bounded Portal/Mini App remediation starts exactly at `c964f35995c52067c105ef6525237fe27762fd88` on `codex/m11d-b2b-lead-funnel`. The starting SHA passed independent review, hosted exact-SHA CI run `33193506667` (`GREEN`), and staging health verification; staging remains on that SHA. Owner manual acceptance remains `BLOCKED` by concrete Portal/Mini App UX findings.
+- The candidate remediates the duplicate Home booking CTA, mobile navigation icons/alignment/safe area, compact flag locale control, Companion attachment affordance, known empty content sections, coherent B2B answer journey, B2B readiness discoverability, referral CTA, and Portal select presentation. It preserves one authoritative B2B answer and existing referral/provider security semantics.
+- Staging diagnosis found one active eligible specialist calendar, no organization B2B duration setting, and no active Zoom credential row. The client message `Слоты для разговора пока не настроены.` is therefore the existing missing-duration branch. The CRM authority remains `Настройки расписания` (`/admin/scheduling-configuration`) for duration, specialist, working hours, and host capability; `Изменения расписания` and `Недоступное время` remain the exception/unavailability authorities. B2B lead actions retain automatic Zoom or manual HTTPS-link choice. No new secrets UI or new tenant settings surface was required; B2B leads now link to the existing authority and show non-secret readiness statuses.
+- The resulting candidate SHA is not independently reviewed, not hosted-CI accepted, not deployed, and not owner-accepted. M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; PR #23 remains untouched. CRM analytics source wording and the broadcast recipient condition builder are intentionally outside this candidate.
+
 ## 2026-08-28 — M11D URL-001 reviewer-found remediation candidate
 
 - Starting candidate `5174ddb402a5c741ac2b79573de9473a4e37151c` received independent review `GO`; that review found `URL-001` (`P2`) in Telegram external and canonical Mini App URL component validation.
@@ -134,7 +141,7 @@
 - Agents use focused local feedback while assembling a coherent candidate, then manually dispatch one hosted candidate gate. Related remediation is batched before another run; high-risk tenant/security/encryption/migration/concurrency changes may justify an additional candidate.
 - Scheduled/manual Playwright remains a separate non-blocking workflow. Local Docker, Playwright, heavy integration, and `make ci` remain prohibited unless the owner explicitly authorizes them.
 
-- Last updated: 2026-08-28
+- Last updated: 2026-08-29
 - Current phase: Phase 1 foundation
 - Current milestone: M11D — B2B lead funnel / Zoom sales handoff (implementation candidate)
 - Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A, M11B, and M11C are merged and preserved, while M11D remains pending independent re-review, PostgreSQL verification, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, OQ-007 remains OPEN, and M12 remains NOT_STARTED.

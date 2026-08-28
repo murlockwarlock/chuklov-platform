@@ -63,6 +63,7 @@ const { locale, t } = usePortalLocale();
         <Link
           :href="props.portal.urls.booking"
           class="portal-button portal-button--primary"
+          data-testid="home-booking-cta"
         >
           {{ t('home.book') }}
         </Link>
@@ -78,14 +79,7 @@ const { locale, t } = usePortalLocale();
         v-else
         :title="t('home.noUpcoming')"
         :description="t('home.noUpcomingDescription')"
-      >
-        <Link
-          :href="props.portal.urls.booking"
-          class="portal-button portal-button--primary"
-        >
-          {{ t('home.book') }}
-        </Link>
-      </EmptyState>
+      />
 
       <section class="portal-stack">
         <header class="portal-section-heading">
@@ -135,6 +129,7 @@ const { locale, t } = usePortalLocale();
         <Link
           :href="props.portal.urls.referrals"
           class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+          data-testid="home-referrals-cta"
         >
           <strong class="portal-heading portal-heading--section">
             {{ t('home.referrals') }}

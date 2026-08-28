@@ -335,8 +335,8 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'EN' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'RU' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'English' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Русский' })).toBeVisible();
 
     if ((page.viewportSize()?.width ?? 0) >= 768) {
         await expect(page.getByRole('link', { name: 'Услуги' }).first()).toBeVisible();
@@ -346,9 +346,9 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
         await expect(page.getByRole('link', { name: 'Профиль' }).last()).toBeVisible();
     }
 
-    await page.getByRole('button', { name: 'EN' }).click();
+    await page.getByRole('button', { name: 'English' }).click();
     await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
@@ -361,6 +361,110 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
+});
+
+test('home keeps one primary booking action and makes referrals discoverable at target widths', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/');
+        await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+
+        const navigationItems = page.locator('.portal-bottom-nav__link');
+        expect(await navigationItems.count()).toBe(6);
+        expect(await navigationItems.evaluateAll((items) => {
+            const widths = items.map((item) => item.getBoundingClientRect().width);
+            const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+
+            return Math.max(...widths) - Math.min(...widths) <= 1
+                && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
+        })).toBe(true);
+
+        await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
+    }
+
+    await page.getByTestId('home-referrals-cta').click();
+    await expect(page).toHaveURL(/\/portal\/referrals$/);
+    await expect(page.getByRole('heading', { name: 'Пригласить друга' })).toBeVisible();
+});
+
+test('B2B answer stays in one journey and Profile shows the same compact classification', async ({ page }) => {
+    const fixture = createBookingFixture({ multipleChoices: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/b2b');
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toBeVisible();
+    await page.getByRole('radio', { name: 'Да', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/portal\/b2b$/);
+    await expect(page.getByRole('heading', { name: 'Запросить разговор о бизнесе' })).toBeVisible();
+    await expect(page.getByText('Вы указали: специалист по работе с телом.')).toBeVisible();
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+    await expect(page.locator('#b2b-specialist')).toBeVisible();
+    const specialistOptions = await page.locator('#b2b-specialist option').allTextContents();
+    expect(specialistOptions).toContain('Выберите специалиста');
+    expect(specialistOptions).not.toContain('specialist_id');
+
+    await page.getByRole('link', { name: 'Профиль' }).last().click();
+    await expect(page).toHaveURL(/\/portal\/profile$/);
+    await expect(page.getByRole('heading', { name: 'Профессиональный профиль' })).toBeVisible();
+    await expect(page.getByText('Специалист по работе с телом: Да')).toBeVisible();
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+});
+
+test('B2B no answer explains the next step without showing the sales-call form', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/b2b');
+    await page.getByRole('radio', { name: 'Нет', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Что дальше' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Запросить разговор о бизнесе' })).toHaveCount(0);
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+});
+
+test('assistant uses an attachment icon and portal selects keep human option labels', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('button', { name: 'Прикрепить изображения' })).toBeVisible();
+    await expect(page.getByText('Добавить изображения', { exact: true })).toHaveCount(0);
+
+    await page.goto('/portal/attribution');
+    const sourceOptions = await page.locator('select option').allTextContents();
+    expect(sourceOptions).toContain('Выберите вариант');
+    expect(sourceOptions).toContain('По рекомендации знакомых');
+    expect(sourceOptions).not.toContain('friend');
+    expect(sourceOptions).not.toContain('social');
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {

@@ -47,6 +47,8 @@ class SchedulingConfiguration extends Page
 
     protected static ?string $navigationLabel = 'Настройки расписания';
 
+    protected ?string $subheading = 'Здесь задаются длительность B2B-разговора, специалист и его рабочие часы. Исключения и недоступное время настраиваются в соседних разделах группы «Записи». Автоматический Zoom использует защищённое подключение без показа секретов; для отдельных разговоров доступна ручная HTTPS-ссылка.';
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
     protected static string|UnitEnum|null $navigationGroup = 'Записи';

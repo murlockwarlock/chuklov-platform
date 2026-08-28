@@ -34,10 +34,12 @@ function switchLocale(nextLocale: PortalLocale): void {
       class="portal-language-switcher__option"
       :class="{ 'portal-language-switcher__option--active': locale === option }"
       :aria-pressed="locale === option"
+      :aria-label="portalText(locale, option === 'ru' ? 'shell.russian' : 'shell.english')"
+      :title="portalText(locale, option === 'ru' ? 'shell.russian' : 'shell.english')"
       :disabled="form.processing"
       @click="switchLocale(option)"
     >
-      {{ option.toUpperCase() }}
+      <span aria-hidden="true">{{ option === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
     </button>
   </div>
 </template>

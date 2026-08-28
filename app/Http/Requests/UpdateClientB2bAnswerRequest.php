@@ -17,6 +17,7 @@ class UpdateClientB2bAnswerRequest extends FormRequest
     {
         return [
             'b2b_specialist_answer' => ['required', 'string', 'in:yes,no'],
+            'return_to' => ['nullable', 'string', 'in:profile,b2b'],
         ];
     }
 }

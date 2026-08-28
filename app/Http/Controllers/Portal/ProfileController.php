@@ -65,6 +65,10 @@ class ProfileController extends Controller
             source: 'portal',
         );
 
-        return to_route('portal.profile')->with('b2b_answer_saved', true);
+        $route = $request->validated('return_to') === 'b2b'
+            ? 'portal.b2b'
+            : 'portal.profile';
+
+        return to_route($route)->with('b2b_answer_saved', true);
     }
 }

@@ -39,8 +39,12 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
-const answerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
+const answerForm = useForm<{
+    b2b_specialist_answer: 'yes' | 'no' | null;
+    return_to: 'b2b';
+}>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
+    return_to: 'b2b',
 });
 const leadForm = useForm<{
     specialist_id: number | null;
@@ -53,6 +57,7 @@ const leadForm = useForm<{
 });
 const selectedStart = ref<string | null>(null);
 const selectedDate = ref<string | null>(null);
+const editingAnswer = ref(props.b2bSpecialistAnswer === null);
 const leadAnswerError = computed(() => (leadForm.errors as Partial<Record<'b2b_specialist_answer', string>>).b2b_specialist_answer);
 const configurationError = computed(() => (leadForm.errors as Partial<Record<'configuration', string>>).configuration);
 
@@ -68,7 +73,17 @@ watch(
 );
 
 function saveAnswer(): void {
-    answerForm.post(props.urls.answer, { preserveScroll: true });
+    answerForm.post(props.urls.answer, {
+        preserveScroll: true,
+        onSuccess: () => {
+            editingAnswer.value = false;
+        },
+    });
+}
+
+function editAnswer(): void {
+    answerForm.b2b_specialist_answer = props.b2bSpecialistAnswer;
+    editingAnswer.value = true;
 }
 
 function changeSpecialist(): void {
@@ -132,7 +147,33 @@ function submitLead(): void {
         </p>
       </article>
 
-      <section class="portal-panel portal-stack">
+      <section
+        v-if="props.authenticated && !editingAnswer"
+        class="portal-panel portal-stack portal-stack--tight"
+      >
+        <div class="portal-section-heading">
+          <div class="portal-stack portal-stack--tight">
+            <h2 class="portal-heading portal-heading--card">
+              {{ t('b2b.profileTitle') }}
+            </h2>
+            <p class="portal-copy portal-copy--small">
+              {{ props.b2bSpecialistAnswer === 'yes' ? t('b2b.answerYesSummary') : t('b2b.answerNoSummary') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="portal-link portal-link--button"
+            @click="editAnswer"
+          >
+            {{ t('b2b.editAnswer') }}
+          </button>
+        </div>
+      </section>
+
+      <section
+        v-if="props.authenticated && editingAnswer"
+        class="portal-panel portal-stack"
+      >
         <h2 class="portal-heading portal-heading--card">
           {{ t('b2b.questionTitle') }}
         </h2>
@@ -140,7 +181,7 @@ function submitLead(): void {
           {{ t('b2b.question') }}
         </p>
         <form
-          class="portal-stack"
+          class="portal-stack portal-stack--tight"
           @submit.prevent="saveAnswer"
         >
           <label class="portal-confirm">
@@ -161,10 +202,16 @@ function submitLead(): void {
             >
             <span>{{ t('b2b.no') }}</span>
           </label>
+          <p
+            v-if="answerForm.errors.b2b_specialist_answer"
+            class="portal-error"
+          >
+            {{ answerForm.errors.b2b_specialist_answer }}
+          </p>
           <button
             type="submit"
             class="portal-button portal-button--secondary self-start"
-            :disabled="answerForm.processing"
+            :disabled="answerForm.processing || answerForm.b2b_specialist_answer === null"
           >
             {{ answerForm.processing ? t('profile.saving') : t('profile.save') }}
           </button>
@@ -172,7 +219,7 @@ function submitLead(): void {
       </section>
 
       <section
-        v-if="props.authenticated"
+        v-if="props.authenticated && props.b2bSpecialistAnswer === 'yes' && !editingAnswer"
         class="portal-panel portal-stack"
       >
         <h2 class="portal-heading portal-heading--card">
@@ -193,14 +240,16 @@ function submitLead(): void {
             <select
               id="b2b-specialist"
               v-model="leadForm.specialist_id"
-              class="portal-input"
+              class="portal-input portal-select"
               required
+              :aria-invalid="Boolean(leadForm.errors.specialist_id)"
               @change="changeSpecialist"
             >
               <option
                 v-if="props.specialists.length !== 1"
                 :value="null"
                 disabled
+                :selected="leadForm.specialist_id === null"
               >
                 {{ t('b2b.chooseSpecialist') }}
               </option>
@@ -219,13 +268,6 @@ function submitLead(): void {
             role="status"
           >
             {{ props.configurationIssue === 'zoom_duration_exceeds_capability' ? t('b2b.zoomDurationNotSupported') : t('b2b.configurationNotReady') }}
-          </p>
-          <p
-            v-else-if="props.b2bSpecialistAnswer !== 'yes'"
-            class="portal-notice"
-            role="status"
-          >
-            {{ t('b2b.answerRequired') }}
           </p>
           <BookingCalendar
             v-else-if="props.availability && props.availabilityRange && props.selectedSpecialistId !== null"
@@ -264,7 +306,19 @@ function submitLead(): void {
       </section>
 
       <section
-        v-else
+        v-else-if="props.authenticated && props.b2bSpecialistAnswer === 'no'"
+        class="portal-panel portal-stack portal-stack--tight"
+      >
+        <h2 class="portal-heading portal-heading--card">
+          {{ t('b2b.nextTitle') }}
+        </h2>
+        <p class="portal-copy">
+          {{ t('b2b.noNextStep') }}
+        </p>
+      </section>
+
+      <section
+        v-if="!props.authenticated"
         class="portal-panel portal-stack"
       >
         <p class="portal-copy">

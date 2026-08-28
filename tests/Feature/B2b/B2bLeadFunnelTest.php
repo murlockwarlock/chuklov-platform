@@ -11,6 +11,7 @@ use App\Modules\B2B\Application\B2bProviderMutationGuard;
 use App\Modules\B2B\Application\CancelB2bSalesCall;
 use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallHostLaunchUrl;
+use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\MarkB2bSalesCallProviderReconciliationRequired;
@@ -222,6 +223,58 @@ final class B2bLeadFunnelTest extends TestCase
             rtrim((string) config('portal.telegram.portal_url'), '/').'/portal/telegram/launch/b2b',
             $b2b['url'],
         );
+    }
+
+    public function test_portal_b2b_answer_keeps_the_client_in_the_b2b_journey_and_exposes_the_request_step(): void
+    {
+        $fixture = $this->fixture(false);
+        $client = $fixture['client'];
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.b2b-answer'), [
+                'b2b_specialist_answer' => 'yes',
+                'return_to' => 'b2b',
+            ])
+            ->assertRedirect(route('portal.b2b'));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.b2b'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/B2b')
+                ->where('b2bSpecialistAnswer', 'yes')
+                ->where('configurationReady', true)
+                ->has('availability.slots'));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.profile'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Profile')
+                ->where('b2bSpecialistAnswer', 'yes'));
+    }
+
+    public function test_b2b_readiness_exposes_human_safe_configuration_statuses(): void
+    {
+        $fixture = $this->fixture();
+
+        self::assertSame([
+            'durationConfigured' => true,
+            'calendarConfigured' => true,
+            'automaticZoomConfigured' => false,
+            'manualLinkFallbackAvailable' => true,
+        ], app(GetB2bSalesCallReadiness::class)->handle());
+    }
+
+    public function test_b2b_readiness_flags_missing_duration(): void
+    {
+        $fixture = $this->fixture();
+
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+        );
+
+        self::assertFalse(app(GetB2bSalesCallReadiness::class)->handle()['durationConfigured']);
     }
 
     public function test_lead_submission_creates_one_nonclinical_lead_and_scheduled_occupancy(): void

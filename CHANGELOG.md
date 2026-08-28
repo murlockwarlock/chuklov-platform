@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-29 — M11D Portal/Mini App owner-UX remediation candidate
+
+- Starts exactly at `c964f35995c52067c105ef6525237fe27762fd88`, which is also the current staging SHA; its independent review, hosted exact-SHA CI run `33193506667`, and staging health were green. Owner manual acceptance was blocked by Portal/Mini App UX findings; this candidate is not independently re-reviewed, hosted-CI accepted, deployed, or owner-accepted.
+- Remediates the Home duplicate booking CTA, coherent SVG mobile navigation with equal layout/safe-area handling, accessible RU/EN flag switching, icon-only Companion attachment action, human empty states for known content sections while preserving unknown-section 404s, compact shared B2B classification presentation, referral discoverability, and consistent native Portal select styling.
+- Keeps the single stored B2B specialist answer authoritative and returns B2B answers to the B2B journey. The B2B CRM lead list now shows safe readiness statuses and links to the existing Scheduling Configuration authority. Staging currently lacks the organization B2B duration setting; one eligible specialist calendar is present and no active Zoom credential is configured. Manual HTTPS meeting links remain the existing fallback. No Zoom or Telegram network calls, secrets UI, reward semantics, analytics remediation, or broadcast-builder remediation were added.
+- M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains OPEN; PR #23 remains untouched. This is one bounded implementation candidate pending independent review and hosted gates.
+
 ## 2026-08-28 — M11D URL-001 reviewer-found remediation candidate
 
 - Candidate `5174ddb402a5c741ac2b79573de9473a4e37151c` received independent review `GO` with reviewer-found `URL-001` (`P2`) in external and canonical Mini App URL component validation.

@@ -102,13 +102,15 @@ function updateScalar(key: string, event: Event, numeric = false): void {
               v-if="question.type === 'single_choice'"
               :id="question.key"
               v-model="form.answers[question.key]"
-              class="portal-input"
+              class="portal-input portal-select"
+              :required="question.required"
+              :aria-invalid="Boolean(form.errors[`answers.${question.key}`])"
             >
               <option
                 value=""
                 disabled
               >
-                —
+                {{ t('survey.choose') }}
               </option>
               <option
                 v-for="option in question.options"

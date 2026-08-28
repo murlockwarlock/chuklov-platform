@@ -3,6 +3,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { onMounted, onUnmounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalIcon from '../../Components/Portal/PortalIcon.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -39,6 +40,7 @@ const props = defineProps<{
 const { t, locale } = usePortalLocale();
 const body = ref('');
 const olderLoading = ref(false);
+const imageInput = ref<HTMLInputElement | null>(null);
 const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
     body: '',
     idempotency_key: '',
@@ -78,6 +80,12 @@ function selectImages(event: Event): void {
     sendForm.images = input.files ? Array.from(input.files).slice(0, 10) : [];
     if (sendForm.images.length) {
         sendForm.reinspect_recent_images = false;
+    }
+}
+
+function openImagePicker(): void {
+    if (!sendForm.processing) {
+        imageInput.value?.click();
     }
 }
 
@@ -253,15 +261,25 @@ onUnmounted(() => {
             maxlength="8000"
             rows="3"
           />
-          <label class="portal-companion__upload">
-            <span>{{ t('companion.addImages') }}</span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              @change="selectImages"
-            >
-          </label>
+          <button
+            type="button"
+            class="portal-companion__upload"
+            :aria-label="t('companion.attachImages')"
+            :title="t('companion.attachImages')"
+            :disabled="sendForm.processing"
+            @click="openImagePicker"
+          >
+            <PortalIcon name="paperclip" />
+            <span class="sr-only">{{ t('companion.attachImages') }}</span>
+          </button>
+          <input
+            ref="imageInput"
+            class="sr-only"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            @change="selectImages"
+          >
           <p
             v-if="sendForm.images.length"
             class="portal-copy portal-copy--small"

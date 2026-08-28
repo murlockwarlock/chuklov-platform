@@ -492,6 +492,26 @@ class MilestoneThreeCrmTest extends TestCase
                 ->where('content.0.title', 'English method'));
     }
 
+    public function test_known_empty_portal_sections_render_and_unknown_sections_remain_not_found(): void
+    {
+        $organization = Organization::factory()->create();
+        $this->setOrganization($organization);
+
+        foreach (['author', 'method', 'partner'] as $section) {
+            $this->withSession(['portal.locale' => 'ru'])
+                ->get(route('portal.section', ['section' => $section]))
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page
+                    ->component('Portal/Section')
+                    ->where('title', config("portal.telegram.sections.{$section}.title.ru"))
+                    ->where('locale', 'ru')
+                    ->has('content', 0));
+        }
+
+        $this->get(route('portal.section', ['section' => 'not-published']))
+            ->assertNotFound();
+    }
+
     public function test_filament_resource_queries_are_organization_scoped(): void
     {
         $organization = Organization::factory()->create();
