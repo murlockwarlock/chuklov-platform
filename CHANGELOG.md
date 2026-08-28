@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-28 — M11D Telegram Mini App owner-acceptance remediation candidate
+
+- The application candidate `782f8a9f07de5cda7466225da54b5a5632b3c6f5` had independent application review `GO`, hosted exact-SHA full CI run `33161376869` `GREEN`, and healthy exact-SHA staging verification. Owner manual acceptance then found that internal Telegram menu entries opened an external browser and that direct B2B launch could submit without a portal session, returning `401`.
+- Added an explicit `mini_app` / `external_url` Telegram menu model, canonical configured HTTPS Mini App URL construction, and one server-side allowlisted launch gateway for `portal`, `author`, `method`, `b2b`, and `partner`. Protected `portal` and `b2b` entries preserve the launch key through the existing verified Telegram initData authentication path, while public sections remain directly readable inside the Mini App. The gateway redirects only to known portal routes; B2B writes remain session-protected.
+- Added RU/EN keyboard coverage, destination/open-redirect negative coverage, seamless authenticated B2B submission coverage, attribution/start-parameter separation coverage, and focused browser UX coverage. This remediation is not yet independently reviewed, hosted-CI verified, redeployed, or owner-accepted; staging remains on the previous candidate until those gates complete. M11 remains `IN_PROGRESS`, `REQ-B2B-001` remains `CANDIDATE`, OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
+
 ## 2026-08-28 — M11D PostgreSQL CI test-isolation remediation
 
 - Isolated `ProcessB2bProviderSyncEvent` in `B2bSalesCallPostgresTest` with a targeted queue fake while preserving real `SubmitB2bLead` event generation, durable lease claiming, and process-level PostgreSQL race assertions. The provider job dispatch is asserted on the configured B2B queue without executing provider work during test setup.

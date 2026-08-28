@@ -253,6 +253,77 @@ test('Telegram Mini App submits initData automatically without a second login ac
     expect(authenticationRequests).toBe(1);
 });
 
+test('Telegram Mini App B2B launch authenticates before showing the requested destination', async ({ page }) => {
+    let authenticationRequests = 0;
+
+    await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+        await route.fulfill({
+            contentType: 'application/javascript',
+            body: 'window.Telegram = { WebApp: { initData: "verified-init-data", ready() {} } };',
+        });
+    });
+    await page.route('**/portal/telegram/auth', async (route) => {
+        authenticationRequests += 1;
+        expect(route.request().postDataJSON().launchEntry).toBe('b2b');
+        await route.fulfill({
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Vary': 'Accept',
+                'X-Inertia': 'true',
+            },
+            body: JSON.stringify({
+                component: 'Portal/B2b',
+                props: {
+                    portal: {
+                        authenticated: true,
+                        clientName: 'Telegram Client',
+                        locale: 'ru',
+                        localeUrl: '/portal/locale',
+                        urls: {
+                            home: '/',
+                            services: '/portal/services',
+                            bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
+                            profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
+                            booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
+                        },
+                    },
+                    authenticated: true,
+                    b2bSpecialistAnswer: 'yes',
+                    content: [],
+                    specialists: [],
+                    selectedSpecialistId: null,
+                    availability: null,
+                    availabilityRange: null,
+                    configurationReady: false,
+                    configurationIssue: null,
+                    urls: {
+                        answer: '/portal/profile/b2b-answer',
+                        page: '/portal/b2b',
+                        submit: '/portal/b2b/leads',
+                        login: '/',
+                    },
+                },
+                url: '/portal/b2b',
+                version: null,
+            }),
+        });
+    });
+
+    await page.goto('/portal/telegram/launch/b2b');
+
+    await expect(page.getByRole('heading', { name: 'Развить бизнес с CHUKLOV' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticationRequests).toBe(1);
+});
+
 test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', async ({ page }) => {
     const fixture = createBookingFixture();
 

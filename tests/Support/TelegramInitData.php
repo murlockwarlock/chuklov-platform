@@ -13,6 +13,7 @@ final class TelegramInitData
         string $language = 'en',
         string $firstName = 'Test',
         string $lastName = 'Client',
+        ?string $startParameter = null,
     ): string {
         $parameters = [
             'auth_date' => (string) $authDate,
@@ -23,6 +24,11 @@ final class TelegramInitData
                 'language_code' => $language,
             ], JSON_THROW_ON_ERROR),
         ];
+
+        if ($startParameter !== null) {
+            $parameters['start_param'] = $startParameter;
+        }
+
         ksort($parameters);
         $dataCheckString = implode("\n", array_map(
             static fn (string $key, string $value): string => $key.'='.$value,

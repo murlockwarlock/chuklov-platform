@@ -2,28 +2,54 @@
 
 namespace App\Modules\Channels\Application;
 
-class GetTelegramMenu
+use App\Modules\Channels\Domain\Enums\TelegramMenuLaunchMode;
+use LogicException;
+
+final class GetTelegramMenu
 {
-    /** @return list<array{key: string, label: string, url: string, web_app: bool}> */
+    public function __construct(private readonly ResolveTelegramMiniAppEntry $entries) {}
+
+    /** @return list<array{key: string, label: string, url: string, web_app: bool, launch: string}> */
     public function handle(?string $language): array
     {
         $locale = str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
         $entries = config('portal.telegram.menu.'.$locale, []);
-        $portalUrl = config('portal.telegram.portal_url');
         $menu = [];
 
+        if (! is_array($entries)) {
+            return [];
+        }
+
         foreach ($entries as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
             $key = (string) ($entry['key'] ?? '');
-            $path = (string) ($entry['path'] ?? '/');
-            $url = $key === 'portal' && is_string($portalUrl) && $portalUrl !== ''
-                ? $portalUrl
-                : rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/');
+            $launch = $this->entries->launchMode($key);
+
+            if ($key === '' || ! $launch instanceof TelegramMenuLaunchMode) {
+                continue;
+            }
+
+            try {
+                $url = $launch === TelegramMenuLaunchMode::MiniApp
+                    ? $this->entries->launchUrl($key)
+                    : $this->entries->externalUrl($key);
+            } catch (LogicException) {
+                continue;
+            }
+
+            if (! is_string($url) || $url === '') {
+                continue;
+            }
 
             $menu[] = [
                 'key' => $key,
                 'label' => (string) ($entry['label'] ?? $key),
                 'url' => $url,
-                'web_app' => $key === 'portal',
+                'web_app' => $launch === TelegramMenuLaunchMode::MiniApp,
+                'launch' => $launch->value,
             ];
         }
 

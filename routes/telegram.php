@@ -51,7 +51,7 @@ $bot->onCommand('start', function (Nutgram $bot, GetTelegramMenu $menu): void {
     $keyboard = InlineKeyboardMarkup::make();
 
     foreach ($menu->handle($language) as $entry) {
-        $button = $entry['web_app']
+        $button = $entry['launch'] === 'mini_app'
             ? InlineKeyboardButton::make(
                 text: $entry['label'],
                 web_app: WebAppInfo::make($entry['url']),

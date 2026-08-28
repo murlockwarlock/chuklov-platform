@@ -213,11 +213,15 @@ final class B2bLeadFunnelTest extends TestCase
                 ->where('authenticated', true)
                 ->where('urls.submit', route('portal.b2b.submit')));
 
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         $menu = app(GetTelegramMenu::class)->handle('ru');
         $b2b = collect($menu)->firstWhere('key', 'b2b');
 
         self::assertSame('🚀 Хочешь себе такого бота? / Развить бизнес', $b2b['label']);
-        self::assertSame(rtrim((string) config('app.url'), '/').'/portal/b2b', $b2b['url']);
+        self::assertSame(
+            rtrim((string) config('portal.telegram.portal_url'), '/').'/portal/telegram/launch/b2b',
+            $b2b['url'],
+        );
     }
 
     public function test_lead_submission_creates_one_nonclinical_lead_and_scheduled_occupancy(): void

@@ -27,6 +27,7 @@ use App\Http\Controllers\Portal\ServiceIndexController;
 use App\Http\Controllers\Portal\SurveyController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
+use App\Http\Controllers\Portal\TelegramMiniAppLaunchController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
 use App\Http\Middleware\CapturePortalAttribution;
 use App\Http\Middleware\RequireClientPortalSession;
@@ -79,6 +80,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->name('portal.telegram.web.status');
 
     Route::middleware([ResolveClientPortalSession::class, CapturePortalAttribution::class])->group(function (): void {
+        Route::get('/portal/telegram/launch/{entry}', TelegramMiniAppLaunchController::class)
+            ->where('entry', '[A-Za-z0-9_-]+')
+            ->name('portal.telegram.launch');
         Route::post('/portal/locale', LocaleController::class)->name('portal.locale.update');
         Route::get('/r/{referralCode}', ReferralRedirectController::class)
             ->where('referralCode', '[A-Za-z0-9_-]{16,128}')

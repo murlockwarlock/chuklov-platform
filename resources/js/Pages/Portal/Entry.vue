@@ -9,6 +9,7 @@ import type { PortalShell } from '../../types/portal';
 type AuthProps = {
     telegramAuthUrl: string;
     telegramAuthError: string | null;
+    telegramLaunchEntry?: string | null;
     telegramWebRequestUrl: string;
     telegramWebStatusUrl: string;
     telegramWebUrl: string | null;
@@ -24,7 +25,10 @@ const props = defineProps<{
 
 const { t } = usePortalLocale();
 const runtimeMode: ClientRuntimeMode = resolveClientRuntime();
-const authForm = useForm<{ initData: string }>({ initData: getTelegramInitData() ?? '' });
+const authForm = useForm<{ initData: string; launchEntry: string }>({
+    initData: getTelegramInitData() ?? '',
+    launchEntry: props.auth.telegramLaunchEntry ?? '',
+});
 const telegramWebForm = useForm<Record<string, never>>({});
 const emailRequestForm = useForm<{ email: string }>({ email: '' });
 const emailVerifyForm = useForm<{ email: string; code: string }>({ email: '', code: '' });
