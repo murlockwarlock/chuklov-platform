@@ -16,6 +16,12 @@ return [
         'version' => env('CLIENT_ONBOARDING_VERSION', 'm2-v1'),
     ],
 
+    'content_sections' => [
+        'author' => ['title' => ['en' => 'Author', 'ru' => 'Об авторе']],
+        'method' => ['title' => ['en' => 'Method', 'ru' => 'Метод']],
+        'partner' => ['title' => ['en' => 'Partners', 'ru' => 'Партнёры']],
+    ],
+
     'telegram' => [
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         'link_ttl' => (int) env('TELEGRAM_CLIENT_LINK_TTL', 600),
@@ -72,12 +78,6 @@ return [
                 ['key' => 'b2b', 'label' => '🚀 Хочешь себе такого бота? / Развить бизнес'],
                 ['key' => 'partner', 'label' => 'Партнёры'],
             ],
-        ],
-        'sections' => [
-            'author' => ['title' => ['en' => 'Author', 'ru' => 'Об авторе']],
-            'method' => ['title' => ['en' => 'Method', 'ru' => 'Метод']],
-            'b2b' => ['title' => ['en' => 'B2B', 'ru' => 'B2B']],
-            'partner' => ['title' => ['en' => 'Partners', 'ru' => 'Партнёры']],
         ],
     ],
 ];

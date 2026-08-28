@@ -7,16 +7,15 @@ use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\CalculateAvailability;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 
 final class ListB2bSalesCallAvailability
 {
     public function __construct(
         private readonly OrganizationContext $context,
+        private readonly ListEligibleB2bSalesCallSpecialists $eligibleSpecialists,
         private readonly GetB2bSalesCallDuration $duration,
         private readonly GetB2bZoomHostCapability $zoomCapability,
         private readonly GetClientB2bSpecialistAnswer $specialistAnswer,
@@ -37,7 +36,7 @@ final class ListB2bSalesCallAvailability
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
-        $specialists = $this->eligibleSpecialists();
+        $specialists = $this->eligibleSpecialists->handle();
         $selectedSpecialist = $specialistId === null
             ? $specialists->count() === 1 ? $specialists->first() : null
             : $specialists->firstWhere('id', $specialistId);
@@ -86,24 +85,5 @@ final class ListB2bSalesCallAvailability
             'configurationIssue' => $configurationIssue,
             'specialistAnswer' => $answer?->value,
         ];
-    }
-
-    /** @return Collection<int, Specialist> */
-    private function eligibleSpecialists(): Collection
-    {
-        $organizationId = $this->context->id();
-        $scheduledSpecialists = SpecialistWorkingHour::query()
-            ->where('organization_id', $organizationId)
-            ->where('is_active', true)
-            ->select('specialist_id')
-            ->distinct();
-
-        return Specialist::query()
-            ->where('organization_id', $organizationId)
-            ->where('is_active', true)
-            ->whereIn('id', $scheduledSpecialists)
-            ->orderBy('display_name')
-            ->limit((int) config('b2b.availability.max_specialists', 20))
-            ->get(['id', 'organization_id', 'display_name', 'timezone', 'is_active']);
     }
 }

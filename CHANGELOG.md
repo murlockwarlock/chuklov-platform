@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-29 — M11D reviewer-found Portal owner-UX P2 remediation candidate
+
+- The prior candidate `afee6e31d68418c945971fefbf73aacca83f833a` received independent Portal owner-UX review `GO` with zero P0/P1 findings. That review identified `PORTAL-REG-001`, `READINESS-DRIFT-001`, and `TEST-EVIDENCE-001` as P2 findings.
+- This bounded remediation adds one Portal generic-content registry independent of Telegram menu visibility, reuses one tenant-scoped eligible-specialist projection for B2B availability and readiness, and adds direct coverage for registry decoupling, readiness combinations, invalid `return_to`, RU/EN empty sections, Telegram entry validation, and Home/referral application behavior.
+- The resulting candidate is not independently re-reviewed, hosted-CI verified, deployed, or owner-retested. Staging remains on `c964f35995c52067c105ef6525237fe27762fd88`; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains OPEN; PR #23 remains untouched. CRM analytics `social` wording and broadcast recipient-condition UX remain intentionally deferred.
+
 ## 2026-08-29 — M11D Portal/Mini App owner-UX remediation candidate
 
 - Starts exactly at `c964f35995c52067c105ef6525237fe27762fd88`, which is also the current staging SHA; its independent review, hosted exact-SHA CI run `33193506667`, and staging health were green. Owner manual acceptance was blocked by Portal/Mini App UX findings; this candidate is not independently re-reviewed, hosted-CI accepted, deployed, or owner-accepted.

@@ -65,7 +65,9 @@ use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
+use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\AuditEvent;
+use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
@@ -275,6 +277,109 @@ final class B2bLeadFunnelTest extends TestCase
         );
 
         self::assertFalse(app(GetB2bSalesCallReadiness::class)->handle()['durationConfigured']);
+    }
+
+    public function test_b2b_readiness_flags_missing_calendar_without_eligible_specialists(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $this->setOrganization($organization);
+
+        self::assertSame([
+            'durationConfigured' => false,
+            'calendarConfigured' => false,
+            'automaticZoomConfigured' => false,
+            'manualLinkFallbackAvailable' => true,
+        ], app(GetB2bSalesCallReadiness::class)->handle());
+    }
+
+    public function test_b2b_readiness_calendar_uses_only_the_current_organization_eligible_specialists(): void
+    {
+        $first = $this->fixture(false);
+        $secondOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $secondAdmin = User::factory()->forOrganization($secondOrganization)->create();
+        $secondSpecialist = Specialist::factory()->forOrganization($secondOrganization)->create(['timezone' => 'UTC']);
+        $this->setOrganization($secondOrganization);
+
+        self::assertFalse(app(GetB2bSalesCallReadiness::class)->handle()['calendarConfigured']);
+
+        app(SetSpecialistWorkingHours::class)->handle($secondAdmin, $secondSpecialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '19:00',
+        ]]);
+
+        self::assertTrue(app(GetB2bSalesCallReadiness::class)->handle()['calendarConfigured']);
+        self::assertNotSame($first['organization']->getKey(), $secondOrganization->getKey());
+    }
+
+    public function test_b2b_readiness_reports_only_an_active_matching_zoom_credential(): void
+    {
+        $fixture = $this->fixture();
+        $credentialName = (string) config('b2b.credential_name');
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+
+        $this->credential($otherOrganization, 'zoom', $credentialName, CredentialStatus::Active);
+        self::assertFalse(app(GetB2bSalesCallReadiness::class)->handle()['automaticZoomConfigured']);
+
+        $this->credential($fixture['organization'], 'other-provider', $credentialName, CredentialStatus::Active);
+        $this->credential($fixture['organization'], 'zoom', 'other-name', CredentialStatus::Active);
+        $disabled = $this->credential($fixture['organization'], 'zoom', $credentialName, CredentialStatus::Disabled);
+
+        $readiness = app(GetB2bSalesCallReadiness::class)->handle();
+        self::assertTrue($readiness['durationConfigured']);
+        self::assertTrue($readiness['calendarConfigured']);
+        self::assertFalse($readiness['automaticZoomConfigured']);
+        self::assertTrue($readiness['manualLinkFallbackAvailable']);
+
+        $disabled->forceFill(['status' => CredentialStatus::Active])->save();
+
+        self::assertTrue(app(GetB2bSalesCallReadiness::class)->handle()['automaticZoomConfigured']);
+    }
+
+    public function test_b2b_answer_return_to_rejects_external_and_arbitrary_values_without_mutation(): void
+    {
+        $fixture = $this->fixture(false);
+        $client = $fixture['client'];
+
+        foreach ([
+            'https://evil.example',
+            '//evil.example',
+            'admin',
+            '../profile',
+            'b2b/anything',
+        ] as $returnTo) {
+            $response = $this->withSession(['client_portal.client_id' => $client->getKey()])
+                ->post(route('portal.profile.b2b-answer'), [
+                    'b2b_specialist_answer' => 'yes',
+                    'return_to' => $returnTo,
+                ]);
+
+            $response->assertSessionHasErrors('return_to');
+            self::assertStringNotContainsString('evil.example', (string) $response->headers->get('Location'));
+            self::assertStringNotContainsString('/admin', (string) $response->headers->get('Location'));
+        }
+
+        self::assertFalse(BroadcastClientProfile::query()->where('client_id', $client->getKey())->exists());
+    }
+
+    public function test_b2b_answer_return_to_profile_is_an_allowed_continuation(): void
+    {
+        $fixture = $this->fixture(false);
+
+        $this->withSession(['client_portal.client_id' => $fixture['client']->getKey()])
+            ->post(route('portal.profile.b2b-answer'), [
+                'b2b_specialist_answer' => 'yes',
+                'return_to' => 'profile',
+            ])
+            ->assertRedirect(route('portal.profile'));
+
+        self::assertSame(
+            'yes',
+            BroadcastClientProfile::query()
+                ->where('client_id', $fixture['client']->getKey())
+                ->firstOrFail()
+                ->getRawOriginal('b2b_specialist_answer'),
+        );
     }
 
     public function test_lead_submission_creates_one_nonclinical_lead_and_scheduled_occupancy(): void
@@ -2128,6 +2233,22 @@ final class B2bLeadFunnelTest extends TestCase
     {
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function credential(
+        Organization $organization,
+        string $provider,
+        string $name,
+        CredentialStatus $status,
+    ): OrganizationCredential {
+        $credential = OrganizationCredential::factory()->forOrganization($organization)->make();
+        $credential->forceFill([
+            'provider' => $provider,
+            'credential_name' => $name,
+            'status' => $status,
+        ])->save();
+
+        return $credential;
     }
 
     private function setPortalClient(Client $client): void

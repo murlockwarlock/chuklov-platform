@@ -24,8 +24,8 @@ class SectionController extends Controller
         ClientPortalContext $clientContext,
         string $section,
     ): Response {
-        $knownSections = config('portal.telegram.sections', []);
-        if (! is_array($knownSections) || ! array_key_exists($section, $knownSections)) {
+        $sectionRegistry = config('portal.content_sections', []);
+        if (! is_array($sectionRegistry) || ! array_key_exists($section, $sectionRegistry)) {
             abort(404);
         }
 
@@ -53,7 +53,7 @@ class SectionController extends Controller
 
         return Inertia::render('Portal/Section', [
             'section' => $section,
-            'title' => $this->sectionTitle($knownSections[$section], $locale, $section),
+            'title' => $this->sectionTitle($sectionRegistry[$section], $locale, $section),
             'locale' => $locale,
             'content' => $content,
         ]);

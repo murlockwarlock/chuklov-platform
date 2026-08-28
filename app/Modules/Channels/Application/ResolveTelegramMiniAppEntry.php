@@ -14,12 +14,6 @@ final class ResolveTelegramMiniAppEntry
         'portal.section',
     ];
 
-    private const ALLOWED_SECTION_VALUES = [
-        'author',
-        'method',
-        'partner',
-    ];
-
     public function launchMode(string $key): ?TelegramMenuLaunchMode
     {
         $definition = $this->definition($key);
@@ -188,14 +182,18 @@ final class ResolveTelegramMiniAppEntry
             return [];
         }
 
+        $sectionRegistry = config('portal.content_sections', []);
+        $section = $parameters['section'] ?? null;
+
         if ($routeName !== 'portal.section'
             || count($parameters) !== 1
-            || ! array_key_exists('section', $parameters)
-            || ! is_string($parameters['section'])
-            || ! in_array($parameters['section'], self::ALLOWED_SECTION_VALUES, true)) {
+            || ! is_string($section)
+            || trim($section) === ''
+            || ! is_array($sectionRegistry)
+            || ! array_key_exists($section, $sectionRegistry)) {
             throw new LogicException('The Telegram Mini App section is not allowlisted.');
         }
 
-        return ['section' => $parameters['section']];
+        return ['section' => $section];
     }
 }

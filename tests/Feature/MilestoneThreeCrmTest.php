@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Models\User;
+use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Content\Application\CreateContentSection;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
@@ -34,6 +36,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use LogicException;
 use Tests\TestCase;
 
 class MilestoneThreeCrmTest extends TestCase
@@ -492,24 +495,57 @@ class MilestoneThreeCrmTest extends TestCase
                 ->where('content.0.title', 'English method'));
     }
 
-    public function test_known_empty_portal_sections_render_and_unknown_sections_remain_not_found(): void
+    public function test_known_empty_portal_sections_render_in_both_locales_and_unknown_sections_remain_not_found(): void
     {
         $organization = Organization::factory()->create();
         $this->setOrganization($organization);
 
-        foreach (['author', 'method', 'partner'] as $section) {
-            $this->withSession(['portal.locale' => 'ru'])
-                ->get(route('portal.section', ['section' => $section]))
-                ->assertOk()
-                ->assertInertia(fn ($page) => $page
-                    ->component('Portal/Section')
-                    ->where('title', config("portal.telegram.sections.{$section}.title.ru"))
-                    ->where('locale', 'ru')
-                    ->has('content', 0));
+        foreach (['ru', 'en'] as $locale) {
+            foreach (['author', 'method', 'partner'] as $section) {
+                $this->withSession(['portal.locale' => $locale])
+                    ->get(route('portal.section', ['section' => $section]))
+                    ->assertOk()
+                    ->assertInertia(fn ($page) => $page
+                        ->component('Portal/Section')
+                        ->where('title', config("portal.content_sections.{$section}.title.{$locale}"))
+                        ->where('locale', $locale)
+                        ->has('content', 0));
+            }
         }
 
         $this->get(route('portal.section', ['section' => 'not-published']))
             ->assertNotFound();
+    }
+
+    public function test_portal_content_registry_is_independent_from_telegram_menu_and_validates_telegram_targets(): void
+    {
+        $organization = Organization::factory()->create();
+        $this->setOrganization($organization);
+        config()->set('portal.content_sections.portal_only', [
+            'title' => ['en' => 'Portal only', 'ru' => 'Только портал'],
+        ]);
+
+        $this->withSession(['portal.locale' => 'ru'])
+            ->get(route('portal.section', ['section' => 'portal_only']))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Portal/Section')
+                ->where('title', 'Только портал')
+                ->where('locale', 'ru')
+                ->has('content', 0));
+
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        self::assertNull(collect(app(GetTelegramMenu::class)->handle('ru'))->firstWhere('key', 'portal_only'));
+
+        config()->set('portal.telegram.entries.invalid-section', [
+            'launch' => 'mini_app',
+            'requires_auth' => false,
+            'route' => 'portal.section',
+            'parameters' => ['section' => 'not-registered'],
+        ]);
+
+        $this->expectException(LogicException::class);
+        app(ResolveTelegramMiniAppEntry::class)->destination('invalid-section');
     }
 
     public function test_filament_resource_queries_are_organization_scoped(): void
