@@ -1,9 +1,9 @@
 # Changelog
 
-## 2026-08-28 — M11D hosted PostgreSQL CI wiring remediation
+## 2026-08-28 — M11D PostgreSQL CI test-isolation remediation
 
-- Added `tests/Integration/B2bSalesCallPostgresTest.php` exactly once to the normal PostgreSQL `test-integration-concurrency` target so the full hosted CI path selects the reviewed M11D scheduling-race, provider-lease, schema, constraint, and migration coverage.
-- Hosted full CI run `33124975103` executed against exact SHA `a7d023265f82fff5d72cd72d5fa100c3ece1adc6` with green GitHub jobs, but M11D acceptance CI was `NOT ACCEPTED` because the required PostgreSQL file was omitted. This candidate adds permanent wiring for a fresh exact-SHA gate; `REQ-B2B-001` remains a candidate and staging, owner acceptance, merge, and M12 are not claimed.
+- Isolated `ProcessB2bProviderSyncEvent` in `B2bSalesCallPostgresTest` with a targeted queue fake while preserving real `SubmitB2bLead` event generation, durable lease claiming, and process-level PostgreSQL race assertions. The provider job dispatch is asserted on the configured B2B queue without executing provider work during test setup.
+- The hosted PostgreSQL `test-integration-concurrency` target remains permanently wired to run `tests/Integration/B2bSalesCallPostgresTest.php` exactly once alongside the existing concurrency suite. Hosted full CI run `33124975103` was green but insufficient because the file was omitted; a fresh exact-SHA hosted gate is still required. This entry does not claim CI green, M11D acceptance, staging deployment, merge, or M12 start.
 
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
 

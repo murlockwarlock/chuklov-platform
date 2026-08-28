@@ -13,6 +13,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
+use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Identity\Domain\Models\Client;
@@ -40,6 +41,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 use Throwable;
@@ -182,6 +184,9 @@ final class B2bSalesCallPostgresTest extends TestCase
             true,
         );
         $start = CarbonImmutable::create(2030, 1, 7, 15, 0, 0, 'UTC');
+        Queue::fake([
+            ProcessB2bProviderSyncEvent::class,
+        ]);
         $lead = app(SubmitB2bLead::class)->handle(
             actor: $fixture['salesClient'],
             client: $fixture['salesClient'],
@@ -197,6 +202,13 @@ final class B2bSalesCallPostgresTest extends TestCase
             ->where('organization_id', $fixture['organization']->getKey())
             ->where('aggregate_id', $call->getKey())
             ->sole();
+
+        Queue::assertPushedOn(
+            (string) config('b2b.queue'),
+            ProcessB2bProviderSyncEvent::class,
+            static fn (ProcessB2bProviderSyncEvent $job): bool => $job->integrationEventId === $event->getKey(),
+        );
+        self::assertSame('pending', $event->getRawOriginal('status'));
 
         $lease = app(B2bProviderLeaseManager::class)->claim($event->getKey());
         self::assertInstanceOf(ProviderOperationLease::class, $lease);

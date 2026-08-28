@@ -1,10 +1,10 @@
 # Project Status
 
-## 2026-08-28 — M11D CI-wiring remediation candidate
+## 2026-08-28 — M11D CI test-isolation remediation candidate
 
 - The Round 3 application candidate received independent `GO`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
 - Hosted full CI run `33124975103` executed against exact SHA `a7d023265f82fff5d72cd72d5fa100c3ece1adc6`; GitHub jobs were green, but M11D acceptance CI was `NOT ACCEPTED` because `tests/Integration/B2bSalesCallPostgresTest.php` was omitted from hosted PostgreSQL test selection. Required M11D PostgreSQL proof remains `NOT ESTABLISHED`.
-- This candidate adds permanent CI wiring for a fresh exact-SHA gate. PostgreSQL remains `NOT RUN LOCALLY`; staging remains `NOT DEPLOYED`; owner/manual acceptance remains `NOT DONE`.
+- CI-wiring candidate `31cf14c8a3f74cb656c2e4c20f31d43d0087e8e3` permanently added the file for a fresh exact-SHA gate. The narrow CI review found `CI-001`: the newly reachable provider-lease test was not isolated from synchronous provider dispatch. This test-harness remediation isolates that provider job for a fresh narrow review. M11D acceptance remains `NOT ESTABLISHED`; PostgreSQL remains `NOT PROVEN` in hosted CI and `NOT RUN LOCALLY`; staging remains `NOT DEPLOYED`; owner/manual acceptance remains `NOT DONE`.
 - OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
 
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
