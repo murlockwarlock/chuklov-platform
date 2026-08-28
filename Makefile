@@ -45,7 +45,7 @@ test-integration-rag:
 	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/MilestoneNineDatabaseTest.php tests/Integration/PgvectorStatementTimeoutTest.php tests/Integration/KnowledgeRevisionsFilamentPostgresTest.php
 
 test-integration-concurrency:
-	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/ClientCompanionPostgresTest.php tests/Integration/MilestoneFourConcurrencyTest.php tests/Integration/MilestoneFiveConcurrencyTest.php tests/Integration/MilestoneSixFinanceConcurrencyTest.php tests/Integration/MilestoneNineConcurrencyTest.php tests/Integration/MilestoneTenConcurrencyTest.php tests/Integration/MilestoneElevenAConcurrencyTest.php tests/Integration/MilestoneElevenBBroadcastConcurrencyTest.php
+	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/ClientCompanionPostgresTest.php tests/Integration/MilestoneFourConcurrencyTest.php tests/Integration/MilestoneFiveConcurrencyTest.php tests/Integration/MilestoneSixFinanceConcurrencyTest.php tests/Integration/MilestoneNineConcurrencyTest.php tests/Integration/MilestoneTenConcurrencyTest.php tests/Integration/MilestoneElevenAConcurrencyTest.php tests/Integration/MilestoneElevenBBroadcastConcurrencyTest.php tests/Integration/B2bSalesCallPostgresTest.php
 
 test-e2e:
 	npm run test:e2e

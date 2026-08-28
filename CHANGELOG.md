@@ -1,9 +1,9 @@
 # Changelog
 
-## 2026-08-28 — M11D independent-review remediation round 3 candidate
+## 2026-08-28 — M11D hosted PostgreSQL CI wiring remediation
 
-- Anchored every provider lease's absolute provider deadline and lease expiry to one immutable UTC claim instant, and made the Sync worker consume that claim-time deadline instead of creating a fresh budget after claim.
-- Added bounded provider timing configuration and deterministic delayed-worker, deadline-boundary, and active host-reconciliation writer coverage. N-03 remains pending fresh independent re-review; PostgreSQL, hosted CI, staging, merge, M12, and owner acceptance are not claimed.
+- Added `tests/Integration/B2bSalesCallPostgresTest.php` exactly once to the normal PostgreSQL `test-integration-concurrency` target so the full hosted CI path selects the reviewed M11D scheduling-race, provider-lease, schema, constraint, and migration coverage.
+- Hosted full CI run `33124975103` executed against exact SHA `a7d023265f82fff5d72cd72d5fa100c3ece1adc6` with green GitHub jobs, but M11D acceptance CI was `NOT ACCEPTED` because the required PostgreSQL file was omitted. This candidate adds permanent wiring for a fresh exact-SHA gate; `REQ-B2B-001` remains a candidate and staging, owner acceptance, merge, and M12 are not claimed.
 
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
 

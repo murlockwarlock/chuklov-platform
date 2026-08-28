@@ -1,11 +1,11 @@
 # Project Status
 
-## 2026-08-28 — M11D independent-review remediation round 3 candidate
+## 2026-08-28 — M11D CI-wiring remediation candidate
 
-- Round 3 starts exactly at reviewed candidate SHA `515068fb3cba96d567d2ea064b1898dbb47dd506` on `codex/m11d-b2b-lead-funnel`, with accepted M11C preserved at main SHA `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
-- The bounded N-03 remediation derives the provider deadline and lease expiry from one immutable UTC claim instant, carries both absolute instants in the provider lease, makes Sync consume the claim-time deadline, bounds timing configuration, and adds deterministic delayed-worker and writer-barrier evidence. N-03 is implemented for fresh independent re-review and is not independently accepted or closed.
-- Focused local lease/deadline/provider evidence passes `70` tests / `359` assertions. PostgreSQL-specific migration, scheduling-race, and provider-lease coverage exists, but the local configured driver is SQLite; PostgreSQL remains `NOT RUN LOCALLY` and no PostgreSQL pass is claimed.
-- Hosted exact-SHA CI remains `NOT RUN`; staging remains `NOT DEPLOYED`; owner/manual acceptance and fresh independent re-review remain `NOT DONE`. OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
+- The Round 3 application candidate received independent `GO`. M11 remains `IN_PROGRESS` and `REQ-B2B-001` remains `CANDIDATE`.
+- Hosted full CI run `33124975103` executed against exact SHA `a7d023265f82fff5d72cd72d5fa100c3ece1adc6`; GitHub jobs were green, but M11D acceptance CI was `NOT ACCEPTED` because `tests/Integration/B2bSalesCallPostgresTest.php` was omitted from hosted PostgreSQL test selection. Required M11D PostgreSQL proof remains `NOT ESTABLISHED`.
+- This candidate adds permanent CI wiring for a fresh exact-SHA gate. PostgreSQL remains `NOT RUN LOCALLY`; staging remains `NOT DEPLOYED`; owner/manual acceptance remains `NOT DONE`.
+- OQ-007 remains OPEN, OQ-015 remains unresolved, M12 remains `NOT_STARTED`, and PR #23 remains untouched.
 
 ## 2026-08-28 — M11D independent-review remediation round 2 candidate
 
