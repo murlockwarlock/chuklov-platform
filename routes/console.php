@@ -3,7 +3,9 @@
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\B2B\Application\ScheduleB2bProviderSyncEvents;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Knowledge\Application\ScheduleKnowledgeStorageCleanup;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scheduling\Application\PruneBookingIdempotencyKeys;
@@ -57,3 +59,14 @@ Artisan::command('broadcasts:run', function (ScheduleBroadcastWork $scheduler): 
 })->purpose('Claim due broadcast campaigns and dispatch bounded recipient batches.');
 
 Schedule::command('broadcasts:run')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('portal:validate-configuration', function (ResolveTelegramMiniAppEntry $entries): void {
+    $entries->launchUrl('feedback');
+    $this->info('Canonical Telegram Mini App configuration is valid.');
+})->purpose('Validate the canonical HTTPS Telegram Mini App configuration.');
+
+Artisan::command('knowledge:storage-cleanup', function (ScheduleKnowledgeStorageCleanup $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' knowledge storage cleanup operation(s).');
+})->purpose('Dispatch pending Knowledge storage cleanup operations with crash-safe retries.');
+
+Schedule::command('knowledge:storage-cleanup')->everyMinute()->withoutOverlapping()->onOneServer();

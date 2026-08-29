@@ -13,6 +13,7 @@ use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
@@ -22,6 +23,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use LogicException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final class ScenarioContextFactory
 {
@@ -38,8 +41,11 @@ final class ScenarioContextFactory
     }
 
     /** @return array<string, mixed> */
-    public function renderContext(ScenarioEvaluationContext $context, ScenarioRecipient $recipient): array
-    {
+    public function renderContext(
+        ScenarioEvaluationContext $context,
+        ScenarioRecipient $recipient,
+        bool $includeFeedbackUrl = false,
+    ): array {
         if ($context->client === null) {
             throw (new ModelNotFoundException)->setModel(Client::class);
         }
@@ -62,9 +68,11 @@ final class ScenarioContextFactory
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
                 'completed_at' => CarbonImmutable::parse((string) $context->event->occurred_at)->toIso8601String(),
             ];
-            $renderContext['feedback'] = [
-                'url' => $this->feedbackUrl(),
-            ];
+            if ($includeFeedbackUrl) {
+                $renderContext['feedback'] = [
+                    'url' => $this->feedbackUrl(),
+                ];
+            }
         }
 
         if ($context->onboarding !== null) {
@@ -124,12 +132,12 @@ final class ScenarioContextFactory
         return $renderContext;
     }
 
-    private function feedbackUrl(): string
+    public function feedbackUrl(): string
     {
         try {
             return app(ResolveTelegramMiniAppEntry::class)->launchUrl('feedback');
-        } catch (\Throwable) {
-            return route('portal.feedback');
+        } catch (LogicException|NotFoundHttpException $exception) {
+            throw new FeedbackMiniAppConfigurationException($exception);
         }
     }
 

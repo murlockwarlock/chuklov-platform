@@ -117,6 +117,27 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertArrayNotHasKey('url', $button);
     }
 
+    public function test_invalid_web_app_url_fails_closed_before_telegram_delivery(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $channel = new TelegramNotificationChannel($bot);
+
+        $result = $channel->send(new NotificationMessage(
+            recipientExternalId: 'feedback-chat',
+            body: 'Оцените визит',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'feedback-invalid-url',
+            webAppUrl: 'http://mini.example.test/feedback',
+        ));
+
+        self::assertSame('unavailable', $result->outcome->value);
+        self::assertSame('invalid_web_app_url', $result->errorCode);
+        self::assertCount(0, $bot->getRequestHistory());
+    }
+
     public function test_canonical_mini_app_origin_accepts_https_host_with_optional_trailing_slash(): void
     {
         foreach (['https://mini.example.test', 'https://mini.example.test/'] as $configuredUrl) {

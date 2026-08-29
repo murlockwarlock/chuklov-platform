@@ -3,11 +3,15 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeStorageCleanupStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Domain\Models\KnowledgeStorageCleanupOperation;
+use App\Modules\Knowledge\Jobs\ProcessKnowledgeStorageCleanup;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 final class DeleteKnowledgeSource
 {
@@ -20,7 +24,7 @@ final class DeleteKnowledgeSource
     {
         $organization = $this->authorization->organizationForSource($actor, $source, OrganizationPermission::ManageKnowledge);
 
-        DB::transaction(function () use ($actor, $source, $organization): void {
+        $cleanupOperationIds = DB::transaction(function () use ($actor, $source, $organization): array {
             $lockedSource = KnowledgeSource::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($source->getKey())
@@ -30,11 +34,6 @@ final class DeleteKnowledgeSource
                 ->where('organization_id', $organization->getKey())
                 ->where('knowledge_source_id', $lockedSource->getKey())
                 ->get(['id', 'storage_disk', 'storage_path']);
-            $fileReferences = $revisions
-                ->filter(fn (object $revision): bool => is_string($revision->storage_disk) && is_string($revision->storage_path))
-                ->map(fn (object $revision): array => [(string) $revision->storage_disk, (string) $revision->storage_path])
-                ->values()
-                ->all();
             $retainedRevisionIds = DB::table('ai_run_rag_references')
                 ->where('organization_id', $organization->getKey())
                 ->where('knowledge_source_id', $lockedSource->getKey())
@@ -42,6 +41,24 @@ final class DeleteKnowledgeSource
                 ->pluck('knowledge_revision_id')
                 ->map(static fn (mixed $id): int => (int) $id)
                 ->all();
+            $retainedRevisionLookup = array_fill_keys($retainedRevisionIds, true);
+            $cleanupCandidates = [];
+
+            foreach ($revisions as $revision) {
+                if (isset($retainedRevisionLookup[(int) $revision->id])
+                    || ! is_string($revision->storage_disk)
+                    || ! is_string($revision->storage_path)
+                    || $revision->storage_disk === ''
+                    || $revision->storage_path === '') {
+                    continue;
+                }
+
+                $candidateKey = $revision->storage_disk."\0".$revision->storage_path;
+                $cleanupCandidates[$candidateKey]['storage_disk'] = $revision->storage_disk;
+                $cleanupCandidates[$candidateKey]['storage_path'] = $revision->storage_path;
+                $cleanupCandidates[$candidateKey]['revision_ids'][] = (int) $revision->id;
+            }
+
             $referencedChunkIds = DB::table('ai_run_rag_references')
                 ->where('organization_id', $organization->getKey())
                 ->where('knowledge_source_id', $lockedSource->getKey())
@@ -80,17 +97,43 @@ final class DeleteKnowledgeSource
             $revisionCount = (clone $revisionQuery)->when($retainedRevisionIds !== [], fn ($query) => $query->whereNotIn('id', $retainedRevisionIds))->count();
             (clone $revisionQuery)->when($retainedRevisionIds !== [], fn ($query) => $query->whereNotIn('id', $retainedRevisionIds))->delete();
 
+            $cleanupOperationIds = [];
+            foreach ($cleanupCandidates as $candidate) {
+                sort($candidate['revision_ids']);
+                $cleanupKey = hash('sha256', implode("\0", [
+                    (string) $organization->getKey(),
+                    (string) $lockedSource->getKey(),
+                    implode(',', $candidate['revision_ids']),
+                    $candidate['storage_disk'],
+                    $candidate['storage_path'],
+                ]));
+                $operation = KnowledgeStorageCleanupOperation::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('cleanup_key', $cleanupKey)
+                    ->first();
+
+                if ($operation === null) {
+                    $operation = new KnowledgeStorageCleanupOperation;
+                    $operation->forceFill([
+                        'organization_id' => $organization->getKey(),
+                        'cleanup_key' => $cleanupKey,
+                        'storage_disk' => $candidate['storage_disk'],
+                        'storage_path' => $candidate['storage_path'],
+                        'status' => KnowledgeStorageCleanupStatus::Pending,
+                        'attempts' => 0,
+                        'available_at' => now(),
+                    ])->save();
+                }
+
+                $cleanupOperationIds[] = (int) $operation->getKey();
+            }
+
             if ($retainedRevisionIds === []) {
                 $lockedSource->delete();
             } else {
                 $lockedSource->forceFill(['status' => 'retired', 'retired_at' => now()])->save();
             }
 
-            DB::afterCommit(function () use ($fileReferences): void {
-                foreach ($fileReferences as [$disk, $path]) {
-                    Storage::disk($disk)->delete($path);
-                }
-            });
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -104,6 +147,21 @@ final class DeleteKnowledgeSource
                     'retained_revision_count' => count($retainedRevisionIds),
                 ],
             );
+
+            return $cleanupOperationIds;
         });
+
+        foreach ($cleanupOperationIds as $operationId) {
+            try {
+                ProcessKnowledgeStorageCleanup::dispatch((int) $organization->getKey(), $operationId)
+                    ->onQueue((string) config('rag.cleanup.queue', 'default'));
+            } catch (Throwable $exception) {
+                Log::warning('Knowledge storage cleanup dispatch failed.', [
+                    'organization_id' => $organization->getKey(),
+                    'operation_id' => $operationId,
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
     }
 }

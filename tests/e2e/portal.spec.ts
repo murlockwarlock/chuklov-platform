@@ -61,7 +61,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
                 ]);
             $fence = str_repeat(chr(96), 3);
-            $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
+            $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n[Безопасная HTTPS ссылка](https://example.test/secure)\n[HTTP ссылка не должна быть активной](http://example.test/insecure)\n[javascript ссылка не должна быть активной](javascript:alert(1))\n[data ссылка не должна быть активной](data:text/html,unsafe)\n[file ссылка не должна быть активной](file:///tmp/unsafe)\n[Относительная ссылка не должна быть активной](//example.test/insecure)\n[userinfo ссылка не должна быть активной](https://user:pass@example.test/insecure)\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
             app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
                 organizationId: $organization->getKey(),
                 client: $client,
@@ -531,6 +531,18 @@ test('companion safely renders rich long messages without viewport overflow', as
         await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
         await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
         await expect(page.locator('.portal-rich-text__code')).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Безопасная HTTPS ссылка' })).toHaveAttribute('href', 'https://example.test/secure');
+        for (const label of [
+            'HTTP ссылка не должна быть активной',
+            'javascript ссылка не должна быть активной',
+            'data ссылка не должна быть активной',
+            'file ссылка не должна быть активной',
+            'Относительная ссылка не должна быть активной',
+            'userinfo ссылка не должна быть активной',
+        ]) {
+            await expect(page.getByRole('link', { name: label })).toHaveCount(0);
+            await expect(page.getByText(label, { exact: true })).toBeVisible();
+        }
         await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
         await assertNoHorizontalOverflow(page);
     }

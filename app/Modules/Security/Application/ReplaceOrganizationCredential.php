@@ -54,6 +54,7 @@ class ReplaceOrganizationCredential
                 ->where('organization_id', $organization->getKey())
                 ->where('provider', $provider)
                 ->where('credential_name', $credentialName)
+                ->lockForUpdate()
                 ->first() ?? new OrganizationCredential;
 
             $oldRevisionId = $credential->revision_id;

@@ -26,7 +26,7 @@ function safeHref(value: string): string | null {
     try {
         const url = new URL(value);
 
-        if (!['http:', 'https:'].includes(url.protocol) || url.hostname === '' || url.username !== '' || url.password !== '') {
+        if (url.protocol !== 'https:' || url.hostname === '' || url.username !== '' || url.password !== '') {
             return null;
         }
 

@@ -6,6 +6,7 @@ use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
@@ -124,6 +125,19 @@ final class MaterializeScenarioEvent
             1,
         );
         $timestamp = now();
+        try {
+            $renderContext = $this->contextFactory->renderContext(
+                $context,
+                $recipient,
+                $template->template?->template_key === 'booking-completed-feedback',
+            );
+        } catch (FeedbackMiniAppConfigurationException) {
+            $renderContext = $this->contextFactory->renderContext($context, $recipient);
+            $renderContext['feedback'] = [
+                'url' => null,
+                'configuration_error' => FeedbackMiniAppConfigurationException::ERROR_CODE,
+            ];
+        }
 
         DB::table('scenario_actions')->insertOrIgnore([
             'organization_id' => $event->organization_id,
@@ -142,7 +156,7 @@ final class MaterializeScenarioEvent
             'repeat_interval_unit' => $rule->repeat_interval_unit?->value,
             'purpose' => $rule->purpose->value,
             'channel_priority' => json_encode($rule->channel_priority, JSON_THROW_ON_ERROR),
-            'render_context' => json_encode($this->contextFactory->renderContext($context, $recipient), JSON_THROW_ON_ERROR),
+            'render_context' => json_encode($renderContext, JSON_THROW_ON_ERROR),
             'materialization_key' => $materializationKey,
             'scheduled_for' => $scheduledFor,
             'status' => ScenarioActionStatus::Scheduled->value,

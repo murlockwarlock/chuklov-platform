@@ -35,6 +35,13 @@ return [
         'minimum_similarity' => 0.0,
     ],
     'processing_stale_after_seconds' => 1800,
+    'cleanup' => [
+        'queue' => env('RAG_CLEANUP_QUEUE', 'default'),
+        'batch_size' => (int) env('RAG_CLEANUP_BATCH_SIZE', 100),
+        'stale_after_seconds' => (int) env('RAG_CLEANUP_STALE_AFTER_SECONDS', 300),
+        'retry_after_seconds' => (int) env('RAG_CLEANUP_RETRY_AFTER_SECONDS', 60),
+        'max_retry_after_seconds' => (int) env('RAG_CLEANUP_MAX_RETRY_AFTER_SECONDS', 3600),
+    ],
     'uploads' => [
         'disk' => 'private',
         'maximum_kilobytes' => 2048,

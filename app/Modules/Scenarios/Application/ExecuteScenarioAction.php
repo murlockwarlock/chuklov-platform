@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
@@ -146,12 +147,20 @@ final class ExecuteScenarioAction
             }
 
             $locale = $template->template->locale;
+            $webAppUrl = null;
+            if ($template->template->template_key === 'booking-completed-feedback') {
+                try {
+                    $webAppUrl = $this->contextFactory->feedbackUrl();
+                } catch (FeedbackMiniAppConfigurationException) {
+                    return NotificationDeliveryResult::unavailable(FeedbackMiniAppConfigurationException::ERROR_CODE);
+                }
+
+                $feedbackContext = $action->render_context['feedback'] ?? null;
+                if (! is_array($feedbackContext) || ($feedbackContext['url'] ?? null) !== $webAppUrl) {
+                    return NotificationDeliveryResult::unavailable(FeedbackMiniAppConfigurationException::ERROR_CODE);
+                }
+            }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
-            $webAppUrl = $template->template->template_key === 'booking-completed-feedback'
-                && is_array($action->render_context['feedback'] ?? null)
-                && is_string($action->render_context['feedback']['url'] ?? null)
-                ? $action->render_context['feedback']['url']
-                : null;
 
             $event = $action->event()->first();
             if ($event === null

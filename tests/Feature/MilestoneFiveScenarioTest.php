@@ -26,6 +26,7 @@ use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
@@ -212,6 +213,85 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(['client.full_name', 'feedback.url'], NotificationTemplateVersion::query()
             ->whereKey($rule->template_version_id)
             ->value('variables'));
+    }
+
+    public function test_feedback_delivery_fails_closed_without_the_canonical_mini_app_and_other_booking_rules_continue(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        config()->set('portal.telegram.portal_url', 'http://mini.example.test');
+        app(ScenarioNotificationSeeder::class)->run();
+        $ordinaryRule = ScenarioRule::factory()
+            ->forOrganization($organization)
+            ->usingTemplate($this->template($organization))
+            ->create(['rule_key' => 'ordinary-booking-without-mini-app']);
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'booking-event-without-mini-app', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        $feedbackRule = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'booking-completed-feedback-en')
+            ->sole();
+        $feedbackAction = ScenarioAction::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('scenario_event_id', $event->getKey())
+            ->where('scenario_rule_id', $feedbackRule->getKey())
+            ->sole();
+        $ordinaryAction = ScenarioAction::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('scenario_event_id', $event->getKey())
+            ->where('scenario_rule_id', $ordinaryRule->getKey())
+            ->sole();
+        self::assertSame(FeedbackMiniAppConfigurationException::ERROR_CODE, $feedbackAction->render_context['feedback']['configuration_error']);
+
+        foreach ([$feedbackAction, $ordinaryAction] as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+        }
+
+        app(ExecuteScenarioAction::class)->handle($feedbackAction->getKey());
+        app(ExecuteScenarioAction::class)->handle($ordinaryAction->getKey());
+
+        self::assertSame(ScenarioDeliveryStatus::Unavailable, $feedbackAction->deliveries()->sole()->status);
+        self::assertSame(FeedbackMiniAppConfigurationException::ERROR_CODE, $feedbackAction->deliveries()->sole()->last_error_code);
+        self::assertSame(ScenarioActionStatus::Suppressed, $feedbackAction->fresh()->status);
+        self::assertSame(ScenarioActionStatus::Delivered, $ordinaryAction->fresh()->status);
+        self::assertCount(1, $this->channel->messages);
+        self::assertSame('Hello '.$client->full_name.'.', $this->channel->messages[0]->body);
+    }
+
+    public function test_feedback_materialization_rejects_missing_http_and_malformed_mini_app_urls_without_calling_provider(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        app(ScenarioNotificationSeeder::class)->run();
+        $feedbackRule = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'booking-completed-feedback-en')
+            ->sole();
+
+        foreach ([null, 'http://mini.example.test', 'not-a-url'] as $index => $portalUrl) {
+            config()->set('portal.telegram.portal_url', $portalUrl);
+            $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+            $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'invalid-feedback-url-'.$index, CarbonImmutable::now());
+            app(MaterializeScenarioEvent::class)->handle($event->getKey());
+            $action = ScenarioAction::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('scenario_event_id', $event->getKey())
+                ->where('scenario_rule_id', $feedbackRule->getKey())
+                ->sole();
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+            self::assertSame(ScenarioDeliveryStatus::Unavailable, $action->deliveries()->sole()->status);
+            self::assertSame(FeedbackMiniAppConfigurationException::ERROR_CODE, $action->deliveries()->sole()->last_error_code);
+        }
+
+        self::assertCount(0, $this->channel->messages);
     }
 
     public function test_template_updates_create_an_immutable_new_version(): void

@@ -34,10 +34,15 @@ final class TelegramNotificationChannel implements NotificationChannel
         }
 
         try {
+            $keyboard = $this->feedbackKeyboard($message);
+            if ($message->webAppUrl !== null && $keyboard === null) {
+                return NotificationDeliveryResult::unavailable('invalid_web_app_url');
+            }
+
             $sent = $this->bot->sendMessage(
                 $message->body,
                 $message->recipientExternalId,
-                reply_markup: $this->feedbackKeyboard($message),
+                reply_markup: $keyboard,
             );
 
             return NotificationDeliveryResult::delivered(

@@ -316,11 +316,52 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         app(ScenarioNotificationSeeder::class)->run();
         $rule = ScenarioRule::query()->where('organization_id', $organization->id)->where('rule_key', 'post-session-follow-up-24h-en')->sole();
         $rule->forceFill(['name' => 'Owner customized'])->save();
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->id)
+            ->where('template_key', 'post-session-follow-up')
+            ->where('locale', 'en')
+            ->sole();
+        $template->forceFill(['name' => 'Owner customized template'])->save();
         app(ScenarioNotificationSeeder::class)->run();
 
         self::assertSame('Owner customized', $rule->fresh()->name);
-        self::assertSame(9, ScenarioRule::query()->where('organization_id', $organization->id)->count());
-        self::assertSame(5, NotificationTemplate::query()->where('organization_id', $organization->id)->count());
+        self::assertSame('Owner customized template', $template->fresh()->name);
+        $expectedRuleKeys = [
+            'b2b-sales-call-ready-client-en',
+            'b2b-sales-call-ready-client-ru',
+            'b2b-sales-call-ready-specialist',
+            'booking-completed-feedback-en',
+            'booking-completed-feedback-ru',
+            'post-session-follow-up-24h-en',
+            'post-session-follow-up-24h-ru',
+            'post-session-follow-up-48h-en',
+            'post-session-follow-up-48h-ru',
+            'post-session-follow-up-72h-en',
+            'post-session-follow-up-72h-ru',
+        ];
+        $ruleKeys = ScenarioRule::query()
+            ->where('organization_id', $organization->id)
+            ->orderBy('rule_key')
+            ->pluck('rule_key')
+            ->all();
+        self::assertSame($expectedRuleKeys, $ruleKeys);
+        self::assertSame(count($expectedRuleKeys), count(array_unique($ruleKeys)));
+        self::assertSame(count($expectedRuleKeys), ScenarioRule::query()->where('organization_id', $organization->id)->count());
+        self::assertSame([
+            'b2b-sales-call-ready:en',
+            'b2b-sales-call-ready:ru',
+            'b2b-sales-call-ready-specialist:en',
+            'booking-completed-feedback:en',
+            'booking-completed-feedback:ru',
+            'post-session-follow-up:en',
+            'post-session-follow-up:ru',
+        ], NotificationTemplate::query()
+            ->where('organization_id', $organization->id)
+            ->orderBy('template_key')
+            ->orderBy('locale')
+            ->get(['template_key', 'locale'])
+            ->map(static fn (NotificationTemplate $template): string => $template->template_key.':'.$template->locale)
+            ->all());
         self::assertSame(
             [24, 48, 72],
             ScenarioRule::query()
