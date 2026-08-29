@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-29 — M11D hosted-CI PostgreSQL wiring remediation candidate
+
+- `eda21f0267cee03b12310b9bc4e738adb06f8630` received independent final concurrency/retry re-review GO; PostgreSQL was not executed locally during that review. Coordinator pre-CI inspection found that `test-integration-concurrency` omitted `B2bZoomCredentialPostgresTest` and `KnowledgeStorageCleanupPostgresTest`, so hosted CI was not triggered for `eda21f…`.
+- This bounded follow-up changes only the Makefile integration-concurrency selector so the existing suites and both reviewed PostgreSQL suites execute under hosted CI. The resulting CI-wiring candidate requires narrow independent re-review; hosted CI has not run, it is not deployed, and the owner has not retested it. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`.
+- M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. Ordinary Online/Remote Booking retains the explicit Phase-1 AUTO/MANUAL provider-lifecycle gap; B2B SalesCall does not satisfy it.
+
 ## 2026-08-29 — M11D final concurrency/retry remediation candidate
 
 - This bounded remediation starts exactly at 686848f5b4f815b10b7070986968d171f42efa23 on codex/m11d-b2b-lead-funnel. That starting SHA received the second independent re-review result CHANGES REQUIRED; its preceding remediation SHA 19163b569022abd0e5b42a3d523a503897ba6dc0 also received independent CHANGES REQUIRED. Staging remains exactly 3dc9f8b9a4038831823a687fa53abe6f481302b0.

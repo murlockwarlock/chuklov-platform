@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-29 — M11D hosted-CI PostgreSQL wiring remediation candidate
+
+- `eda21f0267cee03b12310b9bc4e738adb06f8630` received independent final concurrency/retry re-review GO, but PostgreSQL was not executed locally. Pre-CI inspection found that the existing integration-concurrency selector omitted `B2bZoomCredentialPostgresTest` and `KnowledgeStorageCleanupPostgresTest`, so hosted CI was not triggered for that SHA.
+- This one-file bounded follow-up adds both reviewed suites to the existing Makefile selector without changing application code, test semantics, or workflow configuration. The resulting candidate requires narrow independent re-review; hosted CI has not run, it is not deployed, the owner has not retested it, and staging remains `3dc9f8b9a4038831823a687fa53abe6f481302b0`.
+- M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. The ordinary Booking AUTO/MANUAL provider-lifecycle gap remains explicit and is outside this remediation.
+
 ## 2026-08-29 — M11D final concurrency/retry remediation candidate
 
 - This bounded candidate starts exactly at 686848f5b4f815b10b7070986968d171f42efa23 after the second independent re-review returned CHANGES REQUIRED. It bounds Knowledge cleanup retries with terminal typed failure, serializes credential replacement through the organization row for first Zoom creation, scrubs the write-only Livewire Zoom secret, aligns cleanup scheduler indexes, and synchronizes PostgreSQL concurrency evidence.
