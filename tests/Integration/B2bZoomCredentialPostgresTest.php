@@ -198,7 +198,7 @@ final class B2bZoomCredentialPostgresTest extends TestCase
         $connection->beginTransaction();
         Organization::query()
             ->whereKey($organization->getKey())
-            ->lockForUpdate()
+            ->lock('for no key update')
             ->firstOrFail();
 
         $pool = null;

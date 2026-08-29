@@ -48,7 +48,7 @@ class ReplaceOrganizationCredential
         return DB::transaction(function () use ($organization, $actor, $provider, $credentialName, $credentials, $status): OrganizationCredential {
             Organization::query()
                 ->whereKey($organization->getKey())
-                ->lockForUpdate()
+                ->lock('for no key update')
                 ->firstOrFail();
 
             $credential = OrganizationCredential::query()

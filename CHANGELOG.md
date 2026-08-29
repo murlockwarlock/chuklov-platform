@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-29 — M11D hosted PostgreSQL concurrency failure remediation candidate
+
+- Starting SHA `0f7bed2e81ce4351869df07e898b1c1d838bb78e` received narrow CI-wiring re-review GO. Exact hosted full CI run `33254909757` used healthy PostgreSQL and passed Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health, while Integration concurrency failed with `64` passed, `3` failed, and `403` assertions. `KnowledgeStorageCleanupPostgresTest` passed; the two Zoom first-credential-create tests timed out; and the B2B SalesCall race fixture rejected its Manual request before the scheduling race because it had no manual URL.
+- This bounded remediation supplies a deterministic HTTPS `.test` manual URL to that fixture, changes the authoritative credential organization-row serialization to PostgreSQL `FOR NO KEY UPDATE`, and aligns the PostgreSQL test barrier with that mode. The existing credential-row lock, uniqueness, validation, encryption, audit, revision, event, tenant, and Knowledge cleanup behavior remain unchanged; no CI workflow selector or unrelated application area is changed.
+- The resulting candidate has not received independent review; hosted CI has not been rerun or passed for it; it is not deployed; the owner has not retested it; and staging remains `3dc9f8b9a4038831823a687fa53abe6f481302b0`. M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. The ordinary Booking AUTO/MANUAL provider-lifecycle gap remains explicit and outside this remediation.
+
 ## 2026-08-29 — M11D hosted-CI PostgreSQL wiring remediation candidate
 
 - `eda21f0267cee03b12310b9bc4e738adb06f8630` received independent final concurrency/retry re-review GO, but PostgreSQL was not executed locally. Pre-CI inspection found that the existing integration-concurrency selector omitted `B2bZoomCredentialPostgresTest` and `KnowledgeStorageCleanupPostgresTest`, so hosted CI was not triggered for that SHA.

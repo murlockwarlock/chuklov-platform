@@ -447,6 +447,7 @@ final class B2bSalesCallPostgresTest extends TestCase
                 idempotencyKey: 'pg-race-b2b',
                 source: B2bLeadSource::Portal,
                 meetingMode: VideoMeetingMode::Manual,
+                manualMeetingUrl: 'https://meet.example.test/pg-race-b2b',
             );
 
             return 'b2b';
