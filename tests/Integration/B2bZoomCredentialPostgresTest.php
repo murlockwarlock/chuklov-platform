@@ -8,9 +8,16 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Closure;
+use Illuminate\Console\Application as ConsoleApplication;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
-use Illuminate\Support\Facades\Concurrency;
+use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\InvokedProcess;
+use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Laravel\SerializableClosure\SerializableClosure;
+use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\TestCase;
 use Throwable;
 
@@ -41,10 +48,10 @@ final class B2bZoomCredentialPostgresTest extends TestCase
             enabled: true,
         );
 
-        $results = Concurrency::driver('process')->run([
-            static fn (): string => self::saveBlankInProcess($organization->getKey(), $admin->getKey()),
-            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s1'),
-        ]);
+        $results = $this->runConcurrentWithOrganizationLock($organization, [
+            static fn (): string => self::saveBlankInProcess($organization->getKey(), $admin->getKey(), 'zoom-existing-blank'),
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s1', 'zoom-existing-explicit'),
+        ], ['zoom-existing-blank', 'zoom-existing-explicit']);
 
         self::assertSame(['ok', 'ok'], $results);
         $credential = OrganizationCredential::query()->where('organization_id', $organization->getKey())->sole();
@@ -66,10 +73,10 @@ final class B2bZoomCredentialPostgresTest extends TestCase
             enabled: true,
         );
 
-        $results = Concurrency::driver('process')->run([
-            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s2'),
-            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s3'),
-        ]);
+        $results = $this->runConcurrentWithOrganizationLock($organization, [
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s2', 'zoom-existing-explicit-two'),
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-s3', 'zoom-existing-explicit-three'),
+        ], ['zoom-existing-explicit-two', 'zoom-existing-explicit-three']);
 
         self::assertSame(['ok', 'ok'], $results);
         $secret = OrganizationCredential::query()
@@ -79,11 +86,64 @@ final class B2bZoomCredentialPostgresTest extends TestCase
         self::assertContains($secret, ['secret-s2', 'secret-s3']);
     }
 
-    private static function saveBlankInProcess(int $organizationId, int $adminId): string
+    public function test_concurrent_first_credential_creation_is_serialized_without_unique_violation(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->fixture();
+        $this->setOrganization($organization);
+
+        $results = $this->runConcurrentWithOrganizationLock($organization, [
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-first-one', 'zoom-first-one'),
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-first-two', 'zoom-first-two'),
+        ], ['zoom-first-one', 'zoom-first-two']);
+
+        self::assertSame(['ok', 'ok'], $results);
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+        self::assertContains($credential->credentials['client_secret'], ['secret-first-one', 'secret-first-two']);
+        self::assertSame(2, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'organization.credential.replaced')
+            ->count());
+        $latestAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'organization.credential.replaced')
+            ->latest('id')
+            ->firstOrFail();
+        self::assertSame($latestAudit->metadata['new_revision_id'], $credential->revision_id);
+    }
+
+    public function test_concurrent_first_credential_creation_and_blank_save_have_defined_serialized_outcomes(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->fixture();
+        $this->setOrganization($organization);
+
+        $results = $this->runConcurrentWithOrganizationLock($organization, [
+            static fn (): string => self::saveBlankInProcess($organization->getKey(), $admin->getKey(), 'zoom-first-blank'),
+            static fn (): string => self::saveExplicitInProcess($organization->getKey(), $admin->getKey(), 'secret-first-explicit', 'zoom-first-explicit'),
+        ], ['zoom-first-blank', 'zoom-first-explicit']);
+
+        self::assertContains('ok', $results);
+        self::assertNotContains('error', $results);
+        self::assertContains($results[0], ['ok', 'validation']);
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+        self::assertSame('secret-first-explicit', $credential->credentials['client_secret']);
+        self::assertContains(AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'organization.credential.replaced')
+            ->count(), [1, 2]);
+    }
+
+    private static function saveBlankInProcess(int $organizationId, int $adminId, string $readyToken): string
     {
         try {
             $organization = Organization::query()->findOrFail($organizationId);
             app(OrganizationContext::class)->set($organization);
+            self::signalReady($readyToken);
             app(SaveB2bZoomConfiguration::class)->handle(
                 actor: User::query()->findOrFail($adminId),
                 accountId: 'account-blank',
@@ -94,16 +154,19 @@ final class B2bZoomCredentialPostgresTest extends TestCase
             );
 
             return 'ok';
+        } catch (ValidationException) {
+            return 'validation';
         } catch (Throwable) {
             return 'error';
         }
     }
 
-    private static function saveExplicitInProcess(int $organizationId, int $adminId, string $secret): string
+    private static function saveExplicitInProcess(int $organizationId, int $adminId, string $secret, string $readyToken): string
     {
         try {
             $organization = Organization::query()->findOrFail($organizationId);
             app(OrganizationContext::class)->set($organization);
+            self::signalReady($readyToken);
             app(SaveB2bZoomConfiguration::class)->handle(
                 actor: User::query()->findOrFail($adminId),
                 accountId: 'account-'.$secret,
@@ -116,6 +179,84 @@ final class B2bZoomCredentialPostgresTest extends TestCase
             return 'ok';
         } catch (Throwable) {
             return 'error';
+        }
+    }
+
+    private static function signalReady(string $readyToken): void
+    {
+        fwrite(STDERR, $readyToken.PHP_EOL);
+        fflush(STDERR);
+    }
+
+    /**
+     * @param  list<Closure>  $tasks
+     * @param  list<string>  $readyTokens
+     */
+    private function runConcurrentWithOrganizationLock(Organization $organization, array $tasks, array $readyTokens): array
+    {
+        $connection = DB::connection();
+        $connection->beginTransaction();
+        Organization::query()
+            ->whereKey($organization->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $pool = null;
+
+        try {
+            $command = ConsoleApplication::formatCommandString('invoke-serialized-closure');
+            $pool = app(ProcessFactory::class)->pool(function (Pool $pool) use ($tasks, $command): void {
+                foreach ($tasks as $key => $task) {
+                    $pool->as((string) $key)
+                        ->path(base_path())
+                        ->env([
+                            'LARAVEL_INVOKABLE_CLOSURE' => base64_encode(serialize(new SerializableClosure($task))),
+                        ])
+                        ->timeout(30)
+                        ->command($command);
+                }
+            })->start();
+            $processes = $pool->running();
+            self::assertCount(count($tasks), $processes);
+
+            foreach ($processes as $index => $process) {
+                self::assertInstanceOf(InvokedProcess::class, $process);
+                $readyToken = $readyTokens[$index];
+                $readyOutput = '';
+                $process->waitUntil(function (string $type, string $buffer) use (&$readyOutput, $readyToken): bool {
+                    if ($type !== SymfonyProcess::ERR) {
+                        return false;
+                    }
+
+                    $readyOutput .= $buffer;
+
+                    return str_contains($readyOutput, $readyToken.PHP_EOL);
+                });
+                self::assertTrue($process->running());
+            }
+
+            $connection->commit();
+            $results = $pool->wait()->collect()->map(function ($result): string {
+                self::assertTrue($result->successful(), $result->errorOutput());
+                $payload = json_decode($result->output(), true);
+                self::assertIsArray($payload);
+                self::assertTrue($payload['successful'] ?? false, $result->output());
+                self::assertIsString($payload['result'] ?? null);
+                $value = unserialize($payload['result']);
+                self::assertIsString($value);
+
+                return $value;
+            })->values()->all();
+
+            return $results;
+        } finally {
+            if ($connection->transactionLevel() > 0) {
+                $connection->rollBack();
+            }
+
+            if ($pool !== null && $pool->running()->isNotEmpty()) {
+                $pool->stop(1);
+            }
         }
     }
 

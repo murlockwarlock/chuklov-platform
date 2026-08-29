@@ -61,7 +61,17 @@ final class KnowledgeStorageCleanupPostgresTest extends TestCase
         }
 
         self::assertTrue(DB::table('pg_constraint')->where('conname', 'knowledge_storage_cleanup_operations_organization_id_foreign')->exists());
+        $statusConstraint = DB::table('pg_constraint')
+            ->where('conname', 'knowledge_cleanup_status_check')
+            ->value(DB::raw('pg_get_constraintdef(oid)'));
+        self::assertIsString($statusConstraint);
+        self::assertStringContainsString("'failed'", $statusConstraint);
         self::assertTrue(DB::table('pg_indexes')->where('indexname', 'knowledge_cleanup_org_key_unique')->exists());
+        $indexes = DB::table('pg_indexes')
+            ->whereIn('indexname', ['knowledge_cleanup_global_due_idx', 'knowledge_cleanup_global_stale_idx'])
+            ->pluck('indexdef', 'indexname');
+        self::assertStringContainsString('(status, available_at, id)', (string) $indexes->get('knowledge_cleanup_global_due_idx'));
+        self::assertStringContainsString('(status, processing_started_at, id)', (string) $indexes->get('knowledge_cleanup_global_stale_idx'));
         self::assertTrue(DB::table('pg_indexes')->where('indexname', 'knowledge_revisions_storage_identity_idx')->exists());
     }
 

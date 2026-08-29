@@ -38,6 +38,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -247,12 +248,14 @@ class SchedulingConfiguration extends Page
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $data = $this->form->getState();
-        $specialist = Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->findOrFail((int) $data['specialist_id']);
+        $data = null;
 
         try {
+            $data = $this->form->getState();
+            $specialist = Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->findOrFail((int) $data['specialist_id']);
+
             DB::transaction(function () use ($actor, $data, $specialist): void {
                 app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
                 app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
@@ -308,15 +311,39 @@ class SchedulingConfiguration extends Page
                 }
             });
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
 
             throw $exception;
+        } finally {
+            $this->scrubZoomClientSecret();
         }
 
         Notification::make()
             ->success()
             ->title('Расписание сохранено')
             ->send();
+    }
+
+    /** @param array<string, mixed>|null $data
+     * @return array<string, mixed>
+     */
+    private function safeFormState(?array $data): array
+    {
+        if ($data === null) {
+            $state = $this->form->getRawState();
+            $data = $state instanceof Arrayable ? $state->toArray() : $state;
+        }
+
+        $data['zoom_client_secret'] = null;
+
+        return $data;
+    }
+
+    private function scrubZoomClientSecret(): void
+    {
+        if ($this->data !== null) {
+            $this->data['zoom_client_secret'] = null;
+        }
     }
 
     /** @return array<int, string> */

@@ -9,9 +9,10 @@ enum KnowledgeStorageCleanupStatus: string
     case Retryable = 'retryable';
     case Succeeded = 'succeeded';
     case Protected = 'protected';
+    case Failed = 'failed';
 
     public function isTerminal(): bool
     {
-        return in_array($this, [self::Succeeded, self::Protected], true);
+        return in_array($this, [self::Succeeded, self::Protected, self::Failed], true);
     }
 }

@@ -29,6 +29,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -42,6 +43,7 @@ final class KnowledgeStorageCleanupTest extends TestCase
         Queue::fake();
         Storage::fake('private');
         config()->set('rag.cleanup.retry_after_seconds', 1);
+        config()->set('rag.cleanup.max_attempts', 3);
     }
 
     public function test_unreferenced_uploaded_revision_deletion_creates_and_processes_a_durable_cleanup(): void
@@ -135,7 +137,6 @@ final class KnowledgeStorageCleanupTest extends TestCase
         app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
 
         $operation->refresh();
-        $operation->refresh();
         self::assertSame(KnowledgeStorageCleanupStatus::Retryable, $operation->status);
         self::assertSame('storage_delete_failed', $operation->error_code);
         self::assertSame(1, $operation->attempts);
@@ -149,6 +150,36 @@ final class KnowledgeStorageCleanupTest extends TestCase
         $operation->refresh();
         self::assertSame(KnowledgeStorageCleanupStatus::Succeeded, $operation->status);
         self::assertSame(2, $operation->attempts);
+    }
+
+    public function test_false_storage_delete_reaches_a_terminal_failed_state_at_the_attempt_limit(): void
+    {
+        [$organization] = $this->fixture();
+        $path = 'knowledge/sources/'.$organization->getKey().'/permanent-failure.txt';
+        $operation = $this->operation($organization, $path);
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('delete')->times(3)->with($path)->andReturnFalse();
+        Storage::shouldReceive('disk')->times(3)->with('private')->andReturn($disk);
+
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+            $operation->refresh();
+
+            if ($attempt < 3) {
+                self::assertSame(KnowledgeStorageCleanupStatus::Retryable, $operation->status);
+                $operation->update(['available_at' => now()->subMinutes(10)]);
+            }
+        }
+
+        self::assertSame(KnowledgeStorageCleanupStatus::Failed, $operation->status);
+        self::assertSame('storage_delete_failed', $operation->error_code);
+        self::assertSame(3, $operation->attempts);
+        self::assertNotNull($operation->processed_at);
+        self::assertNull($operation->processing_token);
+        app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+        self::assertSame(3, $operation->refresh()->attempts);
+        self::assertSame(0, app(ScheduleKnowledgeStorageCleanup::class)->handle());
+        Queue::assertNothingPushed();
     }
 
     public function test_thrown_storage_failure_is_retryable_without_persisting_exception_text(): void
@@ -165,6 +196,110 @@ final class KnowledgeStorageCleanupTest extends TestCase
         self::assertSame(KnowledgeStorageCleanupStatus::Retryable, $operation->status);
         self::assertSame('storage_delete_exception', $operation->error_code);
         self::assertStringNotContainsString('document contents must not persist', (string) $operation->error_code);
+    }
+
+    public function test_storage_exception_reaches_a_terminal_failed_state_at_the_attempt_limit(): void
+    {
+        [$organization] = $this->fixture();
+        $path = 'knowledge/sources/'.$organization->getKey().'/permanent-exception.txt';
+        $operation = $this->operation($organization, $path);
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('delete')->times(3)->with($path)->andThrow(new RuntimeException('secret backend details'));
+        Storage::shouldReceive('disk')->times(3)->with('private')->andReturn($disk);
+
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+            $operation->refresh();
+
+            if ($attempt < 3) {
+                self::assertSame(KnowledgeStorageCleanupStatus::Retryable, $operation->status);
+                $operation->update(['available_at' => now()->subSecond()]);
+            }
+        }
+
+        self::assertSame(KnowledgeStorageCleanupStatus::Failed, $operation->status);
+        self::assertSame('storage_delete_exception', $operation->error_code);
+        self::assertSame(3, $operation->attempts);
+        self::assertNotNull($operation->processed_at);
+        self::assertNull($operation->processing_token);
+        self::assertStringNotContainsString('secret backend details', (string) $operation->error_code);
+    }
+
+    #[DataProvider('cleanupMaxAttemptsConfiguration')]
+    public function test_cleanup_max_attempts_configuration_is_clamped(int $configured, int $expected): void
+    {
+        [$organization] = $this->fixture();
+        config()->set('rag.cleanup.max_attempts', $configured);
+        $path = 'knowledge/sources/'.$organization->getKey().'/clamped-'.$configured.'.txt';
+        $operation = $this->operation($organization, $path);
+        $disk = \Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('delete')->times($expected)->with($path)->andReturnFalse();
+        Storage::shouldReceive('disk')->times($expected)->with('private')->andReturn($disk);
+
+        for ($attempt = 1; $attempt <= $expected; $attempt++) {
+            app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+            self::assertSame($attempt, $operation->refresh()->attempts);
+            if ($attempt < $expected) {
+                $operation->update(['available_at' => now()->subMinutes(10)]);
+            }
+        }
+
+        $operation->refresh();
+        self::assertSame($expected, $operation->attempts);
+        self::assertSame(KnowledgeStorageCleanupStatus::Failed, $operation->status);
+    }
+
+    public static function cleanupMaxAttemptsConfiguration(): array
+    {
+        return [
+            'zero' => [0, 1],
+            'negative' => [-5, 1],
+            'excessive' => [1000, 10],
+        ];
+    }
+
+    public function test_stale_processing_operation_at_attempt_limit_is_failed_without_another_attempt(): void
+    {
+        [$organization] = $this->fixture();
+        config()->set('rag.cleanup.max_attempts', 1);
+        $operation = $this->operation($organization, 'knowledge/sources/'.$organization->getKey().'/stale-at-limit.txt', KnowledgeStorageCleanupStatus::Processing);
+        $operation->forceFill([
+            'attempts' => 1,
+            'processing_started_at' => now()->subHours(2),
+            'processing_token' => str_repeat('a', 64),
+            'error_code' => 'storage_delete_exception',
+        ])->save();
+        Storage::shouldReceive('disk')->never();
+
+        app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+
+        $operation->refresh();
+        self::assertSame(KnowledgeStorageCleanupStatus::Failed, $operation->status);
+        self::assertSame('storage_delete_exception', $operation->error_code);
+        self::assertSame(1, $operation->attempts);
+        self::assertNotNull($operation->processed_at);
+        self::assertNull($operation->processing_token);
+    }
+
+    public function test_retryable_operation_at_attempt_limit_fails_closed_without_waiting_for_available_at(): void
+    {
+        [$organization] = $this->fixture();
+        config()->set('rag.cleanup.max_attempts', 1);
+        $operation = $this->operation($organization, 'knowledge/sources/'.$organization->getKey().'/retryable-at-limit.txt', KnowledgeStorageCleanupStatus::Retryable);
+        $operation->forceFill([
+            'attempts' => 1,
+            'available_at' => now()->addHour(),
+            'error_code' => 'storage_delete_failed',
+        ])->save();
+        Storage::shouldReceive('disk')->never();
+
+        app(ProcessKnowledgeStorageCleanupOperation::class)->handle($organization->getKey(), $operation->getKey());
+
+        $operation->refresh();
+        self::assertSame(KnowledgeStorageCleanupStatus::Failed, $operation->status);
+        self::assertSame('storage_delete_failed', $operation->error_code);
+        self::assertSame(1, $operation->attempts);
+        self::assertNotNull($operation->processed_at);
     }
 
     public function test_stale_cleanup_rechecks_references_before_physical_deletion(): void

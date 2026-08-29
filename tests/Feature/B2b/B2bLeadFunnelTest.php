@@ -365,6 +365,12 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertTrue($configuration['hasClientSecret']);
         self::assertArrayNotHasKey('clientSecret', $configuration);
 
+        $this->actingAs($fixture['admin']);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $mounted = Livewire::actingAs($fixture['admin'])->test(SchedulingConfiguration::class);
+        self::assertNull($mounted->instance()->data['zoom_client_secret']);
+        $mounted->assertDontSee('secret-'.$fixture['organization']->getKey());
+
         app(SaveB2bZoomConfiguration::class)->handle(
             actor: $fixture['admin'],
             accountId: 'account-'.$fixture['organization']->getKey(),
@@ -384,6 +390,127 @@ final class B2bLeadFunnelTest extends TestCase
         $this->setOrganization($fixture['organization']);
         self::assertTrue(app(GetB2bZoomConfiguration::class)->handle()['exists']);
         self::assertNotSame($other['organization']->getKey(), $fixture['organization']->getKey());
+    }
+
+    public function test_scheduling_configuration_scrubs_zoom_secret_after_success_and_blank_edit_preserves_it(): void
+    {
+        $fixture = $this->fixture();
+        $this->actingAs($fixture['admin']);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $secret = 'livewire-success-secret';
+        $form = [
+            'specialist_id' => $fixture['specialist']->getKey(),
+            'lead_time_minutes' => 0,
+            'cancellation_cutoff_minutes' => 0,
+            'b2b_sales_call_duration_minutes' => 60,
+            'b2b_zoom_host_licensed' => true,
+            'office_location' => null,
+            'zoom_enabled' => true,
+            'zoom_account_id' => 'livewire-account',
+            'zoom_client_id' => 'livewire-client',
+            'zoom_client_secret' => $secret,
+            'zoom_host_user_id' => 'livewire-host',
+            'working_hours' => [[
+                'weekday' => 1,
+                'start_time' => '09:00',
+                'end_time' => '19:00',
+            ]],
+            'acknowledge_impact' => false,
+            'impact_digest' => null,
+        ];
+
+        Livewire::actingAs($fixture['admin'])
+            ->test(SchedulingConfiguration::class)
+            ->fillForm($form)
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('data.zoom_client_secret', null)
+            ->assertDontSee($secret);
+
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('provider', 'zoom')
+            ->sole();
+        self::assertSame($secret, $credential->credentials['client_secret']);
+
+        Livewire::actingAs($fixture['admin'])
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([...$form, 'zoom_enabled' => false, 'zoom_client_secret' => null])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('data.zoom_client_secret', null);
+
+        self::assertSame($secret, $credential->refresh()->credentials['client_secret']);
+    }
+
+    public function test_scheduling_configuration_scrubs_zoom_secret_when_an_unrelated_field_fails_validation(): void
+    {
+        $fixture = $this->fixture();
+        $this->actingAs($fixture['admin']);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $secret = 'livewire-unrelated-error-secret';
+        app(CreateBooking::class)->handle(
+            actor: $fixture['client'],
+            client: $fixture['client'],
+            specialist: $fixture['specialist'],
+            service: $fixture['service'],
+            startsAt: $this->slot(),
+            format: VisitFormat::Office,
+            idempotencyKey: 'livewire-secret-impact',
+        );
+
+        Livewire::actingAs($fixture['admin'])
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'lead_time_minutes' => 0,
+                'zoom_enabled' => true,
+                'zoom_account_id' => 'error-account',
+                'zoom_client_id' => 'error-client',
+                'zoom_client_secret' => $secret,
+                'zoom_host_user_id' => 'error-host',
+                'working_hours' => [[
+                    'weekday' => 1,
+                    'start_time' => '09:00',
+                    'end_time' => '14:00',
+                ]],
+                'acknowledge_impact' => false,
+                'impact_digest' => null,
+            ])
+            ->call('save')
+            ->assertHasErrors('schedule_impact')
+            ->assertSet('data.zoom_client_secret', null)
+            ->assertDontSee($secret);
+    }
+
+    public function test_scheduling_configuration_scrubs_zoom_secret_when_zoom_validation_fails(): void
+    {
+        $fixture = $this->fixture();
+        $this->actingAs($fixture['admin']);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $secret = 'livewire-zoom-error-secret';
+
+        Livewire::actingAs($fixture['admin'])
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'zoom_enabled' => true,
+                'zoom_account_id' => null,
+                'zoom_client_id' => 'error-client',
+                'zoom_client_secret' => $secret,
+                'zoom_host_user_id' => 'error-host',
+                'working_hours' => [[
+                    'weekday' => 1,
+                    'start_time' => '09:00',
+                    'end_time' => '19:00',
+                ]],
+                'acknowledge_impact' => false,
+                'impact_digest' => null,
+            ])
+            ->call('save')
+            ->assertHasErrors('account_id')
+            ->assertSet('data.zoom_client_secret', null)
+            ->assertDontSee($secret);
     }
 
     public function test_portal_b2b_submission_redirects_to_a_durable_scheduled_state_projection(): void

@@ -1,10 +1,17 @@
 # Changelog
 
+## 2026-08-29 — M11D final concurrency/retry remediation candidate
+
+- This bounded candidate starts exactly at 686848f5b4f815b10b7070986968d171f42efa23 after the second independent re-review returned CHANGES REQUIRED. It bounds Knowledge cleanup retries with terminal typed failure, serializes credential replacement through the organization row for first Zoom creation, scrubs the write-only Livewire Zoom secret, aligns cleanup scheduler indexes, and synchronizes PostgreSQL concurrency evidence.
+- The implementation preserves the existing Scenario/NPS/SafeRichText, retained Knowledge-file, durable cleanup-obligation, tenant, and existing-row Zoom invariants. No ordinary Booking AUTO/MANUAL lifecycle, M12, reward economics, unrelated credential subsystem, real Zoom/Telegram calls, hosted CI, deployment, or merge work is included.
+- The resulting remediation SHA has not received independent re-review; hosted CI has not run; it is not deployed; the owner has not retested it; and staging remains 3dc9f8b9a4038831823a687fa53abe6f481302b0. M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched.
+- Ordinary Online/Remote Booking still lacks the source-required operator-visible AUTO/MANUAL provider lifecycle. B2B SalesCall does not close that Phase-1 gap.
+
 ## 2026-08-29 — M11D independent-review remediation candidate
 
 - Remediates the independently confirmed findings on exact starting candidate 19163b569022abd0e5b42a3d523a503897ba6dc0: canonical Booking-completed Feedback Mini App failure handling, semantic ScenarioNotificationSeeder regression coverage, reference-safe durable Knowledge storage cleanup, atomic Zoom secret preservation, and HTTPS-only SafeRichText links.
 - Reuses the existing B2B eligibility authority, credential encryption/replacement path, scenario/template/rule engine, provider-neutral booking fields, RAG tenant filters, and organization authorization boundaries. No real Zoom or Telegram calls, reward economics, analytics cleanup, or broadcast-builder cleanup were added.
-- The prior staging candidate 3dc9f8b9a4038831823a687fa53abe6f481302b0 had independent review, hosted exact-SHA full CI run 33207954941, and staging health. The immediately prior candidate 19163b569022abd0e5b42a3d523a503897ba6dc0 received independent review with CHANGES REQUIRED. The resulting remediation SHA is not independently re-reviewed, hosted CI has not been run, it is not deployed, and the owner has not retested it. Staging remains on 3dc9f8b9a4038831823a687fa53abe6f481302b0; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched.
+- The prior staging candidate 3dc9f8b9a4038831823a687fa53abe6f481302b0 had independent review, hosted exact-SHA full CI run 33207954941, and staging health. The immediately prior candidate 19163b569022abd0e5b42a3d523a503897ba6dc0 received independent review with CHANGES REQUIRED, and its remediation SHA 686848f5b4f815b10b7070986968d171f42efa23 later received a second independent re-review with CHANGES REQUIRED. The current bounded remediation starts at that SHA; staging remains on 3dc9f8b9a4038831823a687fa53abe6f481302b0; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched.
 - Ordinary Online/Remote Booking still has a source-backed Phase-1 gap: its provider-neutral manual URL field exists, but the current flow has no operator-visible AUTO/MANUAL configuration or automatic provider lifecycle. This batch does not reuse B2B SalesCall state or claim that behavior; the gap is the immediate next Booking package, not M12.
 
 ## 2026-08-29 — M11D reviewer-found Portal owner-UX P2 remediation candidate

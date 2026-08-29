@@ -1,10 +1,17 @@
 # Project Status
 
+## 2026-08-29 — M11D final concurrency/retry remediation candidate
+
+- This bounded remediation starts exactly at 686848f5b4f815b10b7070986968d171f42efa23 on codex/m11d-b2b-lead-funnel. That starting SHA received the second independent re-review result CHANGES REQUIRED; its preceding remediation SHA 19163b569022abd0e5b42a3d523a503897ba6dc0 also received independent CHANGES REQUIRED. Staging remains exactly 3dc9f8b9a4038831823a687fa53abe6f481302b0.
+- This candidate is limited to bounded Knowledge cleanup retries and terminal failure state, organization-row credential serialization for concurrent first Zoom creation, write-only Livewire Zoom secret scrubbing, cleanup scheduler indexes, and synchronized PostgreSQL concurrency evidence. Existing Scenario, NPS, SafeRichText, retained-file, durable-obligation, and existing-row Zoom invariants remain in scope only for regression safety.
+- The resulting remediation SHA has not received independent re-review; hosted CI has not run for it; it is not deployed; and the owner has not retested it. M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched.
+- Ordinary Online/Remote Booking still has the explicit source-backed Phase-1 gap: no operator-visible AUTO/MANUAL configuration or automatic provider lifecycle. B2B SalesCall does not satisfy that gap, and this remediation does not address it.
+
 ## 2026-08-29 — M11D independent-review remediation candidate
 
 - This bounded remediation starts exactly at 19163b569022abd0e5b42a3d523a503897ba6dc0. Its independent review returned CHANGES REQUIRED; the prior accepted/staging candidate 3dc9f8b9a4038831823a687fa53abe6f481302b0 had independent owner-UX review, hosted exact-SHA full CI run 33207954941, and staging health verification. Staging remains on 3dc9f8b9a4038831823a687fa53abe6f481302b0.
 - Owner manual acceptance then found concrete operability and UX issues across slot timezone presentation, durable B2B submission confirmation, CRM action refresh/grouping, meeting-mode setup, Zoom readiness/setup, Feedback/NPS configuration, Knowledge deletion, language switching, and the AI Companion layout/rendering; those were addressed by the preceding candidate. The independent re-review of that candidate identified the six bounded findings addressed here with existing scenario, credential, tenant, storage, and rendering authorities.
-- The resulting remediation SHA has not been independently re-reviewed; hosted CI has not been run for it; it has not been deployed; and the owner has not retested it. M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. Analytics social wording and the broadcast recipient-condition builder remain intentionally deferred.
+- Candidate SHA 686848f5b4f815b10b7070986968d171f42efa23 subsequently received the second independent re-review result CHANGES REQUIRED; the current bounded concurrency/retry remediation starts from that SHA. Staging remains 3dc9f8b9a4038831823a687fa53abe6f481302b0; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. Analytics social wording and the broadcast recipient-condition builder remain intentionally deferred.
 - Source-backed Phase-1 gap retained explicitly: ordinary Online/Remote Booking stores a provider-neutral meeting_link_mode/meeting_url for manual CRM updates, but the current Booking flow has no operator configuration or automatic provider lifecycle for the required “Ссылка: Авто или Ручная” behavior. It is not represented by B2B SalesCall state and is the immediate next source-required Booking package, not M12.
 
 ## 2026-08-29 — M11D reviewer-found P2 remediation candidate

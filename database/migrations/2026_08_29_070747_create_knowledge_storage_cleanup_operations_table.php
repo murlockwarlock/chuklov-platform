@@ -26,10 +26,12 @@ return new class extends Migration
             $table->unique(['organization_id', 'cleanup_key'], 'knowledge_cleanup_org_key_unique');
             $table->index(['organization_id', 'status', 'available_at'], 'knowledge_cleanup_due_index');
             $table->index(['organization_id', 'status', 'processing_started_at'], 'knowledge_cleanup_stale_index');
+            $table->index(['status', 'available_at', 'id'], 'knowledge_cleanup_global_due_idx');
+            $table->index(['status', 'processing_started_at', 'id'], 'knowledge_cleanup_global_stale_idx');
         });
 
         if (DB::getDriverName() === 'pgsql') {
-            DB::statement("ALTER TABLE knowledge_storage_cleanup_operations ADD CONSTRAINT knowledge_cleanup_status_check CHECK (status IN ('pending', 'processing', 'retryable', 'succeeded', 'protected'))");
+            DB::statement("ALTER TABLE knowledge_storage_cleanup_operations ADD CONSTRAINT knowledge_cleanup_status_check CHECK (status IN ('pending', 'processing', 'retryable', 'succeeded', 'protected', 'failed'))");
         }
 
         Schema::table('knowledge_revisions', function (Blueprint $table): void {

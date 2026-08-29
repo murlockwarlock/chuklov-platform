@@ -11,6 +11,13 @@ use Throwable;
 
 final class ProcessKnowledgeStorageCleanupOperation
 {
+    private const MAX_CONFIGURED_ATTEMPTS = 10;
+
+    private const RETRYABLE_ERROR_CODES = [
+        'storage_delete_failed',
+        'storage_delete_exception',
+    ];
+
     public function handle(int $organizationId, int $operationId): void
     {
         $operation = $this->claim($organizationId, $operationId);
@@ -102,6 +109,18 @@ final class ProcessKnowledgeStorageCleanupOperation
                 return null;
             }
 
+            if ($operation->attempts >= $this->maxAttempts()) {
+                $operation->forceFill([
+                    'status' => KnowledgeStorageCleanupStatus::Failed,
+                    'processing_started_at' => null,
+                    'processing_token' => null,
+                    'processed_at' => $now,
+                    'error_code' => $this->exhaustedErrorCode($operation->error_code),
+                ])->save();
+
+                return null;
+            }
+
             if ($operation->status !== KnowledgeStorageCleanupStatus::Processing
                 && $operation->available_at->greaterThan($now)) {
                 return null;
@@ -167,12 +186,19 @@ final class ProcessKnowledgeStorageCleanupOperation
                 return;
             }
 
+            $status = $current->attempts >= $this->maxAttempts()
+                ? KnowledgeStorageCleanupStatus::Failed
+                : KnowledgeStorageCleanupStatus::Retryable;
+
             $current->forceFill([
-                'status' => KnowledgeStorageCleanupStatus::Retryable,
-                'available_at' => CarbonImmutable::now()->addSeconds($this->retryDelay((int) $current->attempts)),
+                'status' => $status,
+                'available_at' => $status === KnowledgeStorageCleanupStatus::Retryable
+                    ? CarbonImmutable::now()->addSeconds($this->retryDelay((int) $current->attempts))
+                    : $current->available_at,
                 'processing_started_at' => null,
                 'processing_token' => null,
-                'error_code' => $errorCode,
+                'processed_at' => $status === KnowledgeStorageCleanupStatus::Failed ? CarbonImmutable::now() : null,
+                'error_code' => $this->retryErrorCode($errorCode),
             ])->save();
         });
     }
@@ -214,6 +240,25 @@ final class ProcessKnowledgeStorageCleanupOperation
         $exponent = min(6, max(0, $attempts - 1));
 
         return min($maximum, $base * (2 ** $exponent));
+    }
+
+    private function maxAttempts(): int
+    {
+        return $this->config('max_attempts', 5, 1, self::MAX_CONFIGURED_ATTEMPTS);
+    }
+
+    private function exhaustedErrorCode(?string $errorCode): string
+    {
+        return in_array($errorCode, self::RETRYABLE_ERROR_CODES, true)
+            ? $errorCode
+            : 'retry_exhausted';
+    }
+
+    private function retryErrorCode(string $errorCode): string
+    {
+        return in_array($errorCode, self::RETRYABLE_ERROR_CODES, true)
+            ? $errorCode
+            : 'storage_delete_exception';
     }
 
     private function config(string $key, int $default, int $minimum, int $maximum): int

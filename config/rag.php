@@ -41,6 +41,7 @@ return [
         'stale_after_seconds' => (int) env('RAG_CLEANUP_STALE_AFTER_SECONDS', 300),
         'retry_after_seconds' => (int) env('RAG_CLEANUP_RETRY_AFTER_SECONDS', 60),
         'max_retry_after_seconds' => (int) env('RAG_CLEANUP_MAX_RETRY_AFTER_SECONDS', 3600),
+        'max_attempts' => (int) env('RAG_CLEANUP_MAX_ATTEMPTS', 5),
     ],
     'uploads' => [
         'disk' => 'private',
