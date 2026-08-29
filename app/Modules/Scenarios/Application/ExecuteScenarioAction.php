@@ -147,6 +147,11 @@ final class ExecuteScenarioAction
 
             $locale = $template->template->locale;
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
+            $webAppUrl = $template->template->template_key === 'booking-completed-feedback'
+                && is_array($action->render_context['feedback'] ?? null)
+                && is_string($action->render_context['feedback']['url'] ?? null)
+                ? $action->render_context['feedback']['url']
+                : null;
 
             $event = $action->event()->first();
             if ($event === null
@@ -161,6 +166,7 @@ final class ExecuteScenarioAction
                 subject: $rendered->subject,
                 locale: $rendered->locale,
                 idempotencyKey: $delivery->idempotency_key,
+                webAppUrl: $webAppUrl,
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');

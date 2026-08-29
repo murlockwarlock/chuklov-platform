@@ -4,6 +4,7 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import SafeRichText from '../../Components/Portal/SafeRichText.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -141,8 +142,8 @@ onUnmounted(() => {
     :portal="props.portal"
     active="companion"
   >
-    <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
+    <section class="portal-container portal-container--narrow portal-stack portal-stack--loose portal-companion-page">
+      <header class="portal-page-heading portal-companion-page__heading">
         <div class="portal-stack portal-stack--tight">
           <p class="portal-eyebrow">
             CHUKLOV
@@ -150,16 +151,22 @@ onUnmounted(() => {
           <h1 class="portal-heading portal-heading--section">
             {{ t('companion.title') }}
           </h1>
-          <p class="portal-copy">
-            {{ t('companion.description') }}
-          </p>
+          <details class="portal-companion__help">
+            <summary>{{ t('companion.about') }}</summary>
+            <p class="portal-copy portal-copy--small">
+              {{ t('companion.description') }}
+            </p>
+          </details>
         </div>
         <button
-          class="portal-button portal-button--secondary"
+          class="portal-companion__reset"
           type="button"
+          :aria-label="t('companion.reset')"
+          :title="t('companion.reset')"
           @click="resetContext"
         >
-          {{ t('companion.reset') }}
+          <span aria-hidden="true">↺</span>
+          <span class="sr-only">{{ t('companion.reset') }}</span>
         </button>
       </header>
 
@@ -194,7 +201,14 @@ onUnmounted(() => {
               <span v-if="message.transportLabel">· {{ message.transportLabel }}</span>
               <span>· {{ formatDate(message.occurredAt) }}</span>
             </div>
-            <p class="m-0 text-[var(--portal-color-ink)]">
+            <SafeRichText
+              v-if="message.role === 'ai' || message.role === 'staff'"
+              :content="message.content"
+            />
+            <p
+              v-else
+              class="m-0 text-[var(--portal-color-ink)]"
+            >
               {{ message.content }}
             </p>
             <p

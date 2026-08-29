@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\Knowledge\Application\ClaimKnowledgeIngestionRun;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
+use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Application\ProcessKnowledgeIngestion;
 use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
 use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
@@ -79,6 +80,39 @@ final class RagTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         self::assertSame([], app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5)));
+    }
+
+    public function test_deleting_a_knowledge_source_removes_its_material_from_subsequent_retrieval_and_is_tenant_scoped(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $source = app(CreateKnowledgeSource::class)->handle($actor, [
+            'title' => 'Delete me',
+            'type' => 'authored_text',
+            'content' => 'booking material that must disappear',
+        ]);
+        self::assertCount(1, app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5)));
+
+        $otherOrganization = $this->organization();
+        $otherActor = User::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        $foreignSource = app(CreateKnowledgeSource::class)->handle($otherActor, [
+            'title' => 'Keep me',
+            'type' => 'authored_text',
+            'content' => 'booking foreign material',
+        ]);
+        app(OrganizationContext::class)->set($organization);
+
+        app(DeleteKnowledgeSource::class)->handle($actor, $source);
+
+        self::assertDatabaseMissing('knowledge_sources', ['id' => $source->getKey()]);
+        self::assertSame([], app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5)));
+
+        try {
+            app(DeleteKnowledgeSource::class)->handle($actor, $foreignSource);
+            self::fail('A knowledge source from another organization was deleted.');
+        } catch (AuthorizationException) {
+            self::assertDatabaseHas('knowledge_sources', ['id' => $foreignSource->getKey()]);
+        }
     }
 
     public function test_evaluation_fixture_ranks_relevant_content_above_irrelevant_content(): void

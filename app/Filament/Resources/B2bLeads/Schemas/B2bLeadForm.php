@@ -70,7 +70,8 @@ final class B2bLeadForm
                     ->url()
                     ->maxLength(2000)
                     ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual->value)
-                    ->helperText('Можно оставить пустым и добавить ссылку позже.'),
+                    ->required(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual->value)
+                    ->helperText('Вставьте ссылку, по которой клиент присоединится к разговору.'),
                 Hidden::make('requested_timezone')
                     ->default(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone()),
             ])->columns(2)->columnSpanFull(),

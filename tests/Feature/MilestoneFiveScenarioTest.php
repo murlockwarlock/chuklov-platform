@@ -41,6 +41,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Events\QueryExecuted;
@@ -176,6 +177,41 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
         self::assertSame(ScenarioDeliveryStatus::Delivered, $action->deliveries()->sole()->status);
         self::assertCount(1, $this->channel->messages);
+    }
+
+    public function test_completed_booking_feedback_uses_the_existing_scenario_engine_and_is_idempotent(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Confirmed);
+        app(OrganizationContext::class)->set($organization);
+
+        app(CompleteBooking::class)->handle($admin, $booking);
+        $event = ScenarioEvent::query()->where('organization_id', $organization->getKey())->sole();
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        $rule = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'booking-completed-feedback-en')
+            ->sole();
+        $action = ScenarioAction::query()->where('scenario_rule_id', $rule->getKey())->sole();
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $feedbackUrl = 'https://mini.example.test/portal/telegram/launch/feedback';
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertCount(1, $this->channel->messages);
+        self::assertSame('Please rate your visit, '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertStringNotContainsString($feedbackUrl, $this->channel->messages[0]->body);
+        self::assertSame($feedbackUrl, $this->channel->messages[0]->webAppUrl);
+        self::assertSame(['client.full_name', 'feedback.url'], NotificationTemplateVersion::query()
+            ->whereKey($rule->template_version_id)
+            ->value('variables'));
     }
 
     public function test_template_updates_create_an_immutable_new_version(): void

@@ -16,6 +16,7 @@ type BookingFixture = {
 
 type BookingFixtureOptions = {
     withBooking?: boolean;
+    withCompanionMessages?: boolean;
     multipleChoices?: boolean;
     longServiceTitle?: boolean;
 };
@@ -27,6 +28,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
+        $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -50,6 +52,25 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'display_name' => 'Playwright Alternate Specialist '.$suffix,
                 'timezone' => 'UTC',
             ]);
+        }
+        if ($withCompanionMessages) {
+            $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
+                ->forOrganization($organization)
+                ->forClient($client)
+                ->create([
+                    'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+                ]);
+            $fence = str_repeat(chr(96), 3);
+            $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
+            app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                organizationId: $organization->getKey(),
+                client: $client,
+                conversation: $conversation,
+                channel: 'portal',
+                direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                body: $body,
+            );
         }
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => $longServiceTitle
@@ -144,6 +165,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
             },
@@ -335,8 +357,9 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'English' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Русский' })).toBeVisible();
+    const russianTrigger = page.getByRole('button', { name: 'Русский', exact: true });
+    await expect(russianTrigger).toBeVisible();
+    await expect(page.getByRole('menu')).toHaveCount(0);
 
     if ((page.viewportSize()?.width ?? 0) >= 768) {
         await expect(page.getByRole('link', { name: 'Услуги' }).first()).toBeVisible();
@@ -346,9 +369,11 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
         await expect(page.getByRole('link', { name: 'Профиль' }).last()).toBeVisible();
     }
 
-    await page.getByRole('button', { name: 'English' }).click();
+    await russianTrigger.click();
+    await expect(page.getByRole('menuitemradio', { name: 'Русский', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
@@ -361,6 +386,28 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
+});
+
+test('feedback keeps the selected score visible and the portal within mobile bounds', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/portal/feedback');
+        const selectedScore = page.getByRole('radio', { name: '6', exact: true });
+        await selectedScore.click();
+        await expect(selectedScore).toHaveAttribute('aria-checked', 'true');
+        await expect(selectedScore).toHaveAttribute('aria-pressed', 'true');
+        await expect(selectedScore).toHaveClass(/portal-score-option--selected/);
+        await expect(page.getByRole('radio', { name: '5', exact: true })).not.toHaveClass(/portal-score-option--selected/);
+        await assertNoHorizontalOverflow(page);
+    }
 });
 
 test('home keeps one primary booking action and makes referrals discoverable at target widths', async ({ page }) => {
@@ -457,7 +504,9 @@ test('assistant uses an attachment icon and portal selects keep human option lab
 
     await page.goto('/portal/companion');
     await expect(page.getByRole('button', { name: 'Прикрепить изображения' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Начать новый диалог' })).toBeVisible();
     await expect(page.getByText('Добавить изображения', { exact: true })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
 
     await page.goto('/portal/attribution');
     const sourceOptions = await page.locator('select option').allTextContents();
@@ -465,6 +514,26 @@ test('assistant uses an attachment icon and portal selects keep human option lab
     expect(sourceOptions).toContain('По рекомендации знакомых');
     expect(sourceOptions).not.toContain('friend');
     expect(sourceOptions).not.toContain('social');
+});
+
+test('companion safely renders rich long messages without viewport overflow', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionMessages: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/portal/companion');
+        await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
+        await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
+        await expect(page.locator('.portal-rich-text__code')).toBeVisible();
+        await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
+        await assertNoHorizontalOverflow(page);
+    }
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
@@ -541,6 +610,9 @@ test('booking uses a service step and selected-day calendar before confirmation'
 
     const time = page.getByTestId('availability-slot').first();
     await expect(page.getByTestId('availability-slot')).toHaveCount(3);
+    await expect(time).toHaveText(/^\d{2}:\d{2}$/);
+    await expect(time).toHaveAttribute('aria-label', /UTC[+-]\d{2}:\d{2}/);
+    await expect(page.getByText(/Ваш часовой пояс: UTC[+-]\d{2}:\d{2}/)).toBeVisible();
     await time.click();
     await expect(time).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Продолжить' }).click();

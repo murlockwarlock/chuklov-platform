@@ -8,6 +8,7 @@ use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Application\FeedbackRequestFingerprint;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
+use App\Modules\Feedback\Domain\Models\FeedbackReviewDestination;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Application\RegisterClientAcquisition;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
@@ -376,6 +377,84 @@ final class M11AAttributionFeedbackTest extends TestCase
             lowScoreFeedbackRequired: true,
             reviewUrlRu: 'http://127.0.0.1/private',
             reviewUrlEn: null,
+        );
+    }
+
+    public function test_feedback_review_destinations_are_tenant_scoped_https_validated_and_only_active_links_are_projected(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+            reviewDestinations: [
+                ['label' => '2GIS', 'url' => 'https://2gis.example.test/chuklov', 'isActive' => true, 'sortOrder' => 2],
+                ['label' => 'Google', 'url' => 'https://google.example.test/chuklov', 'isActive' => false, 'sortOrder' => 1],
+            ],
+        );
+
+        $otherOrganization = Organization::factory()->create();
+        $otherAdmin = User::factory()->forOrganization($otherOrganization)->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $otherAdmin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+            reviewDestinations: [
+                ['label' => 'Other', 'url' => 'https://other.example.test/review', 'isActive' => true, 'sortOrder' => 0],
+            ],
+        );
+        app(OrganizationContext::class)->set($organization);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.feedback'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('feedback.reviewDestinations.0.label', '2GIS')
+                ->where('feedback.reviewDestinations.0.url', 'https://2gis.example.test/chuklov')
+                ->has('feedback.reviewDestinations', 1));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.feedback.store'), [
+                'score' => 9,
+                'idempotency_key' => 'feedback-review-destinations',
+            ])
+            ->assertRedirect(route('portal.feedback'));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.feedback'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('result.band', 'positive')
+                ->where('result.reviewDestinations.0.label', '2GIS')
+                ->where('result.reviewDestinations.0.url', 'https://2gis.example.test/chuklov')
+                ->has('result.reviewDestinations', 1));
+
+        self::assertSame(2, FeedbackReviewDestination::query()
+            ->where('organization_id', $organization->getKey())
+            ->count());
+        self::assertSame(1, FeedbackReviewDestination::query()
+            ->where('organization_id', $otherOrganization->getKey())
+            ->count());
+
+        $this->expectException(ValidationException::class);
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+            reviewDestinations: [
+                ['label' => 'Unsafe', 'url' => 'http://example.test/review', 'isActive' => true, 'sortOrder' => 0],
+            ],
         );
     }
 

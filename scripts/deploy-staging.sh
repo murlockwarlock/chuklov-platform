@@ -364,6 +364,7 @@ ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
 
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan migrate --force < /dev/null
+docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan db:seed --class=Database\\Seeders\\ScenarioNotificationSeeder --force < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan optimize < /dev/null
 docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan filament:optimize < /dev/null
 

@@ -56,13 +56,27 @@ class FeedbackController extends Controller
         $settings = $configuration->handle();
         $band = NpsBand::fromScore($submission->score, $settings['positiveThreshold']);
         $locale = app()->getLocale() === 'en' ? 'en' : 'ru';
+        $reviewDestinations = array_values(array_map(
+            static fn (array $destination): array => [
+                'label' => $destination['label'],
+                'url' => $destination['url'],
+            ],
+            array_filter($settings['reviewDestinations'], static fn (array $destination): bool => $destination['isActive']),
+        ));
+        if ($settings['reviewDestinations'] === []) {
+            $reviewDestinations = array_values(array_map(
+                static fn (string $link): array => ['label' => 'Оставить отзыв', 'url' => $link],
+                array_filter([
+                    $settings['reviewLinks'][$locale],
+                    $settings['reviewLinks'][$locale === 'ru' ? 'en' : 'ru'],
+                ], static fn (?string $link): bool => $link !== null),
+            ));
+        }
 
         return to_route('portal.feedback')->with('feedback_result', [
             'band' => $band->value,
-            'reviewLinks' => array_values(array_filter([
-                $settings['reviewLinks'][$locale],
-                $settings['reviewLinks'][$locale === 'ru' ? 'en' : 'ru'],
-            ], static fn (?string $link): bool => $link !== null)),
+            'reviewLinks' => array_column($reviewDestinations, 'url'),
+            'reviewDestinations' => $reviewDestinations,
         ]);
     }
 }

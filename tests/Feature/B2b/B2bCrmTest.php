@@ -3,6 +3,7 @@
 namespace Tests\Feature\B2b;
 
 use App\Filament\Resources\B2bLeads\Pages\ListB2bLeads;
+use App\Filament\Resources\B2bLeads\Pages\ViewB2bLead;
 use App\Models\User;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Domain\Models\B2bLead;
@@ -73,6 +74,40 @@ final class B2bCrmTest extends TestCase
         } catch (AuthorizationException) {
             self::assertTrue(true);
         }
+    }
+
+    public function test_view_record_actions_refresh_new_state_and_keep_lead_close_separate_from_call_cancel(): void
+    {
+        [$organization, $admin, $lead] = $this->leadFixture();
+        $this->setOrganization($organization);
+        $panel = Filament::getPanel('admin');
+        self::assertNotNull($panel);
+        Filament::setCurrentPanel($panel);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewB2bLead::class, ['record' => $lead->getRouteKey()])
+            ->assertActionExists('contacted')
+            ->assertActionExists('closed')
+            ->assertActionExists('reschedule')
+            ->assertActionExists('cancel')
+            ->assertActionExists('meetingMode')
+            ->assertSee('Ещё')
+            ->callAction('contacted')
+            ->assertNotified('Лид отмечен как обработанный')
+            ->assertSee('Связались')
+            ->callAction('closed')
+            ->assertNotified('Лид закрыт');
+
+        self::assertSame('closed', $lead->fresh()->status->value);
+        self::assertSame('scheduled', $lead->salesCall()->firstOrFail()->status->value);
+        $component
+            ->assertSee('Закрыт')
+            ->assertActionExists('cancel')
+            ->callAction('cancel')
+            ->assertNotified('Разговор отменён');
+
+        self::assertSame('closed', $lead->fresh()->status->value);
+        self::assertSame('cancelled', $lead->salesCall()->firstOrFail()->status->value);
     }
 
     /** @return array{Organization, User, B2bLead} */

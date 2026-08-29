@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitB2bLeadRequest;
+use App\Modules\B2B\Application\GetPortalB2bRequest;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
@@ -31,6 +32,7 @@ final class B2bController extends Controller
         ListPublishedContentSections $sections,
         ContentImageUrlResolver $imageResolver,
         ListB2bSalesCallAvailability $availability,
+        GetPortalB2bRequest $currentRequest,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -75,6 +77,7 @@ final class B2bController extends Controller
             ],
             'configurationReady' => $projection['configurationReady'] ?? false,
             'configurationIssue' => $projection['configurationIssue'] ?? null,
+            'currentRequest' => $client === null ? null : $currentRequest->handle($client),
             'urls' => [
                 'answer' => route('portal.profile.b2b-answer'),
                 'page' => route('portal.b2b'),
@@ -122,7 +125,7 @@ final class B2bController extends Controller
             source: B2bLeadSource::Portal,
         );
 
-        return to_route('portal.b2b')->with('b2b_lead_submitted', true);
+        return to_route('portal.b2b');
     }
 
     private function locale(Request $request, ?string $language): string

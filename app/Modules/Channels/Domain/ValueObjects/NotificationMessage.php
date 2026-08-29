@@ -11,5 +11,6 @@ final readonly class NotificationMessage
         public string $locale,
         public string $idempotencyKey,
         public bool $requireKnownExternalOutcome = false,
+        public ?string $webAppUrl = null,
     ) {}
 }

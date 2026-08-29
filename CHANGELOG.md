@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-29 — M11D final owner-acceptance remediation candidate
+
+- Remediates the owner-blocking UX/operability findings from the exact starting candidate 3dc9f8b9a4038831823a687fa53abe6f481302b0: readable local slot times with one timezone context, durable B2B scheduled-state confirmation, refreshed/grouped CRM actions, complete manual/automatic meeting-mode guidance, tenant-scoped Zoom S2S OAuth setup, selected Feedback score state, configured review destinations, Booking-completed Feedback scenario delivery through the existing Scenario Engine, Knowledge Base deletion, a compact language dropdown, and safe chat-first Companion rich-text rendering.
+- Reuses the existing B2B eligibility authority, credential encryption/replacement path, scenario/template/rule engine, provider-neutral booking fields, RAG tenant filters, and organization authorization boundaries. No real Zoom or Telegram calls, reward economics, analytics cleanup, or broadcast-builder cleanup were added.
+- The starting candidate had independent review, hosted exact-SHA full CI run 33207954941, and staging health. The resulting SHA is not independently reviewed, hosted CI has not been run, it is not deployed, and the owner has not retested it. Staging remains on 3dc9f8b9a4038831823a687fa53abe6f481302b0; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched.
+- Ordinary Online/Remote Booking still has a source-backed Phase-1 gap: its provider-neutral manual URL field exists, but the current flow has no operator-visible AUTO/MANUAL configuration or automatic provider lifecycle. This batch does not reuse B2B SalesCall state or claim that behavior; the gap is the immediate next Booking package, not M12.
+
 ## 2026-08-29 — M11D reviewer-found Portal owner-UX P2 remediation candidate
 
 - The prior candidate `afee6e31d68418c945971fefbf73aacca83f833a` received independent Portal owner-UX review `GO` with zero P0/P1 findings. That review identified `PORTAL-REG-001`, `READINESS-DRIFT-001`, and `TEST-EVIDENCE-001` as P2 findings.

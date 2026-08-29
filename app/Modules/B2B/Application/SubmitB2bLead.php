@@ -205,6 +205,7 @@ final class SubmitB2bLead
                     'schedule_timezone' => $scheduleTimezone,
                     'requested_timezone' => $requestedTimezone,
                     'meeting_mode' => $meetingMode,
+                    'manual_meeting_url' => $manualMeetingUrl,
                     'provider_name' => $meetingMode === VideoMeetingMode::Automatic ? 'zoom' : null,
                     'provider_sync_status' => $meetingMode === VideoMeetingMode::Automatic
                         ? VideoMeetingSyncStatus::Pending
@@ -313,7 +314,19 @@ final class SubmitB2bLead
             throw ValidationException::withMessages(['manual_meeting_url' => 'A manual meeting link is only valid in manual mode.']);
         }
 
-        if ($url !== null && (mb_strlen($url) > 2000 || filter_var($url, FILTER_VALIDATE_URL) === false || ! str_starts_with($url, 'https://'))) {
+        if ($mode === VideoMeetingMode::Manual && ($url === null || $url === '')) {
+            throw ValidationException::withMessages(['manual_meeting_url' => 'Для ручной ссылки укажите HTTPS-ссылку клиента.']);
+        }
+
+        $parts = $url === null ? null : parse_url($url);
+        if ($url !== null && (mb_strlen($url) > 2000
+            || filter_var($url, FILTER_VALIDATE_URL) === false
+            || ! is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ! is_string($parts['host'] ?? null)
+            || trim((string) $parts['host']) === ''
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts))) {
             throw ValidationException::withMessages(['manual_meeting_url' => 'The manual meeting link must be an HTTPS URL.']);
         }
 

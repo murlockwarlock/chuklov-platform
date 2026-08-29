@@ -25,6 +25,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('pg_restore -l', $script);
         self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
+        self::assertStringContainsString('db:seed --class=Database\\\\Seeders\\\\ScenarioNotificationSeeder --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
         self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
         self::assertStringContainsString('up -d --wait < /dev/null', $script);

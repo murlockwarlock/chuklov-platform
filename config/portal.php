@@ -52,6 +52,12 @@ return [
                 'route' => 'portal.b2b',
                 'parameters' => [],
             ],
+            'feedback' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.feedback',
+                'parameters' => [],
+            ],
             'partner' => [
                 'launch' => 'mini_app',
                 'requires_auth' => false,

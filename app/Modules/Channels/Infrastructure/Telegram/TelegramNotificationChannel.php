@@ -8,6 +8,9 @@ use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Exceptions\TelegramException;
+use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
+use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
+use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
 use Throwable;
 
 final class TelegramNotificationChannel implements NotificationChannel
@@ -31,7 +34,11 @@ final class TelegramNotificationChannel implements NotificationChannel
         }
 
         try {
-            $sent = $this->bot->sendMessage($message->body, $message->recipientExternalId);
+            $sent = $this->bot->sendMessage(
+                $message->body,
+                $message->recipientExternalId,
+                reply_markup: $this->feedbackKeyboard($message),
+            );
 
             return NotificationDeliveryResult::delivered(
                 $sent?->message_id === null ? null : (string) $sent->message_id,
@@ -57,5 +64,28 @@ final class TelegramNotificationChannel implements NotificationChannel
                 ? NotificationDeliveryResult::unknown('delivery_outcome_unknown')
                 : NotificationDeliveryResult::retryable('channel_error');
         }
+    }
+
+    private function feedbackKeyboard(NotificationMessage $message): ?InlineKeyboardMarkup
+    {
+        $url = $message->webAppUrl;
+        if (! is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $parts = parse_url($url);
+        if (! is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ! is_string($parts['host'] ?? null)
+            || trim((string) $parts['host']) === ''
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)) {
+            return null;
+        }
+
+        return InlineKeyboardMarkup::make()->addRow(InlineKeyboardButton::make(
+            text: $message->locale === 'ru' ? 'Оценить визит' : 'Rate your visit',
+            web_app: WebAppInfo::make($url),
+        ));
     }
 }

@@ -8,12 +8,16 @@ use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Resources\KnowledgeSources\Schemas\KnowledgeSourceForm;
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Models\User;
+use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -63,6 +67,18 @@ final class KnowledgeSourceResource extends Resource
             ->emptyStateDescription('Добавьте текст или загрузите файл Markdown/TXT, чтобы использовать его в ответах клиентам.')
             ->recordActions([
                 EditAction::make(),
+                Action::make('delete')
+                    ->label('Удалить')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Удалить материал из базы знаний?')
+                    ->modalDescription('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.')
+                    ->action(function (KnowledgeSource $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(DeleteKnowledgeSource::class)->handle($actor, $record);
+                        Notification::make()->title('Материал удалён из базы знаний')->success()->send();
+                    }),
             ])->defaultSort('updated_at', 'desc');
     }
 

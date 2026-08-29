@@ -23,6 +23,17 @@ type Availability = {
     slots: AvailabilitySlot[];
 };
 type AvailabilityRange = { dateFrom: string; dateTo: string };
+type CurrentRequest = {
+    leadId: number;
+    salesCallId: number;
+    startsAt: string;
+    endsAt: string;
+    requestedTimezone: string;
+    specialistName: string;
+    meetingMode: 'automatic' | 'manual';
+    meetingStatus: 'ready' | 'automatic_pending' | 'manual_pending' | 'needs_sync';
+    meetingUrl: string | null;
+};
 
 const props = defineProps<{
     portal: PortalShell;
@@ -35,6 +46,7 @@ const props = defineProps<{
     availabilityRange: AvailabilityRange | null;
     configurationReady: boolean;
     configurationIssue: 'missing_duration' | 'zoom_duration_exceeds_capability' | null;
+    currentRequest: CurrentRequest | null;
     urls: { answer: string; page: string; submit: string; login: string };
 }>();
 
@@ -113,6 +125,22 @@ function selectSlot(slot: AvailabilitySlot): void {
 
 function submitLead(): void {
     leadForm.post(props.urls.submit, { preserveScroll: true });
+}
+
+function requestDate(value: string, timezone: string): string {
+    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
+        day: 'numeric',
+        month: 'long',
+        timeZone: timezone,
+    }).format(new Date(value));
+}
+
+function requestTime(value: string, timezone: string): string {
+    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: timezone,
+    }).format(new Date(value));
 }
 </script>
 
@@ -219,7 +247,57 @@ function submitLead(): void {
       </section>
 
       <section
-        v-if="props.authenticated && props.b2bSpecialistAnswer === 'yes' && !editingAnswer"
+        v-if="props.authenticated && props.currentRequest"
+        class="portal-panel portal-stack"
+        role="status"
+      >
+        <div class="portal-stack portal-stack--tight">
+          <p class="portal-eyebrow">
+            {{ t('b2b.requestAccepted') }}
+          </p>
+          <h2 class="portal-heading portal-heading--card">
+            {{ t('b2b.conversationScheduled') }}
+          </h2>
+          <p class="portal-copy">
+            {{ requestDate(props.currentRequest.startsAt, props.currentRequest.requestedTimezone) }},
+            {{ requestTime(props.currentRequest.startsAt, props.currentRequest.requestedTimezone) }}
+            · {{ props.currentRequest.specialistName }}
+          </p>
+          <p class="portal-copy portal-copy--small">
+            {{ props.currentRequest.requestedTimezone }}
+          </p>
+        </div>
+        <p
+          v-if="props.currentRequest.meetingStatus === 'automatic_pending'"
+          class="portal-notice"
+        >
+          {{ t('b2b.automaticPending') }}
+        </p>
+        <p
+          v-else-if="props.currentRequest.meetingStatus === 'manual_pending'"
+          class="portal-notice"
+        >
+          {{ t('b2b.manualPending') }}
+        </p>
+        <p
+          v-else-if="props.currentRequest.meetingStatus === 'needs_sync'"
+          class="portal-notice portal-notice--error"
+        >
+          {{ t('b2b.needsSync') }}
+        </p>
+        <a
+          v-else-if="props.currentRequest.meetingUrl"
+          :href="props.currentRequest.meetingUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="portal-button portal-button--primary self-start"
+        >
+          {{ t('b2b.joinConversation') }}
+        </a>
+      </section>
+
+      <section
+        v-else-if="props.authenticated && props.b2bSpecialistAnswer === 'yes' && !editingAnswer"
         class="portal-panel portal-stack"
       >
         <h2 class="portal-heading portal-heading--card">

@@ -11,6 +11,7 @@ final class ResolveTelegramMiniAppEntry
     private const ALLOWED_ROUTE_NAMES = [
         'portal.home',
         'portal.b2b',
+        'portal.feedback',
         'portal.section',
     ];
 
@@ -174,7 +175,7 @@ final class ResolveTelegramMiniAppEntry
             throw new LogicException('The Telegram Mini App route parameters are invalid.');
         }
 
-        if (in_array($routeName, ['portal.home', 'portal.b2b'], true)) {
+        if (in_array($routeName, ['portal.home', 'portal.b2b', 'portal.feedback'], true)) {
             if ($parameters !== []) {
                 throw new LogicException('The Telegram Mini App route parameters are not allowlisted.');
             }

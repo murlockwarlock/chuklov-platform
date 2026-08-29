@@ -22,6 +22,8 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedLocale($organization, 'ru', 'Спасибо за ваш визит, {{ client.full_name }}.');
                 $this->seedB2b($organization, 'en', 'Your B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}). Join: {{ sales_call.join_url }}');
                 $this->seedB2b($organization, 'ru', 'Разговор о развитии бизнеса с клиентом {{ client.full_name }} (№{{ sales_call.id }}) запланирован на {{ sales_call.local_date }} в {{ sales_call.local_time }} ({{ sales_call.timezone }}). Ссылка: {{ sales_call.join_url }}');
+                $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
+                $this->seedFeedback($organization, 'ru', 'Оцените визит, {{ client.full_name }}.');
             });
     }
 
@@ -209,6 +211,79 @@ final class ScenarioNotificationSeeder extends Seeder
                 'version' => 1,
             ])->save();
         }
+    }
+
+    private function seedFeedback(Organization $organization, string $locale, string $body): void
+    {
+        $version = $this->ensureFeedbackTemplate($organization, $locale, $body);
+        $ruleKey = 'booking-completed-feedback-'.$locale;
+
+        if (ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $ruleKey)->exists()) {
+            return;
+        }
+
+        $rule = new ScenarioRule;
+        $rule->forceFill([
+            'organization_id' => $organization->getKey(),
+            'rule_key' => $ruleKey,
+            'name' => 'Оценка визита после завершения ('.$locale.')',
+            'trigger_event' => ScenarioEventType::BookingCompleted->value,
+            'is_enabled' => true,
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'purpose' => ScenarioRulePurpose::Service->value,
+            'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
+            'recipient_strategy' => ['type' => 'client'],
+            'channel_priority' => ['telegram'],
+            'template_version_id' => $version->getKey(),
+            'max_occurrences' => 1,
+            'repeat_interval_value' => null,
+            'repeat_interval_unit' => null,
+            'version' => 1,
+        ])->save();
+    }
+
+    private function ensureFeedbackTemplate(Organization $organization, string $locale, string $body): NotificationTemplateVersion
+    {
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_key', 'booking-completed-feedback')
+            ->where('locale', $locale)
+            ->first();
+
+        if ($template === null) {
+            $template = new NotificationTemplate;
+            $template->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_key' => 'booking-completed-feedback',
+                'locale' => $locale,
+                'name' => 'Оценка визита',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+            ])->save();
+        }
+
+        $version = NotificationTemplateVersion::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_id', $template->getKey())
+            ->where('version', 1)
+            ->first();
+
+        if ($version === null) {
+            $version = new NotificationTemplateVersion;
+            $version->forceFill([
+                'organization_id' => $organization->getKey(),
+                'template_id' => $template->getKey(),
+                'version' => 1,
+                'status' => NotificationTemplateStatus::Published->value,
+                'body' => $body,
+                'variables' => ['client.full_name', 'feedback.url'],
+                'created_by_user_id' => null,
+                'published_at' => now(),
+            ])->save();
+        }
+
+        return $version;
     }
 
     /** @param list<string> $variables */

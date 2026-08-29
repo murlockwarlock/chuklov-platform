@@ -12,6 +12,8 @@ use App\Modules\B2B\Application\CancelB2bSalesCall;
 use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallHostLaunchUrl;
 use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
+use App\Modules\B2B\Application\GetB2bZoomConfiguration;
+use App\Modules\B2B\Application\GetPortalB2bRequest;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\MarkB2bSalesCallProviderReconciliationRequired;
@@ -19,6 +21,7 @@ use App\Modules\B2B\Application\RecordB2bProviderSyncEvent;
 use App\Modules\B2B\Application\RecreateB2bSalesCallMeeting;
 use App\Modules\B2B\Application\RescheduleB2bSalesCall;
 use App\Modules\B2B\Application\RetryB2bSalesCallProvider;
+use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
 use App\Modules\B2B\Application\SetB2bSalesCallMeetingMode;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Application\SyncB2bSalesCallProvider;
@@ -334,6 +337,146 @@ final class B2bLeadFunnelTest extends TestCase
         $disabled->forceFill(['status' => CredentialStatus::Active])->save();
 
         self::assertTrue(app(GetB2bSalesCallReadiness::class)->handle()['automaticZoomConfigured']);
+    }
+
+    public function test_zoom_configuration_is_tenant_scoped_encrypted_write_only_and_preserves_secret_on_disable(): void
+    {
+        $fixture = $this->fixture();
+        $credentialName = (string) config('b2b.credential_name');
+
+        app(SaveB2bZoomConfiguration::class)->handle(
+            actor: $fixture['admin'],
+            accountId: 'account-'.$fixture['organization']->getKey(),
+            clientId: 'client-'.$fixture['organization']->getKey(),
+            clientSecret: 'secret-'.$fixture['organization']->getKey(),
+            hostUserId: 'host-'.$fixture['organization']->getKey(),
+            enabled: true,
+        );
+
+        $storedCredentials = DB::table('organization_credentials')
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('credential_name', $credentialName)
+            ->value('credentials');
+        self::assertIsString($storedCredentials);
+        self::assertStringNotContainsString('secret-'.$fixture['organization']->getKey(), $storedCredentials);
+
+        $configuration = app(GetB2bZoomConfiguration::class)->handle();
+        self::assertTrue($configuration['configured']);
+        self::assertTrue($configuration['hasClientSecret']);
+        self::assertArrayNotHasKey('clientSecret', $configuration);
+
+        app(SaveB2bZoomConfiguration::class)->handle(
+            actor: $fixture['admin'],
+            accountId: 'account-'.$fixture['organization']->getKey(),
+            clientId: 'client-'.$fixture['organization']->getKey(),
+            clientSecret: null,
+            hostUserId: 'host-'.$fixture['organization']->getKey(),
+            enabled: false,
+        );
+
+        $disabled = app(GetB2bZoomConfiguration::class)->handle();
+        self::assertFalse($disabled['configured']);
+        self::assertFalse($disabled['enabled']);
+        self::assertTrue($disabled['hasClientSecret']);
+
+        $other = $this->fixture(false);
+        self::assertFalse(app(GetB2bZoomConfiguration::class)->handle()['exists']);
+        $this->setOrganization($fixture['organization']);
+        self::assertTrue(app(GetB2bZoomConfiguration::class)->handle()['exists']);
+        self::assertNotSame($other['organization']->getKey(), $fixture['organization']->getKey());
+    }
+
+    public function test_portal_b2b_submission_redirects_to_a_durable_scheduled_state_projection(): void
+    {
+        $fixture = $this->fixture();
+        $client = $fixture['client'];
+        $startsAt = $this->slot()->toIso8601String();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.b2b.submit'), [
+                'specialist_id' => $fixture['specialist']->getKey(),
+                'starts_at' => $startsAt,
+                'submission_key' => 'portal-confirmation',
+            ])
+            ->assertRedirect(route('portal.b2b'));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.b2b'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/B2b')
+                ->where('currentRequest.meetingMode', VideoMeetingMode::Automatic->value)
+                ->where('currentRequest.meetingStatus', 'automatic_pending')
+                ->where('currentRequest.startsAt', $startsAt)
+                ->where('currentRequest.specialistName', $fixture['specialist']->display_name)
+                ->where('currentRequest.meetingUrl', null));
+
+        self::assertSame(1, B2bSalesCall::query()
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('status', B2bSalesCallStatus::Scheduled->value)
+            ->count());
+        self::assertSame($startsAt, app(GetPortalB2bRequest::class)->handle($client)['startsAt']);
+    }
+
+    public function test_manual_b2b_links_require_safe_https_and_become_the_client_join_projection(): void
+    {
+        $fixture = $this->fixture();
+
+        foreach ([null, '', 'http://meet.example.test/call', 'https://user:pass@meet.example.test/call'] as $index => $url) {
+            try {
+                $this->submit(
+                    fixture: $fixture,
+                    key: 'manual-invalid-'.$index,
+                    meetingMode: VideoMeetingMode::Manual,
+                    manualMeetingUrl: $url,
+                );
+                self::fail('An unsafe or blank manual URL was accepted.');
+            } catch (ValidationException $exception) {
+                self::assertArrayHasKey('manual_meeting_url', $exception->errors());
+            }
+        }
+
+        $lead = $this->submit(
+            fixture: $fixture,
+            key: 'manual-projection',
+            meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/client-call',
+        );
+        $client = $fixture['client'];
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.b2b'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('currentRequest.meetingMode', VideoMeetingMode::Manual->value)
+                ->where('currentRequest.meetingStatus', 'ready')
+                ->where('currentRequest.meetingUrl', 'https://meet.example.test/client-call'));
+        self::assertSame('https://meet.example.test/client-call', $lead->salesCall()->firstOrFail()->manual_meeting_url);
+    }
+
+    public function test_switching_manual_mode_to_automatic_clears_client_link_and_queues_provider_sync(): void
+    {
+        $fixture = $this->fixture();
+        $lead = $this->submit(
+            fixture: $fixture,
+            key: 'manual-to-automatic',
+            meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/client-call',
+        );
+        $call = $lead->salesCall()->firstOrFail();
+
+        $automatic = app(SetB2bSalesCallMeetingMode::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $call,
+            mode: VideoMeetingMode::Automatic,
+            manualMeetingUrl: null,
+            expectedEventVersion: $call->event_version,
+        );
+
+        self::assertNull($automatic->manual_meeting_url);
+        self::assertSame(VideoMeetingSyncStatus::Pending, $automatic->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $automatic->provider_operation);
+        self::assertSame(1, IntegrationEvent::query()->count());
     }
 
     public function test_b2b_answer_return_to_rejects_external_and_arbitrary_values_without_mutation(): void
@@ -1224,6 +1367,7 @@ final class B2bLeadFunnelTest extends TestCase
             fixture: $fixture,
             key: 'manual-sales-call',
             meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/manual-initial',
         );
         $call = $lead->salesCall()->firstOrFail();
 
@@ -1241,7 +1385,7 @@ final class B2bLeadFunnelTest extends TestCase
 
         self::assertSame('https://meet.example.test/manual-call', $updated->manual_meeting_url);
         self::assertSame(VideoMeetingSyncStatus::NotRequired, $updated->provider_sync_status);
-        self::assertSame(1, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
+        self::assertSame(2, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
     }
 
     public function test_switching_a_ready_zoom_call_to_manual_preserves_the_current_manual_ready_generation_after_cancellation(): void
@@ -2246,6 +2390,14 @@ final class B2bLeadFunnelTest extends TestCase
             'provider' => $provider,
             'credential_name' => $name,
             'status' => $status,
+            'credentials' => $provider === 'zoom' && $name === (string) config('b2b.credential_name')
+                ? [
+                    'account_id' => 'account-'.$organization->getKey(),
+                    'client_id' => 'client-'.$organization->getKey(),
+                    'client_secret' => 'secret-'.$organization->getKey(),
+                    'host_user_id' => 'host-'.$organization->getKey(),
+                ]
+                : ['token' => 'test-secret'],
         ])->save();
 
         return $credential;

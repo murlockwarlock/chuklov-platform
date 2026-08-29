@@ -7,6 +7,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -60,6 +61,9 @@ final class ScenarioContextFactory
                 'starts_at' => $context->booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
                 'completed_at' => CarbonImmutable::parse((string) $context->event->occurred_at)->toIso8601String(),
+            ];
+            $renderContext['feedback'] = [
+                'url' => $this->feedbackUrl(),
             ];
         }
 
@@ -118,6 +122,15 @@ final class ScenarioContextFactory
         }
 
         return $renderContext;
+    }
+
+    private function feedbackUrl(): string
+    {
+        try {
+            return app(ResolveTelegramMiniAppEntry::class)->launchUrl('feedback');
+        } catch (\Throwable) {
+            return route('portal.feedback');
+        }
     }
 
     private function bookingContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext

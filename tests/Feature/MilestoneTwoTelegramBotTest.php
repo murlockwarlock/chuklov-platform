@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\User\User;
 use SergiX44\Nutgram\Testing\FakeNutgram;
@@ -82,6 +84,37 @@ class MilestoneTwoTelegramBotTest extends TestCase
         foreach (array_keys($unsafeUrls) as $index) {
             self::assertNull(collect($resolvedMenu)->firstWhere('key', 'external_unsafe_'.$index));
         }
+    }
+
+    public function test_feedback_notification_uses_a_mini_app_button_without_an_external_url(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $channel = new TelegramNotificationChannel($bot);
+
+        $result = $channel->send(new NotificationMessage(
+            recipientExternalId: 'feedback-chat',
+            body: 'Оцените визит',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'feedback-1',
+            webAppUrl: 'https://mini.example.test/portal/telegram/launch/feedback',
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+        $bot->assertCalled('sendMessage');
+        $history = array_values($bot->getRequestHistory());
+        $request = array_values($history[0])[0];
+        $body = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        $button = $body['reply_markup']['inline_keyboard'][0][0];
+
+        self::assertSame('Оценить визит', $button['text']);
+        self::assertSame(
+            'https://mini.example.test/portal/telegram/launch/feedback',
+            $button['web_app']['url'],
+        );
+        self::assertArrayNotHasKey('url', $button);
     }
 
     public function test_canonical_mini_app_origin_accepts_https_host_with_optional_trailing_slash(): void

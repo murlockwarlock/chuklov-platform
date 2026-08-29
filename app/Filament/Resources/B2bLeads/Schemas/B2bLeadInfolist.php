@@ -33,8 +33,8 @@ final class B2bLeadInfolist
                 TextEntry::make('salesCall.specialist.display_name')->label('Специалист')->placeholder('—'),
                 TextEntry::make('salesCall.starts_at')->label('Начало')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.ends_at')->label('Окончание')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
-                TextEntry::make('salesCall.meeting_mode')->label('Режим')->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode && $state === VideoMeetingMode::Manual ? 'Ручная ссылка' : 'Zoom'),
-                TextEntry::make('salesCall.provider_sync_status')->label('Синхронизация')->formatStateUsing(static fn ($state): string => self::providerStatus($state)),
+                TextEntry::make('salesCall.meeting_mode')->label('Режим')->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode && $state === VideoMeetingMode::Manual ? 'Используется ручная ссылка' : 'Zoom автоматически'),
+                TextEntry::make('salesCall.provider_sync_status')->label('Состояние ссылки')->state(fn (B2bLead $record): string => self::meetingStatus($record)),
                 TextEntry::make('salesCall.provider_join_url')
                     ->label('Ссылка клиента')
                     ->state(fn (B2bLead $record): ?string => self::joinUrl($record))
@@ -59,18 +59,17 @@ final class B2bLeadInfolist
         };
     }
 
-    private static function providerStatus(mixed $state): string
+    private static function meetingStatus(B2bLead $record): string
     {
-        $status = $state instanceof VideoMeetingSyncStatus ? $state : VideoMeetingSyncStatus::tryFrom((string) $state);
+        $call = $record->salesCall;
+        if ($call->meeting_mode === VideoMeetingMode::Manual) {
+            return $call->manual_meeting_url === null ? 'Ссылка пока не готова' : 'Используется ручная ссылка';
+        }
 
-        return match ($status) {
-            VideoMeetingSyncStatus::NotRequired => 'Не требуется',
-            VideoMeetingSyncStatus::Pending => 'Ожидает синхронизации',
-            VideoMeetingSyncStatus::Ready => 'Готово',
-            VideoMeetingSyncStatus::Failed => 'Ошибка',
-            VideoMeetingSyncStatus::CancellationPending => 'Отмена ожидает синхронизации',
-            VideoMeetingSyncStatus::ReconciliationRequired => 'Требуется сверка',
-            default => '—',
+        return match ($call->provider_sync_status) {
+            VideoMeetingSyncStatus::Ready => 'Ссылка готова',
+            VideoMeetingSyncStatus::Pending => 'Создаём встречу…',
+            default => 'Нужна повторная синхронизация',
         };
     }
 
