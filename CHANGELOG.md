@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-29 — M11D PostgreSQL credential lock-path remediation candidate
+
+- Final reviewed SHA `0bb7895ade70a12c58dbfe29febe824c336033b7` received narrow D-001 documentation re-review GO. Exact-SHA hosted full CI run `33264385218` used real healthy PostgreSQL; Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health passed, while Integration concurrency failed with `64` passed, `3` failed, `397` assertions, `0` skips, and `141.09s`.
+- In that run, the B2B booking-vs-SalesCall race passed and the Zoom first explicit/explicit creation test passed; the existing blank-preserve/explicit-replace, existing explicit/explicit, and first blank/explicit Zoom tests timed out at approximately 30 seconds. Knowledge cleanup passed on PostgreSQL. This remediation changes the generic credential lock path to use the existing credential row as the existing-row authority and organization `FOR NO KEY UPDATE` only for the missing-row create fallback with a requery.
+- The current remediation has not received independent review; hosted CI has not run on the resulting SHA; it is not deployed; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. The ordinary Booking AUTO/MANUAL provider-lifecycle gap remains explicit and outside this remediation.
+
 ## 2026-08-29 — M11D hosted PostgreSQL concurrency failure remediation candidate
 
 - Starting SHA `0f7bed2e81ce4351869df07e898b1c1d838bb78e` received narrow CI-wiring re-review GO. Exact hosted full CI run `33254909757` used healthy PostgreSQL and passed Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health, while Integration concurrency failed with `64` passed, `3` failed, and `403` assertions. `KnowledgeStorageCleanupPostgresTest` passed; the two Zoom first-credential-create tests timed out; and the B2B SalesCall race fixture rejected its Manual request before the scheduling race because it had no manual URL.

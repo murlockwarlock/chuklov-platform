@@ -46,17 +46,18 @@ class ReplaceOrganizationCredential
         }
 
         return DB::transaction(function () use ($organization, $actor, $provider, $credentialName, $credentials, $status): OrganizationCredential {
-            Organization::query()
-                ->whereKey($organization->getKey())
-                ->lock('for no key update')
-                ->firstOrFail();
+            $credential = $this->findCredentialForUpdate($organization, $provider, $credentialName);
 
-            $credential = OrganizationCredential::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('provider', $provider)
-                ->where('credential_name', $credentialName)
-                ->lockForUpdate()
-                ->first() ?? new OrganizationCredential;
+            if ($credential === null) {
+                Organization::query()
+                    ->whereKey($organization->getKey())
+                    ->lock('for no key update')
+                    ->firstOrFail();
+
+                $credential = $this->findCredentialForUpdate($organization, $provider, $credentialName)
+                    ?? new OrganizationCredential;
+            }
+
             $resolvedCredentials = $credentials instanceof Closure
                 ? $credentials($credential)
                 : $credentials;
@@ -106,6 +107,19 @@ class ReplaceOrganizationCredential
 
             return $credential->refresh();
         }, attempts: 3);
+    }
+
+    private function findCredentialForUpdate(
+        Organization $organization,
+        string $provider,
+        string $credentialName,
+    ): ?OrganizationCredential {
+        return OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('provider', $provider)
+            ->where('credential_name', $credentialName)
+            ->lockForUpdate()
+            ->first();
     }
 
     /** @param array<array-key, mixed> $values */

@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-29 — M11D PostgreSQL credential lock-path remediation candidate
+
+- Final reviewed SHA `0bb7895ade70a12c58dbfe29febe824c336033b7` received narrow D-001 documentation re-review GO. Exact-SHA hosted full CI run `33264385218` used real healthy PostgreSQL: Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health passed; Integration concurrency failed with `64` passed, `3` failed, `397` assertions, `0` skips, and `141.09s`.
+- The B2B booking-vs-SalesCall race and Zoom first explicit/explicit creation passed. The existing blank-preserve/explicit-replace, existing explicit/explicit, and first blank/explicit Zoom tests timed out at approximately 30 seconds. Knowledge cleanup passed on PostgreSQL. The current remediation follows the evidence with direct existing-credential row locking and an organization `FOR NO KEY UPDATE` missing-row fallback followed by an identity requery; it does not claim the exact historical timeout mechanism is fully proven.
+- This remediation candidate has not received independent review; hosted CI has not run on the resulting SHA; it is not deployed; owner retest remains pending; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`. M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched. Ordinary Online/Remote Booking retains the explicit Phase-1 AUTO/MANUAL provider-lifecycle gap.
+
 ## 2026-08-29 — M11D hosted PostgreSQL concurrency failure remediation candidate
 
 - Starting SHA `0f7bed2e81ce4351869df07e898b1c1d838bb78e` had narrow CI-wiring re-review GO. Exact hosted full CI run `33254909757` used real healthy PostgreSQL: Quality, Foundation, RAG, Privacy, and Docker passed; Integration concurrency failed with `64` passed, `3` failed, and `403` assertions. Knowledge cleanup PostgreSQL coverage passed; two Zoom first-create tests timed out, and the B2B SalesCall race fixture failed validation before entering the intended race because Manual mode lacked a URL.
