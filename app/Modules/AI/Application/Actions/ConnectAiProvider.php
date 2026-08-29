@@ -35,12 +35,19 @@ final class ConnectAiProvider
     /** @param array<string, mixed> $data */
     public function update(User $actor, AiProviderConfiguration $provider, array $data): AiProviderConfiguration
     {
-        return DB::transaction(function () use ($actor, $provider, $data): AiProviderConfiguration {
-            $providerName = AiProviderCatalog::normalize($provider->provider_name);
-            $data['credential_id'] = $this->credentialId($actor, $providerName, $data, $provider);
+        $providerId = (int) $provider->getKey();
+        $organizationId = $this->context->id();
+
+        return DB::transaction(function () use ($actor, $providerId, $organizationId, $data): AiProviderConfiguration {
+            $providerAttempt = AiProviderConfiguration::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($providerId)
+                ->firstOrFail();
+            $providerName = AiProviderCatalog::normalize($providerAttempt->provider_name);
+            $data['credential_id'] = $this->credentialId($actor, $providerName, $data, $providerAttempt);
             unset($data['api_key']);
 
-            return $this->updateProvider->handle($actor, $provider, $data);
+            return $this->updateProvider->handle($actor, $providerAttempt, $data);
         }, attempts: 3);
     }
 
@@ -71,7 +78,11 @@ final class ConnectAiProvider
             )->getKey();
         }
 
-        if (array_key_exists('credential_id', $data) && $data['credential_id'] !== null && $data['credential_id'] !== '') {
+        if (array_key_exists('credential_id', $data)) {
+            if ($data['credential_id'] === null || $data['credential_id'] === '') {
+                return null;
+            }
+
             return self::positiveId($data['credential_id']);
         }
 

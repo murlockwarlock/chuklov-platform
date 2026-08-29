@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-30 — M11D AI retry-safety and explicit credential detach remediation candidate
+
+- This bounded candidate starts exactly at `4ea1fa5e490345bd5ef4ae1b6513e25ae20cce32` after fresh exact-SHA review returned CHANGES REQUIRED. `M11D-AI-LOCK-001` remains structurally resolved: the target credential is authoritative before the provider update, and every production update caller is transaction-covered.
+- The valid `M11D-AI-RETRY-001` finding is narrowed to the mutable `AiProviderConfiguration` object captured by `ConnectAiProvider::update()` across Laravel transaction retries. Each attempt now reloads an organization-scoped provider by stable ID without locking P before C. The captured `$data` array is by-value and is not treated as a retry defect; `ConnectAiProvider::create()` remains unchanged. The pre-existing reachable `M11D-AI-DETACH-001` tri-state credential behavior is corrected so absent preserves while explicit null/empty detaches without deleting the credential; nonblank API keys still take precedence.
+- The existing exact-state PostgreSQL lock polling remains bounded and unchanged as accepted non-blocking `M11D-TEST-001` resource debt. Focused local AI/security/Filament checks pass; PostgreSQL remains `NOT RUN LOCALLY`, so the resulting SHA has not received independent re-review or PostgreSQL runtime proof. Hosted CI has not run; no deployment or merge is claimed; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D AI provider / credential lock-order remediation candidate
 
 - Candidate starts exactly at `621e1f7c3fc4e4c667e5d11d870b810e735152e1`. The fresh full re-review returned CHANGES REQUIRED, and the adversarial challenge confirmed `M11D-AI-LOCK-001` through the accepted three-transaction stale-snapshot schedule: a committed `C → C2` reassignment lets a later `C2 → C` provider update hold `P` while waiting on `C`, while the earlier credential replacement waits on `P`.

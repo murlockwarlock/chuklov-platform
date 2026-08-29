@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D AI retry-safety and explicit credential detach remediation candidate
+
+- This bounded candidate starts exactly at `4ea1fa5e490345bd5ef4ae1b6513e25ae20cce32`, which received fresh exact-SHA review CHANGES REQUIRED. `M11D-AI-LOCK-001` remains resolved structurally; the valid retry finding is specifically the mutable caller-supplied Eloquent provider object reused across Laravel transaction attempts.
+- `ConnectAiProvider::update` now reloads the provider inside every retry attempt using the current server-derived organization and provider ID, without `FOR UPDATE` on P before the target credential lock. The captured input array is by-value and is not the defect; `create()` remains unchanged. Explicit null and empty `credential_id` now detach, while an absent key preserves the current credential and a nonblank API key retains precedence.
+- The stale-model, preserve, null-detach, empty-detach, API-key precedence, tenant, provider-validation, and existing AI regression coverage passes locally. The exact-state PostgreSQL polling regression remains unchanged and is accepted as non-blocking P3 debt. PostgreSQL is `NOT RUN LOCALLY`; the resulting SHA is not independently re-reviewed; hosted CI has not run; no deployment or merge is claimed. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched; and the ordinary Booking AUTO/MANUAL Phase-1 gap remains open.
+
 ## 2026-08-30 — M11D AI provider / credential lock-order remediation candidate
 
 - This bounded candidate starts exactly at `621e1f7c3fc4e4c667e5d11d870b810e735152e1`. The fresh full re-review returned CHANGES REQUIRED; the adversarial challenge confirmed `M11D-AI-LOCK-001` with the committed-intervening-reassignment stale-snapshot schedule.
