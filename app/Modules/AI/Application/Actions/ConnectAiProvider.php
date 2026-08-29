@@ -29,7 +29,7 @@ final class ConnectAiProvider
             unset($data['api_key']);
 
             return $this->createProvider->handle($actor, $data);
-        });
+        }, attempts: 3);
     }
 
     /** @param array<string, mixed> $data */
@@ -41,7 +41,7 @@ final class ConnectAiProvider
             unset($data['api_key']);
 
             return $this->updateProvider->handle($actor, $provider, $data);
-        });
+        }, attempts: 3);
     }
 
     /** @param array<string, mixed> $data */

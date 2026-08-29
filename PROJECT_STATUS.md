@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D AI provider / credential lock-order remediation candidate
+
+- This bounded candidate starts exactly at `621e1f7c3fc4e4c667e5d11d870b810e735152e1`. The fresh full re-review returned CHANGES REQUIRED; the adversarial challenge confirmed `M11D-AI-LOCK-001` with the committed-intervening-reassignment stale-snapshot schedule.
+- `UpdateAiProviderConfiguration` now acquires the target organization credential with `FOR UPDATE` before updating the provider configuration. `ConnectAiProvider::create` and `::update` now use Laravel transaction retries with `attempts: 3`; the callback remains database-local. NULL detach behavior, synchronous health invalidation, credential replacement semantics, tenant checks, audit/revision state, and the accepted `ReplaceOrganizationCredential` split remain unchanged.
+- The existing M10 PostgreSQL concurrency file now contains a process-level lock-order regression that observes the child waiting on target credential authority and proves the provider row remains free until the parent releases that credential. Local focused AI/security tests pass; the PostgreSQL regression is `NOT RUN LOCALLY` because PHPUnit forces SQLite, `docker-compose ps` shows no running services, and nothing listens on `127.0.0.1:5432`. The resulting SHA is not independently re-reviewed; hosted CI and PostgreSQL runtime proof are pending; no deployment or merge is claimed. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched; and the ordinary Booking AUTO/MANUAL Phase-1 gap remains open.
+
 ## 2026-08-29 — M11D PostgreSQL credential lock-path remediation candidate
 
 - Final reviewed SHA `0bb7895ade70a12c58dbfe29febe824c336033b7` received narrow D-001 documentation re-review GO. Exact-SHA hosted full CI run `33264385218` used real healthy PostgreSQL: Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health passed; Integration concurrency failed with `64` passed, `3` failed, `397` assertions, `0` skips, and `141.09s`.

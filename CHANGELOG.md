@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-30 — M11D AI provider / credential lock-order remediation candidate
+
+- Candidate starts exactly at `621e1f7c3fc4e4c667e5d11d870b810e735152e1`. The fresh full re-review returned CHANGES REQUIRED, and the adversarial challenge confirmed `M11D-AI-LOCK-001` through the accepted three-transaction stale-snapshot schedule: a committed `C → C2` reassignment lets a later `C2 → C` provider update hold `P` while waiting on `C`, while the earlier credential replacement waits on `P`.
+- This bounded remediation locks every non-null target credential with `FOR UPDATE` before an existing provider configuration update, preserves the NULL-detach path without an old-credential coarse lock, and makes both outer `ConnectAiProvider` create/update transactions Laravel bounded retry authorities with `attempts: 3`. The existing synchronous health invalidation, credential replacement split, tenant validation, audit, revision, and secret behavior remain unchanged.
+- Added deterministic process-level PostgreSQL lock-order regression coverage to the existing `MilestoneTenConcurrencyTest`. Focused SQLite-compatible AI/security coverage passes, while PostgreSQL runtime proof is pending because PHPUnit forces SQLite and no local PostgreSQL/Docker service is available. The resulting remediation SHA has not received independent re-review; hosted CI has not run; no deployment or merge is claimed; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; and PR #23 remains untouched. The ordinary Booking AUTO/MANUAL Phase-1 gap remains open.
+
 ## 2026-08-29 — M11D PostgreSQL credential lock-path remediation candidate
 
 - Final reviewed SHA `0bb7895ade70a12c58dbfe29febe824c336033b7` received narrow D-001 documentation re-review GO. Exact-SHA hosted full CI run `33264385218` used real healthy PostgreSQL; Quality, Integration foundation, Integration RAG, Privacy and secret scan, and Docker build/runtime health passed, while Integration concurrency failed with `64` passed, `3` failed, `397` assertions, `0` skips, and `141.09s`.
