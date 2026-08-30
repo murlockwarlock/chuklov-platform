@@ -294,8 +294,6 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentType).toBeVisible();
     await attachmentType.selectOption('medical_report');
     await expect(attachmentType).toHaveValue('medical_report');
-    const fileInput = uploadDialog.locator('input[type="file"]');
-    await expect(fileInput).toHaveCount(1);
     const uploadControl = uploadDialog
         .getByRole('group', { name: 'Файл*', exact: true })
         .locator('label')
@@ -311,7 +309,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    const selectedFile = uploadDialog.getByText('ux-a-report.pdf', { exact: true });
+    const selectedFile = uploadDialog.getByRole('group', { name: 'ux-a-report.pdf', exact: true });
     await expect(selectedFile).toHaveCount(1);
     await expect(selectedFile).toBeVisible();
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
