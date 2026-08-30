@@ -303,11 +303,17 @@ test('staff can use the client cockpit for medical profile and private files', a
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
+    const readyFile = uploadDialog
+        .locator('.filepond--item[data-filepond-item-state="processing-complete"]')
+        .filter({ hasText: 'ux-a-report.pdf' });
+    await expect(readyFile).toHaveCount(1);
+    await expect(readyFile).toBeVisible();
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
-    await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
+    await expect(uploadSubmit).toBeEnabled();
     await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
     await uploadSubmit.click();
+    await expect(uploadDialog).toBeHidden();
 
     const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
     const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
