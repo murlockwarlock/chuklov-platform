@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D Playwright contract + fixture remediation candidate
+
+- This bounded test-only remediation starts exactly at `68a55d101a42d4e82e084c5c215b292f0d06447d`. That candidate retains green hosted PostgreSQL concurrency run `33315522045` and full CI run `33315885720`; hosted E2E run `33316506558` used PostgreSQL/Redis and finished with `28` passed, `16` failed, and `0` skipped tests.
+- The `16` failures were eight unique tests duplicated across Chromium desktop and WebKit mobile: five known pre-M11D stale CRM/scenario locators and three E2E contract/fixture problems involving the Telegram Home mock, Profile strict locator, and medical encryption-key fixture. Only `tests/e2e/crm.spec.ts`, `tests/e2e/scenarios.spec.ts`, and `tests/e2e/portal.spec.ts` are changed; production behavior is unchanged.
+- The resulting SHA is not yet hosted-E2E or full-CI proven and requires new exact-SHA gates. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; deployment and merge are not run; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D Zoom PostgreSQL test-barrier remediation candidate
 
 - This bounded test-harness candidate starts exactly at `ad12d6cb5000467b54b41edcef50c59104d993a7`; the narrow independent Filament re-review was `GO`. Hosted exact-SHA PostgreSQL concurrency run `33313698105` used `pgvector/pgvector:0.8.2-pg18-trixie` and recorded `65` passed, `3` failed, `415` assertions, `0` skips, and `142.09s`. M10 target-credential-before-provider, B2B booking-vs-SalesCall, first explicit/explicit Zoom, and Knowledge cleanup cases passed.

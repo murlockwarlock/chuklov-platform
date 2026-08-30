@@ -107,7 +107,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await page.goto('/admin/scenario-rules');
     await expect(page.getByRole('heading', { name: 'Правила сообщений' })).toBeVisible();
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}/edit`);
-    await page.getByRole('spinbutton', { name: /Через/ }).fill('48');
+    await page.getByRole('spinbutton', { name: 'Задержка перед отправкой*', exact: true }).fill('48');
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'

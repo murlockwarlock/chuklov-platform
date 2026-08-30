@@ -232,7 +232,7 @@ test('staff sees business labels for client and content settings', async ({ page
     await login(page, fixture);
 
     await page.goto('/admin/clients');
-    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'База клиентов', exact: true })).toBeVisible();
 
     await searchTableFor(page, fixture.clientName);
 
@@ -274,7 +274,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await page.getByRole('row').filter({ hasText: fixture.clientName }).getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
-    for (const tabLabel of ['Профиль', 'Сеансы', 'Записи', 'Опросы', 'Файлы']) {
+    for (const tabLabel of ['Клинический профиль', 'Сеансы', 'Записи на приём', 'Опросы', 'Файлы и МРТ']) {
         await expect(page.getByRole('tab', { name: tabLabel, exact: true })).toBeVisible();
     }
 
@@ -286,7 +286,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Файлы', exact: true }).click();
+    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     const attachmentType = uploadDialog.getByLabel('Тип файла');
@@ -318,7 +318,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await login(page, fixture);
 
     await page.goto('/admin/clients');
-    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'База клиентов', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
 
     const clientRow = page.getByRole('row').filter({ hasText: fixture.clientName });
@@ -400,7 +400,7 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     };
 
     // Navigate to Clients via sidebar link
-    await navigateViaSidebar('Клиенты', /\/admin\/clients$/, 'Клиенты');
+    await navigateViaSidebar('База клиентов', /\/admin\/clients$/, 'База клиентов');
 
     // Verify window marker persists (no full page reload)
     const markerAfterClients = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);

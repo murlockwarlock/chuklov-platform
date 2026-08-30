@@ -17,6 +17,13 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
+### M11D Playwright contract + fixture remediation
+
+- Objective: repair only the stale Playwright UI contracts and the E2E fixture prerequisites exposed by hosted run `33316506558`; do not change production behavior, CI wiring, database defaults, or accepted M11D concurrency architecture.
+- Starting SHA: `68a55d101a42d4e82e084c5c215b292f0d06447d`. Hosted full CI run `33315885720` and PostgreSQL concurrency run `33315522045` remain green for that candidate; hosted E2E recorded `28` passed, `16` failed, and `0` skipped tests across Chromium desktop and WebKit mobile.
+- Remediation: align CRM headings/tabs/sidebar links and the Scenario delay field with their current accessible labels; complete the mocked authenticated `Portal/Home` contract; use an exact Profile heading locator; and configure the canonical test-only medical key before encrypted companion fixture creation. Preserve B2B E2E coverage and all functional assertions without timeout increases, sleeps, or skips.
+- Verification state: local PostgreSQL/Redis and browser execution are unavailable; changed-spec ESLint, `vue-tsc`, Playwright discovery, and `git diff --check` pass. The resulting SHA requires new exact-SHA hosted E2E and full-CI proof; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ### M11D Zoom PostgreSQL test-barrier remediation
 
 - Objective: repair only the PostgreSQL Zoom concurrency test harness's lossy readiness-token observation; do not change production Zoom, credential, B2B SalesCall, Makefile, CI, SQLite, or database configuration behavior.

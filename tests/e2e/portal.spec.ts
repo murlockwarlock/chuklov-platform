@@ -54,6 +54,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             ]);
         }
         if ($withCompanionMessages) {
+            config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
             $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
                 ->forOrganization($organization)
                 ->forClient($client)
@@ -248,6 +249,9 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 props: {
                     services: [],
                     upcomingBooking: null,
+                    attribution: {
+                        needsManualSource: false,
+                    },
                     portal: {
                         authenticated: true,
                         clientName: 'Telegram Client',
@@ -257,8 +261,15 @@ test('Telegram Mini App submits initData automatically without a second login ac
                             home: '/',
                             services: '/portal/services',
                             bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
                             profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
                             booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
                         },
                     },
                 },
@@ -384,7 +395,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await page.getByRole('link', { name: 'Profile' }).last().click();
     await profileResponse;
     await expect(page).toHaveURL(/\/portal\/profile$/);
-    await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
 });
 
