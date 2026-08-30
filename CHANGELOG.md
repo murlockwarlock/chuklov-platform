@@ -3,7 +3,7 @@
 ## 2026-08-30 — M11D attachment-flow remediation candidate
 
 - This bounded remediation starts exactly at `98367624b6321c183a7d0039279441ca8344d98e` and removes the internal scanner/quarantine prerequisite from ordinary medical attachment uploads. Validated files are stored privately, persisted, and immediately usable by authorized same-organization staff; private paths, tenant authorization, signed downloads, validation, checksums, and audit records remain enforced.
-- Replaced the CRM E2E FilePond global-registry synchronization with the rendered `Перетащите файлы или выберите` control and Playwright file chooser flow. The success path now proves the visible selected filename, one uploaded row, the authorized `Открыть` action, the signed response headers, and the downloaded PDF bytes. Hosted exact-SHA gates have not yet run for this candidate; deployment, merge, PR readiness, and M12 remain unchanged.
+- Replaced the CRM E2E FilePond global-registry synchronization with the visible Filament upload label associated with `Перетащите файлы или выберите` and the Playwright file chooser flow. The success path now proves the visible selected filename, one uploaded row, the authorized `Открыть` action, the signed response headers, and the downloaded PDF bytes. Hosted E2E runs `33326965122` at `cb4c15367714f90607ff4022c08b94d4de661b69` and `33327304090` at `6806041c4f0ca38872489276937252c64d5fc3f3` each recorded `42` passed, `2` failed, and `0` skipped because the accessible name selected FilePond's hidden input; the visible-label correction is now at `ff3fb65`, with exact-SHA gates pending. Deployment, merge, PR readiness, and M12 remain unchanged.
 
 ## 2026-08-30 — M11D client cockpit E2E red remediation candidate
 
