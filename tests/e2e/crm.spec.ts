@@ -299,7 +299,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     const uploadControl = uploadDialog.getByRole('button', {
         name: 'Перетащите файлы или выберите',
         exact: true,
-    });
+    }).filter({ visible: true });
     await expect(uploadControl).toBeVisible();
     const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser'),
