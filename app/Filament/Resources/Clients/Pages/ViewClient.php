@@ -76,11 +76,6 @@ class ViewClient extends ViewRecord
                 ->label('Редактировать клиента')
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
-            $this->assignReferrerAction(),
-            Action::make('companionHistory')
-                ->label('AI-компаньон / История общения')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')
@@ -116,17 +111,26 @@ class ViewClient extends ViewRecord
                         UpdateMedicalProfileCommand::fromArray($data),
                     );
                 }),
-            Action::make('newSession')
-                ->label('Новый сеанс')
-                ->icon('heroicon-o-plus')
-                ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
-                ->visible(fn (): bool => MedicalSessionResource::canCreate()),
             ActionGroup::make([
-                $this->blockSelfBookingAction(),
-                $this->unblockSelfBookingAction(),
+                $this->assignReferrerAction(),
+                Action::make('companionHistory')
+                    ->label('AI-компаньон / История общения')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
+                Action::make('newSession')
+                    ->label('Новый сеанс')
+                    ->icon('heroicon-o-plus')
+                    ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
+                    ->visible(fn (): bool => MedicalSessionResource::canCreate()),
+                ActionGroup::make([
+                    $this->blockSelfBookingAction(),
+                    $this->unblockSelfBookingAction(),
+                ])
+                    ->label('Доступ к записи')
+                    ->icon('heroicon-o-lock-closed'),
             ])
-                ->label('Доступ к записи')
-                ->icon('heroicon-o-lock-closed')
+                ->label('Дополнительные действия')
+                ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
                 ->color('gray'),
         ];

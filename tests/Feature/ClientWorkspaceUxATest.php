@@ -21,11 +21,14 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
@@ -671,7 +674,49 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertSee('Telegram ID: 12345678')
             ->assertSee('Инстаграм')
             ->assertSee('REF123')
-            ->assertActionExists('edit');
+            ->assertActionExists('edit')
+            ->assertActionExists('editMedicalProfile')
+            ->assertSee('Дополнительные действия');
+    }
+
+    public function test_client_cockpit_medical_profile_action_persists_encrypted_data(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $anamnesis = 'Анамнез через действие клиентского кабинета';
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertActionVisible('editMedicalProfile')
+            ->callAction('editMedicalProfile', ['anamnesis' => $anamnesis]);
+
+        $rawProfile = MedicalProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->first();
+
+        self::assertNotNull($rawProfile);
+        self::assertNotSame($anamnesis, $rawProfile->anamnesis);
+        self::assertStringNotContainsString($anamnesis, (string) $rawProfile->anamnesis);
+        self::assertSame($organization->getKey(), $rawProfile->organization_id);
+        self::assertSame($client->getKey(), $rawProfile->client_id);
+
+        $auditEvent = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('target_type', MedicalProfile::class)
+            ->latest('id')
+            ->first();
+
+        self::assertNotNull($auditEvent);
+        self::assertSame('medical.profile.created', $auditEvent->action);
+        self::assertStringNotContainsString($anamnesis, (string) json_encode($auditEvent->metadata));
+
+        $profile = app(GetMedicalProfile::class)->handle($admin, $client);
+
+        self::assertNotNull($profile);
+        self::assertSame($anamnesis, $profile->anamnesis);
     }
 
     public function test_client_search_supports_international_phones_and_telegram_id(): void

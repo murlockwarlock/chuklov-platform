@@ -236,15 +236,17 @@ test('staff sees business labels for client and content settings', async ({ page
 
     await searchTableFor(page, fixture.clientName);
 
-    const clientsTimezoneCell = page
-        .getByRole('row')
-        .filter({ hasText: fixture.clientName })
-        .getByRole('cell', { name: 'Всемирное время', exact: true });
-    await expect(clientsTimezoneCell).toBeVisible();
-    await expect(clientsTimezoneCell).toHaveText('Всемирное время');
+    if ((page.viewportSize()?.width ?? 0) >= 1024) {
+        const clientsTimezoneCell = page
+            .getByRole('row')
+            .filter({ hasText: fixture.clientName })
+            .getByRole('cell', { name: 'Всемирное время', exact: true });
+        await expect(clientsTimezoneCell).toBeVisible();
+        await expect(clientsTimezoneCell).toHaveText('Всемирное время');
+    }
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
 
     await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 
@@ -259,10 +261,11 @@ test('staff sees business labels for client and content settings', async ({ page
     await expect(contentSectionRow.getByRole('cell', { name: 'Русский', exact: true })).toBeVisible();
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}`);
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.contentSectionTitle }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Раздел контента', exact: true })).toBeVisible();
 
     await assertBusinessField(page, 'Раздел', 'Об академии');
     await assertBusinessField(page, 'Язык', 'Русский');
+    await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
@@ -413,7 +416,7 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     expect(markerAfterContent).toBe(998877);
 
     // Navigate to Services via sidebar link
-    await navigateViaSidebar('Услуги', /\/admin\/services$/, 'Услуги');
+    await navigateViaSidebar('Каталог услуг', /\/admin\/services$/, 'Каталог услуг');
 
     const markerAfterServices = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterServices).toBe(998877);

@@ -551,8 +551,10 @@ test('companion safely renders rich long messages without viewport overflow', as
             'Относительная ссылка не должна быть активной',
             'userinfo ссылка не должна быть активной',
         ]) {
-            await expect(page.getByRole('link', { name: label })).toHaveCount(0);
-            await expect(page.getByText(label, { exact: true })).toBeVisible();
+            await expect(page.getByRole('link', { name: label, exact: true })).toHaveCount(0);
+            const renderedParagraph = page.locator('.portal-rich-text p').filter({ hasText: label });
+            await expect(renderedParagraph).toHaveCount(1);
+            await expect(renderedParagraph).toBeVisible();
         }
         await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
         await assertNoHorizontalOverflow(page);

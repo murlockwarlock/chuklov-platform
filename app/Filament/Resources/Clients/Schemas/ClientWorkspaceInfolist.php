@@ -84,8 +84,8 @@ final class ClientWorkspaceInfolist
                                 ->wrap(),
                             TextEntry::make('attribution_source')
                                 ->label('Принятая первая атрибуция')
-                                ->state(fn (Client $record): string => ($record->getRelation('attribution') instanceof ClientAttribution
-                                    ? ($record->getRelation('attribution')->source ?? $record->getRelation('attribution')->source_type)
+                                ->state(fn (Client $record): string => (($attribution = $record->getRelationValue('attribution')) instanceof ClientAttribution
+                                    ? ($attribution->source ?? $attribution->source_type)
                                     : null) ?? 'Не указана')
                                 ->placeholder('Не указана')
                                 ->wrap(),

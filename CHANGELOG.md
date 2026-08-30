@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-30 — M11D client cockpit E2E red remediation candidate
+
+- This bounded remediation starts exactly at `bbb7325eaf10c54f2f1404cbab39d6642c1927bd`. Hosted E2E run `33319205488` used PostgreSQL/Redis and recorded `34` passed, `10` failed, and `0` skipped tests; five unique failures were duplicated across Chromium desktop and WebKit mobile.
+- Four failures were stale E2E contracts: current client/detail semantics, the `Каталог услуг` sidebar label, grouped SafeRichText paragraph rendering, and the `Добавить данные` scenario control. The fifth exposed a real client-cockpit defect: after the authorized medical-profile action, Livewire rehydrated the client without its eager `attribution` relation, and the infolist's direct relation lookup raised `Undefined array key "attribution"` during the next render. The desktop action overflow was addressed with Filament `ActionGroup` composition; medical persistence and encryption architecture remain unchanged.
+- Focused Livewire coverage now executes the real `ViewClient` medical-profile action and verifies organization/client ownership, encrypted-at-rest data, audit redaction, and decrypted readback. The resulting SHA still requires exact-SHA hosted E2E and full-CI proof; the parent full CI run `33315885720` and PostgreSQL concurrency run `33315522045` remain historical evidence only. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; deployment and merge have not run; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D Playwright contract + fixture remediation candidate
 
 - This bounded E2E-test candidate starts exactly at `68a55d101a42d4e82e084c5c215b292f0d06447d`. Hosted PostgreSQL concurrency run `33315522045` and hosted full CI run `33315885720` remain green for that starting candidate; hosted E2E run `33316506558` used real PostgreSQL and Redis but recorded `28` passed, `16` failed, and `0` skipped tests.

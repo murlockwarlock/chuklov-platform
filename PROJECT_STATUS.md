@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D client cockpit E2E red remediation candidate
+
+- This bounded remediation starts exactly at `bbb7325eaf10c54f2f1404cbab39d6642c1927bd` after hosted E2E run `33319205488` recorded `34` passed, `10` failed, and `0` skipped tests. Five unique failures duplicated across Chromium desktop and WebKit mobile; four were stale E2E contracts and `crm.spec.ts:268` also exposed a real post-action cockpit render failure.
+- The concrete server error was `Undefined array key "attribution"`: Livewire restored the locked client model without the initially eager-loaded relation, while the client infolist called `getRelation('attribution')` directly. The bounded production fix uses relation-safe loading, and Filament secondary header actions are grouped so the medical-profile action remains normally reachable on desktop. No medical encryption, authorization, persistence, audit, B2B, or Zoom architecture was changed.
+- The real `ViewClient` action regression now verifies encrypted persistence, tenant/client identity, audit redaction, and decrypted readback. Current E2E contract fixes cover the client/detail semantics, `Каталог услуг`, SafeRichText paragraph content, and `Добавить данные`. The resulting SHA requires new exact-SHA hosted E2E and full-CI gates; parent runs `33315885720` and `33315522045` are not proof for it. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; deployment and merge are not run; M11 is `IN_PROGRESS`; M12 is `NOT_STARTED`; OQ-007 is `OPEN`; the ordinary Booking AUTO/MANUAL gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D Playwright contract + fixture remediation candidate
 
 - This bounded test-only remediation starts exactly at `68a55d101a42d4e82e084c5c215b292f0d06447d`. That candidate retains green hosted PostgreSQL concurrency run `33315522045` and full CI run `33315885720`; hosted E2E run `33316506558` used PostgreSQL/Redis and finished with `28` passed, `16` failed, and `0` skipped tests.
