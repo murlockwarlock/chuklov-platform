@@ -298,16 +298,75 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentType).toHaveValue('medical_report');
     const fileInput = uploadDialog.locator('input[type="file"]');
     await expect(fileInput).toHaveCount(1);
+    await expect.poll(async () => fileInput.evaluate((input) => {
+        type FilePondApi = {
+            find: (element: HTMLInputElement) => unknown;
+        };
+
+        return Boolean(
+            (window as Window & { FilePond?: FilePondApi }).FilePond?.find(
+                input as HTMLInputElement,
+            ),
+        );
+    })).toBe(true);
     await fileInput.setInputFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    const readyFile = uploadDialog
-        .locator('.filepond--item[data-filepond-item-state="processing-complete"]')
-        .filter({ hasText: 'ux-a-report.pdf' });
-    await expect(readyFile).toHaveCount(1);
-    await expect(readyFile).toBeVisible();
+    await expect.poll(async () => fileInput.evaluate((input) => {
+        type FilePondFile = {
+            filename: string;
+        };
+        type FilePondInstance = {
+            getFiles: () => FilePondFile[];
+        };
+        type FilePondApi = {
+            find: (element: HTMLInputElement) => FilePondInstance | null;
+        };
+
+        const filePond = (window as Window & { FilePond?: FilePondApi }).FilePond;
+        const files = filePond?.find(input as HTMLInputElement)?.getFiles() ?? [];
+
+        return {
+            count: files.length,
+            filenames: files.map(({ filename }) => filename),
+        };
+    })).toEqual({
+        count: 1,
+        filenames: ['ux-a-report.pdf'],
+    });
+    await expect.poll(async () => fileInput.evaluate((input) => {
+        type FilePondFile = {
+            filename: string;
+            status: number;
+        };
+        type FilePondInstance = {
+            getFiles: () => FilePondFile[];
+        };
+        type FilePondApi = {
+            FileStatus: {
+                PROCESSING_COMPLETE: number;
+            };
+            find: (element: HTMLInputElement) => FilePondInstance | null;
+        };
+
+        const filePond = (window as Window & { FilePond?: FilePondApi }).FilePond;
+        const files = filePond?.find(input as HTMLInputElement)?.getFiles() ?? [];
+
+        return {
+            count: files.length,
+            filename: files.length === 1 ? files[0].filename : null,
+            processingComplete:
+                files.length === 1 &&
+                files[0].filename === 'ux-a-report.pdf' &&
+                files[0].status === filePond?.FileStatus.PROCESSING_COMPLETE,
+        };
+    })).toEqual({
+        count: 1,
+        filename: 'ux-a-report.pdf',
+        processingComplete: true,
+    });
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
     await expect(uploadSubmit).toBeEnabled();
