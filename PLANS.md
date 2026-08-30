@@ -29,6 +29,10 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 - This bounded follow-up starts exactly at `4ea1fa5e490345bd5ef4ae1b6513e25ae20cce32` after fresh review CHANGES REQUIRED. It remediates only mutable provider-object retry state in `ConnectAiProvider::update()` and explicit null/empty credential detach; the captured `$data` array and `create()` retry path are not treated as defective. The existing exact-state PostgreSQL polling remains unchanged non-blocking P3 debt; focused local checks pass, PostgreSQL and hosted CI remain pending, and the resulting SHA is not independently re-reviewed.
 
+### M11D Filament — fresh edit-record follow-up
+
+- This bounded follow-up starts exactly at `19f04cc0cbcad95d32717c767ff20579b9126297` after fresh exact-SHA review returned CHANGES REQUIRED only for `M11D-FILAMENT-RECORD-001` (P2). It replaces the Filament edit page record with the authoritative `ConnectAiProvider` result before post-save hooks/events and adds a real Livewire page/event regression. No AI action, credential lock, detach, PostgreSQL concurrency test, Makefile, or CI wiring is changed; the resulting SHA is not independently re-reviewed, PostgreSQL remains pending, hosted CI and deployment are not run, staging remains `3dc9f8b9a4038831823a687fa53abe6f481302b0`, M11 remains IN_PROGRESS, M12 remains NOT_STARTED, OQ-007 remains OPEN, and PR #23 remains untouched.
+
 ### UX-A — Client Workspace + ordinary client/global search
 
 - Objective: make the opened Client the daily CRM workspace and make the Clients list and global search bounded identity-only finders.

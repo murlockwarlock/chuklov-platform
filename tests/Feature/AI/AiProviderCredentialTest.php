@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\AI;
 
+use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
@@ -32,11 +33,16 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use Filament\Facades\Filament;
+use Filament\Resources\Events\RecordSaved;
+use Filament\Resources\Events\RecordUpdated;
 use GuzzleHttp\Psr7\Uri;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class AiProviderCredentialTest extends TestCase
@@ -557,6 +563,79 @@ class AiProviderCredentialTest extends TestCase
             OrganizationCredential::query()->where('organization_id', $this->organizationA->id)->count(),
         );
         self::assertStringNotContainsString($newApiKey, AuditEvent::query()->get()->toJson());
+    }
+
+    public function test_filament_edit_replaces_the_page_record_with_the_authoritative_provider(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($this->userA);
+
+        $currentCredential = $this->createOrganizationCredential('openai', 'OpenAI Page Current', 'sk-page-current');
+        $targetCredential = $this->createOrganizationCredential('openai', 'OpenAI Page Target', 'sk-page-target');
+        $provider = $this->createProviderConfiguration($currentCredential);
+        $organization = $this->organizationA;
+
+        Event::fake([RecordSaved::class, RecordUpdated::class]);
+
+        $edit = Livewire::test(EditAiProvider::class, ['record' => $provider->getRouteKey()])
+            ->fillForm([
+                'credential_id' => $targetCredential->getKey(),
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        /** @var EditAiProvider $editPage */
+        $editPage = $edit->instance();
+        $pageRecord = $editPage->getRecord();
+        $provider->refresh();
+
+        self::assertInstanceOf(AiProviderConfiguration::class, $pageRecord);
+        self::assertSame($provider->getKey(), $pageRecord->getKey());
+        self::assertSame($organization->getKey(), $pageRecord->organization_id);
+        self::assertSame('openai', $pageRecord->provider_name);
+        self::assertSame($targetCredential->getKey(), $pageRecord->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $pageRecord->health_status);
+        self::assertNull($pageRecord->tested_credential_revision);
+        self::assertNull($pageRecord->tested_configuration_digest);
+        self::assertSame(
+            'Provider execution configuration changed; connection verification is required.',
+            $pageRecord->last_health_error,
+        );
+
+        self::assertSame($targetCredential->getKey(), $provider->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+
+        $assertFreshRecord = static function (string $eventName, array $payload) use ($organization, $provider, $targetCredential): bool {
+            $eventRecord = $payload['record'] ?? null;
+            $page = $payload['page'] ?? null;
+            $data = $payload['data'] ?? null;
+
+            if (! in_array($eventName, [RecordSaved::class, RecordUpdated::class], true)
+                || $eventRecord === null
+                || ! $page instanceof EditAiProvider
+                || ! is_array($data)) {
+                return false;
+            }
+
+            $pageRecord = $page->getRecord();
+
+            return $eventRecord instanceof AiProviderConfiguration
+                && $pageRecord === $eventRecord
+                && $eventRecord->getKey() === $provider->getKey()
+                && $eventRecord->organization_id === $organization->getKey()
+                && $eventRecord->provider_name === 'openai'
+                && $eventRecord->credential_id === $targetCredential->getKey()
+                && $eventRecord->health_status === ProviderHealthStatus::Unknown
+                && $eventRecord->tested_credential_revision === null
+                && $eventRecord->tested_configuration_digest === null
+                && $eventRecord->last_health_error === 'Provider execution configuration changed; connection verification is required.'
+                && (int) ($data['credential_id'] ?? 0) === (int) $targetCredential->getKey();
+        };
+
+        Event::assertDispatched(RecordUpdated::class, $assertFreshRecord);
+        Event::assertDispatched(RecordSaved::class, $assertFreshRecord);
     }
 
     public function test_custom_provider_probe_endpoint_is_rejected_before_any_request(): void

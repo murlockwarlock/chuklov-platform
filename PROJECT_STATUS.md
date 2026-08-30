@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D Filament fresh edit-record remediation candidate
+
+- This bounded candidate starts exactly at `19f04cc0cbcad95d32717c767ff20579b9126297`, whose fresh exact-SHA review returned CHANGES REQUIRED only for `M11D-FILAMENT-RECORD-001` (P2). Filament 5.7.6 ignores the `handleRecordUpdate()` return value, so the edit page could retain a stale provider model after the database update.
+- `EditAiProvider` now replaces its inherited `$record` with the authoritative provider returned by `ConnectAiProvider` before post-save hooks and save events. A real Livewire page test proves the committed provider state is visible through `getRecord()` and both `RecordUpdated` and `RecordSaved` payloads. The accepted AI retry-safety, C → P lock order, and explicit detach behavior are unchanged.
+- Focused local coverage passes: `AiProviderCredentialTest` 23 tests / 138 assertions, plus adjacent AI/security/Filament regressions 50 tests / 571 assertions. PostgreSQL is `NOT RUN LOCALLY`; the resulting SHA is not independently re-reviewed; hosted CI and deployment are not run; no merge is claimed. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; PR #23 remains untouched; and the ordinary Booking AUTO/MANUAL Phase-1 gap remains open.
+
 ## 2026-08-30 — M11D AI retry-safety and explicit credential detach remediation candidate
 
 - This bounded candidate starts exactly at `4ea1fa5e490345bd5ef4ae1b6513e25ae20cce32`, which received fresh exact-SHA review CHANGES REQUIRED. `M11D-AI-LOCK-001` remains resolved structurally; the valid retry finding is specifically the mutable caller-supplied Eloquent provider object reused across Laravel transaction attempts.

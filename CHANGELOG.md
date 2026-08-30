@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-30 — M11D Filament fresh edit-record remediation candidate
+
+- This bounded candidate starts exactly at `19f04cc0cbcad95d32717c767ff20579b9126297` after fresh exact-SHA review returned CHANGES REQUIRED only for `M11D-FILAMENT-RECORD-001` (P2): Filament 5.7.6 ignores the `handleRecordUpdate()` return value and could leave the edit page record stale.
+- `EditAiProvider::handleRecordUpdate()` now assigns the authoritative provider returned by `ConnectAiProvider` to `$this->record` before `afterSave`, `RecordUpdated`, and `RecordSaved`. A real Livewire page regression verifies the database state, page state, and both save-event payloads. AI retry safety, C → P lock order, and explicit detach remain unchanged.
+- Focused local coverage passes: `AiProviderCredentialTest` 23 tests / 138 assertions, plus adjacent AI/security/Filament regressions 50 tests / 571 assertions. PostgreSQL remains `NOT RUN LOCALLY`; the resulting SHA has not received independent re-review; hosted CI and deployment have not run; no merge is claimed; staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains IN_PROGRESS; M12 remains NOT_STARTED; OQ-007 remains OPEN; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D AI retry-safety and explicit credential detach remediation candidate
 
 - This bounded candidate starts exactly at `4ea1fa5e490345bd5ef4ae1b6513e25ae20cce32` after fresh exact-SHA review returned CHANGES REQUIRED. `M11D-AI-LOCK-001` remains structurally resolved: the target credential is authoritative before the provider update, and every production update caller is transaction-covered.
