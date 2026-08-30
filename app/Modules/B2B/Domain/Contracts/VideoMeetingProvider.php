@@ -28,12 +28,14 @@ interface VideoMeetingProvider
     public function cancelMeeting(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): void;
 
     public function obtainHostLaunchUrl(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): string;
 
@@ -46,6 +48,7 @@ interface VideoMeetingProvider
     public function getMeeting(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): ?VideoMeetingResult;
 }

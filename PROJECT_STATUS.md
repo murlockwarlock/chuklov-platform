@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-08-31 — M11D Zoom identity and durable manual cleanup remediation candidate
+
+- This bounded candidate starts exactly at `1c1f1c7f624ebf4f75d54e0a820174359d68bf6c` and addresses only the two M11D final-review HIGH findings: known Zoom identity/correlation adoption and manual-mode provider cleanup loss. The provider/application contract now requires exact meeting ID, exact persisted non-empty UUID when present, and the authoritative B2B agenda marker before a known remote is accepted; update/delete/host paths preflight the remote under the same absolute operation deadline, and mismatches retain reconciliation without adoption, mutation, or URL exposure.
+- Recreate state now retains the old generation's correlation key alongside its old meeting ID. Local cancellation derives cleanup from provider state, not UI mode, and version changes create a current durable Cancel event while stale prior events can only be marked processed. NotRequired and identity clearing occur only after proven cancellation or authoritative absence.
+- Focused local evidence: `B2bVideoMeetingProviderTest` 23 tests / 55 assertions, `B2bLeadFunnelTest` 76 tests / 501 assertions, and adjacent B2B/Scheduling coverage 40 tests / 183 assertions. Pint, full Larastan, and `git diff --check` pass. PostgreSQL B2B/credential integration ran under the local SQLite PHPUnit configuration with 9 skipped tests, so PostgreSQL proof is `NOT RUN LOCALLY`; no SQLite result is claimed as PostgreSQL evidence. Hosted PostgreSQL/concurrency, full CI, exact-SHA E2E, independent final review, deployment, merge, staging, and owner acceptance remain pending.
+- Attachments/scanner/quarantine behavior, PR #23, and M12 were not touched; M11 remains `IN_PROGRESS`, M12 remains `NOT_STARTED`, and PR #26 remains an OPEN Draft pending fresh independent whole-candidate review.
+
 ## 2026-08-30 — M11D attachment-flow remediation candidate
 
 - This bounded remediation starts exactly at `98367624b6321c183a7d0039279441ca8344d98e`. It removes the internal attachment scanner/quarantine runtime dependency and legacy scan columns, while retaining private UUID storage, server-side validation, checksums, audit records, signed downloads, authentication, authorization, and organization isolation.

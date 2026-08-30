@@ -51,7 +51,9 @@ final class RetryB2bSalesCallProvider
 
                 return $locked->refresh();
             }
-            $hasProviderIdentity = $locked->providerIdentity() !== null;
+            $hasProviderIdentity = $locked->providerIdentity() !== null
+                || (is_string($locked->provider_recreate_meeting_id)
+                    && trim($locked->provider_recreate_meeting_id) !== '');
             if ($locked->meeting_mode !== VideoMeetingMode::Automatic
                 && ! $hasProviderIdentity) {
                 throw ValidationException::withMessages(['provider' => 'Automatic provider sync is disabled for manual-link calls.']);
@@ -77,8 +79,14 @@ final class RetryB2bSalesCallProvider
                         ? VideoMeetingSyncStatus::CancellationPending
                         : VideoMeetingSyncStatus::Pending),
                 'provider_operation' => $operation,
-                'provider_recreate_meeting_id' => $operation === VideoMeetingOperation::Recreate
-                    ? $locked->provider_recreate_meeting_id ?? $locked->provider_meeting_id
+                'provider_recreate_meeting_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $locked->provider_recreate_meeting_id ?? $locked->provider_meeting_id,
+                    VideoMeetingOperation::Cancel => $locked->provider_recreate_meeting_id,
+                    default => null,
+                },
+                'provider_recreate_correlation_key' => $operation === VideoMeetingOperation::Recreate
+                    || $operation === VideoMeetingOperation::Cancel
+                    ? $locked->provider_recreate_correlation_key
                     : null,
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,

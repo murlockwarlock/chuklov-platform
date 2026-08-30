@@ -23,4 +23,20 @@ final readonly class VideoMeetingRequest
     {
         return $this->startsAt->addMinutes($this->durationMinutes);
     }
+
+    public function correlationMarker(): string
+    {
+        return 'CHUKLOV-B2B:'.$this->externalKey;
+    }
+
+    public function matchesCorrelation(?string $agenda): bool
+    {
+        if (! is_string($agenda)) {
+            return false;
+        }
+
+        $marker = $this->correlationMarker();
+
+        return $agenda === $marker || str_starts_with($agenda, $marker.' ');
+    }
 }

@@ -41,6 +41,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property CarbonImmutable|null $provider_synced_at
  * @property string|null $provider_error_code
  * @property string|null $provider_recreate_meeting_id
+ * @property string|null $provider_recreate_correlation_key
  * @property string|null $provider_correlation_key
  * @property string|null $provider_lease_token
  * @property CarbonImmutable|null $provider_lease_expires_at
@@ -112,7 +113,7 @@ class B2bSalesCall extends Model
 
         return new VideoMeetingIdentity(
             meetingId: $meetingId,
-            meetingUuid: is_string($uuid) && $uuid !== '' ? $uuid : null,
+            meetingUuid: is_string($uuid) && trim($uuid) !== '' ? $uuid : null,
         );
     }
 

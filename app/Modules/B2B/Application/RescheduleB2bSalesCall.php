@@ -104,7 +104,9 @@ final class RescheduleB2bSalesCall
                     endsAt: $newEndsAt,
                     ignoreUnavailablePeriodId: (int) $occupancy->getKey(),
                 );
-                $hasProviderIdentity = $locked->providerIdentity() !== null;
+                $hasProviderIdentity = $locked->providerIdentity() !== null
+                    || (is_string($locked->provider_recreate_meeting_id)
+                        && trim($locked->provider_recreate_meeting_id) !== '');
                 $providerOperation = null;
                 $providerSyncStatus = VideoMeetingSyncStatus::NotRequired;
                 if ($locked->meeting_mode === VideoMeetingMode::Automatic) {
@@ -130,9 +132,16 @@ final class RescheduleB2bSalesCall
                     'requested_timezone' => $requestedTimezone ?? $locked->requested_timezone,
                     'provider_sync_status' => $providerSyncStatus,
                     'provider_operation' => $providerOperation,
-                    'provider_recreate_meeting_id' => $providerOperation === VideoMeetingOperation::Recreate
-                        ? $locked->provider_meeting_id
-                        : null,
+                    'provider_recreate_meeting_id' => match ($providerOperation) {
+                        VideoMeetingOperation::Recreate => $locked->provider_meeting_id,
+                        VideoMeetingOperation::Cancel => $locked->provider_recreate_meeting_id,
+                        default => null,
+                    },
+                    'provider_recreate_correlation_key' => match ($providerOperation) {
+                        VideoMeetingOperation::Recreate => $locked->provider_correlation_key,
+                        VideoMeetingOperation::Cancel => $locked->provider_recreate_correlation_key,
+                        default => null,
+                    },
                     'provider_correlation_key' => $providerCorrelationKey,
                     'provider_join_url' => null,
                     'provider_lease_token' => null,

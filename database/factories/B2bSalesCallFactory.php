@@ -41,6 +41,7 @@ class B2bSalesCallFactory extends Factory
             'provider_synced_at' => null,
             'provider_error_code' => null,
             'provider_recreate_meeting_id' => null,
+            'provider_recreate_correlation_key' => null,
             'provider_correlation_key' => Str::random(32),
             'provider_lease_token' => null,
             'provider_lease_expires_at' => null,

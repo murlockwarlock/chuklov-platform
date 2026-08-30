@@ -4,7 +4,6 @@ namespace App\Modules\B2B\Application;
 
 use App\Models\User;
 use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
-use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
@@ -69,11 +68,12 @@ final class CancelB2bSalesCall
                 ->lockForUpdate()
                 ->first()
                 ?->delete();
-            $hasProviderIdentity = $locked->providerIdentity() !== null;
-            $requiresProviderCancellation = $locked->meeting_mode === VideoMeetingMode::Automatic
-                && ($hasProviderIdentity
-                    || $locked->provider_operation !== null
-                    || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired);
+            $hasProviderIdentity = $locked->providerIdentity() !== null
+                || (is_string($locked->provider_recreate_meeting_id)
+                    && trim($locked->provider_recreate_meeting_id) !== '');
+            $requiresProviderCancellation = $hasProviderIdentity
+                || $locked->provider_operation !== null
+                || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired;
             $providerSyncStatus = $requiresProviderCancellation
                 ? ($locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
                     ? VideoMeetingSyncStatus::ReconciliationRequired

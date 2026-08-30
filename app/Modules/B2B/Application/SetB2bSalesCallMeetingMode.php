@@ -60,7 +60,9 @@ final class SetB2bSalesCallMeetingMode
                 throw ValidationException::withMessages(['sales_call' => 'A cancelled sales call cannot change meeting mode.']);
             }
 
-            $identityExists = $locked->providerIdentity() !== null;
+            $identityExists = $locked->providerIdentity() !== null
+                || (is_string($locked->provider_recreate_meeting_id)
+                    && trim($locked->provider_recreate_meeting_id) !== '');
             $requiresProviderCancellation = $identityExists
                 || ($locked->meeting_mode === VideoMeetingMode::Automatic
                     && ($locked->provider_operation !== null
@@ -112,9 +114,16 @@ final class SetB2bSalesCallMeetingMode
                 'provider_name' => $mode === VideoMeetingMode::Automatic || $requiresProviderCancellation ? 'zoom' : null,
                 'provider_sync_status' => $syncStatus,
                 'provider_operation' => $operation,
-                'provider_recreate_meeting_id' => $operation === VideoMeetingOperation::Recreate
-                    ? $locked->provider_meeting_id
-                    : null,
+                'provider_recreate_meeting_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $locked->provider_meeting_id,
+                    VideoMeetingOperation::Cancel => $locked->provider_recreate_meeting_id,
+                    default => null,
+                },
+                'provider_recreate_correlation_key' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $locked->provider_correlation_key,
+                    VideoMeetingOperation::Cancel => $locked->provider_recreate_correlation_key,
+                    default => null,
+                },
                 'provider_correlation_key' => $providerCorrelationKey,
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,

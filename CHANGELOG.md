@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-31 — M11D Zoom identity and durable manual cleanup remediation candidate
+
+- This bounded remediation starts exactly at `1c1f1c7f624ebf4f75d54e0a820174359d68bf6c` and addresses only the M11D final-review Zoom identity-safety and manual-cancellation cleanup findings. Known Zoom responses now require an exact persisted meeting ID, an exact persisted non-empty UUID when present, and the authoritative `CHUKLOV-B2B` correlation marker before adoption, update, cancellation, or host launch; mismatches fail closed into reconciliation, while authoritative 404 cancellation remains complete absence.
+- Provider update/delete paths perform a bounded identity/correlation preflight under the existing absolute deadline before mutation, and host launch validates the same contract before structural `zoom.us` allowlisting and return. Recreate cleanup persists the previous generation's correlation key so an old meeting cannot be deleted after the current generation rotates.
+- Local cancellation now preserves provider cleanup obligations independently of the current meeting mode and records a current durable Cancel event when versions advance. New adversarial coverage proves manual → ambiguous provider cancellation → local cancellation retains actionable cleanup, stale events cannot discard it, remote presence is safely cancelled only after proof, and authoritative remote absence completes without another delete. Local focused B2B/Scheduling tests, Pint, Larastan, and `git diff --check` pass; PostgreSQL integration is `NOT RUN LOCALLY` under the SQLite PHPUnit configuration. Hosted PostgreSQL/concurrency, full CI, and E2E have not run for this candidate; deployment, merge, PR readiness, staging, attachments, PR #23, and M12 remain unchanged.
+
 ## 2026-08-30 — M11D attachment-flow remediation candidate
 
 - This bounded remediation starts exactly at `98367624b6321c183a7d0039279441ca8344d98e` and removes the internal scanner/quarantine prerequisite from ordinary medical attachment uploads. Validated files are stored privately, persisted, and immediately usable by authorized same-organization staff; private paths, tenant authorization, signed downloads, validation, checksums, and audit records remain enforced.

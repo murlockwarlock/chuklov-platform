@@ -11,10 +11,12 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
+use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +45,7 @@ final class GetB2bSalesCallHostLaunchUrl
 
         $snapshot = $this->snapshot($organization->getKey(), (int) $salesCall->getKey());
         $identity = $this->launchIdentity($snapshot);
+        $request = $this->launchRequest($snapshot);
 
         if ($this->provider->name() !== 'zoom') {
             throw ValidationException::withMessages([
@@ -54,6 +57,7 @@ final class GetB2bSalesCallHostLaunchUrl
             $hostUrl = $this->provider->obtainHostLaunchUrl(
                 $organization,
                 $identity,
+                $request,
                 ProviderOperationDeadline::fromNow((int) config('b2b.provider.operation_deadline_seconds', 90)),
             );
 
@@ -69,7 +73,11 @@ final class GetB2bSalesCallHostLaunchUrl
 
             return $hostUrl;
         } catch (VideoMeetingException $exception) {
-            if ($exception->safeCode === 'zoom_host_url_404') {
+            if (in_array($exception->safeCode, [
+                'zoom_host_url_404',
+                'zoom_meeting_identity_mismatch',
+                'zoom_meeting_correlation_mismatch',
+            ], true)) {
                 $this->reconciliation->handle(
                     actor: $actor,
                     salesCall: $salesCall,
@@ -108,7 +116,7 @@ final class GetB2bSalesCallHostLaunchUrl
         return $host === 'zoom.us' || preg_match('/^[a-z0-9-]+\.zoom\.us$/', $host) === 1;
     }
 
-    /** @return array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} */
+    /** @return array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, starts_at: CarbonImmutable, ends_at: CarbonImmutable, schedule_timezone: string, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} */
     private function snapshot(int $organizationId, int $salesCallId): array
     {
         return DB::transaction(function () use ($organizationId, $salesCallId): array {
@@ -124,6 +132,9 @@ final class GetB2bSalesCallHostLaunchUrl
                 'provider_meeting_id' => $identity?->meetingId,
                 'provider_meeting_uuid' => $identity?->meetingUuid,
                 'provider_correlation_key' => $salesCall->provider_correlation_key,
+                'starts_at' => $salesCall->startsAtUtc(),
+                'ends_at' => $salesCall->endsAtUtc(),
+                'schedule_timezone' => (string) $salesCall->schedule_timezone,
                 'event_version' => (int) $salesCall->event_version,
                 'provider_sync_version' => (int) $salesCall->provider_sync_version,
                 'status' => $salesCall->status,
@@ -135,7 +146,7 @@ final class GetB2bSalesCallHostLaunchUrl
         });
     }
 
-    /** @param array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} $snapshot */
+    /** @param array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, starts_at: CarbonImmutable, ends_at: CarbonImmutable, schedule_timezone: string, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} $snapshot */
     private function launchIdentity(array $snapshot): VideoMeetingIdentity
     {
         if ($snapshot['status'] !== B2bSalesCallStatus::Scheduled
@@ -152,13 +163,35 @@ final class GetB2bSalesCallHostLaunchUrl
 
         return new VideoMeetingIdentity(
             meetingId: $snapshot['provider_meeting_id'],
-            meetingUuid: is_string($snapshot['provider_meeting_uuid']) && $snapshot['provider_meeting_uuid'] !== ''
+            meetingUuid: is_string($snapshot['provider_meeting_uuid']) && trim($snapshot['provider_meeting_uuid']) !== ''
                 ? $snapshot['provider_meeting_uuid']
                 : null,
         );
     }
 
-    /** @param array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} $snapshot */
+    /** @param array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, starts_at: CarbonImmutable, ends_at: CarbonImmutable, schedule_timezone: string, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} $snapshot */
+    private function launchRequest(array $snapshot): VideoMeetingRequest
+    {
+        if (! is_string($snapshot['provider_correlation_key'])
+            || trim($snapshot['provider_correlation_key']) === '') {
+            throw ValidationException::withMessages(['provider' => self::UNAVAILABLE_MESSAGE]);
+        }
+
+        $durationMinutes = (int) round($snapshot['starts_at']->diffInMinutes($snapshot['ends_at']));
+        if ($durationMinutes < 1) {
+            throw ValidationException::withMessages(['provider' => self::UNAVAILABLE_MESSAGE]);
+        }
+
+        return new VideoMeetingRequest(
+            externalKey: $snapshot['provider_correlation_key'],
+            startsAt: $snapshot['starts_at'],
+            durationMinutes: $durationMinutes,
+            timezone: $snapshot['schedule_timezone'],
+            topic: (string) config('b2b.zoom.topic'),
+        );
+    }
+
+    /** @param array{sales_call_id: int, provider_meeting_id: string|null, provider_meeting_uuid: string|null, provider_correlation_key: string|null, starts_at: CarbonImmutable, ends_at: CarbonImmutable, schedule_timezone: string, event_version: int, provider_sync_version: int, status: B2bSalesCallStatus, meeting_mode: VideoMeetingMode, provider_sync_status: VideoMeetingSyncStatus, provider_operation: VideoMeetingOperation|null, provider_name: string|null} $snapshot */
     private function isCurrentReadySnapshot(int $organizationId, int $salesCallId, array $snapshot): bool
     {
         return DB::transaction(function () use ($organizationId, $salesCallId, $snapshot): bool {

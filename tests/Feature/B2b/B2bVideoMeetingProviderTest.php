@@ -5,6 +5,7 @@ namespace Tests\Feature\B2b;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
+use App\Modules\B2B\Domain\ValueObjects\VideoMeetingResult;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
 use App\Modules\B2B\Infrastructure\Video\ZoomVideoMeetingProvider;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -26,9 +27,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         $organization = $this->organization();
         $this->fakeZoom([
             'create' => [
-                'id' => 123456,
-                'uuid' => 'meeting-uuid',
-                'join_url' => 'https://zoom.us/j/123456',
+                ...$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
             ],
             'list' => [$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')],
             'get' => [
@@ -46,9 +45,15 @@ final class B2bVideoMeetingProviderTest extends TestCase
         $hostUrl = $provider->obtainHostLaunchUrl(
             $organization,
             new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $request,
             ProviderOperationDeadline::fromNow(60),
         );
-        $provider->cancelMeeting($organization, $created->identity, ProviderOperationDeadline::fromNow(60));
+        $provider->cancelMeeting(
+            $organization,
+            $created->identity,
+            $request,
+            ProviderOperationDeadline::fromNow(60),
+        );
 
         self::assertSame('123456', $created->identity->meetingId);
         self::assertSame('meeting-uuid', $created->identity->meetingUuid);
@@ -137,11 +142,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         $deadline = new ProviderOperationDeadline($base->addSeconds(5), 1);
         self::assertSame(4, $deadline->timeoutSeconds(30));
         $this->fakeZoom([
-            'create' => [
-                'id' => 1,
-                'uuid' => 'uuid-1',
-                'join_url' => 'https://zoom.us/j/1',
-            ],
+            'create' => $this->meeting(1, 'uuid-1', 'https://zoom.us/j/1'),
         ]);
 
         try {
@@ -262,19 +263,350 @@ final class B2bVideoMeetingProviderTest extends TestCase
                     return Http::response(['access_token' => 'server-token'], 200);
                 }
 
-                return Http::response(['start_url' => $hostUrl], 200);
+                return Http::response([
+                    ...$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+                    'start_url' => $hostUrl,
+                ], 200);
             });
 
             try {
                 app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
                     $organization,
                     $identity,
+                    $this->request(),
                     ProviderOperationDeadline::fromNow(60),
                 );
                 self::fail('An invalid Zoom host URL was accepted: '.$hostUrl);
             } catch (VideoMeetingException $exception) {
                 self::assertSame('zoom_host_url_invalid', $exception->safeCode);
             }
+        }
+    }
+
+    public function test_get_meeting_rejects_a_remote_meeting_id_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(654321, 'meeting-uuid', 'https://zoom.us/j/654321');
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A remote meeting with a different ID was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    public function test_get_meeting_rejects_a_remote_meeting_uuid_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(123456, 'different-uuid', 'https://zoom.us/j/123456'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A remote meeting with a different UUID was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    public function test_get_meeting_rejects_a_missing_remote_uuid_when_one_is_persisted(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $remote['uuid'] = null;
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A missing remote UUID was accepted for a persisted UUID.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+    }
+
+    public function test_get_meeting_rejects_a_remote_correlation_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $remote['agenda'] = 'CHUKLOV-B2B:another-provider-key';
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A remote meeting with a different correlation marker was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_correlation_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    public function test_update_does_not_patch_a_remote_identity_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(654321, 'meeting-uuid', 'https://zoom.us/j/654321'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->updateMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An update proceeded after a remote identity mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'PATCH');
+    }
+
+    public function test_update_does_not_patch_a_remote_uuid_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(123456, 'different-uuid', 'https://zoom.us/j/123456'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->updateMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An update proceeded after a remote UUID mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'PATCH');
+    }
+
+    public function test_update_does_not_patch_a_remote_correlation_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $remote['agenda'] = 'CHUKLOV-B2B:another-provider-key';
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->updateMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An update proceeded after a remote correlation mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_correlation_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'PATCH');
+    }
+
+    public function test_cancel_does_not_delete_a_remote_correlation_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $remote['agenda'] = 'CHUKLOV-B2B:another-provider-key';
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->cancelMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A delete proceeded after a remote correlation mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_correlation_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'DELETE');
+    }
+
+    public function test_cancel_does_not_delete_a_remote_uuid_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(123456, 'different-uuid', 'https://zoom.us/j/123456'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->cancelMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A delete proceeded after a remote UUID mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'DELETE');
+    }
+
+    public function test_cancel_treats_an_authoritative_remote_404_as_absence_without_deleting(): void
+    {
+        $organization = $this->organization();
+        Http::fake(function (Request $request) {
+            if ($request->url() === (string) config('b2b.zoom.oauth_url')) {
+                return Http::response(['access_token' => 'server-token'], 200);
+            }
+
+            if ($request->method() === 'GET' && str_ends_with($request->url(), '/meetings/123456')) {
+                return Http::response([], 404);
+            }
+
+            if ($request->method() === 'DELETE') {
+                return Http::response([], 204);
+            }
+
+            return Http::response([], 404);
+        });
+
+        app(ZoomVideoMeetingProvider::class)->cancelMeeting(
+            $organization,
+            new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'DELETE');
+    }
+
+    public function test_host_launch_does_not_return_a_url_for_a_remote_identity_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = [
+            ...$this->meeting(654321, 'meeting-uuid', 'https://zoom.us/j/654321'),
+            'start_url' => 'https://us02web.zoom.us/start/654321',
+        ];
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A host URL was returned for a remote identity mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+    }
+
+    public function test_host_launch_does_not_return_a_url_for_a_remote_uuid_mismatch(): void
+    {
+        $organization = $this->organization();
+        $remote = [
+            ...$this->meeting(123456, 'different-uuid', 'https://zoom.us/j/123456'),
+            'start_url' => 'https://us02web.zoom.us/start/123456',
+        ];
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A host URL was returned for a remote UUID mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+    }
+
+    public function test_historical_null_uuid_still_requires_id_and_correlation(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(123456, 'remote-uuid', 'https://zoom.us/j/123456'),
+        ]);
+
+        $result = app(ZoomVideoMeetingProvider::class)->getMeeting(
+            $organization,
+            new VideoMeetingIdentity('123456'),
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertInstanceOf(VideoMeetingResult::class, $result);
+        self::assertSame('remote-uuid', $result->identity->meetingUuid);
+        self::assertSame('123456', $result->identity->meetingId);
+    }
+
+    public function test_historical_null_uuid_still_rejects_an_id_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(654321, 'remote-uuid', 'https://zoom.us/j/654321'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A historical null-UUID ID mismatch was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+    }
+
+    public function test_historical_null_uuid_still_rejects_a_correlation_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => [
+                ...$this->meeting(123456, 'remote-uuid', 'https://zoom.us/j/123456'),
+                'agenda' => 'CHUKLOV-B2B:another-provider-key',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A historical null-UUID correlation mismatch was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_correlation_mismatch', $exception->safeCode);
         }
     }
 

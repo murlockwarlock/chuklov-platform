@@ -45,7 +45,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         try {
-            return $this->result($response);
+            $result = $this->result($response);
+            $this->assertCorrelatedMeeting($result, $request);
+
+            return $result;
         } catch (VideoMeetingException $exception) {
             throw VideoMeetingException::reconciliationRequired($exception->safeCode);
         }
@@ -59,6 +62,15 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     ): void {
         $credentials = $this->credential($organization);
         $token = $this->accessToken($credentials, $deadline);
+
+        if ($this->fetchExpectedMeeting(
+            $this->api($token, $deadline),
+            $identity,
+            $request,
+            'zoom_update',
+        ) === null) {
+            throw VideoMeetingException::reconciliationRequired('zoom_update_identity_missing');
+        }
 
         try {
             $response = $this->api($token, $deadline)->patch(
@@ -81,10 +93,20 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     public function cancelMeeting(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): void {
         $credentials = $this->credential($organization);
         $token = $this->accessToken($credentials, $deadline);
+
+        if ($this->fetchExpectedMeeting(
+            $this->api($token, $deadline),
+            $identity,
+            $request,
+            'zoom_cancel',
+        ) === null) {
+            return;
+        }
 
         try {
             $response = $this->api($token, $deadline)->delete(
@@ -102,24 +124,24 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     public function obtainHostLaunchUrl(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): string {
         $credentials = $this->credential($organization);
         $token = $this->accessToken($credentials, $deadline);
 
-        try {
-            $response = $this->api($token, $deadline)->get(
-                $this->url('/meetings/'.rawurlencode($identity->meetingId)),
-            );
-        } catch (ConnectionException) {
-            throw VideoMeetingException::retryable('zoom_host_url_connection');
+        $meeting = $this->fetchExpectedMeeting(
+            $this->api($token, $deadline),
+            $identity,
+            $request,
+            'zoom_host_url',
+        );
+
+        if ($meeting === null) {
+            throw VideoMeetingException::permanent('zoom_host_url_404');
         }
 
-        if (! $response->successful()) {
-            throw $this->responseException($response, 'zoom_host_url', true);
-        }
-
-        $startUrl = $response->json('start_url');
+        $startUrl = $meeting['response']->json('start_url');
 
         if (! is_string($startUrl) || ! $this->isAllowedHostUrl($startUrl)) {
             throw VideoMeetingException::permanent('zoom_host_url_invalid');
@@ -184,34 +206,29 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             throw VideoMeetingException::reconciliationRequired('zoom_meeting_ambiguous');
         }
 
-        return $this->resultFromMeeting($matches[0]);
+        $result = $this->resultFromMeeting($matches[0]);
+        $this->assertCorrelatedMeeting($result, $request);
+
+        return $result;
     }
 
     public function getMeeting(
         Organization $organization,
         VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): ?VideoMeetingResult {
         $credentials = $this->credential($organization);
         $token = $this->accessToken($credentials, $deadline);
 
-        try {
-            $response = $this->api($token, $deadline)->get(
-                $this->url('/meetings/'.rawurlencode($identity->meetingId)),
-            );
-        } catch (ConnectionException) {
-            throw VideoMeetingException::retryable('zoom_get_connection');
-        }
+        $meeting = $this->fetchExpectedMeeting(
+            $this->api($token, $deadline),
+            $identity,
+            $request,
+            'zoom_get',
+        );
 
-        if ($response->status() === 404) {
-            return null;
-        }
-
-        if (! $response->successful()) {
-            throw $this->responseException($response, 'zoom_get', true);
-        }
-
-        return $this->result($response);
+        return $meeting['result'] ?? null;
     }
 
     /** @return array<string, string> */
@@ -313,7 +330,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
 
     private function agenda(VideoMeetingRequest $request): string
     {
-        $marker = 'CHUKLOV-B2B:'.$request->externalKey;
+        $marker = $request->correlationMarker();
         $topic = trim($request->topic);
 
         return mb_substr($topic === '' ? $marker : $marker.' '.$topic, 0, 250);
@@ -323,9 +340,8 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     private function matches(array $meeting, VideoMeetingRequest $request): bool
     {
         $agenda = $meeting['agenda'] ?? null;
-        $marker = 'CHUKLOV-B2B:'.$request->externalKey;
 
-        return is_string($agenda) && ($agenda === $marker || str_starts_with($agenda, $marker.' '));
+        return $request->matchesCorrelation(is_string($agenda) ? $agenda : null);
     }
 
     /** @param array<string, mixed> $meeting */
@@ -334,7 +350,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         $id = $meeting['id'] ?? null;
         $joinUrl = $meeting['join_url'] ?? null;
 
-        if ((! is_string($id) && ! is_int($id)) || ! is_string($joinUrl) || ! str_starts_with($joinUrl, 'https://')) {
+        if ((! is_string($id) && ! is_int($id))
+            || trim((string) $id) === ''
+            || ! is_string($joinUrl)
+            || ! str_starts_with($joinUrl, 'https://')) {
             throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
         }
 
@@ -350,7 +369,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         $duration = $meeting['duration'] ?? null;
 
         return new VideoMeetingResult(
-            identity: new VideoMeetingIdentity((string) $id, is_string($uuid) ? $uuid : null),
+            identity: new VideoMeetingIdentity(
+                (string) $id,
+                is_string($uuid) && trim($uuid) !== '' ? $uuid : null,
+            ),
             joinUrl: $joinUrl,
             synchronizedAt: CarbonImmutable::now('UTC'),
             startsAt: $startsAt,
@@ -365,6 +387,47 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     private function result(Response $response): VideoMeetingResult
     {
         return $this->resultFromMeeting((array) $response->json());
+    }
+
+    /** @return array{response: Response, result: VideoMeetingResult}|null */
+    private function fetchExpectedMeeting(
+        PendingRequest $api,
+        VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
+        string $operation,
+    ): ?array {
+        try {
+            $response = $api->get(
+                $this->url('/meetings/'.rawurlencode($identity->meetingId)),
+            );
+        } catch (ConnectionException) {
+            throw VideoMeetingException::retryable($operation.'_connection', true);
+        }
+
+        if ($response->status() === 404) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            throw $this->responseException($response, $operation, true);
+        }
+
+        $result = $this->result($response);
+        if (! $result->matchesIdentity($identity)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_meeting_identity_mismatch');
+        }
+        if (! $result->matchesCorrelation($request)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_meeting_correlation_mismatch');
+        }
+
+        return ['response' => $response, 'result' => $result];
+    }
+
+    private function assertCorrelatedMeeting(VideoMeetingResult $result, VideoMeetingRequest $request): void
+    {
+        if (! $result->matchesCorrelation($request)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_meeting_correlation_mismatch');
+        }
     }
 
     /** @param array<int, mixed> $meetings
