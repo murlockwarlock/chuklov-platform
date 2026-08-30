@@ -30,7 +30,6 @@ final readonly class ListClientAttachments
                 'original_filename',
                 'mime_type',
                 'size_bytes',
-                'scan_status',
                 'created_at',
             ])
             ->orderByDesc('created_at')

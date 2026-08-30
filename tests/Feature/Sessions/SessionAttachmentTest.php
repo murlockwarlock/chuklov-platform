@@ -4,7 +4,6 @@ namespace Tests\Feature\Sessions;
 
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ViewMedicalSession;
 use App\Models\User;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -39,7 +38,7 @@ final class SessionAttachmentTest extends TestCase
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $session = $this->makeSession($admin, $client, $specialist);
-        $attachment = $this->attachment($organization, $admin, $client, AttachmentScanStatus::Cleared);
+        $attachment = $this->attachment($organization, $admin, $client);
 
         app(LinkSessionAttachment::class)->handle($admin, $session, $client, (int) $attachment->getKey());
 
@@ -84,17 +83,6 @@ final class SessionAttachmentTest extends TestCase
         } catch (ValidationException) {
             self::assertDatabaseCount('medical_session_attachments', 0);
         }
-    }
-
-    public function test_quarantined_link_has_no_download_url(): void
-    {
-        [$organization, $admin, $client, $specialist] = $this->fixture();
-        $session = $this->makeSession($admin, $client, $specialist);
-        $attachment = $this->attachment($organization, $admin, $client, AttachmentScanStatus::Quarantined);
-        app(LinkSessionAttachment::class)->handle($admin, $session, $client, (int) $attachment->getKey());
-
-        $listed = app(ListSessionAttachments::class)->handle($admin, $session, $client);
-        self::assertNull($listed[0]->downloadUrl);
     }
 
     public function test_dynamics_is_client_scoped_to_current_and_previous_session(): void
@@ -157,8 +145,7 @@ final class SessionAttachmentTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(ViewMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertSee('report.pdf')
-            ->assertSee('Проверен');
+            ->assertSee('report.pdf');
     }
 
     public function test_link_attachment_select_has_bounded_tenant_scoped_initial_and_search_results(): void
@@ -171,7 +158,6 @@ final class SessionAttachmentTest extends TestCase
                 $organization,
                 $admin,
                 $client,
-                AttachmentScanStatus::Cleared,
                 'Archive '.$index.'.pdf',
             );
         }
@@ -180,7 +166,6 @@ final class SessionAttachmentTest extends TestCase
             $organization,
             $admin,
             $client,
-            AttachmentScanStatus::Cleared,
             'A Target.pdf',
         );
         $otherOrganization = Organization::factory()->create();
@@ -190,7 +175,6 @@ final class SessionAttachmentTest extends TestCase
             $otherOrganization,
             $otherAdmin,
             $otherClient,
-            AttachmentScanStatus::Cleared,
             'A Target.pdf',
         );
 
@@ -229,7 +213,6 @@ final class SessionAttachmentTest extends TestCase
             $organization,
             $admin,
             $client,
-            AttachmentScanStatus::Cleared,
             'Z Target.pdf',
         );
 
@@ -238,7 +221,6 @@ final class SessionAttachmentTest extends TestCase
                 $organization,
                 $admin,
                 $client,
-                AttachmentScanStatus::Cleared,
                 'Archive '.$index.'.pdf',
             );
         }
@@ -250,7 +232,6 @@ final class SessionAttachmentTest extends TestCase
             $otherOrganization,
             $otherAdmin,
             $otherClient,
-            AttachmentScanStatus::Cleared,
             'Z Target.pdf',
         );
 
@@ -313,7 +294,6 @@ final class SessionAttachmentTest extends TestCase
         Organization $organization,
         User $admin,
         Client $client,
-        AttachmentScanStatus $status = AttachmentScanStatus::Cleared,
         string $filename = 'report.pdf',
     ): MedicalAttachment {
         return MedicalAttachment::query()->create([
@@ -328,8 +308,6 @@ final class SessionAttachmentTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => (string) Str::uuid(),
-            'scan_status' => $status,
-            'scanned_at' => now(),
         ]);
     }
 }

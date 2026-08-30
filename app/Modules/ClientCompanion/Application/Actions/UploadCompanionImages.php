@@ -2,7 +2,6 @@
 
 namespace App\Modules\ClientCompanion\Application\Actions;
 
-use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
@@ -19,7 +18,6 @@ final class UploadCompanionImages
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly AttachmentStorageInterface $storage,
-        private readonly AttachmentScannerInterface $scanner,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -43,13 +41,9 @@ final class UploadCompanionImages
         try {
             foreach ($files as $file) {
                 $this->assertImage($file);
-                $scan = $this->scanner->scan($file);
                 $uuid = (string) Str::uuid();
                 $storedAttachment = $this->storage->store((int) $organization->getKey(), $file, $uuid);
                 $stored[] = $storedAttachment;
-                if (! $scan->status->isAvailable()) {
-                    throw ValidationException::withMessages(['images' => 'Изображение не прошло проверку безопасности.']);
-                }
 
                 $created[] = [
                     'uuid' => $uuid,
@@ -63,9 +57,6 @@ final class UploadCompanionImages
                     'mime_type' => $storedAttachment->mimeType,
                     'size_bytes' => $storedAttachment->sizeBytes,
                     'sha256_checksum' => $storedAttachment->sha256Checksum,
-                    'scan_status' => $scan->status,
-                    'scan_result_metadata' => $scan->metadata,
-                    'scanned_at' => now(),
                 ];
             }
 
@@ -91,7 +82,6 @@ final class UploadCompanionImages
                             'attachment_type' => AttachmentType::CompanionImage->value,
                             'mime_type' => $attachment->mime_type,
                             'size_bytes' => $attachment->size_bytes,
-                            'scan_status' => $attachment->scan_status->value,
                         ],
                     );
                     $result[] = $attachment->refresh();

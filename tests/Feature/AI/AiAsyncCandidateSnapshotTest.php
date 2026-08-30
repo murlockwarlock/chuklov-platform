@@ -26,7 +26,6 @@ use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Jobs\ProcessAiRunJob;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -717,8 +716,6 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => strlen($content),
             'sha256_checksum' => hash('sha256', $content),
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
     }
 }

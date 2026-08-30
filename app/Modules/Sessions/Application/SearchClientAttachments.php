@@ -25,9 +25,9 @@ final readonly class SearchClientAttachments
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(max(1, min($limit, 50)))
-            ->get(['id', 'original_filename', 'attachment_type', 'scan_status'])
+            ->get(['id', 'original_filename', 'attachment_type'])
             ->mapWithKeys(static fn (MedicalAttachment $attachment): array => [
-                (int) $attachment->getKey() => $attachment->original_filename.' · '.$attachment->attachment_type->label().' · '.$attachment->scan_status->label(),
+                (int) $attachment->getKey() => $attachment->original_filename.' · '.$attachment->attachment_type->label(),
             ])
             ->all();
     }
@@ -39,10 +39,10 @@ final readonly class SearchClientAttachments
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->whereKey($attachmentId)
-            ->first(['id', 'original_filename', 'attachment_type', 'scan_status']);
+            ->first(['id', 'original_filename', 'attachment_type']);
 
         return $attachment instanceof MedicalAttachment
-            ? $attachment->original_filename.' · '.$attachment->attachment_type->label().' · '.$attachment->scan_status->label()
+            ? $attachment->original_filename.' · '.$attachment->attachment_type->label()
             : null;
     }
 }

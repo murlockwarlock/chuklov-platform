@@ -1,5 +1,10 @@
 # Project Status
 
+## 2026-08-30 — M11D attachment-flow remediation candidate
+
+- This bounded remediation starts exactly at `98367624b6321c183a7d0039279441ca8344d98e`. It removes the internal attachment scanner/quarantine runtime dependency and legacy scan columns, while retaining private UUID storage, server-side validation, checksums, audit records, signed downloads, authentication, authorization, and organization isolation.
+- The CRM cockpit E2E now selects a file through the visible Filament control `Перетащите файлы или выберите` and proves the authorized download response and PDF bytes. Focused local attachment, Sessions/cockpit, Companion, and AI attachment suites are green; local PostgreSQL and browser runtime gates remain unrun under repository policy. The candidate still requires two consecutive hosted exact-SHA E2E runs and hosted full CI. Deployment, merge, PR readiness, and M12 remain not started; PR #23 remains untouched.
+
 ## 2026-08-30 — M11D client cockpit E2E red remediation candidate
 
 - This bounded remediation starts exactly at `bbb7325eaf10c54f2f1404cbab39d6642c1927bd` after hosted E2E run `33319205488` recorded `34` passed, `10` failed, and `0` skipped tests. Five unique failures duplicated across Chromium desktop and WebKit mobile; four were stale E2E contracts and `crm.spec.ts:268` also exposed a real post-action cockpit render failure.

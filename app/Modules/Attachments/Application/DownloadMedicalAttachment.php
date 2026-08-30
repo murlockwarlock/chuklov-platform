@@ -5,7 +5,6 @@ namespace App\Modules\Attachments\Application;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentDownloadResult;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
-use App\Modules\Attachments\Domain\Exceptions\AttachmentNotAvailableException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Security\Application\RecordAuditEvent;
 
@@ -20,12 +19,6 @@ final readonly class DownloadMedicalAttachment
     public function handle(User $actor, MedicalAttachment $attachment): AttachmentDownloadResult
     {
         $organization = $this->authorization->authorizeDownload($actor, $attachment);
-
-        if (! $attachment->isAvailable()) {
-            throw new AttachmentNotAvailableException(
-                "Файл недоступен для скачивания (статус проверки: {$attachment->scan_status->label()})."
-            );
-        }
 
         $stream = $this->storage->readStream($attachment->storage_path);
 

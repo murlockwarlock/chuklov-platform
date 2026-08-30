@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-08-30 — REQ-ATTACHMENT-001 product-contract correction
+
+- Clarified that the client Technical Specification requires private, validated medical attachments to become available to authorized same-organization staff after upload; it does not require malware quarantine or a scanner-backed cleared state.
+- Removed the internally-added scanner/quarantine prerequisite from the active requirement while preserving private storage, signed access, tenant authorization, safe filename/path handling, MIME/content/extension/size validation, and audit evidence.
+
 ## 2026-08-27 — REQ-B2B-001 remediation candidate status
 
 - Kept `REQ-B2B-001` in the truthful pre-acceptance `CANDIDATE` state after the independent M11D review returned `BLOCKED`; independent re-review, PostgreSQL verification, hosted CI, staging verification, and owner acceptance remain pending.

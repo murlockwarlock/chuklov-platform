@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
 type CrmFixture = {
@@ -117,8 +117,6 @@ function createCrmFixture(): CrmFixture {
             'mime_type' => 'application/pdf',
             'size_bytes' => 2048,
             'sha256_checksum' => hash('sha256', $suffix),
-            'scan_status' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
         echo json_encode([
             'email' => $email,
@@ -298,75 +296,23 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentType).toHaveValue('medical_report');
     const fileInput = uploadDialog.locator('input[type="file"]');
     await expect(fileInput).toHaveCount(1);
-    await expect.poll(async () => fileInput.evaluate((input) => {
-        type FilePondApi = {
-            find: (element: HTMLInputElement) => unknown;
-        };
-
-        return Boolean(
-            (window as Window & { FilePond?: FilePondApi }).FilePond?.find(
-                input as HTMLInputElement,
-            ),
-        );
-    })).toBe(true);
-    await fileInput.setInputFiles({
+    const uploadControl = uploadDialog.getByRole('button', {
+        name: 'Перетащите файлы или выберите',
+        exact: true,
+    });
+    await expect(uploadControl).toBeVisible();
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        uploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    await expect.poll(async () => fileInput.evaluate((input) => {
-        type FilePondFile = {
-            filename: string;
-        };
-        type FilePondInstance = {
-            getFiles: () => FilePondFile[];
-        };
-        type FilePondApi = {
-            find: (element: HTMLInputElement) => FilePondInstance | null;
-        };
-
-        const filePond = (window as Window & { FilePond?: FilePondApi }).FilePond;
-        const files = filePond?.find(input as HTMLInputElement)?.getFiles() ?? [];
-
-        return {
-            count: files.length,
-            filenames: files.map(({ filename }) => filename),
-        };
-    })).toEqual({
-        count: 1,
-        filenames: ['ux-a-report.pdf'],
-    });
-    await expect.poll(async () => fileInput.evaluate((input) => {
-        type FilePondFile = {
-            filename: string;
-            status: number;
-        };
-        type FilePondInstance = {
-            getFiles: () => FilePondFile[];
-        };
-        type FilePondApi = {
-            FileStatus: {
-                PROCESSING_COMPLETE: number;
-            };
-            find: (element: HTMLInputElement) => FilePondInstance | null;
-        };
-
-        const filePond = (window as Window & { FilePond?: FilePondApi }).FilePond;
-        const files = filePond?.find(input as HTMLInputElement)?.getFiles() ?? [];
-
-        return {
-            count: files.length,
-            filename: files.length === 1 ? files[0].filename : null,
-            processingComplete:
-                files.length === 1 &&
-                files[0].filename === 'ux-a-report.pdf' &&
-                files[0].status === filePond?.FileStatus.PROCESSING_COMPLETE,
-        };
-    })).toEqual({
-        count: 1,
-        filename: 'ux-a-report.pdf',
-        processingComplete: true,
-    });
+    const selectedFile = uploadDialog.getByText('ux-a-report.pdf', { exact: true });
+    await expect(selectedFile).toHaveCount(1);
+    await expect(selectedFile).toBeVisible();
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
     await expect(uploadSubmit).toBeEnabled();
@@ -383,7 +329,26 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(uploadedFileCell).toHaveCount(1);
     await expect(uploadedFileCell).toBeVisible();
     await expect(uploadedFileCell).toContainText('ux-a-report.pdf');
-    await expect(uploadedRow).toContainText('На карантине');
+    const openAttachment = uploadedRow.getByRole('button', { name: 'Открыть', exact: true });
+    await expect(openAttachment).toHaveCount(1);
+    const [download, attachmentResponse] = await Promise.all([
+        page.waitForEvent('download'),
+        page.waitForResponse((response) => {
+            const pathname = new URL(response.url()).pathname;
+
+            return response.status() === 200 && /^\/admin\/attachments\/[^/]+$/.test(pathname);
+        }),
+        openAttachment.click(),
+    ]);
+    expect(download.suggestedFilename()).toBe('ux-a-report.pdf');
+    expect(attachmentResponse.headers()['content-type']).toContain('application/pdf');
+    expect(attachmentResponse.headers()['content-disposition']).toContain('ux-a-report.pdf');
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('The authorized attachment download did not produce a file.');
+    }
+    expect(readFileSync(downloadPath)).toEqual(validPdfBuffer());
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
@@ -427,7 +392,6 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(new RegExp(fixture.attachmentFilename), { exact: false }).click();
     await page.getByRole('button', { name: 'Связать', exact: true }).click();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
-    await expect(page.getByText('Проверен', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Боль').fill('Обновлённая запись о боли');

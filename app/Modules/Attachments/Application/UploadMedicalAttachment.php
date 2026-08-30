@@ -4,7 +4,6 @@ namespace App\Modules\Attachments\Application;
 
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
-use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -17,7 +16,6 @@ final readonly class UploadMedicalAttachment
     public function __construct(
         private AttachmentAuthorization $authorization,
         private AttachmentStorageInterface $storage,
-        private AttachmentScannerInterface $scanner,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -34,10 +32,9 @@ final readonly class UploadMedicalAttachment
 
         $uuid = (string) Str::uuid();
 
-        $scanResult = $this->scanner->scan($command->file);
         $stored = $this->storage->store($orgId, $command->file, $uuid);
 
-        return DB::transaction(function () use ($actor, $organization, $client, $command, $uuid, $stored, $scanResult) {
+        return DB::transaction(function () use ($actor, $organization, $client, $command, $uuid, $stored) {
             $attachment = new MedicalAttachment;
             $attachment->forceFill([
                 'uuid' => $uuid,
@@ -51,9 +48,6 @@ final readonly class UploadMedicalAttachment
                 'mime_type' => $stored->mimeType,
                 'size_bytes' => $stored->sizeBytes,
                 'sha256_checksum' => $stored->sha256Checksum,
-                'scan_status' => $scanResult->status,
-                'scan_result_metadata' => $scanResult->metadata,
-                'scanned_at' => now(),
             ]);
             $attachment->save();
 
@@ -68,7 +62,6 @@ final readonly class UploadMedicalAttachment
                     'attachment_type' => $command->attachmentType->value,
                     'mime_type' => $stored->mimeType,
                     'size_bytes' => $stored->sizeBytes,
-                    'scan_status' => $scanResult->status->value,
                 ],
             );
 

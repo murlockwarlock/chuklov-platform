@@ -128,7 +128,7 @@ class RecordAuditEvent
         'knowledge.source.retired' => ['active_revision_id'],
         'knowledge.source.reactivated' => ['active_revision_id'],
         'knowledge.source.deleted' => ['deleted_chunk_count', 'deleted_run_count', 'deleted_revision_count', 'retained_revision_count'],
-        'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes', 'scan_status'],
+        'attachment.uploaded' => ['source', 'attachment_type', 'mime_type', 'size_bytes'],
         'attachment.downloaded' => ['source'],
         'knowledge.source.client_companion_scope.updated' => ['enabled'],
         'companion.context.reset' => ['new_epoch'],

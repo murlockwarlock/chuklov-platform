@@ -7,15 +7,10 @@ use App\Modules\Attachments\Application\DownloadMedicalAttachment;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
-use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
-use App\Modules\Attachments\Domain\Exceptions\AttachmentNotAvailableException;
 use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
 use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
-use App\Modules\Attachments\Infrastructure\Scanning\FailClosedAttachmentScanner;
-use App\Modules\Attachments\Infrastructure\Scanning\LocalDeterministicAttachmentScanner;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -23,6 +18,8 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
@@ -35,41 +32,47 @@ final class MedicalAttachmentTest extends TestCase
     {
         parent::setUp();
         Storage::fake('private');
+        Storage::fake('public');
     }
 
-    public function test_default_runtime_scanner_fails_closed_and_quarantines_uploads(): void
+    public function test_attachment_schema_has_no_scanner_state(): void
+    {
+        self::assertFalse(Schema::hasColumn('medical_attachments', 'scan_status'));
+        self::assertFalse(Schema::hasColumn('medical_attachments', 'scan_result_metadata'));
+        self::assertFalse(Schema::hasColumn('medical_attachments', 'scanned_at'));
+    }
+
+    public function test_authorized_staff_can_upload_and_immediately_download_a_pdf(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
 
-        // Ensure default runtime scanner is bound
-        $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
-
-        $uploader = app(UploadMedicalAttachment::class);
-        $file = $this->fakePdf('runtime_report.pdf');
-
-        $attachment = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $file,
+        $attachment = app(UploadMedicalAttachment::class)->handle($admin, new AttachmentUploadCommand(
+            file: $this->fakePdf('runtime_report.pdf'),
             attachmentType: AttachmentType::MedicalReport,
             clientId: (int) $client->getKey(),
         ));
+        $download = app(DownloadMedicalAttachment::class)->handle($admin, $attachment);
 
-        self::assertSame(AttachmentScanStatus::Quarantined, $attachment->scan_status);
-        self::assertFalse($attachment->isAvailable());
-        self::assertSame('runtime_fail_closed', $attachment->scan_result_metadata['scanner_name'] ?? null);
-        self::assertSame('Антивирусный сканер не настроен на сервере. Файл помещён на карантин.', $attachment->scan_result_metadata['reason'] ?? null);
+        self::assertSame('runtime_report.pdf', $attachment->original_filename);
+        self::assertSame('application/pdf', $download->mimeType);
+        self::assertSame('runtime_report.pdf', $download->filename);
+        self::assertSame($attachment->size_bytes, $download->sizeBytes);
+        self::assertSame('%PDF-1.4', substr((string) stream_get_contents($download->stream), 0, 8));
+        if (is_resource($download->stream)) {
+            fclose($download->stream);
+        }
+        Storage::disk('private')->assertExists($attachment->storage_path);
+        self::assertStringStartsWith("medical/attachments/{$organization->getKey()}/", $attachment->storage_path);
     }
 
-    public function test_authorized_staff_can_upload_pdf_and_images_with_fake_scanner(): void
+    public function test_authorized_staff_can_upload_pdf_and_images(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
 
         $uploader = app(UploadMedicalAttachment::class);
 
-        // Upload PDF
-        $pdfFile = $this->fakePdf('conclusion.pdf');
         $pdfAttachment = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $pdfFile,
+            file: $this->fakePdf('conclusion.pdf'),
             attachmentType: AttachmentType::MedicalReport,
             clientId: (int) $client->getKey(),
         ));
@@ -79,10 +82,7 @@ final class MedicalAttachmentTest extends TestCase
         self::assertSame('application/pdf', $pdfAttachment->mime_type);
         self::assertSame('private', $pdfAttachment->disk);
         self::assertSame(AttachmentType::MedicalReport, $pdfAttachment->attachment_type);
-        self::assertSame(AttachmentScanStatus::Cleared, $pdfAttachment->scan_status);
-        self::assertTrue($pdfAttachment->isAvailable());
 
-        // Verify file was stored on private disk under UUID path
         Storage::disk('private')->assertExists($pdfAttachment->storage_path);
         self::assertStringStartsWith("medical/attachments/{$organization->getKey()}/", $pdfAttachment->storage_path);
         self::assertStringEndsWith('.pdf', $pdfAttachment->storage_path);
@@ -122,8 +122,7 @@ final class MedicalAttachmentTest extends TestCase
 
     public function test_server_side_mime_sniffing_rejects_extension_spoofs(): void
     {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
+        [, $admin, $client] = $this->setupOrganizationWithClient();
 
         $uploader = app(UploadMedicalAttachment::class);
 
@@ -140,16 +139,12 @@ final class MedicalAttachmentTest extends TestCase
 
     public function test_configurable_file_size_limit_is_enforced(): void
     {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
+        [, $admin, $client] = $this->setupOrganizationWithClient();
 
         // Configure a small limit of 1 KB
         config()->set('medical.attachment_max_bytes', 1024);
 
         $uploader = app(UploadMedicalAttachment::class);
-        $pdfFile = $this->fakePdf('large.pdf'); // ~300 bytes
-
-        // Create a 2 KB file
         $tooLargeFile = UploadedFile::fake()->createWithContent('too_large.pdf', str_repeat('%PDF-1.4 ', 300));
 
         $this->expectException(InvalidAttachmentException::class);
@@ -162,8 +157,7 @@ final class MedicalAttachmentTest extends TestCase
 
     public function test_raw_dicom_files_are_strictly_rejected(): void
     {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
+        [, $admin, $client] = $this->setupOrganizationWithClient();
 
         $uploader = app(UploadMedicalAttachment::class);
 
@@ -197,77 +191,22 @@ final class MedicalAttachmentTest extends TestCase
         }
     }
 
-    public function test_scanner_and_quarantine_lifecycle_with_fake_scanner(): void
+    public function test_invalid_mime_content_is_rejected(): void
     {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
+        [, $admin, $client] = $this->setupOrganizationWithClient();
+        $invalidFile = UploadedFile::fake()->createWithContent('invalid.bin', "not a supported medical file\n");
 
-        $uploader = app(UploadMedicalAttachment::class);
-
-        // 1. Cleared file
-        $clearedFile = $this->fakePdf('clean.pdf');
-        $clearedAtt = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $clearedFile,
+        $this->expectException(InvalidAttachmentException::class);
+        app(UploadMedicalAttachment::class)->handle($admin, new AttachmentUploadCommand(
+            file: $invalidFile,
             attachmentType: AttachmentType::MedicalReport,
             clientId: (int) $client->getKey(),
         ));
-        self::assertSame(AttachmentScanStatus::Cleared, $clearedAtt->scan_status);
-        self::assertTrue($clearedAtt->isAvailable());
-
-        // 2. Quarantined file (simulated malware marker)
-        $quarantineFile = UploadedFile::fake()->createWithContent(
-            'test-trigger-quarantine.txt',
-            'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
-        );
-        $quarantinedAtt = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $quarantineFile,
-            attachmentType: AttachmentType::MedicalReport,
-            clientId: (int) $client->getKey(),
-        ));
-        self::assertSame(AttachmentScanStatus::Quarantined, $quarantinedAtt->scan_status);
-        self::assertFalse($quarantinedAtt->isAvailable());
-
-        // 3. Rejected file
-        $rejectFile = UploadedFile::fake()->createWithContent(
-            'test-trigger-reject.txt',
-            'TEST_MALWARE_REJECT_TRIGGER_CONTENT'
-        );
-        $rejectedAtt = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $rejectFile,
-            attachmentType: AttachmentType::MedicalReport,
-            clientId: (int) $client->getKey(),
-        ));
-        self::assertSame(AttachmentScanStatus::Rejected, $rejectedAtt->scan_status);
-        self::assertFalse($rejectedAtt->isAvailable());
-    }
-
-    public function test_quarantined_and_rejected_files_cannot_be_downloaded(): void
-    {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
-
-        $uploader = app(UploadMedicalAttachment::class);
-        $downloader = app(DownloadMedicalAttachment::class);
-
-        // Upload quarantined file
-        $quarantineFile = UploadedFile::fake()->createWithContent(
-            'test-trigger-quarantine.txt',
-            'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*'
-        );
-        $quarantinedAtt = $uploader->handle($admin, new AttachmentUploadCommand(
-            file: $quarantineFile,
-            attachmentType: AttachmentType::MedicalReport,
-            clientId: (int) $client->getKey(),
-        ));
-
-        $this->expectException(AttachmentNotAvailableException::class);
-        $downloader->handle($admin, $quarantinedAtt);
     }
 
     public function test_temporary_signed_access_lifecycle_and_security_controls(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
 
         $uploader = app(UploadMedicalAttachment::class);
         $file = $this->fakePdf('medical_report.pdf');
@@ -313,13 +252,21 @@ final class MedicalAttachmentTest extends TestCase
         ]);
         $inactiveResponse = $this->actingAs($inactiveUser)->get($signedUrl);
         $inactiveResponse->assertForbidden();
+
+        $nonMember = User::factory()->create();
+        $nonMemberResponse = $this->actingAs($nonMember)->get($signedUrl);
+        $nonMemberResponse->assertForbidden();
+
+        Auth::logout();
+        $this->get($signedUrl)->assertRedirect();
+        Storage::disk('public')->assertMissing($attachment->storage_path);
+        self::assertFalse((bool) config('filesystems.disks.private.serve'));
     }
 
     public function test_cross_organization_staff_cannot_download_attachment_with_signed_url(): void
     {
         [$orgA, $adminA, $clientA] = $this->setupOrganizationWithClient();
-        [$orgB, $adminB, $clientB] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
+        [$orgB, $adminB] = $this->setupOrganizationWithClient();
 
         app(OrganizationContext::class)->set($orgA);
         $file = $this->fakePdf('org_a_report.pdf');
@@ -337,32 +284,6 @@ final class MedicalAttachmentTest extends TestCase
 
         $response = $this->actingAs($adminB)->get($signedUrl);
         $response->assertNotFound();
-    }
-
-    public function test_persisted_scanner_metadata_only_contains_safe_allowlisted_keys(): void
-    {
-        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
-        $this->app->bind(AttachmentScannerInterface::class, LocalDeterministicAttachmentScanner::class);
-
-        $file = $this->fakePdf('audit_check.pdf');
-        $attachment = app(UploadMedicalAttachment::class)->handle($admin, new AttachmentUploadCommand(
-            file: $file,
-            attachmentType: AttachmentType::MedicalReport,
-            clientId: (int) $client->getKey(),
-        ));
-
-        $metadata = $attachment->scan_result_metadata;
-        self::assertIsArray($metadata);
-
-        $allowedKeys = ['scanner_name', 'scanned_at', 'matched_rule', 'reason'];
-        foreach (array_keys($metadata) as $key) {
-            self::assertContains($key, $allowedKeys, "Unsafe metadata key {$key} persisted");
-        }
-
-        // Verify no raw host paths or secret data in metadata
-        $encoded = json_encode($metadata);
-        self::assertStringNotContainsString('/tmp', (string) $encoded);
-        self::assertStringNotContainsString('password', (string) $encoded);
     }
 
     private function fakePdf(string $name = 'test.pdf'): UploadedFile

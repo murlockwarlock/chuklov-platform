@@ -26,10 +26,8 @@ use App\Modules\AI\Infrastructure\Providers\BoundedBedrockProvider;
 use App\Modules\AI\Infrastructure\Safety\AtomicAiSafetyBudgetManager;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
-use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
-use App\Modules\Attachments\Infrastructure\Scanning\FailClosedAttachmentScanner;
 use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
 use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
 use App\Modules\B2B\Infrastructure\Video\ZoomVideoMeetingProvider;
@@ -178,7 +176,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(AttachmentStorageInterface::class, PrivateMedicalAttachmentStorage::class);
         $this->app->bind(ContentMediaStorageInterface::class, FilesystemContentMediaStorage::class);
         $this->app->bind(ServiceMediaStorageInterface::class, FilesystemServiceMediaStorage::class);
-        $this->app->bind(AttachmentScannerInterface::class, FailClosedAttachmentScanner::class);
         $this->app->bind(EmbeddingGenerator::class, LaravelEmbeddingGenerator::class);
         $this->app->bind(KnowledgeRetriever::class, PgvectorKnowledgeRetriever::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);

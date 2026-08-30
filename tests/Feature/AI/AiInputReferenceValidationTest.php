@@ -12,7 +12,6 @@ use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -186,8 +185,6 @@ final class AiInputReferenceValidationTest extends TestCase
             'mime_type' => 'text/plain',
             'size_bytes' => 10,
             'sha256_checksum' => hash('sha256', 'test'),
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => Carbon::now(),
         ]);
         $definition = SurveyDefinition::create([
             'organization_id' => $organization->id,

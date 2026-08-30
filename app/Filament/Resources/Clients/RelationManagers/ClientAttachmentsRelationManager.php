@@ -8,7 +8,6 @@ use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -63,17 +62,6 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
                         ? $state->label()
                         : (AttachmentType::tryFrom($state)?->label() ?? 'Файл')),
-                TextColumn::make('scan_status')
-                    ->label('Проверка')
-                    ->badge()
-                    ->formatStateUsing(fn (AttachmentScanStatus|string $state): string => match (self::scanStatus($state)) {
-                        AttachmentScanStatus::Cleared => 'Проверен',
-                        AttachmentScanStatus::Pending => 'На проверке',
-                        AttachmentScanStatus::Quarantined => 'На карантине',
-                        AttachmentScanStatus::Rejected => 'Отклонён',
-                    })
-                    ->color(fn (AttachmentScanStatus|string $state): string => self::scanStatusColor($state))
-                    ->tooltip(fn (AttachmentScanStatus|string $state): string => self::scanStatusDescription($state)),
                 TextColumn::make('size_bytes')
                     ->label('Размер')
                     ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
@@ -120,14 +108,13 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             ),
                         );
 
-                        self::sendUploadNotification($attachment);
+                        self::sendUploadNotification();
                     })
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),
             ])
             ->recordActions([
                 Action::make('download')
                     ->label('Открыть')
-                    ->visible(fn (MedicalAttachment $record): bool => $record->isAvailable())
                     ->action(function (MedicalAttachment $record) use ($actor): mixed {
                         return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
                     }),
@@ -150,49 +137,11 @@ final class ClientAttachmentsRelationManager extends RelationManager
         return round($bytes / (1024 * 1024), 1).' МБ';
     }
 
-    private static function scanStatus(AttachmentScanStatus|string $status): AttachmentScanStatus
+    private static function sendUploadNotification(): void
     {
-        return $status instanceof AttachmentScanStatus
-            ? $status
-            : (AttachmentScanStatus::tryFrom($status) ?? AttachmentScanStatus::Pending);
-    }
-
-    private static function scanStatusColor(AttachmentScanStatus|string $status): string
-    {
-        return match (self::scanStatus($status)) {
-            AttachmentScanStatus::Cleared => 'success',
-            AttachmentScanStatus::Rejected => 'danger',
-            AttachmentScanStatus::Pending, AttachmentScanStatus::Quarantined => 'warning',
-        };
-    }
-
-    private static function scanStatusDescription(AttachmentScanStatus|string $status): string
-    {
-        return match (self::scanStatus($status)) {
-            AttachmentScanStatus::Cleared => 'Доступен для открытия.',
-            AttachmentScanStatus::Pending => 'Ожидает проверки.',
-            AttachmentScanStatus::Quarantined => 'Доступ закрыт до проверки.',
-            AttachmentScanStatus::Rejected => 'Заблокирован после проверки.',
-        };
-    }
-
-    private static function sendUploadNotification(MedicalAttachment $attachment): void
-    {
-        $notification = Notification::make()
-            ->title(match ($attachment->scan_status) {
-                AttachmentScanStatus::Cleared => 'Файл загружен',
-                AttachmentScanStatus::Pending => 'Файл принят на проверку',
-                AttachmentScanStatus::Quarantined => 'Файл помещён на карантин',
-                AttachmentScanStatus::Rejected => 'Файл отклонён',
-            })
-            ->body(self::scanStatusDescription($attachment->scan_status));
-
-        match ($attachment->scan_status) {
-            AttachmentScanStatus::Cleared => $notification->success(),
-            AttachmentScanStatus::Rejected => $notification->danger(),
-            AttachmentScanStatus::Pending, AttachmentScanStatus::Quarantined => $notification->warning(),
-        };
-
-        $notification->send();
+        Notification::make()
+            ->title('Файл загружен')
+            ->success()
+            ->send();
     }
 }

@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
@@ -333,8 +332,6 @@ final class ClientWorkspaceUxATest extends TestCase
                 'mime_type' => 'application/pdf',
                 'size_bytes' => 128,
                 'sha256_checksum' => hash('sha256', 'report'),
-                'scan_status' => AttachmentScanStatus::Cleared,
-                'scanned_at' => now(),
             ]);
             $attachment->save();
         }

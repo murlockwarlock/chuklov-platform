@@ -43,7 +43,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->whereNumber('receiptId')
         ->name('admin.finance.receipt');
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
-        ->middleware('auth')
+        ->middleware(Authenticate::class)
         ->name('admin.attachments.download');
     Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
         ->middleware(Authenticate::class)

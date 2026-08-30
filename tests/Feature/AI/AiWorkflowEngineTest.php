@@ -48,7 +48,6 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseSdkTool;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -1951,8 +1950,6 @@ class AiWorkflowEngineTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => strlen($content),
             'sha256_checksum' => hash('sha256', $content),
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
     }
 }
