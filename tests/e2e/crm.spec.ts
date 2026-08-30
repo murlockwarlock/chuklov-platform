@@ -296,10 +296,11 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentType).toHaveValue('medical_report');
     const fileInput = uploadDialog.locator('input[type="file"]');
     await expect(fileInput).toHaveCount(1);
-    const uploadControl = uploadDialog.getByRole('button', {
-        name: 'Перетащите файлы или выберите',
-        exact: true,
-    }).filter({ visible: true });
+    const uploadControl = uploadDialog
+        .getByRole('group', { name: 'Файл*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    await expect(uploadControl).toHaveCount(1);
     await expect(uploadControl).toBeVisible();
     const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser'),
