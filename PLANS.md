@@ -17,6 +17,13 @@ Keep only current/relevant plans here. Completed plans are removed after outcome
 
 ## Active Plans
 
+### M11D Zoom PostgreSQL test-barrier remediation
+
+- Objective: repair only the PostgreSQL Zoom concurrency test harness's lossy readiness-token observation; do not change production Zoom, credential, B2B SalesCall, Makefile, CI, SQLite, or database configuration behavior.
+- Starting SHA: `ad12d6cb5000467b54b41edcef50c59104d993a7`. The narrow independent Filament re-review was `GO`; hosted exact-SHA PostgreSQL run `33313698105` recorded `65` passed, `3` failed, `415` assertions, `0` skips, and `142.09s`, with only the three approximately 30-second Zoom readiness waits failing.
+- Remediation: retain the parent credential `FOR UPDATE` and organization `FOR NO KEY UPDATE` barriers, start both real child processes, and release the parent transaction only after exact readiness tokens are found in cumulative STDERR. The 30-second process timeout and bounded PostgreSQL lock diagnostics remain unchanged.
+- Verification state: PostgreSQL is `NOT RUN LOCALLY` because `pg_isready` is unavailable and no local `127.0.0.1:5432` listener exists. The resulting SHA is not yet hosted-PostgreSQL proven; hosted CI/full CI, deployment, and merge remain not run. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ### M11D — B2B lead funnel / Zoom sales handoff — implementation candidate
 
 - Objective: implement `REQ-B2B-001` as one Phase 1 B2B acquisition vertical slice for explicit specialist segmentation, the Telegram/Portal bot-sales CTA, durable leads, shared specialist scheduling, Zoom provisioning, and bounded CRM operations.

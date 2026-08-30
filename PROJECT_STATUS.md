@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-08-30 — M11D Zoom PostgreSQL test-barrier remediation candidate
+
+- This bounded test-harness candidate starts exactly at `ad12d6cb5000467b54b41edcef50c59104d993a7`; the narrow independent Filament re-review was `GO`. Hosted exact-SHA PostgreSQL concurrency run `33313698105` used `pgvector/pgvector:0.8.2-pg18-trixie` and recorded `65` passed, `3` failed, `415` assertions, `0` skips, and `142.09s`. M10 target-credential-before-provider, B2B booking-vs-SalesCall, first explicit/explicit Zoom, and Knowledge cleanup cases passed.
+- Only the existing blank/explicit, existing explicit/explicit, and first blank/explicit Zoom cases failed with approximately 30-second `ProcessTimedOutException`s. Bounded PostgreSQL diagnostics showed the child dependency chains ending at the PHPUnit parent artificial barrier, so the remediation is limited to cumulative STDERR readiness observation in the test harness. Parent credential/organization barriers, real two-process `SaveB2bZoomConfiguration` execution, and the production Zoom/credential architecture remain unchanged.
+- The resulting SHA is not yet hosted-PostgreSQL proven. PostgreSQL is `NOT RUN LOCALLY` because `pg_isready` is unavailable and no `127.0.0.1:5432` listener exists; hosted CI/full CI, deployment, and merge have not run for this candidate. Staging remains exactly `3dc9f8b9a4038831823a687fa53abe6f481302b0`; M11 remains `IN_PROGRESS`; M12 remains `NOT_STARTED`; OQ-007 remains `OPEN`; the ordinary Booking AUTO/MANUAL Phase-1 gap remains open; and PR #23 remains untouched.
+
 ## 2026-08-30 — M11D Filament fresh edit-record remediation candidate
 
 - This bounded candidate starts exactly at `19f04cc0cbcad95d32717c767ff20579b9126297`, whose fresh exact-SHA review returned CHANGES REQUIRED only for `M11D-FILAMENT-RECORD-001` (P2). Filament 5.7.6 ignores the `handleRecordUpdate()` return value, so the edit page could retain a stale provider model after the database update.

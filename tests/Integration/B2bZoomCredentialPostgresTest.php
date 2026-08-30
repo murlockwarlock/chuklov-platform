@@ -18,7 +18,7 @@ use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Laravel\SerializableClosure\SerializableClosure;
-use Symfony\Component\Process\Process as SymfonyProcess;
+use RuntimeException;
 use Tests\TestCase;
 use Throwable;
 
@@ -276,17 +276,7 @@ final class B2bZoomCredentialPostgresTest extends TestCase
 
             foreach ($processes as $index => $process) {
                 self::assertInstanceOf(InvokedProcess::class, $process);
-                $readyToken = $readyTokens[$index];
-                $readyOutput = '';
-                $process->waitUntil(function (string $type, string $buffer) use (&$readyOutput, $readyToken): bool {
-                    if ($type !== SymfonyProcess::ERR) {
-                        return false;
-                    }
-
-                    $readyOutput .= $buffer;
-
-                    return str_contains($readyOutput, $readyToken.PHP_EOL);
-                });
+                self::waitForReadyToken($process, $readyTokens[$index]);
                 self::assertTrue($process->running());
             }
 
@@ -314,6 +304,33 @@ final class B2bZoomCredentialPostgresTest extends TestCase
             if ($pool !== null && $pool->running()->isNotEmpty()) {
                 $pool->stop(1);
             }
+        }
+    }
+
+    private static function waitForReadyToken(InvokedProcess $process, string $readyToken): void
+    {
+        $expectedOutput = $readyToken.PHP_EOL;
+
+        while (true) {
+            $process->ensureNotTimedOut();
+            $errorOutput = $process->errorOutput();
+
+            if (str_contains($errorOutput, $expectedOutput)) {
+                $process->ensureNotTimedOut();
+
+                return;
+            }
+
+            if (! $process->running()) {
+                throw new RuntimeException(sprintf(
+                    'Process %s exited before emitting readiness token %s; cumulative stderr bytes: %d.',
+                    (string) $process->id(),
+                    $readyToken,
+                    strlen($errorOutput),
+                ));
+            }
+
+            usleep(1000);
         }
     }
 
