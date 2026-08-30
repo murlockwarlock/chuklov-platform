@@ -311,8 +311,14 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
     const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
+    const uploadedFileCell = uploadedRow.getByRole('cell').filter({ hasText: 'ux-a-report.pdf' });
+    await expect(attachmentsTable).toBeVisible();
+    await expect(uploadedRow).toHaveCount(1);
     await expect(uploadedRow).toBeVisible();
-    await expect(uploadedRow.getByRole('cell', { name: 'ux-a-report.pdf', exact: true })).toBeVisible();
+    await expect(uploadedFileCell).toHaveCount(1);
+    await expect(uploadedFileCell).toBeVisible();
+    await expect(uploadedFileCell).toContainText('ux-a-report.pdf');
+    await expect(uploadedRow).toContainText('На карантине');
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
