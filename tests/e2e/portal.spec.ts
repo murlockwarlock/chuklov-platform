@@ -680,6 +680,9 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
         multipleChoices: true,
         longServiceTitle: true,
     });
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
 
     expect(fixture.alternateSpecialistName).not.toBeNull();
     await page.setViewportSize({ width: 320, height: 844 });
@@ -689,7 +692,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
         url: 'http://127.0.0.1:8000',
     }]);
 
-    await page.goto('/portal/bookings/create');
+    await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
     await expect(page.getByRole('heading', { name: 'Выберите услугу' })).toBeVisible();
     await assertNoHorizontalOverflow(page);
 
