@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-31 — M11D final bounded Recreate and schedule-convergence remediation candidate
+
+- This bounded candidate starts exactly at `a4c29a4864cf0f3320fe29734b117e806ce53aff` and addresses only the confirmed M11D B2B provider defects. Recreate now cleans and confirms the old generation before a transactional version-fenced transition to a normal Create event for the selected new correlation, so ambiguous old cleanup cannot issue a new POST and an unknown new Create remains cancellable/reconcilable by its current correlation.
+- Ready and Zoom host launch now require the authoritative SalesCall schedule to match the remote meeting after identity, persisted UUID, and correlation proof. Schedule repair is followed by an authoritative read and verification; a remaining mismatch fails closed into reconciliation. The recreate meeting ID/correlation fields are treated as one atomic pair across lifecycle writers.
+- Focused local B2B coverage passes `117` tests / `701` assertions and adjacent B2B/Scheduling coverage passes `20` / `79`; Pint, scoped Larastan, and `git diff --check` pass. PostgreSQL integration is `EXISTS — NOT RUN LOCALLY` because the local PHPUnit configuration skips the 9 PostgreSQL-only tests. Hosted exact-SHA PostgreSQL/concurrency, full CI, and E2E remain pending; recorded staging remains `3dc9f8b9a4038831823a687fa53abe6f481302b0`; no deployment, merge, PR readiness, attachment, PR #23, or M12 work is included.
+
 ## 2026-08-31 — M11D Zoom identity and durable manual cleanup remediation candidate
 
 - This bounded remediation starts exactly at `1c1f1c7f624ebf4f75d54e0a820174359d68bf6c` and addresses only the M11D final-review Zoom identity-safety and manual-cancellation cleanup findings. Known Zoom responses now require an exact persisted meeting ID, an exact persisted non-empty UUID when present, and the authoritative `CHUKLOV-B2B` correlation marker before adoption, update, cancellation, or host launch; mismatches fail closed into reconciliation, while authoritative 404 cancellation remains complete absence.

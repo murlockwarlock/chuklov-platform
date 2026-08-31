@@ -74,6 +74,57 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && ! str_contains($sent->url(), 'to='));
     }
 
+    public function test_create_rejects_a_remote_schedule_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'create' => [
+                ...$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+                'start_time' => '2026-08-31T11:00:00Z',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->createMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A create response with a mismatched schedule was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_schedule_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    public function test_host_launch_rejects_a_remote_schedule_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => [
+                ...$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+                'duration' => 30,
+                'start_url' => 'https://us02web.zoom.us/start/123456',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A host URL was returned for a remote schedule mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_schedule_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'PATCH'
+            || $sent->method() === 'DELETE');
+    }
+
     public function test_multiple_matching_list_results_require_reconciliation(): void
     {
         $organization = $this->organization();
@@ -453,6 +504,28 @@ final class B2bVideoMeetingProviderTest extends TestCase
         Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'DELETE');
     }
 
+    public function test_cancel_does_not_delete_a_remote_id_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => $this->meeting(654321, 'meeting-uuid', 'https://zoom.us/j/654321'),
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->cancelMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A delete proceeded after a remote ID mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'DELETE');
+    }
+
     public function test_cancel_does_not_delete_a_remote_uuid_mismatch(): void
     {
         $organization = $this->organization();
@@ -545,6 +618,30 @@ final class B2bVideoMeetingProviderTest extends TestCase
             self::fail('A host URL was returned for a remote UUID mismatch.');
         } catch (VideoMeetingException $exception) {
             self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+        }
+    }
+
+    public function test_host_launch_does_not_return_a_url_for_a_remote_correlation_mismatch(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'get' => [
+                ...$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+                'agenda' => 'CHUKLOV-B2B:another-provider-key',
+                'start_url' => 'https://us02web.zoom.us/start/123456',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A host URL was returned for a remote correlation mismatch.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_correlation_mismatch', $exception->safeCode);
         }
     }
 

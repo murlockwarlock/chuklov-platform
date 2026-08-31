@@ -30,6 +30,7 @@ final class SyncB2bSalesCallProvider
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
         private readonly B2bProviderLeaseManager $leases,
+        private readonly RecordB2bProviderSyncEvent $providerEvents,
     ) {}
 
     public function handle(int $eventId): void
@@ -54,6 +55,13 @@ final class SyncB2bSalesCallProvider
         }
 
         try {
+            if ($lease->operation === VideoMeetingOperation::Recreate) {
+                $this->recreate($organization, $call, $lease, $deadline);
+                $this->transitionRecreateToCreate($organization, $lease, $payload);
+
+                return;
+            }
+
             $result = $this->perform($organization, $call, $lease, $deadline);
 
             if ($result instanceof VideoMeetingResult) {
@@ -99,8 +107,8 @@ final class SyncB2bSalesCallProvider
             VideoMeetingOperation::Create => $this->create($organization, $call, $lease, $deadline),
             VideoMeetingOperation::Update => $this->update($organization, $call, $lease, $deadline),
             VideoMeetingOperation::Cancel => $this->cancel($organization, $call, $lease, $deadline),
-            VideoMeetingOperation::Recreate => $this->recreate($organization, $call, $lease, $deadline),
-            VideoMeetingOperation::Reconcile => $this->reconcile($organization, $call, $deadline),
+            VideoMeetingOperation::Recreate => throw new \LogicException('Recreate is handled before provider operation dispatch.'),
+            VideoMeetingOperation::Reconcile => $this->reconcile($organization, $call, $lease, $deadline),
         };
     }
 
@@ -118,10 +126,14 @@ final class SyncB2bSalesCallProvider
         $existing = $this->provider->findMeeting($organization, $request, $deadline);
         if ($existing instanceof VideoMeetingResult) {
             $this->assertCorrelatedRemote($existing, $request);
-            if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
-                && ! $existing->matchesRequest($request)) {
-                $this->assertCurrentGeneration($lease);
-                $this->provider->updateMeeting($organization, $existing->identity, $request, $deadline);
+            if (! $existing->matchesRequest($request)) {
+                return $this->repairSchedule(
+                    organization: $organization,
+                    identity: $existing->identity,
+                    request: $request,
+                    lease: $lease,
+                    deadline: $deadline,
+                );
             }
 
             return $existing;
@@ -170,6 +182,8 @@ final class SyncB2bSalesCallProvider
             return $this->reconcileUpdate($organization, $identity, $request, $lease, $deadline);
         }
 
+        $remote = $this->readAndVerifyRemote($organization, $identity, $request, $lease, $deadline);
+
         return $this->resultWithJoinUrl(
             identity: $identity,
             joinUrl: (string) $call->provider_join_url,
@@ -195,8 +209,13 @@ final class SyncB2bSalesCallProvider
         $this->assertExpectedRemote($remote, $identity, $request);
 
         if (! $remote->matchesRequest($request)) {
-            $this->assertCurrentGeneration($lease);
-            $this->provider->updateMeeting($organization, $identity, $request, $deadline);
+            $remote = $this->repairSchedule(
+                organization: $organization,
+                identity: $identity,
+                request: $request,
+                lease: $lease,
+                deadline: $deadline,
+            );
         }
 
         return $this->resultWithJoinUrl(
@@ -215,6 +234,10 @@ final class SyncB2bSalesCallProvider
         ProviderOperationLease $lease,
         ProviderOperationDeadline $deadline,
     ): null {
+        if ($call->hasIncompleteProviderRecreatePair()) {
+            throw VideoMeetingException::reconciliationRequired('provider_recreate_pair_invalid');
+        }
+
         $identity = $this->cleanupIdentity($call);
         if ($identity instanceof VideoMeetingIdentity) {
             $request = $this->cleanupRequest($call);
@@ -246,37 +269,90 @@ final class SyncB2bSalesCallProvider
         B2bSalesCall $call,
         ProviderOperationLease $lease,
         ProviderOperationDeadline $deadline,
-    ): VideoMeetingResult {
-        $oldIdentity = $this->recreateIdentity($call);
-        if ($oldIdentity instanceof VideoMeetingIdentity) {
-            $oldRequest = $this->recreateRequest($call);
-            $this->assertCurrentGeneration($lease);
-            $this->provider->cancelMeeting($organization, $oldIdentity, $oldRequest, $deadline);
+    ): void {
+        if ($call->hasIncompleteProviderRecreatePair()) {
+            throw VideoMeetingException::reconciliationRequired('provider_recreate_pair_invalid');
         }
 
-        $request = $this->request($call);
-        $existing = $this->provider->findMeeting($organization, $request, $deadline);
-        if ($existing instanceof VideoMeetingResult) {
-            $this->assertCorrelatedRemote($existing, $request);
-            if ($oldIdentity instanceof VideoMeetingIdentity && $existing->matchesIdentity($oldIdentity)) {
-                throw VideoMeetingException::reconciliationRequired('zoom_recreate_old_meeting_present');
+        $oldIdentity = $this->recreateIdentity($call);
+        if (! $oldIdentity instanceof VideoMeetingIdentity) {
+            throw VideoMeetingException::reconciliationRequired('zoom_recreate_identity_missing');
+        }
+
+        $oldRequest = $this->recreateRequest($call);
+        $this->assertCurrentGeneration($lease);
+        $this->provider->cancelMeeting($organization, $oldIdentity, $oldRequest, $deadline);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function transitionRecreateToCreate(
+        Organization $organization,
+        ProviderOperationLease $lease,
+        array $payload,
+    ): void {
+        DB::transaction(function () use ($organization, $lease, $payload): void {
+            $call = B2bSalesCall::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->salesCallId)
+                ->lockForUpdate()
+                ->first();
+            $event = IntegrationEvent::query()
+                ->where('organization_id', $lease->organizationId)
+                ->whereKey($lease->eventId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $call instanceof B2bSalesCall
+                || ! $event instanceof IntegrationEvent
+                || $event->getRawOriginal('status') !== IntegrationEventStatus::Processing->value
+                || $event->getRawOriginal('processing_token') !== $lease->eventProcessingToken
+                || ! $this->leaseIsActive($call, $lease)
+                || ! $this->isCurrent($call, $payload, VideoMeetingOperation::Recreate)) {
+                return;
             }
 
-            return $existing;
-        }
-
-        if ($call->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired) {
-            throw VideoMeetingException::reconciliationRequired('zoom_recreate_unresolved');
-        }
-
-        $this->assertCurrentGeneration($lease);
-
-        return $this->provider->createMeeting($organization, $request, $deadline);
+            $call->forceFill([
+                'provider_meeting_id' => null,
+                'provider_meeting_uuid' => null,
+                'provider_join_url' => null,
+                'provider_sync_status' => VideoMeetingSyncStatus::Pending,
+                'provider_operation' => VideoMeetingOperation::Create,
+                'provider_synced_at' => null,
+                'provider_error_code' => null,
+                'provider_recreate_meeting_id' => null,
+                'provider_recreate_correlation_key' => null,
+                'provider_sync_version' => (int) $call->provider_sync_version + 1,
+                'event_version' => (int) $call->event_version + 1,
+                ...$this->clearLease(),
+            ])->save();
+            $this->providerEvents->handle($organization, $call, VideoMeetingOperation::Create);
+            $this->audit->handle(
+                organization: $organization,
+                actor: null,
+                action: 'b2b.sales_call.provider_sync.updated',
+                targetType: B2bSalesCall::class,
+                targetId: (string) $call->getKey(),
+                metadata: [
+                    'operation' => VideoMeetingOperation::Create->value,
+                    'status' => VideoMeetingSyncStatus::Pending->value,
+                    'provider' => $this->provider->name(),
+                    'error_code' => null,
+                ],
+            );
+            $event->forceFill([
+                'status' => IntegrationEventStatus::Processed,
+                'processed_at' => now(),
+                'processing_started_at' => null,
+                'processing_token' => null,
+                'updated_at' => now(),
+            ])->save();
+        });
     }
 
     private function reconcile(
         Organization $organization,
         B2bSalesCall $call,
+        ProviderOperationLease $lease,
         ProviderOperationDeadline $deadline,
     ): VideoMeetingResult {
         $identity = $call->providerIdentity();
@@ -286,6 +362,15 @@ final class SyncB2bSalesCallProvider
 
             if ($remote instanceof VideoMeetingResult) {
                 $this->assertExpectedRemote($remote, $identity, $request);
+                if (! $remote->matchesRequest($request)) {
+                    $remote = $this->repairSchedule(
+                        organization: $organization,
+                        identity: $identity,
+                        request: $request,
+                        lease: $lease,
+                        deadline: $deadline,
+                    );
+                }
 
                 return $remote;
             }
@@ -300,6 +385,47 @@ final class SyncB2bSalesCallProvider
         }
 
         $this->assertCorrelatedRemote($remote, $request);
+        if (! $remote->matchesRequest($request)) {
+            $remote = $this->repairSchedule(
+                organization: $organization,
+                identity: $remote->identity,
+                request: $request,
+                lease: $lease,
+                deadline: $deadline,
+            );
+        }
+
+        return $remote;
+    }
+
+    private function repairSchedule(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $this->assertCurrentGeneration($lease);
+        $this->provider->updateMeeting($organization, $identity, $request, $deadline);
+
+        return $this->readAndVerifyRemote($organization, $identity, $request, $lease, $deadline);
+    }
+
+    private function readAndVerifyRemote(
+        Organization $organization,
+        VideoMeetingIdentity $identity,
+        VideoMeetingRequest $request,
+        ProviderOperationLease $lease,
+        ProviderOperationDeadline $deadline,
+    ): VideoMeetingResult {
+        $this->assertCurrentGeneration($lease);
+        $remote = $this->provider->getMeeting($organization, $identity, $request, $deadline);
+        if (! $remote instanceof VideoMeetingResult) {
+            throw VideoMeetingException::reconciliationRequired('zoom_update_identity_missing');
+        }
+
+        $this->assertExpectedRemote($remote, $identity, $request);
+        $this->assertRequestSchedule($remote, $request);
 
         return $remote;
     }
@@ -427,6 +553,7 @@ final class SyncB2bSalesCallProvider
     ): void {
         $request = $this->request($call);
         $this->assertCorrelatedRemote($result, $request);
+        $this->assertRequestSchedule($result, $request);
 
         if (in_array($operation, [VideoMeetingOperation::Update, VideoMeetingOperation::Reconcile], true)) {
             $identity = $call->providerIdentity();
@@ -451,6 +578,13 @@ final class SyncB2bSalesCallProvider
     {
         if (! $remote->matchesCorrelation($request)) {
             throw VideoMeetingException::reconciliationRequired('zoom_meeting_correlation_mismatch');
+        }
+    }
+
+    private function assertRequestSchedule(VideoMeetingResult $remote, VideoMeetingRequest $request): void
+    {
+        if (! $remote->matchesRequest($request)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_schedule_mismatch');
         }
     }
 

@@ -56,6 +56,12 @@ final class CancelB2bSalesCall
             if ($locked->status !== B2bSalesCallStatus::Scheduled) {
                 return $locked->refresh();
             }
+            if ($locked->hasIncompleteProviderRecreatePair()) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The provider recreation state is incomplete and must be reconciled before cancellation.',
+                ]);
+            }
+            $recreatePair = $locked->providerRecreatePair();
 
             Specialist::query()
                 ->where('organization_id', $organization->getKey())
@@ -69,8 +75,7 @@ final class CancelB2bSalesCall
                 ->first()
                 ?->delete();
             $hasProviderIdentity = $locked->providerIdentity() !== null
-                || (is_string($locked->provider_recreate_meeting_id)
-                    && trim($locked->provider_recreate_meeting_id) !== '');
+                || $recreatePair !== null;
             $requiresProviderCancellation = $hasProviderIdentity
                 || $locked->provider_operation !== null
                 || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired;

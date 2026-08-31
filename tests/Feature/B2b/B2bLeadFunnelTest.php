@@ -1789,9 +1789,172 @@ final class B2bLeadFunnelTest extends TestCase
         app(SyncB2bSalesCallProvider::class)->handle($updateEvent->getKey());
 
         self::assertSame(1, $provider->createCount);
-        self::assertSame(2, $provider->updateCount);
+        self::assertSame(1, $provider->updateCount);
         self::assertSame(VideoMeetingSyncStatus::Ready, $rescheduled->fresh()->provider_sync_status);
         self::assertSame('zoom-1', $rescheduled->fresh()->provider_meeting_id);
+    }
+
+    public function test_create_start_time_mismatch_cannot_become_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->createdStartsAtOverride = $this->slot(16);
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-start-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_schedule_mismatch', $final->provider_error_code);
+        self::assertNull($final->provider_meeting_id);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame('failed', $event->fresh()->status->value);
+        self::assertSame(0, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
+    }
+
+    public function test_create_duration_mismatch_cannot_become_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->createdDurationOverride = 45;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-duration-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_schedule_mismatch', $final->provider_error_code);
+        self::assertNull($final->provider_meeting_id);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame('failed', $event->fresh()->status->value);
+    }
+
+    public function test_create_timezone_mismatch_cannot_become_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->createdTimezoneOverride = 'Asia/Almaty';
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-timezone-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_schedule_mismatch', $final->provider_error_code);
+        self::assertNull($final->provider_meeting_id);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame('failed', $event->fresh()->status->value);
+    }
+
+    public function test_unknown_create_recovery_repairs_schedule_before_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->createdStartsAtOverride = $this->slot(16);
+        $provider->throwAfterCreate = true;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-recovery');
+        $call = $lead->salesCall()->firstOrFail();
+        $createEvent = IntegrationEvent::query()->sole();
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+        $unknown = $call->fresh();
+
+        $retry = app(RetryB2bSalesCallProvider::class)->handle(
+            $fixture['admin'],
+            $unknown,
+            $unknown->event_version,
+        );
+        $retryEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($retryEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $unknown->provider_sync_status);
+        self::assertSame(VideoMeetingSyncStatus::Ready, $final->provider_sync_status);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame(1, $provider->updateCount);
+        self::assertSame('zoom-1', $final->provider_meeting_id);
+        self::assertNull($final->provider_error_code);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $retry->provider_sync_status);
+    }
+
+    public function test_known_identity_reconciliation_repairs_schedule_before_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-reconcile');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $identity = $ready->providerIdentity();
+        self::assertInstanceOf(VideoMeetingIdentity::class, $identity);
+
+        $reconciliation = app(MarkB2bSalesCallProviderReconciliationRequired::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            identity: $identity,
+            errorCode: 'zoom_get_failed',
+            expectedEventVersion: $ready->event_version,
+            expectedProviderSyncVersion: $ready->provider_sync_version,
+        );
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->remoteMeetingOverride = $this->remoteMeetingWithSchedule(
+            $identity,
+            (string) $ready->provider_correlation_key,
+            $this->slot(16),
+            60,
+            'UTC',
+        );
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $reconciliation->provider_sync_status);
+        self::assertSame(VideoMeetingSyncStatus::Ready, $final->provider_sync_status);
+        self::assertSame(1, $provider->updateCount);
+        self::assertSame('zoom-1', $final->provider_meeting_id);
+        self::assertNull($final->provider_error_code);
+    }
+
+    public function test_update_that_leaves_the_remote_schedule_mismatched_cannot_become_ready(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $provider->leaveScheduleMismatchedAfterUpdate = true;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-schedule-post-patch-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $rescheduled = app(RescheduleB2bSalesCall::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $this->slot(17),
+            'UTC',
+            $ready->event_version,
+        );
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Update, $final->provider_operation);
+        self::assertSame('zoom_schedule_mismatch', $final->provider_error_code);
+        self::assertSame(1, $provider->updateCount);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame('zoom-1', $rescheduled->provider_meeting_id);
+        self::assertNull($final->provider_join_url);
+        self::assertSame('failed', $event->fresh()->status->value);
     }
 
     public function test_cancel_timeout_then_remote_404_reconciles_as_cancelled_without_repeating_delete(): void
@@ -1926,6 +2089,40 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(0, $provider->cancelCount);
     }
 
+    public function test_reconciliation_clears_the_recreate_identity_and_correlation_pair_together(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-pair-clear');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $identity = $ready->providerIdentity();
+        self::assertInstanceOf(VideoMeetingIdentity::class, $identity);
+
+        $recreating = app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        self::assertNotNull($recreating->provider_recreate_meeting_id);
+        self::assertNotNull($recreating->provider_recreate_correlation_key);
+
+        $reconciled = app(MarkB2bSalesCallProviderReconciliationRequired::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $recreating,
+            identity: $identity,
+            errorCode: 'zoom_recreate_pair_invalid',
+            expectedEventVersion: $recreating->event_version,
+            expectedProviderSyncVersion: $recreating->provider_sync_version,
+        );
+
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $reconciled->provider_sync_status);
+        self::assertNull($reconciled->provider_recreate_meeting_id);
+        self::assertNull($reconciled->provider_recreate_correlation_key);
+    }
+
     public function test_host_launch_rejects_a_remote_correlation_mismatch_without_returning_its_start_url(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -1957,6 +2154,43 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame('zoom-1', $final->provider_meeting_id);
     }
 
+    public function test_host_launch_rejects_a_remote_schedule_mismatch_without_returning_its_start_url(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-host-schedule-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $identity = $ready->providerIdentity();
+        self::assertInstanceOf(VideoMeetingIdentity::class, $identity);
+        $provider->remoteMeetingOverride = $this->remoteMeetingWithSchedule(
+            $identity,
+            (string) $ready->provider_correlation_key,
+            $this->slot(16),
+            60,
+            'UTC',
+        );
+
+        try {
+            app(GetB2bSalesCallHostLaunchUrl::class)->handle($fixture['admin'], $ready);
+            self::fail('A host URL was returned for a remote schedule mismatch.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'The Zoom meeting is no longer available. Reconcile or recreate it before launching.',
+                $exception->errors()['provider'][0],
+            );
+        }
+
+        $final = $call->fresh();
+        self::assertSame(1, $provider->hostLaunchCount);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Reconcile, $final->provider_operation);
+        self::assertSame('zoom_schedule_mismatch', $final->provider_error_code);
+        self::assertNull($final->provider_join_url);
+    }
+
     public function test_recreate_assigns_a_new_correlation_generation_and_cancels_the_old_identity_first(): void
     {
         $provider = new FakeVideoMeetingProvider;
@@ -1974,13 +2208,317 @@ final class B2bLeadFunnelTest extends TestCase
             $ready->event_version,
         );
         $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $recreatingState = $recreated->fresh();
+        self::assertSame($ready->provider_meeting_id, $recreatingState->provider_recreate_meeting_id);
+        self::assertSame($oldCorrelationKey, $recreatingState->provider_recreate_correlation_key);
+        $recreateProviderSyncVersion = $recreatingState->provider_sync_version;
+        $recreateEventVersion = $recreatingState->event_version;
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $afterCleanup = $recreated->fresh();
+        self::assertNotSame($oldCorrelationKey, $afterCleanup->provider_correlation_key);
+        self::assertSame(VideoMeetingOperation::Create, $afterCleanup->provider_operation);
+        self::assertSame(VideoMeetingSyncStatus::Pending, $afterCleanup->provider_sync_status);
+        self::assertSame($recreateProviderSyncVersion + 1, $afterCleanup->provider_sync_version);
+        self::assertSame($recreateEventVersion + 1, $afterCleanup->event_version);
+        self::assertNull($afterCleanup->provider_meeting_id);
+        self::assertNull($afterCleanup->provider_recreate_meeting_id);
+        self::assertNull($afterCleanup->provider_recreate_correlation_key);
+        self::assertSame(VideoMeetingOperation::Create->value, $createEvent->payload['operation']);
+        self::assertSame($afterCleanup->provider_sync_version, $createEvent->payload['provider_sync_version']);
+        self::assertSame($afterCleanup->event_version, $createEvent->payload['event_version']);
+        self::assertSame('processed', $recreateEvent->fresh()->status->value);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame(1, $provider->cancelCount);
+
         app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
 
-        self::assertNotSame($oldCorrelationKey, $recreated->fresh()->provider_correlation_key);
+        self::assertSame(1, $provider->createCount);
+
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+
         self::assertSame(2, $provider->createCount);
-        self::assertSame(1, $provider->cancelCount);
         self::assertSame('zoom-2', $recreated->fresh()->provider_meeting_id);
         self::assertSame(VideoMeetingSyncStatus::Ready, $recreated->fresh()->provider_sync_status);
+    }
+
+    public function test_recreate_does_not_create_when_old_cleanup_is_ambiguous(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-ambiguous-cleanup');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $oldMeetingId = $ready->provider_meeting_id;
+        $oldCorrelationKey = $ready->provider_correlation_key;
+
+        $recreating = app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->throwAfterCancel = true;
+        $provider->leaveMeetingAfterCancelFailure = true;
+
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+
+        $ambiguous = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $ambiguous->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Recreate, $ambiguous->provider_operation);
+        self::assertSame($oldMeetingId, $ambiguous->provider_meeting_id);
+        self::assertSame($oldMeetingId, $ambiguous->provider_recreate_meeting_id);
+        self::assertSame($oldCorrelationKey, $ambiguous->provider_recreate_correlation_key);
+        self::assertNotSame($oldCorrelationKey, $ambiguous->provider_correlation_key);
+        self::assertSame(1, $provider->createCount);
+        self::assertSame(1, $provider->cancelCount);
+        self::assertSame('retryable', $recreateEvent->fresh()->status->value);
+
+        $retry = app(RetryB2bSalesCallProvider::class)->handle(
+            $fixture['admin'],
+            $recreating->fresh(),
+            $ambiguous->event_version,
+        );
+
+        self::assertSame(VideoMeetingOperation::Recreate, $retry->provider_operation);
+        self::assertSame($oldMeetingId, $retry->provider_recreate_meeting_id);
+        self::assertSame($oldCorrelationKey, $retry->provider_recreate_correlation_key);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $retry->provider_sync_status);
+        self::assertNotSame(VideoMeetingSyncStatus::NotRequired, $retry->provider_sync_status);
+        self::assertSame(1, $provider->createCount);
+    }
+
+    public function test_recreate_old_authoritative_404_transitions_to_create_and_fences_the_old_event(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-old-404');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->remoteMissingOnGet = true;
+
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+
+        $afterCleanup = $call->fresh();
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        self::assertSame(1, $provider->createCount);
+        self::assertSame(0, $provider->cancelCount);
+        self::assertSame('processed', $recreateEvent->fresh()->status->value);
+        self::assertSame(VideoMeetingOperation::Create, $afterCleanup->provider_operation);
+        self::assertSame(VideoMeetingSyncStatus::Pending, $afterCleanup->provider_sync_status);
+        self::assertNull($afterCleanup->provider_recreate_meeting_id);
+        self::assertNull($afterCleanup->provider_recreate_correlation_key);
+        self::assertSame(VideoMeetingOperation::Create->value, $createEvent->payload['operation']);
+
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+
+        self::assertSame(1, $provider->createCount);
+        self::assertSame('processed', $recreateEvent->fresh()->status->value);
+
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+
+        self::assertSame(2, $provider->createCount);
+        self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
+    }
+
+    public function test_unknown_recreate_create_remains_cancellable_when_switching_to_manual(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-unknown-manual');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->throwAfterCreate = true;
+
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+
+        $unknown = $call->fresh();
+        $newCorrelationKey = $unknown->provider_correlation_key;
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $unknown->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $unknown->provider_operation);
+        self::assertNull($unknown->provider_meeting_id);
+        self::assertNull($unknown->provider_recreate_meeting_id);
+        self::assertNull($unknown->provider_recreate_correlation_key);
+        self::assertSame(2, $provider->createCount);
+        self::assertSame(1, $provider->cancelCount);
+
+        $manual = app(SetB2bSalesCallMeetingMode::class)->handle(
+            $fixture['admin'],
+            $unknown,
+            VideoMeetingMode::Manual,
+            'https://meet.example.test/recreate-unknown',
+            $unknown->event_version,
+        );
+        $cancelEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        self::assertSame(VideoMeetingOperation::Cancel, $manual->provider_operation);
+        self::assertNull($manual->provider_recreate_meeting_id);
+        self::assertNull($manual->provider_recreate_correlation_key);
+
+        app(SyncB2bSalesCallProvider::class)->handle($cancelEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingMode::Manual, $final->meeting_mode);
+        self::assertSame(VideoMeetingSyncStatus::NotRequired, $final->provider_sync_status);
+        self::assertNull($final->provider_operation);
+        self::assertNull($final->provider_meeting_id);
+        self::assertNull($final->provider_recreate_meeting_id);
+        self::assertNull($final->provider_recreate_correlation_key);
+        self::assertSame($newCorrelationKey, $final->provider_correlation_key);
+        self::assertSame(2, $provider->cancelCount);
+        self::assertSame('zoom-2', $provider->lastCancelledMeetingId);
+    }
+
+    public function test_unknown_recreate_create_remains_cancellable_when_sales_call_is_cancelled(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-unknown-cancel');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->throwAfterCreate = true;
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+
+        $unknown = $call->fresh();
+        $cancelled = app(CancelB2bSalesCall::class)->handle(
+            $fixture['admin'],
+            $unknown,
+            $unknown->event_version,
+        );
+        $cancelEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        self::assertSame(B2bSalesCallStatus::Cancelled, $cancelled->status);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $cancelled->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Cancel, $cancelled->provider_operation);
+
+        app(SyncB2bSalesCallProvider::class)->handle($cancelEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(B2bSalesCallStatus::Cancelled, $final->status);
+        self::assertSame(VideoMeetingSyncStatus::NotRequired, $final->provider_sync_status);
+        self::assertNull($final->provider_operation);
+        self::assertNull($final->provider_meeting_id);
+        self::assertNull($final->provider_recreate_meeting_id);
+        self::assertNull($final->provider_recreate_correlation_key);
+        self::assertNull($final->provider_correlation_key);
+        self::assertSame(2, $provider->cancelCount);
+        self::assertSame('zoom-2', $provider->lastCancelledMeetingId);
+    }
+
+    public function test_unknown_recreate_create_stays_reconciliation_required_when_manual_cleanup_cannot_resolve_it(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-unknown-unresolved-manual');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->throwAfterCreate = true;
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+        $unknown = $call->fresh();
+        $newCorrelationKey = $unknown->provider_correlation_key;
+        $provider->hideMeetingsFromSearch = true;
+
+        $manual = app(SetB2bSalesCallMeetingMode::class)->handle(
+            $fixture['admin'],
+            $unknown,
+            VideoMeetingMode::Manual,
+            'https://meet.example.test/recreate-unresolved-manual',
+            $unknown->event_version,
+        );
+        $cancelEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($cancelEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingMode::Manual, $manual->meeting_mode);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Cancel, $final->provider_operation);
+        self::assertNotSame(VideoMeetingSyncStatus::NotRequired, $final->provider_sync_status);
+        self::assertSame($newCorrelationKey, $final->provider_correlation_key);
+        self::assertSame(1, $provider->cancelCount);
+        self::assertSame('failed', $cancelEvent->fresh()->status->value);
+    }
+
+    public function test_unknown_recreate_create_stays_reconciliation_required_when_cancelled_cleanup_cannot_resolve_it(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-recreate-unknown-unresolved-cancel');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            $fixture['admin'],
+            $ready,
+            $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $provider->throwAfterCreate = true;
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+        $unknown = $call->fresh();
+        $provider->hideMeetingsFromSearch = true;
+
+        $cancelled = app(CancelB2bSalesCall::class)->handle(
+            $fixture['admin'],
+            $unknown,
+            $unknown->event_version,
+        );
+        $cancelEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($cancelEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(B2bSalesCallStatus::Cancelled, $cancelled->status);
+        self::assertSame(B2bSalesCallStatus::Cancelled, $final->status);
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Cancel, $final->provider_operation);
+        self::assertNotSame(VideoMeetingSyncStatus::NotRequired, $final->provider_sync_status);
+        self::assertSame(1, $provider->cancelCount);
+        self::assertSame('failed', $cancelEvent->fresh()->status->value);
     }
 
     public function test_cancellation_after_unknown_zoom_create_reconciles_and_cancels_the_external_meeting(): void
@@ -2694,13 +3232,29 @@ final class B2bLeadFunnelTest extends TestCase
 
     private function remoteMeeting(VideoMeetingIdentity $identity, string $correlationKey): VideoMeetingResult
     {
+        return $this->remoteMeetingWithSchedule(
+            identity: $identity,
+            correlationKey: $correlationKey,
+            startsAt: $this->slot(),
+            durationMinutes: 60,
+            timezone: 'UTC',
+        );
+    }
+
+    private function remoteMeetingWithSchedule(
+        VideoMeetingIdentity $identity,
+        string $correlationKey,
+        CarbonImmutable $startsAt,
+        int $durationMinutes,
+        string $timezone,
+    ): VideoMeetingResult {
         return new VideoMeetingResult(
             identity: $identity,
             joinUrl: 'https://zoom.example.test/join/'.$identity->meetingId,
             synchronizedAt: CarbonImmutable::now('UTC'),
-            startsAt: $this->slot(),
-            durationMinutes: 60,
-            timezone: 'UTC',
+            startsAt: $startsAt->utc(),
+            durationMinutes: $durationMinutes,
+            timezone: $timezone,
             agenda: 'CHUKLOV-B2B:'.$correlationKey,
         );
     }
@@ -2775,6 +3329,8 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
 
     public int $cancelCount = 0;
 
+    public ?string $lastCancelledMeetingId = null;
+
     public int $hostLaunchCount = 0;
 
     public bool $throwAfterCreate = false;
@@ -2792,6 +3348,14 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
     public bool $throwOnUpdate = false;
 
     public bool $throwOnHostLaunch = false;
+
+    public ?CarbonImmutable $createdStartsAtOverride = null;
+
+    public ?int $createdDurationOverride = null;
+
+    public ?string $createdTimezoneOverride = null;
+
+    public bool $leaveScheduleMismatchedAfterUpdate = false;
 
     public ?string $hostLaunchUrl = null;
 
@@ -2835,9 +3399,9 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
             identity: $identity,
             joinUrl: 'https://zoom.example.test/join/'.$identity->meetingId,
             synchronizedAt: CarbonImmutable::now('UTC'),
-            startsAt: $request->startsAt->utc(),
-            durationMinutes: $request->durationMinutes,
-            timezone: $request->timezone,
+            startsAt: ($this->createdStartsAtOverride ?? $request->startsAt)->utc(),
+            durationMinutes: $this->createdDurationOverride ?? $request->durationMinutes,
+            timezone: $this->createdTimezoneOverride ?? $request->timezone,
             agenda: 'CHUKLOV-B2B:'.$request->externalKey,
         );
         $this->meetings[$request->externalKey] = $result;
@@ -2875,6 +3439,20 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
             throw VideoMeetingException::reconciliationRequired('zoom_update_404');
         }
 
+        if (! $this->leaveScheduleMismatchedAfterUpdate) {
+            $updated = new VideoMeetingResult(
+                identity: $remote->identity,
+                joinUrl: $remote->joinUrl,
+                synchronizedAt: CarbonImmutable::now('UTC'),
+                startsAt: $request->startsAt->utc(),
+                durationMinutes: $request->durationMinutes,
+                timezone: $request->timezone,
+                agenda: $remote->agenda,
+            );
+            $this->replaceMeeting($updated);
+            $this->remoteMeetingOverride = $updated;
+        }
+
         if ($this->throwAfterUpdate) {
             $this->throwAfterUpdate = false;
             throw VideoMeetingException::retryable('zoom_update_response_lost', true);
@@ -2895,6 +3473,7 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         }
         $this->assertExpectedRemote($remote, $identity, $request);
         $this->cancelCount++;
+        $this->lastCancelledMeetingId = $identity->meetingId;
         if (! $this->throwAfterCancel || ! $this->leaveMeetingAfterCancelFailure) {
             $this->cancelled[] = $identity->meetingId;
         }
@@ -2927,6 +3506,9 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
             throw VideoMeetingException::permanent('zoom_host_url_404');
         }
         $this->assertExpectedRemote($remote, $identity, $request);
+        if (! $remote->matchesRequest($request)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_schedule_mismatch');
+        }
 
         return $this->hostLaunchUrl ?? 'https://us02web.zoom.us/start/'.$identity->meetingId;
     }
@@ -2970,6 +3552,17 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         }
 
         return null;
+    }
+
+    private function replaceMeeting(VideoMeetingResult $result): void
+    {
+        foreach ($this->meetings as $externalKey => $meeting) {
+            if ($meeting->identity->meetingId === $result->identity->meetingId) {
+                $this->meetings[$externalKey] = $result;
+
+                return;
+            }
+        }
     }
 
     private function assertExpectedRemote(

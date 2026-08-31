@@ -59,10 +59,18 @@ final class RecreateB2bSalesCallMeeting
                     'provider' => 'The current Zoom generation must be reconciled before the meeting can be recreated.',
                 ]);
             }
+            $currentIdentity = $locked->providerIdentity();
+            if ($currentIdentity === null
+                || ! is_string($locked->provider_correlation_key)
+                || trim($locked->provider_correlation_key) === '') {
+                throw ValidationException::withMessages([
+                    'provider' => 'The current Zoom generation must be reconciled before the meeting can be recreated.',
+                ]);
+            }
             $locked->forceFill([
                 'provider_sync_status' => VideoMeetingSyncStatus::Pending,
                 'provider_operation' => VideoMeetingOperation::Recreate,
-                'provider_recreate_meeting_id' => $locked->provider_meeting_id,
+                'provider_recreate_meeting_id' => $currentIdentity->meetingId,
                 'provider_recreate_correlation_key' => $locked->provider_correlation_key,
                 'provider_correlation_key' => bin2hex(random_bytes(16)),
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,

@@ -80,6 +80,12 @@ final class RescheduleB2bSalesCall
 
                     return $locked->refresh();
                 }
+                if ($locked->hasIncompleteProviderRecreatePair()) {
+                    throw ValidationException::withMessages([
+                        'provider' => 'The provider recreation state is incomplete and must be reconciled before rescheduling.',
+                    ]);
+                }
+                $recreatePair = $locked->providerRecreatePair();
 
                 $specialist = Specialist::query()
                     ->where('organization_id', $organization->getKey())
@@ -105,8 +111,7 @@ final class RescheduleB2bSalesCall
                     ignoreUnavailablePeriodId: (int) $occupancy->getKey(),
                 );
                 $hasProviderIdentity = $locked->providerIdentity() !== null
-                    || (is_string($locked->provider_recreate_meeting_id)
-                        && trim($locked->provider_recreate_meeting_id) !== '');
+                    || $recreatePair !== null;
                 $providerOperation = null;
                 $providerSyncStatus = VideoMeetingSyncStatus::NotRequired;
                 if ($locked->meeting_mode === VideoMeetingMode::Automatic) {
@@ -120,10 +125,25 @@ final class RescheduleB2bSalesCall
                     $providerOperation = VideoMeetingOperation::Cancel;
                     $providerSyncStatus = VideoMeetingSyncStatus::CancellationPending;
                 }
+                $recreateMeetingId = $recreatePair['meeting_id'] ?? $locked->provider_meeting_id;
+                $recreateCorrelationKey = $recreatePair['correlation_key'] ?? $locked->provider_correlation_key;
+                if ($providerOperation === VideoMeetingOperation::Recreate
+                    && ((! is_string($recreateMeetingId) || trim($recreateMeetingId) === '')
+                        || (! is_string($recreateCorrelationKey) || trim($recreateCorrelationKey) === ''))) {
+                    throw ValidationException::withMessages([
+                        'provider' => 'The current Zoom generation must be reconciled before rescheduling.',
+                    ]);
+                }
                 $providerCorrelationKey = $locked->provider_correlation_key;
                 if ($providerOperation === VideoMeetingOperation::Recreate
                     && $locked->provider_sync_status !== VideoMeetingSyncStatus::ReconciliationRequired) {
                     $providerCorrelationKey = bin2hex(random_bytes(16));
+                }
+                if ($providerOperation === VideoMeetingOperation::Recreate
+                    && (! is_string($providerCorrelationKey) || trim($providerCorrelationKey) === '')) {
+                    throw ValidationException::withMessages([
+                        'provider' => 'The current Zoom generation must be reconciled before rescheduling.',
+                    ]);
                 }
                 $locked->forceFill([
                     'starts_at' => $newStartsAt,
@@ -133,13 +153,13 @@ final class RescheduleB2bSalesCall
                     'provider_sync_status' => $providerSyncStatus,
                     'provider_operation' => $providerOperation,
                     'provider_recreate_meeting_id' => match ($providerOperation) {
-                        VideoMeetingOperation::Recreate => $locked->provider_meeting_id,
-                        VideoMeetingOperation::Cancel => $locked->provider_recreate_meeting_id,
+                        VideoMeetingOperation::Recreate => $recreateMeetingId,
+                        VideoMeetingOperation::Cancel => $recreatePair['meeting_id'] ?? null,
                         default => null,
                     },
                     'provider_recreate_correlation_key' => match ($providerOperation) {
-                        VideoMeetingOperation::Recreate => $locked->provider_correlation_key,
-                        VideoMeetingOperation::Cancel => $locked->provider_recreate_correlation_key,
+                        VideoMeetingOperation::Recreate => $recreateCorrelationKey,
+                        VideoMeetingOperation::Cancel => $recreatePair['correlation_key'] ?? null,
                         default => null,
                     },
                     'provider_correlation_key' => $providerCorrelationKey,

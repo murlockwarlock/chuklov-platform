@@ -51,9 +51,14 @@ final class RetryB2bSalesCallProvider
 
                 return $locked->refresh();
             }
+            if ($locked->hasIncompleteProviderRecreatePair()) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The provider recreation state is incomplete and must be reconciled before retrying.',
+                ]);
+            }
+            $recreatePair = $locked->providerRecreatePair();
             $hasProviderIdentity = $locked->providerIdentity() !== null
-                || (is_string($locked->provider_recreate_meeting_id)
-                    && trim($locked->provider_recreate_meeting_id) !== '');
+                || $recreatePair !== null;
             if ($locked->meeting_mode !== VideoMeetingMode::Automatic
                 && ! $hasProviderIdentity) {
                 throw ValidationException::withMessages(['provider' => 'Automatic provider sync is disabled for manual-link calls.']);
@@ -65,12 +70,23 @@ final class RetryB2bSalesCallProvider
                 && $locked->provider_operation instanceof VideoMeetingOperation) {
                 $operation = $locked->provider_operation;
             } elseif ($locked->provider_operation === VideoMeetingOperation::Recreate
-                || $locked->provider_recreate_meeting_id !== null) {
+                || $recreatePair !== null) {
                 $operation = VideoMeetingOperation::Recreate;
             } else {
                 $operation = $locked->providerIdentity() === null
                     ? VideoMeetingOperation::Create
                     : VideoMeetingOperation::Update;
+            }
+            $recreateMeetingId = $recreatePair['meeting_id'] ?? $locked->provider_meeting_id;
+            $recreateCorrelationKey = $recreatePair['correlation_key'] ?? $locked->provider_correlation_key;
+            if ($operation === VideoMeetingOperation::Recreate
+                && ((! is_string($recreateMeetingId) || trim($recreateMeetingId) === '')
+                    || (! is_string($recreateCorrelationKey) || trim($recreateCorrelationKey) === '')
+                    || (! is_string($locked->provider_correlation_key)
+                        || trim($locked->provider_correlation_key) === ''))) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The current Zoom generation must be reconciled before retrying.',
+                ]);
             }
             $locked->forceFill([
                 'provider_sync_status' => $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
@@ -80,14 +96,15 @@ final class RetryB2bSalesCallProvider
                         : VideoMeetingSyncStatus::Pending),
                 'provider_operation' => $operation,
                 'provider_recreate_meeting_id' => match ($operation) {
-                    VideoMeetingOperation::Recreate => $locked->provider_recreate_meeting_id ?? $locked->provider_meeting_id,
-                    VideoMeetingOperation::Cancel => $locked->provider_recreate_meeting_id,
+                    VideoMeetingOperation::Recreate => $recreateMeetingId,
+                    VideoMeetingOperation::Cancel => $recreatePair['meeting_id'] ?? null,
                     default => null,
                 },
-                'provider_recreate_correlation_key' => $operation === VideoMeetingOperation::Recreate
-                    || $operation === VideoMeetingOperation::Cancel
-                    ? $locked->provider_recreate_correlation_key
-                    : null,
+                'provider_recreate_correlation_key' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $recreateCorrelationKey,
+                    VideoMeetingOperation::Cancel => $recreatePair['correlation_key'] ?? null,
+                    default => null,
+                },
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,
                 'provider_error_code' => null,

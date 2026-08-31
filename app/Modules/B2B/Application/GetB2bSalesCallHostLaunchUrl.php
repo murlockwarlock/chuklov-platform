@@ -77,6 +77,7 @@ final class GetB2bSalesCallHostLaunchUrl
                 'zoom_host_url_404',
                 'zoom_meeting_identity_mismatch',
                 'zoom_meeting_correlation_mismatch',
+                'zoom_schedule_mismatch',
             ], true)) {
                 $this->reconciliation->handle(
                     actor: $actor,

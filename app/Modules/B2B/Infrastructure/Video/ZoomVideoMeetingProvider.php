@@ -47,6 +47,9 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         try {
             $result = $this->result($response);
             $this->assertCorrelatedMeeting($result, $request);
+            if (! $result->matchesRequest($request)) {
+                throw VideoMeetingException::reconciliationRequired('zoom_schedule_mismatch');
+            }
 
             return $result;
         } catch (VideoMeetingException $exception) {
@@ -139,6 +142,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
 
         if ($meeting === null) {
             throw VideoMeetingException::permanent('zoom_host_url_404');
+        }
+
+        if (! $meeting['result']->matchesRequest($request)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_schedule_mismatch');
         }
 
         $startUrl = $meeting['response']->json('start_url');

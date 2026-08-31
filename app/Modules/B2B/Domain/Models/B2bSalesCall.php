@@ -117,6 +117,36 @@ class B2bSalesCall extends Model
         );
     }
 
+    public function hasIncompleteProviderRecreatePair(): bool
+    {
+        $hasMeetingId = is_string($this->provider_recreate_meeting_id)
+            && trim($this->provider_recreate_meeting_id) !== '';
+        $hasCorrelationKey = is_string($this->provider_recreate_correlation_key)
+            && trim($this->provider_recreate_correlation_key) !== '';
+
+        return $hasMeetingId !== $hasCorrelationKey;
+    }
+
+    /** @return array{meeting_id: string, correlation_key: string}|null */
+    public function providerRecreatePair(): ?array
+    {
+        if ($this->hasIncompleteProviderRecreatePair()) {
+            return null;
+        }
+
+        if (! is_string($this->provider_recreate_meeting_id)
+            || trim($this->provider_recreate_meeting_id) === ''
+            || ! is_string($this->provider_recreate_correlation_key)
+            || trim($this->provider_recreate_correlation_key) === '') {
+            return null;
+        }
+
+        return [
+            'meeting_id' => $this->provider_recreate_meeting_id,
+            'correlation_key' => $this->provider_recreate_correlation_key,
+        ];
+    }
+
     protected function casts(): array
     {
         return [
