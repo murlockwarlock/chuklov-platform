@@ -192,10 +192,11 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
                 throw $this->responseException($response, 'zoom_find', true);
             }
 
-            $matches = [...$matches, ...$this->matchingMeetings((array) $response->json('meetings', []), $request)];
-            $nextPageToken = $response->json('next_page_token');
+            $pageResponse = $this->listPageResponse($response);
+            $matches = [...$matches, ...$this->matchingMeetings($pageResponse['meetings'], $request)];
+            $nextPageToken = $pageResponse['next_page_token'];
 
-            if (! is_string($nextPageToken) || $nextPageToken === '') {
+            if ($nextPageToken === '') {
                 $nextPageToken = null;
                 break;
             }
@@ -435,6 +436,40 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         if (! $result->matchesCorrelation($request)) {
             throw VideoMeetingException::reconciliationRequired('zoom_meeting_correlation_mismatch');
         }
+    }
+
+    /** @return array{meetings: list<array<string, mixed>>, next_page_token: string} */
+    private function listPageResponse(Response $response): array
+    {
+        $envelope = $response->json();
+        $decodedObject = $response->object();
+
+        if (! is_object($decodedObject)
+            || ! is_array($envelope)
+            || array_is_list($envelope)
+            || ! property_exists($decodedObject, 'meetings')
+            || ! is_array($decodedObject->meetings)
+            || ! array_is_list($decodedObject->meetings)
+            || ! array_key_exists('meetings', $envelope)
+            || ! is_array($envelope['meetings'])
+            || ! array_is_list($envelope['meetings'])
+            || ! property_exists($decodedObject, 'next_page_token')
+            || ! is_string($decodedObject->next_page_token)
+            || ! array_key_exists('next_page_token', $envelope)
+            || ! is_string($envelope['next_page_token'])) {
+            throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
+        }
+
+        foreach ($envelope['meetings'] as $meeting) {
+            if (! is_array($meeting)) {
+                throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
+            }
+        }
+
+        return [
+            'meetings' => $envelope['meetings'],
+            'next_page_token' => $envelope['next_page_token'],
+        ];
     }
 
     /** @param array<int, mixed> $meetings

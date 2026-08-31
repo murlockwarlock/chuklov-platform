@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 final class B2bVideoMeetingProviderTest extends TestCase
@@ -149,6 +150,131 @@ final class B2bVideoMeetingProviderTest extends TestCase
         }
     }
 
+    #[DataProvider('malformedListResponses')]
+    public function test_malformed_zoom_list_responses_require_reconciliation(mixed $listResponse): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['list_response' => $listResponse]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('Malformed Zoom list evidence was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public static function malformedListResponses(): array
+    {
+        return [
+            'top-level array' => [[]],
+            'missing meetings' => [['next_page_token' => '']],
+            'null meetings' => [['meetings' => null, 'next_page_token' => '']],
+            'scalar meetings' => [['meetings' => 'not-an-array', 'next_page_token' => '']],
+            'object meetings' => [['meetings' => (object) ['unexpected' => []], 'next_page_token' => '']],
+            'non-array meeting entry' => [['meetings' => ['not-an-array'], 'next_page_token' => '']],
+            'missing next page token' => [['meetings' => []]],
+            'null next page token' => [['meetings' => [], 'next_page_token' => null]],
+            'integer next page token' => [['meetings' => [], 'next_page_token' => 123]],
+            'boolean next page token' => [['meetings' => [], 'next_page_token' => false]],
+            'array next page token' => [['meetings' => [], 'next_page_token' => []]],
+            'object next page token' => [['meetings' => [], 'next_page_token' => (object) ['token' => 'invalid']]],
+        ];
+    }
+
+    public function test_empty_zoom_list_with_terminal_token_allows_create(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'list' => [],
+            'next_page_token' => '',
+            'create' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+        ]);
+        $provider = app(ZoomVideoMeetingProvider::class);
+
+        self::assertNull($provider->findMeeting(
+            $organization,
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        ));
+
+        $created = $provider->createMeeting(
+            $organization,
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertSame('123456', $created->identity->meetingId);
+        Http::assertSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public function test_valid_non_empty_page_token_continues_to_the_next_page(): void
+    {
+        $organization = $this->organization();
+        $listCalls = 0;
+        Http::fake(function (Request $request) use (&$listCalls) {
+            if ($request->url() === (string) config('b2b.zoom.oauth_url')) {
+                return Http::response(['access_token' => 'server-token'], 200);
+            }
+
+            if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
+                $listCalls++;
+
+                return $listCalls === 1
+                    ? Http::response(['meetings' => [], 'next_page_token' => 'page-2'], 200)
+                    : Http::response([
+                        'meetings' => [$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')],
+                        'next_page_token' => '',
+                    ], 200);
+            }
+
+            return Http::response([], 404);
+        });
+
+        $found = app(ZoomVideoMeetingProvider::class)->findMeeting(
+            $organization,
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertInstanceOf(VideoMeetingResult::class, $found);
+        self::assertSame('123456', $found->identity->meetingId);
+        self::assertSame(2, $listCalls);
+    }
+
+    public function test_matching_meeting_with_a_malformed_page_token_requires_reconciliation_without_adoption(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'list' => [$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')],
+            'next_page_token' => null,
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A matching meeting on an incomplete page was adopted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
     public function test_exhausted_pagination_requires_reconciliation_instead_of_claiming_absence(): void
     {
         $organization = $this->organization();
@@ -224,7 +350,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
                 $listCalls++;
                 CarbonImmutable::setTestNow($base->addSeconds(9));
 
-                return Http::response(['meetings' => [], 'next_page_token' => null], 200);
+                return Http::response(['meetings' => [], 'next_page_token' => ''], 200);
             }
 
             if ($request->method() === 'POST' && str_ends_with($request->url(), '/meetings')) {
@@ -768,9 +894,15 @@ final class B2bVideoMeetingProviderTest extends TestCase
             }
 
             if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
+                if (array_key_exists('list_response', $responses)) {
+                    return Http::response($responses['list_response'], 200);
+                }
+
                 return Http::response([
                     'meetings' => $responses['list'] ?? [],
-                    'next_page_token' => $responses['next_page_token'] ?? null,
+                    'next_page_token' => array_key_exists('next_page_token', $responses)
+                        ? $responses['next_page_token']
+                        : '',
                 ], 200);
             }
 
