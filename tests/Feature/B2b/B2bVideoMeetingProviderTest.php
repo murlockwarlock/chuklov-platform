@@ -172,6 +172,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && str_ends_with($sent->url(), '/meetings'));
     }
 
+    /** @return array<string, array{mixed}> */
     public static function malformedListResponses(): array
     {
         return [
