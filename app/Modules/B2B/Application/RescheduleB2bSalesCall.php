@@ -136,7 +136,7 @@ final class RescheduleB2bSalesCall
                 }
                 $providerCorrelationKey = $locked->provider_correlation_key;
                 if ($providerOperation === VideoMeetingOperation::Recreate
-                    && $locked->provider_sync_status !== VideoMeetingSyncStatus::ReconciliationRequired) {
+                    && $recreatePair === null) {
                     $providerCorrelationKey = bin2hex(random_bytes(16));
                 }
                 if ($providerOperation === VideoMeetingOperation::Recreate

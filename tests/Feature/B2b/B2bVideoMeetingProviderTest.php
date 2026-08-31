@@ -182,6 +182,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
             'scalar meetings' => [['meetings' => 'not-an-array', 'next_page_token' => '']],
             'object meetings' => [['meetings' => (object) ['unexpected' => []], 'next_page_token' => '']],
             'non-array meeting entry' => [['meetings' => ['not-an-array'], 'next_page_token' => '']],
+            'invalid agenda type' => [['meetings' => [['id' => 123456, 'agenda' => []]], 'next_page_token' => '']],
             'missing next page token' => [['meetings' => []]],
             'null next page token' => [['meetings' => [], 'next_page_token' => null]],
             'integer next page token' => [['meetings' => [], 'next_page_token' => 123]],
@@ -189,6 +190,140 @@ final class B2bVideoMeetingProviderTest extends TestCase
             'array next page token' => [['meetings' => [], 'next_page_token' => []]],
             'object next page token' => [['meetings' => [], 'next_page_token' => (object) ['token' => 'invalid']]],
         ];
+    }
+
+    public function test_empty_array_shaped_zoom_list_entry_requires_reconciliation(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'list_response' => [
+                'meetings' => [[]],
+                'next_page_token' => '',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An empty array-shaped meeting entry was treated as absence.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public function test_zoom_list_entry_with_an_invalid_meeting_id_requires_reconciliation(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'list_response' => [
+                'meetings' => [[
+                    'id' => ['invalid-id'],
+                    'agenda' => 'unrelated meeting',
+                ]],
+                'next_page_token' => '',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A meeting entry with an invalid identity was treated as absence.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public function test_correlation_matching_zoom_list_entry_with_an_invalid_join_url_requires_reconciliation(): void
+    {
+        $organization = $this->organization();
+        $request = $this->request();
+        $this->fakeZoom([
+            'list_response' => [
+                'meetings' => [[
+                    'id' => 123456,
+                    'agenda' => $request->correlationMarker(),
+                    'join_url' => null,
+                ]],
+                'next_page_token' => '',
+            ],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $request,
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A malformed correlated meeting entry was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public function test_credible_unrelated_zoom_list_entry_without_optional_fields_remains_a_non_match(): void
+    {
+        $organization = $this->organization();
+        $request = $this->request();
+        $this->fakeZoom([
+            'list_response' => [
+                'meetings' => [[
+                    'id' => 654321,
+                    'agenda' => 'Unrelated Zoom meeting',
+                ]],
+                'next_page_token' => '',
+            ],
+            'create' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456'),
+        ]);
+        $provider = app(ZoomVideoMeetingProvider::class);
+
+        self::assertNull($provider->findMeeting(
+            $organization,
+            $request,
+            ProviderOperationDeadline::fromNow(60),
+        ));
+
+        $created = $provider->createMeeting(
+            $organization,
+            $request,
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertSame('123456', $created->identity->meetingId);
+    }
+
+    public function test_valid_correlated_zoom_list_meeting_is_still_adopted(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom([
+            'list' => [$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')],
+        ]);
+
+        $found = app(ZoomVideoMeetingProvider::class)->findMeeting(
+            $organization,
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertInstanceOf(VideoMeetingResult::class, $found);
+        self::assertSame('123456', $found->identity->meetingId);
     }
 
     public function test_empty_zoom_list_with_terminal_token_allows_create(): void

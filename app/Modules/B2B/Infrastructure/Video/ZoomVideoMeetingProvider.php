@@ -214,7 +214,15 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             throw VideoMeetingException::reconciliationRequired('zoom_meeting_ambiguous');
         }
 
-        $result = $this->resultFromMeeting($matches[0]);
+        try {
+            $result = $this->resultFromMeeting($matches[0]);
+        } catch (VideoMeetingException $exception) {
+            if ($exception->safeCode === 'zoom_meeting_response_invalid') {
+                throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
+            }
+
+            throw $exception;
+        }
         $this->assertCorrelatedMeeting($result, $request);
 
         return $result;
@@ -461,7 +469,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         foreach ($envelope['meetings'] as $meeting) {
-            if (! is_array($meeting)) {
+            if (! $this->isCredibleListMeeting($meeting)) {
                 throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
             }
         }
@@ -470,6 +478,20 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             'meetings' => $envelope['meetings'],
             'next_page_token' => $envelope['next_page_token'],
         ];
+    }
+
+    private function isCredibleListMeeting(mixed $meeting): bool
+    {
+        if (! is_array($meeting) || array_is_list($meeting)) {
+            return false;
+        }
+
+        $id = $meeting['id'] ?? null;
+        if ((! is_string($id) && ! is_int($id)) || trim((string) $id) === '') {
+            return false;
+        }
+
+        return ! array_key_exists('agenda', $meeting) || is_string($meeting['agenda']);
     }
 
     /** @param array<int, mixed> $meetings
