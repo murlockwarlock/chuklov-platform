@@ -186,7 +186,6 @@ final class SyncB2bSalesCallProvider
 
         return $this->resultWithJoinUrl(
             identity: $identity,
-            joinUrl: (string) $call->provider_join_url,
             request: $request,
             organization: $organization,
             deadline: $deadline,
@@ -220,7 +219,6 @@ final class SyncB2bSalesCallProvider
 
         return $this->resultWithJoinUrl(
             identity: $identity,
-            joinUrl: $remote->joinUrl,
             request: $request,
             organization: $organization,
             deadline: $deadline,
@@ -432,36 +430,26 @@ final class SyncB2bSalesCallProvider
 
     private function resultWithJoinUrl(
         VideoMeetingIdentity $identity,
-        string $joinUrl,
         VideoMeetingRequest $request,
         Organization $organization,
         ProviderOperationDeadline $deadline,
         ?VideoMeetingResult $remote = null,
     ): VideoMeetingResult {
-        if ($joinUrl === '' && $remote instanceof VideoMeetingResult) {
-            $joinUrl = $remote->joinUrl;
-        }
-
-        if ($joinUrl === '') {
-            $remote ??= $this->provider->getMeeting($organization, $identity, $request, $deadline);
-            if ($remote instanceof VideoMeetingResult) {
-                $this->assertExpectedRemote($remote, $identity, $request);
-            }
-            $joinUrl = $remote instanceof VideoMeetingResult ? $remote->joinUrl : '';
-        }
-
-        if ($joinUrl === '') {
+        $remote ??= $this->provider->getMeeting($organization, $identity, $request, $deadline);
+        if (! $remote instanceof VideoMeetingResult) {
             throw VideoMeetingException::reconciliationRequired('zoom_join_url_missing');
         }
 
+        $this->assertExpectedRemote($remote, $identity, $request);
+
         return new VideoMeetingResult(
             identity: $identity,
-            joinUrl: $joinUrl,
+            joinUrl: $remote->joinUrl,
             synchronizedAt: CarbonImmutable::now('UTC'),
-            startsAt: $remote?->startsAt,
-            durationMinutes: $remote?->durationMinutes,
-            timezone: $remote?->timezone,
-            agenda: $remote?->agenda,
+            startsAt: $remote->startsAt,
+            durationMinutes: $remote->durationMinutes,
+            timezone: $remote->timezone,
+            agenda: $remote->agenda,
         );
     }
 

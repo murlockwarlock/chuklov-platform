@@ -355,48 +355,59 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     /** @param array<string, mixed> $meeting */
     private function matches(array $meeting, VideoMeetingRequest $request): bool
     {
-        $agenda = $meeting['agenda'] ?? null;
-
-        return $request->matchesCorrelation(is_string($agenda) ? $agenda : null);
+        return array_key_exists('agenda', $meeting)
+            && is_string($meeting['agenda'])
+            && $request->matchesCorrelation($meeting['agenda']);
     }
 
     /** @param array<string, mixed> $meeting */
     private function resultFromMeeting(array $meeting): VideoMeetingResult
     {
-        $id = $meeting['id'] ?? null;
+        $id = $this->parseMeetingId($meeting['id'] ?? null);
         $joinUrl = $meeting['join_url'] ?? null;
 
-        if ((! is_string($id) && ! is_int($id))
-            || trim((string) $id) === ''
-            || ! is_string($joinUrl)
-            || ! str_starts_with($joinUrl, 'https://')) {
+        if ($id === null
+            || ! $this->isUsableJoinUrl($joinUrl)
+            || ! array_key_exists('agenda', $meeting)
+            || ! is_string($meeting['agenda'])
+            || ! array_key_exists('start_time', $meeting)
+            || ! is_string($meeting['start_time'])
+            || trim($meeting['start_time']) === ''
+            || ! array_key_exists('duration', $meeting)
+            || ! is_int($meeting['duration'])
+            || $meeting['duration'] <= 0
+            || ! array_key_exists('timezone', $meeting)
+            || ! is_string($meeting['timezone'])
+            || trim($meeting['timezone']) === '') {
             throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
         }
 
-        $uuid = $meeting['uuid'] ?? null;
-        $startsAt = null;
-        if (is_string($meeting['start_time'] ?? null)) {
-            try {
-                $startsAt = CarbonImmutable::parse($meeting['start_time'])->utc();
-            } catch (\Throwable) {
+        $uuid = null;
+        if (array_key_exists('uuid', $meeting)) {
+            if (! is_string($meeting['uuid']) || trim($meeting['uuid']) === '') {
                 throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
             }
+
+            $uuid = $meeting['uuid'];
         }
-        $duration = $meeting['duration'] ?? null;
+
+        try {
+            $startsAt = CarbonImmutable::parse($meeting['start_time'])->utc();
+        } catch (\Throwable) {
+            throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
+        }
 
         return new VideoMeetingResult(
             identity: new VideoMeetingIdentity(
-                (string) $id,
-                is_string($uuid) && trim($uuid) !== '' ? $uuid : null,
+                $id,
+                $uuid,
             ),
-            joinUrl: $joinUrl,
+            joinUrl: (string) $joinUrl,
             synchronizedAt: CarbonImmutable::now('UTC'),
             startsAt: $startsAt,
-            durationMinutes: is_int($duration) || (is_string($duration) && ctype_digit($duration))
-                ? (int) $duration
-                : null,
-            timezone: is_string($meeting['timezone'] ?? null) ? $meeting['timezone'] : null,
-            agenda: is_string($meeting['agenda'] ?? null) ? $meeting['agenda'] : null,
+            durationMinutes: $meeting['duration'],
+            timezone: $meeting['timezone'],
+            agenda: $meeting['agenda'],
         );
     }
 
@@ -428,7 +439,16 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             throw $this->responseException($response, $operation, true);
         }
 
-        $result = $this->result($response);
+        try {
+            $result = $this->result($response);
+        } catch (VideoMeetingException $exception) {
+            if ($exception->safeCode === 'zoom_meeting_response_invalid') {
+                throw VideoMeetingException::reconciliationRequired('zoom_meeting_response_invalid');
+            }
+
+            throw $exception;
+        }
+
         if (! $result->matchesIdentity($identity)) {
             throw VideoMeetingException::reconciliationRequired('zoom_meeting_identity_mismatch');
         }
@@ -486,12 +506,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             return false;
         }
 
-        $id = $meeting['id'] ?? null;
-        if ((! is_string($id) && ! is_int($id)) || trim((string) $id) === '') {
-            return false;
-        }
-
-        return ! array_key_exists('agenda', $meeting) || is_string($meeting['agenda']);
+        return array_key_exists('id', $meeting)
+            && $this->parseMeetingId($meeting['id']) !== null
+            && array_key_exists('agenda', $meeting)
+            && is_string($meeting['agenda']);
     }
 
     /** @param array<int, mixed> $meetings
@@ -508,6 +526,39 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         return $matches;
+    }
+
+    private function parseMeetingId(mixed $id): ?string
+    {
+        return is_int($id) && $id > 0 ? (string) $id : null;
+    }
+
+    private function isUsableJoinUrl(mixed $url): bool
+    {
+        if (! is_string($url)
+            || $url === ''
+            || trim($url) !== $url
+            || preg_match('/[\x00-\x20\x7F]/', $url) === 1) {
+            return false;
+        }
+
+        try {
+            $parts = parse_url($url);
+        } catch (\ValueError) {
+            return false;
+        }
+
+        if (! is_array($parts)
+            || strtolower((string) ($parts['scheme'] ?? '')) !== 'https'
+            || ! array_key_exists('host', $parts)
+            || trim((string) $parts['host']) === ''
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)) {
+            return false;
+        }
+
+        return ! array_key_exists('port', $parts)
+            || $parts['port'] > 0;
     }
 
     private function isAllowedHostUrl(string $url): bool

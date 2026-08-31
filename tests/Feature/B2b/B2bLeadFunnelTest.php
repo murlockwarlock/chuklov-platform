@@ -1782,7 +1782,10 @@ final class B2bLeadFunnelTest extends TestCase
 
             if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
                 return Http::response([
-                    'meetings' => [[]],
+                    'meetings' => [[
+                        'id' => 'garbage',
+                        'agenda' => 'Unrelated Zoom meeting',
+                    ]],
                     'next_page_token' => '',
                 ], 200);
             }
@@ -1812,6 +1815,140 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame(0, $createCalls);
         self::assertSame(0, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
         self::assertSame('failed', $event->fresh()->status->value);
+    }
+
+    public function test_correlated_malformed_zoom_join_url_cannot_reach_create_or_ready(): void
+    {
+        $fixture = $this->fixture();
+        $this->credential(
+            $fixture['organization'],
+            'zoom',
+            (string) config('b2b.credential_name'),
+            CredentialStatus::Active,
+        );
+        $lead = $this->submit($fixture, 'malformed-zoom-join-url');
+        $call = $lead->salesCall()->firstOrFail();
+        $createCalls = 0;
+
+        Http::fake(function (Request $request) use (&$createCalls, $call) {
+            if ($request->url() === (string) config('b2b.zoom.oauth_url')) {
+                return Http::response(['access_token' => 'server-token'], 200);
+            }
+
+            if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
+                return Http::response([
+                    'meetings' => [[
+                        'id' => 123456,
+                        'uuid' => 'meeting-uuid',
+                        'agenda' => 'CHUKLOV-B2B:'.$call->provider_correlation_key,
+                        'start_time' => '2026-08-31T15:00:00Z',
+                        'duration' => 60,
+                        'timezone' => 'UTC',
+                        'join_url' => 'https://',
+                    ]],
+                    'next_page_token' => '',
+                ], 200);
+            }
+
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/meetings')) {
+                $createCalls++;
+            }
+
+            return Http::response([], 404);
+        });
+
+        $event = IntegrationEvent::query()->sole();
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_find_incomplete', $final->provider_error_code);
+        self::assertNull($final->provider_meeting_id);
+        self::assertNull($final->provider_join_url);
+        self::assertSame(0, $createCalls);
+        self::assertSame(0, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
+        self::assertSame('failed', $event->fresh()->status->value);
+    }
+
+    public function test_malformed_successful_zoom_create_response_cannot_reach_ready_or_trigger_a_second_create(): void
+    {
+        $fixture = $this->fixture();
+        $this->credential(
+            $fixture['organization'],
+            'zoom',
+            (string) config('b2b.credential_name'),
+            CredentialStatus::Active,
+        );
+        $lead = $this->submit($fixture, 'malformed-zoom-create-response');
+        $call = $lead->salesCall()->firstOrFail();
+        $createCalls = 0;
+
+        Http::fake(function (Request $request) use (&$createCalls, $call) {
+            if ($request->url() === (string) config('b2b.zoom.oauth_url')) {
+                return Http::response(['access_token' => 'server-token'], 200);
+            }
+
+            if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
+                return Http::response(['meetings' => [], 'next_page_token' => ''], 200);
+            }
+
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/meetings')) {
+                $createCalls++;
+
+                return Http::response([
+                    'id' => 123456,
+                    'uuid' => 'meeting-uuid',
+                    'agenda' => 'CHUKLOV-B2B:'.$call->provider_correlation_key,
+                    'start_time' => '2026-08-31T15:00:00Z',
+                    'duration' => 60,
+                    'timezone' => 'UTC',
+                    'join_url' => 'https://',
+                ], 201);
+            }
+
+            return Http::response([], 404);
+        });
+
+        $event = IntegrationEvent::query()->sole();
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_meeting_response_invalid', $final->provider_error_code);
+        self::assertNull($final->provider_meeting_id);
+        self::assertNull($final->provider_join_url);
+        self::assertSame(1, $createCalls);
+        self::assertSame(0, DB::table('scenario_events')->where('event_name', 'b2b.sales_call.ready')->count());
+        self::assertSame('failed', $event->fresh()->status->value);
+    }
+
+    public function test_update_uses_the_fresh_zoom_join_url_instead_of_a_cached_value(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'cached-zoom-join-url');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+
+        $ready = $call->fresh();
+        $rescheduled = app(RescheduleB2bSalesCall::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            newStartsAt: $this->slot(17),
+            requestedTimezone: 'UTC',
+            expectedEventVersion: $ready->event_version,
+        );
+        $rescheduled->forceFill(['provider_join_url' => 'https://'])->save();
+        $updateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+
+        app(SyncB2bSalesCallProvider::class)->handle($updateEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::Ready, $final->provider_sync_status);
+        self::assertSame('https://zoom.example.test/join/zoom-1', $final->provider_join_url);
+        self::assertSame(1, $provider->updateCount);
+        self::assertSame('processed', $updateEvent->fresh()->status->value);
     }
 
     public function test_recreate_rejects_an_unresolved_unknown_create_without_rotating_generation(): void

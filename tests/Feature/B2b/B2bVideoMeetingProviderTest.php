@@ -182,6 +182,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
             'scalar meetings' => [['meetings' => 'not-an-array', 'next_page_token' => '']],
             'object meetings' => [['meetings' => (object) ['unexpected' => []], 'next_page_token' => '']],
             'non-array meeting entry' => [['meetings' => ['not-an-array'], 'next_page_token' => '']],
+            'missing agenda' => [['meetings' => [['id' => 123456]], 'next_page_token' => '']],
             'invalid agenda type' => [['meetings' => [['id' => 123456, 'agenda' => []]], 'next_page_token' => '']],
             'missing next page token' => [['meetings' => []]],
             'null next page token' => [['meetings' => [], 'next_page_token' => null]],
@@ -218,14 +219,16 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && str_ends_with($sent->url(), '/meetings'));
     }
 
-    public function test_zoom_list_entry_with_an_invalid_meeting_id_requires_reconciliation(): void
+    #[DataProvider('invalidMeetingIds')]
+    public function test_zoom_list_entry_with_an_invalid_meeting_id_requires_reconciliation(mixed $id): void
     {
         $organization = $this->organization();
+        $request = $this->request();
         $this->fakeZoom([
             'list_response' => [
                 'meetings' => [[
-                    'id' => ['invalid-id'],
-                    'agenda' => 'unrelated meeting',
+                    'id' => $id,
+                    'agenda' => $request->correlationMarker(),
                 ]],
                 'next_page_token' => '',
             ],
@@ -247,7 +250,23 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && str_ends_with($sent->url(), '/meetings'));
     }
 
-    public function test_correlation_matching_zoom_list_entry_with_an_invalid_join_url_requires_reconciliation(): void
+    /** @return array<string, array{mixed}> */
+    public static function invalidMeetingIds(): array
+    {
+        return [
+            'array' => [['invalid-id']],
+            'garbage string' => ['garbage'],
+            'numeric string' => ['123456'],
+            'zero' => [0],
+            'negative integer' => [-123],
+            'float' => [12.3],
+            'null' => [null],
+            'boolean' => [true],
+        ];
+    }
+
+    #[DataProvider('invalidParticipantJoinUrls')]
+    public function test_correlation_matching_zoom_list_entry_with_an_invalid_join_url_requires_reconciliation(mixed $joinUrl): void
     {
         $organization = $this->organization();
         $request = $this->request();
@@ -256,7 +275,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
                 'meetings' => [[
                     'id' => 123456,
                     'agenda' => $request->correlationMarker(),
-                    'join_url' => null,
+                    'join_url' => $joinUrl,
                 ]],
                 'next_page_token' => '',
             ],
@@ -276,6 +295,42 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
             && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function invalidParticipantJoinUrls(): array
+    {
+        return [
+            'null' => [null],
+            'scheme only' => ['https://'],
+            'hostless path' => ['https:///join/123456'],
+            'hostless port' => ['https://:443/j/123456'],
+            'http scheme' => ['http://zoom.us/j/123456'],
+            'userinfo' => ['https://user:pass@zoom.us/j/123456'],
+            'invalid port' => ['https://zoom.us:bad/j/123456'],
+        ];
+    }
+
+    public function test_correlated_zoom_list_meeting_with_malformed_schedule_requires_reconciliation(): void
+    {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['duration'] = '45';
+        $this->fakeZoom([
+            'list' => [$meeting],
+        ]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('Malformed correlated schedule data was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
     }
 
     public function test_credible_unrelated_zoom_list_entry_without_optional_fields_remains_a_non_match(): void
@@ -309,11 +364,12 @@ final class B2bVideoMeetingProviderTest extends TestCase
         self::assertSame('123456', $created->identity->meetingId);
     }
 
-    public function test_valid_correlated_zoom_list_meeting_is_still_adopted(): void
+    #[DataProvider('validParticipantJoinUrls')]
+    public function test_valid_correlated_zoom_list_meeting_is_still_adopted(string $joinUrl): void
     {
         $organization = $this->organization();
         $this->fakeZoom([
-            'list' => [$this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')],
+            'list' => [$this->meeting(123456, 'meeting-uuid', $joinUrl)],
         ]);
 
         $found = app(ZoomVideoMeetingProvider::class)->findMeeting(
@@ -324,6 +380,18 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         self::assertInstanceOf(VideoMeetingResult::class, $found);
         self::assertSame('123456', $found->identity->meetingId);
+        self::assertSame($joinUrl, $found->joinUrl);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function validParticipantJoinUrls(): array
+    {
+        return [
+            'zoom domain' => ['https://zoom.us/j/123456'],
+            'vanity subdomain' => ['https://company.zoom.us/meeting/123456'],
+            'query string' => ['https://zoom.us/j/123456?pwd=passcode'],
+            'valid port' => ['https://zoom.us:443/j/123456'],
+        ];
     }
 
     public function test_empty_zoom_list_with_terminal_token_allows_create(): void
@@ -616,6 +684,26 @@ final class B2bVideoMeetingProviderTest extends TestCase
         }
     }
 
+    public function test_get_meeting_rejects_a_malformed_join_url(): void
+    {
+        $organization = $this->organization();
+        $remote = $this->meeting(123456, 'meeting-uuid', 'https://');
+        $this->fakeZoom(['get' => $remote]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A remote meeting with a malformed join URL was accepted.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_response_invalid', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
     public function test_get_meeting_rejects_a_remote_meeting_uuid_mismatch(): void
     {
         $organization = $this->organization();
@@ -653,7 +741,8 @@ final class B2bVideoMeetingProviderTest extends TestCase
             );
             self::fail('A missing remote UUID was accepted for a persisted UUID.');
         } catch (VideoMeetingException $exception) {
-            self::assertSame('zoom_meeting_identity_mismatch', $exception->safeCode);
+            self::assertSame('zoom_meeting_response_invalid', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
         }
     }
 
