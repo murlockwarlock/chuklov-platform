@@ -41,6 +41,7 @@ use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingResult;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
+use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
 use App\Modules\Broadcasts\Application\BroadcastSegmentSummary;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
@@ -605,7 +606,13 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertNull($automatic->manual_meeting_url);
         self::assertSame(VideoMeetingSyncStatus::Pending, $automatic->provider_sync_status);
         self::assertSame(VideoMeetingOperation::Create, $automatic->provider_operation);
-        self::assertSame(1, IntegrationEvent::query()->count());
+        $event = IntegrationEvent::query()->sole();
+
+        Queue::assertPushedOn(
+            (string) config('b2b.queue'),
+            ProcessB2bProviderSyncEvent::class,
+            static fn (ProcessB2bProviderSyncEvent $job): bool => $job->integrationEventId === $event->getKey(),
+        );
     }
 
     public function test_b2b_answer_return_to_rejects_external_and_arbitrary_values_without_mutation(): void

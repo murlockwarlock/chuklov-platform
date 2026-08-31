@@ -36,7 +36,19 @@ class HorizonFoundationTest extends TestCase
             'ai-companion-delivery',
             'telegram-typing',
             'referrals',
+            (string) config('b2b.queue'),
         ], config('horizon.defaults.supervisor-1.queue'));
+    }
+
+    public function test_horizon_consumes_a_configured_b2b_provider_queue(): void
+    {
+        config()->set('b2b.queue', 'b2b-custom');
+        $configuration = require base_path('config/horizon.php');
+
+        self::assertContains(
+            'b2b-custom',
+            $configuration['defaults']['supervisor-1']['queue'],
+        );
     }
 
     public function test_every_m11_production_queue_is_consumed_by_the_bounded_supervisor(): void
@@ -52,6 +64,7 @@ class HorizonFoundationTest extends TestCase
             'ai-companion-delivery',
             'telegram-typing',
             config('referrals.queue'),
+            (string) config('b2b.queue'),
         ], $configuration['queue']);
         self::assertSame(10, config('horizon.environments.production.supervisor-1.maxProcesses'));
         self::assertSame(1, config('horizon.environments.production.supervisor-1.balanceMaxShift'));

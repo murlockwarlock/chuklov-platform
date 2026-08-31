@@ -200,7 +200,16 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default', 'scenarios', 'broadcasts', 'ai-companion', 'ai-companion-delivery', 'telegram-typing', 'referrals'],
+            'queue' => array_values(array_unique([
+                'default',
+                'scenarios',
+                'broadcasts',
+                'ai-companion',
+                'ai-companion-delivery',
+                'telegram-typing',
+                'referrals',
+                (string) config('b2b.queue'),
+            ])),
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
