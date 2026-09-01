@@ -48,6 +48,7 @@ final class RecordB2bProviderSyncEvent
 
         DB::afterCommit(function () use ($event): void {
             ProcessB2bProviderSyncEvent::dispatch((int) $event->getKey())
+                ->onConnection('redis')
                 ->onQueue((string) config('b2b.queue'));
         });
 

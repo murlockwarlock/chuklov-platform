@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\B2B\Application\RecordB2bProviderSyncEvent;
+use App\Modules\B2B\Application\ScheduleB2bProviderSyncEvents;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
@@ -67,6 +68,7 @@ class HorizonFoundationTest extends TestCase
         $configuration = $this->loadB2bConfiguration($configuredQueue, $configuredQueue !== null);
         self::assertSame($expectedQueue, $configuration['queue']);
         config()->set('b2b.queue', $configuration['queue']);
+        config()->set('queue.default', 'database');
         Queue::fake();
 
         $organization = Organization::factory()->create();
@@ -91,24 +93,67 @@ class HorizonFoundationTest extends TestCase
         Queue::assertPushedOn(
             $expectedQueue,
             ProcessB2bProviderSyncEvent::class,
-            static fn (ProcessB2bProviderSyncEvent $job): bool => $job->integrationEventId === $event->getKey(),
+            static function (ProcessB2bProviderSyncEvent $job) use ($event): bool {
+                self::assertSame('redis', $job->connection);
+
+                return $job->integrationEventId === $event->getKey();
+            },
         );
     }
 
-    public function test_blank_b2b_queue_configuration_is_rejected_during_config_bootstrap(): void
+    public function test_scheduler_dispatches_b2b_provider_events_to_redis_and_the_configured_queue(): void
     {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('B2B_QUEUE');
+        config()->set([
+            'b2b.queue' => 'b2b.custom',
+            'queue.default' => 'database',
+        ]);
+        Queue::fake();
 
-        $this->loadB2bConfiguration('', true);
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $lead = B2bLead::factory()->forClient($client)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $call = B2bSalesCall::factory()
+            ->forLead($lead)
+            ->forSpecialist($specialist)
+            ->create();
+        $event = app(RecordB2bProviderSyncEvent::class)->handle(
+            $organization,
+            $call,
+            VideoMeetingOperation::Create,
+        );
+
+        Queue::fake();
+
+        self::assertSame(1, app(ScheduleB2bProviderSyncEvents::class)->handle());
+        Queue::assertPushed(
+            ProcessB2bProviderSyncEvent::class,
+            static function (ProcessB2bProviderSyncEvent $job) use ($event): bool {
+                self::assertSame('redis', $job->connection);
+                self::assertSame('b2b.custom', $job->queue);
+
+                return $job->integrationEventId === $event->getKey();
+            },
+        );
     }
 
-    public function test_comma_containing_b2b_queue_configuration_is_rejected_during_config_bootstrap(): void
+    #[DataProvider('invalidB2bQueueConfigurations')]
+    public function test_invalid_b2b_queue_configuration_is_rejected_during_config_bootstrap(string $configuredQueue): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('B2B_QUEUE');
 
-        $this->loadB2bConfiguration('foo,bar', true);
+        $this->loadB2bConfiguration($configuredQueue, true);
+    }
+
+    public function test_valid_b2b_queue_configuration_survives_evaluated_cached_configuration_semantics(): void
+    {
+        $configuration = $this->loadB2bConfiguration('b2b.custom', true);
+        $evaluatedConfiguration = ['b2b.queue' => $configuration['queue']];
+
+        config()->set($evaluatedConfiguration);
+
+        self::assertSame('b2b.custom', config('b2b.queue'));
     }
 
     public function test_every_m11_production_queue_is_consumed_by_the_bounded_supervisor(): void
@@ -147,8 +192,48 @@ class HorizonFoundationTest extends TestCase
         return [
             'default' => [null, 'integrations'],
             'custom' => ['b2b-custom', 'b2b-custom'],
-            'surrounding whitespace' => ['  b2b-whitespace  ', 'b2b-whitespace'],
+            'dot' => ['b2b.custom', 'b2b.custom'],
+            'underscore' => ['b2b_custom', 'b2b_custom'],
+            'maximum length' => [str_repeat('a', 64), str_repeat('a', 64)],
         ];
+    }
+
+    public static function invalidB2bQueueConfigurations(): array
+    {
+        $configurations = [
+            'empty' => [''],
+            'whitespace only' => ['   '],
+            'leading whitespace' => [' integrations'],
+            'trailing whitespace' => ['integrations '],
+            'comma' => ['foo,bar'],
+            'colon' => ['foo:bar'],
+            'leading dash' => ['-foo'],
+            'space' => ['foo bar'],
+            'command substitution' => ['foo$(id)'],
+            'variable' => ['$PATH'],
+            'double quote' => ['foo"bar'],
+            'single quote' => ["foo'bar"],
+            'backslash' => ['foo\\bar'],
+            'backtick' => ['foo`id`'],
+            'semicolon' => ['foo;bar'],
+            'ampersand' => ['foo&bar'],
+            'pipe' => ['foo|bar'],
+            'parentheses' => ['foo(bar)'],
+            'redirection' => ['foo>bar'],
+            'reverse redirection' => ['foo<bar'],
+            'newline' => ["foo\nbar"],
+            'tab' => ["foo\tbar"],
+            'null' => ["foo\0bar"],
+            'delete control' => ['foo'.chr(127).'bar'],
+            'leading dot' => ['.foo'],
+            'too long' => [str_repeat('a', 65)],
+        ];
+
+        foreach (array_merge(range(0, 31), [127]) as $code) {
+            $configurations['control-'.$code] = ['foo'.chr($code).'bar'];
+        }
+
+        return $configurations;
     }
 
     private function loadB2bConfiguration(?string $configuredQueue = null, bool $isConfigured = false): array
@@ -161,7 +246,10 @@ class HorizonFoundationTest extends TestCase
 
         if ($isConfigured) {
             $value = (string) $configuredQueue;
-            putenv('B2B_QUEUE='.$value);
+            putenv('B2B_QUEUE');
+            if (! str_contains($value, "\0")) {
+                putenv('B2B_QUEUE='.$value);
+            }
             $_ENV['B2B_QUEUE'] = $value;
             $_SERVER['B2B_QUEUE'] = $value;
         } else {

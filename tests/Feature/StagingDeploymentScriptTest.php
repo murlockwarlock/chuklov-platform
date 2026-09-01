@@ -35,6 +35,15 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('trap \'rollback "$LINENO" "$?"\' ERR', $script);
         self::assertStringContainsString('horizon:supervisors --no-ansi', $script);
         self::assertStringContainsString('Horizon did not report an active supervisor with workers', $script);
+        self::assertStringContainsString("grep -Ec '^QUEUE_CONNECTION='", $script);
+        self::assertStringContainsString("grep -Fxq 'QUEUE_CONNECTION=redis'", $script);
+        self::assertStringContainsString('php artisan config:cache --no-ansi', $script);
+        self::assertStringContainsString('php artisan tinker --no-ansi --execute=', $script);
+        self::assertStringContainsString('B2B_QUEUE_PREFLIGHT_OK', $script);
+        self::assertStringContainsString('app()->configurationIsCached()', $script);
+        self::assertStringContainsString('config("queue.default") !== "redis"', $script);
+        self::assertStringContainsString('config("horizon.defaults.supervisor-1")', $script);
+        self::assertStringContainsString('B2B queue is absent from Horizon supervisor configuration', $script);
         self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
@@ -240,6 +249,10 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString('docker cp', $shell);
         self::assertStringContainsString('--deep', $shell);
         self::assertStringContainsString('app(SupervisorRepository::class)->all()', $php);
+        self::assertStringContainsString('configurationIsCached()', $php);
+        self::assertStringContainsString('cached B2B queue is absent from supervisor configuration', $php);
+        self::assertStringContainsString('active supervisor connection is not redis', $php);
+        self::assertStringContainsString('configured B2B queue is absent from active supervisor', $php);
         self::assertStringContainsString('app(RetireKnowledgeSource::class)->handle', $php);
         self::assertStringContainsString('STAGING_SMOKE_USER_ID=', $example);
         self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);

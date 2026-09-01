@@ -117,9 +117,13 @@ health_url="$5"
 expected_host_port="$6"
 archive="$7"
 remote_normalizer="$8"
+queue_preflight_cache=''
 
 cleanup_remote_transfer_artifacts() {
     rm -f -- "$archive" "$remote_normalizer" || true
+    if [[ -n "$queue_preflight_cache" ]]; then
+        rm -rf -- "$queue_preflight_cache" || true
+    fi
 }
 trap cleanup_remote_transfer_artifacts EXIT
 
@@ -132,6 +136,18 @@ previous_target="$(readlink -f "$root/current")"
 snapshot="$backups/predeploy-$revision"
 database_backup="$backups/postgresql-before-$revision.dump"
 compose_backup="$backups/compose-before-$revision.yml"
+
+assert_redis_queue_environment() {
+    local queue_connection_count
+    queue_connection_count="$(grep -Ec '^QUEUE_CONNECTION=' "$environment" || true)"
+
+    if [[ "$queue_connection_count" -ne 1 ]] || ! grep -Fxq 'QUEUE_CONNECTION=redis' "$environment"; then
+        echo "Staging application environment must explicitly set QUEUE_CONNECTION=redis." >&2
+        return 1
+    fi
+}
+
+assert_redis_queue_environment
 
 write_normalized_nftables() {
     local output="$1" nftables_dump loopback_guard_count
@@ -345,6 +361,40 @@ chmod 0640 "$compose.next"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \
     | jq -e --arg image "chuklov-staging-app:$revision" \
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
+
+verify_queue_contract() {
+    queue_preflight_cache="$(mktemp -d)"
+    docker run --rm --env-file "$environment" \
+        -v "$release:/app:ro" \
+        -v "$root/shared/storage:/app/storage:ro" \
+        -v "$queue_preflight_cache:/app/bootstrap/cache" \
+        -w /app "chuklov-staging-app:$revision" \
+        php artisan config:cache --no-ansi < /dev/null
+
+    local output
+    if ! output="$(docker run --rm --env-file "$environment" \
+        -v "$release:/app:ro" \
+        -v "$root/shared/storage:/app/storage:ro" \
+        -v "$queue_preflight_cache:/app/bootstrap/cache" \
+        -w /app "chuklov-staging-app:$revision" \
+        php artisan tinker --no-ansi --execute='$queue = config("b2b.queue"); $supervisor = config("horizon.defaults.supervisor-1"); if (! app()->configurationIsCached()) { throw new RuntimeException("application configuration is not cached"); } if (config("queue.default") !== "redis") { throw new RuntimeException("queue.default is not redis"); } if (! is_string($queue) || preg_match("/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/", $queue) !== 1) { throw new RuntimeException("B2B queue is not valid"); } if (! is_array($supervisor) || ($supervisor["connection"] ?? null) !== "redis") { throw new RuntimeException("Horizon supervisor connection is not redis"); } $queues = $supervisor["queue"] ?? null; if (! is_array($queues) || ! in_array($queue, $queues, true)) { throw new RuntimeException("B2B queue is absent from Horizon supervisor configuration"); } echo "B2B_QUEUE_PREFLIGHT_OK\n";' < /dev/null 2>&1)"; then
+        echo "Cached B2B queue and Horizon configuration preflight failed." >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    if [[ "$output" != *B2B_QUEUE_PREFLIGHT_OK* ]]; then
+        echo "Cached B2B queue and Horizon configuration preflight returned no success marker." >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+
+    rm -rf -- "$queue_preflight_cache"
+    queue_preflight_cache=''
+    echo "Redis queue, B2B queue, and Horizon configuration preflight passed in a fresh cached application process."
+}
+
+verify_queue_contract
 
 rollback() {
     local failed_line="${1:-unknown}"

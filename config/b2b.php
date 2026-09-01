@@ -2,10 +2,10 @@
 
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
 
-$b2bQueue = trim((string) env('B2B_QUEUE', 'integrations'));
+$b2bQueue = (string) env('B2B_QUEUE', 'integrations');
 
-if ($b2bQueue === '' || str_contains($b2bQueue, ',')) {
-    throw new InvalidArgumentException('B2B_QUEUE must be a non-empty single queue name without commas.');
+if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/', $b2bQueue) !== 1) {
+    throw new InvalidArgumentException('B2B_QUEUE must match [A-Za-z0-9][A-Za-z0-9._-]{0,63} without trimming or normalization.');
 }
 
 $operationDeadlineSeconds = min(

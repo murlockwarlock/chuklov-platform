@@ -18,7 +18,10 @@ final class ProcessB2bProviderSyncEvent implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public readonly int $integrationEventId) {}
+    public function __construct(public readonly int $integrationEventId)
+    {
+        $this->onConnection('redis');
+    }
 
     public function handle(SyncB2bSalesCallProvider $synchronizer): void
     {

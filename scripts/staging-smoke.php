@@ -137,6 +137,21 @@ function runtimeCheck(): void
     if (config('queue.default') !== 'redis') {
         fail('HORIZON', 'queue.default is not redis');
     }
+    if (! app()->configurationIsCached()) {
+        fail('HORIZON', 'application configuration is not cached');
+    }
+    $b2bQueue = config('b2b.queue');
+    if (! is_string($b2bQueue) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/', $b2bQueue) !== 1) {
+        fail('HORIZON', 'B2B queue is not valid');
+    }
+    $horizonConfiguration = config('horizon.defaults.supervisor-1');
+    if (! is_array($horizonConfiguration) || ($horizonConfiguration['connection'] ?? null) !== 'redis') {
+        fail('HORIZON', 'supervisor connection is not redis');
+    }
+    $configuredQueues = $horizonConfiguration['queue'] ?? null;
+    if (! is_array($configuredQueues) || ! in_array($b2bQueue, $configuredQueues, true)) {
+        fail('HORIZON', 'cached B2B queue is absent from supervisor configuration');
+    }
     $masters = app(MasterSupervisorRepository::class)->all();
     if ($masters === [] || collect($masters)->contains(static fn ($master): bool => $master->status !== 'running')) {
         fail('HORIZON', 'master is not running');
@@ -152,7 +167,17 @@ function runtimeCheck(): void
     if ($supervisors === [] || $workers < 1) {
         fail('HORIZON', 'no active supervisor workers');
     }
-    ok('HORIZON', $workers.' worker'.($workers === 1 ? '' : 's'));
+    $supervisor = $supervisors[0];
+    $supervisorOptions = is_array($supervisor->options ?? null) ? $supervisor->options : [];
+    if (($supervisorOptions['connection'] ?? null) !== 'redis') {
+        fail('HORIZON', 'active supervisor connection is not redis');
+    }
+    $runtimeQueue = $supervisorOptions['queue'] ?? null;
+    $runtimeQueues = is_string($runtimeQueue) ? explode(',', $runtimeQueue) : (is_array($runtimeQueue) ? $runtimeQueue : []);
+    if (! in_array($b2bQueue, $runtimeQueues, true)) {
+        fail('HORIZON', 'configured B2B queue is absent from active supervisor');
+    }
+    ok('HORIZON', $workers.' worker'.($workers === 1 ? '' : 's').' B2B queue '.$b2bQueue);
 }
 
 function deepCheck(int $userId, int $clientId): void

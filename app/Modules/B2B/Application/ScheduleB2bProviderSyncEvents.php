@@ -32,6 +32,7 @@ final class ScheduleB2bProviderSyncEvents
 
         foreach ($ids as $id) {
             ProcessB2bProviderSyncEvent::dispatch((int) $id)
+                ->onConnection('redis')
                 ->onQueue((string) config('b2b.queue'));
         }
 
