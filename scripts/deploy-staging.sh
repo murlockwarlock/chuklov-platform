@@ -410,17 +410,6 @@ if [[ ! -d "$root/shared/bootstrap-cache" ]]; then
     exit 1
 fi
 
-current_queue_probe="$(run_queue_contract_probe "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
-current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
-current_pending_work="$(jq -er '
-    if (.counts | type) != "object" then error("missing counts")
-    elif ([.counts.pending, .counts.delayed, .counts.reserved] | all(type == "number" and . >= 0 and floor == .))
-    then (.counts.pending + .counts.delayed + .counts.reserved)
-    else error("invalid counts")
-    end
-' <<< "$current_queue_probe")"
-echo "Current Laravel queue Redis contract verified with $current_pending_work pending B2B work item(s)."
-
 if [[ -e "$release" ]]; then
     if [[ "$release" == "$root/releases/$revision"
         && "$previous_target" != "$release"
@@ -588,6 +577,17 @@ chmod 0640 "$compose.next"
     | jq -e --arg image "chuklov-staging-app:$revision" \
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
 candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$redis_volume_override")"
+
+current_queue_probe="$(run_queue_contract_probe "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
+current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
+current_pending_work="$(jq -er '
+    if (.counts | type) != "object" then error("missing counts")
+    elif ([.counts.pending, .counts.delayed, .counts.reserved] | all(type == "number" and . >= 0 and floor == .))
+    then (.counts.pending + .counts.delayed + .counts.reserved)
+    else error("invalid counts")
+    end
+' <<< "$current_queue_probe")"
+echo "Current Laravel queue Redis contract verified with $current_pending_work pending B2B work item(s)."
 
 verify_queue_contract() {
     queue_preflight_cache="$(mktemp -d)"

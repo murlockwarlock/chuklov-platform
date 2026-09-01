@@ -201,6 +201,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertIsString($script);
         $noOp = strpos($script, 'if [[ "$current_revision" == "$revision" ]]');
         $dependencyStart = strpos($script, "\nensure_current_dependencies\nresolve_staging_network");
+        $candidateVolume = strpos($script, "\nverify_candidate_redis_volume\n");
         $currentProbe = strpos($script, 'current_queue_probe="$(run_queue_contract_probe');
         $candidateCache = strpos($script, 'php artisan config:cache --no-ansi');
         $candidateProbe = strpos($script, 'candidate_queue_probe="$(run_queue_contract_probe');
@@ -209,6 +210,7 @@ class StagingDeploymentScriptTest extends TestCase
 
         self::assertIsInt($noOp);
         self::assertIsInt($dependencyStart);
+        self::assertIsInt($candidateVolume);
         self::assertIsInt($currentProbe);
         self::assertIsInt($candidateCache);
         self::assertIsInt($candidateProbe);
@@ -216,6 +218,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertIsInt($migration);
         self::assertLessThan($dependencyStart, $noOp);
         self::assertLessThan($currentProbe, $dependencyStart);
+        self::assertLessThan($currentProbe, $candidateVolume);
         self::assertLessThan($activation, $candidateCache);
         self::assertLessThan($activation, $candidateProbe);
         self::assertLessThan($migration, $activation);
