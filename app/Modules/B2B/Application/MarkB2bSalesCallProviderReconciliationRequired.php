@@ -8,6 +8,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -108,6 +109,10 @@ final class MarkB2bSalesCallProviderReconciliationRequired
     {
         return $current instanceof VideoMeetingIdentity
             && $current->meetingId === $expected->meetingId
-            && $current->meetingUuid === $expected->meetingUuid;
+            && $current->meetingUuid === $expected->meetingUuid
+            && (($current->providerAccountAffinity === null && $expected->providerAccountAffinity === null)
+                || ($current->providerAccountAffinity instanceof ProviderAccountAffinity
+                    && $expected->providerAccountAffinity instanceof ProviderAccountAffinity
+                    && $current->providerAccountAffinity->equals($expected->providerAccountAffinity)));
     }
 }

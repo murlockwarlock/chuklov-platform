@@ -31,6 +31,8 @@ class B2bSalesCallFactory extends Factory
             'requested_timezone' => 'UTC',
             'meeting_mode' => VideoMeetingMode::Automatic->value,
             'provider_name' => 'zoom',
+            'provider_account_id' => null,
+            'provider_host_user_id' => null,
             'provider_meeting_id' => null,
             'provider_meeting_uuid' => null,
             'provider_join_url' => null,

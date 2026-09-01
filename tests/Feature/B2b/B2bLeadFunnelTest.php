@@ -35,6 +35,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
@@ -812,6 +813,37 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertArrayNotHasKey('medical', $providerEvent->payload);
         self::assertArrayNotHasKey('health', $providerEvent->payload);
         self::assertStringNotContainsString('medical', strtolower($payload));
+    }
+
+    public function test_provider_principal_is_persisted_with_the_known_meeting_and_sync_event(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'provider-principal-persistence');
+        $call = $lead->salesCall()->firstOrFail();
+
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+
+        $ready = $call->fresh();
+        self::assertSame('test-account', $ready->provider_account_id);
+        self::assertSame('test-host', $ready->provider_host_user_id);
+        self::assertSame('test-account', $ready->providerIdentity()?->providerAccountAffinity?->accountId);
+        self::assertSame('test-host', $ready->providerIdentity()?->providerAccountAffinity?->hostUserId);
+
+        app(RescheduleB2bSalesCall::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            newStartsAt: $this->slot(16),
+            requestedTimezone: 'UTC',
+            expectedEventVersion: $ready->event_version,
+        );
+
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+        self::assertSame('test-account', $event->payload['provider_account_id']);
+        self::assertSame('test-host', $event->payload['provider_host_user_id']);
+        self::assertArrayNotHasKey('client_secret', $event->payload);
+        self::assertArrayNotHasKey('access_token', $event->payload);
     }
 
     public function test_retry_is_idempotent_but_a_later_submission_after_cancellation_is_allowed(): void
@@ -4000,7 +4032,14 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         }
 
         $this->createCount++;
-        $identity = new VideoMeetingIdentity('zoom-'.$this->createCount, 'uuid-'.$this->createCount);
+        $identity = new VideoMeetingIdentity(
+            meetingId: 'zoom-'.$this->createCount,
+            meetingUuid: 'uuid-'.$this->createCount,
+            providerAccountAffinity: new ProviderAccountAffinity(
+                accountId: 'test-account',
+                hostUserId: 'test-host',
+            ),
+        );
         $result = new VideoMeetingResult(
             identity: $identity,
             joinUrl: 'https://zoom.example.test/join/'.$identity->meetingId,

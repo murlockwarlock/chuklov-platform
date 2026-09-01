@@ -56,6 +56,10 @@ final class SyncB2bSalesCallProvider
         }
 
         try {
+            if ($call->hasIncompleteProviderAccountAffinity()) {
+                throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing');
+            }
+
             if ($lease->operation === VideoMeetingOperation::Recreate) {
                 $this->recreate($organization, $call, $lease, $deadline);
                 $this->transitionRecreateToCreate($organization, $lease, $payload);
@@ -314,6 +318,8 @@ final class SyncB2bSalesCallProvider
                 'provider_meeting_id' => null,
                 'provider_meeting_uuid' => null,
                 'provider_join_url' => null,
+                'provider_account_id' => null,
+                'provider_host_user_id' => null,
                 'provider_sync_status' => VideoMeetingSyncStatus::Pending,
                 'provider_operation' => VideoMeetingOperation::Create,
                 'provider_synced_at' => null,
@@ -500,7 +506,11 @@ final class SyncB2bSalesCallProvider
     {
         $meetingId = $call->provider_recreate_meeting_id;
         if (is_string($meetingId) && trim($meetingId) !== '') {
-            return new VideoMeetingIdentity($meetingId, $call->provider_meeting_uuid);
+            return new VideoMeetingIdentity(
+                meetingId: $meetingId,
+                meetingUuid: $call->provider_meeting_uuid,
+                providerAccountAffinity: $call->providerAccountAffinity(),
+            );
         }
 
         return $call->providerIdentity();
@@ -585,6 +595,10 @@ final class SyncB2bSalesCallProvider
             && (int) ($payload['sales_call_id'] ?? 0) === (int) $call->getKey()
             && (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
             && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
+            && (! array_key_exists('provider_account_id', $payload)
+                || $payload['provider_account_id'] === $call->provider_account_id)
+            && (! array_key_exists('provider_host_user_id', $payload)
+                || $payload['provider_host_user_id'] === $call->provider_host_user_id)
             && (! array_key_exists('provider_correlation_key', $payload)
                 || $payload['provider_correlation_key'] === $call->provider_correlation_key)
             && (! array_key_exists('provider_recreate_meeting_id', $payload)
@@ -626,6 +640,8 @@ final class SyncB2bSalesCallProvider
                     'provider_meeting_id' => $result->identity->meetingId,
                     'provider_meeting_uuid' => $result->identity->meetingUuid,
                     'provider_join_url' => $result->joinUrl,
+                    'provider_account_id' => $result->identity->providerAccountAffinity?->accountId,
+                    'provider_host_user_id' => $result->identity->providerAccountAffinity?->hostUserId,
                     'provider_sync_status' => VideoMeetingSyncStatus::Ready,
                     'provider_operation' => null,
                     'provider_synced_at' => $result->synchronizedAt,
@@ -695,6 +711,8 @@ final class SyncB2bSalesCallProvider
                     'provider_meeting_id' => null,
                     'provider_meeting_uuid' => null,
                     'provider_join_url' => null,
+                    'provider_account_id' => null,
+                    'provider_host_user_id' => null,
                     'provider_recreate_meeting_id' => null,
                     'provider_recreate_correlation_key' => null,
                     'provider_correlation_key' => $call->meeting_mode === VideoMeetingMode::Manual

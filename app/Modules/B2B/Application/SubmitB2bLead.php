@@ -213,6 +213,8 @@ final class SubmitB2bLead
                     'meeting_mode' => $meetingMode,
                     'manual_meeting_url' => $manualMeetingUrl,
                     'provider_name' => $meetingMode === VideoMeetingMode::Automatic ? 'zoom' : null,
+                    'provider_account_id' => null,
+                    'provider_host_user_id' => null,
                     'provider_sync_status' => $meetingMode === VideoMeetingMode::Automatic
                         ? VideoMeetingSyncStatus::Pending
                         : VideoMeetingSyncStatus::NotRequired,

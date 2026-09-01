@@ -9,6 +9,7 @@ final readonly class VideoMeetingIdentity
     public function __construct(
         public string $meetingId,
         public ?string $meetingUuid = null,
+        public ?ProviderAccountAffinity $providerAccountAffinity = null,
     ) {
         if (trim($this->meetingId) === '') {
             throw new InvalidArgumentException('The video meeting identity is invalid.');

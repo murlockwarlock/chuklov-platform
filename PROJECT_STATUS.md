@@ -1,5 +1,10 @@
 # Project Status
 
+## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
+
+- This bounded candidate starts exactly at `bb03f4140aa92dd7ba61e69fa19885826619466b` and is limited to Track B: the stable Zoom provider principal is the non-secret pair `account_id + host_user_id`. Known meeting identities persist that pair and require an exact active-credential match before provider I/O; same-principal secret/client rotation remains valid, while account/host changes, missing or disabled credentials, and incomplete legacy affinity fail closed into reconciliation. Pending Create adopts the current active principal, and unknown Create remains reconciliation-required.
+- Recreate cleanup, cancellation, reconciliation, host launch, and durable event payload/version checks carry the affinity without retaining credential material. Focused local B2B coverage, scoped Larastan, Pint, PHP syntax checks, and `git diff --check` pass. The 10 B2B PostgreSQL integration tests are skipped by the local SQLite PHPUnit configuration, so PostgreSQL proof is `EXISTS — NOT RUN LOCALLY`; hosted exact-SHA CI/E2E remain the required candidate gate. No staging or production deployment, merge, PR #23, or M12 work is included.
+
 ## 2026-08-31 — M11D final bounded Recreate and schedule-convergence remediation candidate
 
 - This bounded candidate starts exactly at `a4c29a4864cf0f3320fe29734b117e806ce53aff` and is limited to the B2B Zoom provider lifecycle. Recreate now performs only authoritative old-generation cleanup; a transactional event/version fence then creates the current normal Create obligation for the already-selected new correlation. Ambiguous old cleanup cannot issue a new POST, and unknown new Create outcomes remain recoverable by the new correlation for Manual or local cancellation.

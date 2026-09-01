@@ -19,6 +19,7 @@ Phase 1 B2B sales consultations need a durable local schedule and optional Zoom 
 8. B2B sales-call duration is an organization-scoped, authorized CRM setting. It is a positive bounded whole number with no implicit business default; local SalesCall intervals retain the duration captured at creation, while future availability and provider projections use the configured duration.
 9. The `b2b.sales_call.ready` event carries the exact organization, SalesCall version, provider-sync version/generation, correlation key, and meeting mode. Materialization and delivery both revalidate the current scheduled call and current HTTPS client URL before any channel send.
 10. The typed `b2b_specialist_answer` Yes/No value is the sole authority for self-declared massage/bodywork-specialist classification. The legacy `b2b_role` field remains a separate historical/presentation attribute and is not used to infer that answer.
+11. Zoom known-meeting identities carry the non-secret provider principal `account_id + host_user_id`. The active credential must match that principal before known-meeting provider I/O; same-principal client or secret rotation is allowed, while a principal change or missing affinity fails closed into reconciliation. A pending Create with no known remote may bind the current active principal.
 
 ## Consequences
 
@@ -26,5 +27,6 @@ Phase 1 B2B sales consultations need a durable local schedule and optional Zoom 
 - B2B calls do not create Booking, visit, medical, payment, revenue, or debt records, so existing Scheduling analytics and Finance ledgers remain uncontaminated.
 - PostgreSQL composite ownership, typed linkage, and exclusion constraints enforce organization-safe projection integrity. Provider response loss is handled by durable operation identity and deterministic reconciliation rather than blind meeting creation.
 - Zoom credentials remain organization-scoped encrypted configuration. Client-facing data stores only the join URL; host launch URLs are obtained server-side for authorized CRM actions and are not durable business truth.
+- Known Zoom meeting operations are fenced to the persisted account/host principal, so replacing an account or host cannot make an old meeting appear absent under the new credential. Only non-secret principal identifiers cross the durable B2B sync boundary; credential material remains encrypted configuration.
 - Provider host launch responses are parsed structurally and accepted only for the explicit Zoom host allowlist needed by the provider contract. A stale known provider identity is never converted into an automatic replacement create; cancellation may reconcile exact remote absence, while update, launch, and reconciliation surface safe recovery state.
 - This decision does not introduce external calendar synchronization, Phase 2 tenant provisioning, white-label SaaS, subscription billing, or a parallel calendar authority.

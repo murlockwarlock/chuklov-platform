@@ -3,6 +3,7 @@
 namespace App\Modules\B2B\Infrastructure\Video;
 
 use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
@@ -45,7 +46,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         try {
-            $result = $this->result($response);
+            $result = $this->result($response, $credentials['provider_account_affinity']);
             $this->assertCorrelatedMeeting($result, $request);
             if (! $result->matchesRequest($request)) {
                 throw VideoMeetingException::reconciliationRequired('zoom_schedule_mismatch');
@@ -63,13 +64,18 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): void {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $identity->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
 
         if ($this->fetchExpectedMeeting(
             $this->api($token, $deadline),
             $identity,
             $request,
+            $credentials['provider_account_affinity'],
             'zoom_update',
         ) === null) {
             throw VideoMeetingException::reconciliationRequired('zoom_update_identity_missing');
@@ -99,13 +105,18 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): void {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $identity->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
 
         if ($this->fetchExpectedMeeting(
             $this->api($token, $deadline),
             $identity,
             $request,
+            $credentials['provider_account_affinity'],
             'zoom_cancel',
         ) === null) {
             return;
@@ -130,13 +141,18 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): string {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $identity->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
 
         $meeting = $this->fetchExpectedMeeting(
             $this->api($token, $deadline),
             $identity,
             $request,
+            $credentials['provider_account_affinity'],
             'zoom_host_url',
         );
 
@@ -215,7 +231,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         try {
-            $result = $this->resultFromMeeting($matches[0]);
+            $result = $this->resultFromMeeting($matches[0], $credentials['provider_account_affinity']);
         } catch (VideoMeetingException $exception) {
             if ($exception->safeCode === 'zoom_meeting_response_invalid') {
                 throw VideoMeetingException::reconciliationRequired('zoom_find_incomplete');
@@ -234,22 +250,30 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): ?VideoMeetingResult {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $identity->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
 
         $meeting = $this->fetchExpectedMeeting(
             $this->api($token, $deadline),
             $identity,
             $request,
+            $credentials['provider_account_affinity'],
             'zoom_get',
         );
 
         return $meeting['result'] ?? null;
     }
 
-    /** @return array<string, string> */
-    private function credential(Organization $organization): array
-    {
+    /** @return array{account_id: string, client_id: string, client_secret: string, host_user_id: string, provider_account_affinity: ProviderAccountAffinity} */
+    private function credential(
+        Organization $organization,
+        ?ProviderAccountAffinity $expectedAffinity = null,
+        bool $requiresAffinity = false,
+    ): array {
         $credential = OrganizationCredential::query()
             ->where('organization_id', $organization->getKey())
             ->where('provider', 'zoom')
@@ -258,6 +282,10 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             ->first();
 
         if (! $credential instanceof OrganizationCredential) {
+            if ($requiresAffinity) {
+                throw VideoMeetingException::reconciliationRequired('zoom_credentials_missing');
+            }
+
             throw VideoMeetingException::permanent('zoom_credentials_missing');
         }
 
@@ -266,16 +294,38 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             $value = $credential->credentials[$key] ?? null;
 
             if (! is_string($value) || trim($value) === '') {
+                if ($requiresAffinity) {
+                    throw VideoMeetingException::reconciliationRequired('zoom_credentials_invalid');
+                }
+
                 throw VideoMeetingException::permanent('zoom_credentials_invalid');
             }
 
             $values[$key] = trim($value);
         }
 
-        return $values;
+        $affinity = new ProviderAccountAffinity(
+            accountId: $values['account_id'],
+            hostUserId: $values['host_user_id'],
+        );
+
+        if ($requiresAffinity
+            && (! $expectedAffinity instanceof ProviderAccountAffinity
+                || ! $affinity->equals($expectedAffinity))) {
+            throw VideoMeetingException::reconciliationRequired(
+                $expectedAffinity instanceof ProviderAccountAffinity
+                    ? 'zoom_provider_affinity_mismatch'
+                    : 'zoom_provider_affinity_missing',
+            );
+        }
+
+        return [
+            ...$values,
+            'provider_account_affinity' => $affinity,
+        ];
     }
 
-    /** @param array<string, string> $credentials */
+    /** @param array{account_id: string, client_id: string, client_secret: string, host_user_id: string, provider_account_affinity: ProviderAccountAffinity} $credentials */
     private function accessToken(array $credentials, ProviderOperationDeadline $deadline): string
     {
         try {
@@ -361,7 +411,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
     }
 
     /** @param array<string, mixed> $meeting */
-    private function resultFromMeeting(array $meeting): VideoMeetingResult
+    private function resultFromMeeting(array $meeting, ProviderAccountAffinity $affinity): VideoMeetingResult
     {
         $id = $this->parseMeetingId($meeting['id'] ?? null);
         $joinUrl = $meeting['join_url'] ?? null;
@@ -401,6 +451,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             identity: new VideoMeetingIdentity(
                 $id,
                 $uuid,
+                $affinity,
             ),
             joinUrl: (string) $joinUrl,
             synchronizedAt: CarbonImmutable::now('UTC'),
@@ -462,9 +513,9 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         return $parsed->utc();
     }
 
-    private function result(Response $response): VideoMeetingResult
+    private function result(Response $response, ProviderAccountAffinity $affinity): VideoMeetingResult
     {
-        return $this->resultFromMeeting((array) $response->json());
+        return $this->resultFromMeeting((array) $response->json(), $affinity);
     }
 
     /** @return array{response: Response, result: VideoMeetingResult}|null */
@@ -472,6 +523,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         PendingRequest $api,
         VideoMeetingIdentity $identity,
         VideoMeetingRequest $request,
+        ProviderAccountAffinity $affinity,
         string $operation,
     ): ?array {
         try {
@@ -491,7 +543,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         try {
-            $result = $this->result($response);
+            $result = $this->resultFromMeeting((array) $response->json(), $affinity);
         } catch (VideoMeetingException $exception) {
             if ($exception->safeCode === 'zoom_meeting_response_invalid') {
                 throw VideoMeetingException::reconciliationRequired('zoom_meeting_response_invalid');

@@ -22,6 +22,12 @@ final readonly class VideoMeetingResult
             return false;
         }
 
+        if ($expected->providerAccountAffinity instanceof ProviderAccountAffinity
+            && (! $this->identity->providerAccountAffinity instanceof ProviderAccountAffinity
+                || ! $this->identity->providerAccountAffinity->equals($expected->providerAccountAffinity))) {
+            return false;
+        }
+
         if (! is_string($expected->meetingUuid) || trim($expected->meetingUuid) === '') {
             return true;
         }

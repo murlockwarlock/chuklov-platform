@@ -7,6 +7,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\ValueObjects\B2bSalesCallDuration;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -33,6 +34,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $requested_timezone
  * @property VideoMeetingMode $meeting_mode
  * @property string|null $provider_name
+ * @property string|null $provider_account_id
+ * @property string|null $provider_host_user_id
  * @property string|null $provider_meeting_id
  * @property string|null $provider_meeting_uuid
  * @property string|null $provider_join_url
@@ -121,7 +124,36 @@ class B2bSalesCall extends Model
         return new VideoMeetingIdentity(
             meetingId: $meetingId,
             meetingUuid: is_string($uuid) && trim($uuid) !== '' ? $uuid : null,
+            providerAccountAffinity: $this->providerAccountAffinity(),
         );
+    }
+
+    public function providerAccountAffinity(): ?ProviderAccountAffinity
+    {
+        $accountId = $this->getAttribute('provider_account_id');
+        $hostUserId = $this->getAttribute('provider_host_user_id');
+
+        if (! is_string($accountId)
+            || trim($accountId) === ''
+            || ! is_string($hostUserId)
+            || trim($hostUserId) === '') {
+            return null;
+        }
+
+        return new ProviderAccountAffinity(
+            accountId: trim($accountId),
+            hostUserId: trim($hostUserId),
+        );
+    }
+
+    public function hasIncompleteProviderAccountAffinity(): bool
+    {
+        $accountId = $this->getAttribute('provider_account_id');
+        $hostUserId = $this->getAttribute('provider_host_user_id');
+        $hasAccountId = is_string($accountId) && trim($accountId) !== '';
+        $hasHostUserId = is_string($hostUserId) && trim($hostUserId) !== '';
+
+        return $hasAccountId !== $hasHostUserId;
     }
 
     public function hasIncompleteProviderRecreatePair(): bool

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\B2b;
 
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
@@ -45,7 +46,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         $provider->updateMeeting($organization, $created->identity, $request, ProviderOperationDeadline::fromNow(60));
         $hostUrl = $provider->obtainHostLaunchUrl(
             $organization,
-            new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $this->identity(),
             $request,
             ProviderOperationDeadline::fromNow(60),
         );
@@ -58,6 +59,8 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         self::assertSame('123456', $created->identity->meetingId);
         self::assertSame('meeting-uuid', $created->identity->meetingUuid);
+        self::assertSame('account-1', $created->identity->providerAccountAffinity?->accountId);
+        self::assertSame('evgeny@example.test', $created->identity->providerAccountAffinity?->hostUserId);
         self::assertSame('https://zoom.us/j/123456', $created->joinUrl);
         self::assertNotNull($found);
         self::assertSame('123456', $found->identity->meetingId);
@@ -75,6 +78,118 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && ! str_contains($sent->url(), 'to='));
     }
 
+    public function test_same_zoom_account_and_host_can_rotate_client_secret_for_a_known_meeting(): void
+    {
+        $organization = $this->organization();
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+        $credential->forceFill([
+            'credentials' => [
+                ...$credential->credentials,
+                'client_secret' => 'rotated-secret',
+            ],
+        ])->save();
+        $this->fakeZoom(['get' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        $result = app(ZoomVideoMeetingProvider::class)->getMeeting(
+            $organization,
+            $this->identity(),
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertInstanceOf(VideoMeetingResult::class, $result);
+        self::assertTrue($result->identity->providerAccountAffinity?->equals(new ProviderAccountAffinity(
+            accountId: 'account-1',
+            hostUserId: 'evgeny@example.test',
+        )));
+        Http::assertSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && $sent->url() === (string) config('b2b.zoom.oauth_url')
+            && $sent->data()['account_id'] === 'account-1');
+    }
+
+    public function test_zoom_account_switch_is_rejected_before_known_meeting_provider_io(): void
+    {
+        $organization = $this->organization();
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+        $credential->forceFill([
+            'credentials' => [
+                ...$credential->credentials,
+                'account_id' => 'account-2',
+            ],
+        ])->save();
+        $this->fakeZoom(['get' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                $this->identity(),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A known meeting was used with a different Zoom account.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_zoom_host_switch_is_rejected_before_known_meeting_provider_io(): void
+    {
+        $organization = $this->organization();
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+        $credential->forceFill([
+            'credentials' => [
+                ...$credential->credentials,
+                'host_user_id' => 'different-host@example.test',
+            ],
+        ])->save();
+        $this->fakeZoom(['get' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->cancelMeeting(
+                $organization,
+                $this->identity(),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A known meeting was used with a different Zoom host.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_known_meeting_without_persisted_affinity_fails_closed_before_provider_io(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['get' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A known meeting without an affinity was used.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_missing', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
     #[DataProvider('acceptedStartTimes')]
     public function test_get_meeting_accepts_strict_zoom_start_time_forms(
         string $startTime,
@@ -87,7 +202,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         $result = app(ZoomVideoMeetingProvider::class)->getMeeting(
             $organization,
-            new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $this->identity(),
             $this->request(),
             ProviderOperationDeadline::fromNow(60),
         );
@@ -124,7 +239,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -198,7 +313,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -269,7 +384,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -787,7 +902,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
     public function test_host_launch_url_rejects_non_zoom_hosts_and_url_tricks(): void
     {
         $organization = $this->organization();
-        $identity = new VideoMeetingIdentity('123456', 'meeting-uuid');
+        $identity = $this->identity();
 
         foreach ([
             'https://attacker.example/start/123456',
@@ -830,7 +945,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -850,7 +965,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -871,7 +986,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -892,7 +1007,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -913,7 +1028,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -934,7 +1049,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->updateMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -956,7 +1071,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->updateMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -978,7 +1093,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->updateMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1000,7 +1115,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->cancelMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1022,7 +1137,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->cancelMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1044,7 +1159,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->cancelMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1077,7 +1192,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         app(ZoomVideoMeetingProvider::class)->cancelMeeting(
             $organization,
-            new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $this->identity(),
             $this->request(),
             ProviderOperationDeadline::fromNow(60),
         );
@@ -1097,7 +1212,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1119,7 +1234,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1143,7 +1258,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->obtainHostLaunchUrl(
                 $organization,
-                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->identity(),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1162,7 +1277,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
 
         $result = app(ZoomVideoMeetingProvider::class)->getMeeting(
             $organization,
-            new VideoMeetingIdentity('123456'),
+            $this->identity('123456', null),
             $this->request(),
             ProviderOperationDeadline::fromNow(60),
         );
@@ -1182,7 +1297,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456'),
+                $this->identity('123456', null),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1205,7 +1320,7 @@ final class B2bVideoMeetingProviderTest extends TestCase
         try {
             app(ZoomVideoMeetingProvider::class)->getMeeting(
                 $organization,
-                new VideoMeetingIdentity('123456'),
+                $this->identity('123456', null),
                 $this->request(),
                 ProviderOperationDeadline::fromNow(60),
             );
@@ -1245,6 +1360,18 @@ final class B2bVideoMeetingProviderTest extends TestCase
             durationMinutes: 45,
             timezone: 'Asia/Almaty',
             topic: 'Chuklov B2B sales call',
+        );
+    }
+
+    private function identity(string $meetingId = '123456', ?string $meetingUuid = 'meeting-uuid'): VideoMeetingIdentity
+    {
+        return new VideoMeetingIdentity(
+            meetingId: $meetingId,
+            meetingUuid: $meetingUuid,
+            providerAccountAffinity: new ProviderAccountAffinity(
+                accountId: 'account-1',
+                hostUserId: 'evgeny@example.test',
+            ),
         );
     }
 
