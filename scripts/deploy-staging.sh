@@ -149,6 +149,18 @@ assert_redis_queue_environment() {
 
 assert_redis_queue_environment
 
+assert_redis_available() {
+    local output
+
+    if ! output="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T redis redis-cli ping < /dev/null 2>&1)" || [[ "$output" != *PONG* ]]; then
+        echo "Configured staging Redis is unavailable." >&2
+        printf '%s\n' "$output" >&2
+        return 1
+    fi
+}
+
+assert_redis_available
+
 write_normalized_nftables() {
     local output="$1" nftables_dump loopback_guard_count
     local service container service_ip escaped_service_ip

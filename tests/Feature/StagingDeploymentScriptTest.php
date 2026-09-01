@@ -37,6 +37,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('Horizon did not report an active supervisor with workers', $script);
         self::assertStringContainsString("grep -Ec '^QUEUE_CONNECTION='", $script);
         self::assertStringContainsString("grep -Fxq 'QUEUE_CONNECTION=redis'", $script);
+        self::assertStringContainsString('redis-cli ping < /dev/null', $script);
         self::assertStringContainsString('php artisan config:cache --no-ansi', $script);
         self::assertStringContainsString('php artisan tinker --no-ansi --execute=', $script);
         self::assertStringContainsString('B2B_QUEUE_PREFLIGHT_OK', $script);
