@@ -125,8 +125,11 @@ queue_preflight_cache=''
 staging_network=''
 redis_volume_override=''
 current_redis_volume=''
+current_redis_volume_key=''
+candidate_redis_volume_key=''
 current_compose_base=()
 current_compose=()
+candidate_compose_base=()
 candidate_compose=()
 runtime_compose=()
 
@@ -199,7 +202,7 @@ compose_service_environment_file() {
 }
 
 resolve_current_redis_volume() {
-    local container redis_container_output redis_container_count
+    local container redis_container_output redis_container_count compose_config
     local mounts_json data_mount_count named_data_mount_count
 
     if ! redis_container_output="$("${current_compose_base[@]}" ps --status running -q redis)"; then
@@ -239,18 +242,84 @@ resolve_current_redis_volume() {
         return 1
     fi
 
+    if ! compose_config="$("${current_compose_base[@]}" config --format json 2>/dev/null)"; then
+        echo "Could not resolve the current staging Redis Compose configuration; refusing cold initialization." >&2
+        return 1
+    fi
+    if ! current_redis_volume_key="$(jq -er '
+        [.services.redis.volumes[]?
+            | select(.target == "/data" and .type == "volume" and (.source | type == "string") and (.source | length > 0))
+            | .source
+        ]
+        | if length == 1 then .[0] else error("expected exactly one Redis /data volume key") end
+    ' <<< "$compose_config")"; then
+        echo "Current staging Redis Compose configuration must expose exactly one named /data volume key; refusing cold initialization." >&2
+        return 1
+    fi
+    if [[ ! "$current_redis_volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "Current staging Redis Compose volume key is invalid; refusing cold initialization." >&2
+        return 1
+    fi
+
     echo "Current Redis /data physical volume: $current_redis_volume"
 }
 
 write_redis_volume_override() {
+    local additional_volume_key="${1:-}"
+    local volume_key
+    local -a volume_keys=("$current_redis_volume_key")
+
     if [[ -z "$current_redis_volume" ]]; then
         echo "Current staging Redis physical volume was not resolved; refusing cold initialization." >&2
         return 1
     fi
+    if [[ -z "$current_redis_volume_key" ]]; then
+        echo "Current staging Redis Compose volume key was not resolved; refusing cold initialization." >&2
+        return 1
+    fi
+    if [[ -n "$additional_volume_key" && "$additional_volume_key" != "$current_redis_volume_key" ]]; then
+        volume_keys+=("$additional_volume_key")
+    fi
+    for volume_key in "${volume_keys[@]}"; do
+        if [[ ! "$volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+            echo "Staging Redis Compose volume key is invalid; refusing cold initialization." >&2
+            return 1
+        fi
+    done
 
-    redis_volume_override="$(mktemp)"
+    if [[ -z "$redis_volume_override" ]]; then
+        redis_volume_override="$(mktemp)"
+    fi
     chmod 0600 "$redis_volume_override"
-    printf 'volumes:\n  redis_data:\n    name: "%s"\n' "$current_redis_volume" > "$redis_volume_override"
+    {
+        printf 'volumes:\n'
+        for volume_key in "${volume_keys[@]}"; do
+            printf '  %s:\n    name: "%s"\n' "$volume_key" "$current_redis_volume"
+        done
+    } > "$redis_volume_override"
+}
+
+resolve_candidate_redis_volume_key() {
+    local candidate_config
+
+    if ! candidate_config="$("${candidate_compose[@]}" config --format json 2>/dev/null)"; then
+        echo "Could not resolve the candidate Redis Compose configuration; refusing activation." >&2
+        return 1
+    fi
+    if ! candidate_redis_volume_key="$(jq -er '
+        [.services.redis.volumes[]?
+            | select(.target == "/data" and .type == "volume" and (.source | type == "string") and (.source | length > 0))
+            | .source
+        ]
+        | if length == 1 then .[0] else error("expected exactly one Redis /data volume key") end
+    ' <<< "$candidate_config")"; then
+        echo "Candidate Redis Compose configuration must expose exactly one named /data volume key; refusing activation." >&2
+        return 1
+    fi
+    if [[ ! "$candidate_redis_volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "Candidate Redis Compose volume key is invalid; refusing activation." >&2
+        return 1
+    fi
 }
 
 verify_candidate_redis_volume() {
@@ -260,10 +329,10 @@ verify_candidate_redis_volume() {
         echo "Could not resolve the candidate Redis Compose configuration." >&2
         return 1
     fi
-    if ! jq -e --arg expected "$current_redis_volume" '
-        (.volumes.redis_data.name // "") == $expected
+    if ! jq -e --arg expected "$current_redis_volume" --arg volume_key "$candidate_redis_volume_key" '
+        (.volumes[$volume_key].name // "") == $expected
         and ((.services.redis.volumes // []) | map(select(.target == "/data")) | length == 1)
-        and ((.services.redis.volumes // []) | map(select(.target == "/data" and .type == "volume" and .source == "redis_data")) | length == 1)
+        and ((.services.redis.volumes // []) | map(select(.target == "/data" and .type == "volume" and .source == $volume_key)) | length == 1)
     ' <<< "$candidate_config" > /dev/null; then
         echo "Candidate Redis /data physical volume does not match the current staging volume; refusing activation." >&2
         return 1
@@ -569,7 +638,10 @@ normalized_compose="$compose.next.runtime-user"
 normalize_staging_runtime_user "$compose.next" "$normalized_compose"
 mv "$normalized_compose" "$compose.next"
 
-candidate_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" -f "$redis_volume_override")
+candidate_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next")
+candidate_compose=("${candidate_compose_base[@]}" -f "$redis_volume_override")
+resolve_candidate_redis_volume_key
+write_redis_volume_override "$candidate_redis_volume_key"
 verify_candidate_redis_volume
 "${candidate_compose[@]}" config --quiet
 chmod 0640 "$compose.next"

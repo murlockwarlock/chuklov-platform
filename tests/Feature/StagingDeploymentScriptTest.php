@@ -42,6 +42,9 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('redis_container_output', $script);
         self::assertStringContainsString("docker inspect \"\$container\" --format '{{json .Mounts}}'", $script);
         self::assertStringContainsString('docker volume inspect "$current_redis_volume"', $script);
+        self::assertStringContainsString('current_redis_volume_key', $script);
+        self::assertStringContainsString('candidate_redis_volume_key', $script);
+        self::assertStringContainsString('resolve_candidate_redis_volume_key', $script);
         self::assertStringContainsString('write_redis_volume_override', $script);
         self::assertStringContainsString('name: "%s"', $script);
         self::assertStringContainsString('verify_candidate_redis_volume', $script);
@@ -164,10 +167,28 @@ class StagingDeploymentScriptTest extends TestCase
                 'candidate_volume' => 'staging-test_redis_data',
                 'expected_success' => false,
             ],
+            'hyphenated-logical-key' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis-data',
+                'candidate_volume_key' => 'redis-data',
+                'expected_success' => true,
+            ],
         ];
 
         foreach ($fixtures as $name => $fixture) {
-            $result = $this->runRedisVolumeFixture($script, $fixture['mounts'], $fixture['physical_volume'], $fixture['candidate_volume']);
+            $result = $this->runRedisVolumeFixture(
+                $script,
+                $fixture['mounts'],
+                $fixture['physical_volume'],
+                $fixture['candidate_volume'],
+                $fixture['candidate_volume_key'] ?? 'redis_data',
+            );
 
             if ($fixture['expected_success']) {
                 self::assertSame(0, $result['exit_code'], $name);
@@ -188,6 +209,7 @@ class StagingDeploymentScriptTest extends TestCase
             $fixtures['legacy']['mounts'],
             $fixtures['legacy']['physical_volume'],
             $fixtures['legacy']['candidate_volume'],
+            $fixtures['legacy']['candidate_volume_key'] ?? 'redis_data',
         );
         self::assertStringContainsString('staging-test_redis-data', $legacy['docker_log']);
         self::assertStringNotContainsString('staging-test_redis_data', $legacy['docker_log']);
@@ -427,8 +449,13 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);
     }
 
-    private function runRedisVolumeFixture(string $script, array $mounts, string $physicalVolume, string $candidateVolume): array
-    {
+    private function runRedisVolumeFixture(
+        string $script,
+        array $mounts,
+        string $physicalVolume,
+        string $candidateVolume,
+        string $candidateVolumeKey = 'redis_data',
+    ): array {
         $filesystem = new Filesystem;
         $fixtureDirectory = sys_get_temp_dir().'/chuklov-redis-volume-'.bin2hex(random_bytes(8));
         $filesystem->mkdir($fixtureDirectory.'/bin');
@@ -443,13 +470,13 @@ class StagingDeploymentScriptTest extends TestCase
             file_put_contents($mountsFile, json_encode($mounts, JSON_THROW_ON_ERROR).PHP_EOL);
             file_put_contents($candidateConfigFile, json_encode([
                 'volumes' => [
-                    'redis_data' => ['name' => $candidateVolume],
+                    $candidateVolumeKey => ['name' => $candidateVolume],
                 ],
                 'services' => [
                     'redis' => [
                         'volumes' => [[
                             'type' => 'volume',
-                            'source' => 'redis_data',
+                            'source' => $candidateVolumeKey,
                             'target' => '/data',
                         ]],
                     ],
@@ -466,8 +493,11 @@ environment='/tmp/staging-test.env'
 compose='/tmp/staging-test-compose.yml'
 current_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
 current_compose=()
+candidate_compose_base=()
 candidate_compose=()
 current_redis_volume=''
+current_redis_volume_key=''
+candidate_redis_volume_key=''
 redis_volume_override=''
 BASH;
             $harnessContent .= "\n".$this->extractRedisVolumeFunctions($script);
@@ -476,6 +506,8 @@ BASH;
 resolve_current_redis_volume
 write_redis_volume_override
 candidate_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" -f "$redis_volume_override")
+resolve_candidate_redis_volume_key
+write_redis_volume_override "$candidate_redis_volume_key"
 verify_candidate_redis_volume
 printf 'CURRENT=%s\n' "$current_redis_volume"
 printf 'OVERRIDE=%s\n' "$redis_volume_override"
@@ -531,6 +563,7 @@ BASH);
                     'TEST_CANDIDATE_CONFIG_FILE' => $candidateConfigFile,
                     'TEST_DOCKER_LOG' => $dockerLog,
                     'TEST_PHYSICAL_VOLUME' => $physicalVolume,
+                    'TEST_CANDIDATE_VOLUME_KEY' => $candidateVolumeKey,
                 ],
             );
             $process->run();
