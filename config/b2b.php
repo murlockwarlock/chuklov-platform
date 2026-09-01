@@ -2,6 +2,12 @@
 
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
 
+$b2bQueue = trim((string) env('B2B_QUEUE', 'integrations'));
+
+if ($b2bQueue === '' || str_contains($b2bQueue, ',')) {
+    throw new InvalidArgumentException('B2B_QUEUE must be a non-empty single queue name without commas.');
+}
+
 $operationDeadlineSeconds = min(
     ProviderOperationTiming::MAX_OPERATION_DEADLINE_SECONDS,
     max(
@@ -26,7 +32,7 @@ $requestSafetySeconds = min(
 $operationDeadlineSeconds = max($operationDeadlineSeconds, $requestSafetySeconds + 1);
 
 return [
-    'queue' => env('B2B_QUEUE', 'integrations'),
+    'queue' => $b2bQueue,
     'credential_name' => env('B2B_ZOOM_CREDENTIAL_NAME', 'b2b_zoom'),
     'provider' => [
         'operation_deadline_seconds' => $operationDeadlineSeconds,

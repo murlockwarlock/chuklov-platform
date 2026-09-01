@@ -23,6 +23,7 @@ final class SetB2bSalesCallMeetingMode
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly B2bProviderMutationGuard $providerMutationGuard,
+        private readonly GetB2bZoomHostCapability $zoomCapability,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
@@ -75,6 +76,19 @@ final class SetB2bSalesCallMeetingMode
                         || $locked->provider_sync_status !== VideoMeetingSyncStatus::NotRequired));
             if (! $changed) {
                 return $locked->refresh();
+            }
+            if ($mode === VideoMeetingMode::Automatic) {
+                $durationMinutes = (int) round($locked->startsAtUtc()->diffInMinutes($locked->endsAtUtc()));
+                if ($durationMinutes < 1) {
+                    throw ValidationException::withMessages([
+                        'sales_call' => 'The stored sales-call interval is invalid and cannot be changed to automatic mode.',
+                    ]);
+                }
+                if (! $this->zoomCapability->supportsAutomaticDuration($durationMinutes)) {
+                    throw ValidationException::withMessages([
+                        'configuration' => $this->zoomCapability->configurationError(),
+                    ]);
+                }
             }
             if (! $this->providerMutationGuard->allowGenerationChange($locked, $actor)) {
                 $providerChangeBlocked = true;

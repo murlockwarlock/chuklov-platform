@@ -584,7 +584,7 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertSame('https://meet.example.test/client-call', $lead->salesCall()->firstOrFail()->manual_meeting_url);
     }
 
-    public function test_switching_manual_mode_to_automatic_clears_client_link_and_queues_provider_sync(): void
+    public function test_licensed_zoom_host_allows_switching_manual_mode_to_automatic_for_a_sixty_minute_call(): void
     {
         $fixture = $this->fixture();
         $lead = $this->submit(
@@ -613,6 +613,117 @@ final class B2bLeadFunnelTest extends TestCase
             ProcessB2bProviderSyncEvent::class,
             static fn (ProcessB2bProviderSyncEvent $job): bool => $job->integrationEventId === $event->getKey(),
         );
+    }
+
+    public function test_basic_zoom_host_rejects_manual_to_automatic_without_mutating_the_sales_call(): void
+    {
+        $fixture = $this->fixture();
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+        );
+        $lead = $this->submit(
+            fixture: $fixture,
+            key: 'basic-manual-to-automatic-rejected',
+            meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/basic-manual-call',
+        );
+        $call = $lead->salesCall()->firstOrFail();
+        $before = $this->salesCallModeState($call->fresh());
+
+        try {
+            app(SetB2bSalesCallMeetingMode::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $call,
+                mode: VideoMeetingMode::Automatic,
+                expectedEventVersion: $call->event_version,
+            );
+            self::fail('A Basic Zoom host accepted an unsupported Manual to Automatic transition.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Automatic Zoom sales-call duration exceeds the current host capability of 40 minutes. Enable a licensed Zoom host or use a shorter business duration.',
+                $exception->errors()['configuration'][0],
+            );
+        }
+
+        self::assertSame($before, $this->salesCallModeState($call->fresh()));
+        self::assertSame(0, IntegrationEvent::query()->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_basic_zoom_host_allows_manual_to_automatic_at_its_duration_limit(): void
+    {
+        $fixture = $this->fixture();
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+        );
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            40,
+        );
+        $lead = $this->submit(
+            fixture: $fixture,
+            key: 'basic-manual-to-automatic-allowed',
+            meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/basic-manual-call',
+        );
+        $call = $lead->salesCall()->firstOrFail();
+
+        $automatic = app(SetB2bSalesCallMeetingMode::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $call,
+            mode: VideoMeetingMode::Automatic,
+            expectedEventVersion: $call->event_version,
+        );
+
+        self::assertSame(VideoMeetingMode::Automatic, $automatic->meeting_mode);
+        self::assertSame(VideoMeetingSyncStatus::Pending, $automatic->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $automatic->provider_operation);
+        self::assertSame(1, IntegrationEvent::query()->count());
+        Queue::assertPushedOn((string) config('b2b.queue'), ProcessB2bProviderSyncEvent::class);
+    }
+
+    public function test_manual_to_automatic_uses_the_locked_call_duration_after_the_organization_setting_changes(): void
+    {
+        $fixture = $this->fixture();
+        app(ClearOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bZoomHostLicensed,
+        );
+        $lead = $this->submit(
+            fixture: $fixture,
+            key: 'manual-to-automatic-historical-duration',
+            meetingMode: VideoMeetingMode::Manual,
+            manualMeetingUrl: 'https://meet.example.test/historical-manual-call',
+        );
+        $call = $lead->salesCall()->firstOrFail();
+        $before = $this->salesCallModeState($call->fresh());
+        app(SetOrganizationSetting::class)->handle(
+            $fixture['admin'],
+            OrganizationSettingKey::B2bSalesCallDurationMinutes,
+            30,
+        );
+
+        try {
+            app(SetB2bSalesCallMeetingMode::class)->handle(
+                actor: $fixture['admin'],
+                salesCall: $call,
+                mode: VideoMeetingMode::Automatic,
+                expectedEventVersion: $call->event_version,
+            );
+            self::fail('The transition trusted the changed organization duration instead of the scheduled call.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Automatic Zoom sales-call duration exceeds the current host capability of 40 minutes. Enable a licensed Zoom host or use a shorter business duration.',
+                $exception->errors()['configuration'][0],
+            );
+        }
+
+        self::assertSame($before, $this->salesCallModeState($call->fresh()));
+        self::assertSame(0, IntegrationEvent::query()->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_b2b_answer_return_to_rejects_external_and_arbitrary_values_without_mutation(): void
@@ -3560,6 +3671,11 @@ final class B2bLeadFunnelTest extends TestCase
     private function slot(int $hour = 15, string $timezone = 'UTC'): CarbonImmutable
     {
         return CarbonImmutable::create(2026, 8, 31, $hour, 0, 0, $timezone);
+    }
+
+    private function salesCallModeState(B2bSalesCall $call): array
+    {
+        return (array) $call->getRawOriginal();
     }
 
     private function remoteMeeting(VideoMeetingIdentity $identity, string $correlationKey): VideoMeetingResult
