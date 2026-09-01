@@ -1155,32 +1155,31 @@ final class B2bLeadFunnelTest extends TestCase
             manualMeetingUrl: 'https://meet.example.test/malformed-reschedule',
         );
         $call = $lead->salesCall()->firstOrFail();
-        DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
-            'ends_at' => '2026-08-31 15:40:01',
-        ]);
-        $before = $call->fresh()->getRawOriginal();
-        $occupancyBefore = $call->occupancyPeriod()->firstOrFail()->getRawOriginal();
+        $this->withMalformedPersistedInterval($call, '2026-08-31 15:40:01', function () use ($fixture, $call): void {
+            $before = $call->fresh()->getRawOriginal();
+            $occupancyBefore = $call->occupancyPeriod()->firstOrFail()->getRawOriginal();
 
-        try {
-            app(RescheduleB2bSalesCall::class)->handle(
-                actor: $fixture['admin'],
-                salesCall: $call,
-                newStartsAt: $this->slot(17),
-                requestedTimezone: 'UTC',
-                expectedEventVersion: $call->event_version,
-            );
-            self::fail('A malformed historical sales-call interval was rescheduled.');
-        } catch (ValidationException $exception) {
-            self::assertSame(
-                'The stored sales-call interval is invalid and cannot be rescheduled.',
-                $exception->errors()['sales_call'][0],
-            );
-        }
+            try {
+                app(RescheduleB2bSalesCall::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call,
+                    newStartsAt: $this->slot(17),
+                    requestedTimezone: 'UTC',
+                    expectedEventVersion: $call->event_version,
+                );
+                self::fail('A malformed historical sales-call interval was rescheduled.');
+            } catch (ValidationException $exception) {
+                self::assertSame(
+                    'The stored sales-call interval is invalid and cannot be rescheduled.',
+                    $exception->errors()['sales_call'][0],
+                );
+            }
 
-        self::assertSame($before, $call->fresh()->getRawOriginal());
-        self::assertSame($occupancyBefore, $call->occupancyPeriod()->firstOrFail()->getRawOriginal());
-        self::assertSame(0, IntegrationEvent::query()->count());
-        Queue::assertNothingPushed();
+            self::assertSame($before, $call->fresh()->getRawOriginal());
+            self::assertSame($occupancyBefore, $call->occupancyPeriod()->firstOrFail()->getRawOriginal());
+            self::assertSame(0, IntegrationEvent::query()->count());
+            Queue::assertNothingPushed();
+        });
     }
 
     public function test_malformed_historical_call_cannot_switch_manual_to_automatic(): void
@@ -1193,29 +1192,28 @@ final class B2bLeadFunnelTest extends TestCase
             manualMeetingUrl: 'https://meet.example.test/malformed-mode-switch',
         );
         $call = $lead->salesCall()->firstOrFail();
-        DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
-            'ends_at' => '2026-08-31 15:39:59',
-        ]);
-        $before = $call->fresh()->getRawOriginal();
+        $this->withMalformedPersistedInterval($call, '2026-08-31 15:39:59', function () use ($fixture, $call): void {
+            $before = $call->fresh()->getRawOriginal();
 
-        try {
-            app(SetB2bSalesCallMeetingMode::class)->handle(
-                actor: $fixture['admin'],
-                salesCall: $call,
-                mode: VideoMeetingMode::Automatic,
-                expectedEventVersion: $call->event_version,
-            );
-            self::fail('A malformed historical sales-call interval switched to automatic mode.');
-        } catch (ValidationException $exception) {
-            self::assertSame(
-                'The stored sales-call interval is invalid and cannot be changed to automatic mode.',
-                $exception->errors()['sales_call'][0],
-            );
-        }
+            try {
+                app(SetB2bSalesCallMeetingMode::class)->handle(
+                    actor: $fixture['admin'],
+                    salesCall: $call,
+                    mode: VideoMeetingMode::Automatic,
+                    expectedEventVersion: $call->event_version,
+                );
+                self::fail('A malformed historical sales-call interval switched to automatic mode.');
+            } catch (ValidationException $exception) {
+                self::assertSame(
+                    'The stored sales-call interval is invalid and cannot be changed to automatic mode.',
+                    $exception->errors()['sales_call'][0],
+                );
+            }
 
-        self::assertSame($before, $call->fresh()->getRawOriginal());
-        self::assertSame(0, IntegrationEvent::query()->count());
-        Queue::assertNothingPushed();
+            self::assertSame($before, $call->fresh()->getRawOriginal());
+            self::assertSame(0, IntegrationEvent::query()->count());
+            Queue::assertNothingPushed();
+        });
     }
 
     public function test_malformed_historical_call_cannot_start_provider_reconciliation(): void
@@ -1233,17 +1231,16 @@ final class B2bLeadFunnelTest extends TestCase
         $fixture = $this->fixture();
         $lead = $this->submit($fixture, 'malformed-provider-request');
         $call = $lead->salesCall()->firstOrFail();
-        DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
-            'ends_at' => '2026-08-31 15:00:00.000001',
-        ]);
-        $event = IntegrationEvent::query()->sole();
+        $this->withMalformedPersistedInterval($call, '2026-08-31 15:00:00.000001', function () use ($call): void {
+            $event = IntegrationEvent::query()->sole();
 
-        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+            app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
 
-        $final = $call->fresh();
-        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
-        self::assertSame('sales_call_interval_invalid', $final->provider_error_code);
-        self::assertSame('failed', $event->fresh()->status->value);
+            $final = $call->fresh();
+            self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+            self::assertSame('sales_call_interval_invalid', $final->provider_error_code);
+            self::assertSame('failed', $event->fresh()->status->value);
+        });
     }
 
     public function test_malformed_historical_call_cannot_start_host_launch_provider_io(): void
@@ -1256,18 +1253,16 @@ final class B2bLeadFunnelTest extends TestCase
         app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
         self::assertSame(VideoMeetingSyncStatus::Ready, $call->fresh()->provider_sync_status);
 
-        DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
-            'ends_at' => '2026-08-31 16:00:00.000001',
-        ]);
+        $this->withMalformedPersistedInterval($call, '2026-08-31 16:00:00.000001', function () use ($fixture, $call, $provider): void {
+            try {
+                app(GetB2bSalesCallHostLaunchUrl::class)->handle($fixture['admin'], $call->fresh());
+                self::fail('A host launch request was built from a malformed sales-call interval.');
+            } catch (ValidationException $exception) {
+                self::assertArrayHasKey('provider', $exception->errors());
+            }
 
-        try {
-            app(GetB2bSalesCallHostLaunchUrl::class)->handle($fixture['admin'], $call->fresh());
-            self::fail('A host launch request was built from a malformed sales-call interval.');
-        } catch (ValidationException $exception) {
-            self::assertArrayHasKey('provider', $exception->errors());
-        }
-
-        self::assertSame(0, $provider->hostLaunchCount);
+            self::assertSame(0, $provider->hostLaunchCount);
+        });
     }
 
     public function test_zoom_basic_capability_limits_automatic_duration_without_truncating_business_duration(): void
@@ -3878,6 +3873,40 @@ final class B2bLeadFunnelTest extends TestCase
         ])->save();
 
         return $credential;
+    }
+
+    private function withMalformedPersistedInterval(
+        B2bSalesCall $call,
+        string $endsAt,
+        Closure $callback,
+    ): void {
+        $original = DB::table('b2b_sales_calls')
+            ->where('id', $call->getKey())
+            ->first(['starts_at', 'ends_at']);
+        self::assertNotNull($original);
+
+        $constraintDropped = false;
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE b2b_sales_calls DROP CONSTRAINT IF EXISTS b2b_sales_calls_exact_interval_ck');
+            $constraintDropped = true;
+        }
+
+        try {
+            DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
+                'ends_at' => $endsAt,
+            ]);
+            $callback();
+        } finally {
+            DB::table('b2b_sales_calls')->where('id', $call->getKey())->update([
+                'starts_at' => $original->starts_at,
+                'ends_at' => $original->ends_at,
+            ]);
+            if ($constraintDropped) {
+                DB::statement(
+                    "ALTER TABLE b2b_sales_calls ADD CONSTRAINT b2b_sales_calls_exact_interval_ck CHECK (ends_at > starts_at AND starts_at = date_trunc('minute', starts_at) AND ends_at = date_trunc('minute', ends_at))",
+                );
+            }
+        }
     }
 
     private function setPortalClient(Client $client): void
