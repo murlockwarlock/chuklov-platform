@@ -47,7 +47,6 @@ final class B2bQueueRedisContractTest extends TestCase
         }
 
         config()->set('queue.connections.redis.connection', 'cache');
-        Queue::purge('redis');
 
         $queue = Queue::connection('redis');
         self::assertInstanceOf(RedisQueue::class, $queue);
