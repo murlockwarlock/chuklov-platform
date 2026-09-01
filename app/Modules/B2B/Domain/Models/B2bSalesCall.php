@@ -36,6 +36,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $provider_name
  * @property string|null $provider_account_id
  * @property string|null $provider_host_user_id
+ * @property string|null $provider_recreate_account_id
+ * @property string|null $provider_recreate_host_user_id
  * @property string|null $provider_meeting_id
  * @property string|null $provider_meeting_uuid
  * @property string|null $provider_join_url
@@ -148,12 +150,17 @@ class B2bSalesCall extends Model
 
     public function hasIncompleteProviderAccountAffinity(): bool
     {
-        $accountId = $this->getAttribute('provider_account_id');
-        $hostUserId = $this->getAttribute('provider_host_user_id');
-        $hasAccountId = is_string($accountId) && trim($accountId) !== '';
-        $hasHostUserId = is_string($hostUserId) && trim($hostUserId) !== '';
+        return $this->hasIncompleteProviderAffinity('provider_account_id', 'provider_host_user_id');
+    }
 
-        return $hasAccountId !== $hasHostUserId;
+    public function providerRecreateAccountAffinity(): ?ProviderAccountAffinity
+    {
+        return $this->providerAffinity('provider_recreate_account_id', 'provider_recreate_host_user_id');
+    }
+
+    public function hasIncompleteProviderRecreateAffinity(): bool
+    {
+        return $this->hasIncompleteProviderAffinity('provider_recreate_account_id', 'provider_recreate_host_user_id');
     }
 
     public function hasIncompleteProviderRecreatePair(): bool
@@ -184,6 +191,34 @@ class B2bSalesCall extends Model
             'meeting_id' => $this->provider_recreate_meeting_id,
             'correlation_key' => $this->provider_recreate_correlation_key,
         ];
+    }
+
+    private function providerAffinity(string $accountAttribute, string $hostAttribute): ?ProviderAccountAffinity
+    {
+        $accountId = $this->getAttribute($accountAttribute);
+        $hostUserId = $this->getAttribute($hostAttribute);
+
+        if (! is_string($accountId)
+            || trim($accountId) === ''
+            || ! is_string($hostUserId)
+            || trim($hostUserId) === '') {
+            return null;
+        }
+
+        return new ProviderAccountAffinity(
+            accountId: trim($accountId),
+            hostUserId: trim($hostUserId),
+        );
+    }
+
+    private function hasIncompleteProviderAffinity(string $accountAttribute, string $hostAttribute): bool
+    {
+        $accountId = $this->getAttribute($accountAttribute);
+        $hostUserId = $this->getAttribute($hostAttribute);
+        $hasAccountId = is_string($accountId) && trim($accountId) !== '';
+        $hasHostUserId = is_string($hostUserId) && trim($hostUserId) !== '';
+
+        return $hasAccountId !== $hasHostUserId;
     }
 
     protected function casts(): array

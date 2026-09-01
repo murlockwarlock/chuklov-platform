@@ -95,7 +95,10 @@ class HorizonFoundationTest extends TestCase
         $call = B2bSalesCall::factory()
             ->forLead($lead)
             ->forSpecialist($specialist)
-            ->create();
+            ->create([
+                'provider_account_id' => 'test-account',
+                'provider_host_user_id' => 'test-host',
+            ]);
         $event = app(RecordB2bProviderSyncEvent::class)->handle(
             $organization,
             $call,
@@ -133,7 +136,10 @@ class HorizonFoundationTest extends TestCase
         $call = B2bSalesCall::factory()
             ->forLead($lead)
             ->forSpecialist($specialist)
-            ->create();
+            ->create([
+                'provider_account_id' => 'test-account',
+                'provider_host_user_id' => 'test-host',
+            ]);
         $event = app(RecordB2bProviderSyncEvent::class)->handle(
             $organization,
             $call,

@@ -19,7 +19,7 @@ Phase 1 B2B sales consultations need a durable local schedule and optional Zoom 
 8. B2B sales-call duration is an organization-scoped, authorized CRM setting. It is a positive bounded whole number with no implicit business default; local SalesCall intervals retain the duration captured at creation, while future availability and provider projections use the configured duration.
 9. The `b2b.sales_call.ready` event carries the exact organization, SalesCall version, provider-sync version/generation, correlation key, and meeting mode. Materialization and delivery both revalidate the current scheduled call and current HTTPS client URL before any channel send.
 10. The typed `b2b_specialist_answer` Yes/No value is the sole authority for self-declared massage/bodywork-specialist classification. The legacy `b2b_role` field remains a separate historical/presentation attribute and is not used to infer that answer.
-11. Zoom known-meeting identities carry the non-secret provider principal `account_id + host_user_id`. The active credential must match that principal before known-meeting provider I/O; same-principal client or secret rotation is allowed, while a principal change or missing affinity fails closed into reconciliation. A pending Create with no known remote may bind the current active principal.
+11. Zoom known-meeting identities carry the non-secret provider principal `account_id + host_user_id`. The active credential must match that principal before known-meeting provider I/O; same-principal client or secret rotation is allowed, while a principal change or missing affinity fails closed into reconciliation. Every new automatic generation captures its principal before its durable provider event and provider I/O.
 
 ## Consequences
 

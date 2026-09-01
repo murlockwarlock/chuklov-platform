@@ -75,6 +75,8 @@ final class MarkB2bSalesCallProviderReconciliationRequired
                 'provider_error_code' => $errorCode,
                 'provider_recreate_meeting_id' => null,
                 'provider_recreate_correlation_key' => null,
+                'provider_recreate_account_id' => null,
+                'provider_recreate_host_user_id' => null,
                 'provider_lease_token' => null,
                 'provider_lease_expires_at' => null,
                 'provider_lease_event_id' => null,

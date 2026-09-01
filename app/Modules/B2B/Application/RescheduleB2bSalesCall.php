@@ -31,6 +31,7 @@ final class RescheduleB2bSalesCall
         private readonly OrganizationAuthorizer $authorizer,
         private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly EnsureSpecialistIntervalAvailable $availability,
+        private readonly GetB2bZoomProviderAffinity $zoomAffinity,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -147,11 +148,31 @@ final class RescheduleB2bSalesCall
                         'provider' => 'The current Zoom generation must be reconciled before rescheduling.',
                     ]);
                 }
+                $providerAffinity = null;
+                $providerRecreateAffinity = null;
+                if ($providerOperation === VideoMeetingOperation::Create) {
+                    $providerAffinity = $this->zoomAffinity->handle();
+                } elseif ($providerOperation === VideoMeetingOperation::Recreate) {
+                    $providerRecreateAffinity = $recreatePair === null
+                        ? $locked->providerAccountAffinity()
+                        : $locked->providerRecreateAccountAffinity();
+                    $providerAffinity = $recreatePair === null
+                        ? $this->zoomAffinity->handle()
+                        : $locked->providerAccountAffinity();
+
+                    if ($providerRecreateAffinity === null || $providerAffinity === null) {
+                        throw ValidationException::withMessages([
+                            'provider' => 'The current Zoom generation must be reconciled before rescheduling.',
+                        ]);
+                    }
+                }
                 $locked->forceFill([
                     'starts_at' => $newStartsAt,
                     'ends_at' => $newEndsAt,
                     'schedule_timezone' => $scheduleTimezone,
                     'requested_timezone' => $requestedTimezone ?? $locked->requested_timezone,
+                    'provider_account_id' => $providerAffinity->accountId ?? $locked->provider_account_id,
+                    'provider_host_user_id' => $providerAffinity->hostUserId ?? $locked->provider_host_user_id,
                     'provider_sync_status' => $providerSyncStatus,
                     'provider_operation' => $providerOperation,
                     'provider_recreate_meeting_id' => match ($providerOperation) {
@@ -162,6 +183,16 @@ final class RescheduleB2bSalesCall
                     'provider_recreate_correlation_key' => match ($providerOperation) {
                         VideoMeetingOperation::Recreate => $recreateCorrelationKey,
                         VideoMeetingOperation::Cancel => $recreatePair['correlation_key'] ?? null,
+                        default => null,
+                    },
+                    'provider_recreate_account_id' => match ($providerOperation) {
+                        VideoMeetingOperation::Recreate => $providerRecreateAffinity?->accountId,
+                        VideoMeetingOperation::Cancel => $locked->provider_recreate_account_id,
+                        default => null,
+                    },
+                    'provider_recreate_host_user_id' => match ($providerOperation) {
+                        VideoMeetingOperation::Recreate => $providerRecreateAffinity?->hostUserId,
+                        VideoMeetingOperation::Cancel => $locked->provider_recreate_host_user_id,
                         default => null,
                     },
                     'provider_correlation_key' => $providerCorrelationKey,

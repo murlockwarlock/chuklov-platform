@@ -35,13 +35,13 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
-use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingResult;
 use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
+use App\Modules\B2B\Infrastructure\Video\ZoomVideoMeetingProvider;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
 use App\Modules\Broadcasts\Application\BroadcastSegmentSummary;
@@ -521,6 +521,12 @@ final class B2bLeadFunnelTest extends TestCase
     public function test_portal_b2b_submission_redirects_to_a_durable_scheduled_state_projection(): void
     {
         $fixture = $this->fixture();
+        $this->credential(
+            $fixture['organization'],
+            'zoom',
+            (string) config('b2b.credential_name'),
+            CredentialStatus::Active,
+        );
         $client = $fixture['client'];
         $startsAt = $this->slot()->toIso8601String();
 
@@ -608,7 +614,13 @@ final class B2bLeadFunnelTest extends TestCase
         self::assertNull($automatic->manual_meeting_url);
         self::assertSame(VideoMeetingSyncStatus::Pending, $automatic->provider_sync_status);
         self::assertSame(VideoMeetingOperation::Create, $automatic->provider_operation);
+        self::assertSame('account-'.$fixture['organization']->getKey(), $automatic->provider_account_id);
+        self::assertSame('host-'.$fixture['organization']->getKey(), $automatic->provider_host_user_id);
         $event = IntegrationEvent::query()->sole();
+        self::assertSame('account-'.$fixture['organization']->getKey(), $event->payload['provider_account_id']);
+        self::assertSame('host-'.$fixture['organization']->getKey(), $event->payload['provider_host_user_id']);
+        self::assertNull($event->payload['provider_recreate_account_id']);
+        self::assertNull($event->payload['provider_recreate_host_user_id']);
 
         Queue::assertPushedOn(
             (string) config('b2b.queue'),
@@ -822,14 +834,27 @@ final class B2bLeadFunnelTest extends TestCase
         $fixture = $this->fixture();
         $lead = $this->submit($fixture, 'provider-principal-persistence');
         $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $expectedAccount = 'account-'.$fixture['organization']->getKey();
+        $expectedHost = 'host-'.$fixture['organization']->getKey();
 
-        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        self::assertSame($expectedAccount, $call->provider_account_id);
+        self::assertSame($expectedHost, $call->provider_host_user_id);
+        self::assertSame($expectedAccount, $event->payload['provider_account_id']);
+        self::assertSame($expectedHost, $event->payload['provider_host_user_id']);
+        foreach (['client_secret', 'access_token', 'credential', 'credentials', 'credential_json'] as $secretKey) {
+            self::assertArrayNotHasKey($secretKey, $event->payload);
+            self::assertArrayNotHasKey($secretKey, $call->getAttributes());
+        }
+        self::assertSame(0, $provider->createCount);
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
 
         $ready = $call->fresh();
-        self::assertSame('test-account', $ready->provider_account_id);
-        self::assertSame('test-host', $ready->provider_host_user_id);
-        self::assertSame('test-account', $ready->providerIdentity()?->providerAccountAffinity?->accountId);
-        self::assertSame('test-host', $ready->providerIdentity()?->providerAccountAffinity?->hostUserId);
+        self::assertSame($expectedAccount, $ready->provider_account_id);
+        self::assertSame($expectedHost, $ready->provider_host_user_id);
+        self::assertSame($expectedAccount, $ready->providerIdentity()?->providerAccountAffinity?->accountId);
+        self::assertSame($expectedHost, $ready->providerIdentity()?->providerAccountAffinity?->hostUserId);
 
         app(RescheduleB2bSalesCall::class)->handle(
             actor: $fixture['admin'],
@@ -840,10 +865,251 @@ final class B2bLeadFunnelTest extends TestCase
         );
 
         $event = IntegrationEvent::query()->latest('id')->firstOrFail();
-        self::assertSame('test-account', $event->payload['provider_account_id']);
-        self::assertSame('test-host', $event->payload['provider_host_user_id']);
-        self::assertArrayNotHasKey('client_secret', $event->payload);
-        self::assertArrayNotHasKey('access_token', $event->payload);
+        self::assertSame($expectedAccount, $event->payload['provider_account_id']);
+        self::assertSame($expectedHost, $event->payload['provider_host_user_id']);
+        self::assertNull($event->payload['provider_recreate_account_id']);
+        self::assertNull($event->payload['provider_recreate_host_user_id']);
+        foreach (['client_secret', 'access_token', 'credential', 'credentials', 'credential_json'] as $secretKey) {
+            self::assertArrayNotHasKey($secretKey, $event->payload);
+            self::assertArrayNotHasKey($secretKey, $ready->getAttributes());
+        }
+    }
+
+    public function test_initial_automatic_create_fails_closed_without_http_after_an_account_switch(): void
+    {
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'initial-account-switch');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $this->updateZoomCredential($fixture['organization'], [
+            'account_id' => 'account-switched',
+        ]);
+        Http::fake();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $final->provider_operation);
+        self::assertSame('zoom_provider_affinity_mismatch', $final->provider_error_code);
+        self::assertSame('failed', $event->fresh()->status->value);
+        Http::assertNothingSent();
+    }
+
+    public function test_initial_automatic_create_fails_closed_without_http_after_a_host_switch(): void
+    {
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'initial-host-switch');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $this->updateZoomCredential($fixture['organization'], [
+            'host_user_id' => 'host-switched',
+        ]);
+        Http::fake();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $final->provider_operation);
+        self::assertSame('zoom_provider_affinity_mismatch', $final->provider_error_code);
+        self::assertSame('failed', $event->fresh()->status->value);
+        Http::assertNothingSent();
+    }
+
+    public function test_initial_automatic_create_uses_current_secrets_after_same_principal_rotation(): void
+    {
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'initial-same-principal-rotation');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $this->updateZoomCredential($fixture['organization'], [
+            'client_id' => 'client-rotated',
+            'client_secret' => 'secret-rotated',
+        ]);
+        Http::fake(function (Request $request) use ($call) {
+            if ($request->url() === (string) config('b2b.zoom.oauth_url')) {
+                return Http::response(['access_token' => 'rotated-token'], 200);
+            }
+
+            if ($request->method() === 'GET' && str_contains($request->url(), '/users/')) {
+                return Http::response(['meetings' => [], 'next_page_token' => ''], 200);
+            }
+
+            if ($request->method() === 'POST' && str_ends_with($request->url(), '/meetings')) {
+                return Http::response([
+                    'id' => 123456,
+                    'uuid' => 'meeting-uuid',
+                    'agenda' => 'CHUKLOV-B2B:'.$call->provider_correlation_key,
+                    'start_time' => '2026-08-31T15:00:00Z',
+                    'duration' => 60,
+                    'timezone' => 'UTC',
+                    'join_url' => 'https://zoom.us/j/123456',
+                ], 201);
+            }
+
+            return Http::response([], 404);
+        });
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::Ready, $final->provider_sync_status);
+        self::assertSame('account-'.$fixture['organization']->getKey(), $final->provider_account_id);
+        self::assertSame('host-'.$fixture['organization']->getKey(), $final->provider_host_user_id);
+        Http::assertSent(fn (Request $request): bool => $request->url() === (string) config('b2b.zoom.oauth_url')
+            && $request->hasHeader('Authorization', 'Basic '.base64_encode('client-rotated:secret-rotated')));
+    }
+
+    public function test_recreate_snapshots_old_and_new_provider_affinity_before_sync(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'recreate-affinity-snapshot');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $oldMeetingId = $ready->provider_meeting_id;
+        $oldCorrelationKey = $ready->provider_correlation_key;
+        $this->updateZoomCredential($fixture['organization'], [
+            'account_id' => 'account-new',
+            'host_user_id' => 'host-new',
+        ]);
+
+        $recreated = app(RecreateB2bSalesCallMeeting::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            expectedEventVersion: $ready->event_version,
+        );
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+
+        self::assertSame($oldMeetingId, $recreated->provider_recreate_meeting_id);
+        self::assertSame($oldCorrelationKey, $recreated->provider_recreate_correlation_key);
+        self::assertSame('account-'.$fixture['organization']->getKey(), $recreated->provider_recreate_account_id);
+        self::assertSame('host-'.$fixture['organization']->getKey(), $recreated->provider_recreate_host_user_id);
+        self::assertSame('account-new', $recreated->provider_account_id);
+        self::assertSame('host-new', $recreated->provider_host_user_id);
+        self::assertSame($recreated->provider_recreate_account_id, $event->payload['provider_recreate_account_id']);
+        self::assertSame($recreated->provider_recreate_host_user_id, $event->payload['provider_recreate_host_user_id']);
+        self::assertSame($recreated->provider_account_id, $event->payload['provider_account_id']);
+        self::assertSame($recreated->provider_host_user_id, $event->payload['provider_host_user_id']);
+        foreach (['client_secret', 'access_token', 'credential', 'credentials', 'credential_json'] as $secretKey) {
+            self::assertArrayNotHasKey($secretKey, $event->payload);
+        }
+    }
+
+    public function test_recreate_old_principal_mismatch_fails_closed_without_http_or_new_create(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'recreate-old-principal-mismatch');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $this->updateZoomCredential($fixture['organization'], [
+            'account_id' => 'account-new',
+            'host_user_id' => 'host-new',
+        ]);
+        $recreated = app(RecreateB2bSalesCallMeeting::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            expectedEventVersion: $ready->event_version,
+        );
+        $event = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $this->app->instance(VideoMeetingProvider::class, app(ZoomVideoMeetingProvider::class));
+        Http::fake();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $recreated->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Recreate, $final->provider_operation);
+        self::assertSame('zoom_provider_affinity_mismatch', $final->provider_error_code);
+        self::assertSame(2, IntegrationEvent::query()->count());
+        self::assertSame('failed', $event->fresh()->status->value);
+        Http::assertNothingSent();
+    }
+
+    public function test_recreate_create_fails_closed_without_http_after_a_second_principal_switch(): void
+    {
+        $provider = new FakeVideoMeetingProvider;
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'recreate-create-second-switch');
+        $call = $lead->salesCall()->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle(IntegrationEvent::query()->sole()->getKey());
+        $ready = $call->fresh();
+        $this->updateZoomCredential($fixture['organization'], [
+            'account_id' => 'account-new',
+            'host_user_id' => 'host-new',
+        ]);
+        app(RecreateB2bSalesCallMeeting::class)->handle(
+            actor: $fixture['admin'],
+            salesCall: $ready,
+            expectedEventVersion: $ready->event_version,
+        );
+        $recreateEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        app(SyncB2bSalesCallProvider::class)->handle($recreateEvent->getKey());
+        $createEvent = IntegrationEvent::query()->latest('id')->firstOrFail();
+        $transitioned = $call->fresh();
+        self::assertSame(VideoMeetingOperation::Create, $transitioned->provider_operation);
+        self::assertSame('account-new', $transitioned->provider_account_id);
+        self::assertSame('host-new', $transitioned->provider_host_user_id);
+        self::assertNull($transitioned->provider_recreate_account_id);
+        self::assertNull($transitioned->provider_recreate_host_user_id);
+
+        $this->app->instance(VideoMeetingProvider::class, app(ZoomVideoMeetingProvider::class));
+        $this->updateZoomCredential($fixture['organization'], [
+            'account_id' => 'account-second-switch',
+            'host_user_id' => 'host-second-switch',
+        ]);
+        Http::fake();
+
+        app(SyncB2bSalesCallProvider::class)->handle($createEvent->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame(VideoMeetingOperation::Create, $final->provider_operation);
+        self::assertSame('zoom_provider_affinity_mismatch', $final->provider_error_code);
+        self::assertSame('failed', $createEvent->fresh()->status->value);
+        Http::assertNothingSent();
+    }
+
+    public function test_legacy_unbound_provider_generation_fails_closed_without_inference_or_http(): void
+    {
+        $provider = Mockery::mock(VideoMeetingProvider::class);
+        $provider->shouldReceive('name')->andReturn('zoom');
+        $provider->shouldNotReceive('createMeeting');
+        $provider->shouldNotReceive('findMeeting');
+        $provider->shouldNotReceive('getMeeting');
+        $provider->shouldNotReceive('updateMeeting');
+        $provider->shouldNotReceive('cancelMeeting');
+        $provider->shouldNotReceive('obtainHostLaunchUrl');
+        $this->app->instance(VideoMeetingProvider::class, $provider);
+        $fixture = $this->fixture();
+        $lead = $this->submit($fixture, 'legacy-unbound-provider-generation');
+        $call = $lead->salesCall()->firstOrFail();
+        $event = IntegrationEvent::query()->sole();
+        $call->forceFill([
+            'provider_account_id' => null,
+            'provider_host_user_id' => null,
+        ])->save();
+        $payload = $event->payload;
+        foreach (['provider_account_id', 'provider_host_user_id', 'provider_recreate_account_id', 'provider_recreate_host_user_id'] as $key) {
+            unset($payload[$key]);
+        }
+        $event->forceFill(['payload' => $payload])->save();
+        Http::fake();
+
+        app(SyncB2bSalesCallProvider::class)->handle($event->getKey());
+
+        $final = $call->fresh();
+        self::assertSame(VideoMeetingSyncStatus::ReconciliationRequired, $final->provider_sync_status);
+        self::assertSame('zoom_provider_affinity_missing', $final->provider_error_code);
+        self::assertSame('failed', $event->fresh()->status->value);
+        Http::assertNothingSent();
     }
 
     public function test_retry_is_idempotent_but_a_later_submission_after_cancellation_is_allowed(): void
@@ -1595,6 +1861,12 @@ final class B2bLeadFunnelTest extends TestCase
         $fixture = $this->fixture(
             specialistTimezone: 'America/New_York',
             clientTimezone: 'America/New_York',
+        );
+        $this->credential(
+            $fixture['organization'],
+            'zoom',
+            (string) config('b2b.credential_name'),
+            CredentialStatus::Active,
         );
         app(SetSpecialistWorkingHours::class)->handle($fixture['admin'], $fixture['specialist'], [[
             'weekday' => 7,
@@ -3809,6 +4081,20 @@ final class B2bLeadFunnelTest extends TestCase
         VideoMeetingMode $meetingMode = VideoMeetingMode::Automatic,
         ?string $manualMeetingUrl = null,
     ): B2bLead {
+        $this->setOrganization($fixture['organization']);
+        if (! OrganizationCredential::query()
+            ->where('organization_id', $fixture['organization']->getKey())
+            ->where('provider', 'zoom')
+            ->where('credential_name', (string) config('b2b.credential_name'))
+            ->exists()) {
+            $this->credential(
+                $fixture['organization'],
+                'zoom',
+                (string) config('b2b.credential_name'),
+                CredentialStatus::Active,
+            );
+        }
+
         return app(SubmitB2bLead::class)->handle(
             actor: $fixture['client'],
             client: $fixture['client'],
@@ -3905,6 +4191,21 @@ final class B2bLeadFunnelTest extends TestCase
         ])->save();
 
         return $credential;
+    }
+
+    /** @param array<string, string> $overrides */
+    private function updateZoomCredential(Organization $organization, array $overrides): OrganizationCredential
+    {
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('provider', 'zoom')
+            ->where('credential_name', (string) config('b2b.credential_name'))
+            ->firstOrFail();
+        $credential->forceFill([
+            'credentials' => [...$credential->credentials, ...$overrides],
+        ])->save();
+
+        return $credential->refresh();
     }
 
     private function withMalformedPersistedInterval(
@@ -4035,10 +4336,7 @@ final class FakeVideoMeetingProvider implements VideoMeetingProvider
         $identity = new VideoMeetingIdentity(
             meetingId: 'zoom-'.$this->createCount,
             meetingUuid: 'uuid-'.$this->createCount,
-            providerAccountAffinity: new ProviderAccountAffinity(
-                accountId: 'test-account',
-                hostUserId: 'test-host',
-            ),
+            providerAccountAffinity: $request->providerAccountAffinity,
         );
         $result = new VideoMeetingResult(
             identity: $identity,

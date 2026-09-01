@@ -4,6 +4,7 @@ namespace App\Modules\B2B\Application;
 
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\Integration\Application\RecordIntegrationEvent;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
@@ -12,6 +13,7 @@ use App\Modules\Integration\Domain\ValueObjects\IntegrationEventData;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class RecordB2bProviderSyncEvent
 {
@@ -22,6 +24,14 @@ final class RecordB2bProviderSyncEvent
         B2bSalesCall $salesCall,
         VideoMeetingOperation $operation,
     ): IntegrationEvent {
+        if (! $salesCall->providerAccountAffinity() instanceof ProviderAccountAffinity
+            || ($operation === VideoMeetingOperation::Recreate
+                && ! $salesCall->providerRecreateAccountAffinity() instanceof ProviderAccountAffinity)) {
+            throw ValidationException::withMessages([
+                'provider' => 'The provider generation affinity is incomplete and must be reconciled before recording the event.',
+            ]);
+        }
+
         $version = (int) $salesCall->provider_sync_version;
         $event = $this->events->handle(
             organization: $organization,
@@ -40,6 +50,8 @@ final class RecordB2bProviderSyncEvent
                     'provider' => (string) ($salesCall->provider_name ?? 'zoom'),
                     'provider_account_id' => $salesCall->provider_account_id,
                     'provider_host_user_id' => $salesCall->provider_host_user_id,
+                    'provider_recreate_account_id' => $salesCall->provider_recreate_account_id,
+                    'provider_recreate_host_user_id' => $salesCall->provider_recreate_host_user_id,
                     'provider_correlation_key' => $salesCall->provider_correlation_key,
                     'provider_recreate_meeting_id' => $salesCall->provider_recreate_meeting_id,
                     'provider_recreate_correlation_key' => $salesCall->provider_recreate_correlation_key,

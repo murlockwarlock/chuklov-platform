@@ -39,6 +39,7 @@ final class SubmitB2bLead
         private readonly EnsureSpecialistIntervalAvailable $availability,
         private readonly GetB2bSalesCallDuration $duration,
         private readonly GetB2bZoomHostCapability $zoomCapability,
+        private readonly GetB2bZoomProviderAffinity $zoomAffinity,
         private readonly GetClientB2bSpecialistAnswer $specialistAnswer,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
@@ -182,6 +183,10 @@ final class SubmitB2bLead
                     ]);
                 }
 
+                $providerAffinity = $meetingMode === VideoMeetingMode::Automatic
+                    ? $this->zoomAffinity->handle()
+                    : null;
+
                 $requestedEnd = $requestedStart->addMinutes($durationMinutes);
                 if (B2bSalesCallDuration::between($requestedStart, $requestedEnd)->minutes !== $durationMinutes) {
                     throw ValidationException::withMessages([
@@ -213,8 +218,8 @@ final class SubmitB2bLead
                     'meeting_mode' => $meetingMode,
                     'manual_meeting_url' => $manualMeetingUrl,
                     'provider_name' => $meetingMode === VideoMeetingMode::Automatic ? 'zoom' : null,
-                    'provider_account_id' => null,
-                    'provider_host_user_id' => null,
+                    'provider_account_id' => $providerAffinity?->accountId,
+                    'provider_host_user_id' => $providerAffinity?->hostUserId,
                     'provider_sync_status' => $meetingMode === VideoMeetingMode::Automatic
                         ? VideoMeetingSyncStatus::Pending
                         : VideoMeetingSyncStatus::NotRequired,

@@ -88,6 +88,18 @@ final class RetryB2bSalesCallProvider
                     'provider' => 'The current Zoom generation must be reconciled before retrying.',
                 ]);
             }
+            if ($operation === VideoMeetingOperation::Create && $locked->providerAccountAffinity() === null) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The provider generation affinity is incomplete and must be reconciled before retrying.',
+                ]);
+            }
+            if ($operation === VideoMeetingOperation::Recreate
+                && ($locked->providerAccountAffinity() === null
+                    || $locked->providerRecreateAccountAffinity() === null)) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The provider recreation affinity is incomplete and must be reconciled before retrying.',
+                ]);
+            }
             $locked->forceFill([
                 'provider_sync_status' => $locked->provider_sync_status === VideoMeetingSyncStatus::ReconciliationRequired
                     ? VideoMeetingSyncStatus::ReconciliationRequired
@@ -103,6 +115,14 @@ final class RetryB2bSalesCallProvider
                 'provider_recreate_correlation_key' => match ($operation) {
                     VideoMeetingOperation::Recreate => $recreateCorrelationKey,
                     VideoMeetingOperation::Cancel => $recreatePair['correlation_key'] ?? null,
+                    default => null,
+                },
+                'provider_recreate_account_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate, VideoMeetingOperation::Cancel => $locked->provider_recreate_account_id,
+                    default => null,
+                },
+                'provider_recreate_host_user_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate, VideoMeetingOperation::Cancel => $locked->provider_recreate_host_user_id,
                     default => null,
                 },
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,

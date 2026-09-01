@@ -33,6 +33,8 @@ class B2bSalesCallFactory extends Factory
             'provider_name' => 'zoom',
             'provider_account_id' => null,
             'provider_host_user_id' => null,
+            'provider_recreate_account_id' => null,
+            'provider_recreate_host_user_id' => null,
             'provider_meeting_id' => null,
             'provider_meeting_uuid' => null,
             'provider_join_url' => null,

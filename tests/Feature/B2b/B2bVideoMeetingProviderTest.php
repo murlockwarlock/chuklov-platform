@@ -169,6 +169,86 @@ final class B2bVideoMeetingProviderTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_zoom_unknown_create_rejects_a_missing_expected_affinity_before_provider_io(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['create' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->createMeeting(
+                $organization,
+                $this->requestWithoutAffinity(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An unknown CREATE started without an expected provider affinity.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_missing', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_zoom_unknown_find_rejects_a_missing_expected_affinity_before_provider_io(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['list' => []]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->requestWithoutAffinity(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An unknown FIND started without an expected provider affinity.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_missing', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_zoom_unknown_create_rejects_a_changed_expected_affinity_before_provider_io(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['create' => $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456')]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->createMeeting(
+                $organization,
+                $this->request(new ProviderAccountAffinity('account-2', 'evgeny@example.test')),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An unknown CREATE started with a different expected provider affinity.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_zoom_unknown_find_rejects_a_changed_expected_affinity_before_provider_io(): void
+    {
+        $organization = $this->organization();
+        $this->fakeZoom(['list' => []]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(new ProviderAccountAffinity('account-2', 'evgeny@example.test')),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('An unknown FIND started with a different expected provider affinity.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_provider_affinity_mismatch', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNothingSent();
+    }
+
     public function test_known_meeting_without_persisted_affinity_fails_closed_before_provider_io(): void
     {
         $organization = $this->organization();
@@ -1352,7 +1432,22 @@ final class B2bVideoMeetingProviderTest extends TestCase
         return $organization;
     }
 
-    private function request(): VideoMeetingRequest
+    private function request(?ProviderAccountAffinity $providerAffinity = null): VideoMeetingRequest
+    {
+        return new VideoMeetingRequest(
+            externalKey: 'opaque-provider-key',
+            startsAt: CarbonImmutable::create(2026, 8, 31, 10, 0, 0, 'UTC'),
+            durationMinutes: 45,
+            timezone: 'Asia/Almaty',
+            topic: 'Chuklov B2B sales call',
+            providerAccountAffinity: $providerAffinity ?? new ProviderAccountAffinity(
+                accountId: 'account-1',
+                hostUserId: 'evgeny@example.test',
+            ),
+        );
+    }
+
+    private function requestWithoutAffinity(): VideoMeetingRequest
     {
         return new VideoMeetingRequest(
             externalKey: 'opaque-provider-key',

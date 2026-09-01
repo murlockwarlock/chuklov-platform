@@ -22,6 +22,7 @@ final class RecreateB2bSalesCallMeeting
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly B2bProviderMutationGuard $providerMutationGuard,
+        private readonly GetB2bZoomProviderAffinity $zoomAffinity,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -67,11 +68,22 @@ final class RecreateB2bSalesCallMeeting
                     'provider' => 'The current Zoom generation must be reconciled before the meeting can be recreated.',
                 ]);
             }
+            $currentAffinity = $locked->providerAccountAffinity();
+            if ($currentAffinity === null) {
+                throw ValidationException::withMessages([
+                    'provider' => 'The current Zoom generation must be reconciled before the meeting can be recreated.',
+                ]);
+            }
+            $providerAffinity = $this->zoomAffinity->handle();
             $locked->forceFill([
                 'provider_sync_status' => VideoMeetingSyncStatus::Pending,
                 'provider_operation' => VideoMeetingOperation::Recreate,
                 'provider_recreate_meeting_id' => $currentIdentity->meetingId,
                 'provider_recreate_correlation_key' => $locked->provider_correlation_key,
+                'provider_recreate_account_id' => $currentAffinity->accountId,
+                'provider_recreate_host_user_id' => $currentAffinity->hostUserId,
+                'provider_account_id' => $providerAffinity->accountId,
+                'provider_host_user_id' => $providerAffinity->hostUserId,
                 'provider_correlation_key' => bin2hex(random_bytes(16)),
                 'provider_sync_version' => (int) $locked->provider_sync_version + 1,
                 'event_version' => (int) $locked->event_version + 1,

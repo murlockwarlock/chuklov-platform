@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
@@ -240,6 +241,14 @@ final class TelegramMiniAppLaunchTest extends TestCase
             'formats' => ['office', 'online'],
         ]);
         $this->setOrganization($organization);
+        app(SaveB2bZoomConfiguration::class)->handle(
+            actor: $admin,
+            accountId: 'telegram-account',
+            clientId: 'telegram-client',
+            clientSecret: 'telegram-secret',
+            hostUserId: 'telegram-host',
+            enabled: true,
+        );
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
             'enabled' => true,

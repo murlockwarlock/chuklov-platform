@@ -2,7 +2,7 @@
 
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 
-- This bounded candidate starts exactly at `bb03f4140aa92dd7ba61e69fa19885826619466b` and adds the non-secret Zoom provider principal `account_id + host_user_id` to known B2B meeting identity, persistence, and durable sync evidence. Same-principal secret or client rotation remains usable; account, host, missing, or disabled-credential changes fail closed into reconciliation before known-meeting provider I/O, while pending Create may bind the current active principal.
+- This bounded candidate starts exactly at `7e7d4a8e3152c77d0f9e81123ab08edc00900ea4` and adds the non-secret Zoom provider principal `account_id + host_user_id` to known B2B meeting identity, persistence, and durable sync evidence. Same-principal secret or client rotation remains usable; account, host, missing, or disabled-credential changes fail closed into reconciliation before known-meeting provider I/O, while every new automatic generation captures its principal before its durable provider event and provider I/O.
 - Recreate, cancellation, host launch, reconciliation, and event-version fences carry or clear the principal with the meeting generation. No old credential material is retained, and integration payload coverage contains no client secret or access token. Focused B2B tests, scoped Larastan, Pint, PHP syntax checks, and `git diff --check` pass; PostgreSQL integration is `EXISTS — NOT RUN LOCALLY` under the local SQLite PHPUnit configuration. Hosted exact-SHA CI/E2E are required before any deployment or merge; no deployment, merge, PR #23, or M12 work is included.
 
 ## 2026-08-31 — M11D final bounded Recreate and schedule-convergence remediation candidate

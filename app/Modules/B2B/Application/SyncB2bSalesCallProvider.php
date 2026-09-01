@@ -8,6 +8,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationLease;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
@@ -48,15 +49,32 @@ final class SyncB2bSalesCallProvider
         $organization = Organization::query()->findOrFail($lease->organizationId);
         $deadline = $lease->providerDeadline();
 
-        if (! $this->isCurrent($call, $payload, $lease->operation)
+        if (! $this->isCurrentEnvelope($call, $payload, $lease->operation)
             || ($call->status === B2bSalesCallStatus::Cancelled && $lease->operation !== VideoMeetingOperation::Cancel)) {
             $this->markProcessed($lease);
 
             return;
         }
 
+        if (! $this->hasProviderAffinityEvidence($payload, $lease->operation)) {
+            $this->markFailure(
+                $lease,
+                $payload,
+                VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing'),
+            );
+
+            return;
+        }
+
+        if (! $this->isCurrent($call, $payload, $lease->operation)) {
+            $this->markProcessed($lease);
+
+            return;
+        }
+
         try {
-            if ($call->hasIncompleteProviderAccountAffinity()) {
+            if ($call->hasIncompleteProviderAccountAffinity()
+                || $call->hasIncompleteProviderRecreateAffinity()) {
                 throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing');
             }
 
@@ -318,14 +336,14 @@ final class SyncB2bSalesCallProvider
                 'provider_meeting_id' => null,
                 'provider_meeting_uuid' => null,
                 'provider_join_url' => null,
-                'provider_account_id' => null,
-                'provider_host_user_id' => null,
                 'provider_sync_status' => VideoMeetingSyncStatus::Pending,
                 'provider_operation' => VideoMeetingOperation::Create,
                 'provider_synced_at' => null,
                 'provider_error_code' => null,
                 'provider_recreate_meeting_id' => null,
                 'provider_recreate_correlation_key' => null,
+                'provider_recreate_account_id' => null,
+                'provider_recreate_host_user_id' => null,
                 'provider_sync_version' => (int) $call->provider_sync_version + 1,
                 'event_version' => (int) $call->event_version + 1,
                 ...$this->clearLease(),
@@ -481,8 +499,11 @@ final class SyncB2bSalesCallProvider
         return $this->requestForCorrelation($call, $call->provider_correlation_key);
     }
 
-    private function requestForCorrelation(B2bSalesCall $call, mixed $correlationKey): VideoMeetingRequest
-    {
+    private function requestForCorrelation(
+        B2bSalesCall $call,
+        mixed $correlationKey,
+        ?ProviderAccountAffinity $providerAffinity = null,
+    ): VideoMeetingRequest {
         if (! is_string($correlationKey) || trim($correlationKey) === '') {
             throw VideoMeetingException::reconciliationRequired('provider_correlation_missing');
         }
@@ -499,6 +520,7 @@ final class SyncB2bSalesCallProvider
             durationMinutes: $durationMinutes,
             timezone: (string) $call->schedule_timezone,
             topic: (string) config('b2b.zoom.topic'),
+            providerAccountAffinity: $providerAffinity ?? $call->providerAccountAffinity(),
         );
     }
 
@@ -506,10 +528,15 @@ final class SyncB2bSalesCallProvider
     {
         $meetingId = $call->provider_recreate_meeting_id;
         if (is_string($meetingId) && trim($meetingId) !== '') {
+            $providerAffinity = $call->providerRecreateAccountAffinity();
+            if (! $providerAffinity instanceof ProviderAccountAffinity) {
+                throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing');
+            }
+
             return new VideoMeetingIdentity(
                 meetingId: $meetingId,
                 meetingUuid: $call->provider_meeting_uuid,
-                providerAccountAffinity: $call->providerAccountAffinity(),
+                providerAccountAffinity: $providerAffinity,
             );
         }
 
@@ -520,7 +547,11 @@ final class SyncB2bSalesCallProvider
     {
         if (is_string($call->provider_recreate_correlation_key)
             && trim($call->provider_recreate_correlation_key) !== '') {
-            return $this->requestForCorrelation($call, $call->provider_recreate_correlation_key);
+            return $this->requestForCorrelation(
+                $call,
+                $call->provider_recreate_correlation_key,
+                $call->providerRecreateAccountAffinity(),
+            );
         }
 
         $hasRecreateIdentity = is_string($call->provider_recreate_meeting_id)
@@ -552,6 +583,17 @@ final class SyncB2bSalesCallProvider
         VideoMeetingResult $result,
     ): void {
         $request = $this->request($call);
+        $expectedAffinity = $call->providerAccountAffinity();
+        $resultAffinity = $result->identity->providerAccountAffinity;
+        if (! $expectedAffinity instanceof ProviderAccountAffinity) {
+            throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing');
+        }
+        if (! $resultAffinity instanceof ProviderAccountAffinity) {
+            throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_missing');
+        }
+        if (! $resultAffinity->equals($expectedAffinity)) {
+            throw VideoMeetingException::reconciliationRequired('zoom_provider_affinity_mismatch');
+        }
         $this->assertCorrelatedRemote($result, $request);
         $this->assertRequestSchedule($result, $request);
 
@@ -589,23 +631,61 @@ final class SyncB2bSalesCallProvider
     }
 
     /** @param array<string, mixed> $payload */
+    private function isCurrentEnvelope(B2bSalesCall $call, array $payload, VideoMeetingOperation $operation): bool
+    {
+        return (int) ($payload['organization_id'] ?? 0) === (int) $call->organization_id
+            && (int) ($payload['sales_call_id'] ?? 0) === (int) $call->getKey()
+            && (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
+            && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
+            && $operation === $call->provider_operation;
+    }
+
+    /** @param array<string, mixed> $payload */
     private function isCurrent(B2bSalesCall $call, array $payload, VideoMeetingOperation $operation): bool
     {
         return (int) ($payload['organization_id'] ?? 0) === (int) $call->organization_id
             && (int) ($payload['sales_call_id'] ?? 0) === (int) $call->getKey()
             && (int) ($payload['event_version'] ?? 0) === (int) $call->event_version
             && (int) ($payload['provider_sync_version'] ?? 0) === (int) $call->provider_sync_version
-            && (! array_key_exists('provider_account_id', $payload)
-                || $payload['provider_account_id'] === $call->provider_account_id)
-            && (! array_key_exists('provider_host_user_id', $payload)
-                || $payload['provider_host_user_id'] === $call->provider_host_user_id)
-            && (! array_key_exists('provider_correlation_key', $payload)
-                || $payload['provider_correlation_key'] === $call->provider_correlation_key)
-            && (! array_key_exists('provider_recreate_meeting_id', $payload)
-                || $payload['provider_recreate_meeting_id'] === $call->provider_recreate_meeting_id)
-            && (! array_key_exists('provider_recreate_correlation_key', $payload)
-                || $payload['provider_recreate_correlation_key'] === $call->provider_recreate_correlation_key)
+            && array_key_exists('provider_account_id', $payload)
+            && $payload['provider_account_id'] === $call->provider_account_id
+            && array_key_exists('provider_host_user_id', $payload)
+            && $payload['provider_host_user_id'] === $call->provider_host_user_id
+            && array_key_exists('provider_recreate_account_id', $payload)
+            && $payload['provider_recreate_account_id'] === $call->provider_recreate_account_id
+            && array_key_exists('provider_recreate_host_user_id', $payload)
+            && $payload['provider_recreate_host_user_id'] === $call->provider_recreate_host_user_id
+            && array_key_exists('provider_correlation_key', $payload)
+            && $payload['provider_correlation_key'] === $call->provider_correlation_key
+            && array_key_exists('provider_recreate_meeting_id', $payload)
+            && $payload['provider_recreate_meeting_id'] === $call->provider_recreate_meeting_id
+            && array_key_exists('provider_recreate_correlation_key', $payload)
+            && $payload['provider_recreate_correlation_key'] === $call->provider_recreate_correlation_key
             && $operation === $call->provider_operation;
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function hasProviderAffinityEvidence(array $payload, VideoMeetingOperation $operation): bool
+    {
+        $currentAffinityPresent = is_string($payload['provider_account_id'] ?? null)
+            && trim((string) $payload['provider_account_id']) !== ''
+            && is_string($payload['provider_host_user_id'] ?? null)
+            && trim((string) $payload['provider_host_user_id']) !== '';
+        if (! $currentAffinityPresent) {
+            return false;
+        }
+
+        $hasRecreateGeneration = $operation === VideoMeetingOperation::Recreate
+            || is_string($payload['provider_recreate_meeting_id'] ?? null)
+            || is_string($payload['provider_recreate_correlation_key'] ?? null);
+        if (! $hasRecreateGeneration) {
+            return true;
+        }
+
+        return is_string($payload['provider_recreate_account_id'] ?? null)
+            && trim((string) $payload['provider_recreate_account_id']) !== ''
+            && is_string($payload['provider_recreate_host_user_id'] ?? null)
+            && trim((string) $payload['provider_recreate_host_user_id']) !== '';
     }
 
     /** @param array<string, mixed> $payload */
@@ -640,14 +720,14 @@ final class SyncB2bSalesCallProvider
                     'provider_meeting_id' => $result->identity->meetingId,
                     'provider_meeting_uuid' => $result->identity->meetingUuid,
                     'provider_join_url' => $result->joinUrl,
-                    'provider_account_id' => $result->identity->providerAccountAffinity?->accountId,
-                    'provider_host_user_id' => $result->identity->providerAccountAffinity?->hostUserId,
                     'provider_sync_status' => VideoMeetingSyncStatus::Ready,
                     'provider_operation' => null,
                     'provider_synced_at' => $result->synchronizedAt,
                     'provider_error_code' => null,
                     'provider_recreate_meeting_id' => null,
                     'provider_recreate_correlation_key' => null,
+                    'provider_recreate_account_id' => null,
+                    'provider_recreate_host_user_id' => null,
                     ...$this->clearLease(),
                 ])->save();
                 $this->scenarioEvents->b2bSalesCallReady($call, $result->synchronizedAt);
@@ -715,6 +795,8 @@ final class SyncB2bSalesCallProvider
                     'provider_host_user_id' => null,
                     'provider_recreate_meeting_id' => null,
                     'provider_recreate_correlation_key' => null,
+                    'provider_recreate_account_id' => null,
+                    'provider_recreate_host_user_id' => null,
                     'provider_correlation_key' => $call->meeting_mode === VideoMeetingMode::Manual
                         ? $call->provider_correlation_key
                         : null,

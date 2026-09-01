@@ -29,7 +29,11 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): VideoMeetingResult {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $request->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
 
         try {
@@ -178,7 +182,11 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         VideoMeetingRequest $request,
         ProviderOperationDeadline $deadline,
     ): ?VideoMeetingResult {
-        $credentials = $this->credential($organization);
+        $credentials = $this->credential(
+            organization: $organization,
+            expectedAffinity: $request->providerAccountAffinity,
+            requiresAffinity: true,
+        );
         $token = $this->accessToken($credentials, $deadline);
         $matches = [];
         $nextPageToken = null;

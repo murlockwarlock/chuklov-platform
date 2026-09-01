@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\B2B\Application\B2bProviderLeaseManager;
 use App\Modules\B2B\Application\B2bProviderMutationGuard;
 use App\Modules\B2B\Application\CancelB2bSalesCall;
+use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
@@ -42,6 +43,7 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 use Throwable;
@@ -202,6 +204,63 @@ final class B2bSalesCallPostgresTest extends TestCase
         self::assertStringContainsString('2030-01-07 16:00:00', (string) $stored->ends_at);
     }
 
+    public function test_postgresql_persists_track_b_affinity_without_backfill_or_secret_material(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $specialist] = $this->identityFixture();
+        $legacyLead = B2bLead::factory()->forClient($client)->create([
+            'idempotency_key' => 'postgres-track-b-legacy',
+        ]);
+        $legacyId = DB::table('b2b_sales_calls')->insertGetId(
+            $this->salesCallAttributes($organization, $client, $specialist, $legacyLead),
+        );
+        $trackBLead = B2bLead::factory()->forClient($client)->create([
+            'idempotency_key' => 'postgres-track-b-bound',
+        ]);
+        $trackBId = DB::table('b2b_sales_calls')->insertGetId([
+            ...$this->salesCallAttributes($organization, $client, $specialist, $trackBLead),
+            'meeting_mode' => 'automatic',
+            'provider_name' => 'zoom',
+            'provider_sync_status' => 'pending',
+            'provider_operation' => 'recreate',
+            'provider_account_id' => 'account-new',
+            'provider_host_user_id' => 'host-new',
+            'provider_recreate_account_id' => 'account-old',
+            'provider_recreate_host_user_id' => 'host-old',
+            'provider_meeting_id' => null,
+            'provider_recreate_meeting_id' => 'old-meeting',
+            'provider_recreate_correlation_key' => 'old-correlation',
+            'provider_correlation_key' => 'new-correlation',
+        ]);
+
+        $columns = Schema::getColumnListing('b2b_sales_calls');
+        foreach ([
+            'provider_account_id',
+            'provider_host_user_id',
+            'provider_recreate_account_id',
+            'provider_recreate_host_user_id',
+        ] as $column) {
+            self::assertContains($column, $columns);
+        }
+        foreach (['client_secret', 'access_token', 'credential_json', 'provider_client_secret', 'provider_access_token'] as $secretColumn) {
+            self::assertNotContains($secretColumn, $columns);
+        }
+
+        $legacy = DB::table('b2b_sales_calls')->where('id', $legacyId)->first();
+        self::assertNotNull($legacy);
+        self::assertNull($legacy->provider_account_id);
+        self::assertNull($legacy->provider_host_user_id);
+        self::assertNull($legacy->provider_recreate_account_id);
+        self::assertNull($legacy->provider_recreate_host_user_id);
+
+        $stored = DB::table('b2b_sales_calls')->where('id', $trackBId)->first();
+        self::assertNotNull($stored);
+        self::assertSame('account-new', $stored->provider_account_id);
+        self::assertSame('host-new', $stored->provider_host_user_id);
+        self::assertSame('account-old', $stored->provider_recreate_account_id);
+        self::assertSame('host-old', $stored->provider_recreate_host_user_id);
+    }
+
     public function test_postgresql_specialist_lock_closes_the_booking_vs_b2b_sales_call_race(): void
     {
         $this->requirePostgres();
@@ -253,6 +312,14 @@ final class B2bSalesCallPostgresTest extends TestCase
         $this->requirePostgres();
         $fixture = $this->schedulingFixture();
         $this->setOrganization($fixture['organization']);
+        app(SaveB2bZoomConfiguration::class)->handle(
+            actor: $fixture['admin'],
+            accountId: 'account-'.$fixture['organization']->getKey(),
+            clientId: 'client-'.$fixture['organization']->getKey(),
+            clientSecret: 'secret-'.$fixture['organization']->getKey(),
+            hostUserId: 'host-'.$fixture['organization']->getKey(),
+            enabled: true,
+        );
         app(SetOrganizationSetting::class)->handle(
             $fixture['admin'],
             OrganizationSettingKey::B2bZoomHostLicensed,

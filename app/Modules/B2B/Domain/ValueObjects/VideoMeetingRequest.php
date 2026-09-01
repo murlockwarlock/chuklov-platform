@@ -13,6 +13,7 @@ final readonly class VideoMeetingRequest
         public int $durationMinutes,
         public string $timezone,
         public string $topic,
+        public ?ProviderAccountAffinity $providerAccountAffinity = null,
     ) {
         if ($this->externalKey === '' || $this->durationMinutes < 1 || $this->timezone === '' || $this->topic === '') {
             throw new InvalidArgumentException('The video meeting request is invalid.');

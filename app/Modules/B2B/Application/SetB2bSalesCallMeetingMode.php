@@ -25,6 +25,7 @@ final class SetB2bSalesCallMeetingMode
         private readonly OrganizationAuthorizer $authorizer,
         private readonly B2bProviderMutationGuard $providerMutationGuard,
         private readonly GetB2bZoomHostCapability $zoomCapability,
+        private readonly GetB2bZoomProviderAffinity $zoomAffinity,
         private readonly RecordB2bProviderSyncEvent $providerEvents,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
@@ -144,10 +145,31 @@ final class SetB2bSalesCallMeetingMode
                 ]);
             }
 
+            $providerAffinity = null;
+            $providerRecreateAffinity = null;
+            if ($operation === VideoMeetingOperation::Create) {
+                $providerAffinity = $this->zoomAffinity->handle();
+            } elseif ($operation === VideoMeetingOperation::Recreate) {
+                $providerRecreateAffinity = $recreatePair === null
+                    ? $locked->providerAccountAffinity()
+                    : $locked->providerRecreateAccountAffinity();
+                $providerAffinity = $recreatePair === null
+                    ? $this->zoomAffinity->handle()
+                    : $locked->providerAccountAffinity();
+
+                if ($providerRecreateAffinity === null || $providerAffinity === null) {
+                    throw ValidationException::withMessages([
+                        'provider' => 'The current Zoom generation must be reconciled before changing meeting mode.',
+                    ]);
+                }
+            }
+
             $locked->forceFill([
                 'meeting_mode' => $mode,
                 'manual_meeting_url' => $manualMeetingUrl,
                 'provider_name' => $mode === VideoMeetingMode::Automatic || $requiresProviderCancellation ? 'zoom' : null,
+                'provider_account_id' => $providerAffinity->accountId ?? $locked->provider_account_id,
+                'provider_host_user_id' => $providerAffinity->hostUserId ?? $locked->provider_host_user_id,
                 'provider_sync_status' => $syncStatus,
                 'provider_operation' => $operation,
                 'provider_recreate_meeting_id' => match ($operation) {
@@ -158,6 +180,16 @@ final class SetB2bSalesCallMeetingMode
                 'provider_recreate_correlation_key' => match ($operation) {
                     VideoMeetingOperation::Recreate => $recreateCorrelationKey,
                     VideoMeetingOperation::Cancel => $recreatePair['correlation_key'] ?? null,
+                    default => null,
+                },
+                'provider_recreate_account_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $providerRecreateAffinity?->accountId,
+                    VideoMeetingOperation::Cancel => $locked->provider_recreate_account_id,
+                    default => null,
+                },
+                'provider_recreate_host_user_id' => match ($operation) {
+                    VideoMeetingOperation::Recreate => $providerRecreateAffinity?->hostUserId,
+                    VideoMeetingOperation::Cancel => $locked->provider_recreate_host_user_id,
                     default => null,
                 },
                 'provider_correlation_key' => $providerCorrelationKey,

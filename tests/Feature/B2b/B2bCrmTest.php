@@ -118,7 +118,10 @@ final class B2bCrmTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $lead = B2bLead::factory()->forClient($client)->create();
-        B2bSalesCall::factory()->forLead($lead)->forSpecialist($specialist)->create();
+        B2bSalesCall::factory()->forLead($lead)->forSpecialist($specialist)->create([
+            'provider_account_id' => 'test-account',
+            'provider_host_user_id' => 'test-host',
+        ]);
 
         return [$organization, $admin, $lead];
     }
