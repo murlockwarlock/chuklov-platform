@@ -75,6 +75,163 @@ final class B2bVideoMeetingProviderTest extends TestCase
             && ! str_contains($sent->url(), 'to='));
     }
 
+    #[DataProvider('acceptedStartTimes')]
+    public function test_get_meeting_accepts_strict_zoom_start_time_forms(
+        string $startTime,
+        string $expectedUtc,
+    ): void {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['start_time'] = $startTime;
+        $this->fakeZoom(['get' => $meeting]);
+
+        $result = app(ZoomVideoMeetingProvider::class)->getMeeting(
+            $organization,
+            new VideoMeetingIdentity('123456', 'meeting-uuid'),
+            $this->request(),
+            ProviderOperationDeadline::fromNow(60),
+        );
+
+        self::assertInstanceOf(VideoMeetingResult::class, $result);
+        self::assertInstanceOf(CarbonImmutable::class, $result->startsAt);
+        self::assertSame('UTC', $result->startsAt->getTimezone()->getName());
+        self::assertSame($expectedUtc, $result->startsAt->format('Y-m-d\TH:i:s.u\Z'));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function acceptedStartTimes(): array
+    {
+        return [
+            'uppercase T and Z' => ['2026-08-31T10:00:00Z', '2026-08-31T10:00:00.000000Z'],
+            'lowercase t' => ['2026-08-31t10:00:00Z', '2026-08-31T10:00:00.000000Z'],
+            'lowercase z' => ['2026-08-31T10:00:00z', '2026-08-31T10:00:00.000000Z'],
+            'one fractional digit' => ['2026-08-31T10:00:00.1Z', '2026-08-31T10:00:00.100000Z'],
+            'six fractional digits' => ['2026-08-31T10:00:00.123456Z', '2026-08-31T10:00:00.123456Z'],
+            'positive numeric offset' => ['2026-08-31T15:00:00+05:00', '2026-08-31T10:00:00.000000Z'],
+            'negative numeric offset' => ['2026-08-31T03:30:00-06:30', '2026-08-31T10:00:00.000000Z'],
+            'explicit zero numeric offset' => ['2026-08-31T10:00:00+00:00', '2026-08-31T10:00:00.000000Z'],
+        ];
+    }
+
+    #[DataProvider('rejectedStartTimes')]
+    public function test_get_meeting_rejects_non_canonical_zoom_start_times(string $startTime): void
+    {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['start_time'] = $startTime;
+        $this->fakeZoom(['get' => $meeting]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A non-canonical Zoom start_time was accepted: '.var_export($startTime, true));
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_response_invalid', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    /** @return array<string, array{string}> */
+    public static function rejectedStartTimes(): array
+    {
+        return [
+            'missing timezone' => ['2026-08-31T10:00:00'],
+            'space separator' => ['2026-08-31 10:00:00Z'],
+            'date only' => ['2026-08-31'],
+            'missing seconds' => ['2026-08-31T10:00Z'],
+            'empty fraction' => ['2026-08-31T10:00:00.Z'],
+            'fraction longer than six digits' => ['2026-08-31T10:00:00.1234567Z'],
+            'compact numeric offset' => ['2026-08-31T10:00:00+0500'],
+            'offset without minutes' => ['2026-08-31T10:00:00+05'],
+            'offset hour out of range' => ['2026-08-31T10:00:00+24:00'],
+            'offset minute out of range' => ['2026-08-31T10:00:00+05:60'],
+            'negative zero offset' => ['2026-08-31T10:00:00-00:00'],
+            'invalid calendar date' => ['2026-02-30T10:00:00Z'],
+            'non-leap February 29' => ['2025-02-29T10:00:00Z'],
+            'hour out of range' => ['2026-08-31T24:00:00Z'],
+            'minute out of range' => ['2026-08-31T10:60:00Z'],
+            'second out of range' => ['2026-08-31T10:00:60Z'],
+            'leading whitespace' => [' 2026-08-31T10:00:00Z'],
+            'trailing whitespace' => ['2026-08-31T10:00:00Z '],
+            'embedded newline' => ["2026-08-31T10:00:\n00Z"],
+            'embedded control character' => ["2026-08-31T10:00:\0000Z"],
+            'named timezone' => ['2026-08-31T10:00:00Europe/Moscow'],
+            'timezone abbreviation' => ['2026-08-31T10:00:00UTC'],
+        ];
+    }
+
+    public function test_create_meeting_rejects_a_malformed_start_time_as_reconciliation_required(): void
+    {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['start_time'] = '2026-08-31T10:00:00';
+        $this->fakeZoom(['create' => $meeting]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->createMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A malformed CREATE response returned a VideoMeetingResult.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_response_invalid', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
+    public function test_get_meeting_rejects_a_malformed_start_time_as_reconciliation_required(): void
+    {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['start_time'] = '2026-08-31T10:00:00';
+        $this->fakeZoom(['get' => $meeting]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->getMeeting(
+                $organization,
+                new VideoMeetingIdentity('123456', 'meeting-uuid'),
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A malformed GET response returned a VideoMeetingResult.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_meeting_response_invalid', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+    }
+
+    public function test_correlated_list_meeting_rejects_a_malformed_start_time_without_creating(): void
+    {
+        $organization = $this->organization();
+        $meeting = $this->meeting(123456, 'meeting-uuid', 'https://zoom.us/j/123456');
+        $meeting['start_time'] = '2026-08-31T10:00:00';
+        $this->fakeZoom(['list' => [$meeting]]);
+
+        try {
+            app(ZoomVideoMeetingProvider::class)->findMeeting(
+                $organization,
+                $this->request(),
+                ProviderOperationDeadline::fromNow(60),
+            );
+            self::fail('A correlated malformed LIST response was treated as absence.');
+        } catch (VideoMeetingException $exception) {
+            self::assertSame('zoom_find_incomplete', $exception->safeCode);
+            self::assertTrue($exception->requiresReconciliation);
+        }
+
+        Http::assertNotSent(fn (Request $sent): bool => $sent->method() === 'POST'
+            && str_ends_with($sent->url(), '/meetings'));
+    }
+
     public function test_create_rejects_a_remote_schedule_mismatch(): void
     {
         $organization = $this->organization();

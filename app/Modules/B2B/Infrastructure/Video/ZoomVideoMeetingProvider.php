@@ -392,7 +392,7 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
         }
 
         try {
-            $startsAt = CarbonImmutable::parse($meeting['start_time'])->utc();
+            $startsAt = $this->parseStartTime($meeting['start_time']);
         } catch (\Throwable) {
             throw VideoMeetingException::retryable('zoom_meeting_response_invalid');
         }
@@ -409,6 +409,57 @@ final class ZoomVideoMeetingProvider implements VideoMeetingProvider
             timezone: $meeting['timezone'],
             agenda: $meeting['agenda'],
         );
+    }
+
+    private function parseStartTime(string $value): CarbonImmutable
+    {
+        $matches = [];
+
+        if (preg_match(
+            '/\A(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[Tt](?<time>[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.(?<fraction>[0-9]{1,6}))?(?<offset>Z|z|[+-][0-9]{2}:[0-9]{2})\z/',
+            $value,
+            $matches,
+        ) !== 1) {
+            throw new \InvalidArgumentException;
+        }
+
+        $offset = $matches['offset'];
+        if ($offset === '-00:00') {
+            throw new \InvalidArgumentException;
+        }
+
+        $normalizedOffset = $offset;
+        if ($offset === 'Z' || $offset === 'z') {
+            $normalizedOffset = '+00:00';
+        } elseif ((int) substr($offset, 1, 2) > 23 || (int) substr($offset, 4, 2) > 59) {
+            throw new \InvalidArgumentException;
+        }
+
+        $fraction = $matches['fraction'];
+        $normalizedFraction = str_pad($fraction, 6, '0');
+        $normalized = $matches['date']
+            .'T'.$matches['time']
+            .($fraction === '' ? '' : '.'.$normalizedFraction)
+            .$normalizedOffset;
+        $format = $fraction === '' ? '!Y-m-d\TH:i:sP' : '!Y-m-d\TH:i:s.uP';
+
+        try {
+            $parsed = CarbonImmutable::createFromFormat($format, $normalized);
+        } catch (\Throwable) {
+            throw new \InvalidArgumentException;
+        }
+
+        $errors = CarbonImmutable::getLastErrors();
+        if (! $parsed instanceof CarbonImmutable
+            || (is_array($errors)
+                && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+            || $parsed->format('Y-m-d\TH:i:s') !== $matches['date'].'T'.$matches['time']
+            || $parsed->format('u') !== $normalizedFraction
+            || $parsed->format('P') !== $normalizedOffset) {
+            throw new \InvalidArgumentException;
+        }
+
+        return $parsed->utc();
     }
 
     private function result(Response $response): VideoMeetingResult
