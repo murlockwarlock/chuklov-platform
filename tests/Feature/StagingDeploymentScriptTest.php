@@ -38,8 +38,15 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString("grep -Ec '^QUEUE_CONNECTION='", $script);
         self::assertStringContainsString("grep -Fxq 'QUEUE_CONNECTION=redis'", $script);
         self::assertStringNotContainsString('redis-cli ping', $script);
-        self::assertStringContainsString('ensure_current_redis_volume', $script);
-        self::assertStringContainsString('Expected persistent staging Redis volume is missing; refusing cold initialization.', $script);
+        self::assertStringContainsString('resolve_current_redis_volume', $script);
+        self::assertStringContainsString('redis_container_output', $script);
+        self::assertStringContainsString("docker inspect \"\$container\" --format '{{json .Mounts}}'", $script);
+        self::assertStringContainsString('docker volume inspect "$current_redis_volume"', $script);
+        self::assertStringContainsString('write_redis_volume_override', $script);
+        self::assertStringContainsString('name: "%s"', $script);
+        self::assertStringContainsString('verify_candidate_redis_volume', $script);
+        self::assertStringContainsString('Candidate Redis /data physical volume does not match the current staging volume', $script);
+        self::assertStringNotContainsString('volume="${project}_redis_data"', $script);
         self::assertStringContainsString('ensure_current_dependencies', $script);
         self::assertStringContainsString('up -d --wait postgres redis', $script);
         self::assertStringContainsString('run_queue_contract_probe', $script);
@@ -81,6 +88,109 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
+        self::assertStringNotContainsString('docker volume rm', $script);
+        self::assertStringNotContainsString('redis-cli flush', $script);
+        self::assertStringNotContainsString('FLUSHALL', $script);
+    }
+
+    #[Test]
+    public function redis_volume_preflight_preserves_the_current_physical_volume_and_fails_closed_on_unsafe_evidence(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+
+        self::assertIsString($script);
+
+        $fixtures = [
+            'legacy' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis-data',
+                'expected_success' => true,
+            ],
+            'standard' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis_data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis_data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis_data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => true,
+            ],
+            'no-data-volume' => [
+                'mounts' => [[
+                    'Type' => 'bind',
+                    'Name' => '',
+                    'Source' => '/srv/staging/redis',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis_data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => false,
+            ],
+            'ambiguous-data-volume' => [
+                'mounts' => [
+                    [
+                        'Type' => 'volume',
+                        'Name' => 'staging-test_redis-data-a',
+                        'Source' => '/var/lib/docker/volumes/staging-test_redis-data-a/_data',
+                        'Destination' => '/data',
+                    ],
+                    [
+                        'Type' => 'volume',
+                        'Name' => 'staging-test_redis-data-b',
+                        'Source' => '/var/lib/docker/volumes/staging-test_redis-data-b/_data',
+                        'Destination' => '/data',
+                    ],
+                ],
+                'physical_volume' => 'staging-test_redis-data-a',
+                'candidate_volume' => 'staging-test_redis-data-a',
+                'expected_success' => false,
+            ],
+            'candidate-mismatch' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => false,
+            ],
+        ];
+
+        foreach ($fixtures as $name => $fixture) {
+            $result = $this->runRedisVolumeFixture($script, $fixture['mounts'], $fixture['physical_volume'], $fixture['candidate_volume']);
+
+            if ($fixture['expected_success']) {
+                self::assertSame(0, $result['exit_code'], $name);
+                self::assertStringContainsString('Current Redis /data physical volume: '.$fixture['physical_volume'], $result['output'], $name);
+                self::assertStringContainsString('Candidate Redis /data physical volume: '.$fixture['candidate_volume'], $result['output'], $name);
+                self::assertStringContainsString('name: "'.$fixture['physical_volume'].'"', $result['output'], $name);
+            } else {
+                self::assertNotSame(0, $result['exit_code'], $name);
+            }
+
+            self::assertStringNotContainsString('up ', $result['docker_log'], $name);
+            self::assertStringNotContainsString('volume rm', $result['docker_log'], $name);
+            self::assertStringNotContainsString('flush', strtolower($result['docker_log']), $name);
+        }
+
+        $legacy = $this->runRedisVolumeFixture(
+            $script,
+            $fixtures['legacy']['mounts'],
+            $fixtures['legacy']['physical_volume'],
+            $fixtures['legacy']['candidate_volume'],
+        );
+        self::assertStringContainsString('staging-test_redis-data', $legacy['docker_log']);
+        self::assertStringNotContainsString('staging-test_redis_data', $legacy['docker_log']);
     }
 
     #[Test]
@@ -312,6 +422,136 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('app(RetireKnowledgeSource::class)->handle', $php);
         self::assertStringContainsString('STAGING_SMOKE_USER_ID=', $example);
         self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);
+    }
+
+    private function runRedisVolumeFixture(string $script, array $mounts, string $physicalVolume, string $candidateVolume): array
+    {
+        $filesystem = new Filesystem;
+        $fixtureDirectory = sys_get_temp_dir().'/chuklov-redis-volume-'.bin2hex(random_bytes(8));
+        $filesystem->mkdir($fixtureDirectory.'/bin');
+
+        $mountsFile = $fixtureDirectory.'/mounts.json';
+        $candidateConfigFile = $fixtureDirectory.'/candidate.json';
+        $dockerLog = $fixtureDirectory.'/docker.log';
+        $harness = $fixtureDirectory.'/harness.sh';
+        $docker = $fixtureDirectory.'/bin/docker';
+
+        try {
+            file_put_contents($mountsFile, json_encode($mounts, JSON_THROW_ON_ERROR).PHP_EOL);
+            file_put_contents($candidateConfigFile, json_encode([
+                'volumes' => [
+                    'redis_data' => ['name' => $candidateVolume],
+                ],
+                'services' => [
+                    'redis' => [
+                        'volumes' => [[
+                            'type' => 'volume',
+                            'source' => 'redis_data',
+                            'target' => '/data',
+                        ]],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR).PHP_EOL);
+            file_put_contents($dockerLog, '');
+
+            $harnessContent = <<<'BASH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+project='staging-test'
+environment='/tmp/staging-test.env'
+compose='/tmp/staging-test-compose.yml'
+current_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+current_compose=()
+candidate_compose=()
+current_redis_volume=''
+redis_volume_override=''
+BASH;
+            $harnessContent .= "\n".$this->extractRedisVolumeFunctions($script);
+            $harnessContent .= <<<'BASH'
+
+resolve_current_redis_volume
+write_redis_volume_override
+candidate_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" -f "$redis_volume_override")
+verify_candidate_redis_volume
+printf 'CURRENT=%s\n' "$current_redis_volume"
+printf 'OVERRIDE=%s\n' "$redis_volume_override"
+cat "$redis_volume_override"
+BASH;
+            file_put_contents($harness, $harnessContent);
+
+            file_put_contents($docker, <<<'BASH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' "$*" >> "$TEST_DOCKER_LOG"
+
+if [[ "$1" == 'compose' ]]; then
+    if [[ "$*" == *' ps --status running -q redis'* ]]; then
+        printf '%s\n' 'redis-container'
+        exit 0
+    fi
+
+    if [[ "$*" == *' config --format json'* ]]; then
+        cat "$TEST_CANDIDATE_CONFIG_FILE"
+        exit 0
+    fi
+
+    exit 0
+fi
+
+if [[ "$1" == 'inspect' && "${2:-}" == 'redis-container' ]]; then
+    cat "$TEST_MOUNTS_FILE"
+    exit 0
+fi
+
+if [[ "$1" == 'volume' && "${2:-}" == 'inspect' ]]; then
+    if [[ "${3:-}" == "$TEST_PHYSICAL_VOLUME" ]]; then
+        printf '%s\n' '[{}]'
+        exit 0
+    fi
+
+    exit 1
+fi
+
+exit 0
+BASH);
+            chmod($harness, 0755);
+            chmod($docker, 0755);
+
+            $process = new Process(
+                ['bash', $harness],
+                $fixtureDirectory,
+                [
+                    'PATH' => $fixtureDirectory.'/bin:'.(getenv('PATH') ?: '/usr/bin:/bin'),
+                    'TEST_MOUNTS_FILE' => $mountsFile,
+                    'TEST_CANDIDATE_CONFIG_FILE' => $candidateConfigFile,
+                    'TEST_DOCKER_LOG' => $dockerLog,
+                    'TEST_PHYSICAL_VOLUME' => $physicalVolume,
+                ],
+            );
+            $process->run();
+
+            return [
+                'exit_code' => $process->getExitCode(),
+                'output' => $process->getOutput().$process->getErrorOutput(),
+                'docker_log' => file_get_contents($dockerLog) ?: '',
+            ];
+        } finally {
+            $filesystem->remove($fixtureDirectory);
+        }
+    }
+
+    private function extractRedisVolumeFunctions(string $script): string
+    {
+        $start = strpos($script, 'resolve_current_redis_volume() {');
+        $end = $start === false ? false : strpos($script, "\nensure_current_dependencies() {", $start);
+
+        if ($start === false || $end === false) {
+            throw new \RuntimeException('Unable to extract Redis volume preflight functions.');
+        }
+
+        return substr($script, $start, $end - $start);
     }
 
     private function createTrustedDeployCheckout(string $checkout): string
