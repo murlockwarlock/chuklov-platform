@@ -14,11 +14,14 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class HorizonFoundationTest extends TestCase
@@ -29,6 +32,20 @@ class HorizonFoundationTest extends TestCase
     {
         self::assertSame(0, Artisan::call('schedule:list'));
         self::assertStringContainsString('horizon:snapshot', Artisan::output());
+    }
+
+    public function test_b2b_job_retains_redis_connection_after_serialization(): void
+    {
+        $job = (new ProcessB2bProviderSyncEvent(42))
+            ->onQueue('integrations')
+            ->delay(60);
+        $restored = unserialize(serialize($job));
+
+        self::assertInstanceOf(ProcessB2bProviderSyncEvent::class, $restored);
+        self::assertSame('redis', $restored->connection);
+        self::assertSame('integrations', $restored->queue);
+        self::assertSame(42, $restored->integrationEventId);
+        self::assertSame(60, $restored->delay);
     }
 
     public function test_staging_has_a_bounded_horizon_supervisor(): void
@@ -156,6 +173,35 @@ class HorizonFoundationTest extends TestCase
         self::assertSame('b2b.custom', config('b2b.queue'));
     }
 
+    public function test_candidate_config_cache_is_consumed_by_a_fresh_process(): void
+    {
+        $filesystem = new Filesystem;
+        $cacheDirectory = sys_get_temp_dir().'/chuklov-config-cache-'.bin2hex(random_bytes(8));
+        $cachePath = $cacheDirectory.'/config.php';
+        $filesystem->mkdir($cacheDirectory);
+        $environment = [
+            'APP_CONFIG_CACHE' => $cachePath,
+            'B2B_QUEUE' => 'b2b.custom',
+            'QUEUE_CONNECTION' => 'sync',
+        ];
+
+        try {
+            $cache = new Process(['php', 'artisan', 'config:cache', '--no-ansi'], base_path(), $environment);
+            $cache->mustRun();
+
+            $fresh = new Process([
+                'php',
+                '-r',
+                'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); echo json_encode([app()->configurationIsCached(), config("queue.default"), config("b2b.queue"), config("horizon.defaults.supervisor-1.connection"), in_array(config("b2b.queue"), config("horizon.defaults.supervisor-1.queue"), true)]);',
+            ], base_path(), $environment);
+            $fresh->mustRun();
+
+            self::assertSame([true, 'sync', 'b2b.custom', 'redis', true], json_decode(trim($fresh->getOutput()), true, 512, JSON_THROW_ON_ERROR));
+        } finally {
+            $filesystem->remove($cacheDirectory);
+        }
+    }
+
     public function test_every_m11_production_queue_is_consumed_by_the_bounded_supervisor(): void
     {
         $configuration = config('horizon.defaults.supervisor-1');
@@ -194,6 +240,12 @@ class HorizonFoundationTest extends TestCase
             'custom' => ['b2b-custom', 'b2b-custom'],
             'dot' => ['b2b.custom', 'b2b.custom'],
             'underscore' => ['b2b_custom', 'b2b_custom'],
+            'quoted ordinary value' => ['"integrations"', 'integrations'],
+            'quoted true literal' => ['"true"', 'true'],
+            'quoted false literal' => ['"false"', 'false'],
+            'quoted null literal' => ['"null"', 'null'],
+            'quoted empty literal' => ['"empty"', 'empty'],
+            'one character' => ['A', 'A'],
             'maximum length' => [str_repeat('a', 64), str_repeat('a', 64)],
         ];
     }
@@ -202,6 +254,15 @@ class HorizonFoundationTest extends TestCase
     {
         $configurations = [
             'empty' => [''],
+            'true sentinel' => ['true'],
+            'false sentinel' => ['false'],
+            'null sentinel' => ['null'],
+            'empty sentinel' => ['empty'],
+            'parenthesized true sentinel' => ['(true)'],
+            'parenthesized false sentinel' => ['(false)'],
+            'parenthesized null sentinel' => ['(null)'],
+            'parenthesized empty sentinel' => ['(empty)'],
+            'uppercase true sentinel' => ['TRUE'],
             'whitespace only' => ['   '],
             'leading whitespace' => [' integrations'],
             'trailing whitespace' => ['integrations '],
@@ -257,9 +318,12 @@ class HorizonFoundationTest extends TestCase
             unset($_ENV['B2B_QUEUE'], $_SERVER['B2B_QUEUE']);
         }
 
+        Env::enablePutenv();
+
         try {
             return require base_path('config/b2b.php');
         } finally {
+            Env::enablePutenv();
             if ($previousPutenvValue === false) {
                 putenv('B2B_QUEUE');
             } else {

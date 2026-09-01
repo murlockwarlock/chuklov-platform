@@ -117,10 +117,20 @@ health_url="$5"
 expected_host_port="$6"
 archive="$7"
 remote_normalizer="$8"
+queue_probe_script=''
+candidate_build_cache=''
+current_probe_environment=''
+candidate_probe_environment=''
 queue_preflight_cache=''
+staging_network=''
 
 cleanup_remote_transfer_artifacts() {
     rm -f -- "$archive" "$remote_normalizer" || true
+    rm -f -- "$queue_probe_script" || true
+    rm -f -- "$current_probe_environment" "$candidate_probe_environment" || true
+    if [[ -n "$candidate_build_cache" ]]; then
+        rm -rf -- "$candidate_build_cache" || true
+    fi
     if [[ -n "$queue_preflight_cache" ]]; then
         rm -rf -- "$queue_preflight_cache" || true
     fi
@@ -147,19 +157,110 @@ assert_redis_queue_environment() {
     fi
 }
 
-assert_redis_queue_environment
-
-assert_redis_available() {
+compose_service_environment_file() {
+    local compose_file="$1"
+    local service="$2"
     local output
 
-    if ! output="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T redis redis-cli ping < /dev/null 2>&1)" || [[ "$output" != *PONG* ]]; then
-        echo "Configured staging Redis is unavailable." >&2
-        printf '%s\n' "$output" >&2
+    output="$(mktemp)"
+    chmod 0600 "$output"
+    if ! cat "$environment" > "$output"; then
+        rm -f -- "$output"
+        echo "Could not read the staging application environment." >&2
+        return 1
+    fi
+    printf '\n' >> "$output"
+    if ! docker compose --project-name "$project" --env-file "$environment" -f "$compose_file" config --format json 2>/dev/null \
+        | jq -r --arg service "$service" '
+            .services[$service].environment // {}
+            | if type != "object" then error("service environment is not an object") else . end
+            | to_entries
+            | if any(.[]; .value == null) then error("service environment contains an unresolved value") else .[] | "\(.key)=\(.value | tostring)" end
+        ' >> "$output"; then
+        rm -f -- "$output"
+        echo "Could not resolve the staging $service service environment." >&2
+        return 1
+    fi
+
+    printf '%s\n' "$output"
+}
+
+ensure_current_redis_volume() {
+    local volume
+
+    volume="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --format json \
+        | jq -r '.volumes.redis_data.name // empty')"
+    if [[ -z "$volume" ]]; then
+        volume="${project}_redis_data"
+    fi
+
+    if ! docker volume inspect "$volume" > /dev/null 2>&1; then
+        echo "Expected persistent staging Redis volume is missing; refusing cold initialization." >&2
         return 1
     fi
 }
 
-assert_redis_available
+ensure_current_dependencies() {
+    ensure_current_redis_volume
+    docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d postgres redis < /dev/null
+    docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait postgres redis < /dev/null
+}
+
+resolve_staging_network() {
+    local container network label
+    local networks
+
+    container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q redis)"
+    if [[ -z "$container" ]]; then
+        echo "Could not resolve the current staging Redis container." >&2
+        return 1
+    fi
+
+    networks="$(docker inspect "$container" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}')"
+    staging_network=''
+    while IFS= read -r network; do
+        [[ -n "$network" ]] || continue
+        label="$(docker network inspect "$network" --format '{{index .Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+        if [[ "$label" == "$project" ]]; then
+            if [[ -n "$staging_network" ]]; then
+                echo "Current Redis is attached to multiple staging Compose networks." >&2
+                return 1
+            fi
+            staging_network="$network"
+        fi
+    done <<< "$networks"
+
+    if [[ -z "$staging_network" ]]; then
+        echo "Could not resolve the current staging Compose network from Redis." >&2
+        return 1
+    fi
+}
+
+run_queue_contract_probe() {
+    local source="$1"
+    local image="$2"
+    local cache="$3"
+    local probe_environment="$4"
+    local output
+
+    if ! output="$(docker run --rm --network "$staging_network" --env-file "$probe_environment" \
+        --env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php' \
+        -v "$source:/app:ro" \
+        -v "$root/shared/storage:/app/storage:ro" \
+        -v "$cache:/app/bootstrap/cache:ro" \
+        -w /app "$image" php -- < "$queue_probe_script" 2>&1)"; then
+        echo "Laravel queue Redis preflight failed." >&2
+        return 1
+    fi
+
+    output="$(printf '%s\n' "$output" | grep -E '^B2B_QUEUE_PROBE=' | tail -n 1 || true)"
+    if [[ ! "$output" =~ ^B2B_QUEUE_PROBE=\{.*\}$ ]]; then
+        echo "Laravel queue Redis preflight returned no valid probe result." >&2
+        return 1
+    fi
+
+    printf '%s\n' "${output#B2B_QUEUE_PROBE=}"
+}
 
 write_normalized_nftables() {
     local output="$1" nftables_dump loopback_guard_count
@@ -167,7 +268,11 @@ write_normalized_nftables() {
     local -a service_ips=()
 
     for service in postgres redis app horizon scheduler telegram; do
-        container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q "$service")"
+        container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -aq "$service")"
+        if [[ -z "$container" ]]; then
+            echo "Could not resolve the isolated staging $service container." >&2
+            return 1
+        fi
         service_ip="$(docker inspect "$container" --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' | awk 'NF { print; exit }')"
 
         if [[ ! "$service_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
@@ -205,10 +310,41 @@ if [[ -n "$expected_revision" && "$current_revision" != "$expected_revision" ]];
     exit 1
 fi
 
+assert_redis_queue_environment
+
 if [[ "$current_revision" == "$revision" ]]; then
     echo "Revision $revision is already deployed."
     exit 0
 fi
+
+cd "$root"
+docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --quiet
+ensure_current_dependencies
+resolve_staging_network
+
+current_image="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --format json \
+    | jq -er '.services.app.image // empty')"
+current_probe_environment="$(compose_service_environment_file "$compose" app)"
+queue_probe_script="$(mktemp)"
+if ! tar -xOf "$archive" scripts/staging-smoke.php > "$queue_probe_script"; then
+    echo "Candidate queue preflight script is missing from the release archive." >&2
+    exit 1
+fi
+if [[ ! -d "$root/shared/bootstrap-cache" ]]; then
+    echo "Current staging configuration cache directory is missing." >&2
+    exit 1
+fi
+
+current_queue_probe="$(run_queue_contract_probe "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
+current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
+current_pending_work="$(jq -er '
+    if (.counts | type) != "object" then error("missing counts")
+    elif ([.counts.pending, .counts.delayed, .counts.reserved] | all(type == "number" and . >= 0 and floor == .))
+    then (.counts.pending + .counts.delayed + .counts.reserved)
+    else error("invalid counts")
+    end
+' <<< "$current_queue_probe")"
+echo "Current Laravel queue Redis contract verified with $current_pending_work pending B2B work item(s)."
 
 if [[ -e "$release" ]]; then
     if [[ "$release" == "$root/releases/$revision"
@@ -265,10 +401,11 @@ printf '%s\n' "$revision" > "$release/REVISION"
 ln -s /app/storage/app/public "$release/public/storage"
 
 docker build -t "chuklov-staging-app:$revision" -f "$release/docker/php/Dockerfile" "$release"
+candidate_build_cache="$(mktemp -d)"
 docker run --rm --env-file "$environment" \
     -v "$release:/app" \
-    -v "$root/shared/storage:/app/storage" \
-    -v "$root/shared/bootstrap-cache:/app/bootstrap/cache" \
+    -v "$root/shared/storage:/app/storage:ro" \
+    -v "$candidate_build_cache:/app/bootstrap/cache" \
     -w /app "chuklov-staging-app:$revision" \
     composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-scripts
@@ -373,37 +510,41 @@ chmod 0640 "$compose.next"
 docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \
     | jq -e --arg image "chuklov-staging-app:$revision" \
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
+candidate_probe_environment="$(compose_service_environment_file "$compose.next" app)"
 
 verify_queue_contract() {
     queue_preflight_cache="$(mktemp -d)"
-    docker run --rm --env-file "$environment" \
-        -v "$release:/app:ro" \
-        -v "$root/shared/storage:/app/storage:ro" \
-        -v "$queue_preflight_cache:/app/bootstrap/cache" \
-        -w /app "chuklov-staging-app:$revision" \
-        php artisan config:cache --no-ansi < /dev/null
+    local output candidate_queue_probe candidate_queue_fingerprint
 
-    local output
-    if ! output="$(docker run --rm --env-file "$environment" \
+    if ! output="$(docker run --rm --network "$staging_network" --env-file "$candidate_probe_environment" \
+        --env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php' \
         -v "$release:/app:ro" \
         -v "$root/shared/storage:/app/storage:ro" \
         -v "$queue_preflight_cache:/app/bootstrap/cache" \
         -w /app "chuklov-staging-app:$revision" \
-        php artisan tinker --no-ansi --execute='$queue = config("b2b.queue"); $supervisor = config("horizon.defaults.supervisor-1"); if (! app()->configurationIsCached()) { throw new RuntimeException("application configuration is not cached"); } if (config("queue.default") !== "redis") { throw new RuntimeException("queue.default is not redis"); } if (! is_string($queue) || preg_match("/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/", $queue) !== 1) { throw new RuntimeException("B2B queue is not valid"); } if (! is_array($supervisor) || ($supervisor["connection"] ?? null) !== "redis") { throw new RuntimeException("Horizon supervisor connection is not redis"); } $queues = $supervisor["queue"] ?? null; if (! is_array($queues) || ! in_array($queue, $queues, true)) { throw new RuntimeException("B2B queue is absent from Horizon supervisor configuration"); } echo "B2B_QUEUE_PREFLIGHT_OK\n";' < /dev/null 2>&1)"; then
-        echo "Cached B2B queue and Horizon configuration preflight failed." >&2
-        printf '%s\n' "$output" >&2
+        php artisan config:cache --no-ansi < /dev/null 2>&1)"; then
+        echo "Candidate cached configuration generation failed." >&2
+        return 1
+    fi
+    if [[ ! -s "$queue_preflight_cache/config.php" ]]; then
+        echo "Candidate configuration cache was not generated in the disposable cache directory." >&2
         return 1
     fi
 
-    if [[ "$output" != *B2B_QUEUE_PREFLIGHT_OK* ]]; then
-        echo "Cached B2B queue and Horizon configuration preflight returned no success marker." >&2
-        printf '%s\n' "$output" >&2
+    candidate_queue_probe="$(run_queue_contract_probe "$release" "chuklov-staging-app:$revision" "$queue_preflight_cache" "$candidate_probe_environment")"
+    if ! candidate_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$candidate_queue_probe")"; then
+        echo "Candidate Laravel queue Redis preflight returned an invalid physical identity." >&2
+        return 1
+    fi
+
+    if [[ "$current_pending_work" -gt 0 && "$candidate_queue_fingerprint" != "$current_queue_fingerprint" ]]; then
+        echo "Pending B2B work would be stranded by a physical Redis queue identity change." >&2
         return 1
     fi
 
     rm -rf -- "$queue_preflight_cache"
     queue_preflight_cache=''
-    echo "Redis queue, B2B queue, and Horizon configuration preflight passed in a fresh cached application process."
+    echo "Candidate Laravel queue Redis contract and physical identity preflight passed."
 }
 
 verify_queue_contract

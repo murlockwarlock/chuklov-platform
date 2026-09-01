@@ -1,10 +1,13 @@
 <?php
 
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
+use Illuminate\Support\Env;
 
-$b2bQueue = (string) env('B2B_QUEUE', 'integrations');
+$b2bQueue = Env::getRepository()->has('B2B_QUEUE')
+    ? env('B2B_QUEUE')
+    : 'integrations';
 
-if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/', $b2bQueue) !== 1) {
+if (! is_string($b2bQueue) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/', $b2bQueue) !== 1) {
     throw new InvalidArgumentException('B2B_QUEUE must match [A-Za-z0-9][A-Za-z0-9._-]{0,63} without trimming or normalization.');
 }
 

@@ -37,14 +37,24 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('Horizon did not report an active supervisor with workers', $script);
         self::assertStringContainsString("grep -Ec '^QUEUE_CONNECTION='", $script);
         self::assertStringContainsString("grep -Fxq 'QUEUE_CONNECTION=redis'", $script);
-        self::assertStringContainsString('redis-cli ping < /dev/null', $script);
+        self::assertStringNotContainsString('redis-cli ping', $script);
+        self::assertStringContainsString('ensure_current_redis_volume', $script);
+        self::assertStringContainsString('Expected persistent staging Redis volume is missing; refusing cold initialization.', $script);
+        self::assertStringContainsString('ensure_current_dependencies', $script);
+        self::assertStringContainsString('up -d --wait postgres redis', $script);
+        self::assertStringContainsString('run_queue_contract_probe', $script);
+        self::assertStringContainsString('--network "$staging_network"', $script);
+        self::assertStringContainsString("--env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php'", $script);
+        self::assertStringContainsString('compose_service_environment_file', $script);
+        self::assertStringContainsString('--env-file "$probe_environment"', $script);
+        self::assertStringContainsString('current_queue_fingerprint', $script);
+        self::assertStringContainsString('candidate_queue_fingerprint', $script);
+        self::assertStringContainsString('current_pending_work', $script);
+        self::assertStringContainsString('physical Redis queue identity change', $script);
+        self::assertStringContainsString('candidate_build_cache', $script);
+        self::assertStringContainsString('queue_preflight_cache', $script);
         self::assertStringContainsString('php artisan config:cache --no-ansi', $script);
-        self::assertStringContainsString('php artisan tinker --no-ansi --execute=', $script);
-        self::assertStringContainsString('B2B_QUEUE_PREFLIGHT_OK', $script);
-        self::assertStringContainsString('app()->configurationIsCached()', $script);
-        self::assertStringContainsString('config("queue.default") !== "redis"', $script);
-        self::assertStringContainsString('config("horizon.defaults.supervisor-1")', $script);
-        self::assertStringContainsString('B2B queue is absent from Horizon supervisor configuration', $script);
+        self::assertStringNotContainsString('php artisan tinker --no-ansi --execute=', $script);
         self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
@@ -71,6 +81,34 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
+    }
+
+    #[Test]
+    public function queue_preflight_is_before_activation_and_migrations(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+
+        self::assertIsString($script);
+        $noOp = strpos($script, 'if [[ "$current_revision" == "$revision" ]]');
+        $dependencyStart = strpos($script, "\nensure_current_dependencies\nresolve_staging_network");
+        $currentProbe = strpos($script, 'current_queue_probe="$(run_queue_contract_probe');
+        $candidateCache = strpos($script, 'php artisan config:cache --no-ansi');
+        $candidateProbe = strpos($script, 'candidate_queue_probe="$(run_queue_contract_probe');
+        $activation = strpos($script, 'mv "$compose.next" "$compose"');
+        $migration = strpos($script, 'php artisan migrate --force');
+
+        self::assertIsInt($noOp);
+        self::assertIsInt($dependencyStart);
+        self::assertIsInt($currentProbe);
+        self::assertIsInt($candidateCache);
+        self::assertIsInt($candidateProbe);
+        self::assertIsInt($activation);
+        self::assertIsInt($migration);
+        self::assertLessThan($dependencyStart, $noOp);
+        self::assertLessThan($currentProbe, $dependencyStart);
+        self::assertLessThan($activation, $candidateCache);
+        self::assertLessThan($activation, $candidateProbe);
+        self::assertLessThan($migration, $activation);
     }
 
     #[Test]
@@ -249,11 +287,28 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('< "$repository_root/scripts/staging-smoke.php"', $shell);
         self::assertStringNotContainsString('docker cp', $shell);
         self::assertStringContainsString('--deep', $shell);
-        self::assertStringContainsString('app(SupervisorRepository::class)->all()', $php);
+        self::assertStringContainsString('run_php_check app runtime', $shell);
+        self::assertStringContainsString('run_php_check horizon runtime', $shell);
+        self::assertStringContainsString('B2B_QUEUE_PHYSICAL_FINGERPRINT=', $shell);
+        self::assertStringContainsString('application and Horizon resolve different physical queue targets', $shell);
+        self::assertStringContainsString('Queue::connection', $php);
+        self::assertStringContainsString('Redis::connection($target[\'connection\'])', $php);
+        self::assertStringContainsString('ConfigurationUrlParser', $php);
+        self::assertStringContainsString('pendingSize', $php);
+        self::assertStringContainsString('delayedSize', $php);
+        self::assertStringContainsString('reservedSize', $php);
+        self::assertStringContainsString('exactly one active current Horizon master', $php);
+        self::assertStringContainsString('B2B queue has no active worker process pool', $php);
+        self::assertStringContainsString('$supervisorRepository->all()', $php);
         self::assertStringContainsString('configurationIsCached()', $php);
-        self::assertStringContainsString('cached B2B queue is absent from supervisor configuration', $php);
+        self::assertStringContainsString('verifyB2bTransport', $php);
+        self::assertStringContainsString('configured B2B queue is absent from supervisor configuration', $php);
         self::assertStringContainsString('active supervisor connection is not redis', $php);
         self::assertStringContainsString('configured B2B queue is absent from active supervisor', $php);
+        self::assertStringNotContainsString('Redis::connection()->', $php);
+        self::assertStringNotContainsString('dispatch(', $php);
+        self::assertStringNotContainsString('lrange', $php);
+        self::assertStringNotContainsString('zrange', $php);
         self::assertStringContainsString('app(RetireKnowledgeSource::class)->handle', $php);
         self::assertStringContainsString('STAGING_SMOKE_USER_ID=', $example);
         self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);

@@ -83,21 +83,47 @@ ok 'SCHEDULER'
 ok 'TELEGRAM'
 
 run_php_check() {
+    local service="$1"
+    local check="$2"
+
     ssh "${ssh_options[@]}" "$remote" \
-        "${compose_arguments[@]}" exec -T app php -- \
-        "--check=$1" \
+        "${compose_arguments[@]}" exec -T "$service" php -- \
+        "--check=$check" \
         "--user-id=$STAGING_SMOKE_USER_ID" \
         "--client-id=$STAGING_SMOKE_CLIENT_ID" \
         < "$repository_root/scripts/staging-smoke.php"
 }
 
-run_php_check runtime
+app_runtime_output="$(run_php_check app runtime)"
+horizon_runtime_output="$(run_php_check horizon runtime)"
+
+extract_queue_fingerprint() {
+    local output="$1"
+    local fingerprint
+
+    fingerprint="$(grep -E '^B2B_QUEUE_PHYSICAL_FINGERPRINT=[0-9a-f]{64}$' <<< "$output" | tail -n 1 | cut -d= -f2- || true)"
+    if [[ ! "$fingerprint" =~ ^[0-9a-f]{64}$ ]]; then
+        fail 'QUEUE IDENTITY' 'runtime did not return a valid physical fingerprint'
+    fi
+
+    printf '%s\n' "$fingerprint"
+}
+
+app_queue_fingerprint="$(extract_queue_fingerprint "$app_runtime_output")"
+horizon_queue_fingerprint="$(extract_queue_fingerprint "$horizon_runtime_output")"
+if [[ "$app_queue_fingerprint" != "$horizon_queue_fingerprint" ]]; then
+    fail 'QUEUE IDENTITY' 'application and Horizon resolve different physical queue targets'
+fi
+ok 'QUEUE IDENTITY' 'application and Horizon agree'
+ok 'APP RUNTIME'
+ok 'HORIZON RUNTIME'
+
 for check in crm-home clients client-card sessions survey-definitions survey-attempts knowledge-sources knowledge-inspector portal; do
-    run_php_check "$check"
+    run_php_check app "$check"
 done
 
 if [[ "$mode" == "deep" ]]; then
-    run_php_check deep
+    run_php_check app deep
 fi
 
 echo
