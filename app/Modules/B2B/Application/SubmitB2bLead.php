@@ -11,6 +11,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\B2bSalesCallDuration;
 use App\Modules\Broadcasts\Application\GetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Identity\Domain\Models\Client;
@@ -182,6 +183,11 @@ final class SubmitB2bLead
                 }
 
                 $requestedEnd = $requestedStart->addMinutes($durationMinutes);
+                if (B2bSalesCallDuration::between($requestedStart, $requestedEnd)->minutes !== $durationMinutes) {
+                    throw ValidationException::withMessages([
+                        'configuration' => 'B2B sales-call availability is not configured yet. Contact the team.',
+                    ]);
+                }
 
                 $lockedSpecialist = Specialist::query()
                     ->where('organization_id', $organization->getKey())

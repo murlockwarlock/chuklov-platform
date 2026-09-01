@@ -9,6 +9,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\B2B\Domain\ValueObjects\B2bSalesCallDuration;
 use App\Modules\B2B\Domain\ValueObjects\ProviderOperationDeadline;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingRequest;
@@ -20,6 +21,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class GetB2bSalesCallHostLaunchUrl
 {
@@ -178,8 +180,12 @@ final class GetB2bSalesCallHostLaunchUrl
             throw ValidationException::withMessages(['provider' => self::UNAVAILABLE_MESSAGE]);
         }
 
-        $durationMinutes = (int) round($snapshot['starts_at']->diffInMinutes($snapshot['ends_at']));
-        if ($durationMinutes < 1) {
+        try {
+            $durationMinutes = B2bSalesCallDuration::between(
+                $snapshot['starts_at'],
+                $snapshot['ends_at'],
+            )->minutes;
+        } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['provider' => self::UNAVAILABLE_MESSAGE]);
         }
 

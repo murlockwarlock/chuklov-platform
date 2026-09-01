@@ -127,6 +127,81 @@ final class B2bSalesCallPostgresTest extends TestCase
         }
     }
 
+    public function test_postgresql_enforces_exact_whole_minute_b2b_sales_call_intervals(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $specialist] = $this->identityFixture();
+        $lead = B2bLead::factory()->forClient($client)->create([
+            'idempotency_key' => 'postgres-exact-interval',
+        ]);
+        $attributes = $this->salesCallAttributes($organization, $client, $specialist, $lead);
+        $callId = DB::table('b2b_sales_calls')->insertGetId($attributes);
+
+        DB::table('b2b_sales_calls')->where('id', $callId)->update([
+            'ends_at' => '2030-01-07 16:00:00+00',
+        ]);
+        $definition = $this->constraintDefinition('b2b_sales_calls_exact_interval_ck');
+        self::assertStringContainsString('ends_at > starts_at', $definition);
+        self::assertStringContainsString("starts_at = date_trunc('minute'::text, starts_at)", $definition);
+        self::assertStringContainsString("ends_at = date_trunc('minute'::text, ends_at)", $definition);
+
+        $invalidIntervals = [
+            'forty minutes and one second' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 15:40:01+00',
+            ],
+            'thirty-nine minutes and fifty-nine seconds' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 15:39:59+00',
+            ],
+            'start seconds' => [
+                'starts_at' => '2030-01-07 15:00:01+00',
+                'ends_at' => '2030-01-07 16:00:00+00',
+            ],
+            'end seconds' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 16:00:01+00',
+            ],
+            'start microseconds' => [
+                'starts_at' => '2030-01-07 15:00:00.000001+00',
+                'ends_at' => '2030-01-07 16:00:00+00',
+            ],
+            'end microseconds' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 16:00:00.000001+00',
+            ],
+            'thirty seconds' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 15:00:30+00',
+            ],
+            'fifty-nine seconds' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 15:00:59+00',
+            ],
+            'zero duration' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 15:00:00+00',
+            ],
+            'negative duration' => [
+                'starts_at' => '2030-01-07 15:00:00+00',
+                'ends_at' => '2030-01-07 14:59:00+00',
+            ],
+        ];
+
+        foreach ($invalidIntervals as $label => $interval) {
+            try {
+                DB::table('b2b_sales_calls')->where('id', $callId)->update($interval);
+                self::fail("PostgreSQL accepted the invalid B2B interval: {$label}.");
+            } catch (QueryException) {
+                self::assertTrue(true);
+            }
+        }
+
+        $stored = DB::table('b2b_sales_calls')->where('id', $callId)->first();
+        self::assertNotNull($stored);
+        self::assertStringContainsString('2030-01-07 16:00:00', (string) $stored->ends_at);
+    }
+
     public function test_postgresql_specialist_lock_closes_the_booking_vs_b2b_sales_call_race(): void
     {
         $this->requirePostgres();
@@ -362,6 +437,31 @@ final class B2bSalesCallPostgresTest extends TestCase
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
 
         return [$organization, $client, $specialist];
+    }
+
+    private function salesCallAttributes(
+        Organization $organization,
+        Client $client,
+        Specialist $specialist,
+        B2bLead $lead,
+    ): array {
+        return [
+            'organization_id' => $organization->getKey(),
+            'lead_id' => $lead->getKey(),
+            'client_id' => $client->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'status' => 'scheduled',
+            'starts_at' => '2030-01-07 15:00:00+00',
+            'ends_at' => '2030-01-07 15:40:00+00',
+            'schedule_timezone' => 'UTC',
+            'requested_timezone' => 'UTC',
+            'meeting_mode' => 'manual',
+            'provider_sync_status' => 'not_required',
+            'provider_sync_version' => 1,
+            'event_version' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
     }
 
     /** @return array{organization: Organization, admin: User, bookingClient: Client, salesClient: Client, specialist: Specialist, service: Service} */

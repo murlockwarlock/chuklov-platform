@@ -21,6 +21,7 @@ use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 use Throwable;
 
 final class SyncB2bSalesCallProvider
@@ -480,8 +481,9 @@ final class SyncB2bSalesCallProvider
             throw VideoMeetingException::reconciliationRequired('provider_correlation_missing');
         }
 
-        $durationMinutes = (int) round($call->startsAtUtc()->diffInMinutes($call->endsAtUtc()));
-        if ($durationMinutes < 1) {
+        try {
+            $durationMinutes = $call->exactDuration()->minutes;
+        } catch (InvalidArgumentException) {
             throw VideoMeetingException::reconciliationRequired('sales_call_interval_invalid');
         }
 

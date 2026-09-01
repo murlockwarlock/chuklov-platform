@@ -22,6 +22,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class RescheduleB2bSalesCall
 {
@@ -86,6 +87,13 @@ final class RescheduleB2bSalesCall
                     ]);
                 }
                 $recreatePair = $locked->providerRecreatePair();
+                try {
+                    $durationMinutes = $locked->exactDuration()->minutes;
+                } catch (InvalidArgumentException) {
+                    throw ValidationException::withMessages([
+                        'sales_call' => 'The stored sales-call interval is invalid and cannot be rescheduled.',
+                    ]);
+                }
 
                 $specialist = Specialist::query()
                     ->where('organization_id', $organization->getKey())
@@ -97,12 +105,6 @@ final class RescheduleB2bSalesCall
                     ->where('b2b_sales_call_id', $locked->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
-                $durationMinutes = (int) round($locked->startsAtUtc()->diffInMinutes($locked->endsAtUtc()));
-                if ($durationMinutes < 1) {
-                    throw ValidationException::withMessages([
-                        'sales_call' => 'The stored sales-call interval is invalid and cannot be rescheduled.',
-                    ]);
-                }
                 $newEndsAt = $newStartsAt->addMinutes($durationMinutes);
                 $scheduleTimezone = $this->availability->handle(
                     specialist: $specialist,
@@ -217,7 +219,7 @@ final class RescheduleB2bSalesCall
     {
         try {
             return IanaTimezone::from($timezone)->value;
-        } catch (\InvalidArgumentException) {
+        } catch (InvalidArgumentException) {
             throw ValidationException::withMessages(['timezone' => 'The requested timezone must be an IANA timezone.']);
         }
     }

@@ -6,6 +6,7 @@ use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\B2B\Domain\ValueObjects\B2bSalesCallDuration;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -13,6 +14,7 @@ use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Database\Factories\B2bSalesCallFactory;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -93,12 +95,17 @@ class B2bSalesCall extends Model
 
     public function startsAtUtc(): CarbonImmutable
     {
-        return CarbonImmutable::parse((string) $this->getAttribute('starts_at'))->utc();
+        return $this->dateTimeUtc('starts_at');
     }
 
     public function endsAtUtc(): CarbonImmutable
     {
-        return CarbonImmutable::parse((string) $this->getAttribute('ends_at'))->utc();
+        return $this->dateTimeUtc('ends_at');
+    }
+
+    public function exactDuration(): B2bSalesCallDuration
+    {
+        return B2bSalesCallDuration::between($this->startsAtUtc(), $this->endsAtUtc());
     }
 
     public function providerIdentity(): ?VideoMeetingIdentity
@@ -163,6 +170,15 @@ class B2bSalesCall extends Model
             'event_version' => 'integer',
             'provider_lease_event_id' => 'integer',
         ];
+    }
+
+    private function dateTimeUtc(string $attribute): CarbonImmutable
+    {
+        $value = $this->getAttribute($attribute);
+
+        return $value instanceof DateTimeInterface
+            ? CarbonImmutable::instance($value)->utc()
+            : CarbonImmutable::parse((string) $value)->utc();
     }
 
     protected static function newFactory(): B2bSalesCallFactory

@@ -16,6 +16,7 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class SetB2bSalesCallMeetingMode
 {
@@ -78,8 +79,9 @@ final class SetB2bSalesCallMeetingMode
                 return $locked->refresh();
             }
             if ($mode === VideoMeetingMode::Automatic) {
-                $durationMinutes = (int) round($locked->startsAtUtc()->diffInMinutes($locked->endsAtUtc()));
-                if ($durationMinutes < 1) {
+                try {
+                    $durationMinutes = $locked->exactDuration()->minutes;
+                } catch (InvalidArgumentException) {
                     throw ValidationException::withMessages([
                         'sales_call' => 'The stored sales-call interval is invalid and cannot be changed to automatic mode.',
                     ]);
