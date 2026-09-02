@@ -34,12 +34,11 @@ final class ScenarioRuleForm
     {
         return $schema
             ->components([
-                Hidden::make('rule_key'),
-                Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
-                Hidden::make('channel_priority')->default(['telegram']),
-
                 Section::make('Автоматическое сообщение')
                     ->schema([
+                        Hidden::make('rule_key'),
+                        Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
+                        Hidden::make('channel_priority')->default(['telegram']),
                         TextInput::make('name')
                             ->label('Название')
                             ->placeholder('Например, сообщение после визита')

@@ -194,8 +194,8 @@ final class CrmUxRemediationTest extends TestCase
         ]);
         NotificationTemplateVersion::factory()->forTemplate($newer)->create(['body' => 'Новый текст']);
         $timestamp = CarbonImmutable::create(2026, 9, 1, 10, 0, 0, 'UTC');
-        DB::table('notification_templates')->whereKey($older->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
-        DB::table('notification_templates')->whereKey($newer->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
+        DB::table('notification_templates')->where('id', $older->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
+        DB::table('notification_templates')->where('id', $newer->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         $component = Livewire::actingAs($admin)->test(ListNotificationTemplates::class);

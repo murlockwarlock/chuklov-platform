@@ -208,7 +208,7 @@ final class B2bLeadFunnelTest extends TestCase
         ]);
 
         self::assertSame([$fixture['client']->getKey()], $matchingClientIds);
-        self::assertSame('B2B-сегмент специалиста · #Массажист_B2B', $summary);
+        self::assertSame('Будут выбраны клиенты, у которых b2b-сегмент специалиста — Да.', $summary);
     }
 
     public function test_direct_portal_and_telegram_cta_are_available_with_managed_copy(): void

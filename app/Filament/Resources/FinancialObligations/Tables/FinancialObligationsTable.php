@@ -51,14 +51,12 @@ final class FinancialObligationsTable
                     ->label('Оплачено')
                     ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->money(
                         app(FinancePresentation::class)->reconciliation($record)?->displayApplied,
-                    ))
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    )),
                 TextColumn::make('outstanding_summary')
                     ->label('Осталось')
                     ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->money(
                         app(FinancePresentation::class)->reconciliation($record)?->displayOutstanding,
-                    ))
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    )),
                 TextColumn::make('financial_status')
                     ->label('Статус')
                     ->badge()
