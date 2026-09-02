@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
+use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
@@ -224,6 +225,60 @@ final class ClientWorkspaceUxATest extends TestCase
 
         $component->assertSuccessful();
         self::assertCount(0, $component->instance()->getTableRecords());
+    }
+
+    public function test_client_bookings_view_action_renders_booking_details_in_relation(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Booking Client',
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Booking Specialist',
+        ]);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Booking Service',
+        ]);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => 'online',
+                'meeting_url' => 'https://meet.example.test/booking',
+            ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ClientBookingsRelationManager::class, [
+                'ownerRecord' => $client,
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertTableActionExists('view', null, $booking)
+            ->mountTableAction('view', $booking);
+
+        $modalHtml = $component->getMountedActionModalHtml();
+
+        self::assertStringContainsString('Просмотр записи на приём', $modalHtml);
+        self::assertStringContainsString('Информация о приёме', $modalHtml);
+        self::assertStringContainsString('Booking Client', $modalHtml);
+        self::assertStringContainsString('Booking Specialist', $modalHtml);
+        self::assertStringContainsString('Booking Service', $modalHtml);
+        self::assertStringContainsString('https://meet.example.test/booking', $modalHtml);
+    }
+
+    public function test_view_client_header_keeps_secondary_actions_in_the_overflow_group(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+
+        self::assertCount(3, $component->instance()->getCachedHeaderActions());
     }
 
     public function test_view_client_page_renders_successfully(): void

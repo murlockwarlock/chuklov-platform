@@ -125,7 +125,10 @@ class BookingsTable
             ->columns($columns)
             ->filters($filters)
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
+                ViewAction::make()
+                    ->label('Открыть')
+                    ->modalHeading('Просмотр записи на приём')
+                    ->modalWidth('5xl'),
                 ActionGroup::make(BookingLifecycleActions::all())
                     ->label('Действия')
                     ->icon('heroicon-m-ellipsis-vertical')

@@ -79,7 +79,6 @@ class ViewClient extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            $this->marketingConsentActionGroup(),
             EditAction::make()
                 ->label('Редактировать клиента')
                 ->icon('heroicon-o-pencil-square')
@@ -120,6 +119,7 @@ class ViewClient extends ViewRecord
                     );
                 }),
             ActionGroup::make([
+                $this->marketingConsentActionGroup(),
                 $this->assignReferrerAction(),
                 Action::make('companionHistory')
                     ->label('AI-компаньон / История общения')

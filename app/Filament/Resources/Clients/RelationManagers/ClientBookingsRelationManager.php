@@ -2,11 +2,13 @@
 
 namespace App\Filament\Resources\Clients\RelationManagers;
 
+use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Tables\BookingsTable;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Application\ListClientBookingsForCrm;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -15,6 +17,11 @@ final class ClientBookingsRelationManager extends RelationManager
     protected static string $relationship = 'bookings';
 
     protected static ?string $title = 'Записи на приём';
+
+    public function infolist(Schema $schema): Schema
+    {
+        return BookingResource::infolist($schema);
+    }
 
     public function table(Table $table): Table
     {
