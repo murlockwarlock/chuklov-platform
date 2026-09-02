@@ -480,6 +480,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('pendingSize', $php);
         self::assertStringContainsString('delayedSize', $php);
         self::assertStringContainsString('reservedSize', $php);
+        self::assertStringContainsString('instanceof Stringable', $php);
         self::assertStringContainsString('exactly one active current Horizon master', $php);
         self::assertStringContainsString('B2B queue has no active worker process pool', $php);
         self::assertStringContainsString('$supervisorRepository->all()', $php);

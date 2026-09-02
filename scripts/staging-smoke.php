@@ -295,7 +295,11 @@ function queueRedisTarget(): array
 
 function assertRedisPing(mixed $result, string $label): void
 {
-    if ($result === true || (is_string($result) && strtoupper($result) === 'PONG')) {
+    if ($result === true) {
+        return;
+    }
+
+    if ((is_string($result) || $result instanceof Stringable) && strtoupper((string) $result) === 'PONG') {
         return;
     }
 
