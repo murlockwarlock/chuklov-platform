@@ -53,6 +53,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('ensure_current_dependencies', $script);
         self::assertStringContainsString('up -d --wait postgres redis', $script);
         self::assertStringContainsString('run_queue_contract_probe', $script);
+        self::assertStringContainsString('php -- --check="$check" < "$queue_probe_script"', $script);
+        self::assertStringNotContainsString('php -- < "$queue_probe_script"', $script);
         self::assertStringContainsString('--network "$staging_network"', $script);
         self::assertStringContainsString("--env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php'", $script);
         self::assertStringContainsString('compose_service_environment_file', $script);
@@ -244,6 +246,52 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertLessThan($activation, $candidateCache);
         self::assertLessThan($activation, $candidateProbe);
         self::assertLessThan($migration, $activation);
+    }
+
+    #[Test]
+    public function queue_preflight_separates_current_snapshot_from_candidate_contract(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+        $smoke = file_get_contents(base_path('scripts/staging-smoke.php'));
+
+        self::assertIsString($script);
+        self::assertIsString($smoke);
+        self::assertStringContainsString(
+            'current_queue_probe="$(run_queue_contract_probe "queue-snapshot"',
+            $script,
+        );
+        self::assertStringContainsString(
+            'candidate_queue_probe="$(run_queue_contract_probe "queue-contract"',
+            $script,
+        );
+
+        $snapshotStart = strpos($smoke, 'function queueSnapshotCheck(): void');
+        $snapshotEnd = $snapshotStart === false ? false : strpos($smoke, "\nfunction httpCheck", $snapshotStart);
+        $contractStart = strpos($smoke, 'function queueContractCheck(): void');
+
+        self::assertIsInt($snapshotStart);
+        self::assertIsInt($snapshotEnd);
+        self::assertIsInt($contractStart);
+        $snapshotBody = substr($smoke, $snapshotStart, $snapshotEnd - $snapshotStart);
+        $contractBody = substr($smoke, $contractStart, $snapshotStart - $contractStart);
+
+        self::assertStringContainsString('queueContractSnapshot()', $snapshotBody);
+        self::assertStringNotContainsString('verifyB2bTransport()', $snapshotBody);
+        self::assertStringNotContainsString('verifyConfiguredHorizonQueue()', $snapshotBody);
+        self::assertStringContainsString('verifyB2bTransport()', $contractBody);
+        self::assertStringContainsString('verifyConfiguredHorizonQueue()', $contractBody);
+        self::assertStringContainsString("if (\$check === 'queue-snapshot')", $smoke);
+        self::assertStringContainsString("\$check === 'queue-contract'", $smoke);
+        self::assertStringContainsString("'connection' => \$target['connection']", $smoke);
+        self::assertStringContainsString("'queue' => \$target['queue']", $smoke);
+        self::assertStringContainsString("'fingerprint' => \$target['fingerprint']", $smoke);
+        self::assertStringContainsString("'counts' => \$counts", $smoke);
+        self::assertStringContainsString("'total' => array_sum(\$counts)", $smoke);
+        self::assertStringContainsString('configured Laravel Redis connection is unavailable', $smoke);
+        self::assertStringContainsString('Laravel redis queue driver is not Redis', $smoke);
+        self::assertStringContainsString('queue counts are unavailable', $smoke);
+        self::assertStringContainsString('B2B queue is invalid', $smoke);
+        self::assertStringContainsString('Redis host configuration is not resolvable', $smoke);
     }
 
     #[Test]

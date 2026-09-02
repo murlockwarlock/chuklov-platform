@@ -377,10 +377,11 @@ resolve_staging_network() {
 }
 
 run_queue_contract_probe() {
-    local source="$1"
-    local image="$2"
-    local cache="$3"
-    local probe_environment="$4"
+    local check="$1"
+    local source="$2"
+    local image="$3"
+    local cache="$4"
+    local probe_environment="$5"
     local output
 
     if ! output="$(docker run --rm --network "$staging_network" --env-file "$probe_environment" \
@@ -388,7 +389,7 @@ run_queue_contract_probe() {
         -v "$source:/app:ro" \
         -v "$root/shared/storage:/app/storage:ro" \
         -v "$cache:/app/bootstrap/cache:ro" \
-        -w /app "$image" php -- < "$queue_probe_script" 2>&1)"; then
+        -w /app "$image" php -- --check="$check" < "$queue_probe_script" 2>&1)"; then
         echo "Laravel queue Redis preflight failed." >&2
         return 1
     fi
@@ -650,7 +651,7 @@ chmod 0640 "$compose.next"
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
 candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$redis_volume_override")"
 
-current_queue_probe="$(run_queue_contract_probe "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
+current_queue_probe="$(run_queue_contract_probe "queue-snapshot" "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
 current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
 current_pending_work="$(jq -er '
     if (.counts | type) != "object" then error("missing counts")
@@ -680,7 +681,7 @@ verify_queue_contract() {
         return 1
     fi
 
-    candidate_queue_probe="$(run_queue_contract_probe "$release" "chuklov-staging-app:$revision" "$queue_preflight_cache" "$candidate_probe_environment")"
+    candidate_queue_probe="$(run_queue_contract_probe "queue-contract" "$release" "chuklov-staging-app:$revision" "$queue_preflight_cache" "$candidate_probe_environment")"
     if ! candidate_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$candidate_queue_probe")"; then
         echo "Candidate Laravel queue Redis preflight returned an invalid physical identity." >&2
         return 1

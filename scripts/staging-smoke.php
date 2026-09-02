@@ -401,6 +401,17 @@ function queueContractCheck(): void
     printf("B2B_QUEUE_PROBE=%s\n", json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 }
 
+function queueSnapshotCheck(): void
+{
+    bootstrapApplication(false);
+    if (! app()->configurationIsCached()) {
+        fail('B2B QUEUE', 'application configuration is not cached');
+    }
+    $snapshot = queueContractSnapshot();
+
+    printf("B2B_QUEUE_PROBE=%s\n", json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+}
+
 function httpCheck(string $check, int $userId, int $clientId): void
 {
     [$app, $kernel] = bootstrapApplication(true);
@@ -610,7 +621,9 @@ $userId = filter_var($arguments['user-id'] ?? null, FILTER_VALIDATE_INT);
 $clientId = filter_var($arguments['client-id'] ?? null, FILTER_VALIDATE_INT);
 
 try {
-    if ($check === 'queue-contract') {
+    if ($check === 'queue-snapshot') {
+        queueSnapshotCheck();
+    } elseif ($check === 'queue-contract') {
         queueContractCheck();
     } elseif ($check === 'runtime') {
         runtimeCheck();
