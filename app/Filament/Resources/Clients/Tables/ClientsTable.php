@@ -48,8 +48,7 @@ class ClientsTable
                 TextColumn::make('timezone')
                     ->label('Часовой пояс')
                     ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->sortable(),
                 TextColumn::make('language')
                     ->label('Язык')
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
