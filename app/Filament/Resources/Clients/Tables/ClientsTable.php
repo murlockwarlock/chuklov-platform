@@ -19,7 +19,6 @@ class ClientsTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->stackedOnMobile()
             ->searchable()
             ->defaultSort(fn (Builder $query): Builder => $query
                 ->orderByDesc('created_at')
