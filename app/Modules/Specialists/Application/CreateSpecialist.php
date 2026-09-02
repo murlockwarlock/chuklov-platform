@@ -9,6 +9,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistProfile;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class CreateSpecialist
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly SyncSpecialistTelegramIdentity $telegramIdentity,
     ) {}
 
     public function handle(
@@ -27,21 +29,32 @@ class CreateSpecialist
         bool $isActive = true,
         ?string $timezone = null,
         ?int $staffUserId = null,
+        ?SpecialistNotificationSettings $notificationSettings = null,
     ): Specialist {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSpecialists);
         $profile = SpecialistProfile::from($displayName, $timezone);
 
-        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $staffUserId): Specialist {
+        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $staffUserId, $notificationSettings): Specialist {
             $this->ensureStaffMembership($organization->getKey(), $staffUserId);
             $specialist = new Specialist;
             $specialist->forceFill([
                 'organization_id' => $organization->getKey(),
                 ...$profile->attributes(),
                 'is_active' => $isActive,
+                'notifications_enabled' => $notificationSettings->enabled ?? true,
                 'staff_user_id' => $staffUserId,
             ]);
             $specialist->save();
+
+            if ($notificationSettings?->telegramId !== null) {
+                $this->telegramIdentity->handle(
+                    actor: $actor,
+                    organization: $organization,
+                    specialist: $specialist,
+                    telegramId: $notificationSettings->telegramId,
+                );
+            }
 
             $this->audit->handle(
                 organization: $organization,

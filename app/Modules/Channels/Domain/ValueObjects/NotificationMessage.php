@@ -12,5 +12,6 @@ final readonly class NotificationMessage
         public string $idempotencyKey,
         public bool $requireKnownExternalOutcome = false,
         public ?string $webAppUrl = null,
+        public ?NotificationActionButton $actionButton = null,
     ) {}
 }

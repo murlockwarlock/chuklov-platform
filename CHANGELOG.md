@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-02 — Telegram meeting notifications and specialist delivery settings
+
+- Telegram notifications now keep meeting links in inline buttons while the message body contains the appointment date and time for B2B and ordinary online bookings. CRM specialist settings accept an organization-scoped Telegram ID and a global notification toggle; the toggle is rechecked before delivery for every internal scenario recipient.
+
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 
 - This bounded candidate starts exactly at `7e7d4a8e3152c77d0f9e81123ab08edc00900ea4` and adds the non-secret Zoom provider principal `account_id + host_user_id` to known B2B meeting identity, persistence, and durable sync evidence. Same-principal secret or client rotation remains usable; account, host, missing, or disabled-credential changes fail closed into reconciliation before known-meeting provider I/O, while every new automatic generation captures its principal before its durable provider event and provider I/O.

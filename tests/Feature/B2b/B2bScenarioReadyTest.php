@@ -8,6 +8,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -56,6 +57,22 @@ final class B2bScenarioReadyTest extends TestCase
         self::assertSame(ScenarioDeliveryStatus::Suppressed, $scenario['action']->deliveries()->sole()->status);
         self::assertSame('b2b_sales_call_changed', $scenario['action']->fresh()->terminal_reason);
         self::assertCount(0, $this->channel->messages);
+    }
+
+    public function test_ready_client_notification_contains_schedule_and_an_inline_meeting_button(): void
+    {
+        $scenario = $this->readyScenario();
+        $this->execute($scenario['action']);
+
+        $message = $this->channel->messages[0] ?? null;
+
+        self::assertNotNull($message);
+        $start = $scenario['call']->startsAtUtc();
+        self::assertSame('Встреча: '.$start->toDateString().' '.$start->format('H:i').'.', $message->body);
+        self::assertStringNotContainsString('https://zoom.us/j/ready', $message->body);
+        self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
+        self::assertSame('https://zoom.us/j/ready', $message->actionButton->url);
+        self::assertSame('Join meeting', $message->actionButton->text);
     }
 
     public function test_ready_action_is_suppressed_when_the_call_is_rescheduled_to_a_new_generation(): void
@@ -199,8 +216,8 @@ final class B2bScenarioReadyTest extends TestCase
             'locale' => 'en',
         ]);
         $templateVersion = NotificationTemplateVersion::factory()->forTemplate($template)->create([
-            'body' => 'Ссылка: {{ sales_call.join_url }}',
-            'variables' => ['sales_call.join_url'],
+            'body' => 'Встреча: {{ sales_call.local_date }} {{ sales_call.local_time }}.',
+            'variables' => ['sales_call.local_date', 'sales_call.local_time'],
         ]);
         ScenarioRule::factory()->forOrganization($organization)->usingTemplate($templateVersion)->create([
             'trigger_event' => 'b2b.sales_call.ready',

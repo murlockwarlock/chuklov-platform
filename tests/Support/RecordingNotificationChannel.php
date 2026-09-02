@@ -32,7 +32,10 @@ final class RecordingNotificationChannel implements NotificationChannel
 
     public function capabilities(): ChannelCapabilities
     {
-        return new ChannelCapabilities(supportsProactiveDelivery: true);
+        return new ChannelCapabilities(
+            supportsInlineButtons: true,
+            supportsProactiveDelivery: true,
+        );
     }
 
     public function send(NotificationMessage $message): NotificationDeliveryResult

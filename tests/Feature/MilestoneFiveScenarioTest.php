@@ -8,6 +8,7 @@ use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
@@ -37,10 +38,16 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioIdempotencyKey;
 use App\Modules\Scenarios\Jobs\ExecuteScenarioAction as ExecuteScenarioActionJob;
 use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Scheduling\Application\CompleteBooking;
+use App\Modules\Scheduling\Application\ConfirmBooking;
+use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Carbon\CarbonImmutable;
 use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
@@ -81,6 +88,55 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('booking.completed', $event->event_name->value);
         self::assertSame($booking->id, $event->payload['booking_id']);
         self::assertSame('booking.completed:'.$organization->id.':'.$booking->id.':2', $event->idempotency_key);
+    }
+
+    public function test_confirmed_online_booking_notifies_client_with_schedule_and_inline_meeting_button(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        app(ScenarioNotificationSeeder::class)->run();
+        app(OrganizationContext::class)->set($organization);
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'meeting_link_mode' => MeetingLinkMode::Manual,
+                'starts_at' => CarbonImmutable::create(2026, 9, 5, 10, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 5, 11, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 5, 11, 0, 0, 'UTC'),
+                'schedule_timezone' => 'UTC',
+                'client_timezone' => 'UTC',
+            ]);
+
+        $confirmed = app(ConfirmBooking::class)->handle($admin, $booking);
+        $updated = app(SetOnlineMeetingUrl::class)->handle($admin, $confirmed, 'https://zoom.us/j/ordinary-1?pwd=test-password');
+        $event = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.confirmed')
+            ->where('payload->event_version', $updated->event_version)
+            ->sole();
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = $this->channel->messages[0] ?? null;
+        self::assertNotNull($message);
+        self::assertSame(
+            'Your appointment with '.$specialist->display_name.' for '.$service->name.' is confirmed for 2026-09-05 at 10:00 (UTC).',
+            $message->body,
+        );
+        self::assertStringNotContainsString('https://zoom.us/j/ordinary-1', $message->body);
+        self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
+        self::assertSame('https://zoom.us/j/ordinary-1?pwd=test-password', $message->actionButton->url);
+        self::assertSame('Join meeting', $message->actionButton->text);
     }
 
     public function test_booking_completion_rolls_back_booking_history_and_scenario_event_together(): void
@@ -463,6 +519,41 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('internal', $action->recipient_type);
         self::assertSame($staff->id, $action->recipient_user_id);
         self::assertNull($action->client_id);
+    }
+
+    public function test_disabled_specialist_notifications_suppress_already_materialized_internal_actions(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        app(OrganizationContext::class)->set($organization);
+        $specialist = app(UpdateSpecialist::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            displayName: $specialist->display_name,
+            isActive: true,
+            timezone: $specialist->timezone,
+            staffUserId: $staff->id,
+            notificationSettings: SpecialistNotificationSettings::from('555000111', false),
+        );
+        $templateVersion = $this->template($organization);
+        $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($templateVersion)->create([
+            'trigger_event' => 'booking.completed',
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'recipient_strategy' => ['type' => 'members', 'user_ids' => [$staff->id]],
+        ]);
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'booking-event-disabled-specialist', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $action = ScenarioAction::query()->where('scenario_rule_id', $rule->id)->sole();
+
+        app(ExecuteScenarioAction::class)->handle($action->id);
+
+        self::assertSame([], $this->channel->messages);
+        self::assertSame(ScenarioActionStatus::Suppressed, $action->fresh()->status);
+        self::assertSame('no_available_channel', $action->fresh()->terminal_reason);
+        self::assertSame(ScenarioDeliveryStatus::Unavailable, $action->deliveries()->sole()->status);
     }
 
     public function test_scenario_actions_and_crm_queries_are_organization_scoped(): void

@@ -56,6 +56,12 @@ class SpecialistResource extends Resource
                         ? 'Часовой пояс организации'
                         : TimezoneOptions::label($state)),
                 TextEntry::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан'),
+                TextEntry::make('telegramNotificationIdentity.external_id')
+                    ->label('Telegram ID специалиста')
+                    ->placeholder('Не подключён'),
+                TextEntry::make('notifications_enabled')
+                    ->label('Уведомления специалисту')
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'Включены' : 'Выключены'),
                 TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
                 TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
             ]);

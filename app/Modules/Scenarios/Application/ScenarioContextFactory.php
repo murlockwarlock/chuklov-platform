@@ -31,6 +31,7 @@ final class ScenarioContextFactory
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
     {
         return match ($event->event_name) {
+            ScenarioEventType::BookingConfirmed => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
@@ -61,11 +62,17 @@ final class ScenarioContextFactory
         if ($context->booking !== null) {
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),
+                'event_version' => (int) $context->booking->event_version,
                 'status' => $context->booking->status->value,
                 'visit_format' => $context->booking->visit_format->value,
                 'service_name' => $context->booking->service->name,
+                'specialist_name' => $context->booking->specialist->display_name,
                 'starts_at' => $context->booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
+                'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->toDateString(),
+                'local_time' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('H:i'),
+                'timezone' => $this->bookingTimezone($context->booking),
+                'meeting_url' => $context->booking->visit_format->value === 'online' ? $context->booking->meeting_url : null,
                 'completed_at' => CarbonImmutable::parse((string) $context->event->occurred_at)->toIso8601String(),
             ];
             if ($includeFeedbackUrl) {
@@ -146,7 +153,7 @@ final class ScenarioContextFactory
         $booking = Booking::query()
             ->where('organization_id', $event->organization_id)
             ->whereKey($this->payloadId($event, 'booking_id'))
-            ->with(['client', 'service'])
+            ->with(['client', 'service', 'specialist'])
             ->first();
 
         return new ScenarioEvaluationContext($event, $booking, $booking?->client, evaluationEndsAt: $evaluationEndsAt);
@@ -254,6 +261,11 @@ final class ScenarioContextFactory
         return ! app(ReconcileFinancialObligation::class)
             ->handle((int) $context->obligation->organization_id, (int) $context->obligation->getKey())
             ->isSettled();
+    }
+
+    private function bookingTimezone(Booking $booking): string
+    {
+        return (string) ($booking->client_timezone ?: $booking->client->timezone ?: $booking->schedule_timezone);
     }
 
     private function payloadId(ScenarioEvent $event, string $key): int

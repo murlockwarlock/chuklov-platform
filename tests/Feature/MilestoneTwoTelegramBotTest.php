@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use SergiX44\Nutgram\Nutgram;
@@ -115,6 +116,36 @@ class MilestoneTwoTelegramBotTest extends TestCase
             $button['web_app']['url'],
         );
         self::assertArrayNotHasKey('url', $button);
+    }
+
+    public function test_meeting_notification_uses_an_inline_url_button_without_putting_the_url_in_the_body(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $channel = new TelegramNotificationChannel($bot);
+        $url = 'https://zoom.us/j/123456?pwd=test-password';
+
+        $result = $channel->send(new NotificationMessage(
+            recipientExternalId: 'meeting-chat',
+            body: 'Запись подтверждена на 02.09.2026 в 14:57.',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'meeting-1',
+            actionButton: new NotificationActionButton('Подключиться к встрече', $url),
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+        $bot->assertCalled('sendMessage');
+        $history = array_values($bot->getRequestHistory());
+        $request = array_values($history[0])[0];
+        $body = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        $button = $body['reply_markup']['inline_keyboard'][0][0];
+
+        self::assertSame('Запись подтверждена на 02.09.2026 в 14:57.', $body['text']);
+        self::assertSame('Подключиться к встрече', $button['text']);
+        self::assertSame($url, $button['url']);
+        self::assertArrayNotHasKey('web_app', $button);
     }
 
     public function test_invalid_web_app_url_fails_closed_before_telegram_delivery(): void

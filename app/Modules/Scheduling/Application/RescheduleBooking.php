@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -28,6 +29,7 @@ final class RescheduleBooking
         private readonly GetBookingCancellationCutoff $cutoff,
         private readonly CalculateAvailability $availability,
         private readonly RecordBookingEvent $events,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -144,7 +146,7 @@ final class RescheduleBooking
                 throw $exception;
             }
 
-            $this->events->handle(
+            $bookingEvent = $this->events->handle(
                 booking: $lockedBooking,
                 actor: $actor,
                 type: BookingEventType::Rescheduled,
@@ -152,6 +154,13 @@ final class RescheduleBooking
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
+            if ($lockedBooking->status === BookingStatus::Confirmed) {
+                $this->scenarioEvents->bookingConfirmed(
+                    booking: $lockedBooking,
+                    causationId: (string) $bookingEvent->getKey(),
+                    occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
+                );
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor instanceof User ? $actor : null,

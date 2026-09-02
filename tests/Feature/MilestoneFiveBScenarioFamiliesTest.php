@@ -332,6 +332,8 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'b2b-sales-call-ready-specialist',
             'booking-completed-feedback-en',
             'booking-completed-feedback-ru',
+            'booking-confirmed-client-en',
+            'booking-confirmed-client-ru',
             'post-session-follow-up-24h-en',
             'post-session-follow-up-24h-ru',
             'post-session-follow-up-48h-en',
@@ -353,6 +355,8 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'b2b-sales-call-ready-specialist:en',
             'booking-completed-feedback:en',
             'booking-completed-feedback:ru',
+            'booking-confirmed:en',
+            'booking-confirmed:ru',
             'post-session-follow-up:en',
             'post-session-follow-up:ru',
         ], NotificationTemplate::query()

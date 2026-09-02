@@ -27,6 +27,7 @@ final class MaterializeScenarioEvent
         private readonly ConditionEvaluatorRegistry $conditions,
         private readonly ScenarioRecipientResolver $recipients,
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
+        private readonly BookingConfirmedGuard $bookingConfirmedGuard,
     ) {}
 
     public function handle(int $scenarioEventId): void
@@ -47,6 +48,17 @@ final class MaterializeScenarioEvent
                         'processing_started_at' => null,
                         'processed_at' => now(),
                         'last_error_code' => 'b2b_sales_call_changed',
+                    ])->save();
+
+                    return;
+                }
+                if ($event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, $context->booking)) {
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => 'booking_changed',
                     ])->save();
 
                     return;

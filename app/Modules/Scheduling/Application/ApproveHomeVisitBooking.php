@@ -8,6 +8,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
@@ -31,6 +32,7 @@ class ApproveHomeVisitBooking
         private readonly OrganizationAuthorizer $authorizer,
         private readonly CalculateAvailability $availability,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -122,11 +124,16 @@ class ApproveHomeVisitBooking
                 throw $exception;
             }
 
-            $this->recordEvent(
+            $bookingEvent = $this->recordEvent(
                 booking: $lockedBooking,
                 actor: $actor,
                 oldValues: $oldValues,
                 reason: $reason,
+            );
+            $this->scenarioEvents->bookingConfirmed(
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
+                occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
             $this->audit->handle(
                 organization: $organization,
@@ -188,7 +195,7 @@ class ApproveHomeVisitBooking
     }
 
     /** @param array<string, int|string|null> $oldValues */
-    private function recordEvent(Booking $booking, User $actor, array $oldValues, ?string $reason): void
+    private function recordEvent(Booking $booking, User $actor, array $oldValues, ?string $reason): BookingEvent
     {
         $event = new BookingEvent;
         $event->forceFill([
@@ -203,6 +210,8 @@ class ApproveHomeVisitBooking
             'occurred_at' => now(),
         ]);
         $event->save();
+
+        return $event->refresh();
     }
 
     private function isBookingConflict(QueryException $exception): bool

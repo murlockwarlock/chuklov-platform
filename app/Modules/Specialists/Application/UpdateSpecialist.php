@@ -11,6 +11,7 @@ use App\Modules\Scheduling\Application\EnsureScheduleMutationImpactAcknowledged;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistProfile;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,7 @@ class UpdateSpecialist
         private readonly ScheduleMutationImpactCalculator $impactCalculator,
         private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
+        private readonly SyncSpecialistTelegramIdentity $telegramIdentity,
     ) {}
 
     public function handle(
@@ -34,6 +36,7 @@ class UpdateSpecialist
         ?int $staffUserId = null,
         bool $acknowledgeImpact = false,
         ?string $acknowledgedImpactDigest = null,
+        ?SpecialistNotificationSettings $notificationSettings = null,
     ): Specialist {
         $organization = $this->context->organization();
 
@@ -44,7 +47,7 @@ class UpdateSpecialist
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSpecialists);
         $profile = SpecialistProfile::from($displayName, $timezone);
 
-        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId, $acknowledgeImpact, $acknowledgedImpactDigest): Specialist {
+        return DB::transaction(function () use ($actor, $isActive, $organization, $profile, $specialist, $staffUserId, $acknowledgeImpact, $acknowledgedImpactDigest, $notificationSettings): Specialist {
             $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
@@ -53,6 +56,7 @@ class UpdateSpecialist
             $this->ensureStaffMembership($organization->getKey(), $staffUserId);
             $oldStaffUserId = $lockedSpecialist->staff_user_id;
             $oldIsActive = (bool) $lockedSpecialist->is_active;
+            /** @var list<string> $changedFields */
             $changedFields = [];
 
             foreach ($profile->attributes() as $field => $value) {
@@ -69,6 +73,11 @@ class UpdateSpecialist
                 $changedFields[] = 'staff_user_id';
             }
 
+            if ($notificationSettings !== null
+                && (bool) $lockedSpecialist->notifications_enabled !== $notificationSettings->enabled) {
+                $changedFields[] = 'notifications_enabled';
+            }
+
             $impact = $this->impactCalculator->forSpecialistChange(
                 specialist: $lockedSpecialist,
                 newIsActive: $isActive,
@@ -80,9 +89,19 @@ class UpdateSpecialist
             $lockedSpecialist->forceFill([
                 ...$profile->attributes(),
                 'is_active' => $isActive,
+                'notifications_enabled' => $notificationSettings->enabled ?? $lockedSpecialist->notifications_enabled,
                 'staff_user_id' => $staffUserId,
             ]);
             $lockedSpecialist->save();
+
+            if ($notificationSettings !== null) {
+                $this->telegramIdentity->handle(
+                    actor: $actor,
+                    organization: $organization,
+                    specialist: $lockedSpecialist,
+                    telegramId: $notificationSettings->telegramId,
+                );
+            }
 
             if (array_intersect($changedFields, ['display_name', 'timezone']) !== []) {
                 $this->audit->handle(
@@ -103,6 +122,17 @@ class UpdateSpecialist
                     targetType: Specialist::class,
                     targetId: (string) $lockedSpecialist->getKey(),
                     metadata: ['source' => 'crm'],
+                );
+            }
+
+            if (in_array('notifications_enabled', $changedFields, true)) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'specialist.notifications.updated',
+                    targetType: Specialist::class,
+                    targetId: (string) $lockedSpecialist->getKey(),
+                    metadata: ['enabled' => $notificationSettings?->enabled],
                 );
             }
 

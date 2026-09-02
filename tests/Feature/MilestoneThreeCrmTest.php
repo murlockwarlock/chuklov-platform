@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Specialists\Pages\EditSpecialist;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Models\User;
 use App\Modules\Channels\Application\GetTelegramMenu;
@@ -16,6 +17,7 @@ use App\Modules\Identity\Application\UpdateClientProfileFromCrm;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -30,12 +32,15 @@ use App\Modules\Specialists\Application\CreateSpecialist;
 use App\Modules\Specialists\Application\SetSpecialistActive;
 use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Livewire\Livewire;
 use LogicException;
 use Tests\TestCase;
 
@@ -250,6 +255,112 @@ class MilestoneThreeCrmTest extends TestCase
                 'specialist.activated',
                 'specialist.unlinked',
             ])->count());
+    }
+
+    public function test_specialist_telegram_id_and_notification_toggle_are_saved_as_organization_settings(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Telegram Specialist',
+            staffUserId: $staff->id,
+            notificationSettings: SpecialistNotificationSettings::from('987654321', true),
+        );
+
+        self::assertTrue($specialist->notifications_enabled);
+        $identity = OrganizationChannelIdentity::query()->where('organization_id', $organization->id)->sole();
+        self::assertSame($staff->id, $identity->user_id);
+        self::assertSame('987654321', $identity->external_id);
+        self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
+        self::assertSame('crm_admin_configuration', $identity->verification_method);
+
+        $updated = app(UpdateSpecialist::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            displayName: $specialist->display_name,
+            isActive: true,
+            staffUserId: $staff->id,
+            notificationSettings: SpecialistNotificationSettings::from('987654321', false),
+        );
+
+        self::assertFalse($updated->notifications_enabled);
+        self::assertSame('987654321', OrganizationChannelIdentity::query()->sole()->external_id);
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'specialist.notifications.updated')
+            ->count());
+    }
+
+    public function test_specialist_telegram_id_cannot_be_reused_by_another_organization_member(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $firstStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $secondStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'First Telegram Specialist',
+            staffUserId: $firstStaff->id,
+            notificationSettings: SpecialistNotificationSettings::from('123456789', true),
+        );
+        $second = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Second Telegram Specialist',
+            staffUserId: $secondStaff->id,
+        );
+
+        $this->expectException(ValidationException::class);
+        app(UpdateSpecialist::class)->handle(
+            actor: $admin,
+            specialist: $second,
+            displayName: $second->display_name,
+            isActive: true,
+            staffUserId: $secondStaff->id,
+            notificationSettings: SpecialistNotificationSettings::from('123456789', true),
+        );
+
+        self::assertSame($firstStaff->id, OrganizationChannelIdentity::query()->sole()->user_id);
+        self::assertNull($second->fresh()->telegramNotificationIdentity);
+    }
+
+    public function test_specialist_edit_form_loads_and_saves_telegram_notification_settings(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Form Telegram Specialist',
+            staffUserId: $staff->id,
+            notificationSettings: SpecialistNotificationSettings::from('777000111', true),
+        );
+        $this->actingAs($admin);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(EditSpecialist::class, ['record' => $specialist->getKey()]);
+        $telegramField = $component->instance()->getSchemaComponent('form.telegram_id');
+        self::assertSame('777000111', $telegramField->getState());
+        self::assertTrue($component->instance()->getSchemaComponent('form.notifications_enabled')->getState());
+
+        $component
+            ->fillForm([
+                'display_name' => $specialist->display_name,
+                'timezone' => $specialist->timezone,
+                'staff_user_id' => $staff->id,
+                'telegram_id' => '777000111',
+                'is_active' => true,
+                'notifications_enabled' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertFalse($specialist->fresh()->notifications_enabled);
     }
 
     public function test_specialist_rejects_cross_organization_user_links(): void

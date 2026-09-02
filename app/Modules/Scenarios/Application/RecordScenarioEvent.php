@@ -146,6 +146,38 @@ final class RecordScenarioEvent
         return $this->record((int) $booking->organization_id, $data);
     }
 
+    public function bookingConfirmed(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $booking->loadMissing(['client']);
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::BookingConfirmed,
+            aggregateType: Booking::class,
+            aggregateId: (string) $booking->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'organization_id' => (int) $booking->organization_id,
+                'booking_id' => (int) $booking->getKey(),
+                'client_id' => (int) $booking->client_id,
+                'service_id' => (int) $booking->service_id,
+                'specialist_id' => (int) $booking->specialist_id,
+                'event_version' => (int) $booking->event_version,
+                'status' => $booking->status->value,
+                'visit_format' => $booking->visit_format->value,
+                'starts_at' => $booking->startsAtUtc()->toIso8601String(),
+                'ends_at' => $booking->endsAtUtc()->toIso8601String(),
+                'schedule_timezone' => (string) $booking->schedule_timezone,
+                'client_timezone' => $booking->client_timezone,
+                'meeting_link_mode' => $booking->meeting_link_mode?->value,
+                'client_language' => $booking->client->language,
+            ],
+            idempotencyKey: 'booking.confirmed:'.$booking->organization_id.':'.$booking->getKey().':'.$booking->event_version,
+            correlationId: 'booking:'.$booking->getKey(),
+            causationId: $causationId,
+        );
+
+        return $this->record((int) $booking->organization_id, $data);
+    }
+
     public function onboardingStarted(
         ClientOnboarding $onboarding,
         ?string $causationId,

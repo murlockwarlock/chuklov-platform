@@ -136,6 +136,15 @@ final class B2bLeadActions
                     app(SetB2bSalesCallMeetingMode::class)->handle($actor, $call, VideoMeetingMode::from((string) $data['meeting_mode']), isset($data['manual_meeting_url']) ? (string) $data['manual_meeting_url'] : null, $call->event_version);
                     $refresh();
                 }),
+            Action::make('hostLaunch')
+                ->label('Открыть как ведущий')
+                ->visible($canManage
+                    && $lead->salesCall->status === B2bSalesCallStatus::Scheduled
+                    && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic
+                    && $lead->salesCall->provider_sync_status === VideoMeetingSyncStatus::Ready
+                    && $lead->salesCall->providerIdentity() !== null)
+                ->url(fn (): string => route('admin.b2b.sales-call.host-launch', ['salesCallId' => self::call($lead)->getKey()]))
+                ->openUrlInNewTab(),
             ActionGroup::make([
                 Action::make('retryProvider')
                     ->label('Повторить синхронизацию')
@@ -147,15 +156,6 @@ final class B2bLeadActions
                         app(RetryB2bSalesCallProvider::class)->handle($actor, $call, $call->event_version);
                         $refresh();
                     }),
-                Action::make('hostLaunch')
-                    ->label('Открыть как ведущий')
-                    ->visible($canManage
-                        && $lead->salesCall->status === B2bSalesCallStatus::Scheduled
-                        && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic
-                        && $lead->salesCall->provider_sync_status === VideoMeetingSyncStatus::Ready
-                        && $lead->salesCall->providerIdentity() !== null)
-                    ->url(fn (): string => route('admin.b2b.sales-call.host-launch', ['salesCallId' => self::call($lead)->getKey()]))
-                    ->openUrlInNewTab(),
                 Action::make('recreateMeeting')
                     ->label('Создать Zoom заново')
                     ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic)

@@ -4,6 +4,7 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
@@ -33,6 +34,7 @@ final class ExecuteScenarioAction
         private readonly NotificationTemplateRenderer $renderer,
         private readonly ScheduleNextScenarioAction $nextActions,
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
+        private readonly BookingConfirmedGuard $bookingConfirmedGuard,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -46,9 +48,7 @@ final class ExecuteScenarioAction
         if (! $this->isEligible($action)) {
             $this->suppress(
                 $action->getKey(),
-                $action->trigger_event->value === 'b2b.sales_call.ready'
-                    ? 'b2b_sales_call_changed'
-                    : 'current_conditions_not_met',
+                $this->changeReason($action->trigger_event->value),
             );
 
             return;
@@ -102,6 +102,11 @@ final class ExecuteScenarioAction
             return false;
         }
 
+        if ($event->event_name->value === 'booking.confirmed'
+            && ! $this->bookingConfirmedGuard->allows($event, $context->booking, $action->render_context)) {
+            return false;
+        }
+
         try {
             $conditionSnapshot = ScenarioConditionSet::from($action->condition_snapshot);
         } catch (InvalidArgumentException) {
@@ -122,8 +127,10 @@ final class ExecuteScenarioAction
             $event = $action->event()->first();
             if ($event === null
                 || ($event->event_name->value === 'b2b.sales_call.ready'
-                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))) {
-                return NotificationDeliveryResult::suppressed('b2b_sales_call_changed');
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
+                || ($event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
@@ -161,12 +168,19 @@ final class ExecuteScenarioAction
                 }
             }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
+            $actionButton = $this->actionButton($action, $rendered->locale);
+
+            if ($actionButton !== null && ! $channel->capabilities()->supportsInlineButtons) {
+                return NotificationDeliveryResult::unavailable('inline_buttons_unavailable');
+            }
 
             $event = $action->event()->first();
             if ($event === null
                 || ($event->event_name->value === 'b2b.sales_call.ready'
-                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))) {
-                return NotificationDeliveryResult::suppressed('b2b_sales_call_changed');
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
+                || ($event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
 
             return $channel->send(new NotificationMessage(
@@ -176,6 +190,7 @@ final class ExecuteScenarioAction
                 locale: $rendered->locale,
                 idempotencyKey: $delivery->idempotency_key,
                 webAppUrl: $webAppUrl,
+                actionButton: $actionButton,
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
@@ -184,6 +199,42 @@ final class ExecuteScenarioAction
         } catch (Throwable) {
             return NotificationDeliveryResult::retryable('delivery_execution_error');
         }
+    }
+
+    private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
+    {
+        if ($action->recipient_type !== 'client') {
+            return null;
+        }
+
+        $url = match ($action->trigger_event->value) {
+            'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
+            'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
+            default => null,
+        };
+
+        if (! is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        return new NotificationActionButton(
+            text: $this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting',
+            url: $url,
+        );
+    }
+
+    private function changeReason(?string $eventName): string
+    {
+        return match ($eventName) {
+            'b2b.sales_call.ready' => 'b2b_sales_call_changed',
+            'booking.confirmed' => 'booking_changed',
+            default => 'current_conditions_not_met',
+        };
+    }
+
+    private function isRussian(string $locale): bool
+    {
+        return str_starts_with(strtolower($locale), 'ru');
     }
 
     private function claimAction(int $scenarioActionId): ?ScenarioAction

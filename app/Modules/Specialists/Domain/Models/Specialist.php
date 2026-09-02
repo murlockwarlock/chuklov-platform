@@ -3,6 +3,7 @@
 namespace App\Modules\Specialists\Domain\Models;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
@@ -15,10 +16,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property-read Organization $organization
  * @property-read User|null $staffUser
+ * @property bool $notifications_enabled
  */
 #[Fillable(['display_name', 'timezone'])]
 class Specialist extends Model
@@ -36,6 +39,14 @@ class Specialist extends Model
     public function staffUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'staff_user_id');
+    }
+
+    /** @return HasOne<OrganizationChannelIdentity, $this> */
+    public function telegramNotificationIdentity(): HasOne
+    {
+        return $this->hasOne(OrganizationChannelIdentity::class, 'user_id', 'staff_user_id')
+            ->where('organization_id', $this->organization_id)
+            ->where('channel', 'telegram');
     }
 
     /** @return HasMany<SpecialistWorkingHour, $this> */
@@ -75,6 +86,9 @@ class Specialist extends Model
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean'];
+        return [
+            'is_active' => 'boolean',
+            'notifications_enabled' => 'boolean',
+        ];
     }
 }

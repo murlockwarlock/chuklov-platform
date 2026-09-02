@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Specialists\Pages;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Models\User;
 use App\Modules\Specialists\Application\CreateSpecialist as CreateSpecialistAction;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
@@ -25,6 +26,10 @@ class CreateSpecialist extends CreateRecord
             isActive: (bool) $data['is_active'],
             timezone: $data['timezone'] ?? null,
             staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
+            notificationSettings: SpecialistNotificationSettings::from(
+                telegramId: $data['telegram_id'] ?? null,
+                enabled: (bool) ($data['notifications_enabled'] ?? true),
+            ),
         );
     }
 }
