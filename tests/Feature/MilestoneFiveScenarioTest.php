@@ -193,7 +193,6 @@ final class MilestoneFiveScenarioTest extends TestCase
             'provider_sync_status' => 'ready',
             'provider_operation' => null,
             'provider_join_url' => 'https://zoom.us/j/confirmed-auto',
-            'meeting_url' => 'https://zoom.us/j/confirmed-auto',
         ])->save();
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
@@ -366,6 +365,50 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         self::assertSame(ScenarioActionStatus::Delivered, $cancelledAction->fresh()->status);
         self::assertStringContainsString('05-09-2026 at 12:00 (Asia/Bangkok) was cancelled.', $this->channel->messages[1]->body);
+    }
+
+    public function test_auto_rescheduled_notification_waits_for_the_ready_meeting_link(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'meeting_link_mode' => MeetingLinkMode::Auto,
+                'provider_sync_status' => 'pending',
+                'provider_join_url' => null,
+                'starts_at' => CarbonImmutable::create(2026, 9, 4, 5, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'schedule_timezone' => 'Asia/Bangkok',
+                'client_timezone' => 'Asia/Bangkok',
+            ]);
+        $event = app(RecordScenarioEvent::class)->bookingRescheduled($booking, 'booking-rescheduled-meeting-pending', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        self::assertSame(ScenarioEventStatus::Pending, $event->fresh()->status);
+        self::assertSame('booking_meeting_pending', $event->fresh()->last_error_code);
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->count());
+
+        $booking->forceFill([
+            'provider_sync_status' => 'ready',
+            'provider_join_url' => 'https://zoom.us/j/rescheduled-ready',
+        ])->save();
+        $event->forceFill(['available_at' => now()->subSecond()])->save();
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        self::assertSame('https://zoom.us/j/rescheduled-ready', $this->channel->messages[0]->actionButton?->url);
     }
 
     public function test_rescheduled_notification_is_suppressed_when_booking_changes_before_delivery(): void

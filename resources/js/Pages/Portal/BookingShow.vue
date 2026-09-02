@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
@@ -30,11 +30,11 @@ type Booking = {
     paymentStatusLabel: string;
     location: string | null;
     meetingUrl: string | null;
+    meetingPending: boolean;
     partySize: number;
     eventVersion: number;
     canCancel: boolean;
     canReschedule: boolean;
-    contactStaff: boolean;
     pendingReview: boolean;
     history: { label: string; oldStartsAt: string | null; newStartsAt: string | null; occurredAt: string }[];
 };
@@ -58,6 +58,7 @@ const selectedSlot = ref<string | null>(null);
 const selectedDate = ref<string | null>(props.booking.localDate);
 const rescheduleOpen = ref(props.availability !== null);
 const rescheduleLoading = ref(false);
+const meetingReloading = ref(false);
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
 const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null; expected_event_version: number }>({
     starts_at: null,
@@ -74,6 +75,56 @@ const rescheduleError = computed(() => {
         ?? errors.expected_event_version;
 });
 const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
+let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopMeetingPolling(): void {
+    if (meetingPollTimer === null) {
+        return;
+    }
+
+    window.clearInterval(meetingPollTimer);
+    meetingPollTimer = null;
+}
+
+function refreshPendingMeeting(): void {
+    if (!props.booking.meetingPending || props.booking.meetingUrl !== null) {
+        stopMeetingPolling();
+
+        return;
+    }
+
+    if (meetingReloading.value) {
+        return;
+    }
+
+    meetingReloading.value = true;
+    router.reload({
+        only: ['booking'],
+        onFinish: () => {
+            meetingReloading.value = false;
+        },
+    });
+}
+
+function syncMeetingPolling(): void {
+    if (!props.booking.meetingPending || props.booking.meetingUrl !== null) {
+        stopMeetingPolling();
+
+        return;
+    }
+
+    if (meetingPollTimer === null) {
+        meetingPollTimer = window.setInterval(refreshPendingMeeting, 5000);
+    }
+}
+
+onMounted(syncMeetingPolling);
+onBeforeUnmount(stopMeetingPolling);
+
+watch(
+    () => [props.booking.meetingPending, props.booking.meetingUrl] as const,
+    syncMeetingPolling,
+);
 
 watch(
     () => props.booking.eventVersion,
@@ -240,21 +291,22 @@ function rescheduleBooking(): void {
           :href="props.booking.meetingUrl"
           rel="noopener noreferrer"
           target="_blank"
-          class="portal-link"
+          class="portal-button portal-button--primary self-start"
         >
           {{ t('booking.meeting') }}
         </a>
+        <p
+          v-if="props.booking.meetingPending"
+          class="portal-notice"
+          role="status"
+        >
+          {{ t('booking.meetingPending') }}
+        </p>
         <p
           v-if="props.booking.pendingReview"
           class="portal-notice"
         >
           {{ t('booking.requestSent') }}
-        </p>
-        <p
-          v-if="props.booking.contactStaff"
-          class="portal-notice"
-        >
-          {{ t('booking.contactStaff') }}
         </p>
         <div
           v-if="props.booking.canReschedule || props.booking.canCancel"

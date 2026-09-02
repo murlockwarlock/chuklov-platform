@@ -16,7 +16,7 @@ final class BookingConfirmedGuard
         return $booking instanceof Booking
             && $booking->visit_format === VisitFormat::Online
             && $booking->meeting_link_mode?->value === 'auto'
-            && ! $this->validUrl($booking->meeting_url)
+            && $booking->effectiveMeetingUrl() === null
             && $booking->getRawOriginal('provider_sync_status') === VideoMeetingSyncStatus::Pending->value;
     }
 
@@ -41,7 +41,7 @@ final class BookingConfirmedGuard
             return false;
         }
 
-        if ($booking->visit_format === VisitFormat::Online && ! $this->validUrl($booking->meeting_url)) {
+        if ($booking->visit_format === VisitFormat::Online && $booking->effectiveMeetingUrl() === null) {
             return false;
         }
 
@@ -62,7 +62,7 @@ final class BookingConfirmedGuard
             && ($context['local_date'] ?? null) === $localStart->format('d-m-Y')
             && ($context['local_time'] ?? null) === $localStart->format('H:i')
             && ($context['timezone'] ?? null) === $timezone
-            && ($context['meeting_url'] ?? null) === ($booking->visit_format === VisitFormat::Online ? $booking->meeting_url : null);
+            && ($context['meeting_url'] ?? null) === $booking->effectiveMeetingUrl();
     }
 
     private function matchesEvent(ScenarioEvent $event, Booking $booking): bool
@@ -76,22 +76,6 @@ final class BookingConfirmedGuard
             && ($payload['visit_format'] ?? null) === $booking->visit_format->value
             && ($payload['starts_at'] ?? null) === $booking->startsAtUtc()->toIso8601String()
             && ($payload['ends_at'] ?? null) === $booking->endsAtUtc()->toIso8601String();
-    }
-
-    private function validUrl(mixed $url): bool
-    {
-        if (! is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
-            return false;
-        }
-
-        $parts = parse_url($url);
-
-        return is_array($parts)
-            && in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
-            && is_string($parts['host'] ?? null)
-            && trim($parts['host']) !== ''
-            && ! array_key_exists('user', $parts)
-            && ! array_key_exists('pass', $parts);
     }
 
     private function positiveInt(mixed $value): int

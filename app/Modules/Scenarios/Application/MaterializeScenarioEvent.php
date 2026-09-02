@@ -83,6 +83,19 @@ final class MaterializeScenarioEvent
                 }
                 if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
                     && ! $this->bookingChangedGuard->allows($event, $context->booking)) {
+                    if ($event->event_name === ScenarioEventType::BookingRescheduled
+                        && $this->bookingChangedGuard->waitsForMeeting($context->booking)) {
+                        $event->forceFill([
+                            'status' => ScenarioEventStatus::Pending,
+                            'available_at' => now()->addSeconds((int) config('scenarios.events.retry_after_seconds', 60)),
+                            'processing_started_at' => null,
+                            'processed_at' => null,
+                            'last_error_code' => 'booking_meeting_pending',
+                        ])->save();
+
+                        return;
+                    }
+
                     $event->forceFill([
                         'status' => ScenarioEventStatus::Processed,
                         'processing_started_at' => null,

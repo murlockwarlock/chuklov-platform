@@ -2,12 +2,24 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 
 final class BookingChangedGuard
 {
+    public function waitsForMeeting(?Booking $booking): bool
+    {
+        return $booking instanceof Booking
+            && $booking->visit_format === VisitFormat::Online
+            && $booking->meeting_link_mode === MeetingLinkMode::Auto
+            && $booking->effectiveMeetingUrl() === null
+            && $booking->getRawOriginal('provider_sync_status') === VideoMeetingSyncStatus::Pending->value;
+    }
+
     /** @param array<string, mixed>|null $renderContext */
     public function allows(
         ScenarioEvent $event,
@@ -25,6 +37,12 @@ final class BookingChangedGuard
             ->first();
 
         if (! $booking instanceof Booking || ! $this->matchesEvent($event, $booking)) {
+            return false;
+        }
+
+        if ($event->event_name === ScenarioEventType::BookingRescheduled
+            && $booking->meeting_link_mode === MeetingLinkMode::Auto
+            && $booking->effectiveMeetingUrl() === null) {
             return false;
         }
 
@@ -46,7 +64,7 @@ final class BookingChangedGuard
             && ($context['local_date'] ?? null) === $localStart->format('d-m-Y')
             && ($context['local_time'] ?? null) === $localStart->format('H:i')
             && ($context['timezone'] ?? null) === $timezone
-            && ($context['meeting_url'] ?? null) === ($booking->visit_format->value === 'online' ? $booking->meeting_url : null);
+            && ($context['meeting_url'] ?? null) === $booking->effectiveMeetingUrl();
     }
 
     private function matchesEvent(ScenarioEvent $event, Booking $booking): bool

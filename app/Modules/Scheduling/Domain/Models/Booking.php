@@ -147,6 +147,34 @@ class Booking extends Model
         return CarbonImmutable::parse((string) $this->getAttribute('ends_at'))->utc();
     }
 
+    public function effectiveMeetingUrl(): ?string
+    {
+        if ($this->visit_format !== VisitFormat::Online) {
+            return null;
+        }
+
+        $url = $this->meeting_link_mode === MeetingLinkMode::Auto
+            ? ($this->provider_sync_status === VideoMeetingSyncStatus::Ready ? $this->provider_join_url : null)
+            : $this->meeting_url;
+
+        if (! is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $parts = parse_url($url);
+
+        if (! is_array($parts)
+            || ! in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
+            || ! is_string($parts['host'] ?? null)
+            || trim($parts['host']) === ''
+            || array_key_exists('user', $parts)
+            || array_key_exists('pass', $parts)) {
+            return null;
+        }
+
+        return $url;
+    }
+
     public function blockingEndsAtUtc(): CarbonImmutable
     {
         return CarbonImmutable::parse((string) $this->getAttribute('blocking_ends_at'))->utc();

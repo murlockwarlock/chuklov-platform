@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -72,6 +72,57 @@ const selectedDate = ref<string | null>(null);
 const editingAnswer = ref(props.b2bSpecialistAnswer === null);
 const leadAnswerError = computed(() => (leadForm.errors as Partial<Record<'b2b_specialist_answer', string>>).b2b_specialist_answer);
 const configurationError = computed(() => (leadForm.errors as Partial<Record<'configuration', string>>).configuration);
+const meetingReloading = ref(false);
+let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopMeetingPolling(): void {
+    if (meetingPollTimer === null) {
+        return;
+    }
+
+    window.clearInterval(meetingPollTimer);
+    meetingPollTimer = null;
+}
+
+function refreshPendingMeeting(): void {
+    if (props.currentRequest?.meetingStatus !== 'automatic_pending') {
+        stopMeetingPolling();
+
+        return;
+    }
+
+    if (meetingReloading.value) {
+        return;
+    }
+
+    meetingReloading.value = true;
+    router.reload({
+        only: ['currentRequest'],
+        onFinish: () => {
+            meetingReloading.value = false;
+        },
+    });
+}
+
+function syncMeetingPolling(): void {
+    if (props.currentRequest?.meetingStatus !== 'automatic_pending') {
+        stopMeetingPolling();
+
+        return;
+    }
+
+    if (meetingPollTimer === null) {
+        meetingPollTimer = window.setInterval(refreshPendingMeeting, 5000);
+    }
+}
+
+onMounted(syncMeetingPolling);
+onBeforeUnmount(stopMeetingPolling);
+
+watch(
+    () => props.currentRequest?.meetingStatus,
+    syncMeetingPolling,
+);
 
 watch(
     () => [props.selectedSpecialistId, props.availabilityRange?.dateFrom] as const,

@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Services\Domain\Models\Service;
@@ -104,6 +108,38 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('query.dateTo', '2026-03-31')
                 ->where('availability.slots.0.startsAt', '2026-03-15T09:00:00+00:00')
                 ->where('availability.slots.16.startsAt', '2026-03-31T09:00:00+00:00'));
+    }
+
+    public function test_ready_auto_online_booking_exposes_the_provider_join_url_to_the_portal(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture(['online']);
+        $startsAt = CarbonImmutable::now()->addMinute();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Confirmed,
+                'visit_format' => VisitFormat::Online,
+                'meeting_link_mode' => MeetingLinkMode::Auto,
+                'provider_sync_status' => VideoMeetingSyncStatus::Ready,
+                'provider_join_url' => 'https://zoom.us/j/portal-ready',
+                'starts_at' => $startsAt,
+                'ends_at' => $startsAt->addHour(),
+                'blocking_ends_at' => $startsAt->addHour(),
+                'schedule_timezone' => 'UTC',
+                'client_timezone' => 'UTC',
+            ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.show', $booking->getKey()))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingShow')
+                ->where('booking.meetingUrl', 'https://zoom.us/j/portal-ready')
+                ->where('booking.meetingPending', false)
+                ->missing('booking.contactStaff'));
     }
 
     public function test_booking_month_navigation_keeps_the_authoritative_range_within_the_visible_month(): void

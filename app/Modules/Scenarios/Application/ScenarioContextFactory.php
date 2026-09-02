@@ -82,7 +82,7 @@ final class ScenarioContextFactory
                 'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('d-m-Y'),
                 'local_time' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('H:i'),
                 'timezone' => $this->bookingTimezone($context->booking),
-                'meeting_url' => $context->booking->visit_format->value === 'online' ? $context->booking->meeting_url : null,
+                'meeting_url' => $context->booking->effectiveMeetingUrl(),
                 'completed_at' => CarbonImmutable::parse((string) $context->event->occurred_at)->toIso8601String(),
             ];
             if ($includeFeedbackUrl) {

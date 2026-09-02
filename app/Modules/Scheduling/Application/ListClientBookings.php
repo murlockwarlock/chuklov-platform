@@ -2,9 +2,11 @@
 
 namespace App\Modules\Scheduling\Application;
 
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -85,12 +87,14 @@ final class ListClientBookings
             'statusLabel' => $this->statusLabel($booking->status, $locale),
             'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status, $locale),
             'location' => $booking->location,
-            'meetingUrl' => $booking->visit_format === VisitFormat::Online ? $booking->meeting_url : null,
+            'meetingUrl' => $booking->effectiveMeetingUrl(),
+            'meetingPending' => $booking->visit_format === VisitFormat::Online
+                && $booking->meeting_link_mode === MeetingLinkMode::Auto
+                && $booking->provider_sync_status === VideoMeetingSyncStatus::Pending,
             'partySize' => $booking->party_size,
             'eventVersion' => $booking->event_version,
             'canCancel' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
             'canReschedule' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
-            'contactStaff' => ! $terminal && ! $pendingHomeVisit && ! $outsideCutoff,
             'pendingReview' => $pendingHomeVisit,
             'history' => $this->safeHistory($booking, $locale),
         ];
