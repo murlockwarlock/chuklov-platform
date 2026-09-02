@@ -11,6 +11,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CancelBooking;
@@ -149,6 +150,11 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         self::assertSame(BookingStatus::Cancelled, $cancelled->status);
         self::assertSame('unpaid', $cancelled->payment_status->value);
         self::assertSame(BookingEventType::Cancelled, $cancelled->events()->latest('id')->firstOrFail()->event_type);
+        self::assertSame($cancelled->event_version, ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.cancelled')
+            ->sole()
+            ->payload['event_version']);
     }
 
     public function test_reschedule_preserves_booking_identity_and_records_old_and_new_time(): void
@@ -173,6 +179,12 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         self::assertSame(2, $rescheduled->event_version);
         self::assertSame(BookingEventType::Rescheduled, $rescheduled->events()->latest('id')->firstOrFail()->event_type);
         self::assertSame('2026-04-06T09:00:00+00:00', $rescheduled->events()->latest('id')->firstOrFail()->old_values['starts_at']);
+        self::assertSame('booking.rescheduled', ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.rescheduled')
+            ->sole()
+            ->event_name
+            ->value);
     }
 
     public function test_reschedule_conflict_preserves_the_original_booking_time(): void

@@ -4,11 +4,9 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
-use App\Modules\Scheduling\Domain\Enums\BookingStatus;
-use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 
-final class BookingConfirmedGuard
+final class BookingChangedGuard
 {
     /** @param array<string, mixed>|null $renderContext */
     public function allows(
@@ -16,22 +14,17 @@ final class BookingConfirmedGuard
         ?Booking $booking = null,
         ?array $renderContext = null,
     ): bool {
-        if ($event->event_name !== ScenarioEventType::BookingConfirmed) {
+        if (! in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)) {
             return false;
         }
 
         $booking ??= Booking::query()
             ->where('organization_id', $event->organization_id)
             ->whereKey($this->positiveInt($event->payload['booking_id'] ?? null))
+            ->with('client')
             ->first();
 
-        if (! $booking instanceof Booking
-            || ! $this->matchesEvent($event, $booking)
-            || $booking->status !== BookingStatus::Confirmed) {
-            return false;
-        }
-
-        if ($booking->visit_format === VisitFormat::Online && ! $this->validUrl($booking->meeting_url)) {
+        if (! $booking instanceof Booking || ! $this->matchesEvent($event, $booking)) {
             return false;
         }
 
@@ -49,10 +42,11 @@ final class BookingConfirmedGuard
 
         return (int) ($context['id'] ?? 0) === (int) $booking->getKey()
             && (int) ($context['event_version'] ?? 0) === (int) $booking->event_version
+            && ($context['status'] ?? null) === $booking->status->value
             && ($context['local_date'] ?? null) === $localStart->format('d-m-Y')
             && ($context['local_time'] ?? null) === $localStart->format('H:i')
             && ($context['timezone'] ?? null) === $timezone
-            && ($context['meeting_url'] ?? null) === ($booking->visit_format === VisitFormat::Online ? $booking->meeting_url : null);
+            && ($context['meeting_url'] ?? null) === ($booking->visit_format->value === 'online' ? $booking->meeting_url : null);
     }
 
     private function matchesEvent(ScenarioEvent $event, Booking $booking): bool
@@ -66,22 +60,6 @@ final class BookingConfirmedGuard
             && ($payload['visit_format'] ?? null) === $booking->visit_format->value
             && ($payload['starts_at'] ?? null) === $booking->startsAtUtc()->toIso8601String()
             && ($payload['ends_at'] ?? null) === $booking->endsAtUtc()->toIso8601String();
-    }
-
-    private function validUrl(mixed $url): bool
-    {
-        if (! is_string($url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
-            return false;
-        }
-
-        $parts = parse_url($url);
-
-        return is_array($parts)
-            && in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https'], true)
-            && is_string($parts['host'] ?? null)
-            && trim($parts['host']) !== ''
-            && ! array_key_exists('user', $parts)
-            && ! array_key_exists('pass', $parts);
     }
 
     private function positiveInt(mixed $value): int

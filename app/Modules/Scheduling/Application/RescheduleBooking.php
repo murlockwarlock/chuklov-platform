@@ -154,13 +154,11 @@ final class RescheduleBooking
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
-            if ($lockedBooking->status === BookingStatus::Confirmed) {
-                $this->scenarioEvents->bookingConfirmed(
-                    booking: $lockedBooking,
-                    causationId: (string) $bookingEvent->getKey(),
-                    occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
-                );
-            }
+            $this->scenarioEvents->bookingRescheduled(
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
+                occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
+            );
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor instanceof User ? $actor : null,

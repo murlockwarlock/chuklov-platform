@@ -131,7 +131,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $message = $this->channel->messages[0] ?? null;
         self::assertNotNull($message);
         self::assertSame(
-            'Your appointment with '.$specialist->display_name.' for '.$service->name.' is confirmed for 2026-09-05 at 10:00 (UTC).',
+            'Your appointment with '.$specialist->display_name.' for '.$service->name.' is confirmed for 05-09-2026 at 10:00 (UTC).',
             $message->body,
         );
         self::assertStringNotContainsString('https://zoom.us/j/ordinary-1', $message->body);
@@ -180,6 +180,99 @@ final class MilestoneFiveScenarioTest extends TestCase
         );
         self::assertStringContainsString('Your appointment request with '.$specialist->display_name, $this->channel->messages[0]->body);
         self::assertStringContainsString('New appointment request from '.$client->full_name, $this->channel->messages[1]->body);
+    }
+
+    public function test_rescheduled_and_cancelled_bookings_notify_with_local_date_format(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $rescheduled = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'starts_at' => CarbonImmutable::create(2026, 9, 4, 5, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'schedule_timezone' => 'Asia/Bangkok',
+                'client_timezone' => 'Asia/Bangkok',
+            ]);
+        $rescheduledEvent = app(RecordScenarioEvent::class)->bookingRescheduled($rescheduled, 'booking-rescheduled-test', CarbonImmutable::now());
+
+        self::assertSame('booking.rescheduled', $rescheduledEvent->event_name->value);
+        self::assertSame('Asia/Bangkok', $rescheduledEvent->payload['schedule_timezone']);
+        self::assertSame($rescheduled->event_version, $rescheduledEvent->payload['event_version']);
+
+        app(MaterializeScenarioEvent::class)->handle($rescheduledEvent->getKey());
+        $rescheduledAction = ScenarioAction::query()->where('scenario_event_id', $rescheduledEvent->getKey())->sole();
+        $this->makeDue($rescheduledAction);
+        app(ExecuteScenarioAction::class)->handle($rescheduledAction->getKey());
+
+        self::assertSame(ScenarioActionStatus::Delivered, $rescheduledAction->fresh()->status);
+        self::assertStringContainsString('04-09-2026 at 12:00 (Asia/Bangkok)', $this->channel->messages[0]->body);
+
+        $cancelled = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Cancelled,
+                'starts_at' => CarbonImmutable::create(2026, 9, 5, 5, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 5, 6, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 5, 6, 0, 0, 'UTC'),
+                'schedule_timezone' => 'Asia/Bangkok',
+                'client_timezone' => 'Asia/Bangkok',
+            ]);
+        $cancelledEvent = app(RecordScenarioEvent::class)->bookingCancelled($cancelled, 'booking-cancelled-test', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($cancelledEvent->getKey());
+        $cancelledAction = ScenarioAction::query()->where('scenario_event_id', $cancelledEvent->getKey())->sole();
+        $this->makeDue($cancelledAction);
+        app(ExecuteScenarioAction::class)->handle($cancelledAction->getKey());
+
+        self::assertSame(ScenarioActionStatus::Delivered, $cancelledAction->fresh()->status);
+        self::assertStringContainsString('05-09-2026 at 12:00 (Asia/Bangkok) was cancelled.', $this->channel->messages[1]->body);
+    }
+
+    public function test_rescheduled_notification_is_suppressed_when_booking_changes_before_delivery(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'starts_at' => CarbonImmutable::create(2026, 9, 4, 5, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+                'schedule_timezone' => 'Asia/Bangkok',
+                'client_timezone' => 'Asia/Bangkok',
+            ]);
+        $event = app(RecordScenarioEvent::class)->bookingRescheduled($booking, 'booking-rescheduled-stale', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
+        $booking->forceFill([
+            'starts_at' => CarbonImmutable::create(2026, 9, 4, 6, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 9, 4, 7, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 9, 4, 7, 0, 0, 'UTC'),
+            'event_version' => 2,
+        ])->save();
+        $this->makeDue($action);
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        self::assertSame(ScenarioActionStatus::Suppressed, $action->fresh()->status);
+        self::assertSame('booking_changed', $action->fresh()->terminal_reason);
+        self::assertCount(0, $this->channel->messages);
     }
 
     public function test_booking_completion_rolls_back_booking_history_and_scenario_event_together(): void
@@ -746,6 +839,12 @@ final class MilestoneFiveScenarioTest extends TestCase
                 'blocking_ends_at' => $start->addHour(),
                 'schedule_timezone' => 'UTC',
             ]);
+    }
+
+    private function makeDue(ScenarioAction $action): void
+    {
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
     }
 
     private function setFilamentContext(User $admin, Organization $organization): void

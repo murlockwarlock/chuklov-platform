@@ -71,6 +71,9 @@ final class ScenarioActionsTable
 
         return match ($value) {
             'booking.created' => 'После новой записи',
+            'booking.confirmed' => 'После подтверждения записи',
+            'booking.rescheduled' => 'После переноса записи',
+            'booking.cancelled' => 'После отмены записи',
             'booking.completed' => 'После визита',
             default => 'Событие',
         };

@@ -28,7 +28,11 @@ class BookingsTable
         $columns = [
             TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
-            TextColumn::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i')->sortable(),
+            TextColumn::make('starts_at')
+                ->label('Дата и время')
+                ->dateTime('d.m.Y H:i')
+                ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC'))
+                ->sortable(),
             TextColumn::make('visit_format')
                 ->label('Формат')
                 ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),

@@ -6,6 +6,8 @@ enum ScenarioEventType: string
 {
     case BookingCreated = 'booking.created';
     case BookingConfirmed = 'booking.confirmed';
+    case BookingRescheduled = 'booking.rescheduled';
+    case BookingCancelled = 'booking.cancelled';
     case BookingCompleted = 'booking.completed';
     case OnboardingStarted = 'onboarding.started';
     case FinancialObligationCreated = 'finance.obligation.created';

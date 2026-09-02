@@ -26,6 +26,8 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedBookingRequest($organization, 'ru', 'Ваша заявка на запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» принята на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Мы скоро подтвердим запись.');
                 $this->seedBookingConfirmation($organization, 'en', 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} is confirmed for {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).');
                 $this->seedBookingConfirmation($organization, 'ru', 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» подтверждена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}).');
+                $this->seedBookingRescheduled($organization);
+                $this->seedBookingCancelled($organization);
                 $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
                 $this->seedFeedback($organization, 'ru', 'Оцените визит, {{ client.full_name }}.');
             });
@@ -344,6 +346,122 @@ final class ScenarioNotificationSeeder extends Seeder
             'recipient_strategy' => ['type' => 'assigned_specialist'],
             'channel_priority' => ['telegram'],
             'template_version_id' => $specialistVersion->getKey(),
+            'max_occurrences' => 1,
+            'repeat_interval_value' => null,
+            'repeat_interval_unit' => null,
+            'version' => 1,
+        ])->save();
+    }
+
+    private function seedBookingRescheduled(Organization $organization): void
+    {
+        $this->seedBookingLifecycle(
+            organization: $organization,
+            eventType: ScenarioEventType::BookingRescheduled,
+            templateKey: 'booking-rescheduled',
+            rulePrefix: 'booking-rescheduled',
+            clientBodies: [
+                'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} was rescheduled to {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
+                'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» перенесена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}).',
+            ],
+            specialistBody: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} was rescheduled to {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
+        );
+    }
+
+    private function seedBookingCancelled(Organization $organization): void
+    {
+        $this->seedBookingLifecycle(
+            organization: $organization,
+            eventType: ScenarioEventType::BookingCancelled,
+            templateKey: 'booking-cancelled',
+            rulePrefix: 'booking-cancelled',
+            clientBodies: [
+                'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}) was cancelled.',
+                'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}) отменена.',
+            ],
+            specialistBody: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}) was cancelled.',
+        );
+    }
+
+    /** @param array{en: string, ru: string} $clientBodies */
+    private function seedBookingLifecycle(
+        Organization $organization,
+        ScenarioEventType $eventType,
+        string $templateKey,
+        string $rulePrefix,
+        array $clientBodies,
+        string $specialistBody,
+    ): void {
+        foreach ($clientBodies as $locale => $body) {
+            $version = $this->ensureTransactionalTemplate(
+                organization: $organization,
+                templateKey: $templateKey,
+                locale: $locale,
+                name: $templateKey,
+                body: $body,
+                variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            );
+            $this->seedBookingLifecycleRule(
+                organization: $organization,
+                ruleKey: $rulePrefix.'-client-'.$locale,
+                name: $templateKey.' for client ('.$locale.')',
+                eventType: $eventType,
+                conditions: [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
+                recipientStrategy: ['type' => 'client'],
+                templateVersionId: (int) $version->getKey(),
+            );
+        }
+
+        $specialistVersion = $this->ensureTransactionalTemplate(
+            organization: $organization,
+            templateKey: $templateKey.'-specialist',
+            locale: 'en',
+            name: $templateKey.' for specialist',
+            body: $specialistBody,
+            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+        );
+        $this->seedBookingLifecycleRule(
+            organization: $organization,
+            ruleKey: $rulePrefix.'-specialist',
+            name: $templateKey.' for specialist',
+            eventType: $eventType,
+            conditions: [],
+            recipientStrategy: ['type' => 'assigned_specialist'],
+            templateVersionId: (int) $specialistVersion->getKey(),
+        );
+    }
+
+    /**
+     * @param  list<array{type: string, operator: string, value?: mixed}>  $conditions
+     * @param  array<string, mixed>  $recipientStrategy
+     */
+    private function seedBookingLifecycleRule(
+        Organization $organization,
+        string $ruleKey,
+        string $name,
+        ScenarioEventType $eventType,
+        array $conditions,
+        array $recipientStrategy,
+        int $templateVersionId,
+    ): void {
+        if (ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $ruleKey)->exists()) {
+            return;
+        }
+
+        $rule = new ScenarioRule;
+        $rule->forceFill([
+            'organization_id' => $organization->getKey(),
+            'rule_key' => $ruleKey,
+            'name' => $name,
+            'trigger_event' => $eventType->value,
+            'is_enabled' => true,
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'purpose' => ScenarioRulePurpose::Transactional->value,
+            'conditions' => $conditions,
+            'recipient_strategy' => $recipientStrategy,
+            'channel_priority' => ['telegram'],
+            'template_version_id' => $templateVersionId,
             'max_occurrences' => 1,
             'repeat_interval_value' => null,
             'repeat_interval_unit' => null,

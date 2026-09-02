@@ -5,6 +5,7 @@ namespace App\Modules\Scheduling\Application;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -21,6 +22,7 @@ final class CancelBooking
         private readonly BookingAuthorization $authorization,
         private readonly GetBookingCancellationCutoff $cutoff,
         private readonly RecordBookingEvent $events,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -68,13 +70,18 @@ final class CancelBooking
                 'cancelled_at' => now(),
                 'event_version' => $lockedBooking->event_version + 1,
             ])->save();
-            $this->events->handle(
+            $bookingEvent = $this->events->handle(
                 booking: $lockedBooking,
                 actor: $actor,
                 type: BookingEventType::Cancelled,
                 oldValues: $oldValues,
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
+            );
+            $this->scenarioEvents->bookingCancelled(
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
+                occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
             $this->audit->handle(
                 organization: $organization,

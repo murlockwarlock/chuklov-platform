@@ -54,6 +54,8 @@ final class ScenarioRulesTable
         return match ($value) {
             ScenarioEventType::BookingCreated->value => 'После новой записи',
             ScenarioEventType::BookingConfirmed->value => 'После подтверждения',
+            ScenarioEventType::BookingRescheduled->value => 'После переноса',
+            ScenarioEventType::BookingCancelled->value => 'После отмены',
             ScenarioEventType::BookingCompleted->value => 'После визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
             ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',

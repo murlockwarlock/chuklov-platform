@@ -6,6 +6,7 @@ use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -28,6 +29,7 @@ final class MaterializeScenarioEvent
         private readonly ScenarioRecipientResolver $recipients,
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
+        private readonly BookingChangedGuard $bookingChangedGuard,
     ) {}
 
     public function handle(int $scenarioEventId): void
@@ -54,6 +56,17 @@ final class MaterializeScenarioEvent
                 }
                 if ($event->event_name->value === 'booking.confirmed'
                     && ! $this->bookingConfirmedGuard->allows($event, $context->booking)) {
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => 'booking_changed',
+                    ])->save();
+
+                    return;
+                }
+                if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, $context->booking)) {
                     $event->forceFill([
                         'status' => ScenarioEventStatus::Processed,
                         'processing_started_at' => null,

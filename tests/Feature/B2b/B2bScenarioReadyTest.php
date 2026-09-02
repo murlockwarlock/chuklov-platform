@@ -68,7 +68,7 @@ final class B2bScenarioReadyTest extends TestCase
 
         self::assertNotNull($message);
         $start = $scenario['call']->startsAtUtc();
-        self::assertSame('Встреча: '.$start->toDateString().' '.$start->format('H:i').'.', $message->body);
+        self::assertSame('Встреча: '.$start->format('d-m-Y').' '.$start->format('H:i').'.', $message->body);
         self::assertStringNotContainsString('https://zoom.us/j/ready', $message->body);
         self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
         self::assertSame('https://zoom.us/j/ready', $message->actionButton->url);

@@ -174,6 +174,8 @@ final class ScenarioRuleResource extends Resource
         return match ($value) {
             ScenarioEventType::BookingCreated->value => 'После новой записи',
             ScenarioEventType::BookingConfirmed->value => 'После подтверждения записи',
+            ScenarioEventType::BookingRescheduled->value => 'После переноса записи',
+            ScenarioEventType::BookingCancelled->value => 'После отмены записи',
             ScenarioEventType::BookingCompleted->value => 'После завершения визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
             ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',

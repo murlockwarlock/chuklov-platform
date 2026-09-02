@@ -49,6 +49,8 @@ final class ScenarioRuleForm
                             ->options([
                                 ScenarioEventType::BookingCreated->value => 'Новая заявка на запись',
                                 ScenarioEventType::BookingConfirmed->value => 'Запись подтверждена',
+                                ScenarioEventType::BookingRescheduled->value => 'Запись перенесена',
+                                ScenarioEventType::BookingCancelled->value => 'Запись отменена',
                                 ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
                                 ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',
                                 ScenarioEventType::FinancialObligationCreated->value => 'Появилась задолженность за визит',

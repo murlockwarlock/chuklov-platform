@@ -33,6 +33,8 @@ final class ScenarioContextFactory
         return match ($event->event_name) {
             ScenarioEventType::BookingCreated => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingConfirmed => $this->bookingContext($event, $evaluationEndsAt),
+            ScenarioEventType::BookingRescheduled => $this->bookingContext($event, $evaluationEndsAt),
+            ScenarioEventType::BookingCancelled => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
@@ -70,7 +72,7 @@ final class ScenarioContextFactory
                 'specialist_name' => $context->booking->specialist->display_name,
                 'starts_at' => $context->booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
-                'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->toDateString(),
+                'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('d-m-Y'),
                 'local_time' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('H:i'),
                 'timezone' => $this->bookingTimezone($context->booking),
                 'meeting_url' => $context->booking->visit_format->value === 'online' ? $context->booking->meeting_url : null,
@@ -121,7 +123,7 @@ final class ScenarioContextFactory
                 : null;
             $renderContext['sales_call'] = [
                 'id' => (int) $call->getKey(),
-                'local_date' => $localStart->toDateString(),
+                'local_date' => $localStart->format('d-m-Y'),
                 'local_time' => $localStart->format('H:i'),
                 'timezone' => (string) $call->schedule_timezone,
                 'join_url' => $joinUrl,

@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
@@ -35,6 +36,7 @@ final class ExecuteScenarioAction
         private readonly ScheduleNextScenarioAction $nextActions,
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
+        private readonly BookingChangedGuard $bookingChangedGuard,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -107,6 +109,11 @@ final class ExecuteScenarioAction
             return false;
         }
 
+        if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+            && ! $this->bookingChangedGuard->allows($event, $context->booking, $action->render_context)) {
+            return false;
+        }
+
         try {
             $conditionSnapshot = ScenarioConditionSet::from($action->condition_snapshot);
         } catch (InvalidArgumentException) {
@@ -129,7 +136,9 @@ final class ExecuteScenarioAction
                 || ($event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || ($event->event_name->value === 'booking.confirmed'
-                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))) {
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                || (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
                 return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
             $identity = $this->identities->resolve($action, $delivery->channel);
@@ -179,7 +188,9 @@ final class ExecuteScenarioAction
                 || ($event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || ($event->event_name->value === 'booking.confirmed'
-                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))) {
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                || (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
                 return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
 
@@ -210,6 +221,7 @@ final class ExecuteScenarioAction
         $url = match ($action->trigger_event->value) {
             'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
             'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
+            'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
             default => null,
         };
 
@@ -227,7 +239,7 @@ final class ExecuteScenarioAction
     {
         return match ($eventName) {
             'b2b.sales_call.ready' => 'b2b_sales_call_changed',
-            'booking.confirmed' => 'booking_changed',
+            'booking.confirmed', 'booking.rescheduled', 'booking.cancelled' => 'booking_changed',
             default => 'current_conditions_not_met',
         };
     }
