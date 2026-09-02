@@ -4,7 +4,7 @@
 
 - This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and simplifies the normal CRM workflows for broadcasts, auto-messages, templates, message history, bookings, and operational tables without removing the advanced scenario or segmentation capabilities.
 - Broadcasts now support direct searchable client selection, direct message composition, recipient/consent previews, and human-controlled advanced filters. Appointment reminders are first-class booking-relative actions anchored to `starts_at`, with separate client/specialist settings, real reschedule/cancel suppression, bounded Zoom readiness, Russian content, and per-booking address snapshots.
-- Focused local PHPUnit coverage passes `117` tests / `600` assertions; changed PHP syntax, Pint, and `git diff --check` pass. PostgreSQL concurrency, hosted CI/E2E, staging smoke, and owner UX acceptance remain pending for this candidate. No production deployment, merge, PR readiness, PR #23, or M12 work is included.
+- Focused local changed-feature coverage passes `222` tests / `1,389` assertions with `1` PostgreSQL-only concurrency test skipped by the local SQLite configuration; PHP syntax, Pint, PHPStan, and `git diff --check` pass. Hosted exact-SHA CI `33669238885` and E2E `33669239041` pass on `8b19d88b8d808dd8c2e79003c889ddb295ae29aa`; staging deployment and `staging-smoke.sh` also pass on that SHA. Owner UX acceptance remains pending. No production deployment, merge, PR readiness, PR #23, or M12 work is included.
 
 ## 2026-09-02 — CRM operator marketing consent
 
