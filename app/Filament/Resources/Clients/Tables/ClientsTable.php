@@ -19,6 +19,9 @@ class ClientsTable
     {
         return $table
             ->searchable()
+            ->defaultSort(fn (Builder $query): Builder => $query
+                ->orderByDesc('created_at')
+                ->orderByDesc('id'))
             ->searchPlaceholder('Имя, email, телефон или ID клиента')
             ->searchUsing(function (Builder $query, string $search): void {
                 app(ClientSearch::class)->apply($query, $search);

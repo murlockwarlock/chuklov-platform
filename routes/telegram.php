@@ -9,6 +9,8 @@ use App\Modules\Identity\Application\CompleteTelegramWebAuthentication;
 use App\Modules\Identity\Application\ConnectTelegramClientIdentity;
 use App\Modules\Identity\Application\InvalidTelegramLinkToken;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
+use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
+use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Auth\Access\AuthorizationException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
@@ -46,8 +48,23 @@ $bot->onCommand('start {token}', function (
     }
 })->where('token', '(?!web_)[A-Za-z0-9_-]+')->description('Запустить приложение');
 
-$bot->onCommand('start', function (Nutgram $bot, GetTelegramMenu $menu): void {
+$bot->onCommand('start', function (
+    Nutgram $bot,
+    GetTelegramMenu $menu,
+    TelegramBotIdentityVerifier $identityVerifier,
+    RefreshTelegramClientIdentity $refreshIdentity,
+): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
+    $organizationId = config('tenancy.default_organization_id');
+    if (is_int($organizationId) || (is_string($organizationId) && ctype_digit($organizationId))) {
+        $organization = Organization::query()->find((int) $organizationId);
+        if ($organization instanceof Organization) {
+            try {
+                $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
+            } catch (UnauthorizedHttpException) {
+            }
+        }
+    }
     $keyboard = InlineKeyboardMarkup::make();
 
     foreach ($menu->handle($language) as $entry) {

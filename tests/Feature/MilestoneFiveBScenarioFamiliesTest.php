@@ -100,6 +100,53 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         self::assertCount(3, $this->channel->messages);
     }
 
+    public function test_seeded_post_session_follow_ups_wait_for_due_time_and_deliver_once(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $client->forceFill(['language' => 'ru'])->save();
+        $this->verifiedClient($client);
+        app(ScenarioNotificationSeeder::class)->run();
+        ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'booking-completed-feedback-%')
+            ->update(['is_enabled' => false]);
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-ru')
+            ->orderBy('delay_value')
+            ->get();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $occurredAt = CarbonImmutable::now();
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'm5b-seeded-follow-ups', $occurredAt);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $eventOccurredAt = CarbonImmutable::instance($event->fresh()->occurred_at);
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereIn('scenario_rule_id', $rules->pluck('id'))
+            ->orderBy('scheduled_for')
+            ->get();
+
+        self::assertSame([24, 48, 72], $actions->pluck('scheduled_for')->map(
+            static fn ($scheduledFor): int => abs($eventOccurredAt->diffInHours(CarbonImmutable::parse((string) $scheduledFor))),
+        )->all());
+
+        foreach ($actions as $action) {
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+            self::assertSame(ScenarioActionStatus::Scheduled, $action->fresh()->status);
+        }
+        self::assertCount(0, $this->channel->messages);
+
+        foreach ($actions as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+            self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(3, $this->channel->messages);
+    }
+
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();

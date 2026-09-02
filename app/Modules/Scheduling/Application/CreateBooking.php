@@ -12,6 +12,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -42,6 +43,7 @@ class CreateBooking
         private readonly OrganizationFeatureGate $features,
         private readonly CalculateAvailability $availability,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly BookingVideoMeetingLifecycle $videoMeetings,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -83,6 +85,9 @@ class CreateBooking
         }
 
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
+        $resolvedMeetingLinkMode = $format === VisitFormat::Online
+            ? $this->videoMeetings->resolveMeetingLinkMode($organization, $meetingLinkMode)
+            : null;
         $actorScope = $actor instanceof User ? 'user:'.$actor->getKey() : 'client:'.$actor->getKey();
         $actorType = $actor instanceof User ? 'user' : 'client';
         $requestHash = $this->requestHash(
@@ -92,7 +97,7 @@ class CreateBooking
             startsAt: $requestedStart,
             format: $format,
             clientTimezone: $clientTimezone,
-            meetingLinkMode: $meetingLinkMode,
+            meetingLinkMode: $resolvedMeetingLinkMode,
             partySize: $partySize,
             location: $location,
         );
@@ -111,7 +116,7 @@ class CreateBooking
             $service,
             $format,
             $clientTimezone,
-            $meetingLinkMode,
+            $resolvedMeetingLinkMode,
             $requestedStart,
             $source,
             $organization,
@@ -181,9 +186,6 @@ class CreateBooking
             );
 
             $resolvedClientTimezone = $this->resolveClientTimezone($clientTimezone, $lockedClient);
-            $resolvedMeetingLinkMode = $format === VisitFormat::Online
-                ? ($meetingLinkMode ?? MeetingLinkMode::Manual)
-                : null;
             $availability = $this->availability->forBooking(
                 specialist: $lockedSpecialist,
                 service: $lockedService,
@@ -261,6 +263,9 @@ class CreateBooking
                 causationId: (string) $event->getKey(),
                 occurredAt: CarbonImmutable::instance($event->occurred_at),
             );
+            if ($resolvedMeetingLinkMode === MeetingLinkMode::Auto) {
+                $this->videoMeetings->scheduleCreate($organization, $booking);
+            }
 
             $idempotency->forceFill([
                 'booking_id' => $booking->getKey(),

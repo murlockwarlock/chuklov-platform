@@ -2,6 +2,10 @@
 
 namespace App\Modules\Scheduling\Domain\Models;
 
+use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
+use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
@@ -31,6 +35,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read VisitFormat $visit_format
  * @property-read BookingSource $source
  * @property-read MeetingLinkMode|null $meeting_link_mode
+ * @property-read string|null $provider_name
+ * @property-read string|null $provider_account_id
+ * @property-read string|null $provider_host_user_id
+ * @property-read string|null $provider_meeting_id
+ * @property-read string|null $provider_meeting_uuid
+ * @property-read string|null $provider_join_url
+ * @property-read VideoMeetingSyncStatus $provider_sync_status
+ * @property-read VideoMeetingOperation|null $provider_operation
+ * @property-read int $provider_sync_version
+ * @property-read CarbonImmutable|null $provider_synced_at
+ * @property-read string|null $provider_error_code
+ * @property-read string|null $provider_correlation_key
+ * @property-read string|null $provider_lease_token
+ * @property-read CarbonImmutable|null $provider_lease_expires_at
+ * @property-read int|null $provider_lease_event_id
+ * @property-read string|null $provider_lease_processing_token
  * @property-read PaymentRequirementType|null $payment_requirement
  */
 #[Fillable([
@@ -50,6 +70,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'location',
     'meeting_link_mode',
     'meeting_url',
+    'provider_name',
+    'provider_account_id',
+    'provider_host_user_id',
+    'provider_meeting_id',
+    'provider_meeting_uuid',
+    'provider_join_url',
+    'provider_sync_status',
+    'provider_operation',
+    'provider_sync_version',
+    'provider_synced_at',
+    'provider_error_code',
+    'provider_correlation_key',
+    'provider_lease_token',
+    'provider_lease_expires_at',
+    'provider_lease_event_id',
+    'provider_lease_processing_token',
     'party_size',
     'event_version',
     'requested_at',
@@ -130,14 +166,59 @@ class Booking extends Model
             'payment_requirement' => PaymentRequirementType::class,
             'source' => BookingSource::class,
             'meeting_link_mode' => MeetingLinkMode::class,
+            'provider_sync_status' => VideoMeetingSyncStatus::class,
+            'provider_operation' => VideoMeetingOperation::class,
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
             'blocking_ends_at' => 'datetime',
             'requested_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'provider_synced_at' => 'datetime',
+            'provider_lease_expires_at' => 'datetime',
             'party_size' => 'integer',
             'payment_requirement_amount_minor' => 'integer',
             'event_version' => 'integer',
+            'provider_sync_version' => 'integer',
+            'provider_lease_event_id' => 'integer',
         ];
+    }
+
+    public function providerAccountAffinity(): ?ProviderAccountAffinity
+    {
+        $accountId = $this->getAttribute('provider_account_id');
+        $hostUserId = $this->getAttribute('provider_host_user_id');
+
+        if (! is_string($accountId)
+            || trim($accountId) === ''
+            || ! is_string($hostUserId)
+            || trim($hostUserId) === '') {
+            return null;
+        }
+
+        return new ProviderAccountAffinity(trim($accountId), trim($hostUserId));
+    }
+
+    public function providerIdentity(): ?VideoMeetingIdentity
+    {
+        $meetingId = $this->getAttribute('provider_meeting_id');
+        if (! is_string($meetingId) || trim($meetingId) === '') {
+            return null;
+        }
+
+        $uuid = $this->getAttribute('provider_meeting_uuid');
+
+        return new VideoMeetingIdentity(
+            meetingId: $meetingId,
+            meetingUuid: is_string($uuid) && trim($uuid) !== '' ? $uuid : null,
+            providerAccountAffinity: $this->providerAccountAffinity(),
+        );
+    }
+
+    public function hasProviderLease(): bool
+    {
+        return $this->provider_lease_token !== null
+            || $this->provider_lease_expires_at !== null
+            || $this->provider_lease_event_id !== null
+            || $this->provider_lease_processing_token !== null;
     }
 }

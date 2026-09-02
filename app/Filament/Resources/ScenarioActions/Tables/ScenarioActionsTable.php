@@ -7,12 +7,16 @@ use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 final class ScenarioActionsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
+            ->defaultSort(fn (Builder $query): Builder => $query
+                ->orderByDesc('created_at')
+                ->orderByDesc('id'))
             ->columns([
                 TextColumn::make('rule.name')->label('Правило')->searchable(),
                 TextColumn::make('event.event_name')

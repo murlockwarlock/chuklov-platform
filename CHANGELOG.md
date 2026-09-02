@@ -6,6 +6,8 @@
 - Internal Telegram notifications to specialists use Russian templates and include the client's available Telegram @username and ID.
 - Ordinary booking requests now atomically create a durable scenario event, notifying the client and assigned specialist; confirmed bookings also notify the assigned specialist while existing client notifications remain enabled.
 - Booking reschedule and cancellation notifications now use durable lifecycle events, revalidate the booking before delivery, and render `DD-MM-YYYY`; CRM booking times explicitly show the saved schedule timezone.
+- CRM booking lists now default to newest-created records with deterministic ID ordering, and successful lifecycle actions refresh their mounted record immediately. Online bookings use the existing Zoom provider for durable automatic create, reschedule, and cancellation when a complete active credential is configured; manual links remain supported.
+- Confirmed automatic online-booking notifications wait for a ready meeting link instead of being discarded, while verified Telegram interactions refresh stored usernames and specialist messages offer a Telegram profile action when only the verified numeric ID is available.
 
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 

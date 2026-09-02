@@ -7,8 +7,10 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
@@ -29,6 +31,7 @@ final class RescheduleBooking
         private readonly GetBookingCancellationCutoff $cutoff,
         private readonly CalculateAvailability $availability,
         private readonly RecordBookingEvent $events,
+        private readonly BookingVideoMeetingLifecycle $videoMeetings,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -159,6 +162,10 @@ final class RescheduleBooking
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            if ($lockedBooking->visit_format === VisitFormat::Online
+                && $lockedBooking->meeting_link_mode === MeetingLinkMode::Auto) {
+                $this->videoMeetings->scheduleReschedule($organization, $lockedBooking);
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor instanceof User ? $actor : null,

@@ -52,6 +52,16 @@ final class ClientCompanionTelegramTest extends TestCase
         $bot->assertNoReply();
     }
 
+    public function test_verified_private_text_refreshes_a_telegram_username_without_replacing_the_identity(): void
+    {
+        $this->verifyTelegram('810004');
+        $bot = $this->fakeBot(810004, ChatType::PRIVATE, 910004, 'known_client');
+
+        $bot->hearMessage(['message_id' => 401, 'text' => 'Проверка профиля'])->reply();
+
+        self::assertSame('known_client', ClientChannelIdentity::query()->sole()->external_username);
+    }
+
     public function test_unverified_private_text_uses_the_safe_link_path_and_never_creates_ai_state(): void
     {
         $bot = $this->fakeBot(810002, ChatType::PRIVATE, 910002);
@@ -68,11 +78,12 @@ final class ClientCompanionTelegramTest extends TestCase
     public function test_commands_are_not_forwarded_and_group_or_channel_text_is_ignored(): void
     {
         $this->verifyTelegram('810003');
-        $bot = $this->fakeBot(810003, ChatType::PRIVATE, 910003);
+        $bot = $this->fakeBot(810003, ChatType::PRIVATE, 910003, 'start_client');
 
         $bot->hearText('/help')->reply();
         $bot->hearText('/start')->reply();
         self::assertSame(0, CompanionTurn::query()->count());
+        self::assertSame('start_client', ClientChannelIdentity::query()->sole()->external_username);
 
         $groupBot = $this->fakeBot(810003, ChatType::GROUP, -910003);
         $groupBot->hearMessage(['message_id' => 301, 'text' => 'Сообщение из группы'])->reply();
@@ -92,7 +103,7 @@ final class ClientCompanionTelegramTest extends TestCase
         ]);
     }
 
-    private function fakeBot(int $userId, ChatType $chatType, int $chatId): Nutgram
+    private function fakeBot(int $userId, ChatType $chatType, int $chatId, ?string $username = null): Nutgram
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
@@ -101,6 +112,7 @@ final class ClientCompanionTelegramTest extends TestCase
             id: $userId,
             is_bot: false,
             first_name: 'Client',
+            username: $username,
             language_code: 'ru',
         ));
         $bot->setCommonChat(Chat::fromArray([

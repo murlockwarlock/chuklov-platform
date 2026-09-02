@@ -214,6 +214,18 @@ final class ExecuteScenarioAction
 
     private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
     {
+        if ($action->recipient_type === 'internal') {
+            $url = $action->render_context['client']['telegram_profile_url'] ?? null;
+            if (! is_string($url) || trim($url) === '') {
+                return null;
+            }
+
+            return new NotificationActionButton(
+                text: $this->isRussian($locale) ? 'Открыть Telegram клиента' : 'Open client Telegram',
+                url: $url,
+            );
+        }
+
         if ($action->recipient_type !== 'client') {
             return null;
         }

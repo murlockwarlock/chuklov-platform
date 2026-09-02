@@ -2,6 +2,7 @@
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\B2B\Application\ScheduleB2bProviderSyncEvents;
+use App\Modules\B2B\Application\ScheduleBookingProviderSyncEvents;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
@@ -52,6 +53,12 @@ Artisan::command('b2b:provider-sync', function (ScheduleB2bProviderSyncEvents $s
 })->purpose('Dispatch pending B2B video meeting provider events with crash-safe retries.');
 
 Schedule::command('b2b:provider-sync')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('bookings:provider-sync', function (ScheduleBookingProviderSyncEvents $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' booking provider event(s).');
+})->purpose('Dispatch pending ordinary booking video meeting events with crash-safe retries.');
+
+Schedule::command('bookings:provider-sync')->everyMinute()->withoutOverlapping()->onOneServer();
 
 Artisan::command('broadcasts:run', function (ScheduleBroadcastWork $scheduler): void {
     $result = $scheduler->handle();

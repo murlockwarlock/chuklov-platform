@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-02 — M11D CRM operator UX and notification delivery candidate
+
+- This candidate starts exactly at `171163333818c79531202fc857c31ed5c64cdfee` and addresses the reproduced CRM/Telegram defects only: bookings and adjacent high-frequency operational lists use deterministic newest-created ordering; all booking lifecycle actions refresh the mounted Filament record after success; and ordinary online bookings use the existing Zoom provider's durable create/update/cancel lifecycle when a complete active credential enables automatic mode.
+- Booking-confirmed scenario events for automatic online appointments remain pending until the provider writes a usable meeting link, so confirmation delivery is not silently discarded. Scenario context now retains a non-empty client label, uses the saved local date/time/timezone, and exposes verified Telegram contact/profile evidence without inferring usernames. Verified Telegram companion and menu interactions refresh a stored username without erasing a known value.
+- Focused local B2B/Scheduling/Scenario/CRM/Telegram coverage passes `274` tests / `1,405` assertions; Telegram identity/linking regressions pass `15` / `92`. Hosted CI, E2E, staging deployment, and real Telegram/Zoom acceptance remain pending for this candidate. No production deployment, merge, PR #23, or M12 work is included.
+
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 
 - This bounded candidate starts exactly at `7e7d4a8e3152c77d0f9e81123ab08edc00900ea4` and is limited to Track B: the stable Zoom provider principal is the non-secret pair `account_id + host_user_id`. Known meeting identities persist that pair and require an exact active-credential match before provider I/O; same-principal secret/client rotation remains valid, while account/host changes, missing or disabled credentials, and incomplete legacy affinity fail closed into reconciliation. Every new automatic generation captures its principal before its durable provider event and provider I/O, and unknown Create remains reconciliation-required.

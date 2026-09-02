@@ -129,7 +129,9 @@ class AuthenticateClientWithVerifiedChannel
             throw new AuthorizationException('This client channel identity is revoked.');
         }
 
-        $identity->forceFill(['external_username' => $verifiedIdentity->username]);
+        if ($verifiedIdentity->username !== null) {
+            $identity->forceFill(['external_username' => $verifiedIdentity->username]);
+        }
 
         if ($identity->verification_status === ChannelIdentityStatus::Unverified) {
             $identity->forceFill([

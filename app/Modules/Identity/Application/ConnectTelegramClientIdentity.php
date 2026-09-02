@@ -88,7 +88,9 @@ class ConnectTelegramClientIdentity
                 throw new AuthorizationException('The Telegram identity is revoked.');
             }
 
-            $identity->forceFill(['external_username' => $verifiedIdentity->username]);
+            if ($verifiedIdentity->username !== null) {
+                $identity->forceFill(['external_username' => $verifiedIdentity->username]);
+            }
 
             if ($identity->verification_status !== ChannelIdentityStatus::Verified) {
                 $identity->forceFill([

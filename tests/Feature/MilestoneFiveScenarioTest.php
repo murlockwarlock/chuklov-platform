@@ -140,6 +140,94 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('Join meeting', $message->actionButton->text);
     }
 
+    public function test_confirmed_auto_online_booking_waits_for_zoom_and_keeps_specialist_context(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $client->forceFill(['full_name' => 'Aikhana', 'language' => 'ru'])->save();
+        $this->verifiedTelegramIdentity($organization, $client);
+        ClientChannelIdentity::query()->where('client_id', $client->getKey())->sole()->forceFill([
+            'external_id' => '123456789',
+            'external_username' => 'aikhana',
+        ])->save();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+        app(OrganizationContext::class)->set($organization);
+
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'meeting_link_mode' => MeetingLinkMode::Auto,
+                'provider_account_id' => 'account-a',
+                'provider_host_user_id' => 'host-a',
+                'provider_sync_status' => 'pending',
+                'provider_operation' => 'create',
+                'provider_correlation_key' => 'booking-confirmation-test',
+                'starts_at' => CarbonImmutable::create(2026, 9, 5, 10, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 5, 11, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 5, 11, 0, 0, 'UTC'),
+                'schedule_timezone' => 'UTC',
+                'client_timezone' => 'UTC',
+            ]);
+        $confirmed = app(ConfirmBooking::class)->handle($admin, $booking);
+        $event = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.confirmed')
+            ->sole();
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        self::assertSame(ScenarioEventStatus::Pending, $event->fresh()->status);
+        self::assertSame('booking_meeting_pending', $event->fresh()->last_error_code);
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->count());
+
+        $readyAt = CarbonImmutable::parse((string) $event->fresh()->available_at)->addSecond();
+        CarbonImmutable::setTestNow($readyAt);
+        $confirmed->forceFill([
+            'provider_sync_status' => 'ready',
+            'provider_operation' => null,
+            'provider_join_url' => 'https://zoom.us/j/confirmed-auto',
+            'meeting_url' => 'https://zoom.us/j/confirmed-auto',
+        ])->save();
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->orderBy('recipient_type')
+            ->get();
+
+        self::assertCount(2, $actions);
+        $specialistAction = $actions->firstWhere('recipient_type', 'internal');
+        self::assertNotNull($specialistAction);
+        self::assertSame('Aikhana', $specialistAction->render_context['client']['full_name']);
+        self::assertSame('@aikhana (ID: 123456789)', $specialistAction->render_context['client']['telegram_contact']);
+        self::assertSame('tg://user?id=123456789', $specialistAction->render_context['client']['telegram_profile_url']);
+
+        foreach ($actions as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        $clientMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', '123456789');
+        $specialistMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', $specialistAction->recipient_user_id === $staff->getKey()
+            ? OrganizationChannelIdentity::query()->where('user_id', $staff->getKey())->value('external_id')
+            : null);
+        self::assertNotNull($clientMessage);
+        self::assertStringContainsString('Ваша запись', $clientMessage->body);
+        self::assertSame('https://zoom.us/j/confirmed-auto', $clientMessage->actionButton?->url);
+        self::assertNotNull($specialistMessage);
+        self::assertStringContainsString('Aikhana', $specialistMessage->body);
+        self::assertStringContainsString('@aikhana (ID: 123456789)', $specialistMessage->body);
+        self::assertSame('tg://user?id=123456789', $specialistMessage->actionButton?->url);
+        self::assertStringNotContainsString('не указан', $specialistMessage->body);
+    }
+
     public function test_new_booking_notifies_client_and_assigned_specialist(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
@@ -184,6 +272,43 @@ final class MilestoneFiveScenarioTest extends TestCase
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
             $this->channel->messages[1]->body,
         );
+    }
+
+    public function test_specialist_notification_without_username_uses_verified_id_and_profile_action(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'external_id' => '987654321',
+            'external_username' => null,
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'verification_method' => 'test',
+            'verified_at' => now(),
+        ]);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+        app(OrganizationContext::class)->set($organization);
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'booking-created-no-username', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'internal')
+            ->sole();
+
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = collect($this->channel->messages)->firstWhere('recipientExternalId', OrganizationChannelIdentity::query()
+            ->where('user_id', $staff->getKey())
+            ->value('external_id'));
+        self::assertNotNull($message);
+        self::assertStringContainsString('ID: 987654321', $message->body);
+        self::assertStringNotContainsString('@', $message->body);
+        self::assertStringNotContainsString('не указан', $message->body);
+        self::assertSame('tg://user?id=987654321', $message->actionButton?->url);
     }
 
     public function test_rescheduled_and_cancelled_bookings_notify_with_local_date_format(): void

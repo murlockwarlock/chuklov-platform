@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -10,6 +11,15 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 
 final class BookingConfirmedGuard
 {
+    public function waitsForMeeting(?Booking $booking): bool
+    {
+        return $booking instanceof Booking
+            && $booking->visit_format === VisitFormat::Online
+            && $booking->meeting_link_mode?->value === 'auto'
+            && ! $this->validUrl($booking->meeting_url)
+            && $booking->getRawOriginal('provider_sync_status') === VideoMeetingSyncStatus::Pending->value;
+    }
+
     /** @param array<string, mixed>|null $renderContext */
     public function allows(
         ScenarioEvent $event,

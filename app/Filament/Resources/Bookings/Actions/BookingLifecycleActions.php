@@ -56,6 +56,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(ConfirmBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        $record->refresh();
                         Notification::make()->success()->title('Запись подтверждена')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -92,6 +93,7 @@ final class BookingLifecycleActions
                             $data['reason'] ?? null,
                             $data['payment_requirement'] ?? null,
                         );
+                        $record->refresh();
                         Notification::make()->success()->title('Выезд подтверждён')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -117,6 +119,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(RejectHomeVisitBooking::class)->handle($actor, $record, (string) $data['reason']);
+                        $record->refresh();
                         Notification::make()->success()->title('Заявка на выезд отклонена')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -151,6 +154,7 @@ final class BookingLifecycleActions
                             reason: $data['reason'] ?? null,
                             expectedEventVersion: (int) $data['expected_event_version'],
                         );
+                        $record->refresh();
                         Notification::make()->success()->title('Запись успешно перенесена')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -169,6 +173,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(CompleteBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        $record->refresh();
                         Notification::make()->success()->title('Визит успешно завершён')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -188,6 +193,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(MarkBookingNoShow::class)->handle($actor, $record, $data['reason'] ?? null);
+                        $record->refresh();
                         Notification::make()->success()->title('Запись отмечена как не состоявшаяся')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -211,6 +217,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(SetOnlineMeetingUrl::class)->handle($actor, $record, (string) $data['meeting_url'], $data['reason'] ?? null);
+                        $record->refresh();
                         Notification::make()->success()->title('Ссылка на встречу обновлена')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
@@ -230,6 +237,7 @@ final class BookingLifecycleActions
 
                     try {
                         app(CancelBooking::class)->handle($actor, $record, $data['reason'] ?? null);
+                        $record->refresh();
                         Notification::make()->success()->title('Запись отменена')->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);

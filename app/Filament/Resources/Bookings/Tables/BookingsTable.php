@@ -119,6 +119,9 @@ class BookingsTable
 
         return $table
             ->stackedOnMobile()
+            ->defaultSort(fn (Builder $query): Builder => $query
+                ->orderByDesc('created_at')
+                ->orderByDesc('id'))
             ->columns($columns)
             ->filters($filters)
             ->recordActions([

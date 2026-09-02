@@ -15,6 +15,7 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioIdempotencyKey;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -56,11 +57,26 @@ final class MaterializeScenarioEvent
                 }
                 if ($event->event_name->value === 'booking.confirmed'
                     && ! $this->bookingConfirmedGuard->allows($event, $context->booking)) {
+                    if ($this->bookingConfirmedGuard->waitsForMeeting($context->booking)) {
+                        $event->forceFill([
+                            'status' => ScenarioEventStatus::Pending,
+                            'available_at' => now()->addSeconds((int) config('scenarios.events.retry_after_seconds', 60)),
+                            'processing_started_at' => null,
+                            'processed_at' => null,
+                            'last_error_code' => 'booking_meeting_pending',
+                        ])->save();
+
+                        return;
+                    }
+
                     $event->forceFill([
                         'status' => ScenarioEventStatus::Processed,
                         'processing_started_at' => null,
                         'processed_at' => now(),
-                        'last_error_code' => 'booking_changed',
+                        'last_error_code' => $context->booking?->visit_format === VisitFormat::Online
+                            && $context->booking->meeting_link_mode?->value === 'auto'
+                            ? 'booking_meeting_unavailable'
+                            : 'booking_changed',
                     ])->save();
 
                     return;

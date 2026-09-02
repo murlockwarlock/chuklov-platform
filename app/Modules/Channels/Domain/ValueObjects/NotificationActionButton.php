@@ -14,6 +14,10 @@ final readonly class NotificationActionButton
             throw new InvalidArgumentException('The notification button label is invalid.');
         }
 
+        if ($this->telegramProfileUrl($this->url)) {
+            return;
+        }
+
         if (filter_var($this->url, FILTER_VALIDATE_URL) === false) {
             throw new InvalidArgumentException('The notification button URL is invalid.');
         }
@@ -27,5 +31,10 @@ final readonly class NotificationActionButton
             || array_key_exists('pass', $parts)) {
             throw new InvalidArgumentException('The notification button URL is invalid.');
         }
+    }
+
+    private function telegramProfileUrl(string $url): bool
+    {
+        return preg_match('/\Atg:\/\/user\?id=[1-9][0-9]{0,19}\z/', $url) === 1;
     }
 }

@@ -29,6 +29,7 @@ use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
+use App\Modules\B2B\Application\BookingZoomMeetingLifecycle;
 use App\Modules\B2B\Domain\Contracts\VideoMeetingProvider;
 use App\Modules\B2B\Infrastructure\Video\ZoomVideoMeetingProvider;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
@@ -75,6 +76,7 @@ use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
 use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
+use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
@@ -151,6 +153,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(EmailVerificationCodeSender::class, LaravelEmailVerificationCodeSender::class);
         $this->app->bind(MessagingChannel::class, TelegramMessagingChannel::class);
         $this->app->bind(VideoMeetingProvider::class, ZoomVideoMeetingProvider::class);
+        $this->app->bind(BookingVideoMeetingLifecycle::class, BookingZoomMeetingLifecycle::class);
         $this->app->singleton(
             NotificationChannelRegistry::class,
             fn (Application $app): NotificationChannelRegistry => new NotificationChannelRegistry([

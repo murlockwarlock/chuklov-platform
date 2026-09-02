@@ -58,7 +58,7 @@ final class ScenarioContextFactory
 
         $renderContext = [
             'client' => [
-                'full_name' => $context->client->full_name,
+                'full_name' => $this->clientDisplayName($context->client),
                 'language' => strtolower((string) ($context->client->language ?? 'en')),
             ],
             'recipient_locale' => $recipient->locale,
@@ -66,6 +66,7 @@ final class ScenarioContextFactory
 
         if ($recipient->type === 'internal') {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
+            $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
         }
 
         if ($context->booking !== null) {
@@ -302,6 +303,28 @@ final class ScenarioContextFactory
         }
 
         return $externalId !== '' ? 'ID: '.$externalId : 'не указан';
+    }
+
+    private function clientTelegramProfileUrl(Client $client): ?string
+    {
+        $identity = ClientChannelIdentity::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->where('channel', 'telegram')
+            ->where('verification_status', ChannelIdentityStatus::Verified->value)
+            ->first();
+        $externalId = trim((string) $identity?->external_id);
+
+        return preg_match('/^[1-9][0-9]{0,19}$/', $externalId) === 1
+            ? 'tg://user?id='.$externalId
+            : null;
+    }
+
+    private function clientDisplayName(Client $client): string
+    {
+        $name = trim((string) $client->full_name);
+
+        return $name !== '' ? $name : '#'.$client->getKey();
     }
 
     private function payloadId(ScenarioEvent $event, string $key): int

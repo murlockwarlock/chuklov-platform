@@ -14,8 +14,9 @@ final readonly class VideoMeetingRequest
         public string $timezone,
         public string $topic,
         public ?ProviderAccountAffinity $providerAccountAffinity = null,
+        public string $correlationPrefix = 'CHUKLOV-B2B',
     ) {
-        if ($this->externalKey === '' || $this->durationMinutes < 1 || $this->timezone === '' || $this->topic === '') {
+        if ($this->externalKey === '' || $this->durationMinutes < 1 || $this->timezone === '' || $this->topic === '' || $this->correlationPrefix === '') {
             throw new InvalidArgumentException('The video meeting request is invalid.');
         }
     }
@@ -27,7 +28,7 @@ final readonly class VideoMeetingRequest
 
     public function correlationMarker(): string
     {
-        return 'CHUKLOV-B2B:'.$this->externalKey;
+        return $this->correlationPrefix.':'.$this->externalKey;
     }
 
     public function matchesCorrelation(?string $agenda): bool

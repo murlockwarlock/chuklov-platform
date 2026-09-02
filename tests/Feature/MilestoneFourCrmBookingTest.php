@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
+use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -169,6 +170,60 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertNotified('Действие отклонено');
 
         self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
+    }
+
+    public function test_bookings_open_with_newest_created_record_first(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $older = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+            'created_at' => CarbonImmutable::now()->subMinute(),
+        ]);
+        $newer = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'starts_at' => CarbonImmutable::create(2026, 4, 7, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 7, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 7, 10, 15, 0, 'UTC'),
+            'created_at' => CarbonImmutable::now(),
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $records = Livewire::actingAs($admin)
+            ->test(ListBookings::class)
+            ->instance()
+            ->getTableRecords();
+
+        self::assertSame([$newer->getKey(), $older->getKey()], $records->pluck('id')->all());
+    }
+
+    public function test_confirm_action_refreshes_the_visible_booking_state(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->callAction('confirm')
+            ->assertNotified('Запись подтверждена')
+            ->assertSee('Подтверждена')
+            ->assertDontSee('Ожидает подтверждения');
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */
