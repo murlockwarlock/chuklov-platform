@@ -86,21 +86,28 @@ final class AiEvaluationResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')->label('Название')->searchable()->sortable(),
                 TextColumn::make('capability')
                     ->label('Что проверяем')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
-                TextColumn::make('cases_count')->counts('cases')->label('Примеров'),
-                TextColumn::make('runs_count')->counts('runs')->label('Запусков'),
-                TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('cases_count')->counts('cases')->label('Примеров')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('runs_count')->counts('runs')->label('Запусков')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->label('Редактировать')
+                    ->icon(Heroicon::OutlinedPencil)
+                    ->iconButton()
+                    ->tooltip('Редактировать проверку'),
                 Action::make('run_evals')
                     ->label('Запустить тесты')
                     ->color('success')
                     ->icon(Heroicon::OutlinedPlay)
+                    ->iconButton()
+                    ->tooltip('Запустить проверку')
                     ->requiresConfirmation()
                     ->modalHeading('Проверить качество AI')
                     ->modalDescription('Будут последовательно выполнены все активные примеры проверки. Данные должны оставаться искусственными или обезличенными.')

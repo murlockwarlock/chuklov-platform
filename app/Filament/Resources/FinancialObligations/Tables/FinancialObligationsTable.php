@@ -13,8 +13,10 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -127,15 +129,25 @@ final class FinancialObligationsTable
                     }),
             ])
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
-                FinancePaymentActions::forObligation(),
-                Action::make('openBooking')
-                    ->label('Открыть запись')
-                    ->color('gray')
-                    ->visible(fn (FinancialObligation $record): bool => $record->booking instanceof Booking)
-                    ->url(fn (FinancialObligation $record): ?string => $record->booking instanceof Booking
-                        ? BookingResource::getUrl('view', ['record' => $record->booking->getKey()])
-                        : null),
+                ViewAction::make()
+                    ->label('Открыть')
+                    ->icon(Heroicon::OutlinedEye)
+                    ->iconButton()
+                    ->tooltip('Открыть расчёт'),
+                ActionGroup::make([
+                    FinancePaymentActions::forObligation(),
+                    Action::make('openBooking')
+                        ->label('Открыть запись')
+                        ->color('gray')
+                        ->visible(fn (FinancialObligation $record): bool => $record->booking instanceof Booking)
+                        ->url(fn (FinancialObligation $record): ?string => $record->booking instanceof Booking
+                            ? BookingResource::getUrl('view', ['record' => $record->booking->getKey()])
+                            : null),
+                ])
+                    ->label('Действия')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->emptyStateHeading('Оплат пока нет')
             ->emptyStateDescription('Расчёты появятся после завершения визита.');

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdminB2bSalesCallHostLaunchController;
 use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
+use App\Http\Controllers\Portal\B2bController;
 use App\Http\Controllers\Portal\BookingController;
 use App\Http\Controllers\Portal\CompanionController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
@@ -25,6 +27,7 @@ use App\Http\Controllers\Portal\ServiceIndexController;
 use App\Http\Controllers\Portal\SurveyController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
+use App\Http\Controllers\Portal\TelegramMiniAppLaunchController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
 use App\Http\Middleware\CapturePortalAttribution;
 use App\Http\Middleware\RequireClientPortalSession;
@@ -40,7 +43,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->whereNumber('receiptId')
         ->name('admin.finance.receipt');
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
-        ->middleware('auth')
+        ->middleware(Authenticate::class)
         ->name('admin.attachments.download');
     Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
         ->middleware(Authenticate::class)
@@ -54,6 +57,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reset');
+    Route::get('/admin/b2b-sales-calls/{salesCallId}/host-launch', AdminB2bSalesCallHostLaunchController::class)
+        ->middleware('auth')->whereNumber('salesCallId')->name('admin.b2b.sales-call.host-launch');
     Route::get('/admin/clients/{client}/companion/export', [CompanionExportController::class, 'history'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.export');
     Route::get('/admin/clients/{client}/companion/metadata-export', [CompanionExportController::class, 'metadata'])
@@ -75,12 +80,16 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->name('portal.telegram.web.status');
 
     Route::middleware([ResolveClientPortalSession::class, CapturePortalAttribution::class])->group(function (): void {
+        Route::get('/portal/telegram/launch/{entry}', TelegramMiniAppLaunchController::class)
+            ->where('entry', '[A-Za-z0-9_-]+')
+            ->name('portal.telegram.launch');
         Route::post('/portal/locale', LocaleController::class)->name('portal.locale.update');
         Route::get('/r/{referralCode}', ReferralRedirectController::class)
             ->where('referralCode', '[A-Za-z0-9_-]{16,128}')
             ->name('portal.referral');
         Route::get('/', HomeController::class)->name('portal.home');
         Route::get('/portal/services', ServiceIndexController::class)->name('portal.services.index');
+        Route::get('/portal/b2b', B2bController::class)->name('portal.b2b');
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
 
         Route::middleware(RequireClientPortalSession::class)->group(function (): void {
@@ -129,6 +138,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/profile', [ProfileController::class, 'update'])->name('portal.profile.update');
             Route::post('/portal/profile/consents', [ProfileController::class, 'consents'])
                 ->name('portal.profile.consents');
+            Route::post('/portal/profile/b2b-answer', [ProfileController::class, 'b2bAnswer'])
+                ->name('portal.profile.b2b-answer');
+            Route::post('/portal/b2b/leads', [B2bController::class, 'submit'])
+                ->name('portal.b2b.submit');
             Route::get('/portal/onboarding', [OnboardingController::class, 'show'])->name('portal.onboarding');
             Route::post('/portal/onboarding/{stage}', [OnboardingController::class, 'update'])
                 ->name('portal.onboarding.update');

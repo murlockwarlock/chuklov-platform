@@ -4,15 +4,20 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
+use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -66,6 +71,12 @@ class MilestoneFourCrmBookingTest extends TestCase
         $booking = Booking::query()->sole();
         self::assertSame($organization->getKey(), $booking->organization_id);
         self::assertSame($client->getKey(), $booking->client_id);
+        $scenarioEvent = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.created')
+            ->where('aggregate_id', (string) $booking->getKey())
+            ->sole();
+        self::assertSame($booking->getKey(), $scenarioEvent->payload['booking_id']);
 
         Livewire::actingAs($admin)
             ->test(CreateBooking::class)
@@ -76,6 +87,7 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, $booking->fresh()->events()->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
     }
 
     public function test_crm_booking_creation_requires_manage_scheduling_permission(): void
@@ -111,6 +123,40 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_office_bookings_keep_the_default_address_or_store_a_per_booking_override(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::OfficeLocation, 'Адрес по умолчанию');
+
+        $defaultBooking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'default-office-address',
+        );
+        $overrideBooking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'override-office-address',
+            location: 'Другой адрес, кабинет 4',
+        );
+
+        self::assertSame('Адрес по умолчанию', $defaultBooking->location);
+        self::assertSame('Другой адрес, кабинет 4', $overrideBooking->location);
+
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::OfficeLocation, 'Новый адрес по умолчанию');
+
+        self::assertSame('Адрес по умолчанию', $defaultBooking->refresh()->location);
+        self::assertSame('Другой адрес, кабинет 4', $overrideBooking->refresh()->location);
     }
 
     public function test_view_booking_exposes_lifecycle_actions_when_authorized(): void
@@ -161,6 +207,60 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertNotified('Действие отклонено');
 
         self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
+    }
+
+    public function test_bookings_open_with_newest_created_record_first(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $older = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+            'created_at' => CarbonImmutable::now()->subMinute(),
+        ]);
+        $newer = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'starts_at' => CarbonImmutable::create(2026, 4, 7, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 7, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 7, 10, 15, 0, 'UTC'),
+            'created_at' => CarbonImmutable::now(),
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $records = Livewire::actingAs($admin)
+            ->test(ListBookings::class)
+            ->instance()
+            ->getTableRecords();
+
+        self::assertSame([$newer->getKey(), $older->getKey()], $records->pluck('id')->all());
+    }
+
+    public function test_confirm_action_refreshes_the_visible_booking_state(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->callAction('confirm')
+            ->assertNotified('Запись подтверждена')
+            ->assertSee('Подтверждена')
+            ->assertDontSee('Ожидает подтверждения');
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

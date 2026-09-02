@@ -2,6 +2,7 @@
 
 namespace App\Modules\Broadcasts\Application;
 
+use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
@@ -12,6 +13,7 @@ final class SegmentDefinition
     private const OPERATORS = [
         'tag' => ['equals', 'in'],
         'b2b_role' => ['equals', 'in'],
+        'b2b_specialist_answer' => ['equals', 'in'],
         'survey_completed' => ['equals'],
         'visit_count' => ['gte'],
         'booking_status' => ['equals', 'in'],
@@ -57,6 +59,7 @@ final class SegmentDefinition
         return [
             'tag' => 'Метка клиента',
             'b2b_role' => 'B2B-роль',
+            'b2b_specialist_answer' => 'B2B-сегмент специалиста',
             'survey_completed' => 'Завершён тест',
             'visit_count' => 'Количество завершённых визитов',
             'booking_status' => 'Статус записи',
@@ -120,6 +123,9 @@ final class SegmentDefinition
 
         if ($key === 'booking_status' && array_diff($normalized, array_column(BookingStatus::cases(), 'value')) !== []) {
             throw ValidationException::withMessages(['segment_definition' => 'Указан неизвестный статус записи.']);
+        }
+        if ($key === 'b2b_specialist_answer' && array_diff($normalized, array_column(B2bSpecialistAnswer::cases(), 'value')) !== []) {
+            throw ValidationException::withMessages(['segment_definition' => 'Указан неизвестный B2B-сегмент.']);
         }
         if ($key === 'language' && array_filter($normalized, fn (string $locale): bool => preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/', $locale) !== 1) !== []) {
             throw ValidationException::withMessages(['segment_definition' => 'Указан неизвестный язык.']);

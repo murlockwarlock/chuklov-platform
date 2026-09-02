@@ -12,7 +12,7 @@ final class CreateScenarioRule extends CreateRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 
-    protected static ?string $title = 'Создать правило сообщений';
+    protected static ?string $title = 'Создать авто-сообщение';
 
     protected function handleRecordCreation(array $data): Model
     {

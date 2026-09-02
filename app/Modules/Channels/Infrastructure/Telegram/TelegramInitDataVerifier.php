@@ -65,6 +65,7 @@ class TelegramInitDataVerifier
             displayName: mb_substr($displayName, 0, 160),
             language: $language,
             startParameter: is_string($data->start_param) ? mb_substr(trim($data->start_param), 0, 128) : null,
+            username: $data->user->username,
         );
     }
 

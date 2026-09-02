@@ -3,7 +3,6 @@
 namespace App\Modules\Attachments\Application;
 
 use App\Models\User;
-use App\Modules\Attachments\Domain\Exceptions\AttachmentNotAvailableException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use Illuminate\Support\Facades\URL;
 
@@ -16,12 +15,6 @@ final readonly class GetTemporaryAttachmentUrl
     public function handle(User $actor, MedicalAttachment $attachment, int $ttlMinutes = 15): string
     {
         $this->authorization->authorizeDownload($actor, $attachment);
-
-        if (! $attachment->isAvailable()) {
-            throw new AttachmentNotAvailableException(
-                "Файл недоступен для формирования ссылки (статус проверки: {$attachment->scan_status->label()})."
-            );
-        }
 
         return URL::temporarySignedRoute(
             'admin.attachments.download',

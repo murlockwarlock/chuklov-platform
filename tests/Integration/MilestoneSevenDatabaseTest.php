@@ -3,7 +3,6 @@
 namespace Tests\Integration;
 
 use App\Models\User;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -90,8 +89,6 @@ final class MilestoneSevenDatabaseTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => 'checksum',
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
 
         $this->expectException(QueryException::class);
@@ -118,8 +115,6 @@ final class MilestoneSevenDatabaseTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => 'checksum',
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
 
         $this->expectException(QueryException::class);
@@ -144,8 +139,6 @@ final class MilestoneSevenDatabaseTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => 'checksum',
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
 
         $this->expectException(QueryException::class);
@@ -171,8 +164,6 @@ final class MilestoneSevenDatabaseTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => 'checksum',
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
         $attachment->save();
 
@@ -294,8 +285,6 @@ final class MilestoneSevenDatabaseTest extends TestCase
             'mime_type' => 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => 'session-link-checksum',
-            'scan_status' => AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
         $attachment->save();
 

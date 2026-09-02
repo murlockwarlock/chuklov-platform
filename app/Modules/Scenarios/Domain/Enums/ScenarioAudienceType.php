@@ -7,4 +7,5 @@ enum ScenarioAudienceType: string
     case Client = 'client';
     case Members = 'members';
     case Roles = 'roles';
+    case AssignedSpecialist = 'assigned_specialist';
 }

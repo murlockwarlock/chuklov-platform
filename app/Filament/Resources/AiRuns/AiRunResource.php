@@ -39,8 +39,9 @@ final class AiRunResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
-                TextColumn::make('id')->label('#')->sortable(),
+                TextColumn::make('id')->label('#')->sortable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('capability')
                     ->label('Возможность')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state)
@@ -74,16 +75,19 @@ final class AiRunResource extends Resource
                     ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? $state->label() : (string) $state),
                 TextColumn::make('actual_model')
                     ->label('Модель')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('settled_estimated_cost_minor_units')
                     ->label('Стоимость')
-                    ->formatStateUsing(fn ($state) => $state !== null ? '$'.number_format($state / 10000, 4) : '—'),
+                    ->formatStateUsing(fn ($state) => $state !== null ? '$'.number_format($state / 10000, 4) : '—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('latency_ms')
                     ->label('Время')
-                    ->formatStateUsing(fn ($state) => $state ? ($state > 1000 ? round($state / 1000, 2).' с' : $state.' мс') : '—'),
+                    ->formatStateUsing(fn ($state) => $state ? ($state > 1000 ? round($state / 1000, 2).' с' : $state.' мс') : '—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
                     ->label('Создан')
-                    ->dateTime('d.m.Y H:i:s')
+                    ->dateTime('d.m.Y H:i')
                     ->sortable(),
             ])
             ->filters([
@@ -98,7 +102,11 @@ final class AiRunResource extends Resource
                     ->options(collect(HumanReviewStatus::cases())->mapWithKeys(fn ($h) => [$h->value => $h->label()])),
             ])
             ->recordActions([
-                ViewAction::make(),
+                ViewAction::make()
+                    ->label('Открыть')
+                    ->icon(Heroicon::OutlinedEye)
+                    ->iconButton()
+                    ->tooltip('Открыть запуск'),
             ])
             ->defaultSort('created_at', 'desc');
     }

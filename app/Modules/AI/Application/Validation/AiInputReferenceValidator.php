@@ -92,10 +92,6 @@ final class AiInputReferenceValidator
             ->first()
             ?? throw new InvalidArgumentException('AI medical attachment input reference was not found in the current organization.');
 
-        if (! $attachment->isAvailable()) {
-            throw new InvalidArgumentException('AI medical attachment input reference is not available for processing.');
-        }
-
         return $attachment;
     }
 
@@ -107,10 +103,6 @@ final class AiInputReferenceValidator
             ->where('attachment_type', AttachmentType::CompanionImage->value)
             ->first()
             ?? throw new InvalidArgumentException('AI Companion image reference was not found in the current organization.');
-
-        if (! $attachment->isAvailable()) {
-            throw new InvalidArgumentException('AI Companion image reference is not available for processing.');
-        }
 
         return $attachment;
     }

@@ -22,7 +22,11 @@ class EditAiProvider extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(ConnectAiProvider::class)->update($actor, $record, $data);
+        $updatedProvider = app(ConnectAiProvider::class)->update($actor, $record, $data);
+
+        $this->record = $updatedProvider;
+
+        return $updatedProvider;
     }
 
     protected function afterSave(): void

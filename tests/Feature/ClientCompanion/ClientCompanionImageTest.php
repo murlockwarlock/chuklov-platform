@@ -5,8 +5,6 @@ namespace Tests\Feature\ClientCompanion;
 use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
-use App\Modules\Attachments\Domain\Contracts\AttachmentScannerInterface;
-use App\Modules\Attachments\Infrastructure\Scanning\LocalDeterministicAttachmentScanner;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionImages;
@@ -51,7 +49,6 @@ final class ClientCompanionImageTest extends TestCase
     {
         parent::setUp();
         Storage::fake('private');
-        $this->app->instance(AttachmentScannerInterface::class, new LocalDeterministicAttachmentScanner);
         $this->organization = Organization::factory()->create();
         $this->client = Client::factory()->forOrganization($this->organization)->create();
         app(OrganizationContext::class)->set($this->organization);

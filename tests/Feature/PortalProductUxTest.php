@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -38,6 +40,33 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.clientName', 'Portal Client')
                 ->missing('auth')
                 ->missing('onboardingUrl'));
+    }
+
+    public function test_authenticated_home_exposes_the_authorized_referrals_destination_and_personal_link(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        $identity = app(EnsureReferralIdentity::class)->handle($client);
+
+        $this->get(route('portal.referrals'))->assertUnauthorized();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.home'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Home')
+                ->where('portal.urls.referrals', route('portal.referrals')));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.referrals'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Referrals')
+                ->where('referrals.link', route('portal.referral', ['referralCode' => $identity->public_code]))
+                ->where('referrals.registrations', [])
+                ->missing('referrals.reward')
+                ->missing('referrals.commission'));
     }
 
     public function test_incomplete_optional_profile_does_not_block_home_or_profile_updates(): void

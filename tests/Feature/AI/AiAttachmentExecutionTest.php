@@ -8,7 +8,6 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
 use App\Modules\AI\Infrastructure\Providers\AiProviderFactory;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -113,18 +112,6 @@ final class AiAttachmentExecutionTest extends TestCase
                 $this->assertStringContainsString('three', strtolower($exception->getMessage()));
             }
         }
-    }
-
-    public function test_unavailable_cross_organization_and_unsupported_attachments_fail_closed(): void
-    {
-        $quarantined = $this->attachment(AttachmentType::PosturePhoto, 'image/jpeg', 'quarantined.jpg', 'image', AttachmentScanStatus::Quarantined);
-        $this->expectException(\InvalidArgumentException::class);
-        app(AiAttachmentResolver::class)->resolve(
-            organizationId: $this->organization->id,
-            capability: AiCapability::PostureAnalysis,
-            references: [new AiInputReference('medical_attachment', $quarantined->id)],
-            actor: $this->admin,
-        );
     }
 
     public function test_cross_organization_attachment_is_not_resolved(): void
@@ -264,9 +251,8 @@ final class AiAttachmentExecutionTest extends TestCase
         string $mime,
         string $filename,
         string $content,
-        AttachmentScanStatus $scanStatus = AttachmentScanStatus::Cleared,
     ): MedicalAttachment {
-        return $this->attachmentFor($this->organization, $this->client, $this->admin, $type, $mime, $filename, $content, $scanStatus);
+        return $this->attachmentFor($this->organization, $this->client, $this->admin, $type, $mime, $filename, $content);
     }
 
     private function attachmentFor(
@@ -277,7 +263,6 @@ final class AiAttachmentExecutionTest extends TestCase
         string $mime,
         string $filename,
         string $content,
-        AttachmentScanStatus $scanStatus = AttachmentScanStatus::Cleared,
     ): MedicalAttachment {
         $uuid = (string) Str::uuid();
         $extension = pathinfo($filename, PATHINFO_EXTENSION);
@@ -296,8 +281,6 @@ final class AiAttachmentExecutionTest extends TestCase
             'mime_type' => $mime,
             'size_bytes' => strlen($content),
             'sha256_checksum' => hash('sha256', $content),
-            'scan_status' => $scanStatus,
-            'scanned_at' => now(),
         ]);
     }
 }

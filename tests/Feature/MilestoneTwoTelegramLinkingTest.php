@@ -41,13 +41,14 @@ class MilestoneTwoTelegramLinkingTest extends TestCase
         self::assertIsString($token);
         self::assertSame(1, ClientChannelLinkToken::query()->count());
 
-        $bot = $this->fakeBot(710001, 'Unmatched', 'Telegram User');
+        $bot = $this->fakeBot(710001, 'Unmatched', 'Telegram User', username: 'linked_client');
         $bot->hearText('/start '.$token)->reply();
 
         $identity = ClientChannelIdentity::query()->sole();
         $linkToken = ClientChannelLinkToken::query()->sole();
         self::assertSame($client->id, $identity->client_id);
         self::assertSame('710001', $identity->external_id);
+        self::assertSame('linked_client', $identity->external_username);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
         self::assertNotNull($linkToken->consumed_at);
         self::assertStringNotContainsString($token, AuditEvent::query()->get()->toJson());
@@ -150,7 +151,7 @@ class MilestoneTwoTelegramLinkingTest extends TestCase
         self::assertSame(0, ClientChannelIdentity::query()->count());
     }
 
-    private function fakeBot(int $id, string $firstName, string $lastName, bool $isBot = false): Nutgram
+    private function fakeBot(int $id, string $firstName, string $lastName, bool $isBot = false, ?string $username = null): Nutgram
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
@@ -160,6 +161,7 @@ class MilestoneTwoTelegramLinkingTest extends TestCase
             is_bot: $isBot,
             first_name: $firstName,
             last_name: $lastName,
+            username: $username,
             language_code: 'en',
         ));
 

@@ -2,6 +2,8 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\B2B\Domain\Models\B2bLead;
+use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
@@ -16,6 +18,61 @@ use Illuminate\Support\Facades\DB;
 
 final class RecordScenarioEvent
 {
+    public function b2bLeadSubmitted(B2bLead $lead, B2bSalesCall $salesCall, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::B2bLeadSubmitted,
+            aggregateType: B2bLead::class,
+            aggregateId: (string) $lead->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'lead_id' => (int) $lead->getKey(),
+                'client_id' => (int) $lead->client_id,
+                'sales_call_id' => (int) $salesCall->getKey(),
+                'specialist_id' => (int) $salesCall->specialist_id,
+                'source' => $lead->source_channel->value,
+                'starts_at' => $salesCall->startsAtUtc()->toIso8601String(),
+                'ends_at' => $salesCall->endsAtUtc()->toIso8601String(),
+                'schedule_timezone' => (string) $salesCall->schedule_timezone,
+                'requested_timezone' => (string) $salesCall->requested_timezone,
+            ],
+            idempotencyKey: 'b2b.lead.submitted:'.$lead->organization_id.':'.$lead->getKey().':'.$lead->event_version,
+            correlationId: 'b2b:lead:'.$lead->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $lead->organization_id, $data);
+    }
+
+    public function b2bSalesCallReady(B2bSalesCall $salesCall, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::B2bSalesCallReady,
+            aggregateType: B2bSalesCall::class,
+            aggregateId: (string) $salesCall->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'organization_id' => (int) $salesCall->organization_id,
+                'sales_call_id' => (int) $salesCall->getKey(),
+                'lead_id' => (int) $salesCall->lead_id,
+                'client_id' => (int) $salesCall->client_id,
+                'specialist_id' => (int) $salesCall->specialist_id,
+                'event_version' => (int) $salesCall->event_version,
+                'provider_sync_version' => (int) $salesCall->provider_sync_version,
+                'provider_correlation_key' => $salesCall->provider_correlation_key,
+                'meeting_mode' => $salesCall->meeting_mode->value,
+                'starts_at' => $salesCall->startsAtUtc()->toIso8601String(),
+                'ends_at' => $salesCall->endsAtUtc()->toIso8601String(),
+                'schedule_timezone' => (string) $salesCall->schedule_timezone,
+            ],
+            idempotencyKey: 'b2b.sales_call.ready:'.$salesCall->organization_id.':'.$salesCall->getKey().':'.$salesCall->provider_sync_version,
+            correlationId: 'b2b:sales-call:'.$salesCall->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $salesCall->organization_id, $data);
+    }
+
     public function surveyCompleted(SurveyAttempt $attempt, SurveyReport $report, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $data = new ScenarioEventData(
@@ -61,6 +118,11 @@ final class RecordScenarioEvent
         return $this->record((int) $current->organization_id, $data);
     }
 
+    public function bookingCreated(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        return $this->bookingLifecycleEvent($booking, ScenarioEventType::BookingCreated, $causationId, $occurredAt);
+    }
+
     public function bookingCompleted(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $booking->loadMissing(['client']);
@@ -78,6 +140,7 @@ final class RecordScenarioEvent
                 'visit_format' => $booking->visit_format->value,
                 'starts_at' => $booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $booking->endsAtUtc()->toIso8601String(),
+                'location' => $booking->location,
                 'completed_at' => $occurredAt->utc()->toIso8601String(),
                 'client_language' => $booking->client->language,
             ],
@@ -87,6 +150,64 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $booking->organization_id, $data);
+    }
+
+    public function bookingConfirmed(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        return $this->bookingLifecycleEvent($booking, ScenarioEventType::BookingConfirmed, $causationId, $occurredAt);
+    }
+
+    public function bookingRescheduled(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        return $this->bookingLifecycleEvent($booking, ScenarioEventType::BookingRescheduled, $causationId, $occurredAt);
+    }
+
+    public function bookingCancelled(Booking $booking, ?string $causationId, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        return $this->bookingLifecycleEvent($booking, ScenarioEventType::BookingCancelled, $causationId, $occurredAt);
+    }
+
+    private function bookingLifecycleEvent(
+        Booking $booking,
+        ScenarioEventType $eventType,
+        ?string $causationId,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $booking->loadMissing(['client']);
+        $data = new ScenarioEventData(
+            eventType: $eventType,
+            aggregateType: Booking::class,
+            aggregateId: (string) $booking->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: $this->bookingLifecyclePayload($booking),
+            idempotencyKey: $eventType->value.':'.$booking->organization_id.':'.$booking->getKey().':'.$booking->event_version,
+            correlationId: 'booking:'.$booking->getKey(),
+            causationId: $causationId,
+        );
+
+        return $this->record((int) $booking->organization_id, $data);
+    }
+
+    /** @return array<string, int|string|null> */
+    private function bookingLifecyclePayload(Booking $booking): array
+    {
+        return [
+            'organization_id' => (int) $booking->organization_id,
+            'booking_id' => (int) $booking->getKey(),
+            'client_id' => (int) $booking->client_id,
+            'service_id' => (int) $booking->service_id,
+            'specialist_id' => (int) $booking->specialist_id,
+            'event_version' => (int) $booking->event_version,
+            'status' => $booking->status->value,
+            'visit_format' => $booking->visit_format->value,
+            'starts_at' => $booking->startsAtUtc()->toIso8601String(),
+            'ends_at' => $booking->endsAtUtc()->toIso8601String(),
+            'schedule_timezone' => (string) $booking->schedule_timezone,
+            'client_timezone' => $booking->client_timezone,
+            'location' => $booking->location,
+            'meeting_link_mode' => $booking->meeting_link_mode?->value,
+            'client_language' => $booking->client->language,
+        ];
     }
 
     public function onboardingStarted(

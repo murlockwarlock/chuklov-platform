@@ -9,6 +9,7 @@ type VisitFormat = 'office' | 'home' | 'online';
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
+    displayUtcOffset: string;
     displayTimezone: string;
     format: VisitFormat;
 };
@@ -182,6 +183,39 @@ const selectedDayLabel = computed(() => {
     return label.charAt(0).toUpperCase() + label.slice(1);
 });
 
+function offsetLabel(value: string, timezone: string | undefined): string {
+    if (timezone === undefined || timezone === '') {
+        return `UTC${value}`;
+    }
+
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            timeZoneName: 'longOffset',
+        }).formatToParts(new Date(value));
+        const offset = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+
+        return offset === 'GMT' ? 'UTC+00:00' : offset.replace(/^GMT/, 'UTC');
+    } catch {
+        return `UTC${props.availability?.slots[0]?.displayUtcOffset ?? ''}`;
+    }
+}
+
+const timezoneLabel = computed(() => offsetLabel(
+    selectedDaySlots.value[0]?.startsAt ?? new Date().toISOString(),
+    props.availability?.displayTimezone,
+));
+
+function slotLabel(slot: AvailabilitySlot): string {
+    const time = new Intl.DateTimeFormat(props.locale === 'ru' ? 'ru-RU' : 'en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: slot.displayTimezone,
+    }).format(new Date(slot.startsAt));
+
+    return `${time}, ${offsetLabel(slot.startsAt, slot.displayTimezone)}`;
+}
+
 const previousMonth = computed(() => {
     if (monthStart.value === null) {
         return null;
@@ -310,6 +344,9 @@ function selectSlot(slot: AvailabilitySlot): void {
           <p class="portal-copy portal-copy--small">
             {{ text('booking.startTimeOnly') }}
           </p>
+          <p class="portal-copy portal-copy--small portal-booking-calendar__timezone">
+            {{ text('booking.timezoneContext') }}: {{ timezoneLabel }}
+          </p>
         </header>
 
         <p
@@ -332,6 +369,8 @@ function selectSlot(slot: AvailabilitySlot): void {
             class="portal-time-button"
             data-testid="availability-slot"
             :aria-pressed="props.selectedStart === slot.startsAt"
+            :aria-label="slotLabel(slot)"
+            :title="slotLabel(slot)"
             @click="selectSlot(slot)"
           >
             <PortalDateTime

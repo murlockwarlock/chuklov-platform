@@ -13,6 +13,7 @@ use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 class BookingForm
@@ -68,7 +69,15 @@ class BookingForm
                         VisitFormat::Online->value => 'Онлайн',
                     ])
                     ->required()
-                    ->live(),
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        if ($state === VisitFormat::Office->value) {
+                            $set('location', app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value'));
+                        }
+                        if ($state === VisitFormat::Online->value) {
+                            $set('location', null);
+                        }
+                    }),
                 TextInput::make('party_size')
                     ->label('Количество участников')
                     ->integer()
@@ -77,9 +86,15 @@ class BookingForm
                     ->maxValue(20)
                     ->required(),
                 TextInput::make('location')
-                    ->label('Адрес выезда')
+                    ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? 'Адрес приёма' : 'Адрес выезда')
+                    ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
+                        ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
+                        : null)
+                    ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
+                        ? 'Можно изменить адрес только для этой записи.'
+                        : 'Укажите место выезда для этой записи.')
                     ->maxLength(500)
-                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
+                    ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
             ]);
     }
 }

@@ -22,12 +22,26 @@ final class GetPortalFeedback
             $config['reviewLinks'][$locale],
             $config['reviewLinks'][$locale === 'ru' ? 'en' : 'ru'],
         ], static fn (?string $link): bool => $link !== null));
+        $destinations = array_values(array_map(
+            static fn (array $destination): array => [
+                'label' => $destination['label'],
+                'url' => $destination['url'],
+            ],
+            array_filter($config['reviewDestinations'], static fn (array $destination): bool => $destination['isActive']),
+        ));
+        if ($config['reviewDestinations'] === []) {
+            $destinations = array_map(
+                static fn (string $link): array => ['label' => 'Оставить отзыв', 'url' => $link],
+                $links,
+            );
+        }
 
         return [
             'enabled' => $config['enabled'],
             'positiveThreshold' => $config['positiveThreshold'],
             'lowScoreFeedbackRequired' => $config['lowScoreFeedbackRequired'],
             'reviewLinks' => $links,
+            'reviewDestinations' => $destinations,
             'submitUrl' => route('portal.feedback.store'),
         ];
     }

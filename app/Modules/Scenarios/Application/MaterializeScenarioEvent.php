@@ -6,6 +6,8 @@ use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
@@ -13,6 +15,7 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioIdempotencyKey;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +28,9 @@ final class MaterializeScenarioEvent
         private readonly ScenarioContextFactory $contextFactory,
         private readonly ConditionEvaluatorRegistry $conditions,
         private readonly ScenarioRecipientResolver $recipients,
+        private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
+        private readonly BookingConfirmedGuard $bookingConfirmedGuard,
+        private readonly BookingChangedGuard $bookingChangedGuard,
     ) {}
 
     public function handle(int $scenarioEventId): void
@@ -38,10 +44,72 @@ final class MaterializeScenarioEvent
         try {
             DB::transaction(function () use ($event): void {
                 $context = $this->contextFactory->evaluationContext($event);
+                if ($event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, $context->b2bSalesCall)) {
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => 'b2b_sales_call_changed',
+                    ])->save();
+
+                    return;
+                }
+                if ($event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, $context->booking)) {
+                    if ($this->bookingConfirmedGuard->waitsForMeeting($context->booking)) {
+                        $event->forceFill([
+                            'status' => ScenarioEventStatus::Pending,
+                            'available_at' => now()->addSeconds((int) config('scenarios.events.retry_after_seconds', 60)),
+                            'processing_started_at' => null,
+                            'processed_at' => null,
+                            'last_error_code' => 'booking_meeting_pending',
+                        ])->save();
+
+                        return;
+                    }
+
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => $context->booking?->visit_format === VisitFormat::Online
+                            && $context->booking->meeting_link_mode?->value === 'auto'
+                            ? 'booking_meeting_unavailable'
+                            : 'booking_changed',
+                    ])->save();
+
+                    return;
+                }
+                if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, $context->booking)) {
+                    if ($event->event_name === ScenarioEventType::BookingRescheduled
+                        && $this->bookingChangedGuard->waitsForMeeting($context->booking)) {
+                        $event->forceFill([
+                            'status' => ScenarioEventStatus::Pending,
+                            'available_at' => now()->addSeconds((int) config('scenarios.events.retry_after_seconds', 60)),
+                            'processing_started_at' => null,
+                            'processed_at' => null,
+                            'last_error_code' => 'booking_meeting_pending',
+                        ])->save();
+
+                        return;
+                    }
+
+                    $event->forceFill([
+                        'status' => ScenarioEventStatus::Processed,
+                        'processing_started_at' => null,
+                        'processed_at' => now(),
+                        'last_error_code' => 'booking_changed',
+                    ])->save();
+
+                    return;
+                }
                 $rules = ScenarioRule::query()
                     ->where('organization_id', $event->organization_id)
                     ->where('trigger_event', $event->event_name->value)
                     ->where('is_enabled', true)
+                    ->where('system_managed', false)
                     ->with(['templateVersion.template'])
                     ->orderBy('id')
                     ->get();
@@ -112,6 +180,19 @@ final class MaterializeScenarioEvent
             1,
         );
         $timestamp = now();
+        try {
+            $renderContext = $this->contextFactory->renderContext(
+                $context,
+                $recipient,
+                $template->template?->template_key === 'booking-completed-feedback',
+            );
+        } catch (FeedbackMiniAppConfigurationException) {
+            $renderContext = $this->contextFactory->renderContext($context, $recipient);
+            $renderContext['feedback'] = [
+                'url' => null,
+                'configuration_error' => FeedbackMiniAppConfigurationException::ERROR_CODE,
+            ];
+        }
 
         DB::table('scenario_actions')->insertOrIgnore([
             'organization_id' => $event->organization_id,
@@ -130,7 +211,7 @@ final class MaterializeScenarioEvent
             'repeat_interval_unit' => $rule->repeat_interval_unit?->value,
             'purpose' => $rule->purpose->value,
             'channel_priority' => json_encode($rule->channel_priority, JSON_THROW_ON_ERROR),
-            'render_context' => json_encode($this->contextFactory->renderContext($context, $recipient), JSON_THROW_ON_ERROR),
+            'render_context' => json_encode($renderContext, JSON_THROW_ON_ERROR),
             'materialization_key' => $materializationKey,
             'scheduled_for' => $scheduledFor,
             'status' => ScenarioActionStatus::Scheduled->value,

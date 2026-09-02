@@ -7,6 +7,7 @@ use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
@@ -35,6 +36,10 @@ class EditSpecialist extends EditRecord
                 staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
                 acknowledgeImpact: $acknowledgeImpact,
                 acknowledgedImpactDigest: $impactDigest,
+                notificationSettings: SpecialistNotificationSettings::from(
+                    telegramId: $data['telegram_id'] ?? null,
+                    enabled: (bool) ($data['notifications_enabled'] ?? true),
+                ),
             );
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));

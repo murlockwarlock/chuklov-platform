@@ -31,6 +31,7 @@ type SpecialistOption = {
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
+    displayUtcOffset: string;
     displayTimezone: string;
     format: VisitFormat;
 };

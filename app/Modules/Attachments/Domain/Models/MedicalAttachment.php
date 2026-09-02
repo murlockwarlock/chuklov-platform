@@ -3,7 +3,6 @@
 namespace App\Modules\Attachments\Domain\Models;
 
 use App\Models\User;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -28,9 +27,6 @@ use Illuminate\Support\Carbon;
  * @property string $mime_type
  * @property int $size_bytes
  * @property string $sha256_checksum
- * @property AttachmentScanStatus $scan_status
- * @property array<string, mixed>|null $scan_result_metadata
- * @property Carbon|null $scanned_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Organization $organization
@@ -50,9 +46,6 @@ use Illuminate\Support\Carbon;
     'mime_type',
     'size_bytes',
     'sha256_checksum',
-    'scan_status',
-    'scan_result_metadata',
-    'scanned_at',
 ])]
 class MedicalAttachment extends Model
 {
@@ -80,18 +73,10 @@ class MedicalAttachment extends Model
         return $this->hasMany(MedicalSessionAttachment::class, 'medical_attachment_id');
     }
 
-    public function isAvailable(): bool
-    {
-        return $this->scan_status->isAvailable();
-    }
-
     protected function casts(): array
     {
         return [
             'attachment_type' => AttachmentType::class,
-            'scan_status' => AttachmentScanStatus::class,
-            'scan_result_metadata' => 'array',
-            'scanned_at' => 'datetime',
             'size_bytes' => 'integer',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

@@ -19,8 +19,12 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property BroadcastCampaignState $state
  * @property string $send_mode
+ * @property string $audience_type
  * @property list<string> $channel_priority
  * @property list<array{key: string, operator: string, value: mixed}> $segment_definition
+ * @property list<int> $selected_client_ids
+ * @property string $message_mode
+ * @property string|null $message_body
  * @property string $segment_summary
  * @property int|null $template_version_ru_id
  * @property int|null $template_version_en_id
@@ -37,7 +41,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $next_dispatch_at
  * @property string|null $last_dispatch_error_code
  */
-#[Fillable(['name', 'send_mode', 'channel_priority', 'segment_definition', 'segment_summary', 'template_version_ru_id', 'template_version_en_id', 'scheduled_at'])]
+#[Fillable(['name', 'send_mode', 'audience_type', 'channel_priority', 'segment_definition', 'selected_client_ids', 'message_mode', 'message_body', 'segment_summary', 'template_version_ru_id', 'template_version_en_id', 'scheduled_at'])]
 class BroadcastCampaign extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -80,8 +84,10 @@ class BroadcastCampaign extends Model
     {
         return [
             'state' => BroadcastCampaignState::class,
+            'audience_type' => 'string',
             'channel_priority' => 'array',
             'segment_definition' => 'array',
+            'selected_client_ids' => 'array',
             'scheduled_at' => 'datetime',
             'dispatch_started_at' => 'datetime',
             'next_dispatch_at' => 'datetime',

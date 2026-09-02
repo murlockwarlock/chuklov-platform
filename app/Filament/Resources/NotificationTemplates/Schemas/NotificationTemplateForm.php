@@ -20,7 +20,7 @@ final class NotificationTemplateForm
         return $schema
             ->components([
                 Section::make('Основная информация')
-                    ->description('Шаблон — это текст сообщения. Когда, кому и через какой канал его отправлять, настраивается отдельно в разделе «Правила сообщений».')
+                    ->description('Шаблон — это текст сообщения. Когда и кому его отправлять, настраивается отдельно в разделе «Авто-сообщения».')
                     ->schema([
                         TextInput::make('name')
                             ->label('Название')
@@ -36,13 +36,13 @@ final class NotificationTemplateForm
                             ->default('ru')
                             ->disabled(fn (string $operation): bool => $operation === 'edit'),
                         Select::make('purpose')
-                            ->label('Назначение сообщения')
+                            ->label('Для чего сообщение')
                             ->options([
                                 ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
                                 ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
                                 ScenarioRulePurpose::Marketing->value => 'Маркетинговая рассылка',
                             ])
-                            ->helperText('Категория сообщения. Сама по себе не определяет получателя, время отправки или канал связи — они настраиваются в правиле.')
+                            ->helperText('Категория сообщения. Получатель и время отправки настраиваются отдельно в авто-сообщении.')
                             ->live()
                             ->required(),
                         Toggle::make('is_active')

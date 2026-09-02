@@ -132,7 +132,7 @@ Monitoring supports attention for repeated provider failure, sustained failure r
 
 Every workflow/provider configuration defines which classified data may be sent externally, including Profile, confirmed Sessions, Surveys, documents, posture photos, conversations, and RAG content. The runtime sends only explicitly permitted bounded context. Cross-organization access, cross-client contamination, and prompt exposure of credentials are impossible.
 
-Private PDF/image/document analysis uses a controlled authorized integration path, respects cleared/quarantine state and provider capability/data policy, and never makes an attachment public merely for provider access. Raw DICOM remains excluded until a future explicit requirement changes it.
+Private PDF/image/document analysis uses a controlled authorized integration path, respects validated private attachment state and provider capability/data policy, and never makes an attachment public merely for provider access. Raw DICOM remains excluded until a future explicit requirement changes it.
 
 Sensitive run/trace persistence is retention-aware. M10 does not invent legal periods; OQ-013 and the client-data lifecycle govern future deletion/anonymization semantics. The design must support protected provenance plus future legally required retention, deletion, or anonymization without treating every full medical prompt as permanent.
 

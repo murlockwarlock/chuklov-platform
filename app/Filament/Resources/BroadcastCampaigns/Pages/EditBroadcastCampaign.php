@@ -43,11 +43,19 @@ final class EditBroadcastCampaign extends EditRecord
             }
             $value = $filter['value'] ?? null;
             $filter['value_bool'] = is_bool($value) ? ($value ? '1' : '0') : null;
-            $filter['value_list'] = is_array($value) ? $value : [];
-            $filter['value_text'] = is_scalar($value) && ! is_bool($value) ? (string) $value : null;
+            $controlled = in_array($filter['key'] ?? null, ['tag', 'b2b_specialist_answer', 'language', 'verified_channel', 'booking_status'], true);
+            $filter['value_select_list'] = $controlled && is_array($value) ? $value : [];
+            $filter['value_list'] = ! $controlled && is_array($value) ? $value : [];
+            $filter['value_select'] = $controlled && is_scalar($value) && ! is_bool($value) ? (string) $value : null;
+            $filter['value_text'] = ! $controlled && is_scalar($value) && ! is_bool($value) ? (string) $value : null;
             $mapped[] = $filter;
         }
         $data['segment_definition'] = $mapped;
+
+        if (($data['message_mode'] ?? null) === 'compose' && ! filled($data['message_body'] ?? null)
+            && $this->record instanceof BroadcastCampaign) {
+            $data['message_body'] = (string) $this->record->russianTemplateVersion()->value('body');
+        }
 
         return $data;
     }

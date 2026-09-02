@@ -30,9 +30,14 @@ final class ViewBroadcastCampaign extends ViewRecord
         return [
             EditAction::make()->label('Редактировать')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft),
             Action::make('preview')->label('Предпросмотр')->icon('heroicon-o-eye')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
-                $result = app(PreviewBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                $campaign = $this->campaign();
+                $result = app(PreviewBroadcastCampaign::class)->handle($this->actor(), $campaign);
                 $reasons = collect($result['reasons'])->map(fn (int $count, string $reason): string => self::reasonLabel($reason).': '.$count)->implode('; ');
-                Notification::make()->title("Подходят {$result['eligible']} из {$result['matched']}")->body($reasons === '' ? 'Исключений нет.' : 'Исключено: '.$reasons)->success()->persistent()->send();
+                $message = trim((string) ($campaign->message_body ?: $campaign->russianTemplateVersion?->body ?: $campaign->englishTemplateVersion?->body));
+                $body = ($reasons === '' ? 'Исключений нет.' : 'Исключено: '.$reasons)
+                    ."\n\nПредпросмотр сообщения:\n"
+                    .($message === '' ? 'Сообщение не выбрано.' : $message);
+                Notification::make()->title("Получателей: {$result['eligible']} из {$result['matched']}")->body($body)->success()->persistent()->send();
             }),
             Action::make('test')->label('Тестовая отправка')->icon('heroicon-o-paper-airplane')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->schema([
                 Select::make('test_client_id')->label('Тестовый получатель')->options(fn (): array => Client::query()->where('organization_id', app(OrganizationContext::class)->id())->whereHas('channelIdentities', fn ($query) => $query->where('channel', 'telegram')->where('verification_status', ChannelIdentityStatus::Verified->value))->orderBy('full_name')->limit(200)->pluck('full_name', 'id')->all())->searchable()->required()->helperText('Сообщение уйдёт только выбранному получателю, а не всему сегменту.'),

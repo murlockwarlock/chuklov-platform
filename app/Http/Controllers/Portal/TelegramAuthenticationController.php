@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Infrastructure\Telegram\InvalidTelegramInitData;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramInitDataVerifier;
 use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
@@ -25,10 +26,20 @@ class TelegramAuthenticationController extends Controller
         ApplyClientPortalLocale $applyLocale,
         CapturePreAuthAttribution $captureAttribution,
         FinalizeClientAcquisition $finalizeAcquisition,
+        ResolveTelegramMiniAppEntry $telegramEntries,
     ): RedirectResponse {
         $validated = $request->validate([
             'initData' => ['required', 'string', 'max:8192'],
+            'launchEntry' => ['nullable', 'string', 'max:64'],
         ]);
+        $launchEntry = $validated['launchEntry'] ?? null;
+        $launchEntry = is_string($launchEntry) && trim($launchEntry) !== '' ? trim($launchEntry) : null;
+        $destination = $launchEntry === null ? route('portal.home') : $telegramEntries->destinationOrNull($launchEntry);
+
+        if ($destination === null) {
+            $launchEntry = null;
+            $destination = route('portal.home');
+        }
 
         try {
             $identity = $verifier->handle($validated['initData']);
@@ -45,7 +56,11 @@ class TelegramAuthenticationController extends Controller
                 acquisitionSessionId: $request->session()->getId(),
             );
         } catch (InvalidTelegramInitData|AuthorizationException) {
-            return to_route('portal.home')->with(
+            $errorRedirect = $launchEntry === null
+                ? to_route('portal.home')
+                : redirect()->to(route('portal.home', ['telegram_entry' => $launchEntry], false));
+
+            return $errorRedirect->with(
                 'telegram_auth_error',
                 $this->localizedAuthError($request),
             );
@@ -57,7 +72,7 @@ class TelegramAuthenticationController extends Controller
         $this->applySessionLocale($request, $client, $applyLocale);
         $startOnboarding->handle($client);
 
-        return to_route('portal.home');
+        return redirect()->to($destination);
     }
 
     private function applySessionLocale(

@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioChannelIdentity;
+use App\Modules\Specialists\Domain\Models\Specialist;
 
 final class ScenarioChannelIdentityResolver
 {
@@ -28,6 +29,14 @@ final class ScenarioChannelIdentityResolver
                 ->exists();
 
             if (! $isActiveMember) {
+                return null;
+            }
+
+            if (Specialist::query()
+                ->where('organization_id', $action->organization_id)
+                ->where('staff_user_id', $action->recipient_user_id)
+                ->where('notifications_enabled', false)
+                ->exists()) {
                 return null;
             }
 

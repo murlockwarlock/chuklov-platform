@@ -26,6 +26,7 @@ const navigation = [
     { key: 'referrals', label: 'shell.referrals' },
     { key: 'feedback', label: 'shell.feedback' },
     { key: 'profile', label: 'shell.profile' },
+    { key: 'b2b', label: 'shell.b2b' },
 ] as const;
 
 const brandLogo = computed(() => props.portal.locale === 'en'

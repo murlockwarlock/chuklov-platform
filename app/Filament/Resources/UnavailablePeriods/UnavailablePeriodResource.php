@@ -37,6 +37,7 @@ class UnavailablePeriodResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereNull('b2b_sales_call_id')
             ->with('specialist');
     }
 

@@ -1,8 +1,25 @@
 # Requirements Changelog
 
-## 2026-08-27 — REQ-CRM-002 implementation/remediation candidate
+## 2026-08-30 — REQ-ATTACHMENT-001 product-contract correction
 
-- Recorded the M11C implementation/remediation candidate for `REQ-CRM-002`: the read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions exist in code, but the requirement remains pending PostgreSQL verification, hosted exact-SHA CI, independent re-review, staging/manual acceptance, and owner acceptance.
+- Clarified that the client Technical Specification requires private, validated medical attachments to become available to authorized same-organization staff after upload; it does not require malware quarantine or a scanner-backed cleared state.
+- Removed the internally-added scanner/quarantine prerequisite from the active requirement while preserving private storage, signed access, tenant authorization, safe filename/path handling, MIME/content/extension/size validation, and audit evidence.
+
+## 2026-08-27 — REQ-B2B-001 remediation candidate status
+
+- Kept `REQ-B2B-001` in the truthful pre-acceptance `CANDIDATE` state after the independent M11D review returned `BLOCKED`; independent re-review, PostgreSQL verification, hosted CI, staging verification, and owner acceptance remain pending.
+- Clarified that B2B sales-call duration is an organization-scoped CRM setting with no source-backed implicit duration. The source-backed B2B flow is not the later M12 paid 15-minute mentoring offer.
+- Recorded the bounded remediation for documented Zoom agenda correlation, fail-closed unknown-create reconciliation, durable provider fencing/deadlines, shared scheduling availability, stale-ready suppression, preserved Scenario/Integration values, and typed specialist-answer authority. No requirement scope or M12 status changed.
+
+## 2026-08-27 — REQ-B2B-001 M11D implementation candidate
+
+- Added `REQ-B2B-001` for the source-backed Phase 1 B2B acquisition slice: explicit self-declared massage/bodywork specialist segmentation, the managed bot-sales CTA, one durable organization-scoped lead form, a Zoom sales-call request, and bounded CRM lead handling.
+- The requirement explicitly excludes Phase 2 white-label, SaaS, tenant provisioning, subscription, billing, and bot-token behavior. B2B sales calls remain outside Booking and Finance while their scheduled intervals use the shared Specialist occupancy authority.
+- The implementation candidate includes a provider-neutral video boundary with a Zoom Server-to-Server OAuth adapter, durable provider synchronization, and shared Telegram/Portal Application actions. PostgreSQL-specific integration and concurrency coverage exists but is not run locally because the configured PostgreSQL server is unavailable.
+
+## 2026-08-27 — REQ-CRM-002 accepted and merged
+
+- Recorded the accepted M11C implementation for `REQ-CRM-002`: read-only organization-scoped CRM analytics dashboard projections, shared period filter, least-privilege widgets, source-record reconciliation coverage, and explicit historical/operational metric definitions are merged into main at `978eca9b86cb88f9a5b02b66cc28fe2d8b60026f`.
 - Reserved the explicit `Не указан` source bucket so low-count unattributed clients cannot be folded into `Другие`; `Другие` contains only overflow known sources and the source result remains bounded.
 - Follow-up remediation keeps authoritative known-versus-unknown attribution identity separate from display text; a known literal source `Не указан` is presented as `Источник: Не указан` while the reserved unknown bucket remains `Не указан`.
 - Final source-identity remediation keeps structural semantic kind/value separate from presentation labels for referral, direct, UTM, unknown, and generated overflow buckets; collision-safe namespaces preserve unique user-visible labels without changing normalized attribution authority.

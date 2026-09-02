@@ -31,11 +31,16 @@ final readonly class ListClientBookingsForCrm
                 'visit_format',
                 'status',
                 'payment_status',
+                'payment_requirement',
                 'starts_at',
                 'ends_at',
+                'schedule_timezone',
                 'location',
                 'meeting_link_mode',
+                'meeting_url',
+                'party_size',
                 'event_version',
+                'requested_at',
             ])
             ->with([
                 'specialist:id,organization_id,display_name',

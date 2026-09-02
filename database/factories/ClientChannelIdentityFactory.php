@@ -20,6 +20,7 @@ class ClientChannelIdentityFactory extends Factory
         return [
             'channel' => 'telegram',
             'external_id' => fake()->unique()->numerify('##########'),
+            'external_username' => null,
             'verification_status' => ChannelIdentityStatus::Unverified->value,
             'verification_method' => null,
             'verified_at' => null,

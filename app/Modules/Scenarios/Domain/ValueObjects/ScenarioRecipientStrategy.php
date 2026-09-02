@@ -27,6 +27,7 @@ final readonly class ScenarioRecipientStrategy
             ScenarioAudienceType::Client => [],
             ScenarioAudienceType::Members => self::memberIds($data['user_ids'] ?? []),
             ScenarioAudienceType::Roles => self::roles($data['roles'] ?? []),
+            ScenarioAudienceType::AssignedSpecialist => [],
         };
 
         return new self($type, $values);
@@ -39,6 +40,7 @@ final readonly class ScenarioRecipientStrategy
             ScenarioAudienceType::Client => ['type' => $this->type->value],
             ScenarioAudienceType::Members => ['type' => $this->type->value, 'user_ids' => $this->memberValues()],
             ScenarioAudienceType::Roles => ['type' => $this->type->value, 'roles' => $this->roleValues()],
+            ScenarioAudienceType::AssignedSpecialist => ['type' => $this->type->value],
         };
     }
 

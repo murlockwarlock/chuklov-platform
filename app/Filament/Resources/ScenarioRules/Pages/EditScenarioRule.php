@@ -13,7 +13,7 @@ final class EditScenarioRule extends EditRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 
-    protected static ?string $title = 'Редактировать правило сообщений';
+    protected static ?string $title = 'Редактировать авто-сообщение';
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {

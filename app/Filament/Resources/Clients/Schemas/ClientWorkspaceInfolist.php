@@ -10,8 +10,11 @@ use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Application\GetClientCommunicationIdentities;
+use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -84,10 +87,46 @@ final class ClientWorkspaceInfolist
                                 ->wrap(),
                             TextEntry::make('attribution_source')
                                 ->label('Принятая первая атрибуция')
-                                ->state(fn (Client $record): string => ($record->getRelation('attribution') instanceof ClientAttribution
-                                    ? ($record->getRelation('attribution')->source ?? $record->getRelation('attribution')->source_type)
+                                ->state(fn (Client $record): string => (($attribution = $record->getRelationValue('attribution')) instanceof ClientAttribution
+                                    ? ($attribution->source ?? $attribution->source_type)
                                     : null) ?? 'Не указана')
                                 ->placeholder('Не указана')
+                                ->wrap(),
+                        ])
+                        ->columns(1),
+
+                    Section::make('Маркетинговые рассылки')
+                        ->schema([
+                            TextEntry::make('marketing_consent_summary')
+                                ->label('Состояние')
+                                ->state(function (Client $record): array {
+                                    $actor = auth()->user();
+
+                                    if (! $actor instanceof User) {
+                                        return ['Требуется авторизация'];
+                                    }
+
+                                    $consent = app(GetLatestClientMarketingConsent::class)->handle($actor, $record);
+
+                                    if (! $consent instanceof ClientConsent) {
+                                        return ['Согласие не зафиксировано'];
+                                    }
+
+                                    $recordedAt = $consent->recorded_at
+                                        ->copy()
+                                        ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                                        ->format('d.m.Y H:i');
+                                    $recordedBy = $consent->getRelationValue('recordedBy');
+
+                                    return [
+                                        $consent->granted ? 'Согласие есть' : 'Согласие отозвано',
+                                        'Зафиксировано: '.$recordedAt,
+                                        'Источник: '.self::marketingConsentEvidenceLabel((string) $consent->evidence),
+                                        'Версия: '.$consent->version,
+                                        'Кем: '.($recordedBy instanceof User ? $recordedBy->name : 'Клиентом через портал'),
+                                    ];
+                                })
+                                ->listWithLineBreaks()
                                 ->wrap(),
                         ])
                         ->columns(1),
@@ -213,5 +252,17 @@ final class ClientWorkspaceInfolist
                         ->columns(1),
                 ])->extraAttributes(['class' => 'min-w-0 w-full']),
             ]);
+    }
+
+    private static function marketingConsentEvidenceLabel(string $evidence): string
+    {
+        return match ($evidence) {
+            'crm' => 'Зафиксировано оператором в CRM',
+            'telegram' => 'Сообщение клиента в Telegram',
+            'phone' => 'Телефонный разговор',
+            'written' => 'Письменное согласие',
+            'portal' => 'Подтверждено клиентом в портале',
+            default => 'Источник не указан',
+        };
     }
 }

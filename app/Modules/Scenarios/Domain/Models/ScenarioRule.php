@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ScenarioDelayUnit $delay_unit
  * @property ScenarioRulePurpose $purpose
  * @property bool $is_enabled
+ * @property bool $system_managed
  * @property array<int, array<string, mixed>> $conditions
  * @property array<string, mixed> $recipient_strategy
  * @property list<string> $channel_priority
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'name',
     'trigger_event',
     'is_enabled',
+    'system_managed',
     'delay_value',
     'delay_unit',
     'purpose',
@@ -87,6 +89,7 @@ class ScenarioRule extends Model
         return [
             'trigger_event' => ScenarioEventType::class,
             'is_enabled' => 'boolean',
+            'system_managed' => 'boolean',
             'delay_value' => 'integer',
             'delay_unit' => ScenarioDelayUnit::class,
             'purpose' => ScenarioRulePurpose::class,

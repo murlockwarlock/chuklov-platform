@@ -4,6 +4,7 @@ namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
 use App\Models\User;
+use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
 use App\Modules\Knowledge\Application\RetireKnowledgeSource;
 use App\Modules\Knowledge\Application\UpdateKnowledgeSource as UpdateKnowledgeSourceAction;
@@ -71,6 +72,20 @@ final class EditKnowledgeSource extends EditRecord
                 Notification::make()->title('Источник снова доступен в поиске')->success()->send();
                 $this->redirect(KnowledgeSourceResource::getUrl('edit', ['record' => $record]));
             }),
+            Action::make('delete')
+                ->label('Удалить материал')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Удалить материал из базы знаний?')
+                ->modalDescription('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.')
+                ->action(function (): void {
+                    $actor = auth()->user();
+                    $record = $this->getRecord();
+                    abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
+                    app(DeleteKnowledgeSource::class)->handle($actor, $record);
+                    Notification::make()->title('Материал удалён из базы знаний')->success()->send();
+                    $this->redirect(KnowledgeSourceResource::getUrl('index'));
+                }),
         ];
     }
 }

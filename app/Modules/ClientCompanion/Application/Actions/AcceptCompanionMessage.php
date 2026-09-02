@@ -425,8 +425,8 @@ final class AcceptCompanionMessage
                 return $position === false ? PHP_INT_MAX : $position;
             })
             ->values();
-        if ($attachments->count() !== count($attachmentIds) || $attachments->contains(fn (MedicalAttachment $attachment): bool => ! $attachment->isAvailable())) {
-            throw ValidationException::withMessages(['images' => 'Изображение ещё не готово для обработки.']);
+        if ($attachments->count() !== count($attachmentIds)) {
+            throw ValidationException::withMessages(['images' => 'Изображение недоступно для обработки.']);
         }
         if ((int) $attachments->sum('size_bytes') > (int) config('ai.companion.maximum_image_total_bytes', 20_971_520)) {
             throw ValidationException::withMessages(['images' => 'Изображения слишком большие. Отправьте меньше или меньшего размера.']);

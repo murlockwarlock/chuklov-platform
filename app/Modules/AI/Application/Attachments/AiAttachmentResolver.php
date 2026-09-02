@@ -137,10 +137,6 @@ final class AiAttachmentResolver
             throw new InvalidArgumentException('Medical attachment storage is not private and organization-scoped.');
         }
 
-        if (! $attachment->isAvailable()) {
-            throw new InvalidArgumentException('Medical attachment is not cleared for AI processing.');
-        }
-
         $disk = Storage::disk($attachment->disk);
         if (! $disk->exists($attachment->storage_path)) {
             throw new InvalidArgumentException('Medical attachment content is unavailable.');
@@ -183,7 +179,7 @@ final class AiAttachmentResolver
 
         if ($capability === AiCapability::PostureAnalysis) {
             if ($count !== 3 || $type !== AttachmentType::PosturePhoto || ! in_array($mime, self::IMAGE_MIMES, true)) {
-                throw new InvalidArgumentException('Posture analysis accepts exactly three cleared posture images.');
+                throw new InvalidArgumentException('Posture analysis accepts exactly three posture images.');
             }
 
             return;
@@ -191,7 +187,7 @@ final class AiAttachmentResolver
 
         if ($referenceType === 'companion_attachment'
             && ($capability !== AiCapability::ClientCompanion || $type !== AttachmentType::CompanionImage || ! in_array($mime, self::IMAGE_MIMES, true))) {
-            throw new InvalidArgumentException('AI Companion accepts cleared image input only.');
+            throw new InvalidArgumentException('AI Companion accepts image input only.');
         }
 
         if ($capability === AiCapability::ClinicalDocumentExtraction && $type !== AttachmentType::MedicalReport) {

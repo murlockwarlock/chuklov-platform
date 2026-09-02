@@ -25,6 +25,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('pg_restore -l', $script);
         self::assertStringNotContainsString("sh -lc 'pg_restore -l'", $script);
         self::assertStringContainsString('migrate --force', $script);
+        self::assertStringContainsString('php artisan portal:validate-configuration', $script);
+        self::assertStringContainsString('db:seed --class=Database\\\\Seeders\\\\ScenarioNotificationSeeder --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
         self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
         self::assertStringContainsString('up -d --wait < /dev/null', $script);
@@ -33,6 +35,39 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('trap \'rollback "$LINENO" "$?"\' ERR', $script);
         self::assertStringContainsString('horizon:supervisors --no-ansi', $script);
         self::assertStringContainsString('Horizon did not report an active supervisor with workers', $script);
+        self::assertStringContainsString("grep -Ec '^QUEUE_CONNECTION='", $script);
+        self::assertStringContainsString("grep -Fxq 'QUEUE_CONNECTION=redis'", $script);
+        self::assertStringNotContainsString('redis-cli ping', $script);
+        self::assertStringContainsString('resolve_current_redis_volume', $script);
+        self::assertStringContainsString('redis_container_output', $script);
+        self::assertStringContainsString("docker inspect \"\$container\" --format '{{json .Mounts}}'", $script);
+        self::assertStringContainsString('docker volume inspect "$current_redis_volume"', $script);
+        self::assertStringContainsString('current_redis_volume_key', $script);
+        self::assertStringContainsString('candidate_redis_volume_key', $script);
+        self::assertStringContainsString('resolve_candidate_redis_volume_key', $script);
+        self::assertStringContainsString('write_redis_volume_override', $script);
+        self::assertStringContainsString('name: "%s"', $script);
+        self::assertStringContainsString('verify_candidate_redis_volume', $script);
+        self::assertStringContainsString('Candidate Redis /data physical volume does not match the current staging volume', $script);
+        self::assertStringNotContainsString('volume="${project}_redis_data"', $script);
+        self::assertStringContainsString('ensure_current_dependencies', $script);
+        self::assertStringContainsString('up -d --wait postgres redis', $script);
+        self::assertStringContainsString('run_queue_contract_probe', $script);
+        self::assertStringContainsString('php -- --check="$check" < "$queue_probe_script"', $script);
+        self::assertStringNotContainsString('php -- < "$queue_probe_script"', $script);
+        self::assertStringContainsString('--network "$staging_network"', $script);
+        self::assertStringContainsString('docker run --rm --interactive --network "$staging_network"', $script);
+        self::assertStringContainsString("--env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php'", $script);
+        self::assertStringContainsString('compose_service_environment_file', $script);
+        self::assertStringContainsString('--env-file "$probe_environment"', $script);
+        self::assertStringContainsString('current_queue_fingerprint', $script);
+        self::assertStringContainsString('candidate_queue_fingerprint', $script);
+        self::assertStringContainsString('current_pending_work', $script);
+        self::assertStringContainsString('physical Redis queue identity change', $script);
+        self::assertStringContainsString('candidate_build_cache', $script);
+        self::assertStringContainsString('queue_preflight_cache', $script);
+        self::assertStringContainsString('php artisan config:cache --no-ansi', $script);
+        self::assertStringNotContainsString('php artisan tinker --no-ansi --execute=', $script);
         self::assertStringContainsString('Protected host services and routing match the pre-deploy baseline.', $script);
         self::assertStringContainsString('report_preflight_failure', $script);
         self::assertStringContainsString('CHUKLOV_CONTAINER_IP', $script);
@@ -59,6 +94,205 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
+        self::assertStringNotContainsString('docker volume rm', $script);
+        self::assertStringNotContainsString('redis-cli flush', $script);
+        self::assertStringNotContainsString('FLUSHALL', $script);
+    }
+
+    #[Test]
+    public function redis_volume_preflight_preserves_the_current_physical_volume_and_fails_closed_on_unsafe_evidence(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+
+        self::assertIsString($script);
+
+        $fixtures = [
+            'legacy' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis-data',
+                'expected_success' => true,
+            ],
+            'standard' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis_data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis_data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis_data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => true,
+            ],
+            'no-data-volume' => [
+                'mounts' => [[
+                    'Type' => 'bind',
+                    'Name' => '',
+                    'Source' => '/srv/staging/redis',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis_data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => false,
+            ],
+            'ambiguous-data-volume' => [
+                'mounts' => [
+                    [
+                        'Type' => 'volume',
+                        'Name' => 'staging-test_redis-data-a',
+                        'Source' => '/var/lib/docker/volumes/staging-test_redis-data-a/_data',
+                        'Destination' => '/data',
+                    ],
+                    [
+                        'Type' => 'volume',
+                        'Name' => 'staging-test_redis-data-b',
+                        'Source' => '/var/lib/docker/volumes/staging-test_redis-data-b/_data',
+                        'Destination' => '/data',
+                    ],
+                ],
+                'physical_volume' => 'staging-test_redis-data-a',
+                'candidate_volume' => 'staging-test_redis-data-a',
+                'expected_success' => false,
+            ],
+            'candidate-mismatch' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis_data',
+                'expected_success' => false,
+            ],
+            'hyphenated-logical-key' => [
+                'mounts' => [[
+                    'Type' => 'volume',
+                    'Name' => 'staging-test_redis-data',
+                    'Source' => '/var/lib/docker/volumes/staging-test_redis-data/_data',
+                    'Destination' => '/data',
+                ]],
+                'physical_volume' => 'staging-test_redis-data',
+                'candidate_volume' => 'staging-test_redis-data',
+                'candidate_volume_key' => 'redis-data',
+                'expected_success' => true,
+            ],
+        ];
+
+        foreach ($fixtures as $name => $fixture) {
+            $result = $this->runRedisVolumeFixture(
+                $script,
+                $fixture['mounts'],
+                $fixture['physical_volume'],
+                $fixture['candidate_volume'],
+                $fixture['candidate_volume_key'] ?? 'redis_data',
+            );
+
+            if ($fixture['expected_success']) {
+                self::assertSame(0, $result['exit_code'], $name);
+                self::assertStringContainsString('Current Redis /data physical volume: '.$fixture['physical_volume'], $result['output'], $name);
+                self::assertStringContainsString('Candidate Redis /data physical volume: '.$fixture['candidate_volume'], $result['output'], $name);
+                self::assertStringContainsString('name: "'.$fixture['physical_volume'].'"', $result['output'], $name);
+            } else {
+                self::assertNotSame(0, $result['exit_code'], $name);
+            }
+
+            self::assertStringNotContainsString('up ', $result['docker_log'], $name);
+            self::assertStringNotContainsString('volume rm', $result['docker_log'], $name);
+            self::assertStringNotContainsString('flush', strtolower($result['docker_log']), $name);
+        }
+
+        $legacy = $this->runRedisVolumeFixture(
+            $script,
+            $fixtures['legacy']['mounts'],
+            $fixtures['legacy']['physical_volume'],
+            $fixtures['legacy']['candidate_volume'],
+            $fixtures['legacy']['candidate_volume_key'] ?? 'redis_data',
+        );
+        self::assertStringContainsString('staging-test_redis-data', $legacy['docker_log']);
+        self::assertStringNotContainsString('staging-test_redis_data', $legacy['docker_log']);
+    }
+
+    #[Test]
+    public function queue_preflight_is_before_activation_and_migrations(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+
+        self::assertIsString($script);
+        $noOp = strpos($script, 'if [[ "$current_revision" == "$revision" ]]');
+        $dependencyStart = strpos($script, "\nensure_current_dependencies\nresolve_staging_network");
+        $candidateVolume = strpos($script, "\nverify_candidate_redis_volume\n");
+        $currentProbe = strpos($script, 'current_queue_probe="$(run_queue_contract_probe');
+        $candidateCache = strpos($script, 'php artisan config:cache --no-ansi');
+        $candidateProbe = strpos($script, 'candidate_queue_probe="$(run_queue_contract_probe');
+        $activation = strpos($script, 'mv "$compose.next" "$compose"');
+        $migration = strpos($script, 'php artisan migrate --force');
+
+        self::assertIsInt($noOp);
+        self::assertIsInt($dependencyStart);
+        self::assertIsInt($candidateVolume);
+        self::assertIsInt($currentProbe);
+        self::assertIsInt($candidateCache);
+        self::assertIsInt($candidateProbe);
+        self::assertIsInt($activation);
+        self::assertIsInt($migration);
+        self::assertLessThan($dependencyStart, $noOp);
+        self::assertLessThan($currentProbe, $dependencyStart);
+        self::assertLessThan($currentProbe, $candidateVolume);
+        self::assertLessThan($activation, $candidateCache);
+        self::assertLessThan($activation, $candidateProbe);
+        self::assertLessThan($migration, $activation);
+    }
+
+    #[Test]
+    public function queue_preflight_separates_current_snapshot_from_candidate_contract(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+        $smoke = file_get_contents(base_path('scripts/staging-smoke.php'));
+
+        self::assertIsString($script);
+        self::assertIsString($smoke);
+        self::assertStringContainsString(
+            'current_queue_probe="$(run_queue_contract_probe "queue-snapshot"',
+            $script,
+        );
+        self::assertStringContainsString(
+            'candidate_queue_probe="$(run_queue_contract_probe "queue-contract"',
+            $script,
+        );
+
+        $snapshotStart = strpos($smoke, 'function queueSnapshotCheck(): void');
+        $snapshotEnd = $snapshotStart === false ? false : strpos($smoke, "\nfunction httpCheck", $snapshotStart);
+        $contractStart = strpos($smoke, 'function queueContractCheck(): void');
+
+        self::assertIsInt($snapshotStart);
+        self::assertIsInt($snapshotEnd);
+        self::assertIsInt($contractStart);
+        $snapshotBody = substr($smoke, $snapshotStart, $snapshotEnd - $snapshotStart);
+        $contractBody = substr($smoke, $contractStart, $snapshotStart - $contractStart);
+
+        self::assertStringContainsString('queueContractSnapshot()', $snapshotBody);
+        self::assertStringNotContainsString('verifyB2bTransport()', $snapshotBody);
+        self::assertStringNotContainsString('verifyConfiguredHorizonQueue()', $snapshotBody);
+        self::assertStringContainsString('verifyB2bTransport()', $contractBody);
+        self::assertStringContainsString('verifyConfiguredHorizonQueue()', $contractBody);
+        self::assertStringContainsString("if (\$check === 'queue-snapshot')", $smoke);
+        self::assertStringContainsString("\$check === 'queue-contract'", $smoke);
+        self::assertStringContainsString("'connection' => \$target['connection']", $smoke);
+        self::assertStringContainsString("'queue' => \$target['queue']", $smoke);
+        self::assertStringContainsString("'fingerprint' => \$target['fingerprint']", $smoke);
+        self::assertStringContainsString("'counts' => \$counts", $smoke);
+        self::assertStringContainsString("'total' => array_sum(\$counts)", $smoke);
+        self::assertStringContainsString('configured Laravel Redis connection is unavailable', $smoke);
+        self::assertStringContainsString('Laravel redis queue driver is not Redis', $smoke);
+        self::assertStringContainsString('queue counts are unavailable', $smoke);
+        self::assertStringContainsString('B2B queue is invalid', $smoke);
+        self::assertStringContainsString('Redis host configuration is not resolvable', $smoke);
     }
 
     #[Test]
@@ -237,10 +471,173 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('< "$repository_root/scripts/staging-smoke.php"', $shell);
         self::assertStringNotContainsString('docker cp', $shell);
         self::assertStringContainsString('--deep', $shell);
-        self::assertStringContainsString('app(SupervisorRepository::class)->all()', $php);
+        self::assertStringContainsString('run_php_check app runtime', $shell);
+        self::assertStringContainsString('run_php_check horizon runtime', $shell);
+        self::assertStringContainsString('B2B_QUEUE_PHYSICAL_FINGERPRINT=', $shell);
+        self::assertStringContainsString('application and Horizon resolve different physical queue targets', $shell);
+        self::assertStringContainsString('Queue::connection', $php);
+        self::assertStringContainsString('Redis::connection($target[\'connection\'])', $php);
+        self::assertStringContainsString('ConfigurationUrlParser', $php);
+        self::assertStringContainsString('pendingSize', $php);
+        self::assertStringContainsString('delayedSize', $php);
+        self::assertStringContainsString('reservedSize', $php);
+        self::assertStringContainsString('instanceof Stringable', $php);
+        self::assertStringContainsString('exactly one active current Horizon master', $php);
+        self::assertStringContainsString('B2B queue has no active worker process pool', $php);
+        self::assertStringContainsString('$supervisorRepository->all()', $php);
+        self::assertStringContainsString('configurationIsCached()', $php);
+        self::assertStringContainsString('verifyB2bTransport', $php);
+        self::assertStringContainsString('configured B2B queue is absent from supervisor configuration', $php);
+        self::assertStringContainsString('active supervisor connection is not redis', $php);
+        self::assertStringContainsString('configured B2B queue is absent from active supervisor', $php);
+        self::assertStringNotContainsString('Redis::connection()->', $php);
+        self::assertStringNotContainsString('dispatch(', $php);
+        self::assertStringNotContainsString('lrange', $php);
+        self::assertStringNotContainsString('zrange', $php);
         self::assertStringContainsString('app(RetireKnowledgeSource::class)->handle', $php);
         self::assertStringContainsString('STAGING_SMOKE_USER_ID=', $example);
         self::assertStringContainsString('STAGING_SMOKE_CLIENT_ID=', $example);
+    }
+
+    private function runRedisVolumeFixture(
+        string $script,
+        array $mounts,
+        string $physicalVolume,
+        string $candidateVolume,
+        string $candidateVolumeKey = 'redis_data',
+    ): array {
+        $filesystem = new Filesystem;
+        $fixtureDirectory = sys_get_temp_dir().'/chuklov-redis-volume-'.bin2hex(random_bytes(8));
+        $filesystem->mkdir($fixtureDirectory.'/bin');
+
+        $mountsFile = $fixtureDirectory.'/mounts.json';
+        $candidateConfigFile = $fixtureDirectory.'/candidate.json';
+        $dockerLog = $fixtureDirectory.'/docker.log';
+        $harness = $fixtureDirectory.'/harness.sh';
+        $docker = $fixtureDirectory.'/bin/docker';
+
+        try {
+            file_put_contents($mountsFile, json_encode($mounts, JSON_THROW_ON_ERROR).PHP_EOL);
+            file_put_contents($candidateConfigFile, json_encode([
+                'volumes' => [
+                    $candidateVolumeKey => ['name' => $candidateVolume],
+                ],
+                'services' => [
+                    'redis' => [
+                        'volumes' => [[
+                            'type' => 'volume',
+                            'source' => $candidateVolumeKey,
+                            'target' => '/data',
+                        ]],
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR).PHP_EOL);
+            file_put_contents($dockerLog, '');
+
+            $harnessContent = <<<'BASH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+project='staging-test'
+environment='/tmp/staging-test.env'
+compose='/tmp/staging-test-compose.yml'
+current_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+current_compose=()
+candidate_compose_base=()
+candidate_compose=()
+current_redis_volume=''
+current_redis_volume_key=''
+candidate_redis_volume_key=''
+redis_volume_override=''
+BASH;
+            $harnessContent .= "\n".$this->extractRedisVolumeFunctions($script);
+            $harnessContent .= <<<'BASH'
+
+resolve_current_redis_volume
+write_redis_volume_override
+candidate_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" -f "$redis_volume_override")
+resolve_candidate_redis_volume_key
+write_redis_volume_override "$candidate_redis_volume_key"
+verify_candidate_redis_volume
+printf 'CURRENT=%s\n' "$current_redis_volume"
+printf 'OVERRIDE=%s\n' "$redis_volume_override"
+cat "$redis_volume_override"
+BASH;
+            file_put_contents($harness, $harnessContent);
+
+            file_put_contents($docker, <<<'BASH'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+printf '%s\n' "$*" >> "$TEST_DOCKER_LOG"
+
+if [[ "$1" == 'compose' ]]; then
+    if [[ "$*" == *' ps --status running -q redis'* ]]; then
+        printf '%s\n' 'redis-container'
+        exit 0
+    fi
+
+    if [[ "$*" == *' config --format json'* ]]; then
+        cat "$TEST_CANDIDATE_CONFIG_FILE"
+        exit 0
+    fi
+
+    exit 0
+fi
+
+if [[ "$1" == 'inspect' && "${2:-}" == 'redis-container' ]]; then
+    cat "$TEST_MOUNTS_FILE"
+    exit 0
+fi
+
+if [[ "$1" == 'volume' && "${2:-}" == 'inspect' ]]; then
+    if [[ "${3:-}" == "$TEST_PHYSICAL_VOLUME" ]]; then
+        printf '%s\n' '[{}]'
+        exit 0
+    fi
+
+    exit 1
+fi
+
+exit 0
+BASH);
+            chmod($harness, 0755);
+            chmod($docker, 0755);
+
+            $process = new Process(
+                ['bash', $harness],
+                $fixtureDirectory,
+                [
+                    'PATH' => $fixtureDirectory.'/bin:'.(getenv('PATH') ?: '/usr/bin:/bin'),
+                    'TEST_MOUNTS_FILE' => $mountsFile,
+                    'TEST_CANDIDATE_CONFIG_FILE' => $candidateConfigFile,
+                    'TEST_DOCKER_LOG' => $dockerLog,
+                    'TEST_PHYSICAL_VOLUME' => $physicalVolume,
+                    'TEST_CANDIDATE_VOLUME_KEY' => $candidateVolumeKey,
+                ],
+            );
+            $process->run();
+
+            return [
+                'exit_code' => $process->getExitCode(),
+                'output' => $process->getOutput().$process->getErrorOutput(),
+                'docker_log' => file_get_contents($dockerLog) ?: '',
+            ];
+        } finally {
+            $filesystem->remove($fixtureDirectory);
+        }
+    }
+
+    private function extractRedisVolumeFunctions(string $script): string
+    {
+        $start = strpos($script, 'resolve_current_redis_volume() {');
+        $end = $start === false ? false : strpos($script, "\nensure_current_dependencies() {", $start);
+
+        if ($start === false || $end === false) {
+            throw new \RuntimeException('Unable to extract Redis volume preflight functions.');
+        }
+
+        return substr($script, $start, $end - $start);
     }
 
     private function createTrustedDeployCheckout(string $checkout): string

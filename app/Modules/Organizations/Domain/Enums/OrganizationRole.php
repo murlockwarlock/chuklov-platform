@@ -16,6 +16,8 @@ enum OrganizationRole: string
             self::Staff => in_array($permission, [
                 OrganizationPermission::ViewClients,
                 OrganizationPermission::ManageClients,
+                OrganizationPermission::ViewB2bLeads,
+                OrganizationPermission::ManageB2bLeads,
                 OrganizationPermission::RecordConsent,
                 OrganizationPermission::ViewSpecialists,
                 OrganizationPermission::ViewScheduling,

@@ -65,10 +65,14 @@ function submit(): void {
             <span class="portal-label">{{ t('attribution.source') }}</span>
             <select
               v-model="form.source"
-              class="portal-input"
+              class="portal-input portal-select"
               required
+              :aria-invalid="Boolean(form.errors.source)"
             >
-              <option value="">{{ t('attribution.choose') }}</option>
+              <option
+                value=""
+                disabled
+              >{{ t('attribution.choose') }}</option>
               <option
                 v-for="source in props.sources"
                 :key="source"

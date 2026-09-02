@@ -31,11 +31,18 @@ class BookingInfolist
                         TextEntry::make('visit_format')
                             ->label('Формат')
                             ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
-                        TextEntry::make('starts_at')->label('Дата и время начала')->dateTime('d.m.Y H:i'),
-                        TextEntry::make('ends_at')->label('Окончание')->dateTime('d.m.Y H:i'),
+                        TextEntry::make('starts_at')
+                            ->label('Дата и время начала')
+                            ->dateTime('d.m.Y H:i')
+                            ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC')),
+                        TextEntry::make('ends_at')
+                            ->label('Окончание')
+                            ->dateTime('d.m.Y H:i')
+                            ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC')),
+                        TextEntry::make('schedule_timezone')->label('Часовой пояс записи'),
                         TextEntry::make('party_size')->label('Количество персон'),
                         TextEntry::make('requested_at')->label('Заявка создана')->dateTime('d.m.Y H:i'),
-                        TextEntry::make('location')->label('Адрес')->placeholder('Не указан')->columnSpanFull()->wrap(),
+                        TextEntry::make('location')->label('Адрес приёма')->placeholder('Не указан')->columnSpanFull()->wrap(),
                         TextEntry::make('meeting_url')
                             ->label('Ссылка на онлайн-встречу')
                             ->placeholder('Не указана')

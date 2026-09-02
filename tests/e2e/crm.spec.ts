@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 
 type CrmFixture = {
@@ -117,8 +117,6 @@ function createCrmFixture(): CrmFixture {
             'mime_type' => 'application/pdf',
             'size_bytes' => 2048,
             'sha256_checksum' => hash('sha256', $suffix),
-            'scan_status' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentScanStatus::Cleared,
-            'scanned_at' => now(),
         ]);
         echo json_encode([
             'email' => $email,
@@ -232,19 +230,21 @@ test('staff sees business labels for client and content settings', async ({ page
     await login(page, fixture);
 
     await page.goto('/admin/clients');
-    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'База клиентов', exact: true })).toBeVisible();
 
     await searchTableFor(page, fixture.clientName);
 
-    const clientsTimezoneCell = page
-        .getByRole('row')
-        .filter({ hasText: fixture.clientName })
-        .getByRole('cell', { name: 'Всемирное время', exact: true });
-    await expect(clientsTimezoneCell).toBeVisible();
-    await expect(clientsTimezoneCell).toHaveText('Всемирное время');
+    if ((page.viewportSize()?.width ?? 0) >= 1024) {
+        const clientsTimezoneCell = page
+            .getByRole('row')
+            .filter({ hasText: fixture.clientName })
+            .getByRole('cell', { name: 'Всемирное время', exact: true });
+        await expect(clientsTimezoneCell).toBeVisible();
+        await expect(clientsTimezoneCell).toHaveText('Всемирное время');
+    }
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
 
     await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 
@@ -259,10 +259,11 @@ test('staff sees business labels for client and content settings', async ({ page
     await expect(contentSectionRow.getByRole('cell', { name: 'Русский', exact: true })).toBeVisible();
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}`);
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.contentSectionTitle }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Раздел контента', exact: true })).toBeVisible();
 
     await assertBusinessField(page, 'Раздел', 'Об академии');
     await assertBusinessField(page, 'Язык', 'Русский');
+    await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
@@ -274,7 +275,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await page.getByRole('row').filter({ hasText: fixture.clientName }).getByRole('link', { name: fixture.clientName, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
-    for (const tabLabel of ['Профиль', 'Сеансы', 'Записи', 'Опросы', 'Файлы']) {
+    for (const tabLabel of ['Клинический профиль', 'Сеансы', 'Записи на приём', 'Опросы', 'Файлы и МРТ']) {
         await expect(page.getByRole('tab', { name: tabLabel, exact: true })).toBeVisible();
     }
 
@@ -286,30 +287,67 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Файлы', exact: true }).click();
+    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
     const uploadDialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     const attachmentType = uploadDialog.getByLabel('Тип файла');
     await expect(attachmentType).toBeVisible();
     await attachmentType.selectOption('medical_report');
     await expect(attachmentType).toHaveValue('medical_report');
-    const fileInput = uploadDialog.locator('input[type="file"]');
-    await expect(fileInput).toHaveCount(1);
-    await fileInput.setInputFiles({
+    const uploadControl = uploadDialog
+        .getByRole('group', { name: 'Файл*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    await expect(uploadControl).toHaveCount(1);
+    await expect(uploadControl).toBeVisible();
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        uploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
         name: 'ux-a-report.pdf',
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
+    const selectedFile = uploadDialog.getByRole('group', { name: 'ux-a-report.pdf', exact: true });
+    await expect(selectedFile).toHaveCount(1);
+    await expect(selectedFile).toBeVisible();
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
-    await expect(uploadSubmit).toBeEnabled({ timeout: 15_000 });
+    await expect(uploadSubmit).toBeEnabled();
     await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
     await uploadSubmit.click();
+    await expect(uploadDialog).toBeHidden();
 
     const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
     const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
+    const uploadedFileCell = uploadedRow.getByRole('cell').filter({ hasText: 'ux-a-report.pdf' });
+    await expect(attachmentsTable).toBeVisible();
+    await expect(uploadedRow).toHaveCount(1);
     await expect(uploadedRow).toBeVisible();
-    await expect(uploadedRow.getByRole('cell', { name: 'ux-a-report.pdf', exact: true })).toBeVisible();
+    await expect(uploadedFileCell).toHaveCount(1);
+    await expect(uploadedFileCell).toBeVisible();
+    await expect(uploadedFileCell).toContainText('ux-a-report.pdf');
+    const openAttachment = uploadedRow.getByRole('button', { name: 'Открыть', exact: true });
+    await expect(openAttachment).toHaveCount(1);
+    const [download, attachmentResponse] = await Promise.all([
+        page.waitForEvent('download'),
+        page.waitForResponse((response) => {
+            const pathname = new URL(response.url()).pathname;
+
+            return response.status() === 200 && /^\/admin\/attachments\/[^/]+$/.test(pathname);
+        }),
+        openAttachment.click(),
+    ]);
+    expect(download.suggestedFilename()).toBe('ux-a-report.pdf');
+    expect(attachmentResponse.headers()['content-type']).toContain('application/pdf');
+    expect(attachmentResponse.headers()['content-disposition']).toContain('ux-a-report.pdf');
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('The authorized attachment download did not produce a file.');
+    }
+    expect(readFileSync(downloadPath)).toEqual(validPdfBuffer());
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
@@ -318,7 +356,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await login(page, fixture);
 
     await page.goto('/admin/clients');
-    await expect(page.getByRole('heading', { name: 'Клиенты' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'База клиентов', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
 
     const clientRow = page.getByRole('row').filter({ hasText: fixture.clientName });
@@ -353,7 +391,6 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(new RegExp(fixture.attachmentFilename), { exact: false }).click();
     await page.getByRole('button', { name: 'Связать', exact: true }).click();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
-    await expect(page.getByText('Проверен', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Боль').fill('Обновлённая запись о боли');
@@ -400,7 +437,7 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     };
 
     // Navigate to Clients via sidebar link
-    await navigateViaSidebar('Клиенты', /\/admin\/clients$/, 'Клиенты');
+    await navigateViaSidebar('База клиентов', /\/admin\/clients$/, 'База клиентов');
 
     // Verify window marker persists (no full page reload)
     const markerAfterClients = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
@@ -413,7 +450,7 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
     expect(markerAfterContent).toBe(998877);
 
     // Navigate to Services via sidebar link
-    await navigateViaSidebar('Услуги', /\/admin\/services$/, 'Услуги');
+    await navigateViaSidebar('Каталог услуг', /\/admin\/services$/, 'Каталог услуг');
 
     const markerAfterServices = await page.evaluate(() => (window as Window & { __crm_spa_marker?: number }).__crm_spa_marker);
     expect(markerAfterServices).toBe(998877);

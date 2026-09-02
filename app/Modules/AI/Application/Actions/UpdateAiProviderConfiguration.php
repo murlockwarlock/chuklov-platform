@@ -48,6 +48,7 @@ final class UpdateAiProviderConfiguration
             $credential = OrganizationCredential::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($credentialId)
+                ->lockForUpdate()
                 ->first();
             if ($credential === null || $credential->provider !== $providerName) {
                 throw new InvalidArgumentException('The selected organization credential is invalid for this provider.');

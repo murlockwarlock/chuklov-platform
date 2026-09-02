@@ -105,9 +105,9 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 
     await page.goto('/admin/scenario-rules');
-    await expect(page.getByRole('heading', { name: 'Правила сообщений' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Авто-сообщения' })).toBeVisible();
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}/edit`);
-    await page.getByRole('spinbutton', { name: /Через/ }).fill('48');
+    await page.getByRole('spinbutton', { name: 'Через сколько*', exact: true }).fill('48');
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
@@ -119,7 +119,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await expect(page.getByText('3 раза, каждые 12 ч.', { exact: true })).toBeVisible();
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
-    await expect(page.getByText('Вставить данные в сообщение', { exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Добавить данные', exact: true })).toBeVisible();
     await page.locator('textarea').fill('Обновлённое сообщение для {{ client.full_name }}.');
     const templateSave = page.getByRole('button', { name: 'Сохранить' });
     const templateSaveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')

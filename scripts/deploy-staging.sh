@@ -117,9 +117,33 @@ health_url="$5"
 expected_host_port="$6"
 archive="$7"
 remote_normalizer="$8"
+queue_probe_script=''
+candidate_build_cache=''
+current_probe_environment=''
+candidate_probe_environment=''
+queue_preflight_cache=''
+staging_network=''
+redis_volume_override=''
+current_redis_volume=''
+current_redis_volume_key=''
+candidate_redis_volume_key=''
+current_compose_base=()
+current_compose=()
+candidate_compose_base=()
+candidate_compose=()
+runtime_compose=()
 
 cleanup_remote_transfer_artifacts() {
     rm -f -- "$archive" "$remote_normalizer" || true
+    rm -f -- "$queue_probe_script" || true
+    rm -f -- "$current_probe_environment" "$candidate_probe_environment" || true
+    rm -f -- "$redis_volume_override" || true
+    if [[ -n "$candidate_build_cache" ]]; then
+        rm -rf -- "$candidate_build_cache" || true
+    fi
+    if [[ -n "$queue_preflight_cache" ]]; then
+        rm -rf -- "$queue_preflight_cache" || true
+    fi
 }
 trap cleanup_remote_transfer_artifacts EXIT
 
@@ -133,13 +157,263 @@ snapshot="$backups/predeploy-$revision"
 database_backup="$backups/postgresql-before-$revision.dump"
 compose_backup="$backups/compose-before-$revision.yml"
 
+assert_redis_queue_environment() {
+    local queue_connection_count
+    queue_connection_count="$(grep -Ec '^QUEUE_CONNECTION=' "$environment" || true)"
+
+    if [[ "$queue_connection_count" -ne 1 ]] || ! grep -Fxq 'QUEUE_CONNECTION=redis' "$environment"; then
+        echo "Staging application environment must explicitly set QUEUE_CONNECTION=redis." >&2
+        return 1
+    fi
+}
+
+compose_service_environment_file() {
+    local compose_file="$1"
+    local service="$2"
+    local volume_override="${3:-}"
+    local output
+    local -a compose_arguments=(docker compose --project-name "$project" --env-file "$environment" -f "$compose_file")
+
+    if [[ -n "$volume_override" ]]; then
+        compose_arguments+=(-f "$volume_override")
+    fi
+
+    output="$(mktemp)"
+    chmod 0600 "$output"
+    if ! cat "$environment" > "$output"; then
+        rm -f -- "$output"
+        echo "Could not read the staging application environment." >&2
+        return 1
+    fi
+    printf '\n' >> "$output"
+    if ! "${compose_arguments[@]}" config --format json 2>/dev/null \
+        | jq -r --arg service "$service" '
+            .services[$service].environment // {}
+            | if type != "object" then error("service environment is not an object") else . end
+            | to_entries
+            | if any(.[]; .value == null) then error("service environment contains an unresolved value") else .[] | "\(.key)=\(.value | tostring)" end
+        ' >> "$output"; then
+        rm -f -- "$output"
+        echo "Could not resolve the staging $service service environment." >&2
+        return 1
+    fi
+
+    printf '%s\n' "$output"
+}
+
+resolve_current_redis_volume() {
+    local container redis_container_output redis_container_count compose_config
+    local mounts_json data_mount_count named_data_mount_count
+
+    if ! redis_container_output="$("${current_compose_base[@]}" ps --status running -q redis)"; then
+        echo "Could not resolve the current staging Redis container; refusing cold initialization." >&2
+        return 1
+    fi
+    redis_container_count="$(awk 'NF { count += NF } END { print count + 0 }' <<< "$redis_container_output")"
+    if [[ "$redis_container_count" -ne 1 ]]; then
+        echo "Could not resolve exactly one running staging Redis container; refusing cold initialization." >&2
+        return 1
+    fi
+    container="$(awk 'NF { print $1; exit }' <<< "$redis_container_output")"
+
+    if ! mounts_json="$(docker inspect "$container" --format '{{json .Mounts}}')"; then
+        echo "Could not inspect the current staging Redis container mounts; refusing cold initialization." >&2
+        return 1
+    fi
+    if ! jq -e 'type == "array"' <<< "$mounts_json" > /dev/null; then
+        echo "Current staging Redis mount evidence is invalid; refusing cold initialization." >&2
+        return 1
+    fi
+
+    data_mount_count="$(jq -er '[.[] | select(.Destination == "/data")] | length' <<< "$mounts_json")"
+    named_data_mount_count="$(jq -er '[.[] | select(.Destination == "/data" and .Type == "volume" and (.Name | type == "string") and (.Name | length > 0) and (.Source | type == "string") and (.Source | length > 0))] | length' <<< "$mounts_json")"
+    if [[ "$data_mount_count" -ne 1 || "$named_data_mount_count" -ne 1 ]]; then
+        echo "Current staging Redis must have exactly one named volume mounted at /data; refusing cold initialization." >&2
+        return 1
+    fi
+
+    current_redis_volume="$(jq -er '[.[] | select(.Destination == "/data" and .Type == "volume" and (.Name | type == "string") and (.Name | length > 0) and (.Source | type == "string") and (.Source | length > 0))][0].Name' <<< "$mounts_json")"
+    if [[ ! "$current_redis_volume" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "Current staging Redis physical volume name is invalid; refusing cold initialization." >&2
+        return 1
+    fi
+    if ! docker volume inspect "$current_redis_volume" > /dev/null 2>&1; then
+        echo "Current staging Redis physical volume is missing; refusing cold initialization." >&2
+        return 1
+    fi
+
+    if ! compose_config="$("${current_compose_base[@]}" config --format json 2>/dev/null)"; then
+        echo "Could not resolve the current staging Redis Compose configuration; refusing cold initialization." >&2
+        return 1
+    fi
+    if ! current_redis_volume_key="$(jq -er '
+        [.services.redis.volumes[]?
+            | select(.target == "/data" and .type == "volume" and (.source | type == "string") and (.source | length > 0))
+            | .source
+        ]
+        | if length == 1 then .[0] else error("expected exactly one Redis /data volume key") end
+    ' <<< "$compose_config")"; then
+        echo "Current staging Redis Compose configuration must expose exactly one named /data volume key; refusing cold initialization." >&2
+        return 1
+    fi
+    if [[ ! "$current_redis_volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "Current staging Redis Compose volume key is invalid; refusing cold initialization." >&2
+        return 1
+    fi
+
+    echo "Current Redis /data physical volume: $current_redis_volume"
+}
+
+write_redis_volume_override() {
+    local additional_volume_key="${1:-}"
+    local volume_key
+    local -a volume_keys=("$current_redis_volume_key")
+
+    if [[ -z "$current_redis_volume" ]]; then
+        echo "Current staging Redis physical volume was not resolved; refusing cold initialization." >&2
+        return 1
+    fi
+    if [[ -z "$current_redis_volume_key" ]]; then
+        echo "Current staging Redis Compose volume key was not resolved; refusing cold initialization." >&2
+        return 1
+    fi
+    if [[ -n "$additional_volume_key" && "$additional_volume_key" != "$current_redis_volume_key" ]]; then
+        volume_keys+=("$additional_volume_key")
+    fi
+    for volume_key in "${volume_keys[@]}"; do
+        if [[ ! "$volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+            echo "Staging Redis Compose volume key is invalid; refusing cold initialization." >&2
+            return 1
+        fi
+    done
+
+    if [[ -z "$redis_volume_override" ]]; then
+        redis_volume_override="$(mktemp)"
+    fi
+    chmod 0600 "$redis_volume_override"
+    {
+        printf 'volumes:\n'
+        for volume_key in "${volume_keys[@]}"; do
+            printf '  %s:\n    name: "%s"\n' "$volume_key" "$current_redis_volume"
+        done
+    } > "$redis_volume_override"
+}
+
+resolve_candidate_redis_volume_key() {
+    local candidate_config
+
+    if ! candidate_config="$("${candidate_compose[@]}" config --format json 2>/dev/null)"; then
+        echo "Could not resolve the candidate Redis Compose configuration; refusing activation." >&2
+        return 1
+    fi
+    if ! candidate_redis_volume_key="$(jq -er '
+        [.services.redis.volumes[]?
+            | select(.target == "/data" and .type == "volume" and (.source | type == "string") and (.source | length > 0))
+            | .source
+        ]
+        | if length == 1 then .[0] else error("expected exactly one Redis /data volume key") end
+    ' <<< "$candidate_config")"; then
+        echo "Candidate Redis Compose configuration must expose exactly one named /data volume key; refusing activation." >&2
+        return 1
+    fi
+    if [[ ! "$candidate_redis_volume_key" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+        echo "Candidate Redis Compose volume key is invalid; refusing activation." >&2
+        return 1
+    fi
+}
+
+verify_candidate_redis_volume() {
+    local candidate_config
+
+    if ! candidate_config="$("${candidate_compose[@]}" config --format json 2>/dev/null)"; then
+        echo "Could not resolve the candidate Redis Compose configuration." >&2
+        return 1
+    fi
+    if ! jq -e --arg expected "$current_redis_volume" --arg volume_key "$candidate_redis_volume_key" '
+        (.volumes[$volume_key].name // "") == $expected
+        and ((.services.redis.volumes // []) | map(select(.target == "/data")) | length == 1)
+        and ((.services.redis.volumes // []) | map(select(.target == "/data" and .type == "volume" and .source == $volume_key)) | length == 1)
+    ' <<< "$candidate_config" > /dev/null; then
+        echo "Candidate Redis /data physical volume does not match the current staging volume; refusing activation." >&2
+        return 1
+    fi
+
+    echo "Candidate Redis /data physical volume: $current_redis_volume"
+}
+
+ensure_current_dependencies() {
+    "${current_compose[@]}" up -d postgres redis < /dev/null
+    "${current_compose[@]}" up -d --wait postgres redis < /dev/null
+}
+
+resolve_staging_network() {
+    local container network label
+    local networks
+
+    container="$("${current_compose[@]}" ps --status running -q redis)"
+    if [[ -z "$container" ]]; then
+        echo "Could not resolve the current staging Redis container." >&2
+        return 1
+    fi
+
+    networks="$(docker inspect "$container" --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}')"
+    staging_network=''
+    while IFS= read -r network; do
+        [[ -n "$network" ]] || continue
+        label="$(docker network inspect "$network" --format '{{index .Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+        if [[ "$label" == "$project" ]]; then
+            if [[ -n "$staging_network" ]]; then
+                echo "Current Redis is attached to multiple staging Compose networks." >&2
+                return 1
+            fi
+            staging_network="$network"
+        fi
+    done <<< "$networks"
+
+    if [[ -z "$staging_network" ]]; then
+        echo "Could not resolve the current staging Compose network from Redis." >&2
+        return 1
+    fi
+}
+
+run_queue_contract_probe() {
+    local check="$1"
+    local source="$2"
+    local image="$3"
+    local cache="$4"
+    local probe_environment="$5"
+    local output
+
+    if ! output="$(docker run --rm --interactive --network "$staging_network" --env-file "$probe_environment" \
+        --env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php' \
+        -v "$source:/app:ro" \
+        -v "$root/shared/storage:/app/storage:ro" \
+        -v "$cache:/app/bootstrap/cache:ro" \
+        -w /app "$image" php -- --check="$check" < "$queue_probe_script" 2>&1)"; then
+        echo "Laravel queue Redis preflight failed." >&2
+        return 1
+    fi
+
+    output="$(printf '%s\n' "$output" | grep -E '^B2B_QUEUE_PROBE=' | tail -n 1 || true)"
+    if [[ ! "$output" =~ ^B2B_QUEUE_PROBE=\{.*\}$ ]]; then
+        echo "Laravel queue Redis preflight returned no valid probe result." >&2
+        return 1
+    fi
+
+    printf '%s\n' "${output#B2B_QUEUE_PROBE=}"
+}
+
 write_normalized_nftables() {
     local output="$1" nftables_dump loopback_guard_count
     local service container service_ip escaped_service_ip
     local -a service_ips=()
 
     for service in postgres redis app horizon scheduler telegram; do
-        container="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps -q "$service")"
+        container="$("${current_compose[@]}" ps -aq "$service")"
+        if [[ -z "$container" ]]; then
+            echo "Could not resolve the isolated staging $service container." >&2
+            return 1
+        fi
         service_ip="$(docker inspect "$container" --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' | awk 'NF { print; exit }')"
 
         if [[ ! "$service_ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
@@ -177,9 +451,33 @@ if [[ -n "$expected_revision" && "$current_revision" != "$expected_revision" ]];
     exit 1
 fi
 
+assert_redis_queue_environment
+
 if [[ "$current_revision" == "$revision" ]]; then
     echo "Revision $revision is already deployed."
     exit 0
+fi
+
+cd "$root"
+current_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+resolve_current_redis_volume
+write_redis_volume_override
+current_compose=("${current_compose_base[@]}" -f "$redis_volume_override")
+"${current_compose[@]}" config --quiet
+ensure_current_dependencies
+resolve_staging_network
+
+current_image="$("${current_compose[@]}" config --format json \
+    | jq -er '.services.app.image // empty')"
+current_probe_environment="$(compose_service_environment_file "$compose" app "$redis_volume_override")"
+queue_probe_script="$(mktemp)"
+if ! tar -xOf "$archive" scripts/staging-smoke.php > "$queue_probe_script"; then
+    echo "Candidate queue preflight script is missing from the release archive." >&2
+    exit 1
+fi
+if [[ ! -d "$root/shared/bootstrap-cache" ]]; then
+    echo "Current staging configuration cache directory is missing." >&2
+    exit 1
 fi
 
 if [[ -e "$release" ]]; then
@@ -209,22 +507,22 @@ chmod 0600 "$snapshot"/*
 echo "Pre-deploy host baseline captured."
 
 cd "$root"
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --quiet
+"${current_compose[@]}" config --quiet
 
-actual_binding="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" port app 8000)"
+actual_binding="$("${current_compose[@]}" port app 8000)"
 if [[ "$actual_binding" != "$expected_host_port" ]]; then
     echo "Unexpected app binding: $actual_binding" >&2
     exit 1
 fi
 
 for service in postgres redis app horizon scheduler telegram; do
-    docker compose --project-name "$project" --env-file "$environment" -f "$compose" config --services | grep -Fxq "$service"
+    "${current_compose[@]}" config --services | grep -Fxq "$service"
 done
 echo "Isolated Compose project and app binding verified."
 
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
+"${current_compose[@]}" exec -T postgres \
     sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' < /dev/null > "$database_backup"
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T postgres \
+"${current_compose[@]}" exec -T postgres \
     pg_restore -l < "$database_backup" > /dev/null
 chmod 0600 "$database_backup"
 echo "Staging PostgreSQL backup created and validated."
@@ -237,10 +535,11 @@ printf '%s\n' "$revision" > "$release/REVISION"
 ln -s /app/storage/app/public "$release/public/storage"
 
 docker build -t "chuklov-staging-app:$revision" -f "$release/docker/php/Dockerfile" "$release"
+candidate_build_cache="$(mktemp -d)"
 docker run --rm --env-file "$environment" \
     -v "$release:/app" \
-    -v "$root/shared/storage:/app/storage" \
-    -v "$root/shared/bootstrap-cache:/app/bootstrap/cache" \
+    -v "$root/shared/storage:/app/storage:ro" \
+    -v "$candidate_build_cache:/app/bootstrap/cache" \
     -w /app "chuklov-staging-app:$revision" \
     composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-scripts
@@ -340,21 +639,81 @@ normalized_compose="$compose.next.runtime-user"
 normalize_staging_runtime_user "$compose.next" "$normalized_compose"
 mv "$normalized_compose" "$compose.next"
 
-docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --quiet
+candidate_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next")
+candidate_compose=("${candidate_compose_base[@]}" -f "$redis_volume_override")
+resolve_candidate_redis_volume_key
+write_redis_volume_override "$candidate_redis_volume_key"
+verify_candidate_redis_volume
+"${candidate_compose[@]}" config --quiet
 chmod 0640 "$compose.next"
-docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" config --format json \
+"${candidate_compose[@]}" config --format json \
     | jq -e --arg image "chuklov-staging-app:$revision" \
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
+candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$redis_volume_override")"
+
+current_queue_probe="$(run_queue_contract_probe "queue-snapshot" "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
+current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
+current_pending_work="$(jq -er '
+    if (.counts | type) != "object" then error("missing counts")
+    elif ([.counts.pending, .counts.delayed, .counts.reserved] | all(type == "number" and . >= 0 and floor == .))
+    then (.counts.pending + .counts.delayed + .counts.reserved)
+    else error("invalid counts")
+    end
+' <<< "$current_queue_probe")"
+echo "Current Laravel queue Redis contract verified with $current_pending_work pending B2B work item(s)."
+
+verify_queue_contract() {
+    queue_preflight_cache="$(mktemp -d)"
+    local output candidate_queue_probe candidate_queue_fingerprint
+
+    if ! output="$(docker run --rm --network "$staging_network" --env-file "$candidate_probe_environment" \
+        --env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php' \
+        -v "$release:/app:ro" \
+        -v "$root/shared/storage:/app/storage:ro" \
+        -v "$queue_preflight_cache:/app/bootstrap/cache" \
+        -w /app "chuklov-staging-app:$revision" \
+        php artisan config:cache --no-ansi < /dev/null 2>&1)"; then
+        echo "Candidate cached configuration generation failed." >&2
+        return 1
+    fi
+    if [[ ! -s "$queue_preflight_cache/config.php" ]]; then
+        echo "Candidate configuration cache was not generated in the disposable cache directory." >&2
+        return 1
+    fi
+
+    candidate_queue_probe="$(run_queue_contract_probe "queue-contract" "$release" "chuklov-staging-app:$revision" "$queue_preflight_cache" "$candidate_probe_environment")"
+    if ! candidate_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$candidate_queue_probe")"; then
+        echo "Candidate Laravel queue Redis preflight returned an invalid physical identity." >&2
+        return 1
+    fi
+
+    if [[ "$current_pending_work" -gt 0 && "$candidate_queue_fingerprint" != "$current_queue_fingerprint" ]]; then
+        echo "Pending B2B work would be stranded by a physical Redis queue identity change." >&2
+        return 1
+    fi
+
+    rm -rf -- "$queue_preflight_cache"
+    queue_preflight_cache=''
+    echo "Candidate Laravel queue Redis contract and physical identity preflight passed."
+}
+
+verify_queue_contract
 
 rollback() {
     local failed_line="${1:-unknown}"
     local failed_status="${2:-1}"
+    local -a rollback_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+
+    if [[ -n "$redis_volume_override" ]]; then
+        rollback_compose+=(-f "$redis_volume_override")
+    fi
+
     echo "Deployment failed at post-switch line $failed_line (exit $failed_status); restoring application release $current_revision." >&2
     ln -s "$previous_target" "$root/current.rollback"
     mv -Tf "$root/current.rollback" "$root/current"
     cp "$compose_backup" "$compose"
     cd "$root"
-    docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
+    "${rollback_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
     rm -f -- "$remote_normalizer" || true
 }
 trap 'rollback "$LINENO" "$?"' ERR
@@ -362,10 +721,13 @@ trap 'rollback "$LINENO" "$?"' ERR
 mv "$compose.next" "$compose"
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
+runtime_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$redis_volume_override")
 
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan migrate --force < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan optimize < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" run --rm --no-deps app php artisan filament:optimize < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan migrate --force < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan portal:validate-configuration < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan db:seed --class=Database\\Seeders\\ScenarioNotificationSeeder --force < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan optimize < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan filament:optimize < /dev/null
 
 prepare_runtime_ownership() {
     local runtime_path
@@ -392,15 +754,15 @@ prepare_runtime_ownership() {
 }
 
 prepare_runtime_ownership
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d postgres redis < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" up -d --wait < /dev/null
+"${runtime_compose[@]}" up -d postgres redis < /dev/null
+"${runtime_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
+"${runtime_compose[@]}" up -d --wait < /dev/null
 
 echo "Runtime containers refreshed; verifying application health."
 curl --noproxy '*' --fail --silent --show-error --retry 15 --retry-delay 2 "$health_url"
 for attempt in $(seq 1 15); do
-    horizon_status="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:status --no-ansi < /dev/null 2>&1 || true)"
-    horizon_supervisors="$(docker compose --project-name "$project" --env-file "$environment" -f "$compose" exec -T app php artisan horizon:supervisors --no-ansi < /dev/null 2>&1 || true)"
+    horizon_status="$("${runtime_compose[@]}" exec -T app php artisan horizon:status --no-ansi < /dev/null 2>&1 || true)"
+    horizon_supervisors="$("${runtime_compose[@]}" exec -T app php artisan horizon:supervisors --no-ansi < /dev/null 2>&1 || true)"
     if grep -Fq 'Horizon is running.' <<< "$horizon_status" \
         && grep -Fq 'supervisor-1' <<< "$horizon_supervisors" \
         && grep -Eq '\([1-9][0-9]*\)' <<< "$horizon_supervisors"; then
@@ -415,7 +777,7 @@ for attempt in $(seq 1 15); do
     sleep 2
 done
 for service in app horizon scheduler telegram; do
-    if ! docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps --status running --services | grep -Fxq "$service"; then
+    if ! "${runtime_compose[@]}" ps --status running --services | grep -Fxq "$service"; then
         echo "Required runtime service is not running: $service" >&2
         false
     fi
@@ -460,5 +822,5 @@ trap - ERR
 
 echo
 echo "Successfully deployed $revision"
-docker compose --project-name "$project" --env-file "$environment" -f "$compose" ps
+"${runtime_compose[@]}" ps
 REMOTE

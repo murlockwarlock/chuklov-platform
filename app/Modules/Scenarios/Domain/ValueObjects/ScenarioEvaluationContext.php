@@ -2,6 +2,8 @@
 
 namespace App\Modules\Scenarios\Domain\ValueObjects;
 
+use App\Modules\B2B\Domain\Models\B2bLead;
+use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -20,6 +22,8 @@ final readonly class ScenarioEvaluationContext
         public ?CarbonImmutable $evaluationEndsAt = null,
         public ?FinancialObligation $obligation = null,
         public ?SurveyAttempt $surveyAttempt = null,
+        public ?B2bLead $b2bLead = null,
+        public ?B2bSalesCall $b2bSalesCall = null,
     ) {}
 
     public function withEvaluationEndsAt(?CarbonImmutable $evaluationEndsAt): self
@@ -32,6 +36,8 @@ final readonly class ScenarioEvaluationContext
             evaluationEndsAt: $evaluationEndsAt,
             obligation: $this->obligation,
             surveyAttempt: $this->surveyAttempt,
+            b2bLead: $this->b2bLead,
+            b2bSalesCall: $this->b2bSalesCall,
         );
     }
 }

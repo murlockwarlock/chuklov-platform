@@ -31,6 +31,72 @@ class MilestoneFourDatabaseTest extends TestCase
         self::assertNotNull(DB::selectOne("SELECT installed_version FROM pg_available_extensions WHERE name = 'btree_gist'")->installed_version);
     }
 
+    public function test_postgresql_booking_provider_state_persists_non_secret_affinity_without_backfill(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Booking provider persistence requires PostgreSQL schema checks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $legacy = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $bound = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => 'online',
+                'meeting_link_mode' => 'auto',
+                'starts_at' => CarbonImmutable::create(2026, 4, 6, 12, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 4, 6, 13, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 13, 15, 0, 'UTC'),
+                'provider_name' => 'zoom',
+                'provider_account_id' => 'account-a',
+                'provider_host_user_id' => 'host-a',
+                'provider_sync_status' => 'pending',
+                'provider_operation' => 'create',
+                'provider_sync_version' => 1,
+                'provider_correlation_key' => 'booking-provider-test',
+            ]);
+
+        $columns = array_map(
+            static fn (object $column): string => $column->column_name,
+            DB::select("SELECT column_name FROM information_schema.columns WHERE table_name = 'bookings' AND column_name LIKE 'provider_%' ORDER BY ordinal_position"),
+        );
+        self::assertSame([
+            'provider_name',
+            'provider_account_id',
+            'provider_host_user_id',
+            'provider_meeting_id',
+            'provider_meeting_uuid',
+            'provider_join_url',
+            'provider_sync_status',
+            'provider_operation',
+            'provider_sync_version',
+            'provider_synced_at',
+            'provider_error_code',
+            'provider_correlation_key',
+            'provider_lease_token',
+            'provider_lease_expires_at',
+            'provider_lease_event_id',
+            'provider_lease_processing_token',
+        ], $columns);
+        self::assertNotContains('provider_client_secret', $columns);
+        self::assertNotContains('provider_access_token', $columns);
+        self::assertNotContains('provider_credentials', $columns);
+        self::assertNull($legacy->refresh()->provider_account_id);
+        self::assertNull($legacy->provider_host_user_id);
+        self::assertSame('account-a', $bound->refresh()->provider_account_id);
+        self::assertSame('host-a', $bound->provider_host_user_id);
+        self::assertSame('booking-provider-test', $bound->provider_correlation_key);
+    }
+
     public function test_composite_booking_foreign_keys_reject_cross_organization_specialist(): void
     {
         $organization = Organization::factory()->create();

@@ -50,23 +50,30 @@ final class AiPromptResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')->label('Название')->searchable()->sortable(),
                 TextColumn::make('capability')
                     ->label('Используется для')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
-                TextColumn::make('activeVersion.version')->label('Активная версия')->placeholder('Нет активной'),
-                TextColumn::make('versions_count')->counts('versions')->label('Всего версий'),
-                TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('activeVersion.version')->label('Активный текст')->placeholder('Нет активного')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('versions_count')->counts('versions')->label('Всего текстов')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->emptyStateHeading('Промптов пока нет')
             ->emptyStateDescription('Промпты определяют, как AI должен вести себя в разных сценариях.')
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->label('Редактировать')
+                    ->icon(Heroicon::OutlinedPencil)
+                    ->iconButton()
+                    ->tooltip('Редактировать промпт'),
                 Action::make('playground')
                     ->label('Песочница')
                     ->color('info')
                     ->icon(Heroicon::OutlinedPlay)
+                    ->iconButton()
+                    ->tooltip('Проверить ответ AI')
                     ->form([
                         Textarea::make('test_input')
                             ->label('Пример запроса')

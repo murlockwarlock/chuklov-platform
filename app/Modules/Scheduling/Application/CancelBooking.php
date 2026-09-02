@@ -5,8 +5,12 @@ namespace App\Modules\Scheduling\Application;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -21,6 +25,9 @@ final class CancelBooking
         private readonly BookingAuthorization $authorization,
         private readonly GetBookingCancellationCutoff $cutoff,
         private readonly RecordBookingEvent $events,
+        private readonly BookingVideoMeetingLifecycle $videoMeetings,
+        private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -68,7 +75,7 @@ final class CancelBooking
                 'cancelled_at' => now(),
                 'event_version' => $lockedBooking->event_version + 1,
             ])->save();
-            $this->events->handle(
+            $bookingEvent = $this->events->handle(
                 booking: $lockedBooking,
                 actor: $actor,
                 type: BookingEventType::Cancelled,
@@ -76,6 +83,16 @@ final class CancelBooking
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
+            $this->scenarioEvents->bookingCancelled(
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
+                occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
+            );
+            $this->reminders->cancelForBooking((int) $organization->getKey(), (int) $lockedBooking->getKey());
+            if ($lockedBooking->visit_format === VisitFormat::Online
+                && $lockedBooking->meeting_link_mode === MeetingLinkMode::Auto) {
+                $this->videoMeetings->scheduleCancel($organization, $lockedBooking);
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor instanceof User ? $actor : null,

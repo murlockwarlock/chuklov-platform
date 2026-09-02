@@ -6,8 +6,12 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Models\User;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
+use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
+use App\Modules\Identity\Application\RecordClientConsent;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -19,12 +23,15 @@ use App\Modules\Referrals\Application\SearchClientsForReferralAssignment;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Validation\ValidationException;
 
 class ViewClient extends ViewRecord
 {
@@ -76,11 +83,6 @@ class ViewClient extends ViewRecord
                 ->label('Редактировать клиента')
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
-            $this->assignReferrerAction(),
-            Action::make('companionHistory')
-                ->label('AI-компаньон / История общения')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')
@@ -116,20 +118,177 @@ class ViewClient extends ViewRecord
                         UpdateMedicalProfileCommand::fromArray($data),
                     );
                 }),
-            Action::make('newSession')
-                ->label('Новый сеанс')
-                ->icon('heroicon-o-plus')
-                ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
-                ->visible(fn (): bool => MedicalSessionResource::canCreate()),
             ActionGroup::make([
-                $this->blockSelfBookingAction(),
-                $this->unblockSelfBookingAction(),
+                $this->marketingConsentActionGroup(),
+                $this->assignReferrerAction(),
+                Action::make('companionHistory')
+                    ->label('AI-компаньон / История общения')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
+                Action::make('newSession')
+                    ->label('Новый сеанс')
+                    ->icon('heroicon-o-plus')
+                    ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
+                    ->visible(fn (): bool => MedicalSessionResource::canCreate()),
+                ActionGroup::make([
+                    $this->blockSelfBookingAction(),
+                    $this->unblockSelfBookingAction(),
+                ])
+                    ->label('Доступ к записи')
+                    ->icon('heroicon-o-lock-closed'),
             ])
-                ->label('Доступ к записи')
-                ->icon('heroicon-o-lock-closed')
+                ->label('Дополнительные действия')
+                ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
                 ->color('gray'),
         ];
+    }
+
+    private function marketingConsentActionGroup(): ActionGroup
+    {
+        $actions = $this->marketingConsentIsGranted()
+            ? [$this->revokeMarketingConsentAction(), $this->grantMarketingConsentAction()]
+            : [$this->grantMarketingConsentAction(), $this->revokeMarketingConsentAction()];
+
+        return ActionGroup::make($actions)
+            ->label('Маркетинговые рассылки')
+            ->icon('heroicon-o-megaphone')
+            ->button()
+            ->color('gray')
+            ->visible(fn (): bool => $this->canRecordMarketingConsent());
+    }
+
+    private function grantMarketingConsentAction(): Action
+    {
+        return Action::make('grantMarketingConsent')
+            ->label('Зафиксировать согласие на рассылки')
+            ->icon('heroicon-o-check-circle')
+            ->color('success')
+            ->modalHeading('Зафиксировать согласие на рассылки')
+            ->modalDescription('Укажите, как клиент подтвердил согласие, и подтвердите факт получения согласия.')
+            ->modalSubmitActionLabel('Зафиксировать согласие')
+            ->requiresConfirmation()
+            ->fillForm(fn (): array => [
+                'version' => $this->latestMarketingConsent()?->version,
+            ])
+            ->schema($this->marketingConsentSchema(true))
+            ->authorize(fn (): bool => $this->canRecordMarketingConsent())
+            ->visible(fn (): bool => $this->canRecordMarketingConsent())
+            ->action(function (array $data): void {
+                $this->recordMarketingConsent(true, $data);
+            });
+    }
+
+    private function revokeMarketingConsentAction(): Action
+    {
+        return Action::make('revokeMarketingConsent')
+            ->label('Отозвать согласие на рассылки')
+            ->icon('heroicon-o-x-circle')
+            ->color('danger')
+            ->modalHeading('Отозвать согласие на рассылки')
+            ->modalDescription('Укажите, как клиент сообщил об отзыве, и подтвердите факт получения отказа.')
+            ->modalSubmitActionLabel('Отозвать согласие')
+            ->requiresConfirmation()
+            ->fillForm(fn (): array => [
+                'version' => $this->latestMarketingConsent()?->version,
+            ])
+            ->schema($this->marketingConsentSchema(false))
+            ->authorize(fn (): bool => $this->canRecordMarketingConsent())
+            ->visible(fn (): bool => $this->canRecordMarketingConsent())
+            ->action(function (array $data): void {
+                $this->recordMarketingConsent(false, $data);
+            });
+    }
+
+    /** @return array<Checkbox|Select|TextInput> */
+    private function marketingConsentSchema(bool $granted): array
+    {
+        return [
+            TextInput::make('version')
+                ->label('Версия согласия')
+                ->required()
+                ->maxLength(64)
+                ->helperText('Укажите версию текста или условия, которые подтвердил клиент.'),
+            Select::make('evidence')
+                ->label('Источник подтверждения')
+                ->options([
+                    'crm' => 'Зафиксировано оператором в CRM',
+                    'telegram' => 'Сообщение клиента в Telegram',
+                    'phone' => 'Телефонный разговор',
+                    'written' => 'Письменное согласие',
+                ])
+                ->native(false)
+                ->required(),
+            Checkbox::make('confirmed')
+                ->label($granted
+                    ? 'Подтверждаю, что клиент действительно согласился на маркетинговые рассылки.'
+                    : 'Подтверждаю, что клиент действительно отозвал согласие на маркетинговые рассылки.')
+                ->accepted(),
+        ];
+    }
+
+    /** @param array<string, mixed> $data */
+    private function recordMarketingConsent(bool $granted, array $data): void
+    {
+        if (! in_array($data['confirmed'] ?? null, [true, 1, '1', 'on', 'yes'], true)) {
+            throw ValidationException::withMessages([
+                'confirmed' => 'Подтвердите, что сообщение клиента действительно получено.',
+            ]);
+        }
+
+        $consent = app(RecordClientConsent::class)->handle(
+            actor: $this->actor(),
+            client: $this->clientRecord(),
+            subject: ConsentSubject::Marketing,
+            version: (string) ($data['version'] ?? ''),
+            granted: $granted,
+            evidence: (string) ($data['evidence'] ?? ''),
+        );
+
+        $this->getRecord()->refresh();
+
+        Notification::make()
+            ->title($granted ? 'Согласие на рассылки зафиксировано' : 'Согласие на рассылки отозвано')
+            ->body('Версия: '.$consent->version)
+            ->success()
+            ->send();
+    }
+
+    private function canRecordMarketingConsent(): bool
+    {
+        $actor = auth()->user();
+
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        $client = $this->clientRecord();
+        $organization = app(OrganizationContext::class)->organization();
+
+        return (int) $client->organization_id === (int) $organization->getKey()
+            && app(OrganizationAuthorizer::class)->allows(
+                $actor,
+                $organization,
+                OrganizationPermission::RecordConsent,
+            );
+    }
+
+    private function marketingConsentIsGranted(): bool
+    {
+        return $this->latestMarketingConsent()?->granted === true;
+    }
+
+    private function latestMarketingConsent(): ?ClientConsent
+    {
+        return app(GetLatestClientMarketingConsent::class)->handle($this->actor(), $this->clientRecord());
+    }
+
+    private function actor(): User
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        return $actor;
     }
 
     private function blockSelfBookingAction(): Action

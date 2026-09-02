@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreatePromptDraft;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
@@ -17,6 +18,7 @@ use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\BudgetReservationStatus;
+use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
@@ -47,13 +49,21 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Console\Application as ConsoleApplication;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
+use Illuminate\Process\Factory as ProcessFactory;
+use Illuminate\Process\InvokedProcess;
+use Illuminate\Process\Pool;
+use Illuminate\Process\ProcessResult;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Ai\Tools\Request;
+use Laravel\SerializableClosure\SerializableClosure;
+use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\TestCase;
 
 final class CountingInitialRagEmbeddingGenerator implements EmbeddingGenerator
@@ -440,6 +450,133 @@ final class MilestoneTenConcurrencyTest extends TestCase
         self::assertSame($credential->id, DB::table('ai_run_attempts')->where('ai_run_id', $run->id)->value('credential_id'));
     }
 
+    public function test_saved_credential_reassignment_locks_target_credential_before_provider_row(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Provider credential lock ordering requires PostgreSQL row locks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $targetCredential = OrganizationCredential::factory()->forOrganization($organization)->create([
+            'provider' => 'openai',
+            'credential_name' => 'Target provider credential',
+        ]);
+        $currentCredential = OrganizationCredential::factory()->forOrganization($organization)->create([
+            'provider' => 'openai',
+            'credential_name' => 'Current provider credential',
+        ]);
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI lock ordering',
+            'credential_id' => $currentCredential->id,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'tested_credential_revision' => $currentCredential->revision_id,
+            'tested_configuration_digest' => 'digest-before-reassignment',
+        ]);
+
+        $token = (string) Str::uuid();
+        $readyToken = 'ai-provider-ready-'.$token;
+        $parentApplicationName = 'chuklov-m11d-ai-parent-'.$token;
+        $childApplicationName = 'chuklov-m11d-ai-child-'.$token;
+        $connection = DB::connection();
+        $connection->statement(
+            "select set_config('application_name', ?, false)",
+            [$parentApplicationName],
+        );
+        $parentPid = (int) $connection->selectOne('select pg_backend_pid() as pid')->pid;
+        $connection->beginTransaction();
+        OrganizationCredential::query()
+            ->where('organization_id', $organization->id)
+            ->whereKey($targetCredential->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $pool = null;
+
+        try {
+            $command = ConsoleApplication::formatCommandString('invoke-serialized-closure');
+            $task = static fn (): array => self::reassignProviderCredentialInProcess(
+                $organization->id,
+                $admin->id,
+                $provider->id,
+                $targetCredential->id,
+                $childApplicationName,
+                $readyToken,
+            );
+            $pool = app(ProcessFactory::class)->pool(function (Pool $pool) use ($task, $command): void {
+                $pool->as('0')
+                    ->path(base_path())
+                    ->env([
+                        'LARAVEL_INVOKABLE_CLOSURE' => base64_encode(serialize(new SerializableClosure($task))),
+                    ])
+                    ->timeout(30)
+                    ->command($command);
+            })->start();
+            $processes = $pool->running();
+            self::assertCount(1, $processes);
+            $process = $processes->first();
+            self::assertInstanceOf(InvokedProcess::class, $process);
+            $readyOutput = '';
+            $process->waitUntil(function (string $type, string $buffer) use (&$readyOutput, $readyToken): bool {
+                if ($type !== SymfonyProcess::ERR) {
+                    return false;
+                }
+
+                $readyOutput .= $buffer;
+
+                return str_contains($readyOutput, $readyToken.PHP_EOL);
+            });
+            self::assertTrue($process->running());
+
+            $this->waitForProviderCredentialLockWait($childApplicationName, $parentPid);
+            $probe = Concurrency::driver('process')->run([
+                static fn (): array => self::probeProviderRowLock($organization->id, $provider->id),
+            ])[0];
+
+            self::assertSame('free', $probe['status']);
+            self::assertSame($currentCredential->id, $probe['credential_id']);
+            self::assertTrue($process->running());
+
+            $connection->commit();
+            $processResult = $pool->wait()[0];
+            self::assertInstanceOf(ProcessResult::class, $processResult);
+            self::assertTrue($processResult->successful(), $processResult->errorOutput());
+            $payload = json_decode($processResult->output(), true);
+            self::assertIsArray($payload);
+            self::assertTrue($payload['successful'] ?? false, $processResult->output());
+            self::assertIsString($payload['result'] ?? null);
+            $result = unserialize($payload['result']);
+            self::assertIsArray($result);
+
+            self::assertSame([
+                'status' => 'completed',
+                'credential_id' => $targetCredential->id,
+            ], $result);
+        } catch (ProcessTimedOutException $exception) {
+            $this->writeProviderLockDiagnostics($childApplicationName, $parentPid);
+            throw $exception;
+        } finally {
+            if ($connection->transactionLevel() > 0) {
+                $connection->rollBack();
+            }
+
+            if ($pool !== null && $pool->running()->isNotEmpty()) {
+                $pool->stop(1);
+            }
+        }
+
+        $provider->refresh();
+        self::assertSame($targetCredential->id, $provider->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+        self::assertSame(2, OrganizationCredential::query()
+            ->where('organization_id', $organization->id)
+            ->count());
+    }
+
     public function test_concurrent_scheduled_reclaim_claims_one_expired_run_and_dispatches_one_job(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
@@ -601,6 +738,189 @@ final class MilestoneTenConcurrencyTest extends TestCase
             ->orderBy('call_index')
             ->pluck('call_index')
             ->all());
+    }
+
+    /** @return array{status: string, credential_id: int}|array{status: string, exception: string} */
+    private static function reassignProviderCredentialInProcess(
+        int $organizationId,
+        int $adminId,
+        int $providerId,
+        int $credentialId,
+        string $applicationName,
+        string $readyToken,
+    ): array {
+        try {
+            self::setAiProcessApplicationName($applicationName);
+            self::signalReady($readyToken);
+            $organization = Organization::query()->findOrFail($organizationId);
+            config()->set('tenancy.default_organization_id', $organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $provider = AiProviderConfiguration::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($providerId)
+                ->firstOrFail();
+            $result = app(ConnectAiProvider::class)->update(
+                User::query()->findOrFail($adminId),
+                $provider,
+                ['credential_id' => $credentialId],
+            );
+
+            return [
+                'status' => 'completed',
+                'credential_id' => (int) $result->credential_id,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'status' => 'error',
+                'exception' => $exception::class,
+            ];
+        }
+    }
+
+    /** @return array{status: string, credential_id?: int, code?: string} */
+    private static function probeProviderRowLock(int $organizationId, int $providerId): array
+    {
+        try {
+            return DB::transaction(function () use ($organizationId, $providerId): array {
+                $provider = AiProviderConfiguration::query()
+                    ->where('organization_id', $organizationId)
+                    ->whereKey($providerId)
+                    ->lock('for update nowait')
+                    ->firstOrFail();
+
+                return [
+                    'status' => 'free',
+                    'credential_id' => (int) $provider->credential_id,
+                ];
+            });
+        } catch (QueryException $exception) {
+            if ((string) $exception->getCode() === '55P03') {
+                return ['status' => 'locked'];
+            }
+
+            return [
+                'status' => 'error',
+                'code' => (string) $exception->getCode(),
+            ];
+        }
+    }
+
+    private function waitForProviderCredentialLockWait(string $childApplicationName, int $parentPid): void
+    {
+        $deadline = microtime(true) + 30;
+
+        do {
+            $activity = DB::selectOne(
+                <<<'SQL'
+SELECT pid, wait_event_type, wait_event, pg_blocking_pids(pid) AS blocking_pids
+FROM pg_stat_activity
+WHERE application_name = ?
+SQL,
+                [$childApplicationName],
+            );
+
+            if ($activity !== null
+                && $activity->wait_event_type === 'Lock'
+                && in_array($parentPid, self::blockingPids($activity->blocking_pids), true)) {
+                return;
+            }
+        } while (microtime(true) < $deadline);
+
+        $this->writeProviderLockDiagnostics($childApplicationName, $parentPid);
+        self::fail('The provider reassignment process did not reach the target credential lock wait.');
+    }
+
+    /** @return list<int> */
+    private static function blockingPids(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_filter(
+                array_map(static fn (mixed $pid): int => (int) $pid, $value),
+                static fn (int $pid): bool => $pid > 0,
+            ));
+        }
+
+        if (! is_string($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(
+                static fn (string $pid): int => (int) trim($pid),
+                explode(',', trim($value, '{}')),
+            ),
+            static fn (int $pid): bool => $pid > 0,
+        ));
+    }
+
+    private static function setAiProcessApplicationName(string $applicationName): void
+    {
+        DB::statement(
+            "select set_config('application_name', ?, false)",
+            [$applicationName],
+        );
+    }
+
+    private static function signalReady(string $readyToken): void
+    {
+        fwrite(STDERR, $readyToken.PHP_EOL);
+        fflush(STDERR);
+    }
+
+    private function writeProviderLockDiagnostics(string $childApplicationName, int $parentPid): void
+    {
+        try {
+            $activities = DB::select(
+                <<<'SQL'
+SELECT pid, application_name, state, wait_event_type, wait_event,
+       pg_blocking_pids(pid) AS blocking_pids
+FROM pg_stat_activity
+WHERE application_name = ? OR pid = ?
+ORDER BY pid
+SQL,
+                [$childApplicationName, $parentPid],
+            );
+            $locks = DB::select(
+                <<<'SQL'
+SELECT locks.pid, locks.locktype,
+       CASE WHEN locks.relation IS NULL THEN NULL ELSE locks.relation::regclass::text END AS relation_name,
+       locks.mode, locks.granted
+FROM pg_locks AS locks
+JOIN pg_stat_activity AS activity ON activity.pid = locks.pid
+WHERE activity.application_name = ? OR activity.pid = ?
+ORDER BY locks.pid, locks.granted, locks.locktype, relation_name, locks.mode
+SQL,
+                [$childApplicationName, $parentPid],
+            );
+
+            fwrite(STDERR, 'PostgreSQL provider lock diagnostics: '.json_encode([
+                'activities' => array_map(static function (object $row): array {
+                    $values = get_object_vars($row);
+
+                    return [
+                        'pid' => (int) ($values['pid'] ?? 0),
+                        'application_name' => (string) ($values['application_name'] ?? ''),
+                        'state' => $values['state'] ?? null,
+                        'wait_event_type' => $values['wait_event_type'] ?? null,
+                        'wait_event' => $values['wait_event'] ?? null,
+                        'blocking_pids' => $values['blocking_pids'] ?? null,
+                    ];
+                }, $activities),
+                'locks' => array_map(static function (object $row): array {
+                    $values = get_object_vars($row);
+
+                    return [
+                        'pid' => (int) ($values['pid'] ?? 0),
+                        'locktype' => (string) ($values['locktype'] ?? ''),
+                        'relation' => $values['relation_name'] ?? null,
+                        'mode' => (string) ($values['mode'] ?? ''),
+                        'granted' => (bool) ($values['granted'] ?? false),
+                    ];
+                }, $locks),
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES).PHP_EOL);
+        } catch (\Throwable) {
+            fwrite(STDERR, 'PostgreSQL provider lock diagnostics unavailable.'.PHP_EOL);
+        }
     }
 
     /** @return array{run_id: int, queued_jobs: int} */

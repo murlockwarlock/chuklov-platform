@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -36,9 +36,11 @@ const props = defineProps<{
         update: string;
         consents: string;
         telegramLink: string;
+        b2bAnswer: string;
     };
     saved: boolean;
     consentsSaved: boolean;
+    b2bSpecialistAnswer: 'yes' | 'no' | null;
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -60,6 +62,10 @@ const consentForm = useForm<{
     })),
 });
 const telegramLinkForm = useForm<Record<string, never>>({});
+const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
+    b2b_specialist_answer: props.b2bSpecialistAnswer,
+});
+const editingB2bAnswer = ref(false);
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
@@ -79,6 +85,15 @@ function saveConsents(): void {
 function requestTelegramLink(): void {
     telegramLinkForm.post(props.urls.telegramLink, {
         preserveScroll: true,
+    });
+}
+
+function saveB2bAnswer(): void {
+    b2bAnswerForm.post(props.urls.b2bAnswer, {
+        preserveScroll: true,
+        onSuccess: () => {
+            editingB2bAnswer.value = false;
+        },
     });
 }
 </script>
@@ -198,6 +213,70 @@ function requestTelegramLink(): void {
               {{ t('profile.saved') }}
             </p>
           </div>
+        </form>
+      </section>
+
+      <section class="portal-panel portal-stack">
+        <div class="portal-section-heading">
+          <div class="portal-stack portal-stack--tight">
+            <h2 class="portal-heading portal-heading--card">
+              {{ t('profile.professional') }}
+            </h2>
+            <p class="portal-copy portal-copy--small">
+              {{ props.b2bSpecialistAnswer === 'yes'
+                ? t('profile.b2bYes')
+                : props.b2bSpecialistAnswer === 'no'
+                  ? t('profile.b2bNo')
+                  : t('profile.b2bMissing') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="portal-link portal-link--button"
+            @click="editingB2bAnswer = true"
+          >
+            {{ props.b2bSpecialistAnswer === null ? t('profile.setAnswer') : t('profile.edit') }}
+          </button>
+        </div>
+        <form
+          v-if="editingB2bAnswer"
+          class="portal-stack portal-stack--tight"
+          @submit.prevent="saveB2bAnswer"
+        >
+          <p class="portal-copy portal-copy--small">
+            {{ t('b2b.question') }}
+          </p>
+          <label class="portal-confirm">
+            <input
+              v-model="b2bAnswerForm.b2b_specialist_answer"
+              type="radio"
+              value="yes"
+              class="portal-checkbox"
+            >
+            <span>{{ t('b2b.yes') }}</span>
+          </label>
+          <label class="portal-confirm">
+            <input
+              v-model="b2bAnswerForm.b2b_specialist_answer"
+              type="radio"
+              value="no"
+              class="portal-checkbox"
+            >
+            <span>{{ t('b2b.no') }}</span>
+          </label>
+          <button
+            type="submit"
+            class="portal-button portal-button--secondary self-start"
+            :disabled="b2bAnswerForm.processing"
+          >
+            {{ b2bAnswerForm.processing ? t('profile.saving') : t('profile.save') }}
+          </button>
+          <p
+            v-if="b2bAnswerForm.errors.b2b_specialist_answer"
+            class="portal-error"
+          >
+            {{ b2bAnswerForm.errors.b2b_specialist_answer }}
+          </p>
         </form>
       </section>
 

@@ -16,6 +16,7 @@ class SpecialistFactory extends Factory
         return [
             'display_name' => fake()->name(),
             'is_active' => true,
+            'notifications_enabled' => true,
             'staff_user_id' => null,
             'timezone' => null,
         ];

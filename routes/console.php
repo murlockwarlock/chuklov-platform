@@ -1,8 +1,12 @@
 <?php
 
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
+use App\Modules\B2B\Application\ScheduleB2bProviderSyncEvents;
+use App\Modules\B2B\Application\ScheduleBookingProviderSyncEvents;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Knowledge\Application\ScheduleKnowledgeStorageCleanup;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
 use App\Modules\Scheduling\Application\PruneBookingIdempotencyKeys;
@@ -44,9 +48,32 @@ Artisan::command('referrals:run', function (ScheduleReferralIntegrationEvents $s
 
 Schedule::command('referrals:run')->everyMinute()->withoutOverlapping();
 
+Artisan::command('b2b:provider-sync', function (ScheduleB2bProviderSyncEvents $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' B2B provider event(s).');
+})->purpose('Dispatch pending B2B video meeting provider events with crash-safe retries.');
+
+Schedule::command('b2b:provider-sync')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('bookings:provider-sync', function (ScheduleBookingProviderSyncEvents $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' booking provider event(s).');
+})->purpose('Dispatch pending ordinary booking video meeting events with crash-safe retries.');
+
+Schedule::command('bookings:provider-sync')->everyMinute()->withoutOverlapping()->onOneServer();
+
 Artisan::command('broadcasts:run', function (ScheduleBroadcastWork $scheduler): void {
     $result = $scheduler->handle();
     $this->info("Claimed {$result['campaigns']} campaign(s) and dispatched {$result['batches']} bounded batch job(s).");
 })->purpose('Claim due broadcast campaigns and dispatch bounded recipient batches.');
 
 Schedule::command('broadcasts:run')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('portal:validate-configuration', function (ResolveTelegramMiniAppEntry $entries): void {
+    $entries->launchUrl('feedback');
+    $this->info('Canonical Telegram Mini App configuration is valid.');
+})->purpose('Validate the canonical HTTPS Telegram Mini App configuration.');
+
+Artisan::command('knowledge:storage-cleanup', function (ScheduleKnowledgeStorageCleanup $scheduler): void {
+    $this->info('Dispatched '.$scheduler->handle().' knowledge storage cleanup operation(s).');
+})->purpose('Dispatch pending Knowledge storage cleanup operations with crash-safe retries.');
+
+Schedule::command('knowledge:storage-cleanup')->everyMinute()->withoutOverlapping()->onOneServer();

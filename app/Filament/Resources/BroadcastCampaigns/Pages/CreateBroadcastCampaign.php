@@ -41,7 +41,22 @@ final class CreateBroadcastCampaign extends CreateRecord
             }
             $key = is_string($filter['key'] ?? null) ? $filter['key'] : '';
             $operator = is_string($filter['operator'] ?? null) ? $filter['operator'] : '';
-            $normalized[] = ['key' => $key, 'operator' => $operator, 'value' => in_array($key, ['survey_completed', 'no_future_booking', 'referral_relationship'], true) ? (($filter['value_bool'] ?? null) === '1' || ($filter['value_bool'] ?? null) === 1 || ($filter['value_bool'] ?? null) === true) : ($operator === 'in' ? ($filter['value_list'] ?? []) : ($filter['value_text'] ?? null))];
+            $controlled = in_array($key, ['tag', 'b2b_specialist_answer', 'language', 'verified_channel', 'booking_status'], true);
+            $boolean = $filter['value_bool'] ?? null;
+            $booleanValue = match (true) {
+                $boolean === '1', $boolean === 1, $boolean === true => true,
+                $boolean === '0', $boolean === 0, $boolean === false => false,
+                default => null,
+            };
+            $normalized[] = [
+                'key' => $key,
+                'operator' => $operator,
+                'value' => in_array($key, ['survey_completed', 'no_future_booking', 'referral_relationship'], true)
+                    ? $booleanValue
+                    : ($operator === 'in'
+                        ? ($controlled ? ($filter['value_select_list'] ?? []) : ($filter['value_list'] ?? []))
+                        : ($controlled ? ($filter['value_select'] ?? null) : ($filter['value_text'] ?? null))),
+            ];
         }
         $data['segment_definition'] = $normalized;
 

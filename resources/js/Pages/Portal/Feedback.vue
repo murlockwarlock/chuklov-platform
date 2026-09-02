@@ -12,9 +12,10 @@ const props = defineProps<{
         positiveThreshold: number;
         lowScoreFeedbackRequired: boolean;
         reviewLinks: string[];
+        reviewDestinations: { label: string; url: string }[];
         submitUrl: string;
     };
-    result: { band: 'positive' | 'internal'; reviewLinks: string[] } | null;
+    result: { band: 'positive' | 'internal'; reviewLinks: string[]; reviewDestinations?: { label: string; url: string }[] } | null;
 }>();
 
 const { t } = usePortalLocale();
@@ -29,6 +30,16 @@ const form = useForm<{
 });
 
 const lowScore = computed(() => form.score !== null && form.score < props.feedback.positiveThreshold);
+const resultDestinations = computed(() => {
+    if (props.result === null) {
+        return [];
+    }
+
+    return props.result.reviewDestinations ?? props.result.reviewLinks.map((url) => ({
+        label: t('feedback.reviewLinks'),
+        url,
+    }));
+});
 
 function selectScore(score: number): void {
     form.score = score;
@@ -81,18 +92,18 @@ function submit(): void {
           {{ props.result.band === 'positive' ? t('feedback.positiveDescription') : t('feedback.internalDescription') }}
         </p>
         <div
-          v-if="props.result.band === 'positive' && props.result.reviewLinks.length"
+          v-if="props.result.band === 'positive' && resultDestinations.length"
           class="portal-stack portal-stack--tight"
         >
           <span class="portal-label">{{ t('feedback.reviewLinks') }}</span>
           <a
-            v-for="link in props.result.reviewLinks"
-            :key="link"
-            :href="link"
+            v-for="destination in resultDestinations"
+            :key="destination.url"
+            :href="destination.url"
             target="_blank"
             rel="noopener noreferrer"
             class="portal-link break-all"
-          >{{ link }}</a>
+          >{{ destination.label }}</a>
         </div>
       </section>
 
@@ -101,12 +112,19 @@ function submit(): void {
         class="portal-panel portal-stack"
       >
         <span class="portal-label">{{ t('feedback.score') }}</span>
-        <div class="grid grid-cols-5 gap-2 sm:grid-cols-10">
+        <div
+          class="grid grid-cols-5 gap-2 sm:grid-cols-10"
+          role="radiogroup"
+          :aria-label="t('feedback.score')"
+        >
           <button
             v-for="score in 10"
             :key="score"
             type="button"
-            class="portal-button portal-button--secondary min-w-0 px-2"
+            class="portal-button portal-button--secondary portal-score-option min-w-0 px-2"
+            :class="{ 'portal-score-option--selected': form.score === score }"
+            role="radio"
+            :aria-checked="form.score === score"
             :aria-pressed="form.score === score"
             @click="selectScore(score)"
           >

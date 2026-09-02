@@ -107,7 +107,7 @@ class SchedulingDomainTest extends TestCase
         ));
     }
 
-    public function test_dst_fall_overlap_has_stable_unique_instants(): void
+    public function test_dst_fall_overlap_preserves_both_valid_instants(): void
     {
         $slots = (new SlotCalculator)->calculate(
             date: LocalDate::from('2026-10-25'),
@@ -126,9 +126,21 @@ class SchedulingDomainTest extends TestCase
         );
 
         $instants = array_map(static fn ($slot): int => $slot->startsAt->getTimestamp(), $slots);
-        self::assertCount(6, $slots);
+        self::assertCount(8, $slots);
         self::assertSame($instants, array_values(array_unique($instants)));
-        self::assertSame('2026-10-25T01:00:00+00:00', $slots[2]->startsAt->toIso8601String());
+        self::assertSame([
+            '2026-10-24T23:00:00+00:00',
+            '2026-10-24T23:30:00+00:00',
+            '2026-10-25T00:00:00+00:00',
+            '2026-10-25T00:30:00+00:00',
+            '2026-10-25T01:00:00+00:00',
+            '2026-10-25T01:30:00+00:00',
+            '2026-10-25T02:00:00+00:00',
+            '2026-10-25T02:30:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $slots,
+        ));
     }
 
     public function test_lead_time_removes_candidates_before_the_configured_instant(): void

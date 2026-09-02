@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Attribution\Application\GetClientAttribution;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Identity\Domain\Models\Client;
@@ -23,6 +24,7 @@ class HomeController extends Controller
         ListClientBookings $bookings,
         ProjectPortalService $serviceProjection,
         GetClientAttribution $getAttribution,
+        ResolveTelegramMiniAppEntry $telegramEntries,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -41,6 +43,7 @@ class HomeController extends Controller
                     'emailRequestUrl' => route('portal.email.request'),
                     'emailVerifyUrl' => route('portal.email.verify'),
                     'emailCodeSent' => (bool) $request->session()->pull('email_code_sent', false),
+                    'telegramLaunchEntry' => $this->launchEntry($request->query('telegram_entry'), $telegramEntries),
                 ],
             ]);
         }
@@ -57,5 +60,12 @@ class HomeController extends Controller
                 'needsManualSource' => $getAttribution->handle($client) === null,
             ],
         ]);
+    }
+
+    private function launchEntry(mixed $entry, ResolveTelegramMiniAppEntry $telegramEntries): ?string
+    {
+        return $telegramEntries->destinationOrNull($entry) === null || ! is_string($entry)
+            ? null
+            : $entry;
     }
 }

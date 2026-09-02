@@ -2,14 +2,15 @@
 
 namespace App\Modules\ClientCompanion\Application\Actions;
 
+use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
-use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
+use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
 use App\Modules\Identity\Domain\Models\Client;
-use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use SergiX44\Nutgram\Nutgram;
+use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Throwable;
 
 final class HandleTelegramCompanionCallback
@@ -19,6 +20,8 @@ final class HandleTelegramCompanionCallback
         private readonly AcceptCompanionMessage $accept,
         private readonly RecordCompanionFeedback $feedback,
         private readonly RequestCompanionHandoff $handoff,
+        private readonly TelegramBotIdentityVerifier $identityVerifier,
+        private readonly RefreshTelegramClientIdentity $refreshIdentity,
     ) {}
 
     public function handle(Nutgram $bot): void
@@ -50,13 +53,13 @@ final class HandleTelegramCompanionCallback
             return;
         }
         $this->context->set($organization);
-        $identity = ClientChannelIdentity::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('channel', 'telegram')
-            ->where('external_id', (string) $user->id)
-            ->where('verification_status', ChannelIdentityStatus::Verified)
-            ->first();
-        $client = $identity?->client;
+        try {
+            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot));
+        } catch (UnauthorizedHttpException) {
+            $bot->answerCallbackQuery(text: 'Сначала подключите Telegram к порталу.');
+
+            return;
+        }
         if (! $client instanceof Client || (int) $client->organization_id !== (int) $organization->getKey()) {
             $bot->answerCallbackQuery(text: 'Сначала подключите Telegram к порталу.');
 

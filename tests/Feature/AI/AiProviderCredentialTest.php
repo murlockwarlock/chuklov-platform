@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\AI;
 
+use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\TestProviderConnection;
 use App\Modules\AI\Application\Actions\UpdateAiProviderConfiguration;
@@ -28,13 +30,19 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\ReplaceOrganizationCredential;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
+use Filament\Facades\Filament;
+use Filament\Resources\Events\RecordSaved;
+use Filament\Resources\Events\RecordUpdated;
 use GuzzleHttp\Psr7\Uri;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class AiProviderCredentialTest extends TestCase
@@ -420,6 +428,216 @@ class AiProviderCredentialTest extends TestCase
         $this->assertNull($provider->tested_configuration_digest);
     }
 
+    public function test_connect_provider_update_reloads_authoritative_provider_before_execution_comparison(): void
+    {
+        $currentCredential = $this->createOrganizationCredential('ollama', 'Ollama Retry Current', 'sk-retry-current');
+        $targetCredential = $this->createOrganizationCredential('ollama', 'Ollama Retry Target', 'sk-retry-target');
+        $originalOptions = [];
+        $desiredOptions = ['base_url' => 'http://127.0.0.1:11434'];
+        $provider = $this->createProviderConfiguration($currentCredential, $originalOptions);
+
+        $provider->credential_id = $targetCredential->id;
+        $provider->health_status = ProviderHealthStatus::Unknown;
+        $provider->tested_credential_revision = null;
+        $provider->tested_configuration_digest = null;
+        $provider->options = $desiredOptions;
+
+        $result = app(ConnectAiProvider::class)->update($this->userA, $provider, [
+            'credential_id' => $targetCredential->id,
+            'options' => $desiredOptions,
+        ]);
+
+        $provider->refresh();
+        self::assertSame($targetCredential->id, $result->credential_id);
+        self::assertSame($targetCredential->id, $provider->credential_id);
+        self::assertSame($desiredOptions, $provider->options);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+        self::assertSame(
+            'Provider execution configuration changed; connection verification is required.',
+            $provider->last_health_error,
+        );
+
+        $audit = AuditEvent::query()
+            ->where('organization_id', $this->organizationA->id)
+            ->where('action', 'ai.provider_config.updated')
+            ->sole();
+        self::assertTrue($audit->metadata['credential_reassigned']);
+    }
+
+    public function test_connect_provider_update_preserves_existing_credential_when_credential_id_is_absent(): void
+    {
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Preserve', 'sk-preserve');
+        $provider = $this->createProviderConfiguration($credential);
+
+        app(ConnectAiProvider::class)->update($this->userA, $provider, [
+            'display_name' => 'OpenAI Preserved',
+        ]);
+
+        $provider->refresh();
+        self::assertSame($credential->id, $provider->credential_id);
+        self::assertSame('OpenAI Preserved', $provider->display_name);
+        self::assertSame(ProviderHealthStatus::Healthy, $provider->health_status);
+        self::assertSame($credential->revision_id, $provider->tested_credential_revision);
+        self::assertSame(
+            AiProviderExecutionConfiguration::digest('openai'),
+            $provider->tested_configuration_digest,
+        );
+    }
+
+    public function test_connect_provider_update_explicit_null_credential_id_detaches_without_deleting_credential(): void
+    {
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Null Detach', 'sk-null-detach');
+        $provider = $this->createProviderConfiguration($credential);
+        $credentialCount = OrganizationCredential::query()
+            ->where('organization_id', $this->organizationA->id)
+            ->count();
+
+        app(ConnectAiProvider::class)->update($this->userA, $provider, [
+            'credential_id' => null,
+        ]);
+
+        $provider->refresh();
+        self::assertNull($provider->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+        self::assertSame(
+            'Provider execution configuration changed; connection verification is required.',
+            $provider->last_health_error,
+        );
+        self::assertTrue(OrganizationCredential::query()->whereKey($credential->id)->exists());
+        self::assertSame(
+            $credentialCount,
+            OrganizationCredential::query()->where('organization_id', $this->organizationA->id)->count(),
+        );
+    }
+
+    public function test_connect_provider_update_empty_credential_id_detaches_without_deleting_credential(): void
+    {
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Empty Detach', 'sk-empty-detach');
+        $provider = $this->createProviderConfiguration($credential);
+        $credentialCount = OrganizationCredential::query()
+            ->where('organization_id', $this->organizationA->id)
+            ->count();
+
+        app(ConnectAiProvider::class)->update($this->userA, $provider, [
+            'credential_id' => '',
+        ]);
+
+        $provider->refresh();
+        self::assertNull($provider->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+        self::assertTrue(OrganizationCredential::query()->whereKey($credential->id)->exists());
+        self::assertSame(
+            $credentialCount,
+            OrganizationCredential::query()->where('organization_id', $this->organizationA->id)->count(),
+        );
+    }
+
+    public function test_connect_provider_update_nonblank_api_key_takes_precedence_over_explicit_detach(): void
+    {
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI API Key Precedence', 'sk-api-key-original');
+        $provider = $this->createProviderConfiguration($credential);
+        $originalRevision = $credential->revision_id;
+        $newApiKey = 'sk-api-key-replacement';
+
+        app(ConnectAiProvider::class)->update($this->userA, $provider, [
+            'api_key' => $newApiKey,
+            'credential_id' => null,
+        ]);
+
+        $provider->refresh();
+        $credential->refresh();
+        self::assertSame($credential->id, $provider->credential_id);
+        self::assertSame($newApiKey, $credential->credentials['api_key']);
+        self::assertNotSame($originalRevision, $credential->revision_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+        self::assertSame(
+            1,
+            OrganizationCredential::query()->where('organization_id', $this->organizationA->id)->count(),
+        );
+        self::assertStringNotContainsString($newApiKey, AuditEvent::query()->get()->toJson());
+    }
+
+    public function test_filament_edit_replaces_the_page_record_with_the_authoritative_provider(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($this->userA);
+
+        $currentCredential = $this->createOrganizationCredential('openai', 'OpenAI Page Current', 'sk-page-current');
+        $targetCredential = $this->createOrganizationCredential('openai', 'OpenAI Page Target', 'sk-page-target');
+        $provider = $this->createProviderConfiguration($currentCredential);
+        $organization = $this->organizationA;
+
+        Event::fake([RecordSaved::class, RecordUpdated::class]);
+
+        $edit = Livewire::test(EditAiProvider::class, ['record' => $provider->getRouteKey()])
+            ->fillForm([
+                'credential_id' => $targetCredential->getKey(),
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        /** @var EditAiProvider $editPage */
+        $editPage = $edit->instance();
+        $pageRecord = $editPage->getRecord();
+        $provider->refresh();
+
+        self::assertInstanceOf(AiProviderConfiguration::class, $pageRecord);
+        self::assertSame($provider->getKey(), $pageRecord->getKey());
+        self::assertSame($organization->getKey(), $pageRecord->organization_id);
+        self::assertSame('openai', $pageRecord->provider_name);
+        self::assertSame($targetCredential->getKey(), $pageRecord->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $pageRecord->health_status);
+        self::assertNull($pageRecord->tested_credential_revision);
+        self::assertNull($pageRecord->tested_configuration_digest);
+        self::assertSame(
+            'Provider execution configuration changed; connection verification is required.',
+            $pageRecord->last_health_error,
+        );
+
+        self::assertSame($targetCredential->getKey(), $provider->credential_id);
+        self::assertSame(ProviderHealthStatus::Unknown, $provider->health_status);
+        self::assertNull($provider->tested_credential_revision);
+        self::assertNull($provider->tested_configuration_digest);
+
+        $assertFreshRecord = static function (string $eventName, array $payload) use ($organization, $provider, $targetCredential): bool {
+            $eventRecord = $payload['record'] ?? null;
+            $page = $payload['page'] ?? null;
+            $data = $payload['data'] ?? null;
+
+            if (! in_array($eventName, [RecordSaved::class, RecordUpdated::class], true)
+                || $eventRecord === null
+                || ! $page instanceof EditAiProvider
+                || ! is_array($data)) {
+                return false;
+            }
+
+            $pageRecord = $page->getRecord();
+
+            return $eventRecord instanceof AiProviderConfiguration
+                && $pageRecord === $eventRecord
+                && $eventRecord->getKey() === $provider->getKey()
+                && $eventRecord->organization_id === $organization->getKey()
+                && $eventRecord->provider_name === 'openai'
+                && $eventRecord->credential_id === $targetCredential->getKey()
+                && $eventRecord->health_status === ProviderHealthStatus::Unknown
+                && $eventRecord->tested_credential_revision === null
+                && $eventRecord->tested_configuration_digest === null
+                && $eventRecord->last_health_error === 'Provider execution configuration changed; connection verification is required.'
+                && (int) ($data['credential_id'] ?? 0) === (int) $targetCredential->getKey();
+        };
+
+        Event::assertDispatched(RecordUpdated::class, $assertFreshRecord);
+        Event::assertDispatched(RecordSaved::class, $assertFreshRecord);
+    }
+
     public function test_custom_provider_probe_endpoint_is_rejected_before_any_request(): void
     {
         Http::fake();
@@ -679,5 +897,36 @@ class AiProviderCredentialTest extends TestCase
         $this->assertSame('An internal error occurred during AI execution.', $provider->last_health_error);
         $this->assertStringNotContainsString('sk-secret-health', (string) $provider->last_health_error);
         $this->assertStringNotContainsString('secret provider response', (string) $provider->last_health_error);
+    }
+
+    private function createOrganizationCredential(string $provider, string $name, string $apiKey): OrganizationCredential
+    {
+        $credential = new OrganizationCredential([
+            'provider' => $provider,
+            'credential_name' => $name,
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = max(0, (int) $this->organizationA->id);
+        $credential->credentials = ['api_key' => $apiKey];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+
+        return $credential;
+    }
+
+    /** @param array<string, mixed> $options */
+    private function createProviderConfiguration(OrganizationCredential $credential, array $options = []): AiProviderConfiguration
+    {
+        return AiProviderConfiguration::create([
+            'organization_id' => $this->organizationA->id,
+            'provider_name' => $credential->provider,
+            'display_name' => $credential->credential_name,
+            'is_enabled' => true,
+            'credential_id' => $credential->id,
+            'options' => $options,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest($credential->provider, $options),
+        ]);
     }
 }

@@ -8,12 +8,16 @@ use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Resources\KnowledgeSources\Schemas\KnowledgeSourceForm;
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Models\User;
+use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -51,18 +55,38 @@ final class KnowledgeSourceResource extends Resource
     {
         $presentation = app(KnowledgeSourcePresentation::class);
 
-        return $table->columns([
-            TextColumn::make('title')->label('Название')->searchable()->sortable(),
-            TextColumn::make('type')->label('Тип')->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
-            TextColumn::make('search_availability')->label('Доступность')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record)),
-            TextColumn::make('latest_processing')->label('Обработка')->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record)),
-            TextColumn::make('created_at')->label('Добавлен')->dateTime('d.m.Y H:i')->sortable(),
-            TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
-        ])
+        return $table
+            ->stackedOnMobile()
+            ->columns([
+                TextColumn::make('title')->label('Название')->searchable()->sortable()->wrap(),
+                TextColumn::make('type')->label('Тип')->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
+                TextColumn::make('search_availability')->label('Доступность')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record)),
+                TextColumn::make('latest_processing')->label('Обработка')->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record))->wrap(),
+                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
+            ])
             ->emptyStateHeading('В базе знаний пока нет материалов')
             ->emptyStateDescription('Добавьте текст или загрузите файл Markdown/TXT, чтобы использовать его в ответах клиентам.')
             ->recordActions([
-                EditAction::make(),
+                EditAction::make()
+                    ->label('Открыть')
+                    ->icon(Heroicon::OutlinedPencil)
+                    ->iconButton()
+                    ->tooltip('Открыть материал'),
+                Action::make('delete')
+                    ->label('Удалить')
+                    ->icon(Heroicon::OutlinedTrash)
+                    ->iconButton()
+                    ->tooltip('Удалить материал')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Удалить материал из базы знаний?')
+                    ->modalDescription('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.')
+                    ->action(function (KnowledgeSource $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(DeleteKnowledgeSource::class)->handle($actor, $record);
+                        Notification::make()->title('Материал удалён из базы знаний')->success()->send();
+                    }),
             ])->defaultSort('updated_at', 'desc');
     }
 

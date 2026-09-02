@@ -10,13 +10,13 @@ final class ViewScenarioRule extends ViewRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 
-    protected static ?string $title = 'Правило сообщений';
+    protected static ?string $title = 'Авто-сообщение';
 
     protected function getHeaderActions(): array
     {
         return [
             EditAction::make()
-                ->label('Редактировать правило')
+                ->label('Редактировать авто-сообщение')
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
         ];

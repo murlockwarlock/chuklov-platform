@@ -2,10 +2,10 @@
 
 namespace App\Modules\ClientCompanion\Application\Actions;
 
+use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
-use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
+use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
 use App\Modules\Identity\Domain\Models\Client;
-use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Http\UploadedFile;
@@ -13,6 +13,7 @@ use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Properties\ChatType;
 use SergiX44\Nutgram\Telegram\Types\Media\PhotoSize;
 use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
+use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 final class HandleTelegramCompanionPhoto
 {
@@ -20,6 +21,8 @@ final class HandleTelegramCompanionPhoto
         private readonly OrganizationContext $context,
         private readonly AcceptCompanionMessage $accept,
         private readonly UploadCompanionImages $upload,
+        private readonly TelegramBotIdentityVerifier $identityVerifier,
+        private readonly RefreshTelegramClientIdentity $refreshIdentity,
     ) {}
 
     public function handle(Nutgram $bot): void
@@ -43,13 +46,13 @@ final class HandleTelegramCompanionPhoto
         }
         $this->context->set($organization);
 
-        $identity = ClientChannelIdentity::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('channel', 'telegram')
-            ->where('external_id', (string) $user->id)
-            ->where('verification_status', ChannelIdentityStatus::Verified)
-            ->first();
-        $client = $identity?->client;
+        try {
+            $client = $this->refreshIdentity->handle($organization, $this->identityVerifier->handle($bot));
+        } catch (UnauthorizedHttpException) {
+            $this->sendLinkPath($bot);
+
+            return;
+        }
         if (! $client instanceof Client || (int) $client->organization_id !== (int) $organization->getKey()) {
             $this->sendLinkPath($bot);
 

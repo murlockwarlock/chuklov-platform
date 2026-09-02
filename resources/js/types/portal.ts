@@ -12,6 +12,7 @@ export type PortalUrls = {
     feedback: string;
     attribution: string;
     booking: string;
+    b2b: string;
 };
 
 export type PortalShell = {
@@ -22,4 +23,4 @@ export type PortalShell = {
     urls: PortalUrls;
 };
 
-export type PortalNavKey = 'home' | 'services' | 'bookings' | 'finance' | 'surveys' | 'companion' | 'profile' | 'referrals' | 'feedback' | 'attribution' | null;
+export type PortalNavKey = 'home' | 'services' | 'bookings' | 'finance' | 'surveys' | 'companion' | 'profile' | 'referrals' | 'feedback' | 'attribution' | 'b2b' | null;

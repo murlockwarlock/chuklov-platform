@@ -16,36 +16,74 @@ return [
         'version' => env('CLIENT_ONBOARDING_VERSION', 'm2-v1'),
     ],
 
+    'content_sections' => [
+        'author' => ['title' => ['en' => 'Author', 'ru' => 'Об авторе']],
+        'method' => ['title' => ['en' => 'Method', 'ru' => 'Метод']],
+        'partner' => ['title' => ['en' => 'Partners', 'ru' => 'Партнёры']],
+    ],
+
     'telegram' => [
         'bot_username' => env('TELEGRAM_BOT_USERNAME'),
         'link_ttl' => (int) env('TELEGRAM_CLIENT_LINK_TTL', 600),
         'web_auth_ttl' => (int) env('TELEGRAM_WEB_AUTH_TTL', 600),
         'portal_url' => env('CLIENT_PORTAL_URL'),
+        'entries' => [
+            'portal' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.home',
+                'parameters' => [],
+            ],
+            'author' => [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => 'author'],
+            ],
+            'method' => [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => 'method'],
+            ],
+            'b2b' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.b2b',
+                'parameters' => [],
+            ],
+            'feedback' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.feedback',
+                'parameters' => [],
+            ],
+            'partner' => [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => 'partner'],
+            ],
+        ],
         'greeting' => [
             'en' => 'Choose an entry point.',
             'ru' => 'Выберите раздел.',
         ],
         'menu' => [
             'en' => [
-                ['key' => 'portal', 'label' => 'Open client portal', 'path' => '/'],
-                ['key' => 'author', 'label' => 'Author', 'path' => '/portal/sections/author'],
-                ['key' => 'method', 'label' => 'Method', 'path' => '/portal/sections/method'],
-                ['key' => 'b2b', 'label' => 'B2B', 'path' => '/portal/sections/b2b'],
-                ['key' => 'partner', 'label' => 'Partners', 'path' => '/portal/sections/partner'],
+                ['key' => 'portal', 'label' => 'Open client portal'],
+                ['key' => 'author', 'label' => 'Author'],
+                ['key' => 'method', 'label' => 'Method'],
+                ['key' => 'b2b', 'label' => '🚀 Want a bot like this? / Grow your business'],
+                ['key' => 'partner', 'label' => 'Partners'],
             ],
             'ru' => [
-                ['key' => 'portal', 'label' => 'Открыть портал', 'path' => '/'],
-                ['key' => 'author', 'label' => 'Об авторе', 'path' => '/portal/sections/author'],
-                ['key' => 'method', 'label' => 'Метод', 'path' => '/portal/sections/method'],
-                ['key' => 'b2b', 'label' => 'B2B', 'path' => '/portal/sections/b2b'],
-                ['key' => 'partner', 'label' => 'Партнёры', 'path' => '/portal/sections/partner'],
+                ['key' => 'portal', 'label' => 'Открыть портал'],
+                ['key' => 'author', 'label' => 'Об авторе'],
+                ['key' => 'method', 'label' => 'Метод'],
+                ['key' => 'b2b', 'label' => '🚀 Хочешь себе такого бота? / Развить бизнес'],
+                ['key' => 'partner', 'label' => 'Партнёры'],
             ],
-        ],
-        'sections' => [
-            'author' => ['title' => ['en' => 'Author', 'ru' => 'Об авторе']],
-            'method' => ['title' => ['en' => 'Method', 'ru' => 'Метод']],
-            'b2b' => ['title' => ['en' => 'B2B', 'ru' => 'B2B']],
-            'partner' => ['title' => ['en' => 'Partners', 'ru' => 'Партнёры']],
         ],
     ],
 ];

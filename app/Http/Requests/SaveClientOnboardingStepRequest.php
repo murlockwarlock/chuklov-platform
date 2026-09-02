@@ -21,6 +21,7 @@ class SaveClientOnboardingStepRequest extends FormRequest
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
             'language' => ['sometimes', 'nullable', 'regex:/^[a-z]{2}(?:-[A-Z]{2})?$/'],
             'timezone' => ['sometimes', 'nullable', 'timezone'],
+            'b2b_specialist_answer' => ['sometimes', 'required', 'string', 'in:yes,no'],
             'confirmed_fields' => ['sometimes', 'array'],
             'confirmed_fields.*' => [
                 'string',

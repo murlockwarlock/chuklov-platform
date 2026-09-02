@@ -14,6 +14,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -28,7 +29,11 @@ class BookingsTable
         $columns = [
             TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
-            TextColumn::make('starts_at')->label('Дата и время')->dateTime('d.m.Y H:i')->sortable(),
+            TextColumn::make('starts_at')
+                ->label('Дата и время')
+                ->dateTime('d.m.Y H:i')
+                ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC'))
+                ->sortable(),
             TextColumn::make('visit_format')
                 ->label('Формат')
                 ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
@@ -49,7 +54,8 @@ class BookingsTable
                 ->label('Проверка времени')
                 ->badge()
                 ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? 'Требует внимания' : 'В порядке')
-                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success');
+                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success')
+                ->toggleable(isToggledHiddenByDefault: true);
         }
 
         $filters = [
@@ -115,10 +121,19 @@ class BookingsTable
 
         return $table
             ->stackedOnMobile()
+            ->defaultSort(fn (Builder $query): Builder => $query
+                ->orderByDesc('created_at')
+                ->orderByDesc('id'))
             ->columns($columns)
             ->filters($filters)
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
+                ViewAction::make()
+                    ->label('Открыть')
+                    ->icon(Heroicon::OutlinedEye)
+                    ->iconButton()
+                    ->tooltip('Открыть запись')
+                    ->modalHeading('Просмотр записи на приём')
+                    ->modalWidth('5xl'),
                 ActionGroup::make(BookingLifecycleActions::all())
                     ->label('Действия')
                     ->icon('heroicon-m-ellipsis-vertical')

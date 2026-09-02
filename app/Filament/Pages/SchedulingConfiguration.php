@@ -4,11 +4,20 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
+use App\Modules\B2B\Application\GetB2bSalesCallDuration;
+use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
+use App\Modules\B2B\Application\GetB2bZoomConfiguration;
+use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
+use App\Modules\Organizations\Application\ClearOrganizationSetting;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
+use App\Modules\Scenarios\Application\UpdateAppointmentReminders;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
+use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scheduling\Application\GetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\GetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
@@ -17,6 +26,8 @@ use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -27,9 +38,11 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -44,13 +57,15 @@ class SchedulingConfiguration extends Page
 
     protected static ?string $navigationLabel = 'Настройки расписания';
 
+    protected ?string $subheading = 'Здесь задаются длительность B2B-разговора, специалист и его рабочие часы. Исключения и недоступное время настраиваются в соседних разделах группы «Записи». Автоматический Zoom использует защищённое подключение без показа секретов; для отдельных разговоров доступна ручная HTTPS-ссылка.';
+
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
     protected static string|UnitEnum|null $navigationGroup = 'Записи';
 
     protected static ?int $navigationSort = 2;
 
-    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, office_location: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
+    /** @var array<string, mixed>|null */
     public ?array $data = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
@@ -76,18 +91,35 @@ class SchedulingConfiguration extends Page
 
     public function mount(): void
     {
+        $organization = app(OrganizationContext::class)->organization();
+        if (! AppointmentReminder::query()->where('organization_id', $organization->getKey())->exists()) {
+            app(EnsureAppointmentReminderDefaults::class)->handle($organization);
+        }
+
         $specialistId = Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->orderBy('display_name')
             ->value('id');
+        $zoom = app(GetB2bZoomConfiguration::class)->handle();
 
         $this->form->fill([
             'specialist_id' => $specialistId,
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
-            'office_location' => app(OrganizationContext::class)->organization()->settings()
+            'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
+            'b2b_zoom_host_licensed' => (bool) $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
+                ->value('boolean_value'),
+            'office_location' => $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
+            'client_reminders' => $this->reminderRows('client'),
+            'specialist_reminders' => $this->reminderRows('specialist'),
+            'zoom_enabled' => $zoom['enabled'],
+            'zoom_account_id' => $zoom['accountId'],
+            'zoom_client_id' => $zoom['clientId'],
+            'zoom_client_secret' => null,
+            'zoom_host_user_id' => $zoom['hostUserId'],
             'working_hours' => $specialistId === null ? [] : $this->workingHours((int) $specialistId),
         ]);
     }
@@ -117,10 +149,79 @@ class SchedulingConfiguration extends Page
                     ->minValue(0)
                     ->helperText('За сколько минут до визита клиент может бесплатно отменить или перенести запись.')
                     ->required(),
+                TextInput::make('b2b_sales_call_duration_minutes')
+                    ->label('Длительность B2B-разговора (минуты)')
+                    ->integer()
+                    ->minValue(1)
+                    ->maxValue(1440)
+                    ->helperText('Без этого значения клиентские слоты не публикуются. Бесплатный Zoom поддерживает автоматические разговоры до 40 минут; для большей длительности отметьте лицензированный хост.')
+                    ->nullable(),
+                Checkbox::make('b2b_zoom_host_licensed')
+                    ->label('У Zoom-хоста есть лицензия Meetings')
+                    ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
                 TextInput::make('office_location')
-                    ->label('Адрес клиники')
-                    ->helperText('Адрес для очных визитов в клинике.')
+                    ->label('Адрес по умолчанию')
+                    ->helperText('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.')
                     ->maxLength(500),
+                Section::make('Напоминания о записи')
+                    ->description('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи.')
+                    ->schema([
+                        Repeater::make('client_reminders')
+                            ->label('Клиенту')
+                            ->schema($this->reminderSchema())
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить напоминание'),
+                        Repeater::make('specialist_reminders')
+                            ->label('Себе / специалисту')
+                            ->schema($this->reminderSchema())
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить напоминание'),
+                    ])
+                    ->columns(1)
+                    ->columnSpanFull(),
+                Section::make('Подключение Zoom')
+                    ->description('Создайте приложение Server-to-Server OAuth в Zoom Marketplace и вставьте сюда его Account ID, Client ID, Client Secret и User ID ведущего. Секрет не показывается после сохранения; пустое поле при редактировании сохраняет прежний секрет.')
+                    ->schema([
+                        Placeholder::make('zoom_instructions')
+                            ->label('Что увидит клиент')
+                            ->content('Система создаст встречу в подключённом Zoom-аккаунте автоматически. После синхронизации ссылка появится у клиента.'),
+                        Placeholder::make('zoom_status')
+                            ->label('Текущее состояние')
+                            ->content(function (): string {
+                                $configuration = app(GetB2bZoomConfiguration::class)->handle();
+                                $readiness = app(GetB2bSalesCallReadiness::class)->handle();
+
+                                return ($configuration['configured'] ? 'Zoom подключён' : 'Zoom не подключён')
+                                    .' · длительность: '.($readiness['durationConfigured'] ? 'настроена' : 'не настроена')
+                                    .' · календарь: '.($readiness['calendarConfigured'] ? 'настроен' : 'не настроен');
+                            }),
+                        Checkbox::make('zoom_enabled')
+                            ->label('Разрешить автоматическое создание Zoom-встреч')
+                            ->helperText('Включайте после заполнения всех полей. Без активного подключения клиенту доступна только ручная ссылка.')
+                            ->columnSpanFull(),
+                        TextInput::make('zoom_account_id')
+                            ->label('Account ID')
+                            ->maxLength(255),
+                        TextInput::make('zoom_client_id')
+                            ->label('Client ID')
+                            ->maxLength(255),
+                        TextInput::make('zoom_client_secret')
+                            ->label('Client Secret')
+                            ->password()
+                            ->revealable()
+                            ->maxLength(2048)
+                            ->helperText('Оставьте пустым при редактировании, чтобы сохранить сохранённый секрет.'),
+                        TextInput::make('zoom_host_user_id')
+                            ->label('User ID ведущего Zoom')
+                            ->maxLength(255)
+                            ->helperText('Это User ID пользователя, от имени которого создаются встречи.'),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
                 Repeater::make('working_hours')
                     ->label('Рабочие часы')
                     ->schema([
@@ -178,22 +279,49 @@ class SchedulingConfiguration extends Page
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $data = $this->form->getState();
-        $specialist = Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->findOrFail((int) $data['specialist_id']);
+        $data = null;
 
         try {
+            $data = $this->form->getState();
+            $specialist = Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->findOrFail((int) $data['specialist_id']);
+
             DB::transaction(function () use ($actor, $data, $specialist): void {
                 app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
                 app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
+                if (isset($data['b2b_sales_call_duration_minutes']) && $data['b2b_sales_call_duration_minutes'] !== '') {
+                    app(SetOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bSalesCallDurationMinutes,
+                        (int) $data['b2b_sales_call_duration_minutes'],
+                    );
+                } else {
+                    app(ClearOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bSalesCallDurationMinutes,
+                    );
+                }
+                if (array_key_exists('b2b_zoom_host_licensed', $data)) {
+                    app(SetOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::B2bZoomHostLicensed,
+                        (bool) $data['b2b_zoom_host_licensed'],
+                    );
+                }
                 if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
                     app(SetOrganizationSetting::class)->handle(
                         $actor,
                         OrganizationSettingKey::OfficeLocation,
                         trim((string) $data['office_location']),
                     );
+                } else {
+                    app(ClearOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::OfficeLocation,
+                    );
                 }
+                app(UpdateAppointmentReminders::class)->handle($actor, $data);
                 app(SetSpecialistWorkingHours::class)->handle(
                     $actor,
                     $specialist,
@@ -201,17 +329,58 @@ class SchedulingConfiguration extends Page
                     (bool) ($data['acknowledge_impact'] ?? false),
                     isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                 );
+                $zoom = app(GetB2bZoomConfiguration::class)->handle();
+                $hasZoomInput = $zoom['exists']
+                    || filled($data['zoom_account_id'] ?? null)
+                    || filled($data['zoom_client_id'] ?? null)
+                    || filled($data['zoom_client_secret'] ?? null)
+                    || filled($data['zoom_host_user_id'] ?? null)
+                    || (bool) ($data['zoom_enabled'] ?? false);
+                if ($hasZoomInput) {
+                    app(SaveB2bZoomConfiguration::class)->handle(
+                        actor: $actor,
+                        accountId: (string) ($data['zoom_account_id'] ?? ''),
+                        clientId: (string) ($data['zoom_client_id'] ?? ''),
+                        clientSecret: is_string($data['zoom_client_secret'] ?? null) ? $data['zoom_client_secret'] : null,
+                        hostUserId: (string) ($data['zoom_host_user_id'] ?? ''),
+                        enabled: (bool) ($data['zoom_enabled'] ?? false),
+                    );
+                }
             });
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
 
             throw $exception;
+        } finally {
+            $this->scrubZoomClientSecret();
         }
 
         Notification::make()
             ->success()
             ->title('Расписание сохранено')
             ->send();
+    }
+
+    /** @param array<string, mixed>|null $data
+     * @return array<string, mixed>
+     */
+    private function safeFormState(?array $data): array
+    {
+        if ($data === null) {
+            $state = $this->form->getRawState();
+            $data = $state instanceof Arrayable ? $state->toArray() : $state;
+        }
+
+        $data['zoom_client_secret'] = null;
+
+        return $data;
+    }
+
+    private function scrubZoomClientSecret(): void
+    {
+        if ($this->data !== null) {
+            $this->data['zoom_client_secret'] = null;
+        }
     }
 
     /** @return array<int, string> */
@@ -222,6 +391,47 @@ class SchedulingConfiguration extends Page
             ->orderBy('display_name')
             ->pluck('display_name', 'id')
             ->all();
+    }
+
+    /** @return list<array{is_enabled: bool, offset_value: int, offset_unit: string}> */
+    private function reminderRows(string $recipientType): array
+    {
+        $rows = AppointmentReminder::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('recipient_type', $recipientType)
+            ->orderBy('offset_value')
+            ->orderBy('offset_unit')
+            ->get()
+            ->map(fn (AppointmentReminder $reminder): array => [
+                'is_enabled' => $reminder->is_enabled,
+                'offset_value' => $reminder->offset_value,
+                'offset_unit' => $reminder->offset_unit->value,
+            ])
+            ->values()
+            ->all();
+
+        return array_values($rows);
+    }
+
+    /** @return list<Component> */
+    private function reminderSchema(): array
+    {
+        return [
+            Checkbox::make('is_enabled')->label('Включено')->default(true),
+            TextInput::make('offset_value')
+                ->label('За сколько до визита')
+                ->integer()
+                ->minValue(1)
+                ->required(),
+            Select::make('offset_unit')
+                ->label('Единица времени')
+                ->options([
+                    ScenarioDelayUnit::Minutes->value => 'минут',
+                    ScenarioDelayUnit::Hours->value => 'часов',
+                    ScenarioDelayUnit::Days->value => 'дней',
+                ])
+                ->required(),
+        ];
     }
 
     /** @return list<array{weekday: int, start_time: string, end_time: string}> */

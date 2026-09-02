@@ -39,6 +39,7 @@ final class KnowledgeSourcePolicy
 
     public function delete(User $user, KnowledgeSource $source): bool
     {
-        return false;
+        return $source->organization_id === $this->context->id()
+            && $this->authorizer->allows($user, $source->organization, OrganizationPermission::ManageKnowledge);
     }
 }

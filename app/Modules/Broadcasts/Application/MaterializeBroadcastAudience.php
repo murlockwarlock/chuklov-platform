@@ -40,7 +40,9 @@ final readonly class MaterializeBroadcastAudience
                 'campaign_id' => $locked->getKey(),
                 'version' => $version,
                 'draft_version' => $locked->draft_version,
+                'audience_type' => $locked->audience_type,
                 'segment_definition' => $locked->segment_definition,
+                'selected_client_ids' => $locked->selected_client_ids,
                 'segment_summary' => $locked->segment_summary,
                 'channel_priority' => $locked->channel_priority,
                 'template_version_ru_id' => $locked->template_version_ru_id,
@@ -60,7 +62,12 @@ final readonly class MaterializeBroadcastAudience
                 ->where('organization_id', $locked->organization_id)
                 ->where('campaign_id', $locked->getKey())
                 ->max('sequence');
-            $query = $this->segments->build((int) $locked->organization_id, $locked->segment_definition);
+            $query = $this->segments->buildForAudience(
+                organizationId: (int) $locked->organization_id,
+                audienceType: $locked->audience_type,
+                selectedClientIds: $locked->selected_client_ids,
+                filters: $locked->segment_definition,
+            );
 
             $query->chunkById(200, function ($clients) use (&$matched, &$eligible, &$suppressed, &$batch, &$batchPosition, &$batchSequence, $locked, $snapshot): void {
                 foreach ($clients as $client) {

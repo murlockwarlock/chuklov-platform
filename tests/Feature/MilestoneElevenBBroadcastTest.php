@@ -85,10 +85,82 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         $preview = app(PreviewBroadcastCampaign::class)->handle($actor, $campaign);
 
+        self::assertSame('Будут выбраны клиенты, у которых язык — Русский.', $campaign->segment_summary);
         self::assertSame(3, $preview['matched']);
         self::assertSame(1, $preview['eligible']);
         self::assertSame(2, $preview['suppressed']);
         self::assertSame($eligible->getKey(), app(BroadcastSegmentQuery::class)->build($organization->getKey(), [['key' => 'language', 'operator' => 'equals', 'value' => 'ru'], ['key' => 'verified_channel', 'operator' => 'equals', 'value' => 'telegram']])->whereKey($eligible->getKey())->value('id'));
+    }
+
+    public function test_selected_client_audience_preview_shows_one_human_recipient_and_keeps_consent_safety(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $selected = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $selected->forceFill(['full_name' => 'Aikhana'])->save();
+        $withoutConsent = $this->client($organization, consent: false, verified: true, language: 'ru');
+
+        $data = $this->campaignData([]);
+        $data['audience_type'] = 'selected';
+        $data['selected_client_ids'] = [$selected->getKey(), $withoutConsent->getKey()];
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = 'Здравствуйте, {{ client.full_name }}!';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $preview = app(PreviewBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertSame('selected', $campaign->audience_type);
+        self::assertSame([$selected->getKey(), $withoutConsent->getKey()], $campaign->selected_client_ids);
+        self::assertSame('Выбранные клиенты: Aikhana, '.$withoutConsent->full_name, $campaign->segment_summary);
+        self::assertSame(2, $preview['matched']);
+        self::assertSame(1, $preview['eligible']);
+        self::assertSame(1, $preview['suppressed']);
+        self::assertSame(1, $preview['reasons']['marketing_suppressed']);
+    }
+
+    public function test_selected_one_client_preview_reports_the_human_recipient_count(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $selected = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $selected->forceFill(['full_name' => 'Aikhana'])->save();
+
+        $data = $this->campaignData([]);
+        $data['audience_type'] = 'selected';
+        $data['selected_client_ids'] = [$selected->getKey()];
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = 'Здравствуйте, {{ client.full_name }}!';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $preview = app(PreviewBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertSame('Выбранные клиенты: Aikhana', $campaign->segment_summary);
+        self::assertSame(1, $preview['matched']);
+        self::assertSame(1, $preview['eligible']);
+        self::assertSame(0, $preview['suppressed']);
+    }
+
+    public function test_direct_message_composition_is_saved_and_sent_without_template_detour(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $data = $this->campaignData([]);
+        $data['audience_type'] = 'selected';
+        $data['selected_client_ids'] = [$client->getKey()];
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = 'Здравствуйте, {{ client.full_name }}!';
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame('compose', $campaign->message_mode);
+        self::assertSame($data['message_body'], $campaign->message_body);
+        self::assertNotNull($campaign->template_version_ru_id);
+        self::assertSame(1, NotificationTemplateVersion::query()->whereKey($campaign->template_version_ru_id)->count());
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
+        self::assertCount(1, $this->channel->messages);
+        self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
+        self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void
@@ -602,6 +674,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $component = Livewire::actingAs($actor)->test(CreateBroadcastCampaignPage::class);
+        $component->fillForm(['message_mode' => 'saved_template']);
         $select = $component->instance()->getSchemaComponent('form.template_version_ru_id');
 
         self::assertInstanceOf(Select::class, $select);

@@ -63,7 +63,7 @@ class AuthenticateClientWithVerifiedChannel
                 ->first();
 
             if ($identity instanceof ClientChannelIdentity) {
-                return $this->authenticateExistingIdentity($identity);
+                return $this->authenticateExistingIdentity($identity, $verifiedIdentity);
             }
 
             $client = new Client;
@@ -100,6 +100,7 @@ class AuthenticateClientWithVerifiedChannel
                 'client_id' => $client->getKey(),
                 'channel' => $verifiedIdentity->channel,
                 'external_id' => $verifiedIdentity->externalId,
+                'external_username' => $verifiedIdentity->username,
                 'verification_status' => ChannelIdentityStatus::Verified,
                 'verification_method' => 'authenticated_channel_flow',
                 'verified_at' => now(),
@@ -122,10 +123,14 @@ class AuthenticateClientWithVerifiedChannel
         });
     }
 
-    private function authenticateExistingIdentity(ClientChannelIdentity $identity): Client
+    private function authenticateExistingIdentity(ClientChannelIdentity $identity, VerifiedChannelIdentity $verifiedIdentity): Client
     {
         if ($identity->verification_status === ChannelIdentityStatus::Revoked) {
             throw new AuthorizationException('This client channel identity is revoked.');
+        }
+
+        if ($verifiedIdentity->username !== null) {
+            $identity->forceFill(['external_username' => $verifiedIdentity->username]);
         }
 
         if ($identity->verification_status === ChannelIdentityStatus::Unverified) {
@@ -147,6 +152,8 @@ class AuthenticateClientWithVerifiedChannel
                     'verification_method' => 'authenticated_channel_flow',
                 ],
             );
+        } elseif ($identity->isDirty()) {
+            $identity->save();
         }
 
         return $identity->client()->firstOrFail();

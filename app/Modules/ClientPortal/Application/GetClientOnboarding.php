@@ -3,6 +3,7 @@
 namespace App\Modules\ClientPortal\Application;
 
 use App\Modules\Attribution\Application\GetClientAttribution;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -28,6 +29,11 @@ class GetClientOnboarding
             'email' => $client->email,
             'phone' => $client->phone,
         ];
+        $b2bProfile = BroadcastClientProfile::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->first();
+        $b2bAnswer = $b2bProfile?->getRawOriginal('b2b_specialist_answer');
         $verifiedFields = $client->channelIdentities()
             ->where('verification_status', ChannelIdentityStatus::Verified)
             ->get()
@@ -49,6 +55,7 @@ class GetClientOnboarding
                 ClientOnboardingStage::cases(),
             ),
             'profile' => $profile,
+            'b2bSpecialistAnswer' => $b2bAnswer,
             'verifiedFields' => $verifiedFields,
             'completed' => $onboarding->completed_at !== null,
             'askLeadSource' => $this->getAttribution->handle($client) === null,

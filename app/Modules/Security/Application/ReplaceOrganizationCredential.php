@@ -6,9 +6,11 @@ use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Events\OrganizationCredentialReplaced;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -21,12 +23,12 @@ class ReplaceOrganizationCredential
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<array-key, mixed> $credentials */
+    /** @param array<array-key, mixed>|Closure $credentials */
     public function handle(
         User $actor,
         string $provider,
         string $credentialName,
-        array $credentials,
+        array|Closure $credentials,
         CredentialStatus $status = CredentialStatus::Active,
     ): OrganizationCredential {
         $organization = $this->context->organization();
@@ -43,18 +45,28 @@ class ReplaceOrganizationCredential
             throw new InvalidArgumentException('The credential name is invalid.');
         }
 
-        if ($credentials === []) {
-            throw new InvalidArgumentException('Credential values cannot be empty.');
-        }
-
-        $this->assertSerializable($credentials);
-
         return DB::transaction(function () use ($organization, $actor, $provider, $credentialName, $credentials, $status): OrganizationCredential {
-            $credential = OrganizationCredential::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('provider', $provider)
-                ->where('credential_name', $credentialName)
-                ->first() ?? new OrganizationCredential;
+            $credential = $this->findCredentialForUpdate($organization, $provider, $credentialName);
+
+            if ($credential === null) {
+                Organization::query()
+                    ->whereKey($organization->getKey())
+                    ->lock('for no key update')
+                    ->firstOrFail();
+
+                $credential = $this->findCredentialForUpdate($organization, $provider, $credentialName)
+                    ?? new OrganizationCredential;
+            }
+
+            $resolvedCredentials = $credentials instanceof Closure
+                ? $credentials($credential)
+                : $credentials;
+
+            if (! is_array($resolvedCredentials) || $resolvedCredentials === []) {
+                throw new InvalidArgumentException('Credential values cannot be empty.');
+            }
+
+            $this->assertSerializable($resolvedCredentials);
 
             $oldRevisionId = $credential->revision_id;
             $newRevisionId = (string) Str::uuid();
@@ -63,7 +75,7 @@ class ReplaceOrganizationCredential
                 'organization_id' => $organization->getKey(),
                 'provider' => $provider,
                 'credential_name' => $credentialName,
-                'credentials' => $credentials,
+                'credentials' => $resolvedCredentials,
                 'status' => $status,
                 'revision_id' => $newRevisionId,
                 'last_rotated_at' => now(),
@@ -94,7 +106,20 @@ class ReplaceOrganizationCredential
             );
 
             return $credential->refresh();
-        });
+        }, attempts: 3);
+    }
+
+    private function findCredentialForUpdate(
+        Organization $organization,
+        string $provider,
+        string $credentialName,
+    ): ?OrganizationCredential {
+        return OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('provider', $provider)
+            ->where('credential_name', $credentialName)
+            ->lockForUpdate()
+            ->first();
     }
 
     /** @param array<array-key, mixed> $values */

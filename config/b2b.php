@@ -1,0 +1,65 @@
+<?php
+
+use App\Modules\B2B\Domain\ValueObjects\ProviderOperationTiming;
+use Illuminate\Support\Env;
+
+$b2bQueue = Env::getRepository()->has('B2B_QUEUE')
+    ? env('B2B_QUEUE')
+    : 'integrations';
+
+if (! is_string($b2bQueue) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/', $b2bQueue) !== 1) {
+    throw new InvalidArgumentException('B2B_QUEUE must match [A-Za-z0-9][A-Za-z0-9._-]{0,63} without trimming or normalization.');
+}
+
+$operationDeadlineSeconds = min(
+    ProviderOperationTiming::MAX_OPERATION_DEADLINE_SECONDS,
+    max(
+        15,
+        (int) env('B2B_PROVIDER_OPERATION_DEADLINE_SECONDS', 90),
+    ),
+);
+$leaseMarginSeconds = min(
+    ProviderOperationTiming::MAX_LEASE_MARGIN_SECONDS,
+    max(
+        5,
+        (int) env('B2B_PROVIDER_LEASE_MARGIN_SECONDS', 15),
+    ),
+);
+$requestSafetySeconds = min(
+    ProviderOperationTiming::MAX_REQUEST_SAFETY_SECONDS,
+    max(
+        ProviderOperationTiming::MIN_REQUEST_SAFETY_SECONDS,
+        (int) env('B2B_PROVIDER_REQUEST_SAFETY_SECONDS', 2),
+    ),
+);
+$operationDeadlineSeconds = max($operationDeadlineSeconds, $requestSafetySeconds + 1);
+
+return [
+    'queue' => $b2bQueue,
+    'credential_name' => env('B2B_ZOOM_CREDENTIAL_NAME', 'b2b_zoom'),
+    'provider' => [
+        'operation_deadline_seconds' => $operationDeadlineSeconds,
+        'lease_margin_seconds' => $leaseMarginSeconds,
+        'request_safety_seconds' => $requestSafetySeconds,
+        'list_page_size' => min(300, max(1, (int) env('B2B_PROVIDER_LIST_PAGE_SIZE', 100))),
+        'list_max_pages' => min(20, max(1, (int) env('B2B_PROVIDER_LIST_MAX_PAGES', 5))),
+    ],
+    'availability' => [
+        'max_specialists' => 20,
+        'max_slots' => 200,
+    ],
+    'zoom' => [
+        'api_base_url' => env('ZOOM_API_BASE_URL', 'https://api.zoom.us/v2'),
+        'oauth_url' => env('ZOOM_OAUTH_URL', 'https://zoom.us/oauth/token'),
+        'topic' => env('B2B_ZOOM_TOPIC', 'Chuklov B2B sales call'),
+        'timeout_seconds' => max(1, (int) env('ZOOM_TIMEOUT_SECONDS', 15)),
+        'basic_max_duration_minutes' => 40,
+        'licensed_max_duration_minutes' => 1440,
+    ],
+    'events' => [
+        'batch_size' => 100,
+        'max_attempts' => 5,
+        'retry_after_seconds' => 60,
+        'stale_after_seconds' => 300,
+    ],
+];

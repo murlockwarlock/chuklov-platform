@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -23,12 +24,13 @@ type ContentItem = {
 const props = defineProps<{
     portal: PortalShell;
     section: string;
+    title: string;
     locale: Locale;
     content: ContentItem[];
 }>();
 
 const { t } = usePortalLocale();
-const pageTitle = computed(() => props.content[0]?.title ?? props.section);
+const pageTitle = computed(() => props.title);
 </script>
 
 <template>
@@ -67,6 +69,11 @@ const pageTitle = computed(() => props.content[0]?.title ?? props.section);
           {{ item.body }}
         </p>
       </article>
+      <EmptyState
+        v-if="!props.content.length"
+        :title="t('section.emptyTitle')"
+        :description="t('section.emptyDescription')"
+      />
       <Link
         :href="props.portal.urls.home"
         class="portal-button portal-button--secondary self-start"

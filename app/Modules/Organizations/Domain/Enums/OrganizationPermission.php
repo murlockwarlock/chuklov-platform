@@ -38,4 +38,6 @@ enum OrganizationPermission: string
     case ExportCompanionHistory = 'export_companion_history';
     case ExportCompanionMetadata = 'export_companion_metadata';
     case ManageCompanionHandoff = 'manage_companion_handoff';
+    case ViewB2bLeads = 'view_b2b_leads';
+    case ManageB2bLeads = 'manage_b2b_leads';
 }

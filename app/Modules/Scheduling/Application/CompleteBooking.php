@@ -5,6 +5,7 @@ namespace App\Modules\Scheduling\Application;
 use App\Models\User;
 use App\Modules\Finance\Application\CreateFinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -22,6 +23,7 @@ final class CompleteBooking
         private readonly RecordBookingEvent $events,
         private readonly RecordScenarioEvent $scenarioEvents,
         private readonly CreateFinancialObligation $financialObligations,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -69,6 +71,7 @@ final class CompleteBooking
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->reminders->cancelForBooking((int) $organization->getKey(), (int) $lockedBooking->getKey());
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,

@@ -5,12 +5,12 @@ namespace Tests\Feature;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
+use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
-use App\Modules\Attachments\Domain\Enums\AttachmentScanStatus;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
@@ -21,11 +21,14 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
@@ -224,6 +227,60 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertCount(0, $component->instance()->getTableRecords());
     }
 
+    public function test_client_bookings_view_action_renders_booking_details_in_relation(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Booking Client',
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Booking Specialist',
+        ]);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Booking Service',
+        ]);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => 'online',
+                'meeting_url' => 'https://meet.example.test/booking',
+            ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ClientBookingsRelationManager::class, [
+                'ownerRecord' => $client,
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertTableActionExists('view', null, $booking)
+            ->mountTableAction('view', $booking);
+
+        $modalHtml = $component->getMountedActionModalHtml();
+
+        self::assertStringContainsString('Просмотр записи на приём', $modalHtml);
+        self::assertStringContainsString('Информация о приёме', $modalHtml);
+        self::assertStringContainsString('Booking Client', $modalHtml);
+        self::assertStringContainsString('Booking Specialist', $modalHtml);
+        self::assertStringContainsString('Booking Service', $modalHtml);
+        self::assertStringContainsString('https://meet.example.test/booking', $modalHtml);
+    }
+
+    public function test_view_client_header_keeps_secondary_actions_in_the_overflow_group(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+
+        self::assertCount(3, $component->instance()->getCachedHeaderActions());
+    }
+
     public function test_view_client_page_renders_successfully(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
@@ -330,8 +387,6 @@ final class ClientWorkspaceUxATest extends TestCase
                 'mime_type' => 'application/pdf',
                 'size_bytes' => 128,
                 'sha256_checksum' => hash('sha256', 'report'),
-                'scan_status' => AttachmentScanStatus::Cleared,
-                'scanned_at' => now(),
             ]);
             $attachment->save();
         }
@@ -671,7 +726,49 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertSee('Telegram ID: 12345678')
             ->assertSee('Инстаграм')
             ->assertSee('REF123')
-            ->assertActionExists('edit');
+            ->assertActionExists('edit')
+            ->assertActionExists('editMedicalProfile')
+            ->assertSee('Дополнительные действия');
+    }
+
+    public function test_client_cockpit_medical_profile_action_persists_encrypted_data(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $anamnesis = 'Анамнез через действие клиентского кабинета';
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertActionVisible('editMedicalProfile')
+            ->callAction('editMedicalProfile', ['anamnesis' => $anamnesis]);
+
+        $rawProfile = MedicalProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->first();
+
+        self::assertNotNull($rawProfile);
+        self::assertNotSame($anamnesis, $rawProfile->anamnesis);
+        self::assertStringNotContainsString($anamnesis, (string) $rawProfile->anamnesis);
+        self::assertSame($organization->getKey(), $rawProfile->organization_id);
+        self::assertSame($client->getKey(), $rawProfile->client_id);
+
+        $auditEvent = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('target_type', MedicalProfile::class)
+            ->latest('id')
+            ->first();
+
+        self::assertNotNull($auditEvent);
+        self::assertSame('medical.profile.created', $auditEvent->action);
+        self::assertStringNotContainsString($anamnesis, (string) json_encode($auditEvent->metadata));
+
+        $profile = app(GetMedicalProfile::class)->handle($admin, $client);
+
+        self::assertNotNull($profile);
+        self::assertSame($anamnesis, $profile->anamnesis);
     }
 
     public function test_client_search_supports_international_phones_and_telegram_id(): void

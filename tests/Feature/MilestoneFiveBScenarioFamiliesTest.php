@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -98,6 +99,70 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
 
         self::assertSame(3, ScenarioAction::query()->where('scenario_rule_id', $rule->id)->count());
         self::assertCount(3, $this->channel->messages);
+    }
+
+    public function test_seeded_post_session_follow_ups_wait_for_due_time_and_deliver_once(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $client->forceFill(['language' => 'ru'])->save();
+        $this->verifiedClient($client);
+        app(ScenarioNotificationSeeder::class)->run();
+        ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'booking-completed-feedback-%')
+            ->update(['is_enabled' => false]);
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-ru')
+            ->orderBy('delay_value')
+            ->get();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $occurredAt = CarbonImmutable::now();
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'm5b-seeded-follow-ups', $occurredAt);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $eventOccurredAt = CarbonImmutable::instance($event->fresh()->occurred_at);
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereIn('scenario_rule_id', $rules->pluck('id'))
+            ->with('templateVersion.template')
+            ->orderBy('scheduled_for')
+            ->get();
+
+        self::assertSame([24, 48, 72], $actions->pluck('scheduled_for')->map(
+            static fn ($scheduledFor): int => abs($eventOccurredAt->diffInHours(CarbonImmutable::parse((string) $scheduledFor))),
+        )->all());
+        self::assertSame(
+            [
+                'post-session-follow-up-24h',
+                'post-session-follow-up-48h',
+                'post-session-follow-up-72h',
+            ],
+            $actions->map(static fn (ScenarioAction $action): string => $action->templateVersion->template->template_key)->all(),
+        );
+
+        foreach ($actions as $action) {
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+            self::assertSame(ScenarioActionStatus::Scheduled, $action->fresh()->status);
+        }
+        self::assertCount(0, $this->channel->messages);
+
+        foreach ($actions as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+            self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(3, $this->channel->messages);
+        self::assertSame(
+            [
+                'Как вы себя чувствуете после визита, '.$client->full_name.'? Если появились вопросы, напишите нам.',
+                'Надеемся, визит был полезен, '.$client->full_name.'. Поделитесь впечатлениями, когда будет удобно.',
+                $client->full_name.', если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
+            ],
+            array_map(static fn (NotificationMessage $message): string => $message->body, $this->channel->messages),
+        );
     }
 
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void
@@ -316,11 +381,84 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         app(ScenarioNotificationSeeder::class)->run();
         $rule = ScenarioRule::query()->where('organization_id', $organization->id)->where('rule_key', 'post-session-follow-up-24h-en')->sole();
         $rule->forceFill(['name' => 'Owner customized'])->save();
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->id)
+            ->where('template_key', 'post-session-follow-up')
+            ->where('locale', 'en')
+            ->sole();
+        $template->forceFill(['name' => 'Owner customized template'])->save();
         app(ScenarioNotificationSeeder::class)->run();
 
         self::assertSame('Owner customized', $rule->fresh()->name);
-        self::assertSame(6, ScenarioRule::query()->where('organization_id', $organization->id)->count());
-        self::assertSame(2, NotificationTemplate::query()->where('organization_id', $organization->id)->count());
+        self::assertSame('Owner customized template', $template->fresh()->name);
+        $expectedRuleKeys = [
+            'b2b-sales-call-ready-client-en',
+            'b2b-sales-call-ready-client-ru',
+            'b2b-sales-call-ready-specialist',
+            'booking-cancelled-client-en',
+            'booking-cancelled-client-ru',
+            'booking-cancelled-specialist',
+            'booking-completed-feedback-en',
+            'booking-completed-feedback-ru',
+            'booking-confirmed-client-en',
+            'booking-confirmed-client-ru',
+            'booking-confirmed-specialist',
+            'booking-created-client-en',
+            'booking-created-client-ru',
+            'booking-created-specialist',
+            'booking-rescheduled-client-en',
+            'booking-rescheduled-client-ru',
+            'booking-rescheduled-specialist',
+            'post-session-follow-up-24h-en',
+            'post-session-follow-up-24h-ru',
+            'post-session-follow-up-48h-en',
+            'post-session-follow-up-48h-ru',
+            'post-session-follow-up-72h-en',
+            'post-session-follow-up-72h-ru',
+        ];
+        $ruleKeys = ScenarioRule::query()
+            ->where('organization_id', $organization->id)
+            ->where('system_managed', false)
+            ->orderBy('rule_key')
+            ->pluck('rule_key')
+            ->all();
+        self::assertSame($expectedRuleKeys, $ruleKeys);
+        self::assertSame(count($expectedRuleKeys), count(array_unique($ruleKeys)));
+        self::assertSame(count($expectedRuleKeys), ScenarioRule::query()->where('organization_id', $organization->id)->where('system_managed', false)->count());
+        self::assertSame([
+            'b2b-sales-call-ready:en',
+            'b2b-sales-call-ready:ru',
+            'b2b-sales-call-ready-specialist:ru',
+            'booking-cancelled:en',
+            'booking-cancelled:ru',
+            'booking-cancelled-specialist:ru',
+            'booking-completed-feedback:en',
+            'booking-completed-feedback:ru',
+            'booking-confirmed:en',
+            'booking-confirmed:ru',
+            'booking-confirmed-specialist:ru',
+            'booking-created:en',
+            'booking-created:ru',
+            'booking-created-specialist:ru',
+            'booking-rescheduled:en',
+            'booking-rescheduled:ru',
+            'booking-rescheduled-specialist:ru',
+            'post-session-follow-up:en',
+            'post-session-follow-up:ru',
+            'post-session-follow-up-24h:en',
+            'post-session-follow-up-24h:ru',
+            'post-session-follow-up-48h:en',
+            'post-session-follow-up-48h:ru',
+            'post-session-follow-up-72h:en',
+            'post-session-follow-up-72h:ru',
+        ], NotificationTemplate::query()
+            ->where('organization_id', $organization->id)
+            ->where('template_key', 'not like', 'appointment-reminder-%')
+            ->orderBy('template_key')
+            ->orderBy('locale')
+            ->get(['template_key', 'locale'])
+            ->map(static fn (NotificationTemplate $template): string => $template->template_key.':'.$template->locale)
+            ->all());
         self::assertSame(
             [24, 48, 72],
             ScenarioRule::query()
@@ -329,6 +467,53 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
                 ->orderBy('delay_value')
                 ->pluck('delay_value')
                 ->all(),
+        );
+    }
+
+    public function test_post_session_follow_up_migration_moves_legacy_rules_to_distinct_templates(): void
+    {
+        $organization = Organization::factory()->create();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'post-session-follow-up',
+            'locale' => 'ru',
+        ]);
+        $version = NotificationTemplateVersion::factory()->forTemplate($template)->create([
+            'body' => 'Спасибо за ваш визит, {{ client.full_name }}.',
+        ]);
+
+        foreach ([24, 48, 72] as $delay) {
+            ScenarioRule::factory()->forOrganization($organization)->usingTemplate($version)->create([
+                'rule_key' => 'post-session-follow-up-'.$delay.'h-ru',
+                'delay_value' => $delay,
+                'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => 'ru']],
+            ]);
+        }
+
+        $migration = require base_path('database/migrations/2026_09_02_110009_distinguish_post_session_follow_up_templates.php');
+        $migration->up();
+
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-ru')
+            ->with('templateVersion.template')
+            ->orderBy('delay_value')
+            ->get();
+
+        self::assertSame(
+            [
+                'post-session-follow-up-24h',
+                'post-session-follow-up-48h',
+                'post-session-follow-up-72h',
+            ],
+            $rules->map(static fn (ScenarioRule $rule): string => $rule->templateVersion->template->template_key)->all(),
+        );
+        self::assertSame(
+            [
+                'Как вы себя чувствуете после визита, {{ client.full_name }}? Если появились вопросы, напишите нам.',
+                'Надеемся, визит был полезен, {{ client.full_name }}. Поделитесь впечатлениями, когда будет удобно.',
+                '{{ client.full_name }}, если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
+            ],
+            $rules->map(static fn (ScenarioRule $rule): string => $rule->templateVersion->body)->all(),
         );
     }
 

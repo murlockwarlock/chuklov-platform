@@ -11,6 +11,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CancelBooking;
@@ -149,6 +150,11 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         self::assertSame(BookingStatus::Cancelled, $cancelled->status);
         self::assertSame('unpaid', $cancelled->payment_status->value);
         self::assertSame(BookingEventType::Cancelled, $cancelled->events()->latest('id')->firstOrFail()->event_type);
+        self::assertSame($cancelled->event_version, ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.cancelled')
+            ->sole()
+            ->payload['event_version']);
     }
 
     public function test_reschedule_preserves_booking_identity_and_records_old_and_new_time(): void
@@ -173,6 +179,31 @@ class MilestoneFourFinalLifecycleTest extends TestCase
         self::assertSame(2, $rescheduled->event_version);
         self::assertSame(BookingEventType::Rescheduled, $rescheduled->events()->latest('id')->firstOrFail()->event_type);
         self::assertSame('2026-04-06T09:00:00+00:00', $rescheduled->events()->latest('id')->firstOrFail()->old_values['starts_at']);
+        self::assertSame('booking.rescheduled', ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.rescheduled')
+            ->sole()
+            ->event_name
+            ->value);
+    }
+
+    public function test_staff_can_correct_the_office_address_when_rescheduling(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+
+        $rescheduled = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+            expectedEventVersion: $booking->event_version,
+            location: 'Новый кабинет, 4 этаж',
+        );
+
+        self::assertSame('Новый кабинет, 4 этаж', $rescheduled->location);
+        self::assertNull($rescheduled->events()->latest('id')->firstOrFail()->old_values['location']);
+        self::assertSame('Новый кабинет, 4 этаж', $rescheduled->events()->latest('id')->firstOrFail()->new_values['location']);
     }
 
     public function test_reschedule_conflict_preserves_the_original_booking_time(): void

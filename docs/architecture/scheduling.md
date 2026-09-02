@@ -20,6 +20,14 @@ Scheduling stores UTC instants and IANA zones, recalculates availability server-
 - A home-visit approval fails with a validation error when its preferred time is no longer available. Rejection is a typed non-blocking terminal state and requires an explicit reason. Neither transition implements payment, deposit, refund, cancellation, or reschedule behavior.
 - The shared Portal booking journey uses explicit service, Specialist, date/slot, format, and confirmation projections for browser, mobile browser, and Telegram Mini App runtime. CRM list/detail/actions remain organization scoped and call the same Application lifecycle actions.
 
+## M11D B2B sales-call occupancy
+
+- B2B SalesCalls remain separate from Booking and Finance. A scheduled call owns its local interval and materializes one typed linked `UnavailablePeriod` projection; SalesCall Application actions are the only writers of that projection.
+- SalesCall creation and rescheduling use the same Specialist row lock and PostgreSQL exclusion authority as Booking creation. Booking, B2B calls, and ordinary unavailable periods therefore share one conflict boundary without a second calendar algorithm.
+- Cancellation removes the linked projection and rescheduling replaces it in the same transaction. Provider synchronization is post-commit and cannot release or move the local reserved interval when Zoom fails.
+
+See ADR-020 and REQ-B2B-001.
+
 ## M4C decisions
 
 - Booking creation has a PostgreSQL-backed organization/actor-scoped idempotency record with request-hash comparison, transactional booking linkage, bounded retention, and scheduled pruning. It prevents duplicate logical bookings without replacing the independent PostgreSQL interval exclusion invariant.

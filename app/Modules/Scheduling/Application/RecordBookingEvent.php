@@ -55,6 +55,7 @@ final class RecordBookingEvent
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
+            'location' => $booking->location,
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,

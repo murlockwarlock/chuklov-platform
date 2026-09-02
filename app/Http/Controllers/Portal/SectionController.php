@@ -24,16 +24,24 @@ class SectionController extends Controller
         ClientPortalContext $clientContext,
         string $section,
     ): Response {
+        $sectionRegistry = config('portal.content_sections', []);
+        if (! is_array($sectionRegistry) || ! array_key_exists($section, $sectionRegistry)) {
+            abort(404);
+        }
+
         $contentSections = $this->sections->handle($section);
         $locale = $this->resolveLocale($request, $clientContext);
         $selectedSections = $contentSections->where('locale', $locale);
 
-        if ($selectedSections->isEmpty()) {
-            $locale = $locale === 'en' ? 'ru' : 'en';
-            $selectedSections = $contentSections->where('locale', $locale);
-        }
+        if ($selectedSections->isEmpty() && $contentSections->isNotEmpty()) {
+            $fallbackLocale = $locale === 'en' ? 'ru' : 'en';
+            $fallbackSections = $contentSections->where('locale', $fallbackLocale);
 
-        abort_unless($selectedSections->isNotEmpty(), 404);
+            if ($fallbackSections->isNotEmpty()) {
+                $locale = $fallbackLocale;
+                $selectedSections = $fallbackSections;
+            }
+        }
 
         $content = $selectedSections->map(fn (ContentSection $contentSection): array => [
             'locale' => $contentSection->locale,
@@ -45,9 +53,20 @@ class SectionController extends Controller
 
         return Inertia::render('Portal/Section', [
             'section' => $section,
+            'title' => $this->sectionTitle($sectionRegistry[$section], $locale, $section),
             'locale' => $locale,
             'content' => $content,
         ]);
+    }
+
+    private function sectionTitle(mixed $sectionConfig, string $locale, string $fallback): string
+    {
+        $titles = is_array($sectionConfig) && is_array($sectionConfig['title'] ?? null)
+            ? $sectionConfig['title']
+            : [];
+        $title = $titles[$locale] ?? $titles['ru'] ?? $titles['en'] ?? $fallback;
+
+        return is_string($title) && trim($title) !== '' ? $title : $fallback;
     }
 
     private function resolveLocale(Request $request, ClientPortalContext $clientContext): string

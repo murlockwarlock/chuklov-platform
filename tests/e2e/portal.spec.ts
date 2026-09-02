@@ -16,6 +16,7 @@ type BookingFixture = {
 
 type BookingFixtureOptions = {
     withBooking?: boolean;
+    withCompanionMessages?: boolean;
     multipleChoices?: boolean;
     longServiceTitle?: boolean;
 };
@@ -27,6 +28,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
+        $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -50,6 +52,26 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'display_name' => 'Playwright Alternate Specialist '.$suffix,
                 'timezone' => 'UTC',
             ]);
+        }
+        if ($withCompanionMessages) {
+            config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+            $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
+                ->forOrganization($organization)
+                ->forClient($client)
+                ->create([
+                    'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+                ]);
+            $fence = str_repeat(chr(96), 3);
+            $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n[Безопасная HTTPS ссылка](https://example.test/secure)\n[HTTP ссылка не должна быть активной](http://example.test/insecure)\n[javascript ссылка не должна быть активной](javascript:alert(1))\n[data ссылка не должна быть активной](data:text/html,unsafe)\n[file ссылка не должна быть активной](file:///tmp/unsafe)\n[Относительная ссылка не должна быть активной](//example.test/insecure)\n[userinfo ссылка не должна быть активной](https://user:pass@example.test/insecure)\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
+            app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                organizationId: $organization->getKey(),
+                client: $client,
+                conversation: $conversation,
+                channel: 'portal',
+                direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                body: $body,
+            );
         }
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => $longServiceTitle
@@ -144,6 +166,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
             },
@@ -226,6 +249,9 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 props: {
                     services: [],
                     upcomingBooking: null,
+                    attribution: {
+                        needsManualSource: false,
+                    },
                     portal: {
                         authenticated: true,
                         clientName: 'Telegram Client',
@@ -235,8 +261,15 @@ test('Telegram Mini App submits initData automatically without a second login ac
                             home: '/',
                             services: '/portal/services',
                             bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
                             profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
                             booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
                         },
                     },
                 },
@@ -253,6 +286,77 @@ test('Telegram Mini App submits initData automatically without a second login ac
     expect(authenticationRequests).toBe(1);
 });
 
+test('Telegram Mini App B2B launch authenticates before showing the requested destination', async ({ page }) => {
+    let authenticationRequests = 0;
+
+    await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+        await route.fulfill({
+            contentType: 'application/javascript',
+            body: 'window.Telegram = { WebApp: { initData: "verified-init-data", ready() {} } };',
+        });
+    });
+    await page.route('**/portal/telegram/auth', async (route) => {
+        authenticationRequests += 1;
+        expect(route.request().postDataJSON().launchEntry).toBe('b2b');
+        await route.fulfill({
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Vary': 'Accept',
+                'X-Inertia': 'true',
+            },
+            body: JSON.stringify({
+                component: 'Portal/B2b',
+                props: {
+                    portal: {
+                        authenticated: true,
+                        clientName: 'Telegram Client',
+                        locale: 'ru',
+                        localeUrl: '/portal/locale',
+                        urls: {
+                            home: '/',
+                            services: '/portal/services',
+                            bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
+                            profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
+                            booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
+                        },
+                    },
+                    authenticated: true,
+                    b2bSpecialistAnswer: 'yes',
+                    content: [],
+                    specialists: [],
+                    selectedSpecialistId: null,
+                    availability: null,
+                    availabilityRange: null,
+                    configurationReady: false,
+                    configurationIssue: null,
+                    urls: {
+                        answer: '/portal/profile/b2b-answer',
+                        page: '/portal/b2b',
+                        submit: '/portal/b2b/leads',
+                        login: '/',
+                    },
+                },
+                url: '/portal/b2b',
+                version: null,
+            }),
+        });
+    });
+
+    await page.goto('/portal/telegram/launch/b2b');
+
+    await expect(page.getByRole('heading', { name: 'Развить бизнес с CHUKLOV' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticationRequests).toBe(1);
+});
+
 test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', async ({ page }) => {
     const fixture = createBookingFixture();
 
@@ -264,8 +368,9 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'EN' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'RU' })).toBeVisible();
+    const russianTrigger = page.getByRole('button', { name: 'Русский', exact: true });
+    await expect(russianTrigger).toBeVisible();
+    await expect(page.getByRole('menu')).toHaveCount(0);
 
     if ((page.viewportSize()?.width ?? 0) >= 768) {
         await expect(page.getByRole('link', { name: 'Услуги' }).first()).toBeVisible();
@@ -275,9 +380,11 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
         await expect(page.getByRole('link', { name: 'Профиль' }).last()).toBeVisible();
     }
 
-    await page.getByRole('button', { name: 'EN' }).click();
+    await russianTrigger.click();
+    await expect(page.getByRole('menuitemradio', { name: 'Русский', exact: true })).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'EN' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.getByRole('link', { name: 'Services' }).last().click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
@@ -288,8 +395,170 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await page.getByRole('link', { name: 'Profile' }).last().click();
     await profileResponse;
     await expect(page).toHaveURL(/\/portal\/profile$/);
-    await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
+});
+
+test('feedback keeps the selected score visible and the portal within mobile bounds', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/portal/feedback');
+        const selectedScore = page.getByRole('radio', { name: '6', exact: true });
+        await selectedScore.click();
+        await expect(selectedScore).toHaveAttribute('aria-checked', 'true');
+        await expect(selectedScore).toHaveAttribute('aria-pressed', 'true');
+        await expect(selectedScore).toHaveClass(/portal-score-option--selected/);
+        await expect(page.getByRole('radio', { name: '5', exact: true })).not.toHaveClass(/portal-score-option--selected/);
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
+test('home keeps one primary booking action and makes referrals discoverable at target widths', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/');
+        await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+
+        const navigationItems = page.locator('.portal-bottom-nav__link');
+        expect(await navigationItems.count()).toBe(6);
+        expect(await navigationItems.evaluateAll((items) => {
+            const widths = items.map((item) => item.getBoundingClientRect().width);
+            const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+
+            return Math.max(...widths) - Math.min(...widths) <= 1
+                && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
+        })).toBe(true);
+
+        await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
+    }
+
+    await page.getByTestId('home-referrals-cta').click();
+    await expect(page).toHaveURL(/\/portal\/referrals$/);
+    await expect(page.getByRole('heading', { name: 'Пригласить друга' })).toBeVisible();
+});
+
+test('B2B answer stays in one journey and Profile shows the same compact classification', async ({ page }) => {
+    const fixture = createBookingFixture({ multipleChoices: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/b2b');
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toBeVisible();
+    await page.getByRole('radio', { name: 'Да', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/portal\/b2b$/);
+    await expect(page.getByRole('heading', { name: 'Запросить разговор о бизнесе' })).toBeVisible();
+    await expect(page.getByText('Вы указали: специалист по работе с телом.')).toBeVisible();
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+    await expect(page.locator('#b2b-specialist')).toBeVisible();
+    const specialistOptions = await page.locator('#b2b-specialist option').allTextContents();
+    expect(specialistOptions).toContain('Выберите специалиста');
+    expect(specialistOptions).not.toContain('specialist_id');
+
+    await page.getByRole('link', { name: 'Профиль' }).last().click();
+    await expect(page).toHaveURL(/\/portal\/profile$/);
+    await expect(page.getByRole('heading', { name: 'Профессиональный профиль' })).toBeVisible();
+    await expect(page.getByText('Специалист по работе с телом: Да')).toBeVisible();
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+});
+
+test('B2B no answer explains the next step without showing the sales-call form', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/b2b');
+    await page.getByRole('radio', { name: 'Нет', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Что дальше' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Запросить разговор о бизнесе' })).toHaveCount(0);
+    await expect(page.getByText('Являетесь ли вы массажистом / специалистом по работе с телом?')).toHaveCount(0);
+});
+
+test('assistant uses an attachment icon and portal selects keep human option labels', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('button', { name: 'Прикрепить изображения' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Начать новый диалог' })).toBeVisible();
+    await expect(page.getByText('Добавить изображения', { exact: true })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+
+    await page.goto('/portal/attribution');
+    const sourceOptions = await page.locator('select option').allTextContents();
+    expect(sourceOptions).toContain('Выберите вариант');
+    expect(sourceOptions).toContain('По рекомендации знакомых');
+    expect(sourceOptions).not.toContain('friend');
+    expect(sourceOptions).not.toContain('social');
+});
+
+test('companion safely renders rich long messages without viewport overflow', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionMessages: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [390, 760]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/portal/companion');
+        await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
+        await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
+        await expect(page.locator('.portal-rich-text__code')).toBeVisible();
+        await expect(page.getByRole('link', { name: 'Безопасная HTTPS ссылка' })).toHaveAttribute('href', 'https://example.test/secure');
+        for (const label of [
+            'HTTP ссылка не должна быть активной',
+            'javascript ссылка не должна быть активной',
+            'data ссылка не должна быть активной',
+            'file ссылка не должна быть активной',
+            'Относительная ссылка не должна быть активной',
+            'userinfo ссылка не должна быть активной',
+        ]) {
+            await expect(page.getByRole('link', { name: label, exact: true })).toHaveCount(0);
+            const renderedParagraph = page.locator('.portal-rich-text p').filter({ hasText: label });
+            await expect(renderedParagraph).toHaveCount(1);
+            await expect(renderedParagraph).toBeVisible();
+        }
+        await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
+        await assertNoHorizontalOverflow(page);
+    }
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
@@ -366,6 +635,9 @@ test('booking uses a service step and selected-day calendar before confirmation'
 
     const time = page.getByTestId('availability-slot').first();
     await expect(page.getByTestId('availability-slot')).toHaveCount(3);
+    await expect(time).toHaveText(/^\d{2}:\d{2}$/);
+    await expect(time).toHaveAttribute('aria-label', /UTC[+-]\d{2}:\d{2}/);
+    await expect(page.getByText(/Ваш часовой пояс: UTC[+-]\d{2}:\d{2}/)).toBeVisible();
     await time.click();
     await expect(time).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Продолжить' }).click();
@@ -408,6 +680,9 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
         multipleChoices: true,
         longServiceTitle: true,
     });
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
 
     expect(fixture.alternateSpecialistName).not.toBeNull();
     await page.setViewportSize({ width: 320, height: 844 });
@@ -417,7 +692,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
         url: 'http://127.0.0.1:8000',
     }]);
 
-    await page.goto('/portal/bookings/create');
+    await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
     await expect(page.getByRole('heading', { name: 'Выберите услугу' })).toBeVisible();
     await assertNoHorizontalOverflow(page);
 

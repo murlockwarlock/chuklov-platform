@@ -11,6 +11,8 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -41,6 +43,8 @@ class CreateBooking
         private readonly OrganizationFeatureGate $features,
         private readonly CalculateAvailability $availability,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly BookingVideoMeetingLifecycle $videoMeetings,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -76,11 +80,20 @@ class CreateBooking
             throw ValidationException::withMessages(['partySize' => 'The party size is invalid.']);
         }
 
-        if ($format !== VisitFormat::HomeVisit && $location !== null) {
-            throw ValidationException::withMessages(['location' => 'A destination is only valid for home visits.']);
+        $location = $this->normalizeLocation($location);
+
+        if ($format === VisitFormat::Online && $location !== null) {
+            throw ValidationException::withMessages(['location' => 'Адрес не используется для онлайн-визита.']);
+        }
+
+        if ($format === VisitFormat::Office && $actor instanceof Client && $location !== null) {
+            throw ValidationException::withMessages(['location' => 'Адрес приёма может изменить только специалист.']);
         }
 
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
+        $resolvedMeetingLinkMode = $format === VisitFormat::Online
+            ? $this->videoMeetings->resolveMeetingLinkMode($organization, $meetingLinkMode)
+            : null;
         $actorScope = $actor instanceof User ? 'user:'.$actor->getKey() : 'client:'.$actor->getKey();
         $actorType = $actor instanceof User ? 'user' : 'client';
         $requestHash = $this->requestHash(
@@ -90,7 +103,7 @@ class CreateBooking
             startsAt: $requestedStart,
             format: $format,
             clientTimezone: $clientTimezone,
-            meetingLinkMode: $meetingLinkMode,
+            meetingLinkMode: $resolvedMeetingLinkMode,
             partySize: $partySize,
             location: $location,
         );
@@ -109,7 +122,7 @@ class CreateBooking
             $service,
             $format,
             $clientTimezone,
-            $meetingLinkMode,
+            $resolvedMeetingLinkMode,
             $requestedStart,
             $source,
             $organization,
@@ -179,9 +192,6 @@ class CreateBooking
             );
 
             $resolvedClientTimezone = $this->resolveClientTimezone($clientTimezone, $lockedClient);
-            $resolvedMeetingLinkMode = $format === VisitFormat::Online
-                ? ($meetingLinkMode ?? MeetingLinkMode::Manual)
-                : null;
             $availability = $this->availability->forBooking(
                 specialist: $lockedSpecialist,
                 service: $lockedService,
@@ -221,7 +231,9 @@ class CreateBooking
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
                 'client_timezone' => $resolvedClientTimezone,
-                'location' => $format === VisitFormat::HomeVisit ? $location : $officeLocation,
+                'location' => $format === VisitFormat::HomeVisit
+                    ? $location
+                    : ($actor instanceof User && $location !== null ? $location : $officeLocation),
                 'meeting_link_mode' => $resolvedMeetingLinkMode,
                 'party_size' => $partySize,
                 'event_version' => 1,
@@ -254,6 +266,14 @@ class CreateBooking
                 'occurred_at' => now(),
             ]);
             $event->save();
+            $this->scenarioEvents->bookingCreated(
+                booking: $booking,
+                causationId: (string) $event->getKey(),
+                occurredAt: CarbonImmutable::instance($event->occurred_at),
+            );
+            if ($resolvedMeetingLinkMode === MeetingLinkMode::Auto) {
+                $this->videoMeetings->scheduleCreate($organization, $booking);
+            }
 
             $idempotency->forceFill([
                 'booking_id' => $booking->getKey(),
@@ -342,6 +362,7 @@ class CreateBooking
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
+            'location' => $booking->location,
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,
@@ -353,6 +374,17 @@ class CreateBooking
         $sqlState = $exception->getCode() ?: ($exception->errorInfo[0] ?? null);
 
         return in_array($sqlState, ['23P01', '40P01'], true);
+    }
+
+    private function normalizeLocation(?string $location): ?string
+    {
+        $location = $location === null ? null : trim($location);
+
+        if ($location !== null && mb_strlen($location) > 500) {
+            throw ValidationException::withMessages(['location' => 'Адрес должен быть не длиннее 500 символов.']);
+        }
+
+        return $location === '' ? null : $location;
     }
 
     private function resolveIdempotencyKey(

@@ -4,17 +4,24 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
+use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +38,9 @@ final class ExecuteScenarioAction
         private readonly NotificationChannelRegistry $channels,
         private readonly NotificationTemplateRenderer $renderer,
         private readonly ScheduleNextScenarioAction $nextActions,
+        private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
+        private readonly BookingConfirmedGuard $bookingConfirmedGuard,
+        private readonly BookingChangedGuard $bookingChangedGuard,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -42,7 +52,10 @@ final class ExecuteScenarioAction
         }
 
         if (! $this->isEligible($action)) {
-            $this->suppress($action->getKey(), 'current_conditions_not_met');
+            $this->suppress(
+                $action->getKey(),
+                $this->changeReason($action->trigger_event->value),
+            );
 
             return;
         }
@@ -81,12 +94,31 @@ final class ExecuteScenarioAction
                 : CarbonImmutable::parse((string) $action->scheduled_for)->utc(),
         );
 
+        if ($action->kind === 'appointment_reminder') {
+            return $this->appointmentReminderIsCurrent($action, $context->booking);
+        }
+
         if (! is_array($action->condition_snapshot)) {
             return false;
         }
 
         if ($event->event_name->value === 'finance.obligation.created'
             && ! $this->contextFactory->financeDebtIsCurrent($context)) {
+            return false;
+        }
+
+        if ($event->event_name->value === 'b2b.sales_call.ready'
+            && ! $this->b2bReadyGuard->allows($event, $context->b2bSalesCall, $action->render_context)) {
+            return false;
+        }
+
+        if ($event->event_name->value === 'booking.confirmed'
+            && ! $this->bookingConfirmedGuard->allows($event, $context->booking, $action->render_context)) {
+            return false;
+        }
+
+        if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+            && ! $this->bookingChangedGuard->allows($event, $context->booking, $action->render_context)) {
             return false;
         }
 
@@ -107,6 +139,37 @@ final class ExecuteScenarioAction
                 ->where('organization_id', $delivery->organization_id)
                 ->with('templateVersion.template')
                 ->firstOrFail();
+            $event = $action->event()->first();
+            $isAppointmentReminder = $action->kind === 'appointment_reminder';
+            if ($event === null
+                || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
+                || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
+            }
+
+            if ($isAppointmentReminder) {
+                $booking = $this->appointmentReminderBooking($action);
+                if ($booking === null || ! $this->appointmentReminderIsCurrent($action, $booking)) {
+                    return NotificationDeliveryResult::suppressed('booking_changed');
+                }
+                if ($booking->visit_format->value === 'online' && $booking->effectiveMeetingUrl() === null) {
+                    return NotificationDeliveryResult::retryable('booking_meeting_pending');
+                }
+                $recipient = new ScenarioRecipient(
+                    type: $action->recipient_type,
+                    clientId: $action->client_id,
+                    userId: $action->recipient_user_id,
+                    locale: $action->templateVersion?->template?->locale ?: 'ru',
+                );
+                $context = $this->contextFactory->evaluationContext($event);
+                $renderContext = $this->contextFactory->renderContext($context, $recipient);
+                $renderContext['booking']['reminder_offset_label'] = $action->render_context['booking']['reminder_offset_label'] ?? 'некоторое время';
+                $action->setAttribute('render_context', $renderContext);
+            }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
             if ($identity === null) {
@@ -129,7 +192,37 @@ final class ExecuteScenarioAction
             }
 
             $locale = $template->template->locale;
+            $webAppUrl = null;
+            if ($template->template->template_key === 'booking-completed-feedback') {
+                try {
+                    $webAppUrl = $this->contextFactory->feedbackUrl();
+                } catch (FeedbackMiniAppConfigurationException) {
+                    return NotificationDeliveryResult::unavailable(FeedbackMiniAppConfigurationException::ERROR_CODE);
+                }
+
+                $feedbackContext = $action->render_context['feedback'] ?? null;
+                if (! is_array($feedbackContext) || ($feedbackContext['url'] ?? null) !== $webAppUrl) {
+                    return NotificationDeliveryResult::unavailable(FeedbackMiniAppConfigurationException::ERROR_CODE);
+                }
+            }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
+            $actionButton = $this->actionButton($action, $rendered->locale);
+
+            if ($actionButton !== null && ! $channel->capabilities()->supportsInlineButtons) {
+                return NotificationDeliveryResult::unavailable('inline_buttons_unavailable');
+            }
+
+            $event = $action->event()->first();
+            if ($event === null
+                || ($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
+                || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
+                    && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
+                || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
+                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
+            }
 
             return $channel->send(new NotificationMessage(
                 recipientExternalId: $identity->externalId,
@@ -137,6 +230,8 @@ final class ExecuteScenarioAction
                 subject: $rendered->subject,
                 locale: $rendered->locale,
                 idempotencyKey: $delivery->idempotency_key,
+                webAppUrl: $webAppUrl,
+                actionButton: $actionButton,
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
@@ -145,6 +240,93 @@ final class ExecuteScenarioAction
         } catch (Throwable) {
             return NotificationDeliveryResult::retryable('delivery_execution_error');
         }
+    }
+
+    private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
+    {
+        if ($action->kind === 'appointment_reminder') {
+            $url = $action->render_context['booking']['meeting_url'] ?? null;
+            if (is_string($url) && trim($url) !== '') {
+                return new NotificationActionButton(
+                    text: $action->recipient_type === 'internal'
+                        ? ($this->isRussian($locale) ? 'Открыть Zoom' : 'Open Zoom')
+                        : ($this->isRussian($locale) ? 'Подключиться к Zoom' : 'Join Zoom'),
+                    url: $url,
+                );
+            }
+        }
+
+        if ($action->recipient_type === 'internal') {
+            $url = $action->render_context['client']['telegram_profile_url'] ?? null;
+            if (! is_string($url) || trim($url) === '') {
+                return null;
+            }
+
+            return new NotificationActionButton(
+                text: $this->isRussian($locale) ? 'Открыть Telegram клиента' : 'Open client Telegram',
+                url: $url,
+            );
+        }
+
+        if ($action->recipient_type !== 'client') {
+            return null;
+        }
+
+        $url = match ($action->trigger_event->value) {
+            'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
+            'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
+            'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
+            default => null,
+        };
+
+        if (! is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        return new NotificationActionButton(
+            text: $this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting',
+            url: $url,
+        );
+    }
+
+    private function changeReason(?string $eventName): string
+    {
+        return match ($eventName) {
+            'b2b.sales_call.ready' => 'b2b_sales_call_changed',
+            'booking.confirmed', 'booking.rescheduled', 'booking.cancelled' => 'booking_changed',
+            default => 'current_conditions_not_met',
+        };
+    }
+
+    private function isRussian(string $locale): bool
+    {
+        return str_starts_with(strtolower($locale), 'ru');
+    }
+
+    private function appointmentReminderIsCurrent(ScenarioAction $action, ?Booking $booking): bool
+    {
+        if ($booking === null || $booking->status !== BookingStatus::Confirmed || $action->booking_starts_at === null) {
+            return false;
+        }
+
+        $reminder = $action->appointmentReminder;
+
+        return $reminder instanceof AppointmentReminder
+            && $reminder->is_enabled
+            && CarbonImmutable::parse((string) $action->booking_starts_at)->equalTo($booking->startsAtUtc());
+    }
+
+    private function appointmentReminderBooking(ScenarioAction $action): ?Booking
+    {
+        if ($action->booking_id === null) {
+            return null;
+        }
+
+        return Booking::query()
+            ->where('organization_id', $action->organization_id)
+            ->whereKey($action->booking_id)
+            ->with(['client', 'service', 'specialist'])
+            ->first();
     }
 
     private function claimAction(int $scenarioActionId): ?ScenarioAction
