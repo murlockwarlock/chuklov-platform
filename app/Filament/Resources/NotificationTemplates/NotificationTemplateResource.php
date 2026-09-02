@@ -55,25 +55,23 @@ final class NotificationTemplateResource extends Resource
                     ->label('Язык')
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
                 TextEntry::make('purpose')
-                    ->label('Назначение')
+                    ->label('Для чего')
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 TextEntry::make('is_active')->label('Включён')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
                 TextEntry::make('version_summary')
                     ->label('Состояние текста')
-                    ->state(fn (NotificationTemplate $record): string => $record->versions
-                        ->sortByDesc('version')
-                        ->isEmpty() ? 'Текст не добавлен' : 'Текст сохранён'),
+                    ->state(fn (NotificationTemplate $record): string => $record->latestVersion === null ? 'Текст не добавлен' : 'Текст сохранён'),
                 TextEntry::make('latest_subject')
                     ->label('Тема')
-                    ->state(fn (NotificationTemplate $record): ?string => $record->versions->sortByDesc('version')->first()?->subject),
+                    ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->subject),
                 TextEntry::make('latest_body')
                     ->label('Текст сообщения')
-                    ->state(fn (NotificationTemplate $record): ?string => $record->versions->sortByDesc('version')->first()?->body)
+                    ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->body)
                     ->columnSpanFull(),
                 TextEntry::make('latest_variables')
                     ->label('Доступные данные')
                     ->state(function (NotificationTemplate $record): string {
-                        $latest = $record->versions->sortByDesc('version')->first();
+                        $latest = $record->latestVersion;
 
                         return $latest === null
                             ? ''
@@ -119,7 +117,7 @@ final class NotificationTemplateResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->with('versions');
+            ->with('latestVersion');
     }
 
     public static function getPages(): array

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Broadcasts\Application;
 
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -22,7 +23,7 @@ final readonly class BroadcastCampaignInput
      */
     public function normalize(int $organizationId, array $attributes): array
     {
-        $allowed = ['name', 'send_mode', 'channel_priority', 'segment_definition', 'template_version_ru_id', 'template_version_en_id', 'scheduled_at'];
+        $allowed = ['name', 'send_mode', 'audience_type', 'selected_client_ids', 'channel_priority', 'segment_definition', 'message_mode', 'message_body', 'template_version_ru_id', 'template_version_en_id', 'scheduled_at'];
         if (array_diff(array_keys($attributes), $allowed) !== []) {
             throw ValidationException::withMessages(['name' => 'Форма содержит неподдерживаемые поля.']);
         }
@@ -42,12 +43,28 @@ final readonly class BroadcastCampaignInput
             throw ValidationException::withMessages(['channel_priority' => 'Выберите доступный способ связи.']);
         }
 
-        $filters = $this->segments->validate($attributes['segment_definition'] ?? []);
-        $ru = $this->template($organizationId, $attributes['template_version_ru_id'] ?? null, 'ru');
-        $en = $this->template($organizationId, $attributes['template_version_en_id'] ?? null, 'en');
-        if ($ru === null && $en === null) {
-            throw ValidationException::withMessages(['template_version_ru_id' => 'Выберите хотя бы один опубликованный маркетинговый шаблон.']);
+        $rawFilters = $attributes['segment_definition'] ?? [];
+        if (! is_array($rawFilters) || ! array_is_list($rawFilters)) {
+            throw ValidationException::withMessages(['segment_definition' => 'Расширенный выбор имеет неверный формат.']);
         }
+        $audienceType = $attributes['audience_type'] ?? ($rawFilters === [] ? 'all' : 'segment');
+        if (! in_array($audienceType, ['selected', 'all', 'segment'], true)) {
+            throw ValidationException::withMessages(['audience_type' => 'Выберите способ выбора клиентов.']);
+        }
+        $selectedClientIds = $this->selectedClientIds($organizationId, $audienceType, $attributes['selected_client_ids'] ?? []);
+        $filters = $audienceType === 'segment' ? $this->segments->validate($rawFilters) : [];
+
+        $messageMode = $this->messageMode($attributes);
+        $ru = $messageMode === 'saved_template'
+            ? $this->template($organizationId, $attributes['template_version_ru_id'] ?? null, 'ru')
+            : null;
+        $en = $messageMode === 'saved_template'
+            ? $this->template($organizationId, $attributes['template_version_en_id'] ?? null, 'en')
+            : null;
+        if ($messageMode === 'saved_template' && $ru === null && $en === null) {
+            throw ValidationException::withMessages(['template_version_ru_id' => 'Нет готовых шаблонов для этого типа сообщения. Создайте сообщение или выберите шаблон.']);
+        }
+        $messageBody = $messageMode === 'compose' ? $this->messageBody($attributes['message_body'] ?? null) : null;
 
         $scheduledAt = null;
         if ($mode === 'scheduled') {
@@ -65,9 +82,13 @@ final readonly class BroadcastCampaignInput
         return [
             'name' => $name,
             'send_mode' => $mode,
+            'audience_type' => $audienceType,
             'channel_priority' => ['telegram'],
             'segment_definition' => $filters,
-            'segment_summary' => $this->summaries->make($filters),
+            'selected_client_ids' => $selectedClientIds,
+            'message_mode' => $messageMode,
+            'message_body' => $messageBody,
+            'segment_summary' => $this->summary($organizationId, $audienceType, $selectedClientIds, $filters),
             'template_version_ru_id' => $ru?->getKey(),
             'template_version_en_id' => $en?->getKey(),
             'scheduled_at' => $scheduledAt,
@@ -132,5 +153,96 @@ final readonly class BroadcastCampaignInput
         }
 
         return $version;
+    }
+
+    /** @return list<int> */
+    private function selectedClientIds(int $organizationId, string $audienceType, mixed $values): array
+    {
+        if ($audienceType !== 'selected') {
+            return [];
+        }
+        if (! is_array($values) || ! array_is_list($values) || $values === [] || count($values) > 10000) {
+            throw ValidationException::withMessages(['selected_client_ids' => 'Выберите хотя бы одного клиента.']);
+        }
+
+        $ids = [];
+        foreach ($values as $value) {
+            if (! is_int($value) && ! (is_string($value) && ctype_digit($value))) {
+                throw ValidationException::withMessages(['selected_client_ids' => 'Выбран неверный клиент.']);
+            }
+            $id = (int) $value;
+            if ($id < 1 || in_array($id, $ids, true)) {
+                throw ValidationException::withMessages(['selected_client_ids' => 'Список клиентов содержит повтор или неверный ID.']);
+            }
+            $ids[] = $id;
+        }
+
+        $found = Client::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $ids)
+            ->count();
+        if ($found !== count($ids)) {
+            throw ValidationException::withMessages(['selected_client_ids' => 'Выберите клиентов только из текущей организации.']);
+        }
+
+        return $ids;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function messageMode(array $attributes): string
+    {
+        $mode = $attributes['message_mode'] ?? null;
+        if ($mode === null) {
+            $mode = filled($attributes['message_body'] ?? null) ? 'compose' : 'saved_template';
+        }
+        if (! in_array($mode, ['compose', 'saved_template'], true)) {
+            throw ValidationException::withMessages(['message_mode' => 'Выберите способ подготовки сообщения.']);
+        }
+
+        return $mode;
+    }
+
+    private function messageBody(mixed $value): string
+    {
+        $body = is_string($value) ? trim($value) : '';
+        if ($body === '' || mb_strlen($body) > 100000) {
+            throw ValidationException::withMessages(['message_body' => 'Напишите текст сообщения.']);
+        }
+
+        try {
+            $used = ScenarioTemplateVariableCatalog::used($body);
+        } catch (\InvalidArgumentException) {
+            throw ValidationException::withMessages(['message_body' => 'В тексте есть неподдерживаемые данные.']);
+        }
+        if (array_diff($used, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
+            throw ValidationException::withMessages(['message_body' => 'В рассылке можно использовать только имя и язык клиента.']);
+        }
+
+        return $body;
+    }
+
+    /** @param list<int> $selectedClientIds
+     * @param  list<array{key: string, operator: string, value: mixed}>  $filters
+     */
+    private function summary(int $organizationId, string $audienceType, array $selectedClientIds, array $filters): string
+    {
+        if ($audienceType === 'all') {
+            return 'Всем клиентам с согласием';
+        }
+        if ($audienceType === 'segment') {
+            return $this->summaries->make($filters);
+        }
+
+        $names = Client::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $selectedClientIds)
+            ->orderBy('full_name')
+            ->pluck('full_name')
+            ->map(fn (?string $name): string => trim((string) $name))
+            ->filter()
+            ->values()
+            ->all();
+
+        return 'Выбранные клиенты: '.implode(', ', $names);
     }
 }

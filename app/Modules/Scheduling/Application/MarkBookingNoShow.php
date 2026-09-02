@@ -4,6 +4,7 @@ namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -18,6 +19,7 @@ final class MarkBookingNoShow
         private readonly OrganizationContext $context,
         private readonly BookingAuthorization $authorization,
         private readonly RecordBookingEvent $events,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -55,6 +57,7 @@ final class MarkBookingNoShow
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
+            $this->reminders->cancelForBooking((int) $organization->getKey(), (int) $lockedBooking->getKey());
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,

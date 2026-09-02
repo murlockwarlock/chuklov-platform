@@ -13,7 +13,9 @@ use LogicException;
  * @property int $campaign_id
  * @property int $version
  * @property int $draft_version
+ * @property string $audience_type
  * @property list<array{key: string, operator: string, value: mixed}> $segment_definition
+ * @property list<int> $selected_client_ids
  * @property string $segment_summary
  * @property list<string> $channel_priority
  * @property int|null $template_version_ru_id
@@ -52,6 +54,7 @@ class BroadcastAudienceSnapshot extends Model
     {
         return [
             'segment_definition' => 'array',
+            'selected_client_ids' => 'array',
             'channel_priority' => 'array',
             'version' => 'integer',
             'draft_version' => 'integer',

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['template_key', 'name', 'locale', 'purpose', 'is_active'])]
 class NotificationTemplate extends Model
@@ -26,6 +27,12 @@ class NotificationTemplate extends Model
     public function versions(): HasMany
     {
         return $this->hasMany(NotificationTemplateVersion::class, 'template_id');
+    }
+
+    /** @return HasOne<NotificationTemplateVersion, $this> */
+    public function latestVersion(): HasOne
+    {
+        return $this->hasOne(NotificationTemplateVersion::class, 'template_id')->ofMany('version', 'max');
     }
 
     protected static function newFactory(): NotificationTemplateFactory

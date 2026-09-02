@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -30,6 +31,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedBookingCancelled($organization);
                 $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
                 $this->seedFeedback($organization, 'ru', 'Оцените визит, {{ client.full_name }}.');
+                app(EnsureAppointmentReminderDefaults::class)->handle($organization);
             });
     }
 
@@ -39,7 +41,7 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'post-session-follow-up',
             locale: $locale,
-            name: 'Post-session follow-up',
+            name: 'После визита',
             body: $body,
             variables: ['client.full_name'],
         );
@@ -48,7 +50,7 @@ final class ScenarioNotificationSeeder extends Seeder
             [
                 'template_key' => 'post-session-follow-up-24h',
                 'key' => 'post-session-follow-up-24h-'.$locale,
-                'name' => 'Post-session follow-up +24h ('.$locale.')',
+                'name' => 'Через день после визита',
                 'delay' => 24,
                 'body' => $locale === 'ru'
                     ? 'Как вы себя чувствуете после визита, {{ client.full_name }}? Если появились вопросы, напишите нам.'
@@ -58,7 +60,7 @@ final class ScenarioNotificationSeeder extends Seeder
             [
                 'template_key' => 'post-session-follow-up-48h',
                 'key' => 'post-session-follow-up-48h-'.$locale,
-                'name' => 'Post-session follow-up +48h ('.$locale.')',
+                'name' => 'Через два дня после визита',
                 'delay' => 48,
                 'body' => $locale === 'ru'
                     ? 'Надеемся, визит был полезен, {{ client.full_name }}. Поделитесь впечатлениями, когда будет удобно.'
@@ -68,7 +70,7 @@ final class ScenarioNotificationSeeder extends Seeder
             [
                 'template_key' => 'post-session-follow-up-72h',
                 'key' => 'post-session-follow-up-72h-'.$locale,
-                'name' => 'Post-session follow-up +72h ('.$locale.')',
+                'name' => 'Поддержка после визита',
                 'delay' => 72,
                 'body' => $locale === 'ru'
                     ? '{{ client.full_name }}, если после визита появились новые мысли или вопросы, мы готовы вас поддержать.'
@@ -130,7 +132,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'organization_id' => $organization->getKey(),
                 'template_key' => 'b2b-sales-call-ready',
                 'locale' => $locale,
-                'name' => 'B2B sales call ready',
+                'name' => 'B2B-разговор готов',
                 'purpose' => ScenarioRulePurpose::Transactional->value,
                 'is_active' => true,
             ])->save();
@@ -162,7 +164,7 @@ final class ScenarioNotificationSeeder extends Seeder
             $rule->forceFill([
                 'organization_id' => $organization->getKey(),
                 'rule_key' => $clientRuleKey,
-                'name' => 'B2B sales call ready for client ('.$locale.')',
+                'name' => 'B2B-разговор для клиента',
                 'trigger_event' => ScenarioEventType::B2bSalesCallReady->value,
                 'is_enabled' => true,
                 'delay_value' => 0,
@@ -216,7 +218,7 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'booking-created',
             locale: $locale,
-            name: 'Booking request received',
+            name: 'Новая запись',
             body: $body,
             variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
@@ -227,7 +229,7 @@ final class ScenarioNotificationSeeder extends Seeder
             $rule->forceFill([
                 'organization_id' => $organization->getKey(),
                 'rule_key' => $ruleKey,
-                'name' => 'Booking request received by client ('.$locale.')',
+                'name' => 'Новая запись для клиента',
                 'trigger_event' => ScenarioEventType::BookingCreated->value,
                 'is_enabled' => true,
                 'delay_value' => 0,
@@ -283,7 +285,7 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'booking-confirmed',
             locale: $locale,
-            name: 'Booking confirmed',
+            name: 'Подтверждение записи',
             body: $body,
             variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
@@ -294,7 +296,7 @@ final class ScenarioNotificationSeeder extends Seeder
             $rule->forceFill([
                 'organization_id' => $organization->getKey(),
                 'rule_key' => $ruleKey,
-                'name' => 'Booking confirmed for client ('.$locale.')',
+                'name' => 'Подтверждение записи для клиента',
                 'trigger_event' => ScenarioEventType::BookingConfirmed->value,
                 'is_enabled' => true,
                 'delay_value' => 0,
@@ -383,19 +385,21 @@ final class ScenarioNotificationSeeder extends Seeder
         array $clientBodies,
         string $specialistBody,
     ): void {
+        $messageName = $this->lifecycleMessageName($templateKey);
+
         foreach ($clientBodies as $locale => $body) {
             $version = $this->ensureTransactionalTemplate(
                 organization: $organization,
                 templateKey: $templateKey,
                 locale: $locale,
-                name: $templateKey,
+                name: $messageName,
                 body: $body,
                 variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
             );
             $this->seedBookingLifecycleRule(
                 organization: $organization,
                 ruleKey: $rulePrefix.'-client-'.$locale,
-                name: $templateKey.' for client ('.$locale.')',
+                name: $messageName.' для клиента',
                 eventType: $eventType,
                 conditions: [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
                 recipientStrategy: ['type' => 'client'],
@@ -407,19 +411,28 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: $templateKey.'-specialist',
             locale: 'ru',
-            name: $templateKey.' для специалиста',
+            name: $messageName.' для специалиста',
             body: $specialistBody,
             variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
         $this->seedBookingLifecycleRule(
             organization: $organization,
             ruleKey: $rulePrefix.'-specialist',
-            name: $templateKey.' for specialist',
+            name: $messageName.' для специалиста',
             eventType: $eventType,
             conditions: [],
             recipientStrategy: ['type' => 'assigned_specialist'],
             templateVersionId: (int) $specialistVersion->getKey(),
         );
+    }
+
+    private function lifecycleMessageName(string $templateKey): string
+    {
+        return match ($templateKey) {
+            'booking-rescheduled' => 'Перенос записи',
+            'booking-cancelled' => 'Отмена записи',
+            default => 'Автоматическое сообщение',
+        };
     }
 
     /**

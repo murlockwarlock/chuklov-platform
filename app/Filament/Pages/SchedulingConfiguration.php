@@ -14,6 +14,10 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
+use App\Modules\Scenarios\Application\UpdateAppointmentReminders;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
+use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scheduling\Application\GetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\GetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
@@ -61,7 +65,7 @@ class SchedulingConfiguration extends Page
 
     protected static ?int $navigationSort = 2;
 
-    /** @var array{specialist_id: int|null, lead_time_minutes: int, cancellation_cutoff_minutes: int, b2b_sales_call_duration_minutes: int|null, b2b_zoom_host_licensed: bool, office_location: string|null, zoom_enabled: bool, zoom_account_id: string|null, zoom_client_id: string|null, zoom_client_secret: string|null, zoom_host_user_id: string|null, working_hours: list<array{weekday: int, start_time: string, end_time: string}>}|null */
+    /** @var array<string, mixed>|null */
     public ?array $data = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
@@ -87,6 +91,11 @@ class SchedulingConfiguration extends Page
 
     public function mount(): void
     {
+        $organization = app(OrganizationContext::class)->organization();
+        if (! AppointmentReminder::query()->where('organization_id', $organization->getKey())->exists()) {
+            app(EnsureAppointmentReminderDefaults::class)->handle($organization);
+        }
+
         $specialistId = Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->orderBy('display_name')
@@ -98,12 +107,14 @@ class SchedulingConfiguration extends Page
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
-            'b2b_zoom_host_licensed' => (bool) app(OrganizationContext::class)->organization()->settings()
+            'b2b_zoom_host_licensed' => (bool) $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
                 ->value('boolean_value'),
-            'office_location' => app(OrganizationContext::class)->organization()->settings()
+            'office_location' => $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
+            'client_reminders' => $this->reminderRows('client'),
+            'specialist_reminders' => $this->reminderRows('specialist'),
             'zoom_enabled' => $zoom['enabled'],
             'zoom_account_id' => $zoom['accountId'],
             'zoom_client_id' => $zoom['clientId'],
@@ -149,9 +160,29 @@ class SchedulingConfiguration extends Page
                     ->label('У Zoom-хоста есть лицензия Meetings')
                     ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
                 TextInput::make('office_location')
-                    ->label('Адрес клиники')
-                    ->helperText('Адрес для очных визитов в клинике.')
+                    ->label('Адрес по умолчанию')
+                    ->helperText('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.')
                     ->maxLength(500),
+                Section::make('Напоминания о записи')
+                    ->description('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи.')
+                    ->schema([
+                        Repeater::make('client_reminders')
+                            ->label('Клиенту')
+                            ->schema($this->reminderSchema())
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить напоминание'),
+                        Repeater::make('specialist_reminders')
+                            ->label('Себе / специалисту')
+                            ->schema($this->reminderSchema())
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel('Добавить напоминание'),
+                    ])
+                    ->columns(1)
+                    ->columnSpanFull(),
                 Section::make('Подключение Zoom')
                     ->description('Создайте приложение Server-to-Server OAuth в Zoom Marketplace и вставьте сюда его Account ID, Client ID, Client Secret и User ID ведущего. Секрет не показывается после сохранения; пустое поле при редактировании сохраняет прежний секрет.')
                     ->schema([
@@ -284,7 +315,13 @@ class SchedulingConfiguration extends Page
                         OrganizationSettingKey::OfficeLocation,
                         trim((string) $data['office_location']),
                     );
+                } else {
+                    app(ClearOrganizationSetting::class)->handle(
+                        $actor,
+                        OrganizationSettingKey::OfficeLocation,
+                    );
                 }
+                app(UpdateAppointmentReminders::class)->handle($actor, $data);
                 app(SetSpecialistWorkingHours::class)->handle(
                     $actor,
                     $specialist,
@@ -354,6 +391,47 @@ class SchedulingConfiguration extends Page
             ->orderBy('display_name')
             ->pluck('display_name', 'id')
             ->all();
+    }
+
+    /** @return list<array{is_enabled: bool, offset_value: int, offset_unit: string}> */
+    private function reminderRows(string $recipientType): array
+    {
+        $rows = AppointmentReminder::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('recipient_type', $recipientType)
+            ->orderBy('offset_value')
+            ->orderBy('offset_unit')
+            ->get()
+            ->map(fn (AppointmentReminder $reminder): array => [
+                'is_enabled' => $reminder->is_enabled,
+                'offset_value' => $reminder->offset_value,
+                'offset_unit' => $reminder->offset_unit->value,
+            ])
+            ->values()
+            ->all();
+
+        return array_values($rows);
+    }
+
+    /** @return list<Component> */
+    private function reminderSchema(): array
+    {
+        return [
+            Checkbox::make('is_enabled')->label('Включено')->default(true),
+            TextInput::make('offset_value')
+                ->label('За сколько до визита')
+                ->integer()
+                ->minValue(1)
+                ->required(),
+            Select::make('offset_unit')
+                ->label('Единица времени')
+                ->options([
+                    ScenarioDelayUnit::Minutes->value => 'минут',
+                    ScenarioDelayUnit::Hours->value => 'часов',
+                    ScenarioDelayUnit::Days->value => 'дней',
+                ])
+                ->required(),
+        ];
     }
 
     /** @return list<array{weekday: int, start_time: string, end_time: string}> */

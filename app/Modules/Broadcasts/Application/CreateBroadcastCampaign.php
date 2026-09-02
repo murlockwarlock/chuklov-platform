@@ -10,7 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class CreateBroadcastCampaign
 {
-    public function __construct(private BroadcastAuthorization $authorization, private BroadcastCampaignInput $input, private RecordAuditEvent $audit) {}
+    public function __construct(
+        private BroadcastAuthorization $authorization,
+        private BroadcastCampaignInput $input,
+        private CreateBroadcastMessageTemplate $messages,
+        private RecordAuditEvent $audit,
+    ) {}
 
     /** @param array<string, mixed> $attributes */
     public function handle(User $actor, array $attributes): BroadcastCampaign
@@ -19,6 +24,15 @@ final readonly class CreateBroadcastCampaign
         $normalized = $this->input->normalize($organization->getKey(), $attributes);
 
         return DB::transaction(function () use ($actor, $organization, $normalized): BroadcastCampaign {
+            if ($normalized['message_mode'] === 'compose') {
+                $version = $this->messages->handle(
+                    actor: $actor,
+                    organization: $organization,
+                    campaignName: $normalized['name'],
+                    body: $normalized['message_body'],
+                );
+                $normalized['template_version_ru_id'] = $version->getKey();
+            }
             $campaign = new BroadcastCampaign;
             $campaign->forceFill([...$normalized, 'organization_id' => $organization->getKey(), 'created_by_user_id' => $actor->getKey(), 'state' => BroadcastCampaignState::Draft]);
             $campaign->save();

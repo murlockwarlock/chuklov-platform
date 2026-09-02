@@ -187,6 +187,25 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             ->value);
     }
 
+    public function test_staff_can_correct_the_office_address_when_rescheduling(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+
+        $rescheduled = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            newStartsAt: CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+            expectedEventVersion: $booking->event_version,
+            location: 'Новый кабинет, 4 этаж',
+        );
+
+        self::assertSame('Новый кабинет, 4 этаж', $rescheduled->location);
+        self::assertNull($rescheduled->events()->latest('id')->firstOrFail()->old_values['location']);
+        self::assertSame('Новый кабинет, 4 этаж', $rescheduled->events()->latest('id')->firstOrFail()->new_values['location']);
+    }
+
     public function test_reschedule_conflict_preserves_the_original_booking_time(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture();

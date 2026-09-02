@@ -185,7 +185,7 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         self::assertSame(ScenarioEventStatus::Pending, $event->fresh()->status);
         self::assertSame('booking_meeting_pending', $event->fresh()->last_error_code);
-        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->count());
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->where('kind', 'scenario')->count());
 
         $readyAt = CarbonImmutable::parse((string) $event->fresh()->available_at)->addSecond();
         CarbonImmutable::setTestNow($readyAt);
@@ -198,6 +198,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
         $actions = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
+            ->where('kind', 'scenario')
             ->orderBy('recipient_type')
             ->get();
 

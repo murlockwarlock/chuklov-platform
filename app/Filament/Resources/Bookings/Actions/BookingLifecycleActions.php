@@ -131,6 +131,11 @@ final class BookingLifecycleActions
                 ->icon('heroicon-o-calendar')
                 ->schema([
                     DateTimePicker::make('starts_at')->label('Новая дата и время')->seconds(false)->required(),
+                    TextInput::make('location')
+                        ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? 'Адрес приёма' : 'Адрес выезда')
+                        ->default(fn (Booking $record): ?string => $record->location)
+                        ->visible(fn (Booking $record): bool => in_array($record->visit_format, [VisitFormat::Office, VisitFormat::HomeVisit], true))
+                        ->maxLength(500),
                     Hidden::make('expected_event_version')
                         ->default(fn (Booking $record): int => $record->event_version)
                         ->required(),
@@ -153,6 +158,7 @@ final class BookingLifecycleActions
                             clientTimezone: null,
                             reason: $data['reason'] ?? null,
                             expectedEventVersion: (int) $data['expected_event_version'],
+                            location: array_key_exists('location', $data) ? (string) $data['location'] : null,
                         );
                         $record->refresh();
                         Notification::make()->success()->title('Запись успешно перенесена')->send();

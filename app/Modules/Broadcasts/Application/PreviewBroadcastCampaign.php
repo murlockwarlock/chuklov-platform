@@ -27,7 +27,12 @@ final readonly class PreviewBroadcastCampaign
         $matched = 0;
         $eligible = 0;
         $reasons = [];
-        $query = $this->segments->build($organization->getKey(), $campaign->segment_definition);
+        $query = $this->segments->buildForAudience(
+            organizationId: $organization->getKey(),
+            audienceType: $campaign->audience_type,
+            selectedClientIds: $campaign->selected_client_ids,
+            filters: $campaign->segment_definition,
+        );
         $query->chunkById(200, function ($clients) use (&$matched, &$eligible, &$reasons, $campaign, $organization): void {
             foreach ($clients as $client) {
                 $matched++;

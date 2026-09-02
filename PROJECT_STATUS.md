@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-02 — M11 CRM operator UX remediation candidate
+
+- This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and is limited to the requested operator-facing remediation. Broadcast creation now defaults to direct searchable client selection and direct message composition, while consent enforcement, saved templates, and advanced segmentation remain available behind human-language controls. Auto-messages, templates, message history, bookings, knowledge, AI, finance, and broadcast tables use compact Russian labels and primary actions.
+- Appointment reminders are persisted as booking-relative configuration for clients and specialists, scheduled from `booking.starts_at`, and rebuilt or suppressed on confirmation, reschedule, cancellation, completion, and no-show without catch-up spam or duplicate materialization. Built-in Russian content handles online Zoom readiness, office/home destinations, specialist details, and booking-specific address overrides without changing historical bookings when the default address changes.
+- Focused local evidence passes `117` tests / `600` assertions; changed PHP syntax, Pint, and `git diff --check` pass. PostgreSQL concurrency, hosted exact-SHA CI/E2E, staging smoke, and owner UX acceptance remain pending. PR #26 remains open/Draft/unmerged; PR #23 is untouched; no production, M12, or merge work is included.
+
 ## 2026-09-02 — M11D CRM operator UX and notification delivery candidate
 
 - This candidate starts exactly at `171163333818c79531202fc857c31ed5c64cdfee` and addresses the reproduced CRM/Telegram defects only: bookings and adjacent high-frequency operational lists use deterministic newest-created ordering; all booking lifecycle actions refresh the mounted Filament record after success; and ordinary online bookings use the existing Zoom provider's durable create/update/cancel lifecycle when a complete active credential enables automatic mode.

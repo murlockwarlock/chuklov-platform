@@ -80,8 +80,14 @@ class CreateBooking
             throw ValidationException::withMessages(['partySize' => 'The party size is invalid.']);
         }
 
-        if ($format !== VisitFormat::HomeVisit && $location !== null) {
-            throw ValidationException::withMessages(['location' => 'A destination is only valid for home visits.']);
+        $location = $this->normalizeLocation($location);
+
+        if ($format === VisitFormat::Online && $location !== null) {
+            throw ValidationException::withMessages(['location' => 'Адрес не используется для онлайн-визита.']);
+        }
+
+        if ($format === VisitFormat::Office && $actor instanceof Client && $location !== null) {
+            throw ValidationException::withMessages(['location' => 'Адрес приёма может изменить только специалист.']);
         }
 
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
@@ -225,7 +231,9 @@ class CreateBooking
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
                 'client_timezone' => $resolvedClientTimezone,
-                'location' => $format === VisitFormat::HomeVisit ? $location : $officeLocation,
+                'location' => $format === VisitFormat::HomeVisit
+                    ? $location
+                    : ($actor instanceof User && $location !== null ? $location : $officeLocation),
                 'meeting_link_mode' => $resolvedMeetingLinkMode,
                 'party_size' => $partySize,
                 'event_version' => 1,
@@ -354,6 +362,7 @@ class CreateBooking
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
+            'location' => $booking->location,
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,
@@ -365,6 +374,17 @@ class CreateBooking
         $sqlState = $exception->getCode() ?: ($exception->errorInfo[0] ?? null);
 
         return in_array($sqlState, ['23P01', '40P01'], true);
+    }
+
+    private function normalizeLocation(?string $location): ?string
+    {
+        $location = $location === null ? null : trim($location);
+
+        if ($location !== null && mb_strlen($location) > 500) {
+            throw ValidationException::withMessages(['location' => 'Адрес должен быть не длиннее 500 символов.']);
+        }
+
+        return $location === '' ? null : $location;
     }
 
     private function resolveIdempotencyKey(

@@ -19,10 +19,28 @@ final class BroadcastSegmentQuery
      */
     public function build(int $organizationId, array $filters): Builder
     {
-        $filters = $this->definitions->validate($filters);
+        return $this->buildForAudience($organizationId, 'segment', [], $filters);
+    }
+
+    /**
+     * @param  list<int>  $selectedClientIds
+     * @param  list<array{key: string, operator: string, value: mixed}>  $filters
+     * @return Builder<Client>
+     */
+    public function buildForAudience(int $organizationId, string $audienceType, array $selectedClientIds, array $filters): Builder
+    {
+        if (! in_array($audienceType, ['selected', 'all', 'segment'], true)) {
+            throw new \LogicException('Unsupported persisted broadcast audience.');
+        }
+
+        $filters = $audienceType === 'segment' ? $this->definitions->validate($filters) : [];
         $query = Client::query()
             ->select(['clients.id', 'clients.organization_id', 'clients.full_name', 'clients.language'])
             ->where('clients.organization_id', $organizationId);
+
+        if ($audienceType === 'selected') {
+            $query->whereIn('clients.id', array_map('intval', $selectedClientIds));
+        }
 
         foreach ($filters as $filter) {
             $values = $filter['operator'] === 'in' ? $filter['value'] : [$filter['value']];

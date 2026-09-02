@@ -5,6 +5,7 @@ namespace App\Modules\Scheduling\Application;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
@@ -26,6 +27,7 @@ final class CancelBooking
         private readonly RecordBookingEvent $events,
         private readonly BookingVideoMeetingLifecycle $videoMeetings,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -86,6 +88,7 @@ final class CancelBooking
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->reminders->cancelForBooking((int) $organization->getKey(), (int) $lockedBooking->getKey());
             if ($lockedBooking->visit_format === VisitFormat::Online
                 && $lockedBooking->meeting_link_mode === MeetingLinkMode::Auto) {
                 $this->videoMeetings->scheduleCancel($organization, $lockedBooking);

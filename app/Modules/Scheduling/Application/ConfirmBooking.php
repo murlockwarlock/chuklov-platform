@@ -4,6 +4,7 @@ namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -21,6 +22,7 @@ final class ConfirmBooking
         private readonly BookingAuthorization $authorization,
         private readonly RecordBookingEvent $events,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -55,11 +57,12 @@ final class ConfirmBooking
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
-            $this->scenarioEvents->bookingConfirmed(
+            $scenarioEvent = $this->scenarioEvents->bookingConfirmed(
                 booking: $lockedBooking,
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->reminders->schedule($lockedBooking, $scenarioEvent);
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,

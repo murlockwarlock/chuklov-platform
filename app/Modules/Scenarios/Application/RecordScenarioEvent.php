@@ -140,6 +140,7 @@ final class RecordScenarioEvent
                 'visit_format' => $booking->visit_format->value,
                 'starts_at' => $booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $booking->endsAtUtc()->toIso8601String(),
+                'location' => $booking->location,
                 'completed_at' => $occurredAt->utc()->toIso8601String(),
                 'client_language' => $booking->client->language,
             ],
@@ -203,6 +204,7 @@ final class RecordScenarioEvent
             'ends_at' => $booking->endsAtUtc()->toIso8601String(),
             'schedule_timezone' => (string) $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
+            'location' => $booking->location,
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'client_language' => $booking->client->language,
         ];

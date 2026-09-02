@@ -77,6 +77,7 @@ final class ScenarioContextFactory
                 'visit_format' => $context->booking->visit_format->value,
                 'service_name' => $context->booking->service->name,
                 'specialist_name' => $context->booking->specialist->display_name,
+                'location' => $context->booking->location,
                 'starts_at' => $context->booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
                 'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('d-m-Y'),

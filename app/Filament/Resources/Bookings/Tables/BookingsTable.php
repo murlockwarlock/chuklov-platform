@@ -14,6 +14,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -53,7 +54,8 @@ class BookingsTable
                 ->label('Проверка времени')
                 ->badge()
                 ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? 'Требует внимания' : 'В порядке')
-                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success');
+                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success')
+                ->toggleable(isToggledHiddenByDefault: true);
         }
 
         $filters = [
@@ -127,6 +129,9 @@ class BookingsTable
             ->recordActions([
                 ViewAction::make()
                     ->label('Открыть')
+                    ->icon(Heroicon::OutlinedEye)
+                    ->iconButton()
+                    ->tooltip('Открыть запись')
                     ->modalHeading('Просмотр записи на приём')
                     ->modalWidth('5xl'),
                 ActionGroup::make(BookingLifecycleActions::all())

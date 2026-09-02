@@ -52,6 +52,7 @@ final class AiProviderResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('display_name')->label('Название')->searchable()->sortable(),
                 TextColumn::make('provider_name')
@@ -68,7 +69,8 @@ final class AiProviderResource extends Resource
                         return $record->credential?->status === CredentialStatus::Active
                             ? 'Подключён: '.$state
                             : 'Отключён: '.$state;
-                    }),
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('health_status')
                     ->label('Состояние')
                     ->badge()
@@ -80,8 +82,8 @@ final class AiProviderResource extends Resource
                     })
                     ->formatStateUsing(fn ($state) => $state instanceof ProviderHealthStatus ? $state->label() : (string) $state),
                 TextColumn::make('is_enabled')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Включен' : 'Отключен'),
-                TextColumn::make('models_count')->counts('models')->label('Моделей'),
-                TextColumn::make('updated_at')->label('Изменен')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('models_count')->counts('models')->label('Моделей')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->emptyStateHeading('Сервисов AI пока нет')
             ->emptyStateDescription('Подключите сервис AI, которым будет пользоваться Chuklov. Сначала выберите провайдера и добавьте API-ключ.')
@@ -89,6 +91,8 @@ final class AiProviderResource extends Resource
                 Action::make('test_connection')
                     ->label('Проверить связь')
                     ->icon(Heroicon::OutlinedSignal)
+                    ->iconButton()
+                    ->tooltip('Проверить связь с провайдером')
                     ->color('gray')
                     ->action(function (AiProviderConfiguration $record): void {
                         $actor = Auth::user();
@@ -108,7 +112,11 @@ final class AiProviderResource extends Resource
                             }
                         }
                     }),
-                EditAction::make(),
+                EditAction::make()
+                    ->label('Редактировать')
+                    ->icon(Heroicon::OutlinedPencil)
+                    ->iconButton()
+                    ->tooltip('Редактировать провайдера'),
             ])
             ->defaultSort('updated_at', 'desc');
     }

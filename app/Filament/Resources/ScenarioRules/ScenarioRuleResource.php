@@ -19,6 +19,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
@@ -31,17 +32,17 @@ final class ScenarioRuleResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBellAlert;
 
-    protected static ?string $navigationLabel = 'Правила сообщений';
+    protected static ?string $navigationLabel = 'Авто-сообщения';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Коммуникации';
 
     protected static ?int $navigationSort = 2;
 
-    protected static ?string $modelLabel = 'правило сообщений';
+    protected static ?string $modelLabel = 'авто-сообщение';
 
-    protected static ?string $pluralModelLabel = 'правила сообщений';
+    protected static ?string $pluralModelLabel = 'авто-сообщения';
 
-    protected static ?string $breadcrumb = 'Правила сообщений';
+    protected static ?string $breadcrumb = 'Авто-сообщения';
 
     public static function form(Schema $schema): Schema
     {
@@ -65,9 +66,6 @@ final class ScenarioRuleResource extends Resource
                     ->state(fn (ScenarioRule $record): string => $record->max_occurrences > 1
                         ? $record->max_occurrences.' раза, каждые '.$record->repeat_interval_value.' '.self::delayUnitLabel($record->repeat_interval_unit)
                         : 'Одно сообщение'),
-                TextEntry::make('purpose')
-                    ->label('Назначение')
-                    ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 TextEntry::make('template_summary')
                     ->label('Сообщение')
                     ->state(function (ScenarioRule $record): string {
@@ -80,17 +78,26 @@ final class ScenarioRuleResource extends Resource
                         return ($template->name ?: 'Не выбрано').' — '.self::localeLabel($template->locale)
                             .' · версия '.$record->templateVersion->version;
                     }),
-                TextEntry::make('conditions_summary')
-                    ->label('Условие')
-                    ->state(fn (ScenarioRule $record): string => self::conditionsSummary($record->conditions))
-                    ->columnSpanFull(),
                 TextEntry::make('recipient_summary')
                     ->label('Кому')
                     ->state(fn (ScenarioRule $record): string => self::recipientSummary($record->recipient_strategy))
                     ->columnSpanFull(),
-                TextEntry::make('channel_priority')
-                    ->label('Способ связи')
-                    ->formatStateUsing(fn (mixed $state): string => self::channelSummary($state))
+                Section::make('Дополнительные настройки')
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('purpose')
+                            ->label('Тип сообщения')
+                            ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
+                        TextEntry::make('conditions_summary')
+                            ->label('Дополнительные условия')
+                            ->state(fn (ScenarioRule $record): string => self::conditionsSummary($record->conditions))
+                            ->columnSpanFull(),
+                        TextEntry::make('channel_priority')
+                            ->label('Способ связи')
+                            ->formatStateUsing(fn (mixed $state): string => self::channelSummary($state))
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
                     ->columnSpanFull(),
                 TextEntry::make('actions_count')->label('Отправок'),
                 TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
@@ -134,6 +141,7 @@ final class ScenarioRuleResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('system_managed', false)
             ->with(['templateVersion.template'])
             ->withCount('actions');
     }
@@ -266,6 +274,7 @@ final class ScenarioRuleResource extends Resource
 
         return match ($type) {
             'client' => 'Клиент записи',
+            'assigned_specialist' => 'Назначенный специалист',
             'members' => 'Выбранные сотрудники',
             'roles' => 'Сотрудники по роли',
             default => 'Не указано',

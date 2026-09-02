@@ -19,6 +19,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
@@ -77,7 +78,7 @@ final class ScenarioActionResource extends Resource
                         return 'Сотрудник: '.($user instanceof User ? $user->name : 'недоступен');
                     }),
                 TextEntry::make('purpose')
-                    ->label('Назначение')
+                    ->label('Тип сообщения')
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 TextEntry::make('scheduled_for')->label('Запланировано')->dateTime('d.m.Y H:i'),
                 TextEntry::make('status')
@@ -102,6 +103,37 @@ final class ScenarioActionResource extends Resource
                         ->sortBy('priority')
                         ->map(fn (ScenarioDelivery $delivery): string => self::formatDelivery($delivery))
                         ->implode("\n"))
+                    ->columnSpanFull(),
+                Section::make('Технические детали')
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('technical_action_id')
+                            ->label('ID сообщения')
+                            ->state(fn (ScenarioAction $record): string => (string) $record->getKey()),
+                        TextEntry::make('technical_event_id')
+                            ->label('ID события')
+                            ->state(fn (ScenarioAction $record): string => (string) $record->scenario_event_id),
+                        TextEntry::make('technical_rule_id')
+                            ->label('ID авто-сообщения')
+                            ->state(fn (ScenarioAction $record): string => (string) $record->scenario_rule_id),
+                        TextEntry::make('technical_booking_id')
+                            ->label('ID записи')
+                            ->state(fn (ScenarioAction $record): string => $record->booking_id === null ? '—' : (string) $record->booking_id),
+                        TextEntry::make('technical_rule_key')
+                            ->label('Ключ авто-сообщения')
+                            ->state(fn (ScenarioAction $record): string => $record->rule?->rule_key ?: '—'),
+                        TextEntry::make('technical_event_key')
+                            ->label('Системное событие')
+                            ->state(fn (ScenarioAction $record): string => $record->event?->event_name?->value ?: '—'),
+                        TextEntry::make('technical_delivery_attempts')
+                            ->label('Попыток отправки')
+                            ->state(fn (ScenarioAction $record): string => (string) $record->deliveries->sum('attempt_count')),
+                        TextEntry::make('technical_error_codes')
+                            ->label('Коды ошибок')
+                            ->state(fn (ScenarioAction $record): string => self::errorCodes($record))
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
                     ->columnSpanFull(),
             ]);
     }
@@ -142,6 +174,7 @@ final class ScenarioActionResource extends Resource
                 'templateVersion.template',
                 'client',
                 'recipientUser',
+                'appointmentReminder',
                 'deliveries.attempts',
             ]);
     }
@@ -251,11 +284,24 @@ final class ScenarioActionResource extends Resource
         return match ($reason) {
             'current_conditions_not_met' => 'Условие больше не выполнено',
             'provider_suppressed' => 'Получатель отключил сообщения',
-            'recipient_unavailable' => 'Получатель недоступен',
-            'no_available_channel' => 'Нет доступного подтверждённого канала',
+            'recipient_unavailable', 'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => 'Нет доступного Telegram',
+            'booking_changed' => 'Запись уже изменилась',
+            'booking_meeting_pending' => 'Ссылка на Zoom ещё готовится',
+            'template_unavailable' => 'Сообщение больше недоступно',
             null => '—',
             default => 'Не удалось отправить',
         };
+    }
+
+    private static function errorCodes(ScenarioAction $record): string
+    {
+        $codes = $record->deliveries
+            ->flatMap(fn (ScenarioDelivery $delivery) => $delivery->attempts->pluck('error_code')->push($delivery->last_error_code))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $codes->isEmpty() ? 'Нет' : $codes->implode(', ');
     }
 
     private static function localeLabel(?string $locale): string

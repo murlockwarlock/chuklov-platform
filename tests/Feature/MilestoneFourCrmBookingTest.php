@@ -9,12 +9,15 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -120,6 +123,40 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_office_bookings_keep_the_default_address_or_store_a_per_booking_override(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::OfficeLocation, 'Адрес по умолчанию');
+
+        $defaultBooking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'default-office-address',
+        );
+        $overrideBooking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'override-office-address',
+            location: 'Другой адрес, кабинет 4',
+        );
+
+        self::assertSame('Адрес по умолчанию', $defaultBooking->location);
+        self::assertSame('Другой адрес, кабинет 4', $overrideBooking->location);
+
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::OfficeLocation, 'Новый адрес по умолчанию');
+
+        self::assertSame('Адрес по умолчанию', $defaultBooking->refresh()->location);
+        self::assertSame('Другой адрес, кабинет 4', $overrideBooking->refresh()->location);
     }
 
     public function test_view_booking_exposes_lifecycle_actions_when_authorized(): void

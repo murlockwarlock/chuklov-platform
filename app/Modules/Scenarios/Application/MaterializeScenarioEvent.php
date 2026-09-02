@@ -109,6 +109,7 @@ final class MaterializeScenarioEvent
                     ->where('organization_id', $event->organization_id)
                     ->where('trigger_event', $event->event_name->value)
                     ->where('is_enabled', true)
+                    ->where('system_managed', false)
                     ->with(['templateVersion.template'])
                     ->orderBy('id')
                     ->get();

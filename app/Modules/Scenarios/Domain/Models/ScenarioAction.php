@@ -31,6 +31,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'recipient_type',
     'client_id',
     'recipient_user_id',
+    'appointment_reminder_id',
+    'booking_id',
+    'booking_starts_at',
+    'kind',
     'template_version_id',
     'trigger_event',
     'rule_version',
@@ -88,6 +92,12 @@ class ScenarioAction extends Model
         return $this->belongsTo(User::class, 'recipient_user_id');
     }
 
+    /** @return BelongsTo<AppointmentReminder, $this> */
+    public function appointmentReminder(): BelongsTo
+    {
+        return $this->belongsTo(AppointmentReminder::class);
+    }
+
     /** @return HasMany<ScenarioDelivery, $this> */
     public function deliveries(): HasMany
     {
@@ -118,6 +128,9 @@ class ScenarioAction extends Model
             'suppressed_at' => 'datetime',
             'attempt_count' => 'integer',
             'rule_version' => 'integer',
+            'appointment_reminder_id' => 'integer',
+            'booking_id' => 'integer',
+            'booking_starts_at' => 'datetime',
         ];
     }
 }

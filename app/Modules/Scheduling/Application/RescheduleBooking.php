@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
@@ -33,6 +34,7 @@ final class RescheduleBooking
         private readonly RecordBookingEvent $events,
         private readonly BookingVideoMeetingLifecycle $videoMeetings,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -43,6 +45,7 @@ final class RescheduleBooking
         ?string $clientTimezone = null,
         ?string $reason = null,
         ?int $expectedEventVersion = null,
+        ?string $location = null,
     ): Booking {
         $this->authorization->authorize($actor, $booking);
         $reason = $this->normalizeReason($reason);
@@ -56,6 +59,7 @@ final class RescheduleBooking
             $clientTimezone,
             $reason,
             $expectedEventVersion,
+            $location,
             $organization,
         ): Booking {
             $lockedBooking = Booking::query()
@@ -128,6 +132,11 @@ final class RescheduleBooking
             }
 
             $oldValues = $this->events->snapshot($lockedBooking);
+
+            if ($actor instanceof User && $lockedBooking->visit_format !== VisitFormat::Online && $location !== null) {
+                $lockedBooking->forceFill(['location' => $this->normalizeLocation($location)]);
+            }
+
             $lockedBooking->forceFill([
                 'starts_at' => $slot->startsAt,
                 'ends_at' => $slot->endsAt,
@@ -157,11 +166,12 @@ final class RescheduleBooking
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
             );
-            $this->scenarioEvents->bookingRescheduled(
+            $scenarioEvent = $this->scenarioEvents->bookingRescheduled(
                 booking: $lockedBooking,
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->reminders->schedule($lockedBooking, $scenarioEvent);
             if ($lockedBooking->visit_format === VisitFormat::Online
                 && $lockedBooking->meeting_link_mode === MeetingLinkMode::Auto) {
                 $this->videoMeetings->scheduleReschedule($organization, $lockedBooking);
@@ -220,6 +230,17 @@ final class RescheduleBooking
         }
 
         return $reason;
+    }
+
+    private function normalizeLocation(?string $location): ?string
+    {
+        $location = trim((string) $location);
+
+        if (mb_strlen($location) > 500) {
+            throw ValidationException::withMessages(['location' => 'Адрес должен быть не длиннее 500 символов.']);
+        }
+
+        return $location === '' ? null : $location;
     }
 
     private function isBookingConflict(QueryException $exception): bool

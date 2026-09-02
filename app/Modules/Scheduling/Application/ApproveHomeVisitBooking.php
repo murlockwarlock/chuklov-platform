@@ -8,6 +8,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -33,6 +34,7 @@ class ApproveHomeVisitBooking
         private readonly CalculateAvailability $availability,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -130,11 +132,12 @@ class ApproveHomeVisitBooking
                 oldValues: $oldValues,
                 reason: $reason,
             );
-            $this->scenarioEvents->bookingConfirmed(
+            $scenarioEvent = $this->scenarioEvents->bookingConfirmed(
                 booking: $lockedBooking,
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->reminders->schedule($lockedBooking, $scenarioEvent);
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -190,6 +193,7 @@ class ApproveHomeVisitBooking
             'ends_at' => $booking->endsAtUtc()->toIso8601String(),
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
+            'location' => $booking->location,
             'event_version' => $booking->event_version,
         ];
     }

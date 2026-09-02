@@ -418,12 +418,13 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         ];
         $ruleKeys = ScenarioRule::query()
             ->where('organization_id', $organization->id)
+            ->where('system_managed', false)
             ->orderBy('rule_key')
             ->pluck('rule_key')
             ->all();
         self::assertSame($expectedRuleKeys, $ruleKeys);
         self::assertSame(count($expectedRuleKeys), count(array_unique($ruleKeys)));
-        self::assertSame(count($expectedRuleKeys), ScenarioRule::query()->where('organization_id', $organization->id)->count());
+        self::assertSame(count($expectedRuleKeys), ScenarioRule::query()->where('organization_id', $organization->id)->where('system_managed', false)->count());
         self::assertSame([
             'b2b-sales-call-ready:en',
             'b2b-sales-call-ready:ru',
@@ -452,6 +453,7 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'post-session-follow-up-72h:ru',
         ], NotificationTemplate::query()
             ->where('organization_id', $organization->id)
+            ->where('template_key', 'not like', 'appointment-reminder-%')
             ->orderBy('template_key')
             ->orderBy('locale')
             ->get(['template_key', 'locale'])

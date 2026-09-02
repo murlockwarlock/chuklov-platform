@@ -10,7 +10,7 @@ final class ListScenarioRules extends ListRecords
 {
     protected static string $resource = ScenarioRuleResource::class;
 
-    protected static ?string $title = 'Правила сообщений';
+    protected static ?string $title = 'Авто-сообщения';
 
     public function getBreadcrumbs(): array
     {
