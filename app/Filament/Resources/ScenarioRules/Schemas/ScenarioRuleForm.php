@@ -47,6 +47,7 @@ final class ScenarioRuleForm
                         Select::make('trigger_event')
                             ->label('Событие')
                             ->options([
+                                ScenarioEventType::BookingCreated->value => 'Новая заявка на запись',
                                 ScenarioEventType::BookingConfirmed->value => 'Запись подтверждена',
                                 ScenarioEventType::BookingCompleted->value => 'Клиент завершил визит',
                                 ScenarioEventType::OnboardingStarted->value => 'Клиент начал оформление',

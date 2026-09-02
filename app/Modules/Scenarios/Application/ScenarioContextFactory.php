@@ -31,6 +31,7 @@ final class ScenarioContextFactory
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
     {
         return match ($event->event_name) {
+            ScenarioEventType::BookingCreated => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingConfirmed => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),

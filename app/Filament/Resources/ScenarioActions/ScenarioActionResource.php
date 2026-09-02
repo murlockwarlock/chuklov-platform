@@ -169,6 +169,7 @@ final class ScenarioActionResource extends Resource
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
+            'booking.created' => 'После новой записи',
             'booking.completed' => 'После завершения визита',
             'onboarding.started' => 'После начала оформления',
             'finance.obligation.created' => 'После появления задолженности',

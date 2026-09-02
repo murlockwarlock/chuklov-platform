@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -41,6 +42,7 @@ class CreateBooking
         private readonly OrganizationFeatureGate $features,
         private readonly CalculateAvailability $availability,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly RecordScenarioEvent $scenarioEvents,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -254,6 +256,11 @@ class CreateBooking
                 'occurred_at' => now(),
             ]);
             $event->save();
+            $this->scenarioEvents->bookingCreated(
+                booking: $booking,
+                causationId: (string) $event->getKey(),
+                occurredAt: CarbonImmutable::instance($event->occurred_at),
+            );
 
             $idempotency->forceFill([
                 'booking_id' => $booking->getKey(),

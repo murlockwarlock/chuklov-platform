@@ -52,6 +52,7 @@ final class ScenarioRulesTable
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
+            ScenarioEventType::BookingCreated->value => 'После новой записи',
             ScenarioEventType::BookingConfirmed->value => 'После подтверждения',
             ScenarioEventType::BookingCompleted->value => 'После визита',
             ScenarioEventType::OnboardingStarted->value => 'После начала оформления',

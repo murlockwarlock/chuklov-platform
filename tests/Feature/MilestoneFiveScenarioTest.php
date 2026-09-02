@@ -10,6 +10,7 @@ use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -137,6 +138,48 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
         self::assertSame('https://zoom.us/j/ordinary-1?pwd=test-password', $message->actionButton->url);
         self::assertSame('Join meeting', $message->actionButton->text);
+    }
+
+    public function test_new_booking_notifies_client_and_assigned_specialist(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'booking-created-test', CarbonImmutable::now());
+
+        self::assertSame('booking.created', $event->event_name->value);
+        self::assertSame($booking->id, $event->payload['booking_id']);
+        self::assertSame($client->id, $event->payload['client_id']);
+        self::assertSame($specialist->id, $event->payload['specialist_id']);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->orderBy('recipient_type')
+            ->get();
+        self::assertCount(2, $actions);
+        self::assertSame($client->id, $actions->firstWhere('recipient_type', 'client')?->client_id);
+        self::assertSame($staff->id, $actions->firstWhere('recipient_type', 'internal')?->recipient_user_id);
+
+        foreach ($actions as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(2, $this->channel->messages);
+        self::assertEqualsCanonicalizing(
+            [$client->getKey().'-chat', $staffIdentity->external_id],
+            array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
+        );
+        self::assertStringContainsString('Your appointment request with '.$specialist->display_name, $this->channel->messages[0]->body);
+        self::assertStringContainsString('New appointment request from '.$client->full_name, $this->channel->messages[1]->body);
     }
 
     public function test_booking_completion_rolls_back_booking_history_and_scenario_event_together(): void

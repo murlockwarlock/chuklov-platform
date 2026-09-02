@@ -4,6 +4,7 @@ namespace App\Modules\Scenarios\Domain\Enums;
 
 enum ScenarioEventType: string
 {
+    case BookingCreated = 'booking.created';
     case BookingConfirmed = 'booking.confirmed';
     case BookingCompleted = 'booking.completed';
     case OnboardingStarted = 'onboarding.started';

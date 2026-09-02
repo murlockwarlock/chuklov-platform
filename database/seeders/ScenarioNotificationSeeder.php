@@ -22,6 +22,8 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedLocale($organization, 'ru', 'Спасибо за ваш визит, {{ client.full_name }}.');
                 $this->seedB2b($organization, 'en', 'Your B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}).');
                 $this->seedB2b($organization, 'ru', 'Разговор о развитии бизнеса с клиентом {{ client.full_name }} (№{{ sales_call.id }}) запланирован на {{ sales_call.local_date }} в {{ sales_call.local_time }} ({{ sales_call.timezone }}).');
+                $this->seedBookingRequest($organization, 'en', 'Your appointment request with {{ booking.specialist_name }} for {{ booking.service_name }} is received for {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}). We will confirm it soon.');
+                $this->seedBookingRequest($organization, 'ru', 'Ваша заявка на запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» принята на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Мы скоро подтвердим запись.');
                 $this->seedBookingConfirmation($organization, 'en', 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} is confirmed for {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).');
                 $this->seedBookingConfirmation($organization, 'ru', 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» подтверждена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}).');
                 $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
@@ -215,6 +217,73 @@ final class ScenarioNotificationSeeder extends Seeder
         }
     }
 
+    private function seedBookingRequest(Organization $organization, string $locale, string $body): void
+    {
+        $version = $this->ensureTransactionalTemplate(
+            organization: $organization,
+            templateKey: 'booking-created',
+            locale: $locale,
+            name: 'Booking request received',
+            body: $body,
+            variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+        );
+        $ruleKey = 'booking-created-client-'.$locale;
+
+        if (! ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $ruleKey)->exists()) {
+            $rule = new ScenarioRule;
+            $rule->forceFill([
+                'organization_id' => $organization->getKey(),
+                'rule_key' => $ruleKey,
+                'name' => 'Booking request received by client ('.$locale.')',
+                'trigger_event' => ScenarioEventType::BookingCreated->value,
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $version->getKey(),
+                'max_occurrences' => 1,
+                'repeat_interval_value' => null,
+                'repeat_interval_unit' => null,
+                'version' => 1,
+            ])->save();
+        }
+
+        if ($locale !== 'en' || ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', 'booking-created-specialist')->exists()) {
+            return;
+        }
+
+        $specialistVersion = $this->ensureTransactionalTemplate(
+            organization: $organization,
+            templateKey: 'booking-created-specialist',
+            locale: 'en',
+            name: 'New booking request for specialist',
+            body: 'New appointment request from {{ client.full_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
+            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+        );
+        $rule = new ScenarioRule;
+        $rule->forceFill([
+            'organization_id' => $organization->getKey(),
+            'rule_key' => 'booking-created-specialist',
+            'name' => 'New booking request for specialist',
+            'trigger_event' => ScenarioEventType::BookingCreated->value,
+            'is_enabled' => true,
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'purpose' => ScenarioRulePurpose::Transactional->value,
+            'conditions' => [],
+            'recipient_strategy' => ['type' => 'assigned_specialist'],
+            'channel_priority' => ['telegram'],
+            'template_version_id' => $specialistVersion->getKey(),
+            'max_occurrences' => 1,
+            'repeat_interval_value' => null,
+            'repeat_interval_unit' => null,
+            'version' => 1,
+        ])->save();
+    }
+
     private function seedBookingConfirmation(Organization $organization, string $locale, string $body): void
     {
         $version = $this->ensureTransactionalTemplate(
@@ -227,24 +296,54 @@ final class ScenarioNotificationSeeder extends Seeder
         );
         $ruleKey = 'booking-confirmed-client-'.$locale;
 
-        if (ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $ruleKey)->exists()) {
+        if (! ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $ruleKey)->exists()) {
+            $rule = new ScenarioRule;
+            $rule->forceFill([
+                'organization_id' => $organization->getKey(),
+                'rule_key' => $ruleKey,
+                'name' => 'Booking confirmed for client ('.$locale.')',
+                'trigger_event' => ScenarioEventType::BookingConfirmed->value,
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $version->getKey(),
+                'max_occurrences' => 1,
+                'repeat_interval_value' => null,
+                'repeat_interval_unit' => null,
+                'version' => 1,
+            ])->save();
+        }
+
+        if ($locale !== 'en' || ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', 'booking-confirmed-specialist')->exists()) {
             return;
         }
 
+        $specialistVersion = $this->ensureTransactionalTemplate(
+            organization: $organization,
+            templateKey: 'booking-confirmed-specialist',
+            locale: 'en',
+            name: 'Booking confirmed for specialist',
+            body: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} is confirmed for {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
+            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+        );
         $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
-            'rule_key' => $ruleKey,
-            'name' => 'Booking confirmed for client ('.$locale.')',
+            'rule_key' => 'booking-confirmed-specialist',
+            'name' => 'Booking confirmed for specialist',
             'trigger_event' => ScenarioEventType::BookingConfirmed->value,
             'is_enabled' => true,
             'delay_value' => 0,
             'delay_unit' => 'minutes',
             'purpose' => ScenarioRulePurpose::Transactional->value,
-            'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
-            'recipient_strategy' => ['type' => 'client'],
+            'conditions' => [],
+            'recipient_strategy' => ['type' => 'assigned_specialist'],
             'channel_priority' => ['telegram'],
-            'template_version_id' => $version->getKey(),
+            'template_version_id' => $specialistVersion->getKey(),
             'max_occurrences' => 1,
             'repeat_interval_value' => null,
             'repeat_interval_unit' => null,

@@ -69,6 +69,10 @@ final class ScenarioActionsTable
     {
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
-        return $value === 'booking.completed' ? 'После визита' : 'Событие';
+        return match ($value) {
+            'booking.created' => 'После новой записи',
+            'booking.completed' => 'После визита',
+            default => 'Событие',
+        };
     }
 }

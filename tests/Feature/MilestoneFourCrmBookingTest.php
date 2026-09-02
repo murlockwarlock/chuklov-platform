@@ -12,6 +12,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -66,6 +67,12 @@ class MilestoneFourCrmBookingTest extends TestCase
         $booking = Booking::query()->sole();
         self::assertSame($organization->getKey(), $booking->organization_id);
         self::assertSame($client->getKey(), $booking->client_id);
+        $scenarioEvent = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.created')
+            ->where('aggregate_id', (string) $booking->getKey())
+            ->sole();
+        self::assertSame($booking->getKey(), $scenarioEvent->payload['booking_id']);
 
         Livewire::actingAs($admin)
             ->test(CreateBooking::class)
@@ -76,6 +83,7 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, $booking->fresh()->events()->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
     }
 
     public function test_crm_booking_creation_requires_manage_scheduling_permission(): void

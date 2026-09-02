@@ -3,6 +3,7 @@
 ## 2026-09-02 — Telegram meeting notifications and specialist delivery settings
 
 - Telegram notifications now keep meeting links in inline buttons while the message body contains the appointment date and time for B2B and ordinary online bookings. CRM specialist settings accept an organization-scoped Telegram ID and a global notification toggle; the toggle is rechecked before delivery for every internal scenario recipient.
+- Ordinary booking requests now atomically create a durable scenario event, notifying the client and assigned specialist; confirmed bookings also notify the assigned specialist while existing client notifications remain enabled.
 
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 
