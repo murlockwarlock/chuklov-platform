@@ -384,7 +384,7 @@ run_queue_contract_probe() {
     local probe_environment="$5"
     local output
 
-    if ! output="$(docker run --rm --network "$staging_network" --env-file "$probe_environment" \
+    if ! output="$(docker run --rm --interactive --network "$staging_network" --env-file "$probe_environment" \
         --env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php' \
         -v "$source:/app:ro" \
         -v "$root/shared/storage:/app/storage:ro" \

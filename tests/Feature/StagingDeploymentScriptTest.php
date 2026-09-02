@@ -56,6 +56,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('php -- --check="$check" < "$queue_probe_script"', $script);
         self::assertStringNotContainsString('php -- < "$queue_probe_script"', $script);
         self::assertStringContainsString('--network "$staging_network"', $script);
+        self::assertStringContainsString('docker run --rm --interactive --network "$staging_network"', $script);
         self::assertStringContainsString("--env 'APP_CONFIG_CACHE=/app/bootstrap/cache/config.php'", $script);
         self::assertStringContainsString('compose_service_environment_file', $script);
         self::assertStringContainsString('--env-file "$probe_environment"', $script);
