@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-02 — CRM operator marketing consent
+
+- The client CRM card now exposes permission-checked actions to record or revoke marketing consent as append-only records, requiring a confirmed evidence source and consent version. The latest consent state and safe audit details refresh immediately in the client card and remain authoritative for broadcast eligibility.
+
 ## 2026-09-02 — Telegram meeting notifications and specialist delivery settings
 
 - Telegram notifications now keep meeting links in inline buttons while the message body contains the appointment date and time for B2B and ordinary online bookings. CRM specialist settings accept an organization-scoped Telegram ID and a global notification toggle; the toggle is rechecked before delivery for every internal scenario recipient.
