@@ -14,8 +14,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read Client $client
  * @property-read Organization $organization
  * @property ChannelIdentityStatus $verification_status
+ * @property string|null $external_username
  */
-#[Fillable(['channel', 'external_id'])]
+#[Fillable(['channel', 'external_id', 'external_username'])]
 class ClientChannelIdentity extends Model
 {
     /** @use HasFactory<ClientChannelIdentityFactory> */

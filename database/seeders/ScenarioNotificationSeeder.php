@@ -192,16 +192,16 @@ final class ScenarioNotificationSeeder extends Seeder
             $specialistVersion = $this->ensureTransactionalTemplate(
                 organization: $organization,
                 templateKey: 'b2b-sales-call-ready-specialist',
-                locale: 'en',
-                name: 'B2B sales call ready for specialist',
-                body: 'B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}). Open CRM: {{ sales_call.crm_url }}',
-                variables: ['client.full_name', 'sales_call.id', 'sales_call.local_date', 'sales_call.local_time', 'sales_call.timezone', 'sales_call.crm_url'],
+                locale: 'ru',
+                name: 'Готовый B2B-разговор для специалиста',
+                body: 'Разговор о развитии бизнеса с клиентом {{ client.full_name }} (№{{ sales_call.id }}) запланирован на {{ sales_call.local_date }} в {{ sales_call.local_time }} ({{ sales_call.timezone }}). Telegram клиента: {{ client.telegram_contact }}. Открыть CRM: {{ sales_call.crm_url }}',
+                variables: ['client.full_name', 'client.telegram_contact', 'sales_call.id', 'sales_call.local_date', 'sales_call.local_time', 'sales_call.timezone', 'sales_call.crm_url'],
             );
             $rule = new ScenarioRule;
             $rule->forceFill([
                 'organization_id' => $organization->getKey(),
                 'rule_key' => 'b2b-sales-call-ready-specialist',
-                'name' => 'B2B sales call ready for specialist',
+                'name' => 'Готовый B2B-разговор для специалиста',
                 'trigger_event' => ScenarioEventType::B2bSalesCallReady->value,
                 'is_enabled' => true,
                 'delay_value' => 0,
@@ -260,16 +260,16 @@ final class ScenarioNotificationSeeder extends Seeder
         $specialistVersion = $this->ensureTransactionalTemplate(
             organization: $organization,
             templateKey: 'booking-created-specialist',
-            locale: 'en',
-            name: 'New booking request for specialist',
-            body: 'New appointment request from {{ client.full_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
-            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            locale: 'ru',
+            name: 'Новая заявка на запись для специалиста',
+            body: 'Новая заявка на запись от клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
             'rule_key' => 'booking-created-specialist',
-            'name' => 'New booking request for specialist',
+            'name' => 'Новая заявка на запись для специалиста',
             'trigger_event' => ScenarioEventType::BookingCreated->value,
             'is_enabled' => true,
             'delay_value' => 0,
@@ -327,16 +327,16 @@ final class ScenarioNotificationSeeder extends Seeder
         $specialistVersion = $this->ensureTransactionalTemplate(
             organization: $organization,
             templateKey: 'booking-confirmed-specialist',
-            locale: 'en',
-            name: 'Booking confirmed for specialist',
-            body: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} is confirmed for {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
-            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            locale: 'ru',
+            name: 'Подтверждение записи для специалиста',
+            body: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» подтверждена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
             'rule_key' => 'booking-confirmed-specialist',
-            'name' => 'Booking confirmed for specialist',
+            'name' => 'Подтверждение записи для специалиста',
             'trigger_event' => ScenarioEventType::BookingConfirmed->value,
             'is_enabled' => true,
             'delay_value' => 0,
@@ -364,7 +364,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} was rescheduled to {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
                 'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» перенесена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}).',
             ],
-            specialistBody: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} was rescheduled to {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
+            specialistBody: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» перенесена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
         );
     }
 
@@ -379,7 +379,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}) was cancelled.',
                 'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}) отменена.',
             ],
-            specialistBody: 'Appointment with {{ client.full_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}) was cancelled.',
+            specialistBody: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}) отменена. Telegram клиента: {{ client.telegram_contact }}.',
         );
     }
 
@@ -415,10 +415,10 @@ final class ScenarioNotificationSeeder extends Seeder
         $specialistVersion = $this->ensureTransactionalTemplate(
             organization: $organization,
             templateKey: $templateKey.'-specialist',
-            locale: 'en',
-            name: $templateKey.' for specialist',
+            locale: 'ru',
+            name: $templateKey.' для специалиста',
             body: $specialistBody,
-            variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
         );
         $this->seedBookingLifecycleRule(
             organization: $organization,

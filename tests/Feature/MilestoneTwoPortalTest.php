@@ -75,7 +75,7 @@ class MilestoneTwoPortalTest extends TestCase
         $this->useTelegramToken();
 
         $response = $this->post(route('portal.telegram.auth'), [
-            'initData' => TelegramInitData::make(100001, now()->timestamp, firstName: 'New'),
+            'initData' => TelegramInitData::make(100001, now()->timestamp, firstName: 'New', username: 'new_client'),
             'organization_id' => 999999,
             'client_id' => 999999,
         ]);
@@ -87,6 +87,7 @@ class MilestoneTwoPortalTest extends TestCase
         self::assertSame('New Client', $client->full_name);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
         self::assertSame('100001', $identity->external_id);
+        self::assertSame('new_client', $identity->external_username);
         $response->assertSessionHas('client_portal.client_id', $client->id);
 
         $this->get(route('portal.home'))

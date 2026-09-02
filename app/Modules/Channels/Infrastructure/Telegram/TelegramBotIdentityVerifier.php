@@ -33,6 +33,7 @@ final class TelegramBotIdentityVerifier
             externalId: (string) $user->id,
             displayName: mb_substr($displayName, 0, 160),
             language: $language,
+            username: $user->username,
         );
     }
 }

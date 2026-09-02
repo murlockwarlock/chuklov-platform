@@ -41,7 +41,7 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
         $token = $this->tokenFromUrl($url);
         self::assertStringNotContainsString($token, ClientTelegramAuthenticationRequest::query()->sole()->toJson());
 
-        $bot = $this->fakeBot(720001, 'Новый', 'Клиент');
+        $bot = $this->fakeBot(720001, 'Новый', 'Клиент', username: 'new_client');
         $bot->hearText('/start web_'.$token)->reply();
         $bot->assertCalled('sendMessage', 1)
             ->assertReplyText('Вход подтверждён. Вернитесь в браузер.');
@@ -50,6 +50,7 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
         $identity = ClientChannelIdentity::query()->sole();
         self::assertSame($client->id, $identity->client_id);
         self::assertSame('720001', $identity->external_id);
+        self::assertSame('new_client', $identity->external_username);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
 
         $this->getJson(route('portal.telegram.web.status'))
@@ -72,11 +73,12 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
         ClientChannelIdentity::factory()->forClient($client)->create([
             'channel' => 'telegram',
             'external_id' => '720002',
+            'external_username' => 'old_client',
             'verification_status' => ChannelIdentityStatus::Verified,
         ]);
 
         $this->post(route('portal.telegram.web.request'))->assertRedirect();
-        $bot = $this->fakeBot(720002, 'Другое', 'Имя');
+        $bot = $this->fakeBot(720002, 'Другое', 'Имя', username: 'updated_client');
         $bot->hearText('/start web_'.$this->tokenFromUrl((string) session('telegram_web_auth.url')))->reply();
 
         $this->getJson(route('portal.telegram.web.status'))
@@ -85,6 +87,7 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
 
         self::assertSame(1, Client::query()->count());
         self::assertSame('Сохранённое имя', $client->refresh()->full_name);
+        self::assertSame('updated_client', ClientChannelIdentity::query()->sole()->external_username);
     }
 
     public function test_consumed_web_auth_can_retry_acquisition_finalization_after_a_process_boundary(): void
@@ -195,7 +198,7 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
         return substr($payload, 4);
     }
 
-    private function fakeBot(int $id, string $firstName, string $lastName): Nutgram
+    private function fakeBot(int $id, string $firstName, string $lastName, ?string $username = null): Nutgram
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
@@ -205,6 +208,7 @@ class MilestoneTwoTelegramWebAuthenticationTest extends TestCase
             is_bot: false,
             first_name: $firstName,
             last_name: $lastName,
+            username: $username,
             language_code: 'ru',
         ));
 

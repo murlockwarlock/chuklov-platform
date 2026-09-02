@@ -80,12 +80,15 @@ class ConnectTelegramClientIdentity
                     'client_id' => $client->getKey(),
                     'channel' => 'telegram',
                     'external_id' => $verifiedIdentity->externalId,
+                    'external_username' => $verifiedIdentity->username,
                 ]);
             }
 
             if ($identity->verification_status === ChannelIdentityStatus::Revoked) {
                 throw new AuthorizationException('The Telegram identity is revoked.');
             }
+
+            $identity->forceFill(['external_username' => $verifiedIdentity->username]);
 
             if ($identity->verification_status !== ChannelIdentityStatus::Verified) {
                 $identity->forceFill([
@@ -106,6 +109,8 @@ class ConnectTelegramClientIdentity
                         'verification_method' => 'telegram_connection_token',
                     ],
                 );
+            } elseif ($identity->isDirty()) {
+                $identity->save();
             }
 
             $linkToken->forceFill(['consumed_at' => now()]);

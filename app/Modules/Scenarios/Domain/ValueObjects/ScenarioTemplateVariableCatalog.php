@@ -11,6 +11,7 @@ final class ScenarioTemplateVariableCatalog
     private const ALLOWED = [
         'client.full_name',
         'client.language',
+        'client.telegram_contact',
         'booking.id',
         'booking.status',
         'booking.visit_format',
@@ -63,6 +64,7 @@ final class ScenarioTemplateVariableCatalog
         return [
             'client.full_name' => 'Имя клиента',
             'client.language' => 'Язык клиента',
+            'client.telegram_contact' => 'Telegram клиента',
             'booking.id' => 'Номер записи',
             'booking.status' => 'Статус записи',
             'booking.visit_format' => 'Формат визита',

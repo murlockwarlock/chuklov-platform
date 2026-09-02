@@ -60,7 +60,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
                 type: 'internal',
                 clientId: null,
                 userId: (int) $membership->user_id,
-                locale: 'en',
+                locale: 'ru',
             ),
         )->values()->all());
     }
@@ -86,7 +86,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
                 type: 'internal',
                 clientId: null,
                 userId: (int) $membership->user_id,
-                locale: 'en',
+                locale: 'ru',
             ))
             ->values()
             ->all());
@@ -118,7 +118,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             type: 'internal',
             clientId: null,
             userId: (int) $userId,
-            locale: 'en',
+            locale: 'ru',
         )];
     }
 

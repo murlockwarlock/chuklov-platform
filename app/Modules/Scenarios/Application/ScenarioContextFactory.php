@@ -11,7 +11,9 @@ use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -61,6 +63,10 @@ final class ScenarioContextFactory
             ],
             'recipient_locale' => $recipient->locale,
         ];
+
+        if ($recipient->type === 'internal') {
+            $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
+        }
 
         if ($context->booking !== null) {
             $renderContext['booking'] = [
@@ -269,6 +275,33 @@ final class ScenarioContextFactory
     private function bookingTimezone(Booking $booking): string
     {
         return (string) ($booking->client_timezone ?: $booking->client->timezone ?: $booking->schedule_timezone);
+    }
+
+    private function clientTelegramContact(Client $client): string
+    {
+        $identity = ClientChannelIdentity::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->where('channel', 'telegram')
+            ->where('verification_status', ChannelIdentityStatus::Verified->value)
+            ->first();
+
+        if ($identity === null) {
+            return 'не указан';
+        }
+
+        $username = trim((string) $identity->external_username);
+        $externalId = trim((string) $identity->external_id);
+
+        if ($username !== '' && $externalId !== '') {
+            return '@'.ltrim($username, '@').' (ID: '.$externalId.')';
+        }
+
+        if ($username !== '') {
+            return '@'.ltrim($username, '@');
+        }
+
+        return $externalId !== '' ? 'ID: '.$externalId : 'не указан';
     }
 
     private function payloadId(ScenarioEvent $event, string $key): int

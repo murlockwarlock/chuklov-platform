@@ -179,7 +179,11 @@ final class MilestoneFiveScenarioTest extends TestCase
             array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
         );
         self::assertStringContainsString('Your appointment request with '.$specialist->display_name, $this->channel->messages[0]->body);
-        self::assertStringContainsString('New appointment request from '.$client->full_name, $this->channel->messages[1]->body);
+        self::assertStringContainsString('Новая заявка на запись от клиента '.$client->full_name, $this->channel->messages[1]->body);
+        self::assertStringContainsString(
+            '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
+            $this->channel->messages[1]->body,
+        );
     }
 
     public function test_rescheduled_and_cancelled_bookings_notify_with_local_date_format(): void
@@ -812,6 +816,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         ClientChannelIdentity::factory()->forClient($client)->create([
             'channel' => 'telegram',
             'external_id' => (string) $client->id.'-chat',
+            'external_username' => 'client_'.$client->id,
             'verification_status' => ChannelIdentityStatus::Verified->value,
             'verification_method' => 'test',
             'verified_at' => now(),
