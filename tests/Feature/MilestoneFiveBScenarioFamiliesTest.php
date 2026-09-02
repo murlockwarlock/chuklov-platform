@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -124,12 +125,21 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         $actions = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->whereIn('scenario_rule_id', $rules->pluck('id'))
+            ->with('templateVersion.template')
             ->orderBy('scheduled_for')
             ->get();
 
         self::assertSame([24, 48, 72], $actions->pluck('scheduled_for')->map(
             static fn ($scheduledFor): int => abs($eventOccurredAt->diffInHours(CarbonImmutable::parse((string) $scheduledFor))),
         )->all());
+        self::assertSame(
+            [
+                'post-session-follow-up-24h',
+                'post-session-follow-up-48h',
+                'post-session-follow-up-72h',
+            ],
+            $actions->map(static fn (ScenarioAction $action): string => $action->templateVersion->template->template_key)->all(),
+        );
 
         foreach ($actions as $action) {
             app(ExecuteScenarioAction::class)->handle($action->getKey());
@@ -145,6 +155,14 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         }
 
         self::assertCount(3, $this->channel->messages);
+        self::assertSame(
+            [
+                'Как вы себя чувствуете после визита, '.$client->full_name.'? Если появились вопросы, напишите нам.',
+                'Надеемся, визит был полезен, '.$client->full_name.'. Поделитесь впечатлениями, когда будет удобно.',
+                $client->full_name.', если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
+            ],
+            array_map(static fn (NotificationMessage $message): string => $message->body, $this->channel->messages),
+        );
     }
 
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void
@@ -426,6 +444,12 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'booking-rescheduled-specialist:ru',
             'post-session-follow-up:en',
             'post-session-follow-up:ru',
+            'post-session-follow-up-24h:en',
+            'post-session-follow-up-24h:ru',
+            'post-session-follow-up-48h:en',
+            'post-session-follow-up-48h:ru',
+            'post-session-follow-up-72h:en',
+            'post-session-follow-up-72h:ru',
         ], NotificationTemplate::query()
             ->where('organization_id', $organization->id)
             ->orderBy('template_key')
@@ -441,6 +465,53 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
                 ->orderBy('delay_value')
                 ->pluck('delay_value')
                 ->all(),
+        );
+    }
+
+    public function test_post_session_follow_up_migration_moves_legacy_rules_to_distinct_templates(): void
+    {
+        $organization = Organization::factory()->create();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'post-session-follow-up',
+            'locale' => 'ru',
+        ]);
+        $version = NotificationTemplateVersion::factory()->forTemplate($template)->create([
+            'body' => 'Спасибо за ваш визит, {{ client.full_name }}.',
+        ]);
+
+        foreach ([24, 48, 72] as $delay) {
+            ScenarioRule::factory()->forOrganization($organization)->usingTemplate($version)->create([
+                'rule_key' => 'post-session-follow-up-'.$delay.'h-ru',
+                'delay_value' => $delay,
+                'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => 'ru']],
+            ]);
+        }
+
+        $migration = require base_path('database/migrations/2026_09_02_110009_distinguish_post_session_follow_up_templates.php');
+        $migration->up();
+
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-ru')
+            ->with('templateVersion.template')
+            ->orderBy('delay_value')
+            ->get();
+
+        self::assertSame(
+            [
+                'post-session-follow-up-24h',
+                'post-session-follow-up-48h',
+                'post-session-follow-up-72h',
+            ],
+            $rules->map(static fn (ScenarioRule $rule): string => $rule->templateVersion->template->template_key)->all(),
+        );
+        self::assertSame(
+            [
+                'Как вы себя чувствуете после визита, {{ client.full_name }}? Если появились вопросы, напишите нам.',
+                'Надеемся, визит был полезен, {{ client.full_name }}. Поделитесь впечатлениями, когда будет удобно.',
+                '{{ client.full_name }}, если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
+            ],
+            $rules->map(static fn (ScenarioRule $rule): string => $rule->templateVersion->body)->all(),
         );
     }
 

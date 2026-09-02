@@ -9,6 +9,7 @@
 - CRM booking lists now default to newest-created records with deterministic ID ordering, and successful lifecycle actions refresh their mounted record immediately. Online bookings use the existing Zoom provider for durable automatic create, reschedule, and cancellation when a complete active credential is configured; manual links remain supported.
 - Confirmed automatic online-booking notifications wait for a ready meeting link instead of being discarded, while verified Telegram interactions refresh stored usernames and specialist messages offer a Telegram profile action when only the verified numeric ID is available.
 - The client portal now refreshes automatic online bookings while Zoom is preparing, exposes the ready provider join link in the booking details, and no longer renders the unavailable specialist-contact control.
+- Post-session follow-up notifications now use distinct Russian and English messages for +24h, +48h, and +72h; already materialized actions retain their original immutable template snapshots.
 
 ## 2026-09-02 — M11D Track B Zoom account/host affinity implementation candidate
 

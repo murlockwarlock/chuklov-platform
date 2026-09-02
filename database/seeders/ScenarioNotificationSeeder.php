@@ -35,67 +35,58 @@ final class ScenarioNotificationSeeder extends Seeder
 
     private function seedLocale(Organization $organization, string $locale, string $body): void
     {
-        $template = NotificationTemplate::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('template_key', 'post-session-follow-up')
-            ->where('locale', $locale)
-            ->first();
-
-        if ($template === null) {
-            $template = new NotificationTemplate;
-            $template->forceFill([
-                'organization_id' => $organization->getKey(),
-                'template_key' => 'post-session-follow-up',
-                'locale' => $locale,
-                'name' => 'Post-session follow-up',
-                'purpose' => ScenarioRulePurpose::Service->value,
-                'is_active' => true,
-            ])->save();
-        }
-
-        $version = NotificationTemplateVersion::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('template_id', $template->getKey())
-            ->where('version', 1)
-            ->first();
-
-        if ($version === null) {
-            $version = new NotificationTemplateVersion;
-            $version->forceFill([
-                'organization_id' => $organization->getKey(),
-                'template_id' => $template->getKey(),
-                'version' => 1,
-                'status' => NotificationTemplateStatus::Published->value,
-                'body' => $body,
-                'variables' => ['client.full_name'],
-                'created_by_user_id' => null,
-                'published_at' => now(),
-            ])->save();
-        }
+        $this->ensureServiceTemplate(
+            organization: $organization,
+            templateKey: 'post-session-follow-up',
+            locale: $locale,
+            name: 'Post-session follow-up',
+            body: $body,
+            variables: ['client.full_name'],
+        );
 
         foreach ([
             [
+                'template_key' => 'post-session-follow-up-24h',
                 'key' => 'post-session-follow-up-24h-'.$locale,
                 'name' => 'Post-session follow-up +24h ('.$locale.')',
                 'delay' => 24,
+                'body' => $locale === 'ru'
+                    ? 'Как вы себя чувствуете после визита, {{ client.full_name }}? Если появились вопросы, напишите нам.'
+                    : 'How are you feeling after your visit, {{ client.full_name }}? If any questions come up, write to us.',
                 'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
             ],
             [
+                'template_key' => 'post-session-follow-up-48h',
                 'key' => 'post-session-follow-up-48h-'.$locale,
                 'name' => 'Post-session follow-up +48h ('.$locale.')',
                 'delay' => 48,
+                'body' => $locale === 'ru'
+                    ? 'Надеемся, визит был полезен, {{ client.full_name }}. Поделитесь впечатлениями, когда будет удобно.'
+                    : 'We hope your visit was useful, {{ client.full_name }}. Share your impressions when convenient.',
                 'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
             ],
             [
+                'template_key' => 'post-session-follow-up-72h',
                 'key' => 'post-session-follow-up-72h-'.$locale,
                 'name' => 'Post-session follow-up +72h ('.$locale.')',
                 'delay' => 72,
+                'body' => $locale === 'ru'
+                    ? '{{ client.full_name }}, если после визита появились новые мысли или вопросы, мы готовы вас поддержать.'
+                    : '{{ client.full_name }}, if new thoughts or questions came up after your visit, we are here to support you.',
                 'conditions' => [
                     ['type' => 'client.language', 'operator' => 'equals', 'value' => $locale],
                     ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'completed'],
                 ],
             ],
         ] as $seed) {
+            $version = $this->ensureServiceTemplate(
+                organization: $organization,
+                templateKey: $seed['template_key'],
+                locale: $locale,
+                name: $seed['name'],
+                body: $seed['body'],
+                variables: ['client.full_name'],
+            );
             $rule = ScenarioRule::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('rule_key', $seed['key'])
@@ -543,6 +534,26 @@ final class ScenarioNotificationSeeder extends Seeder
     }
 
     /** @param list<string> $variables */
+    private function ensureServiceTemplate(
+        Organization $organization,
+        string $templateKey,
+        string $locale,
+        string $name,
+        string $body,
+        array $variables,
+    ): NotificationTemplateVersion {
+        return $this->ensureTemplateVersion(
+            organization: $organization,
+            templateKey: $templateKey,
+            locale: $locale,
+            name: $name,
+            body: $body,
+            variables: $variables,
+            purpose: ScenarioRulePurpose::Service,
+        );
+    }
+
+    /** @param list<string> $variables */
     private function ensureTransactionalTemplate(
         Organization $organization,
         string $templateKey,
@@ -550,6 +561,27 @@ final class ScenarioNotificationSeeder extends Seeder
         string $name,
         string $body,
         array $variables,
+    ): NotificationTemplateVersion {
+        return $this->ensureTemplateVersion(
+            organization: $organization,
+            templateKey: $templateKey,
+            locale: $locale,
+            name: $name,
+            body: $body,
+            variables: $variables,
+            purpose: ScenarioRulePurpose::Transactional,
+        );
+    }
+
+    /** @param list<string> $variables */
+    private function ensureTemplateVersion(
+        Organization $organization,
+        string $templateKey,
+        string $locale,
+        string $name,
+        string $body,
+        array $variables,
+        ScenarioRulePurpose $purpose,
     ): NotificationTemplateVersion {
         $template = NotificationTemplate::query()
             ->where('organization_id', $organization->getKey())
@@ -564,7 +596,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'template_key' => $templateKey,
                 'locale' => $locale,
                 'name' => $name,
-                'purpose' => ScenarioRulePurpose::Transactional->value,
+                'purpose' => $purpose->value,
                 'is_active' => true,
             ])->save();
         }
