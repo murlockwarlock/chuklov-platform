@@ -9,6 +9,7 @@ use Filament\Forms\Components\RichEditor\RichEditorTool;
 
 final class RichTextEditor
 {
+    /** @param array<string, string>|Closure|null $mergeTags */
     public static function make(string $name, array|Closure|null $mergeTags = null): RichEditor
     {
         $toolbarButtons = [

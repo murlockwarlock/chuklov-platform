@@ -59,12 +59,12 @@ final class EditNotificationTemplate extends EditRecord
         ]);
     }
 
-    protected function getRedirectUrl(): ?string
+    protected function getRedirectUrl(): string
     {
         return NotificationTemplateResource::getUrl('view', ['record' => $this->getRecord()]);
     }
 
-    protected function getSavedNotificationTitle(): ?string
+    protected function getSavedNotificationTitle(): string
     {
         return 'Шаблон сохранён';
     }
