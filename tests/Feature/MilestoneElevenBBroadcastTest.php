@@ -445,6 +445,50 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame(0, $copy->audience_count);
     }
 
+    public function test_run_again_starts_a_new_campaign_and_opens_its_view(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->callAction('runAgain')
+            ->assertNotified('Рассылка отправлена')
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => BroadcastCampaign::query()->latest('id')->firstOrFail()]));
+
+        $copy = BroadcastCampaign::query()->where('id', '!=', $campaign->getKey())->latest('id')->firstOrFail();
+
+        self::assertSame(BroadcastCampaignState::Completed, $copy->state);
+        self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $copy->getKey())->where('kind', 'production')->count());
+        self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
+    }
+
+    public function test_edit_and_rerun_keeps_the_copy_as_a_draft(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->callAction('editAndRerun');
+        $copy = BroadcastCampaign::query()->where('id', '!=', $campaign->getKey())->latest('id')->firstOrFail();
+
+        $component->assertRedirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+        self::assertSame(BroadcastCampaignState::Draft, $copy->state);
+        self::assertSame(0, BroadcastRecipient::query()->where('campaign_id', $copy->getKey())->count());
+    }
+
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void
     {
         [$organization, $actor] = $this->fixture();

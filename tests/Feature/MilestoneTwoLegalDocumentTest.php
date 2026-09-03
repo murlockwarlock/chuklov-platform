@@ -19,6 +19,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Security\Domain\Models\AuditEvent;
+use Database\Seeders\LegalDocumentSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,25 @@ use Tests\TestCase;
 class MilestoneTwoLegalDocumentTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_default_legal_document_seed_is_complete_and_idempotent(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+
+        app(LegalDocumentSeeder::class)->run();
+        app(LegalDocumentSeeder::class)->run();
+
+        $documents = LegalDocument::query()
+            ->where('organization_id', $organization->getKey())
+            ->get();
+
+        self::assertCount(4, $documents);
+        self::assertSame(['marketing', 'medical_disclaimer', 'offer', 'privacy'], $documents->pluck('document_type')->sort()->values()->all());
+        self::assertSame(4, $documents->where('status', LegalDocumentStatus::Draft)->count());
+        self::assertSame(3, $documents->where('is_required', true)->count());
+        self::assertSame(1, $documents->where('is_required', false)->count());
+        self::assertTrue($documents->every(static fn (LegalDocument $document): bool => str_starts_with($document->content, 'Черновик')));
+    }
 
     public function test_platform_managed_draft_can_change_before_publish_but_published_content_is_immutable(): void
     {

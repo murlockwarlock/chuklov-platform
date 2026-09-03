@@ -20,6 +20,9 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Chuklov', 'timezone' => 'Asia/Almaty'],
         );
 
-        $this->call(ScenarioNotificationSeeder::class);
+        $this->call([
+            LegalDocumentSeeder::class,
+            ScenarioNotificationSeeder::class,
+        ]);
     }
 }

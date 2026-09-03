@@ -57,10 +57,27 @@ final class ViewBroadcastCampaign extends ViewRecord
                 ->label('Запустить снова')
                 ->icon('heroicon-o-arrow-path')
                 ->color('primary')
+                ->requiresConfirmation()
+                ->modalDescription('Будет создана копия этой рассылки и сразу запущена. После запуска изменить её нельзя.')
                 ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
                 ->action(function (): void {
-                    $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                    $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+                    try {
+                        $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                        $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $copy);
+                    } catch (ValidationException $exception) {
+                        $message = collect($exception->errors())->flatten()->first() ?: 'Повторный запуск не выполнен.';
+
+                        Notification::make()
+                            ->title('Повторный запуск не выполнен')
+                            ->body($message)
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $this->notifyAboutStartedCampaign($campaign);
+                    $this->redirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
                 }),
             Action::make('editAndRerun')
                 ->label('Редактировать и повторить')
@@ -114,21 +131,7 @@ final class ViewBroadcastCampaign extends ViewRecord
                 }),
             Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? 'Запланировать' : 'Запустить рассылку')->color('primary')->requiresConfirmation()->modalDescription('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
                 $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                $counts = 'Доставлено: '.$campaign->delivered_count.' · ошибок: '.$campaign->failed_count.' · исключено: '.$campaign->suppressed_count.'.';
-
-                if ($campaign->state === BroadcastCampaignState::Completed) {
-                    Notification::make()
-                        ->title($campaign->failed_count > 0 ? 'Рассылка завершена с ошибками' : 'Рассылка отправлена')
-                        ->body($counts.' Причины ошибок указаны в списке получателей.')
-                        ->status($campaign->failed_count > 0 ? 'warning' : 'success')
-                        ->send();
-                } else {
-                    Notification::make()
-                        ->title($campaign->send_mode === 'scheduled' ? 'Рассылка запланирована' : 'Рассылка поставлена в очередь')
-                        ->body($counts.' Итог появится после обработки очереди; причины ошибок указаны в списке получателей.')
-                        ->success()
-                        ->send();
-                }
+                $this->notifyAboutStartedCampaign($campaign);
 
                 $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'delivered_count', 'failed_count', 'suppressed_count']);
             }),
@@ -153,5 +156,26 @@ final class ViewBroadcastCampaign extends ViewRecord
         abort_unless($this->record instanceof BroadcastCampaign, 404);
 
         return $this->record->refresh();
+    }
+
+    private function notifyAboutStartedCampaign(BroadcastCampaign $campaign): void
+    {
+        $counts = 'Доставлено: '.$campaign->delivered_count.' · ошибок: '.$campaign->failed_count.' · исключено: '.$campaign->suppressed_count.'.';
+
+        if ($campaign->state === BroadcastCampaignState::Completed) {
+            Notification::make()
+                ->title($campaign->failed_count > 0 ? 'Рассылка завершена с ошибками' : 'Рассылка отправлена')
+                ->body($counts.' Причины ошибок указаны в списке получателей.')
+                ->status($campaign->failed_count > 0 ? 'warning' : 'success')
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title($campaign->send_mode === 'scheduled' ? 'Рассылка запланирована' : 'Рассылка поставлена в очередь')
+            ->body($counts.' Итог появится после обработки очереди; причины ошибок указаны в списке получателей.')
+            ->success()
+            ->send();
     }
 }
