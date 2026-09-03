@@ -10,6 +10,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ContentSections\ContentSectionResource;
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Resources\LocationDays\LocationDayResource;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Resources\ScenarioActions\ScenarioActionResource;
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
@@ -20,6 +21,7 @@ use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignm
 use App\Filament\Resources\SurveyAttempts\SurveyAttemptResource;
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
+use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
 use Filament\Facades\Filament;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,6 +46,7 @@ class FilamentFoundationTest extends TestCase
         self::assertSame([
             'Клиенты',
             'Записи',
+            'Настройки',
             'Команда и услуги',
             'Коммуникации',
             'Контент и знания',
@@ -59,6 +62,8 @@ class FilamentFoundationTest extends TestCase
             SchedulingConfiguration::class => 'Записи',
             UnavailablePeriodResource::class => 'Записи',
             ScheduleExceptionResource::class => 'Записи',
+            WorkingLocationResource::class => 'Настройки',
+            LocationDayResource::class => 'Настройки',
             SpecialistResource::class => 'Команда и услуги',
             ServiceResource::class => 'Команда и услуги',
             SpecialistServiceAssignmentResource::class => 'Команда и услуги',
