@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-03 — M11E review follow-up
+
+- Starting from `364c57257ff9edc8ac1669492ea32d409f3bcd40`, portal booking idempotency now covers legal evidence, manual attribution, and booking creation; legacy timezone provenance is conservatively backfilled from audit history; image-required campaigns fail before dispatch when media is absent; and mixed Telegram/Mini App content remains reachable.
+- Focused local SQLite and PostgreSQL regressions, Pint, PHPStan, PHP syntax, and `git diff --check` pass. Production remains untouched and PR #28 remains unmerged; staging redeployment and affected-path smoke verification are pending for this follow-up SHA.
+
 ## 2026-09-03 — CRM UX, legal consent and Telegram content pass
 
 - Added versioned legal-document drafts/publications with immutable consent evidence, required Offer/Privacy/MedicalDisclaimer booking confirmations, optional Marketing consent, and append-only marketing withdrawal without affecting transactional delivery.

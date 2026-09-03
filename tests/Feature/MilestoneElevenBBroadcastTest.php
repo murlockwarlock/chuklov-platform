@@ -277,6 +277,97 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame(NotificationMessageMode::Image->value, $campaign->delivery_mode);
     }
 
+    public function test_image_mode_rejects_removing_the_only_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Удаление изображения';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = '';
+        $update['delivery_mode'] = NotificationMessageMode::Image->value;
+        $update['remove_media'] = true;
+
+        $this->expectException(ValidationException::class);
+        app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertSame('https://cdn.example.test/image.jpg', $campaign->refresh()->media['image'] ?? null);
+    }
+
+    public function test_switching_to_text_allows_removing_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Только текст';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = 'Обычный текст';
+        $update['delivery_mode'] = NotificationMessageMode::Text->value;
+        $update['remove_media'] = true;
+
+        $updated = app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertNull($updated->media);
+        self::assertSame(NotificationMessageMode::Text->value, $updated->delivery_mode);
+    }
+
+    public function test_image_mode_allows_replacing_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/old.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Новое изображение';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = '';
+        $update['delivery_mode'] = NotificationMessageMode::Image->value;
+        $update['media_url'] = 'https://cdn.example.test/new.jpg';
+
+        $updated = app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertSame('https://cdn.example.test/new.jpg', $updated->media['image'] ?? null);
+        self::assertSame(NotificationMessageMode::Image->value, $updated->delivery_mode);
+    }
+
+    public function test_image_delivery_cannot_launch_when_persisted_media_is_absent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $campaign->forceFill(['media' => null])->save();
+
+        try {
+            app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+            self::fail('Image delivery without media must be rejected before dispatch.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Добавьте изображение или выберите текстовый режим.', $exception->errors()['media_image'][0]);
+        }
+
+        self::assertSame(BroadcastCampaignState::Draft, $campaign->refresh()->state);
+        self::assertNull($campaign->audience_snapshot_id);
+    }
+
     public function test_sent_campaign_can_only_be_copied_to_a_new_draft(): void
     {
         [$organization, $actor] = $this->fixture();

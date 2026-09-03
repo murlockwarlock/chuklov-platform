@@ -2,6 +2,7 @@
 
 namespace App\Modules\Broadcasts\Application;
 
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use Illuminate\Http\UploadedFile;
@@ -46,6 +47,19 @@ final readonly class BroadcastCampaignMedia
         }
 
         return ['image' => $image, 'alt' => is_string($alt) && trim($alt) !== '' ? trim($alt) : null];
+    }
+
+    /** @param array<string, mixed>|null $media */
+    public function ensureAvailable(NotificationMessageMode $mode, ?array $media): void
+    {
+        if (! $mode->includesImage()) {
+            return;
+        }
+
+        $image = is_string($media['image'] ?? null) ? trim($media['image']) : '';
+        if ($image === '') {
+            throw ValidationException::withMessages(['media_image' => 'Добавьте изображение или выберите текстовый режим.']);
+        }
     }
 
     public function discard(int $organizationId, string $path): void

@@ -433,12 +433,14 @@ class MilestoneFourSchedulingTest extends TestCase
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
         $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
         app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
             'weekday' => 1,
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
         $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Europe/Berlin']);
+        $documents = $this->publishPortalLegalDocuments($organization);
 
         $this->withSession(['client_portal.client_id' => $client->id])
             ->get(route('portal.bookings.create', [
@@ -463,6 +465,7 @@ class MilestoneFourSchedulingTest extends TestCase
                 'specialist_id' => $specialist->id,
                 'starts_at' => '2026-03-30T09:00:00+00:00',
                 'format' => VisitFormat::Office->value,
+                'consents' => $this->portalConsentPayload($documents),
                 'client_timezone' => 'Europe/Berlin',
                 'idempotency_key' => 'portal-create-m4',
             ])
@@ -525,6 +528,53 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
         self::assertSame(3, DB::table('client_consents')->where('client_id', $client->id)->count());
         self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->count());
+    }
+
+    public function test_portal_booking_replay_returns_before_new_legal_or_attribution_evidence(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $attributes = [
+            'client' => $client,
+            'specialist' => $specialist,
+            'service' => $service,
+            'startsAt' => CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+            'format' => VisitFormat::Office,
+            'consents' => $this->portalConsentPayload($documents),
+            'marketingConsent' => false,
+            'clientTimezone' => 'UTC',
+            'partySize' => 1,
+            'location' => null,
+            'attributionSource' => 'social',
+        ];
+
+        $first = app(CreatePortalBooking::class)->handle(...$attributes);
+
+        $newOffer = app(CreatePlatformLegalDocumentDraft::class)->handle(
+            organization: $organization,
+            documentType: 'offer',
+            purpose: 'offer_consent',
+            locale: 'en',
+            version: '2026-08-13-offer',
+            content: 'Configured replacement offer text.',
+            isRequired: true,
+        );
+        app(PublishLegalDocument::class)->handle($newOffer);
+
+        $replay = app(CreatePortalBooking::class)->handle(...$attributes);
+
+        self::assertSame($first->getKey(), $replay->getKey());
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, DB::table('client_consents')->where('client_id', $client->getKey())->count());
+        self::assertSame(3, DB::table('audit_events')->where('organization_id', $organization->getKey())->where('action', 'client.consent.recorded')->count());
+        self::assertSame(1, ClientAttribution::query()->where('client_id', $client->getKey())->count());
     }
 
     public function test_portal_booking_fails_closed_when_no_required_legal_documents_are_published(): void

@@ -8,6 +8,7 @@ use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
 use App\Models\User;
 use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
+use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Application\TelegramMessagePreview;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Application\ContentImageUrlResolver;
@@ -85,6 +86,72 @@ final class ContentSectionMediaTest extends TestCase
         self::assertCount(1, $sections->handle('method', ContentDeliveryMode::MiniApp));
         self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::Telegram));
         self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::MiniApp));
+    }
+
+    public function test_telegram_menu_keeps_mini_app_only_content_reachable_for_mixed_rows_and_fallbacks(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $sectionKeys = ['telegram_menu', 'mini_menu', 'both_menu', 'mixed_menu', 'fallback_menu'];
+        $contentSections = config('portal.content_sections');
+        $entries = config('portal.telegram.entries');
+        $menu = config('portal.telegram.menu.en');
+        $ruMenu = config('portal.telegram.menu.ru');
+
+        foreach ($sectionKeys as $sectionKey) {
+            $contentSections[$sectionKey] = ['title' => ['en' => $sectionKey, 'ru' => $sectionKey]];
+            $entries[$sectionKey] = [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => $sectionKey],
+            ];
+            $menu[] = ['key' => $sectionKey, 'label' => $sectionKey];
+            $ruMenu[] = ['key' => $sectionKey, 'label' => $sectionKey];
+        }
+
+        config()->set('portal.content_sections', $contentSections);
+        config()->set('portal.telegram.entries', $entries);
+        config()->set('portal.telegram.menu.en', $menu);
+        config()->set('portal.telegram.menu.ru', $ruMenu);
+
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'telegram_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'mini_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::MiniApp,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'both_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Both,
+        ]);
+        foreach ([ContentDeliveryMode::Telegram, ContentDeliveryMode::MiniApp] as $deliveryMode) {
+            ContentSection::factory()->forOrganization($organization)->create([
+                'section_key' => 'mixed_menu',
+                'locale' => 'en',
+                'delivery_mode' => $deliveryMode,
+            ]);
+        }
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'fallback_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+
+        $resolved = collect(app(GetTelegramMenu::class)->handle('ru'))->keyBy('key');
+
+        self::assertSame('telegram_content', $resolved['telegram_menu']['launch']);
+        self::assertSame('telegram_content', $resolved['both_menu']['launch']);
+        self::assertSame('mini_app', $resolved['mini_menu']['launch']);
+        self::assertSame('mini_app', $resolved['mixed_menu']['launch']);
+        self::assertSame('telegram_content', $resolved['fallback_menu']['launch']);
+        self::assertArrayNotHasKey('callback_data', $resolved['mini_menu']);
+        self::assertArrayNotHasKey('callback_data', $resolved['mixed_menu']);
     }
 
     public function test_both_content_builds_one_telegram_projection_with_image_caption_and_mini_app_cta(): void

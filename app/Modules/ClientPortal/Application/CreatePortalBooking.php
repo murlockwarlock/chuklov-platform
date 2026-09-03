@@ -15,7 +15,6 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final readonly class CreatePortalBooking
@@ -41,43 +40,46 @@ final readonly class CreatePortalBooking
         ?string $location,
         ?string $attributionSource = null,
     ): Booking {
-        return DB::transaction(function () use ($client, $specialist, $service, $startsAt, $format, $consents, $marketingConsent, $clientTimezone, $partySize, $location, $attributionSource): Booking {
-            $documents = $this->legalDocuments->handle($client->language);
-            $this->ensureRequiredLegalDocumentsPublished($documents);
-            $answers = $consents;
-            if ($marketingConsent) {
-                $marketingDocument = $documents
-                    ->first(fn (LegalDocument $document): bool => $document->document_type === ConsentSubject::Marketing->value);
-                if ($marketingDocument !== null) {
-                    $answers[] = [
-                        'legal_document_id' => (int) $marketingDocument->getKey(),
-                        'granted' => true,
-                    ];
+        return $this->createBooking->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $startsAt,
+            format: $format,
+            clientTimezone: $clientTimezone,
+            meetingLinkMode: null,
+            idempotencyKey: null,
+            partySize: $partySize,
+            location: $location,
+            beforeCreate: function () use ($client, $consents, $marketingConsent, $attributionSource): void {
+                $this->recordConsentsForBooking($client, $consents, $marketingConsent);
+
+                if (filled($attributionSource)) {
+                    $this->acceptAttribution->handle($client, $attributionSource);
                 }
+            },
+        );
+    }
+
+    /** @param list<array{legal_document_id: int, granted: bool}> $consents */
+    private function recordConsentsForBooking(Client $client, array $consents, bool $marketingConsent): void
+    {
+        $documents = $this->legalDocuments->handle($client->language);
+        $this->ensureRequiredLegalDocumentsPublished($documents);
+        $answers = $consents;
+        if ($marketingConsent) {
+            $marketingDocument = $documents
+                ->first(fn (LegalDocument $document): bool => $document->document_type === ConsentSubject::Marketing->value);
+            if ($marketingDocument !== null) {
+                $answers[] = [
+                    'legal_document_id' => (int) $marketingDocument->getKey(),
+                    'granted' => true,
+                ];
             }
+        }
 
-            $this->recordConsents->handle($client, $answers);
-
-            $booking = $this->createBooking->handle(
-                actor: $client,
-                client: $client,
-                specialist: $specialist,
-                service: $service,
-                startsAt: $startsAt,
-                format: $format,
-                clientTimezone: $clientTimezone,
-                meetingLinkMode: null,
-                idempotencyKey: null,
-                partySize: $partySize,
-                location: $location,
-            );
-
-            if (filled($attributionSource)) {
-                $this->acceptAttribution->handle($client, $attributionSource);
-            }
-
-            return $booking;
-        });
+        $this->recordConsents->handle($client, $answers);
     }
 
     /** @param Collection<int, LegalDocument> $documents */

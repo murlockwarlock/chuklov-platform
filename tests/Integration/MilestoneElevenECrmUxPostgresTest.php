@@ -3,10 +3,12 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\CreatePortalBooking;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
@@ -26,13 +28,19 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\ListClientBookings;
+use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use LogicException;
@@ -75,6 +83,165 @@ final class MilestoneElevenECrmUxPostgresTest extends TestCase
         $v1->content = 'Changed archived text.';
         $this->expectException(LogicException::class);
         $v1->save();
+    }
+
+    public function test_postgresql_portal_booking_replay_does_not_duplicate_consent_or_attribution(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $client, $specialist, $service] = $this->portalBookingFixture();
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $attributes = $this->portalBookingAttributes($client, $specialist, $service, $documents, 'social');
+
+        $first = app(CreatePortalBooking::class)->handle(...$attributes);
+        $replay = app(CreatePortalBooking::class)->handle(...$attributes);
+
+        self::assertSame($first->getKey(), $replay->getKey());
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, DB::table('booking_events')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, ClientConsent::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, DB::table('audit_events')->where('organization_id', $organization->getKey())->where('action', 'client.consent.recorded')->count());
+        self::assertSame(1, ClientAttribution::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
+    }
+
+    public function test_postgresql_portal_booking_replay_after_new_legal_publication_returns_the_original_booking(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $client, $specialist, $service] = $this->portalBookingFixture();
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $attributes = $this->portalBookingAttributes($client, $specialist, $service, $documents, 'friend');
+
+        $first = app(CreatePortalBooking::class)->handle(...$attributes);
+        $newOffer = app(CreatePlatformLegalDocumentDraft::class)->handle(
+            organization: $organization,
+            documentType: 'offer',
+            purpose: 'offer_consent',
+            locale: 'en',
+            version: '2026-09-04-offer',
+            content: 'A newer owner-provided offer fixture.',
+            isRequired: true,
+        );
+        app(PublishLegalDocument::class)->handle($newOffer);
+
+        $replay = app(CreatePortalBooking::class)->handle(...$attributes);
+
+        self::assertSame($first->getKey(), $replay->getKey());
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, ClientConsent::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, ClientAttribution::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
+        self::assertSame($documents['offer']->getKey(), ClientConsent::query()->where('client_id', $client->getKey())->where('subject', 'offer')->value('legal_document_id'));
+    }
+
+    public function test_postgresql_concurrent_identical_portal_bookings_create_one_mutation_set(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $client, $specialist, $service] = $this->portalBookingFixture();
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $start = CarbonImmutable::create(2027, 4, 5, 9, 0, 0, 'UTC');
+        $documentIds = array_map(
+            static fn (LegalDocument $document): int => $document->getKey(),
+            $documents,
+        );
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::createPortalBookingInProcess($organization->getKey(), $client->getKey(), $specialist->getKey(), $service->getKey(), $start->toIso8601String(), $documentIds),
+            static fn (): string => self::createPortalBookingInProcess($organization->getKey(), $client->getKey(), $specialist->getKey(), $service->getKey(), $start->toIso8601String(), $documentIds),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertSame(2, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'booking:'))));
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, DB::table('booking_events')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, ClientConsent::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(3, DB::table('audit_events')->where('organization_id', $organization->getKey())->where('action', 'client.consent.recorded')->count());
+        self::assertSame(1, ClientAttribution::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
+    }
+
+    public function test_postgresql_timezone_provenance_correction_preserves_legacy_manual_values_and_scopes_by_organization(): void
+    {
+        $this->requirePostgres();
+        $organization = $this->organizationWithClientRecords();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $portalClient = Client::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'timezone_source' => 'organization',
+        ]);
+        app(ClientPortalContext::class)->set($portalClient);
+        app(UpdateClientTimezonePreference::class)->handle('Europe/Berlin');
+        $portalClient->forceFill(['timezone_source' => 'organization'])->save();
+
+        $crmClient = Client::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'timezone_source' => 'organization',
+        ]);
+        app(UpdateClientProfileFromCrm::class)->handle($admin, $crmClient, ['timezone' => 'America/New_York']);
+        $crmClient->forceFill(['timezone_source' => 'organization'])->save();
+
+        $organizationClient = Client::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'timezone_source' => 'organization',
+        ]);
+        ClientChannelIdentity::factory()->forClient($organizationClient)->create([
+            'channel' => 'telegram',
+            'external_id' => 'legacy-organization-client',
+            'verification_status' => ChannelIdentityStatus::Verified,
+        ]);
+        ClientChannelIdentity::factory()->forClient($portalClient)->create([
+            'channel' => 'telegram',
+            'external_id' => 'legacy-portal-client',
+            'verification_status' => ChannelIdentityStatus::Verified,
+        ]);
+        ClientChannelIdentity::factory()->forClient($crmClient)->create([
+            'channel' => 'telegram',
+            'external_id' => 'legacy-crm-client',
+            'verification_status' => ChannelIdentityStatus::Verified,
+        ]);
+
+        $otherOrganization = Organization::factory()->create();
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create([
+            'timezone' => 'Asia/Tokyo',
+            'timezone_source' => 'organization',
+        ]);
+        app(RecordAuditEvent::class)->handle(
+            organization: $organization,
+            actor: $admin,
+            action: 'client.profile.updated',
+            targetType: Client::class,
+            targetId: (string) $otherClient->getKey(),
+            metadata: ['source' => 'crm', 'fields' => 'timezone'],
+        );
+
+        $migration = require database_path('migrations/2026_09_03_010000_backfill_client_timezone_provenance.php');
+        $migration->up();
+        $migration->up();
+
+        self::assertSame('manual', $portalClient->refresh()->timezone_source);
+        self::assertSame('Europe/Berlin', $portalClient->timezone);
+        self::assertSame('manual', $crmClient->refresh()->timezone_source);
+        self::assertSame('America/New_York', $crmClient->timezone);
+        self::assertSame('organization', $organizationClient->refresh()->timezone_source);
+        self::assertSame('UTC', $organizationClient->timezone);
+        self::assertSame('organization', $otherClient->refresh()->timezone_source);
+        self::assertSame('Asia/Tokyo', $otherClient->timezone);
+
+        app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'legacy-portal-client', 'Portal client', 'en', 'portal_client'),
+            clientTimezone: 'Asia/Almaty',
+        );
+        app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'legacy-crm-client', 'CRM client', 'en', 'crm_client'),
+            clientTimezone: 'Asia/Almaty',
+        );
+        app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'legacy-organization-client', 'Organization client', 'en', 'organization_client'),
+            clientTimezone: 'Asia/Almaty',
+        );
+
+        self::assertSame('Europe/Berlin', $portalClient->refresh()->timezone);
+        self::assertSame('manual', $portalClient->timezone_source);
+        self::assertSame('America/New_York', $crmClient->refresh()->timezone);
+        self::assertSame('manual', $crmClient->timezone_source);
+        self::assertSame('Asia/Almaty', $organizationClient->refresh()->timezone);
+        self::assertSame('device', $organizationClient->timezone_source);
     }
 
     public function test_postgresql_username_and_telegram_id_search_is_case_insensitive_and_tenant_scoped(): void
@@ -322,6 +489,119 @@ final class MilestoneElevenECrmUxPostgresTest extends TestCase
 
         self::assertSame([$document->getKey()], $documents->pluck('id')->all());
         self::assertSame('ru', $documents->sole()->locale);
+    }
+
+    /** @return array{Organization, User, Client, Specialist, Service} */
+    private function portalBookingFixture(): array
+    {
+        $organization = $this->organizationWithClientRecords();
+        $organization->forceFill(['timezone' => 'UTC'])->save();
+        app(OrganizationContext::class)->set($organization->refresh());
+        $admin = User::factory()->forOrganization($organization)->create();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => null]);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 60,
+            'buffer_minutes' => 15,
+            'formats' => ['office'],
+        ]);
+        app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+
+        return [$organization, $admin, $client, $specialist, $service];
+    }
+
+    /** @return array<string, LegalDocument> */
+    private function publishPortalLegalDocuments(Organization $organization): array
+    {
+        $documents = [];
+
+        foreach (['offer', 'privacy', 'medical_disclaimer'] as $documentType) {
+            $documents[$documentType] = app(PublishLegalDocument::class)->handle(
+                app(CreatePlatformLegalDocumentDraft::class)->handle(
+                    organization: $organization,
+                    documentType: $documentType,
+                    purpose: $documentType.'_consent',
+                    locale: 'en',
+                    version: '2026-09-03-'.$documentType,
+                    content: 'Synthetic owner-provided '.$documentType.' fixture.',
+                    isRequired: true,
+                ),
+            );
+        }
+
+        return $documents;
+    }
+
+    /** @param array<string, LegalDocument> $documents
+     * @return array{client: Client, specialist: Specialist, service: Service, startsAt: CarbonImmutable, format: VisitFormat, consents: list<array{legal_document_id: int, granted: bool}>, marketingConsent: bool, clientTimezone: string, partySize: int, location: null, attributionSource: string}
+     */
+    private function portalBookingAttributes(Client $client, Specialist $specialist, Service $service, array $documents, string $attributionSource): array
+    {
+        return [
+            'client' => $client,
+            'specialist' => $specialist,
+            'service' => $service,
+            'startsAt' => CarbonImmutable::create(2027, 4, 5, 9, 0, 0, 'UTC'),
+            'format' => VisitFormat::Office,
+            'consents' => array_map(
+                static fn (string $documentType): array => [
+                    'legal_document_id' => $documents[$documentType]->getKey(),
+                    'granted' => true,
+                ],
+                ['offer', 'privacy', 'medical_disclaimer'],
+            ),
+            'marketingConsent' => false,
+            'clientTimezone' => 'UTC',
+            'partySize' => 1,
+            'location' => null,
+            'attributionSource' => $attributionSource,
+        ];
+    }
+
+    /** @param array<string, int> $documentIds */
+    private static function createPortalBookingInProcess(int $organizationId, int $clientId, int $specialistId, int $serviceId, string $startsAt, array $documentIds): string
+    {
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+        $client = Client::query()->where('organization_id', $organizationId)->whereKey($clientId)->firstOrFail();
+        $specialist = Specialist::query()->where('organization_id', $organizationId)->whereKey($specialistId)->firstOrFail();
+        $service = Service::query()->where('organization_id', $organizationId)->whereKey($serviceId)->firstOrFail();
+        $consents = array_map(
+            static fn (string $documentType): array => [
+                'legal_document_id' => $documentIds[$documentType],
+                'granted' => true,
+            ],
+            ['offer', 'privacy', 'medical_disclaimer'],
+        );
+
+        try {
+            $booking = app(CreatePortalBooking::class)->handle(
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::parse($startsAt),
+                format: VisitFormat::Office,
+                consents: $consents,
+                marketingConsent: false,
+                clientTimezone: 'UTC',
+                partySize: 1,
+                location: null,
+                attributionSource: 'social',
+            );
+
+            return 'booking:'.$booking->getKey();
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
     }
 
     private function publishLegalDocument(Organization $organization, string $version, string $locale = 'en'): LegalDocument

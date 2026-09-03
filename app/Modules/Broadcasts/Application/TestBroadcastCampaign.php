@@ -8,6 +8,7 @@ use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastAudienceSnapshot;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -16,7 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class TestBroadcastCampaign
 {
-    public function __construct(private BroadcastAuthorization $authorization, private BroadcastEligibilityPolicy $eligibility, private ProcessBroadcastBatch $delivery, private RecordAuditEvent $audit) {}
+    public function __construct(private BroadcastAuthorization $authorization, private BroadcastEligibilityPolicy $eligibility, private ProcessBroadcastBatch $delivery, private RecordAuditEvent $audit, private BroadcastCampaignMedia $media) {}
 
     public function handle(User $actor, BroadcastCampaign $campaign, int $testClientId): BroadcastRecipient
     {
@@ -29,6 +30,11 @@ final readonly class TestBroadcastCampaign
             if ($locked->state !== BroadcastCampaignState::Draft) {
                 throw ValidationException::withMessages(['test_client_id' => 'Тестовая отправка доступна только для черновика.']);
             }
+            $deliveryMode = NotificationMessageMode::tryFrom((string) $locked->delivery_mode);
+            if (! $deliveryMode instanceof NotificationMessageMode) {
+                throw ValidationException::withMessages(['campaign' => 'Формат сообщения рассылки недоступен.']);
+            }
+            $this->media->ensureAvailable($deliveryMode, is_array($locked->media) ? $locked->media : null);
             $client = Client::query()->where('organization_id', $organization->getKey())->whereKey($testClientId)->first();
             if ($client === null) {
                 throw ValidationException::withMessages(['test_client_id' => 'Выберите клиента текущей организации.']);

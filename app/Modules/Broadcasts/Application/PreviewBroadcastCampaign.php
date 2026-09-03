@@ -43,6 +43,7 @@ final readonly class PreviewBroadcastCampaign
 
         $body = $mode->includesText() ? $this->previewBody($campaign, $organization->getKey()) : '';
         $media = is_array($campaign->media) ? $campaign->media : [];
+        $this->media->ensureAvailable($mode, $media);
         $image = is_string($media['image'] ?? null) ? trim($media['image']) : null;
         $mediaUrl = $image === null || $image === ''
             ? null

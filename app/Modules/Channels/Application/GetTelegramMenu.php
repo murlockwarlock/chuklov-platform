@@ -92,6 +92,7 @@ final class GetTelegramMenu
             $localized = $content->where('locale', $locale === 'ru' ? 'en' : 'ru');
         }
 
-        return $localized->contains(static fn (ContentSection $section): bool => $section->delivery_mode->supportsTelegram());
+        return $localized->isNotEmpty()
+            && $localized->every(static fn (ContentSection $section): bool => $section->delivery_mode->supportsTelegram());
     }
 }

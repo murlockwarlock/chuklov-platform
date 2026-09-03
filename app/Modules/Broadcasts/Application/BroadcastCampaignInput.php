@@ -79,7 +79,8 @@ final readonly class BroadcastCampaignInput
             : null;
         $media = $this->mediaInput($attributes);
 
-        if ($deliveryMode->includesImage() && $media === null) {
+        if ($deliveryMode->includesImage()
+            && ($media === null || ($media['remove'] ?? false) === true)) {
             throw ValidationException::withMessages(['media_image' => 'Добавьте изображение для выбранного режима.']);
         }
 

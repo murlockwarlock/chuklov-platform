@@ -28,6 +28,7 @@ use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Closure;
 use DateTimeInterface;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -60,6 +61,7 @@ class CreateBooking
         ?string $idempotencyKey = null,
         int $partySize = 1,
         ?string $location = null,
+        ?Closure $beforeCreate = null,
     ): Booking {
         $organization = $this->context->organization();
         $this->ensureOrganizationOwnership($organization->getKey(), $actor, $client, $specialist, $service);
@@ -132,6 +134,7 @@ class CreateBooking
             $partySize,
             $location,
             $requestHash,
+            $beforeCreate,
         ): Booking {
             $idempotency = $this->lockIdempotencyKey(
                 organizationId: $organization->getKey(),
@@ -154,6 +157,10 @@ class CreateBooking
                 }
 
                 return $bookingQuery->firstOrFail();
+            }
+
+            if ($beforeCreate !== null) {
+                $beforeCreate();
             }
 
             $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
