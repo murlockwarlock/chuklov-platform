@@ -12,15 +12,13 @@ use App\Modules\Broadcasts\Application\StartBroadcastCampaign;
 use App\Modules\Broadcasts\Application\TestBroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
-use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
-use App\Modules\Identity\Domain\Models\Client;
-use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Contracts\View\View;
+use Illuminate\Validation\ValidationException;
 
 final class ViewBroadcastCampaign extends ViewRecord
 {
@@ -72,22 +70,48 @@ final class ViewBroadcastCampaign extends ViewRecord
                     $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
                     $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
                 }),
-            Action::make('test')->label('Тестовая отправка')->icon('heroicon-o-paper-airplane')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->schema([
-                Select::make('test_client_id')->label('Тестовый получатель')->options(fn (): array => Client::query()->where('organization_id', app(OrganizationContext::class)->id())->whereHas('channelIdentities', fn ($query) => $query->where('channel', 'telegram')->where('verification_status', ChannelIdentityStatus::Verified->value))->orderBy('full_name')->limit(200)->pluck('full_name', 'id')->all())->searchable()->required()->helperText('Сообщение уйдёт только выбранному получателю, а не всему сегменту.'),
-            ])->action(function (array $data): void {
-                $recipient = app(TestBroadcastCampaign::class)->handle($this->actor(), $this->campaign(), (int) $data['test_client_id']);
-                $delivered = $recipient->state->value === 'delivered';
-                $reason = $recipient->last_error_code ?: $recipient->exclusion_code;
-                $body = $delivered
-                    ? 'Тестовая отправка отмечена отдельно и не затрагивает список рассылки.'
-                    : BroadcastFailurePresentation::label($reason);
+            Action::make('test')
+                ->label('Тестовая отправка')
+                ->icon('heroicon-o-paper-airplane')
+                ->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)
+                ->schema([
+                    Select::make('test_client_id')
+                        ->label('Тестовый получатель')
+                        ->options(fn (): array => app(TestBroadcastCampaign::class)
+                            ->eligibleTestClients($this->actor(), $this->campaign())
+                            ->pluck('full_name', 'id')
+                            ->all())
+                        ->searchable()
+                        ->required()
+                        ->helperText('Доступны только клиенты с согласием на маркетинговые сообщения и подтверждённым Telegram.'),
+                ])
+                ->action(function (array $data): void {
+                    try {
+                        $recipient = app(TestBroadcastCampaign::class)->handle($this->actor(), $this->campaign(), (int) $data['test_client_id']);
+                    } catch (ValidationException $exception) {
+                        $message = collect($exception->errors())->flatten()->first() ?: 'Проверьте получателя и настройки рассылки.';
 
-                Notification::make()
-                    ->title($delivered ? 'Тестовое сообщение доставлено' : 'Тестовая отправка завершилась с ошибкой')
-                    ->body($body)
-                    ->status($delivered ? 'success' : 'danger')
-                    ->send();
-            }),
+                        Notification::make()
+                            ->title('Тестовая отправка не выполнена')
+                            ->body($message)
+                            ->danger()
+                            ->send();
+
+                        return;
+                    }
+
+                    $delivered = $recipient->state->value === 'delivered';
+                    $reason = $recipient->last_error_code ?: $recipient->exclusion_code;
+                    $body = $delivered
+                        ? 'Тестовая отправка отмечена отдельно и не затрагивает список рассылки.'
+                        : BroadcastFailurePresentation::label($reason);
+
+                    Notification::make()
+                        ->title($delivered ? 'Тестовое сообщение доставлено' : 'Тестовая отправка завершилась с ошибкой')
+                        ->body($body)
+                        ->status($delivered ? 'success' : 'danger')
+                        ->send();
+                }),
             Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? 'Запланировать' : 'Запустить рассылку')->color('primary')->requiresConfirmation()->modalDescription('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
                 $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
                 $counts = 'Доставлено: '.$campaign->delivered_count.' · ошибок: '.$campaign->failed_count.' · исключено: '.$campaign->suppressed_count.'.';

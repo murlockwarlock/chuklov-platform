@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign as CreateBroadcastCampaignPage;
+use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign as ViewBroadcastCampaignPage;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
@@ -492,6 +493,62 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame($target->getKey(), $recipient->client_id);
         self::assertCount(1, $this->channel->messages);
         self::assertSame(0, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
+    }
+
+    public function test_test_recipient_selector_excludes_clients_without_current_marketing_consent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $eligible = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $withoutConsent = $this->client($organization, consent: false, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->mountAction('test');
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.test_client_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertArrayHasKey($eligible->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($withoutConsent->getKey(), $select->getOptions());
+    }
+
+    public function test_test_send_explains_missing_marketing_consent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        ClientConsent::query()->where('client_id', $target->getKey())->delete();
+        $campaign = $this->campaign($actor, []);
+
+        try {
+            app(TestBroadcastCampaign::class)->handle($actor, $campaign, $target->getKey());
+            self::fail('An ineligible test recipient must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'У тестового получателя нет согласия на маркетинговые сообщения.',
+                $exception->errors()['test_client_id'][0],
+            );
+        }
+    }
+
+    public function test_test_send_action_shows_validation_failures_as_notifications(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->mountAction('test')
+            ->setActionData(['test_client_id' => $target->getKey()]);
+        $campaign->forceFill(['channel_priority' => ['email']])->save();
+
+        $component
+            ->callMountedAction()
+            ->assertNotified('Тестовая отправка не выполнена');
+
+        self::assertSame(0, BroadcastRecipient::query()->count());
     }
 
     public function test_language_referral_source_booking_last_visit_no_rebooking_tags_and_survey_completion_queries_are_scoped(): void
