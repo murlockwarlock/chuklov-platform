@@ -58,6 +58,7 @@ use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -261,6 +262,29 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         $tooLong['media_url'] = 'https://cdn.example.test/image.jpg';
         $this->expectException(ValidationException::class);
         app(CreateBroadcastCampaign::class)->handle($actor, $tooLong);
+    }
+
+    public function test_broadcast_rejects_multiple_media_uploads_with_a_clear_error(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = [
+            UploadedFile::fake()->image('one.jpg'),
+            UploadedFile::fake()->image('two.jpg'),
+        ];
+
+        try {
+            app(CreateBroadcastCampaign::class)->handle($actor, $data);
+            self::fail('Multiple media uploads must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Можно добавить только одно изображение. Видео и несколько файлов не поддерживаются.',
+                $exception->errors()['media_image'][0],
+            );
+        }
     }
 
     public function test_image_only_mode_does_not_create_or_require_a_text_template(): void

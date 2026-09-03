@@ -17,7 +17,7 @@ final class RichTextDocument
 
     public static function canonicalHtml(string $content): string
     {
-        $content = trim($content);
+        $content = trim(self::normalizeMergeTags($content));
 
         if ($content === '') {
             return '';
@@ -40,6 +40,17 @@ final class RichTextDocument
         }
 
         return $html;
+    }
+
+    public static function normalizeMergeTags(string $content): string
+    {
+        $normalized = preg_replace_callback(
+            '~<span\b(?=[^>]*\bdata-type\s*=\s*(["\'])mergeTag\1)(?=[^>]*\bdata-id\s*=\s*(["\'])([a-z][a-z0-9_.]*)\2)[^>]*>.*?</span>~isu',
+            static fn (array $matches): string => '{{ '.$matches[3].' }}',
+            $content,
+        );
+
+        return is_string($normalized) ? $normalized : $content;
     }
 
     public static function telegramHtml(string $content): string

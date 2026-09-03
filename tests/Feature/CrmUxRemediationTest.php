@@ -23,9 +23,11 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -33,6 +35,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\RichEditor;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -71,11 +74,19 @@ final class CrmUxRemediationTest extends TestCase
             ->assertFormFieldExists('message_body')
             ->assertSee('Выбрать клиентов')
             ->assertSee('Написать сообщение')
+            ->assertSee('Добавить данные')
             ->assertSee('Получателей');
 
         self::assertSame('Клиенты', $broadcast->instance()->getSchemaComponent('form.selected_client_ids')->getLabel());
         self::assertTrue($broadcast->instance()->getSchemaComponent('form.selected_client_ids')->isMultiple());
         self::assertTrue($broadcast->instance()->getSchemaComponent('form.selected_client_ids')->isSearchable());
+
+        $messageEditor = $broadcast->instance()->getSchemaComponent('form.message_body');
+        self::assertInstanceOf(RichEditor::class, $messageEditor);
+        self::assertSame(
+            ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing),
+            $messageEditor->getMergeTags(),
+        );
 
         Livewire::actingAs($admin)
             ->test(CreateScenarioRule::class)

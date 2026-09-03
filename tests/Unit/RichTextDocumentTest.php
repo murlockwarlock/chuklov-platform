@@ -48,4 +48,14 @@ final class RichTextDocumentTest extends TestCase
         self::assertStringContainsString('<a href="mailto:help@example.test">email</a>', $telegramHtml);
         self::assertStringContainsString('<a href="tel:+77001234567">phone</a>', $telegramHtml);
     }
+
+    public function test_filament_merge_tags_are_normalized_to_supported_template_tokens(): void
+    {
+        $content = '<p>Здравствуйте, <span data-type="mergeTag" data-id="client.full_name"></span>!</p>';
+
+        self::assertSame(
+            '<p>Здравствуйте, {{ client.full_name }}!</p>',
+            RichTextDocument::canonicalHtml($content),
+        );
+    }
 }

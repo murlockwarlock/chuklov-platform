@@ -10,7 +10,6 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 final class NotificationTemplateForm
@@ -20,7 +19,7 @@ final class NotificationTemplateForm
         return $schema
             ->components([
                 Section::make('Основная информация')
-                    ->description('Шаблон — это текст сообщения. Когда и кому его отправлять, настраивается отдельно в разделе «Авто-сообщения».')
+                    ->description('Шаблон хранит только текст и подстановочные данные. Фото и видео настраиваются отдельно в рассылке или авто-сообщении.')
                     ->schema([
                         TextInput::make('name')
                             ->label('Название')
@@ -62,33 +61,13 @@ final class NotificationTemplateForm
                             ->maxLength(255)
                             ->helperText('Необязательно для мессенджеров. Можно использовать подстановочные данные.')
                             ->columnSpanFull(),
-                        RichTextEditor::make('body')
+                        RichTextEditor::make('body', fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')))
                             ->label('Текст сообщения')
                             ->required()
                             ->maxLength(100000)
                             ->helperText(fn (Get $get): string => $get('purpose') === ScenarioRulePurpose::Marketing->value
-                                ? 'Для маркетинговой рассылки доступны только имя и язык клиента: {{ client.full_name }}, {{ client.language }}.'
-                                : 'Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
-                            ->columnSpanFull(),
-                        Select::make('insert_variable')
-                            ->label('Добавить данные')
-                            ->options(fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')))
-                            ->placeholder('Выберите данные для вставки')
-                            ->live()
-                            ->dehydrated(false)
-                            ->afterStateUpdated(function (Get $get, Set $set, ?string $state): void {
-                                if ($state === null || ! in_array($state, ScenarioTemplateVariableCatalog::allowedForPurpose((string) ($get('purpose') ?: '')), true)) {
-                                    $set('insert_variable', null);
-
-                                    return;
-                                }
-
-                                $body = trim((string) $get('body'));
-                                $token = '{{ '.$state.' }}';
-                                $set('body', $body === '' ? $token : $body."\n".$token);
-                                $set('insert_variable', null);
-                            })
-                            ->helperText('Система автоматически подставит реальные данные при отправке (например, имя клиента или дату визита).')
+                                ? 'Для рассылки доступны имя и язык клиента. Нажмите «Добавить данные» в редакторе или введите {{ client.full_name }}.'
+                                : 'Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора. Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
                             ->columnSpanFull(),
                     ])
                     ->columnSpanFull(),

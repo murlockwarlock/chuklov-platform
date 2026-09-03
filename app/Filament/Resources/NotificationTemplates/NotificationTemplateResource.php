@@ -83,6 +83,10 @@ final class NotificationTemplateResource extends Resource
                             : collect($latest->variables)->map(fn (string $variable): string => ScenarioTemplateVariableCatalog::labels()[$variable] ?? 'Данные')->implode(', ');
                     })
                     ->columnSpanFull(),
+                TextEntry::make('media_note')
+                    ->label('Медиа')
+                    ->state('Фото и видео не входят в текстовый шаблон. Добавьте их в конкретной рассылке или авто-сообщении.')
+                    ->columnSpanFull(),
             ]);
     }
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Scenarios;
 
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
+use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Resources\NotificationTemplates\Pages\CreateNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\EditNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
@@ -107,7 +108,8 @@ final class NotificationTemplateUxTest extends TestCase
                 'body' => 'Новый текст для языка {{ client.language }} и услуги {{ booking.service_name }}',
             ])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertHasNoFormErrors()
+            ->assertRedirect(NotificationTemplateResource::getUrl('view', ['record' => $template->getKey()]));
 
         $latestVersion = $template->versions()->latest('version')->firstOrFail();
         self::assertSame(2, $latestVersion->version);

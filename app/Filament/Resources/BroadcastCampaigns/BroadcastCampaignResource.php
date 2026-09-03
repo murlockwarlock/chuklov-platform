@@ -188,10 +188,11 @@ final class BroadcastCampaignResource extends Resource
                     ->visible(fn (Get $get): bool => self::deliveryIncludesText($get))
                     ->required(fn (Get $get): bool => self::deliveryIncludesText($get))
                     ->columns(1),
-                RichTextEditor::make('message_body')
+                RichTextEditor::make('message_body', ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing))
                     ->label('Текст сообщения в Telegram')
                     ->maxLength(100000)
                     ->live()
+                    ->helperText('Для рассылки доступны имя и язык клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.')
                     ->columnSpanFull()
                     ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get))
                     ->required(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
@@ -230,14 +231,14 @@ final class BroadcastCampaignResource extends Resource
                         ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
                 ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
             ])->columns(1)->columnSpanFull(),
-            Section::make('Изображение')->description('Можно загрузить одно изображение или указать готовую HTTPS-ссылку.')->schema([
+            Section::make('Изображение')->description('Для одной отправки можно добавить одно изображение. Видео и несколько файлов пока не поддерживаются.')->schema([
                 FileUpload::make('media_image')
                     ->label('Загрузить изображение')
                     ->image()
                     ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                     ->maxSize(self::imageUploadKilobytes())
                     ->storeFiles(false)
-                    ->helperText('JPG, PNG или WebP размером до 5 МБ.')
+                    ->helperText('Только одно изображение: JPG, PNG или WebP размером до 5 МБ.')
                     ->columnSpanFull(),
                 TextInput::make('media_url')
                     ->label('HTTPS-ссылка на изображение')
@@ -290,6 +291,9 @@ final class BroadcastCampaignResource extends Resource
                 ->prose()
                 ->html()
                 ->wrap(),
+            TextEntry::make('media_summary')
+                ->label('Медиа')
+                ->state(fn (BroadcastCampaign $record): string => self::mediaSummary($record)),
             TextEntry::make('scheduled_at')->label(fn (): string => 'Запланировано ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу'),
             TextEntry::make('audience_count')->label('Найдено'),
             TextEntry::make('delivered_count')->label('Доставлено'),
@@ -652,6 +656,19 @@ final class BroadcastCampaignResource extends Resource
         $image = is_array($media) ? $media['image'] ?? null : null;
 
         return is_string($image) && trim($image) !== '';
+    }
+
+    private static function mediaSummary(BroadcastCampaign $campaign): string
+    {
+        if (! self::hasMedia($campaign)) {
+            return 'Не добавлено';
+        }
+
+        $alt = is_array($campaign->media) ? $campaign->media['alt'] ?? null : null;
+
+        return is_string($alt) && trim($alt) !== ''
+            ? 'Изображение добавлено · '.trim($alt)
+            : 'Изображение добавлено';
     }
 
     private static function localeLabel(string $locale): string

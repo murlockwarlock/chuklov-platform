@@ -324,6 +324,9 @@ final readonly class BroadcastCampaignInput
 
         $remove = (bool) ($attributes['remove_media'] ?? false);
         $upload = $attributes['media_image'] ?? null;
+        if (is_array($upload)) {
+            throw ValidationException::withMessages(['media_image' => 'Можно добавить только одно изображение. Видео и несколько файлов не поддерживаются.']);
+        }
         if ($upload !== null && $upload !== '' && ! $upload instanceof UploadedFile) {
             throw ValidationException::withMessages(['media_image' => 'Загрузите изображение JPG, PNG или WebP.']);
         }
