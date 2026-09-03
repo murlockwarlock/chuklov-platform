@@ -37,8 +37,18 @@ class LegalDocument extends Model
     protected static function booted(): void
     {
         static::updating(function (self $document): void {
-            if ($document->getRawOriginal('status') !== LegalDocumentStatus::Published->value) {
+            $originalStatus = LegalDocumentStatus::tryFrom((string) $document->getRawOriginal('status'));
+
+            if ($originalStatus === LegalDocumentStatus::Draft) {
                 return;
+            }
+
+            if ($originalStatus !== LegalDocumentStatus::Published) {
+                throw new LogicException('Archived legal document versions are immutable.');
+            }
+
+            if ($document->status !== LegalDocumentStatus::Archived) {
+                throw new LogicException('Published legal document versions can only be archived.');
             }
 
             $allowedChanges = ['status', 'archived_at', 'updated_at'];
@@ -46,6 +56,12 @@ class LegalDocument extends Model
 
             if ($unsafeChanges !== []) {
                 throw new LogicException('Published legal document versions are immutable.');
+            }
+        });
+
+        static::deleting(function (self $document): void {
+            if ($document->status !== LegalDocumentStatus::Draft) {
+                throw new LogicException('Published and archived legal document versions are immutable.');
             }
         });
     }

@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
@@ -39,6 +40,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -107,6 +109,7 @@ class SchedulingConfiguration extends Page
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
+            'default_timezone' => $organization->defaultTimezone(),
             'b2b_zoom_host_licensed' => (bool) $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
                 ->value('boolean_value'),
@@ -156,6 +159,15 @@ class SchedulingConfiguration extends Page
                     ->maxValue(1440)
                     ->helperText('Без этого значения клиентские слоты не публикуются. Бесплатный Zoom поддерживает автоматические разговоры до 40 минут; для большей длительности отметьте лицензированный хост.')
                     ->nullable(),
+                Select::make('default_timezone')
+                    ->label('Часовой пояс организации')
+                    ->options(fn (Get $get): array => TimezoneOptions::options(
+                        current: $get('default_timezone'),
+                        organization: app(OrganizationContext::class)->organization()->defaultTimezone(),
+                    ))
+                    ->searchable()
+                    ->required()
+                    ->helperText('Все расписания и запланированные рассылки показываются операторам в этом часовом поясе. Хранение выполняется в UTC.'),
                 Checkbox::make('b2b_zoom_host_licensed')
                     ->label('У Zoom-хоста есть лицензия Meetings')
                     ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
@@ -290,6 +302,11 @@ class SchedulingConfiguration extends Page
             DB::transaction(function () use ($actor, $data, $specialist): void {
                 app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
                 app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::DefaultTimezone,
+                    (string) $data['default_timezone'],
+                );
                 if (isset($data['b2b_sales_call_duration_minutes']) && $data['b2b_sales_call_duration_minutes'] !== '') {
                     app(SetOrganizationSetting::class)->handle(
                         $actor,

@@ -8,10 +8,13 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\ListBroadcastCampaigns;
 use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\RelationManagers\RecipientsRelationManager;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\RichTextEditor;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -20,19 +23,21 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Support\RichText\RichTextDocument;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
@@ -44,7 +49,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final class BroadcastCampaignResource extends Resource
@@ -147,6 +151,27 @@ final class BroadcastCampaignResource extends Resource
                     ->columnSpanFull(),
             ])->columnSpanFull(),
             Section::make('Сообщение')->schema([
+                Radio::make('delivery_mode')
+                    ->label('Формат отправки')
+                    ->options([
+                        NotificationMessageMode::Text->value => 'Только текст',
+                        NotificationMessageMode::Image->value => 'Только изображение',
+                        NotificationMessageMode::ImageThenText->value => 'Изображение, затем текст',
+                        NotificationMessageMode::TextThenImage->value => 'Текст, затем изображение',
+                        NotificationMessageMode::ImageWithCaption->value => 'Изображение с подписью',
+                    ])
+                    ->default(NotificationMessageMode::Text->value)
+                    ->live()
+                    ->required()
+                    ->columns(1)
+                    ->columnSpanFull(),
+                Radio::make('caption_position')
+                    ->label('Положение подписи')
+                    ->options(['above' => 'Над изображением', 'below' => 'Под изображением'])
+                    ->default('below')
+                    ->inline()
+                    ->visible(fn (Get $get): bool => self::deliveryUsesCaption($get))
+                    ->required(fn (Get $get): bool => self::deliveryUsesCaption($get)),
                 Radio::make('message_mode')
                     ->label('Как подготовить сообщение')
                     ->options([
@@ -155,42 +180,76 @@ final class BroadcastCampaignResource extends Resource
                     ])
                     ->default('compose')
                     ->live()
-                    ->required()
+                    ->visible(fn (Get $get): bool => self::deliveryIncludesText($get))
+                    ->required(fn (Get $get): bool => self::deliveryIncludesText($get))
                     ->columns(1),
-                Textarea::make('message_body')
+                RichTextEditor::make('message_body')
                     ->label('Текст сообщения в Telegram')
-                    ->rows(7)
                     ->maxLength(100000)
                     ->live()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose')
-                    ->required(fn (Get $get): bool => $get('message_mode') === 'compose'),
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get))
+                    ->required(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
+                Placeholder::make('message_counter')
+                    ->label('Лимит Telegram')
+                    ->content(fn (Get $get): string => self::messageCounter($get))
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
                 Placeholder::make('message_preview')
                     ->label('Предпросмотр')
                     ->content(fn (Get $get): string => trim((string) $get('message_body')) ?: 'Текст появится здесь.')
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose'),
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
                 Select::make('template_version_ru_id')
                     ->label('Сохранённый шаблон')
                     ->options(fn (): array => self::templateOptions('ru'))
                     ->placeholder('Нет опубликованных сообщений')
                     ->searchable()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template'),
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
                 Select::make('template_version_en_id')
                     ->label('Шаблон для английского текста')
                     ->options(fn (): array => self::templateOptions('en'))
                     ->placeholder('Нет опубликованных сообщений')
                     ->searchable()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template'),
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
                 Placeholder::make('template_empty')
                     ->label('Готовые сообщения')
                     ->content('Нет готовых шаблонов для этого типа сообщения.')
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
+                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get) && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
                 Actions::make([
                     Action::make('createMessage')
                         ->label('Создать сообщение')
                         ->icon(Heroicon::OutlinedPlus)
                         ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
-                ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template'),
+                ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
             ])->columns(2)->columnSpanFull(),
+            Section::make('Изображение')->description('Можно загрузить одно изображение или указать готовую HTTPS-ссылку.')->schema([
+                FileUpload::make('media_image')
+                    ->label('Загрузить изображение')
+                    ->image()
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize(self::imageUploadKilobytes())
+                    ->storeFiles(false)
+                    ->helperText('JPG, PNG или WebP размером до 5 МБ.')
+                    ->columnSpanFull(),
+                TextInput::make('media_url')
+                    ->label('HTTPS-ссылка на изображение')
+                    ->url()
+                    ->maxLength(2000)
+                    ->dehydrated(fn (mixed $state): bool => filled($state))
+                    ->helperText('Заполните только если не загружаете файл.')
+                    ->columnSpanFull(),
+                TextInput::make('media_alt')
+                    ->label('Описание изображения')
+                    ->maxLength(255)
+                    ->columnSpanFull(),
+                Placeholder::make('current_media_status')
+                    ->label('Текущее изображение')
+                    ->content('Изображение уже добавлено.')
+                    ->visible(fn (?BroadcastCampaign $record): bool => self::hasMedia($record))
+                    ->columnSpanFull(),
+                Toggle::make('remove_media')
+                    ->label('Удалить текущее изображение')
+                    ->visible(fn (?BroadcastCampaign $record): bool => self::hasMedia($record))
+                    ->columnSpanFull(),
+            ])->columnSpanFull(),
             Section::make('Запуск')->schema([
                 Select::make('send_mode')->label('Когда отправить')->options(['immediate' => 'Сейчас', 'scheduled' => 'Запланировать'])->default('immediate')->required()->live(),
                 DateTimePicker::make('scheduled_at')
@@ -456,21 +515,15 @@ final class BroadcastCampaignResource extends Resource
     /** @return array<string, string> */
     private static function clientSearch(string $search): array
     {
-        $organizationId = app(OrganizationContext::class)->id();
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return [];
+        }
 
-        return Client::query()
-            ->where('organization_id', $organizationId)
-            ->where(function (Builder $query) use ($search): void {
-                $like = '%'.$search.'%';
-                $operator = DB::getDriverName() === 'pgsql' ? 'ilike' : 'like';
-                $query->where('full_name', $operator, $like)
-                    ->orWhere('phone', $operator, $like)
-                    ->orWhere('email', $operator, $like)
-                    ->orWhereHas('channelIdentities', fn (Builder $identity): Builder => $identity->where('channel', 'telegram')->where('external_username', $operator, $like));
-            })
+        return app(ClientSearch::class)
+            ->query($actor, $search)
             ->with('channelIdentities')
             ->orderBy('full_name')
-            ->limit(50)
             ->get()
             ->mapWithKeys(fn (Client $client): array => [$client->getKey() => self::clientDisplayLabel($client)])
             ->all();
@@ -502,7 +555,59 @@ final class BroadcastCampaignResource extends Resource
             $parts[] = '@'.ltrim((string) $username, '@');
         }
 
+        $telegramId = $client->channelIdentities
+            ->first(fn ($identity): bool => $identity->channel === 'telegram')?->external_id;
+        if (filled($telegramId)) {
+            $parts[] = 'Telegram ID: '.(string) $telegramId;
+        }
+
         return implode(' · ', $parts);
+    }
+
+    private static function deliveryIncludesText(Get $get): bool
+    {
+        return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->includesText() ?? true;
+    }
+
+    private static function deliveryUsesCaption(Get $get): bool
+    {
+        return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->usesCaption() ?? false;
+    }
+
+    private static function messageCounter(Get $get): string
+    {
+        $mode = NotificationMessageMode::tryFrom((string) $get('delivery_mode'));
+        $limit = $mode?->usesCaption() === true
+            ? RichTextDocument::TELEGRAM_CAPTION_LIMIT
+            : RichTextDocument::TELEGRAM_TEXT_LIMIT;
+        $body = $get('message_body');
+
+        if (! is_string($body) || trim($body) === '') {
+            return '0 / '.$limit;
+        }
+
+        try {
+            $length = RichTextDocument::telegramLength($body);
+        } catch (\InvalidArgumentException) {
+            return 'Проверьте формат текста · лимит '.$limit;
+        }
+
+        return $length.' / '.$limit;
+    }
+
+    private static function imageUploadKilobytes(): int
+    {
+        $bytes = max(1, (int) config('content_media.max_bytes', 5_242_880));
+
+        return intdiv($bytes + 1023, 1024);
+    }
+
+    private static function hasMedia(?BroadcastCampaign $campaign): bool
+    {
+        $media = $campaign?->media;
+        $image = is_array($media) ? $media['image'] ?? null : null;
+
+        return is_string($image) && trim($image) !== '';
     }
 
     private static function localeLabel(string $locale): string

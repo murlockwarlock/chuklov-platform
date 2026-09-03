@@ -56,7 +56,18 @@ type BookingQuery = {
 type BookingResult = {
     message: string;
     bookingId: number;
+    startsAt: string;
 } | null;
+
+type LegalDocument = {
+    id: number;
+    documentType: string;
+    title: string;
+    content: string;
+    contentHtml: string;
+    version: string;
+    isRequired: boolean;
+};
 
 type Props = {
     portal: PortalShell;
@@ -65,7 +76,9 @@ type Props = {
     availability: Availability | null;
     query: BookingQuery;
     bookingResult: BookingResult;
-    urls: { create: string; store: string; services: string; bookings: string };
+    legalDocuments: LegalDocument[];
+    attribution: { needsManualSource: boolean; url: string; sources: string[] };
+    urls: { create: string; store: string; services: string; bookings: string; referrals: string };
 };
 
 type ProgressStep = {
@@ -79,7 +92,7 @@ const selectedServiceId = ref<number | null>(props.query.serviceId);
 const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
 const selectedDate = ref<string | null>(props.query.dateFrom);
-const selectedStart = ref<string | null>(null);
+const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
 const bookingStep = ref<BookingStep>('time');
 const bookingForm = useForm<{
     service_id: number | null;
@@ -88,6 +101,9 @@ const bookingForm = useForm<{
     format: VisitFormat;
     party_size: number;
     location: string | null;
+    consents: Array<{ legal_document_id: number; granted: boolean }>;
+    marketing_consent: boolean;
+    attribution_source: string | null;
 }>({
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
@@ -95,7 +111,19 @@ const bookingForm = useForm<{
     format: props.query.format,
     party_size: 1,
     location: null,
+    consents: props.legalDocuments
+        .filter((document) => document.isRequired)
+        .map((document) => ({ legal_document_id: document.id, granted: false })),
+    marketing_consent: false,
+    attribution_source: null,
 });
+
+const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
+    bookingForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
+));
+const requiredConsentsAccepted = computed(() => props.legalDocuments
+    .filter((document) => document.isRequired)
+    .every((document) => consentValues.value[document.id] === true));
 
 const acknowledgedBookingId = ref<number | null>(null);
 
@@ -115,6 +143,7 @@ watch(
             bookingStep.value = 'time';
             bookingForm.starts_at = null;
         } else {
+            selectedStart.value = props.bookingResult.startsAt;
             bookingStep.value = 'success';
         }
     },
@@ -129,6 +158,7 @@ watch(
         }
 
         acknowledgedBookingId.value = bookingId;
+        selectedStart.value = props.bookingResult?.startsAt ?? null;
         bookingStep.value = 'success';
     },
     { immediate: true },
@@ -186,8 +216,22 @@ const bookingError = computed(() => {
         ?? errors.specialist_id
         ?? errors.format
         ?? errors.party_size
-        ?? errors.location;
+        ?? errors.location
+        ?? errors.consents
+        ?? errors.marketing_consent;
 });
+
+function setConsent(id: number, granted: boolean): void {
+    consentValues.value[id] = granted;
+    const consent = bookingForm.consents.find((item) => item.legal_document_id === id);
+    if (consent !== undefined) {
+        consent.granted = granted;
+    }
+}
+
+function setMarketingConsent(granted: boolean): void {
+    bookingForm.marketing_consent = granted;
+}
 
 function durationLabel(service: ServiceOption): string | null {
     return service.durationMinutes === null
@@ -442,7 +486,7 @@ function submitBooking(): void {
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format-label="formatLabel(props.query.format)"
-          :urls="{ bookings: props.urls.bookings, services: props.urls.services }"
+          :urls="{ bookings: props.urls.bookings, services: props.urls.services, referrals: props.urls.referrals }"
         />
 
         <BookingChoiceList
@@ -621,8 +665,19 @@ function submitBooking(): void {
           :location="bookingForm.location"
           :processing="bookingForm.processing"
           :error="bookingError"
+          :legal-documents="props.legalDocuments"
+          :consent-values="consentValues"
+          :marketing-consent="bookingForm.marketing_consent"
+          :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
+          :attribution-sources="props.attribution.sources"
+          :attribution-source="bookingForm.attribution_source"
+          :attribution-needs-manual-source="props.attribution.needsManualSource"
+          :required-consents-accepted="requiredConsentsAccepted"
           @update:party-size="bookingForm.party_size = $event"
           @update:location="bookingForm.location = $event"
+          @update:consent="setConsent"
+          @update:marketing-consent="setMarketingConsent"
+          @update:attribution-source="bookingForm.attribution_source = $event"
           @change="returnToTime"
           @confirm="submitBooking"
         />

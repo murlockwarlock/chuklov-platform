@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-03 — CRM UX, legal consent and Telegram content pass
+
+- Added versioned legal-document drafts/publications with immutable consent evidence, required Offer/Privacy/MedicalDisclaimer booking confirmations, optional Marketing consent, and append-only marketing withdrawal without affecting transactional delivery.
+- Added one safe rich-text representation for CRM-managed content, broadcast text/media modes, Telegram-aware limits and preview rendering, content delivery modes for Telegram/Mini App/Both, and immutable sent-campaign copy/re-run actions.
+- Added server-side broadcast client search for names, phones, Telegram usernames with or without `@`, and Telegram IDs, plus bounded recipient polling and human-readable selection state.
+- Added organization/client timezone preferences with UTC persistence and `Asia/Almaty` seed configuration, Mini App Zoom readiness polling, referral/attribution UX, and the compact language control.
+- Added focused PostgreSQL-backed regression coverage for legal consent, tenant-safe search, Telegram limits/media, timezone persistence, and relevant database constraints. No deployment, merge, production/staging verification, or hosted CI was performed for this candidate.
+
 ## 2026-09-02 — CRM operator UX remediation candidate
 
 - This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and simplifies the normal CRM workflows for broadcasts, auto-messages, templates, message history, bookings, and operational tables without removing the advanced scenario or segmentation capabilities.

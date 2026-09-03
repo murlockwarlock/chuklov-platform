@@ -27,6 +27,7 @@ final class RecipientsRelationManager extends RelationManager
         abort_unless((int) $campaign->organization_id === app(OrganizationContext::class)->id(), 404);
 
         return $table
+            ->poll(fn (): ?string => $this->shouldPoll() ? '5s' : null)
             ->columns([
                 TextColumn::make('client.full_name')->label('Клиент')->placeholder('Имя не указано')->limit(80),
                 TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
@@ -59,6 +60,21 @@ final class RecipientsRelationManager extends RelationManager
             ->paginated([10, 25, 50])
             ->emptyStateHeading('Получателей пока нет')
             ->emptyStateDescription('После фиксации списка здесь появятся результаты отправки.');
+    }
+
+    private function shouldPoll(): bool
+    {
+        $campaign = $this->getOwnerRecord();
+        if (! $campaign instanceof BroadcastCampaign) {
+            return false;
+        }
+
+        return BroadcastRecipient::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('campaign_id', $campaign->getKey())
+            ->where('kind', 'production')
+            ->whereIn('state', [BroadcastRecipientState::Pending->value, BroadcastRecipientState::Claimed->value])
+            ->exists();
     }
 
     private static function stateLabel(BroadcastRecipientState|string $state): string

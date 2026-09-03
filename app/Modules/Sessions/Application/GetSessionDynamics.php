@@ -56,19 +56,22 @@ final readonly class GetSessionDynamics
                 ? $this->getSession->handle($actor, $previous, $client)
                 : null,
             currentSpecialist: $session->specialist->display_name,
-            currentBooking: self::bookingLabel($session),
+            currentBooking: self::bookingLabel($session, $organization->defaultTimezone()),
             previousSpecialist: $previous?->specialist->display_name,
-            previousBooking: $previous instanceof MedicalSession ? self::bookingLabel($previous) : null,
+            previousBooking: $previous instanceof MedicalSession ? self::bookingLabel($previous, $organization->defaultTimezone()) : null,
+            timezone: $organization->defaultTimezone(),
         );
     }
 
-    private static function bookingLabel(MedicalSession $session): string
+    private static function bookingLabel(MedicalSession $session, string $timezone = 'UTC'): string
     {
         if ($session->booking === null) {
             return 'Без записи на приём';
         }
 
-        return Carbon::parse((string) $session->booking->getAttribute('starts_at'))->format('d.m.Y H:i')
+        return Carbon::parse((string) $session->booking->getAttribute('starts_at'), 'UTC')
+            ->setTimezone($timezone)
+            ->format('d.m.Y H:i')
             .' (#'.$session->booking->getKey().')';
     }
 }

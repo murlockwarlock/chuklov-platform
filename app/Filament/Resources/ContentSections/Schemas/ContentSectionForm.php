@@ -2,11 +2,12 @@
 
 namespace App\Filament\Resources\ContentSections\Schemas;
 
+use App\Filament\Support\RichTextEditor;
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -43,16 +44,24 @@ class ContentSectionForm
                             ->required()
                             ->maxLength(160)
                             ->columnSpanFull(),
+                        Select::make('delivery_mode')
+                            ->label('Где показывать')
+                            ->options([
+                                ContentDeliveryMode::Telegram->value => 'Telegram',
+                                ContentDeliveryMode::MiniApp->value => 'Mini App',
+                                ContentDeliveryMode::Both->value => 'Telegram и Mini App',
+                            ])
+                            ->required()
+                            ->default(ContentDeliveryMode::Both->value),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
                 Section::make('Текст раздела')
                     ->schema([
-                        Textarea::make('body')
+                        RichTextEditor::make('body')
                             ->label('Текст')
                             ->required()
                             ->maxLength(100000)
-                            ->rows(12)
                             ->columnSpanFull(),
                     ])
                     ->columnSpanFull(),

@@ -78,6 +78,7 @@ class CreateClient
                 'phone' => $phone,
                 'language' => $language,
                 'timezone' => $timezone,
+                'timezone_source' => 'manual',
                 'lead_source' => $leadSource,
                 'referral_code' => $referralCode,
             ]);

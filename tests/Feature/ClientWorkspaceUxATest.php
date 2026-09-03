@@ -71,6 +71,37 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame([$client->id], $search->query($admin, '7-999-123-45-67')->pluck('id')->all(), '7-phone');
     }
 
+    public function test_client_search_matches_telegram_username_with_or_without_at_and_keeps_tenant_scope(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $otherOrganization = Organization::factory()->create();
+        $aikhia = Client::factory()->forOrganization($organization)->create(['full_name' => 'Aikhia']);
+        $aikhana = Client::factory()->forOrganization($organization)->create(['full_name' => 'Aikhana']);
+        $foreign = Client::factory()->forOrganization($otherOrganization)->create(['full_name' => 'Foreign Aikhia']);
+
+        ClientChannelIdentity::factory()->forClient($aikhia)->create([
+            'external_id' => '806750628',
+            'external_username' => 'Aikhia',
+        ]);
+        ClientChannelIdentity::factory()->forClient($aikhana)->create([
+            'external_id' => '806750629',
+            'external_username' => 'aikhana',
+        ]);
+        ClientChannelIdentity::factory()->forClient($foreign)->create([
+            'external_id' => '806750628',
+            'external_username' => 'Aikhia',
+        ]);
+
+        $search = app(ClientSearch::class);
+
+        self::assertSame([$aikhia->id], $search->query($admin, 'Aikhia')->pluck('id')->all());
+        self::assertSame([$aikhia->id], $search->query($admin, '@Aikhia')->pluck('id')->all());
+        self::assertSame([$aikhana->id], $search->query($admin, 'AIKHANA')->pluck('id')->all());
+        self::assertSame([$aikhia->id], $search->query($admin, '806750628')->pluck('id')->all());
+        self::assertSame([$aikhia->id], $search->query($admin, 'tg:806750628')->pluck('id')->all());
+        self::assertNotContains($foreign->id, $search->query($admin, '@Aikhia')->pluck('id')->all());
+    }
+
     public function test_client_search_preserves_non_russian_country_digits(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

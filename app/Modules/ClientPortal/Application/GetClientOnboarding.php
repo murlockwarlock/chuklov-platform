@@ -7,7 +7,9 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Services\Application\ListPublishedServices;
+use App\Support\RichText\RichTextDocument;
 
 class GetClientOnboarding
 {
@@ -41,12 +43,20 @@ class GetClientOnboarding
             ->keys()
             ->values()
             ->all();
-        $legalDocuments = $this->legalDocuments->handle($client->language)->map(static fn ($document): array => [
-            'id' => $document->getKey(),
-            'purpose' => $document->purpose,
-            'content' => $document->content,
-            'isRequired' => $document->is_required,
-        ])->all();
+        $legalDocuments = $this->legalDocuments->handle($client->language)->map(static function ($document): array {
+            $subject = ConsentSubject::tryFrom($document->document_type);
+
+            return [
+                'id' => $document->getKey(),
+                'documentType' => $document->document_type,
+                'title' => $subject?->label(str_starts_with(strtolower((string) $document->locale), 'ru') ? 'ru' : 'en') ?? $document->purpose,
+                'purpose' => $document->purpose,
+                'content' => $document->content,
+                'contentHtml' => RichTextDocument::canonicalHtml($document->content),
+                'version' => $document->version,
+                'isRequired' => $subject?->isRequired() ?? false,
+            ];
+        })->all();
 
         return [
             'currentStage' => $onboarding->current_stage->value,

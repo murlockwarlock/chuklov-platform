@@ -21,6 +21,7 @@ class RecordPortalClientConsents
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly ListPublishedLegalDocuments $publishedDocuments,
     ) {}
 
     /** @param list<array{legal_document_id: int, granted: bool}> $consents */
@@ -41,6 +42,18 @@ class RecordPortalClientConsents
 
         if ($ids !== array_values(array_unique($ids))) {
             throw ValidationException::withMessages(['consents' => 'Each legal document can be answered once.']);
+        }
+
+        $requiredIds = $this->publishedDocuments->handle($client->language)
+            ->filter(static function (LegalDocument $document): bool {
+                return ConsentSubject::tryFrom($document->document_type)?->isRequired() === true;
+            })
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+        if (array_diff($requiredIds, $ids) !== []) {
+            throw ValidationException::withMessages(['consents' => 'All required legal documents must be accepted.']);
         }
 
         $documents = LegalDocument::query()
@@ -78,7 +91,9 @@ class RecordPortalClientConsents
         }
 
         foreach ($documents as $document) {
-            if ($document->is_required && (($answers[$document->getKey()]['granted'] ?? false) !== true)) {
+            $subject = $answers[$document->getKey()]['subject'];
+
+            if ($subject->isRequired() && (($answers[$document->getKey()]['granted'] ?? false) !== true)) {
                 throw ValidationException::withMessages([
                     'consents' => 'All required legal documents must be accepted.',
                 ]);
@@ -98,7 +113,7 @@ class RecordPortalClientConsents
                     'legal_document_id' => $document->getKey(),
                     'subject' => $subject,
                     'version' => $document->version,
-                    'is_required' => $document->is_required,
+                    'is_required' => $subject->isRequired(),
                     'granted' => $answer['granted'],
                     'evidence' => 'portal',
                     'recorded_at' => now(),

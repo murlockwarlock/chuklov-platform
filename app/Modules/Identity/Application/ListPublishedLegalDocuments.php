@@ -15,18 +15,19 @@ class ListPublishedLegalDocuments
     public function handle(?string $locale = null): Collection
     {
         $organizationId = $this->context->id();
-        $requestedLocale = is_string($locale) && $locale !== '' ? $locale : 'en';
-        $locales = array_values(array_unique([$requestedLocale, 'en']));
+        $normalizedLocale = strtolower((string) $locale);
+        $requestedLocale = str_starts_with($normalizedLocale, 'ru') ? 'ru' : 'en';
+        $locales = array_values(array_unique([$requestedLocale, 'en', 'ru']));
 
         return LegalDocument::query()
             ->where('status', LegalDocumentStatus::Published)
             ->whereIn('locale', $locales)
             ->where('organization_id', $organizationId)
             ->get()
-            ->sortBy(function (LegalDocument $document) use ($requestedLocale): int {
-                $localePriority = (int) ($document->locale !== $requestedLocale);
+            ->sortBy(function (LegalDocument $document) use ($locales): int {
+                $localePriority = array_search($document->locale, $locales, true);
 
-                return $localePriority;
+                return $localePriority === false ? count($locales) : $localePriority;
             })
             ->unique('document_type')
             ->values();

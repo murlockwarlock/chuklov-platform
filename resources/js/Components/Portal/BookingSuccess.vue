@@ -12,7 +12,7 @@ const props = defineProps<{
     timezone: string;
     locale: PortalLocale;
     formatLabel: string;
-    urls: { bookings: string; services: string };
+    urls: { bookings: string; services: string; referrals: string };
 }>();
 
 const { t } = usePortalLocale();
@@ -81,6 +81,13 @@ const { t } = usePortalLocale();
         class="portal-button portal-button--secondary"
       >
         {{ t('booking.bookAgain') }}
+      </Link>
+      <Link
+        :href="props.urls.referrals"
+        class="portal-button portal-button--secondary"
+        data-testid="booking-referrals-cta"
+      >
+        {{ t('home.referrals') }}
       </Link>
     </div>
   </section>

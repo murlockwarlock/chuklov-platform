@@ -16,10 +16,11 @@ class RecordPortalClientConsentsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'consents' => ['required', 'array'],
+            'consents' => ['present', 'array'],
             'consents.*' => ['required', 'array:legal_document_id,granted'],
             'consents.*.legal_document_id' => ['required', 'integer', 'min:1'],
             'consents.*.granted' => ['required', 'boolean'],
+            'marketing_consent' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -28,7 +29,7 @@ class RecordPortalClientConsentsRequest extends FormRequest
     {
         return [
             'consents.array' => 'Проверьте согласия с документами.',
-            'consents.required' => 'Проверьте согласия с документами.',
+            'consents.present' => 'Проверьте согласия с документами.',
             'consents.*.legal_document_id.required' => 'Выберите документ.',
             'consents.*.granted.required' => 'Подтвердите согласие.',
         ];

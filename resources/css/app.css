@@ -159,11 +159,6 @@ body {
     color: var(--portal-color-surface);
 }
 
-.portal-language-switcher__chevron {
-    font-size: 0.92rem;
-    line-height: 1;
-}
-
 .portal-language-switcher__menu {
     position: absolute;
     z-index: 30;

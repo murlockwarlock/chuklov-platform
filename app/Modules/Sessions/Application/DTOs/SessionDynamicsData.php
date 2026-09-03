@@ -2,6 +2,8 @@
 
 namespace App\Modules\Sessions\Application\DTOs;
 
+use Carbon\CarbonImmutable;
+
 final readonly class SessionDynamicsData
 {
     public function __construct(
@@ -11,6 +13,7 @@ final readonly class SessionDynamicsData
         public string $currentBooking,
         public ?string $previousSpecialist,
         public ?string $previousBooking,
+        public string $timezone = 'UTC',
     ) {}
 
     /** @return list<array<string, mixed>> */
@@ -40,7 +43,9 @@ final readonly class SessionDynamicsData
     {
         return [
             'period' => $period,
-            'occurred_at' => $session->occurredAt?->format('d.m.Y H:i') ?? '—',
+            'occurred_at' => $session->occurredAt === null
+                ? '—'
+                : CarbonImmutable::instance($session->occurredAt)->setTimezone($this->timezone)->format('d.m.Y H:i'),
             'specialist' => $specialist,
             'booking' => $booking,
             'pain' => $session->pain,

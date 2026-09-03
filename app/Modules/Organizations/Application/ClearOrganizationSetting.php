@@ -26,6 +26,7 @@ final class ClearOrganizationSetting
             in_array($key, [
                 OrganizationSettingKey::B2bSalesCallDurationMinutes,
                 OrganizationSettingKey::B2bZoomHostLicensed,
+                OrganizationSettingKey::DefaultTimezone,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,

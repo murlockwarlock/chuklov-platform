@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources\NotificationTemplates\Schemas;
 
+use App\Filament\Support\RichTextEditor;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -62,10 +62,9 @@ final class NotificationTemplateForm
                             ->maxLength(255)
                             ->helperText('Необязательно для мессенджеров. Можно использовать подстановочные данные.')
                             ->columnSpanFull(),
-                        Textarea::make('body')
+                        RichTextEditor::make('body')
                             ->label('Текст сообщения')
                             ->required()
-                            ->rows(10)
                             ->maxLength(100000)
                             ->helperText(fn (Get $get): string => $get('purpose') === ScenarioRulePurpose::Marketing->value
                                 ? 'Для маркетинговой рассылки доступны только имя и язык клиента: {{ client.full_name }}, {{ client.language }}.'

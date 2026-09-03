@@ -19,6 +19,7 @@ class UpdateClientProfileRequest extends FormRequest
             'full_name' => ['sometimes', 'nullable', 'string', 'max:160'],
             'email' => ['sometimes', 'nullable', 'email', 'max:320'],
             'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+            'timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
         ];
     }
 
@@ -30,6 +31,7 @@ class UpdateClientProfileRequest extends FormRequest
             'email.email' => 'Введите корректный email.',
             'email.max' => 'Email слишком длинный.',
             'phone.max' => 'Телефон слишком длинный.',
+            'timezone.max' => 'Часовой пояс указан слишком длинно.',
         ];
     }
 }

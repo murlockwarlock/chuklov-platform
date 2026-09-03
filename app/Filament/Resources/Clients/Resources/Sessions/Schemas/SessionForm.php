@@ -24,6 +24,7 @@ final class SessionForm
                     ->schema([
                         DateTimePicker::make('occurred_at')
                             ->label('Дата и время сеанса')
+                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                             ->required()
                             ->seconds(false)
                             ->placeholder('Выберите дату и время сеанса'),
@@ -123,7 +124,9 @@ final class SessionForm
             ->limit(50)
             ->get(['id', 'starts_at'])
             ->mapWithKeys(static fn (Booking $booking): array => [
-                $booking->getKey() => Carbon::parse((string) $booking->getAttribute('starts_at'))->format('d.m.Y H:i').' (#'.$booking->getKey().')',
+                $booking->getKey() => Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
+                    ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                    ->format('d.m.Y H:i').' (#'.$booking->getKey().')',
             ])
             ->all();
     }
@@ -139,7 +142,9 @@ final class SessionForm
             ->first(['id', 'starts_at']);
 
         return $booking instanceof Booking
-            ? Carbon::parse((string) $booking->getAttribute('starts_at'))->format('d.m.Y H:i').' (#'.$booking->getKey().')'
+            ? Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
+                ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                ->format('d.m.Y H:i').' (#'.$booking->getKey().')'
             : null;
     }
 

@@ -10,6 +10,7 @@ use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Broadcasts\Application\BroadcastEligibilityPolicy;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
+use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign;
 use App\Modules\Broadcasts\Application\MaterializeBroadcastAudience;
 use App\Modules\Broadcasts\Application\PreviewBroadcastCampaign;
@@ -27,6 +28,7 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastDeliveryAttempt;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
@@ -48,6 +50,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
@@ -161,6 +164,144 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertCount(1, $this->channel->messages);
         self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
         self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
+    }
+
+    public function test_selected_client_form_shows_the_exact_human_recipient_count(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($actor)
+            ->test(CreateBroadcastCampaignPage::class)
+            ->fillForm([
+                'audience_type' => 'selected',
+                'selected_client_ids' => [$client->getKey()],
+            ])
+            ->assertSee('Получателей: 1');
+    }
+
+    public function test_broadcast_text_limit_is_validated_at_campaign_boundary(): void
+    {
+        [$organization, $actor] = $this->fixture();
+
+        $text = $this->campaignData([]);
+        $text['message_mode'] = 'compose';
+        $text['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT);
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $text);
+        self::assertSame($text['message_body'], $campaign->message_body);
+
+        $tooLongText = $this->campaignData([]);
+        $tooLongText['message_mode'] = 'compose';
+        $tooLongText['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT + 1);
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $tooLongText);
+    }
+
+    public function test_preview_renders_template_variables_before_the_telegram_projection(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '<p><strong>Здравствуйте, {{ client.full_name }}!</strong> 😀</p>';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $preview = app(PreviewBroadcastCampaign::class)->message($actor, $campaign);
+
+        self::assertStringContainsString('Aikhana', $preview['bodyHtml']);
+        self::assertStringNotContainsString('{{ client.full_name }}', $preview['bodyHtml']);
+        self::assertStringContainsString('<b>', $preview['bodyHtml']);
+    }
+
+    public function test_campaign_preview_rejects_a_stale_message_that_exceeds_the_telegram_limit(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'message_body' => str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT + 1),
+        ])->save();
+
+        $this->expectException(ValidationException::class);
+        app(PreviewBroadcastCampaign::class)->message($actor, $campaign->refresh());
+    }
+
+    public function test_rendered_template_variables_are_checked_against_telegram_limits(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $text = $this->campaignData([]);
+        $text['message_mode'] = 'compose';
+        $text['message_body'] = str_repeat('a', 3900).' {{ client.full_name }}';
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $text);
+    }
+
+    public function test_photo_caption_mode_persists_caption_position_and_enforces_1024_boundary(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $data['caption_position'] = 'above';
+        $data['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_CAPTION_LIMIT);
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame(NotificationMessageMode::ImageWithCaption->value, $campaign->delivery_mode);
+        self::assertSame('above', $campaign->caption_position);
+        self::assertSame('https://cdn.example.test/image.jpg', $campaign->media['image'] ?? null);
+
+        $tooLong = $this->campaignData([]);
+        $tooLong['message_mode'] = 'compose';
+        $tooLong['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $tooLong['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_CAPTION_LIMIT + 1);
+        $tooLong['media_url'] = 'https://cdn.example.test/image.jpg';
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $tooLong);
+    }
+
+    public function test_image_only_mode_does_not_create_or_require_a_text_template(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertNull($campaign->message_body);
+        self::assertNull($campaign->template_version_ru_id);
+        self::assertSame(NotificationMessageMode::Image->value, $campaign->delivery_mode);
+    }
+
+    public function test_sent_campaign_can_only_be_copied_to_a_new_draft(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '<p><strong>Повтор</strong> 😀</p>';
+        $data['delivery_mode'] = NotificationMessageMode::ImageThenText->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+
+        $copy = app(CopyBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertNotSame($campaign->getKey(), $copy->getKey());
+        self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
+        self::assertSame(BroadcastCampaignState::Draft, $copy->state);
+        self::assertSame($campaign->message_body, $copy->message_body);
+        self::assertSame($campaign->delivery_mode, $copy->delivery_mode);
+        self::assertSame($campaign->caption_position, $copy->caption_position);
+        self::assertSame($campaign->media, $copy->media);
+        self::assertNull($copy->audience_snapshot_id);
+        self::assertSame(0, $copy->audience_count);
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void

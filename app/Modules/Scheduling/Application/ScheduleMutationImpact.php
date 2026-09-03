@@ -47,7 +47,7 @@ final readonly class ScheduleMutationImpact
             return 'дата не указана';
         }
 
-        return CarbonImmutable::parse($value, 'UTC')->format('d.m.Y H:i');
+        return CarbonImmutable::parse($value)->format('d.m.Y H:i');
     }
 
     private static function statusLabel(mixed $status): string

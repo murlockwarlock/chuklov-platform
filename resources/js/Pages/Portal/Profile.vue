@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
 type LegalDocument = {
     id: number;
+    documentType: string;
     purpose: string;
     content: string;
+    contentHtml: string;
+    title: string;
+    version: string;
     isRequired: boolean;
     accepted: boolean;
 };
@@ -17,6 +22,7 @@ type Profile = {
     fullName: string | null;
     email: string | null;
     phone: string | null;
+    timezone: string;
     locale: 'ru' | 'en';
     emailEditable: boolean;
 };
@@ -37,10 +43,13 @@ const props = defineProps<{
         consents: string;
         telegramLink: string;
         b2bAnswer: string;
+        referrals: string;
     };
     saved: boolean;
     consentsSaved: boolean;
     b2bSpecialistAnswer: 'yes' | 'no' | null;
+    marketingConsent: { documentId: number; accepted: boolean } | null;
+    timezoneOptions: Array<{ value: string; label: string }>;
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -48,19 +57,26 @@ const profileForm = useForm<{
     full_name: string;
     email: string;
     phone: string;
+    timezone: string;
 }>({
     full_name: props.profile.fullName ?? '',
     email: props.profile.email ?? '',
     phone: props.profile.phone ?? '',
+    timezone: props.profile.timezone,
 });
 const consentForm = useForm<{
     consents: Array<{ legal_document_id: number; granted: boolean }>;
+    marketing_consent: boolean;
 }>({
-    consents: props.legalDocuments.map((document) => ({
+    consents: props.legalDocuments.filter((document) => document.isRequired).map((document) => ({
         legal_document_id: document.id,
         granted: document.accepted,
     })),
+    marketing_consent: props.marketingConsent?.accepted ?? false,
 });
+const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
+    consentForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
+));
 const telegramLinkForm = useForm<Record<string, never>>({});
 const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
@@ -80,6 +96,18 @@ function saveConsents(): void {
     consentForm.post(props.urls.consents, {
         preserveScroll: true,
     });
+}
+
+function setConsent(id: number, granted: boolean): void {
+    consentValues.value[id] = granted;
+    const consent = consentForm.consents.find((item) => item.legal_document_id === id);
+    if (consent) {
+        consent.granted = granted;
+    }
+}
+
+function setMarketingConsent(granted: boolean): void {
+    consentForm.marketing_consent = granted;
 }
 
 function requestTelegramLink(): void {
@@ -195,6 +223,25 @@ function saveB2bAnswer(): void {
               >
                 {{ profileForm.errors.email }}
               </p>
+            </div>
+            <div class="portal-field portal-field--wide">
+              <label
+                for="profile-timezone"
+                class="portal-label"
+              >{{ t('profile.timezone') }}</label>
+              <select
+                id="profile-timezone"
+                v-model="profileForm.timezone"
+                class="portal-input"
+              >
+                <option
+                  v-for="option in props.timezoneOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
             </div>
           </div>
           <div class="portal-form-actions">
@@ -354,34 +401,14 @@ function saveB2bAnswer(): void {
           class="portal-stack"
           @submit.prevent="saveConsents"
         >
-          <article
-            v-for="(document, index) in props.legalDocuments"
-            :key="document.id"
-            class="portal-legal-card"
-          >
-            <div class="portal-section-heading">
-              <h3 class="portal-heading portal-heading--card">
-                {{ document.purpose }}
-              </h3>
-              <span
-                v-if="document.isRequired"
-                class="portal-copy portal-copy--small"
-              >
-                {{ t('profile.required') }}
-              </span>
-            </div>
-            <div class="portal-legal-content">
-              {{ document.content }}
-            </div>
-            <label class="portal-confirm">
-              <input
-                v-model="consentForm.consents[index].granted"
-                type="checkbox"
-                class="portal-checkbox"
-              >
-              <span>{{ t('profile.accept') }}</span>
-            </label>
-          </article>
+          <LegalConsentChecklist
+            :documents="props.legalDocuments"
+            :values="consentValues"
+            :marketing-value="consentForm.marketing_consent"
+            :show-marketing="props.marketingConsent !== null"
+            @change="setConsent"
+            @update:marketing-value="setMarketingConsent"
+          />
           <button
             type="submit"
             class="portal-button portal-button--secondary self-start"
@@ -397,6 +424,21 @@ function saveB2bAnswer(): void {
             {{ t('profile.consentsSaved') }}
           </p>
         </form>
+      </section>
+
+      <section class="portal-panel portal-stack portal-stack--tight">
+        <h2 class="portal-heading portal-heading--card">
+          {{ t('home.referrals') }}
+        </h2>
+        <p class="portal-copy portal-copy--small">
+          {{ t('home.referralsDescription') }}
+        </p>
+        <Link
+          :href="props.portal.urls.referrals"
+          class="portal-button portal-button--secondary self-start"
+        >
+          {{ t('home.referrals') }}
+        </Link>
       </section>
     </section>
   </AppShell>

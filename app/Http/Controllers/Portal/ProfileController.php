@@ -10,8 +10,10 @@ use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\GetClientProfile;
+use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -47,8 +49,21 @@ class ProfileController extends Controller
         RecordPortalClientConsentsRequest $request,
         ClientPortalContext $clientContext,
         RecordPortalClientConsents $recordConsents,
+        ListPublishedLegalDocuments $legalDocuments,
     ): RedirectResponse {
-        $recordConsents->handle($clientContext->client(), $request->validated('consents'));
+        $validated = $request->validated();
+        $answers = $validated['consents'];
+        if (array_key_exists('marketing_consent', $validated)) {
+            $marketingDocument = $legalDocuments->handle($clientContext->client()->language)
+                ->first(fn ($document): bool => $document->document_type === ConsentSubject::Marketing->value);
+            if ($marketingDocument !== null) {
+                $answers[] = [
+                    'legal_document_id' => (int) $marketingDocument->getKey(),
+                    'granted' => (bool) $validated['marketing_consent'],
+                ];
+            }
+        }
+        $recordConsents->handle($clientContext->client(), $answers);
 
         return to_route('portal.profile')->with('consents_saved', true);
     }

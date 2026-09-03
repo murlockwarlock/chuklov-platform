@@ -31,6 +31,7 @@ class TelegramAuthenticationController extends Controller
         $validated = $request->validate([
             'initData' => ['required', 'string', 'max:8192'],
             'launchEntry' => ['nullable', 'string', 'max:64'],
+            'clientTimezone' => ['nullable', 'string', 'max:64'],
         ]);
         $launchEntry = $validated['launchEntry'] ?? null;
         $launchEntry = is_string($launchEntry) && trim($launchEntry) !== '' ? trim($launchEntry) : null;
@@ -54,6 +55,7 @@ class TelegramAuthenticationController extends Controller
             $client = $authenticate->handle(
                 verifiedIdentity: $identity,
                 acquisitionSessionId: $request->session()->getId(),
+                clientTimezone: $validated['clientTimezone'] ?? null,
             );
         } catch (InvalidTelegramInitData|AuthorizationException) {
             $errorRedirect = $launchEntry === null

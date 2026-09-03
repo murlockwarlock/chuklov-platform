@@ -32,7 +32,7 @@ class BookingsTable
             TextColumn::make('starts_at')
                 ->label('Дата и время')
                 ->dateTime('d.m.Y H:i')
-                ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC'))
+                ->timezone(fn (): string => self::organizationTimezone())
                 ->sortable(),
             TextColumn::make('visit_format')
                 ->label('Формат')

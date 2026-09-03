@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 final readonly class ClientSearch
 {
@@ -67,7 +68,10 @@ final readonly class ClientSearch
             $telegramId = $matches[1];
 
             return $query->whereHas('channelIdentities', function (Builder $query) use ($telegramId): void {
-                $query->where('channel', 'telegram')->where('external_id', $telegramId);
+                $query
+                    ->whereColumn('client_channel_identities.organization_id', 'clients.organization_id')
+                    ->where('channel', 'telegram')
+                    ->where('external_id', $telegramId);
             });
         }
 
@@ -101,18 +105,18 @@ final readonly class ClientSearch
                         $hasClause = true;
                     }
 
-                    if ($prefixCandidates !== []) {
-                        foreach ($prefixCandidates as $prefix) {
-                            $method = $hasClause ? 'orWhere' : 'where';
-                            $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
-                            $hasClause = true;
-                        }
-
-                        $query->orWhereHas('channelIdentities', function (Builder $query) use ($input): void {
-                            $query->where('external_id', $input);
-                        });
+                    foreach ($prefixCandidates as $prefix) {
+                        $method = $hasClause ? 'orWhere' : 'where';
+                        $query->{$method}('phone_search_key', 'LIKE', $prefix.'%');
+                        $hasClause = true;
                     }
 
+                    $query->orWhereHas('channelIdentities', function (Builder $query) use ($input): void {
+                        $query
+                            ->whereColumn('client_channel_identities.organization_id', 'clients.organization_id')
+                            ->where('channel', 'telegram')
+                            ->where('external_id', $input);
+                    });
                 });
 
                 return $this->prioritizeExactChannelIdentity($query, $input);
@@ -151,7 +155,7 @@ final readonly class ClientSearch
             return $query->whereKey(0);
         }
 
-        $terms = $this->terms($input);
+        $terms = $this->terms($this->normalizedUsernameInput($input));
 
         if ($terms === []) {
             return $query->whereKey(0);
@@ -166,7 +170,7 @@ final readonly class ClientSearch
         }
 
         return $query->where(function (Builder $query) use ($terms): void {
-            $operator = config('database.default') === 'pgsql' ? 'ILIKE' : 'LIKE';
+            $operator = DB::getDriverName() === 'pgsql' ? 'ILIKE' : 'LIKE';
 
             foreach ($terms as $term) {
                 $pattern = '%'.addcslashes($term, '\\%_').'%';
@@ -174,7 +178,13 @@ final readonly class ClientSearch
                 $query->where(function (Builder $query) use ($pattern, $operator): void {
                     $query
                         ->where('full_name', $operator, $pattern)
-                        ->orWhere('email', $operator, $pattern);
+                        ->orWhere('email', $operator, $pattern)
+                        ->orWhereHas('channelIdentities', function (Builder $query) use ($pattern, $operator): void {
+                            $query
+                                ->whereColumn('client_channel_identities.organization_id', 'clients.organization_id')
+                                ->where('channel', 'telegram')
+                                ->where('external_username', $operator, $pattern);
+                        });
                 });
             }
         });
@@ -199,9 +209,18 @@ final readonly class ClientSearch
     private function prioritizeExactChannelIdentity(Builder $query, string $externalId): Builder
     {
         return $query->orderByRaw(
-            'CASE WHEN EXISTS (SELECT 1 FROM client_channel_identities WHERE client_channel_identities.client_id = clients.id AND client_channel_identities.organization_id = clients.organization_id AND client_channel_identities.external_id = ?) THEN 0 ELSE 1 END',
+            'CASE WHEN EXISTS (SELECT 1 FROM client_channel_identities WHERE client_channel_identities.client_id = clients.id AND client_channel_identities.organization_id = clients.organization_id AND client_channel_identities.channel = \'telegram\' AND client_channel_identities.external_id = ?) THEN 0 ELSE 1 END',
             [$externalId],
         );
+    }
+
+    private function normalizedUsernameInput(string $input): string
+    {
+        if (! str_starts_with($input, '@')) {
+            return $input;
+        }
+
+        return ltrim($input, '@');
     }
 
     private function looksLikePhone(string $input): bool

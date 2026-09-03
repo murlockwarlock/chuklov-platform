@@ -5,6 +5,7 @@ namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
+use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
 use App\Modules\Broadcasts\Application\PreviewBroadcastCampaign;
 use App\Modules\Broadcasts\Application\StartBroadcastCampaign;
 use App\Modules\Broadcasts\Application\TestBroadcastCampaign;
@@ -18,6 +19,7 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Contracts\View\View;
 
 final class ViewBroadcastCampaign extends ViewRecord
 {
@@ -29,16 +31,46 @@ final class ViewBroadcastCampaign extends ViewRecord
     {
         return [
             EditAction::make()->label('Редактировать')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft),
-            Action::make('preview')->label('Предпросмотр')->icon('heroicon-o-eye')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
-                $campaign = $this->campaign();
-                $result = app(PreviewBroadcastCampaign::class)->handle($this->actor(), $campaign);
-                $reasons = collect($result['reasons'])->map(fn (int $count, string $reason): string => self::reasonLabel($reason).': '.$count)->implode('; ');
-                $message = trim((string) ($campaign->message_body ?: $campaign->russianTemplateVersion?->body ?: $campaign->englishTemplateVersion?->body));
-                $body = ($reasons === '' ? 'Исключений нет.' : 'Исключено: '.$reasons)
-                    ."\n\nПредпросмотр сообщения:\n"
-                    .($message === '' ? 'Сообщение не выбрано.' : $message);
-                Notification::make()->title("Получателей: {$result['eligible']} из {$result['matched']}")->body($body)->success()->persistent()->send();
-            }),
+            Action::make('preview')
+                ->label('Предпросмотр')
+                ->icon('heroicon-o-eye')
+                ->modalHeading('Предпросмотр рассылки')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Закрыть')
+                ->modalContent(function (): View {
+                    $campaign = $this->campaign();
+                    $preview = app(PreviewBroadcastCampaign::class)->message($this->actor(), $campaign);
+                    $summary = $campaign->state === BroadcastCampaignState::Draft
+                        ? app(PreviewBroadcastCampaign::class)->handle($this->actor(), $campaign)
+                        : null;
+
+                    return view('filament.resources.broadcasts.preview', [
+                        'preview' => $preview,
+                        'summary' => $summary,
+                        'reasonLabels' => [
+                            'marketing_consent_missing' => 'нет согласия на маркетинговые сообщения',
+                            'marketing_suppressed' => 'согласие отозвано',
+                            'verified_channel_unavailable' => 'нет подтверждённого канала',
+                        ],
+                    ]);
+                }),
+            Action::make('runAgain')
+                ->label('Запустить снова')
+                ->icon('heroicon-o-arrow-path')
+                ->color('primary')
+                ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
+                ->action(function (): void {
+                    $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                    $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+                }),
+            Action::make('editAndRerun')
+                ->label('Редактировать и повторить')
+                ->icon('heroicon-o-pencil-square')
+                ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
+                ->action(function (): void {
+                    $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                    $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+                }),
             Action::make('test')->label('Тестовая отправка')->icon('heroicon-o-paper-airplane')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->schema([
                 Select::make('test_client_id')->label('Тестовый получатель')->options(fn (): array => Client::query()->where('organization_id', app(OrganizationContext::class)->id())->whereHas('channelIdentities', fn ($query) => $query->where('channel', 'telegram')->where('verification_status', ChannelIdentityStatus::Verified->value))->orderBy('full_name')->limit(200)->pluck('full_name', 'id')->all())->searchable()->required()->helperText('Сообщение уйдёт только выбранному получателю, а не всему сегменту.'),
             ])->action(function (array $data): void {
@@ -71,12 +103,5 @@ final class ViewBroadcastCampaign extends ViewRecord
         abort_unless($this->record instanceof BroadcastCampaign, 404);
 
         return $this->record->refresh();
-    }
-
-    private static function reasonLabel(string $reason): string
-    {
-        return match ($reason) {
-            'marketing_consent_missing' => 'нет согласия на маркетинговые сообщения', 'marketing_suppressed' => 'согласие отозвано', 'verified_channel_unavailable' => 'нет подтверждённого канала', default => 'не подходит'
-        };
     }
 }

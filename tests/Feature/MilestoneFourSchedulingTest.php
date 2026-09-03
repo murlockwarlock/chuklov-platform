@@ -9,6 +9,8 @@ use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignm
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Models\User;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
+use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
+use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -37,6 +39,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -464,6 +467,62 @@ class MilestoneFourSchedulingTest extends TestCase
             ->assertRedirect();
 
         self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
+    }
+
+    public function test_portal_booking_requires_current_legal_documents_but_not_marketing_consent(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $documents = [];
+
+        foreach (['offer', 'privacy', 'medical_disclaimer', 'marketing'] as $documentType) {
+            $draft = app(CreatePlatformLegalDocumentDraft::class)->handle(
+                organization: $organization,
+                documentType: $documentType,
+                purpose: $documentType.'_consent',
+                locale: 'en',
+                version: '2026-08-12-'.$documentType,
+                content: 'Configured '.$documentType.' text.',
+                isRequired: $documentType !== 'marketing',
+            );
+            $documents[$documentType] = app(PublishLegalDocument::class)->handle($draft);
+        }
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => [],
+            ])
+            ->assertRedirect();
+
+        self::assertSame(0, Booking::query()->count());
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => [
+                    ['legal_document_id' => $documents['offer']->id, 'granted' => true],
+                    ['legal_document_id' => $documents['privacy']->id, 'granted' => true],
+                    ['legal_document_id' => $documents['medical_disclaimer']->id, 'granted' => true],
+                ],
+            ])
+            ->assertRedirect();
+
+        self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
+        self::assertSame(3, DB::table('client_consents')->where('client_id', $client->id)->count());
+        self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->count());
     }
 
     public function test_portal_auto_selects_the_only_bookable_specialist(): void

@@ -70,6 +70,7 @@ class UpdateClientProfileFromPortal
 
         return DB::transaction(function () use ($client, $normalized, $organization): Client {
             $changedFields = [];
+            $attributesToSave = $normalized;
 
             foreach ($normalized as $field => $value) {
                 if ($client->getAttribute($field) !== $value) {
@@ -77,8 +78,12 @@ class UpdateClientProfileFromPortal
                 }
             }
 
+            if (in_array('timezone', $changedFields, true)) {
+                $attributesToSave['timezone_source'] = 'manual';
+            }
+
             if ($changedFields !== []) {
-                $client->forceFill($normalized);
+                $client->forceFill($attributesToSave);
                 $client->save();
 
                 $this->audit->handle(

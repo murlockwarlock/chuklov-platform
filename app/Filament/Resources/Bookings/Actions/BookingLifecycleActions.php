@@ -130,7 +130,11 @@ final class BookingLifecycleActions
                 ->label('Перенести')
                 ->icon('heroicon-o-calendar')
                 ->schema([
-                    DateTimePicker::make('starts_at')->label('Новая дата и время')->seconds(false)->required(),
+                    DateTimePicker::make('starts_at')
+                        ->label('Новая дата и время')
+                        ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                        ->seconds(false)
+                        ->required(),
                     TextInput::make('location')
                         ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? 'Адрес приёма' : 'Адрес выезда')
                         ->default(fn (Booking $record): ?string => $record->location)
@@ -148,7 +152,10 @@ final class BookingLifecycleActions
                     abort_unless($actor instanceof User, 403);
                     $startsAt = $data['starts_at'] instanceof DateTimeInterface
                         ? $data['starts_at']
-                        : CarbonImmutable::parse((string) $data['starts_at']);
+                        : CarbonImmutable::parse(
+                            (string) $data['starts_at'],
+                            app(OrganizationContext::class)->defaultTimezone(),
+                        );
 
                     try {
                         app(RescheduleBooking::class)->handle(
