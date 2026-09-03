@@ -46,7 +46,12 @@ final class SendTelegramContentSection
         $lastResult = NotificationDeliveryResult::unavailable('content_unavailable');
 
         foreach ($localized as $section) {
-            $lastResult = $channel->send($this->messages->handle($identity->externalId, $section, $locale));
+            $lastResult = $channel->send($this->messages->handle(
+                $identity->externalId,
+                $section,
+                $locale,
+                includeMediaStream: true,
+            ));
 
             if ($lastResult->outcome->value !== 'delivered') {
                 return $lastResult;

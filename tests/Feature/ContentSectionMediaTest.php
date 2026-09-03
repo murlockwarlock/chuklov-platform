@@ -239,14 +239,50 @@ final class ContentSectionMediaTest extends TestCase
         ]);
         $path = $this->imagePath($section->media);
 
-        $message = app(BuildTelegramContentSectionMessage::class)->handle('content-chat', $section, 'ru');
+        $message = app(BuildTelegramContentSectionMessage::class)->handle(
+            'content-chat',
+            $section,
+            'ru',
+            includeMediaStream: true,
+        );
         $stream = $message->mediaStream;
 
         self::assertIsResource($stream);
         self::assertSame(Storage::disk(self::DISK)->get($path), stream_get_contents($stream));
         fclose($stream);
-        self::assertSame(Storage::disk(self::DISK)->url($path), $message->mediaUrl);
+        self::assertNull($message->mediaUrl);
+
+        $previewMessage = app(BuildTelegramContentSectionMessage::class)->handle('content-preview', $section, 'ru');
+
+        self::assertSame(Storage::disk(self::DISK)->url($path), $previewMessage->mediaUrl);
+        self::assertNull($previewMessage->mediaStream);
         self::assertSame($organization->getKey(), $section->organization_id);
+    }
+
+    public function test_missing_managed_content_image_does_not_fall_back_to_preview_url_for_telegram_delivery(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('academy.jpg', 640, 480),
+            'delivery_mode' => ContentDeliveryMode::Telegram->value,
+        ]);
+        $path = $this->imagePath($section->media);
+        Storage::disk(self::DISK)->delete($path);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle(
+            'content-chat',
+            $section,
+            'ru',
+            includeMediaStream: true,
+        );
+
+        self::assertNull($message->mediaStream);
+        self::assertNull($message->mediaUrl);
+        self::assertTrue($message->mode->includesImage());
     }
 
     public function test_editing_title_and_body_with_blank_url_preserves_managed_image(): void

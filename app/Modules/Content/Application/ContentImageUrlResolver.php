@@ -17,15 +17,20 @@ final class ContentImageUrlResolver
             return null;
         }
 
-        return $this->media->isManagedPath((int) $section->organization_id, $image)
+        return $this->isManaged($section)
             ? $this->media->url($image)
             : $image;
+    }
+
+    public function isManaged(ContentSection $section): bool
+    {
+        return $this->media->isManagedPath((int) $section->organization_id, $this->image($section));
     }
 
     public function resolveStream(ContentSection $section): mixed
     {
         $image = $this->image($section);
-        if ($image === null || ! $this->media->isManagedPath((int) $section->organization_id, $image)) {
+        if ($image === null || ! $this->isManaged($section)) {
             return null;
         }
 

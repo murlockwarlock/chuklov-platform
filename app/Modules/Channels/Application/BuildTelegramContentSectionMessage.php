@@ -17,14 +17,19 @@ final class BuildTelegramContentSectionMessage
         private readonly ResolveTelegramMiniAppEntry $entries,
     ) {}
 
-    public function handle(string $recipientExternalId, ContentSection $section, string $locale): NotificationMessage
-    {
+    public function handle(
+        string $recipientExternalId,
+        ContentSection $section,
+        string $locale,
+        bool $includeMediaStream = false,
+    ): NotificationMessage {
         $title = htmlspecialchars($section->title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $body = RichTextDocument::canonicalHtml(
             '<p><strong>'.$title.'</strong></p>'.RichTextDocument::canonicalHtml($section->body),
         );
-        $imageUrl = $this->images->resolve($section);
-        $mode = $imageUrl === null
+        $previewImageUrl = $this->images->resolve($section);
+        $managedImage = $this->images->isManaged($section);
+        $mode = $previewImageUrl === null
             ? NotificationMessageMode::Text
             : (RichTextDocument::telegramLength($body) <= RichTextDocument::TELEGRAM_CAPTION_LIMIT
                 ? NotificationMessageMode::ImageWithCaption
@@ -36,7 +41,8 @@ final class BuildTelegramContentSectionMessage
             )
             : null;
         $updatedAt = $section->updated_at?->getTimestamp() ?? 0;
-        $mediaStream = $this->images->resolveStream($section);
+        $mediaStream = $includeMediaStream ? $this->images->resolveStream($section) : null;
+        $mediaUrl = $includeMediaStream && $managedImage ? null : $previewImageUrl;
 
         return new NotificationMessage(
             recipientExternalId: $recipientExternalId,
@@ -46,7 +52,7 @@ final class BuildTelegramContentSectionMessage
             idempotencyKey: 'content:'.$section->getKey().':'.$recipientExternalId.':'.$updatedAt,
             mode: $mode,
             actionButton: $button,
-            mediaUrl: $imageUrl,
+            mediaUrl: $mediaUrl,
             mediaStream: $mediaStream,
         );
     }
