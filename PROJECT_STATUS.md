@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-03 — Broadcast test-send consent UX remediation
+
+- Test recipient selection now exposes only clients with current marketing consent and a verified Telegram identity. Rejected test-send validation now produces a visible, actionable CRM notification instead of appearing silent; broadcast eligibility and organization authorization remain enforced server-side.
+- Focused local `MilestoneElevenBBroadcastTest` passes 52 tests / 171 assertions; Pint and `git diff --check` pass. Hosted exact-SHA CI `33768506391` and E2E `33768507211` pass for implementation SHA `24becdabcfc218be8eed34e76dc398a4c8814e17`.
+- Staging deployment and `./scripts/staging-smoke.sh` pass on the same SHA: health, app, Horizon, scheduler, Telegram, queue identity, CRM, knowledge, and portal checks are green. Production remains untouched and PR #28 remains open/unmerged.
+
 ## 2026-09-03 — M11 CRM operator UX and rich content follow-up
 
 - Release candidate d04345ccadaa0ce510fb64cddaa955ec9eca585f completes the requested CRM operator remediation: searchable broadcast clients, stable message/media layouts, actionable Telegram delivery failures, balanced client/booking/B2B/auto-message/legal screens, and safe rich-text rendering across tables, details, and previews. The E2E fixtures now cover the required legal-document setup and current Filament rich editor contract.
