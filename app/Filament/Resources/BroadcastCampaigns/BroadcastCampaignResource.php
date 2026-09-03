@@ -282,7 +282,7 @@ final class BroadcastCampaignResource extends Resource
                     ->maxLength(255)
                     ->columnSpanFull(),
                 View::make('filament.resources.broadcasts.current-media')
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasSinglePhoto($record))
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get) && ! self::hasSinglePhoto($record))
                     ->columnSpanFull(),
                 SchemaImage::make(
                     fn (?BroadcastCampaign $record): string => self::singlePhotoUrl($record) ?? '',
@@ -291,12 +291,17 @@ final class BroadcastCampaignResource extends Resource
                     ->imageHeight('16rem')
                     ->imageWidth('24rem')
                     ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media'))
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
                     ->columnSpanFull(),
                 Placeholder::make('current_media_status')
                     ->label('Текущее медиа')
                     ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media'))
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
+                    ->columnSpanFull(),
+                Placeholder::make('media_replacement_status')
+                    ->label('Новое медиа')
+                    ->content('Новое медиа выбрано и заменит текущее после сохранения.')
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && self::hasPendingMedia($get))
                     ->columnSpanFull(),
                 Hidden::make('remove_media')->default(false),
                 Actions::make([
@@ -307,7 +312,7 @@ final class BroadcastCampaignResource extends Resource
                         ->action(function (Set $set): void {
                             $set('remove_media', true);
                         })
-                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media')),
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get)),
                     Action::make('restoreMedia')
                         ->label('Оставить текущее медиа')
                         ->icon(Heroicon::OutlinedArrowUturnLeft)
@@ -321,7 +326,7 @@ final class BroadcastCampaignResource extends Resource
                 Placeholder::make('media_removal_notice')
                     ->label('Изменение медиа')
                     ->content('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».')
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media'))
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media') && ! self::hasPendingMedia($get))
                     ->columnSpanFull(),
             ])->columnSpanFull(),
             Section::make('Запуск')->schema([
@@ -739,6 +744,19 @@ final class BroadcastCampaignResource extends Resource
     {
         return $campaign instanceof BroadcastCampaign
             && app(BroadcastCampaignMedia::class)->items($campaign->media) !== [];
+    }
+
+    private static function hasPendingMedia(Get $get): bool
+    {
+        $uploads = $get('media_image');
+        if ($uploads instanceof UploadedFile) {
+            return true;
+        }
+        if (is_array($uploads)) {
+            return $uploads !== [];
+        }
+
+        return filled($uploads) || filled($get('media_url'));
     }
 
     /** @return list<array{type: string, url: string, name: string|null, alt: string|null, managed: bool}> */

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-04 — Компактные согласия и общий emoji picker
+
+- В booking flow обязательные документы показываются компактным списком с отдельным просмотром в modal и одной общей галочкой; backend по-прежнему фиксирует отдельное versioned consent evidence для Offer, Privacy и MedicalDisclaimer.
+- Marketing consent остаётся отдельным необязательным выбором, а отсутствие опубликованного обязательного документа сохраняет fail-closed поведение.
+- В общий `RichTextEditor` добавлены локальный emoji picker с поиском и категориями, вставка Unicode в текущую позицию курсора и сброс залипшего форматирования на границе mark.
+- Исправлены сохранение/перенаправление рассылок и отображение замены/удаления media без потери текущих файлов.
+
 ## 2026-09-03 — Telegram media, previews, and safe replacement
 
 - Broadcasts now accept one media file or up to 10 photos, MP4 videos, or documents with Telegram-compatible limits: 10 MB for photos and 50 MB for videos and files.

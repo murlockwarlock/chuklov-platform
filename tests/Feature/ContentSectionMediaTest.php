@@ -214,7 +214,7 @@ final class ContentSectionMediaTest extends TestCase
             'section_key' => 'partner',
             'locale' => 'ru',
             'title' => 'Партнёры',
-            'body' => '<p><strong>Текст</strong> 😀</p>',
+            'body' => '<p><strong>Текст</strong> 😀 ❤️</p>',
             'delivery_mode' => ContentDeliveryMode::Both,
             'media' => ['image' => 'https://cdn.example.test/partner.jpg', 'alt' => 'Партнёры'],
         ]);
@@ -228,6 +228,8 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame('Открыть полностью', $message->actionButton?->text);
         self::assertSame('image_caption', $preview['mode']);
         self::assertStringContainsString('<b>Партнёры</b>', $preview['bodyHtml']);
+        self::assertStringContainsString('😀 ❤️', $preview['bodyHtml']);
+        self::assertStringNotContainsString('<img', $preview['bodyHtml']);
         self::assertTrue($preview['hasImage']);
         self::assertTrue($preview['hasText']);
         self::assertSame('Открыть полностью', $preview['actionButton']['text'] ?? null);

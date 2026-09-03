@@ -36,7 +36,7 @@ const props = defineProps<{
     attributionSources: string[];
     attributionSource: string | null;
     attributionNeedsManualSource: boolean;
-    requiredConsentsAccepted: boolean;
+    requiredAcceptanceError?: string;
 }>();
 
 const emit = defineEmits<{
@@ -195,7 +195,7 @@ const location = computed({
           {{ t('profile.legal') }}
         </h3>
         <p class="portal-copy portal-copy--small">
-          {{ t('profile.legalDescription') }}
+          {{ t('legal.requiredDescription') }}
         </p>
       </div>
       <LegalConsentChecklist
@@ -203,6 +203,8 @@ const location = computed({
         :values="props.consentValues"
         :marketing-value="props.marketingConsent"
         :show-marketing="props.showMarketing"
+        group-required-acceptance
+        :required-acceptance-error="props.requiredAcceptanceError"
         @change="(id, granted) => emit('update:consent', id, granted)"
         @update:marketing-value="(granted) => emit('update:marketingConsent', granted)"
       />
@@ -227,7 +229,7 @@ const location = computed({
       <button
         type="button"
         class="portal-button portal-button--primary"
-        :disabled="props.processing || !props.requiredConsentsAccepted"
+        :disabled="props.processing"
         @click="emit('confirm')"
       >
         {{ props.processing ? t('booking.creating') : t('booking.create') }}

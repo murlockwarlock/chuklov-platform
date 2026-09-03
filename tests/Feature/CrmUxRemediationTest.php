@@ -90,6 +90,10 @@ final class CrmUxRemediationTest extends TestCase
             ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing),
             $messageEditor->getMergeTags(),
         );
+        self::assertSame('😊 Смайлик', $messageEditor->getTools()['emoji']->getLabel());
+        self::assertFalse($messageEditor->getTools()['emoji']->isLabelHidden());
+        self::assertContains('emoji', array_merge(...$messageEditor->getToolbarButtons()));
+        self::assertStringContainsString('ChuklovRichTextEditor', $messageEditor->getExtraInputAttributes()['x-on:keydown']);
         self::assertFalse($messageEditor->getTools()['mergeTags']->isLabelHidden());
         self::assertSame(Heroicon::OutlinedTag, $messageEditor->getTools()['mergeTags']->getIcon());
         self::assertTrue($broadcast->instance()->getSchemaComponent('form.message_mode')->isInline());

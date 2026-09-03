@@ -121,9 +121,14 @@ const bookingForm = useForm<{
 const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
     bookingForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
 ));
+const requiredDocumentTypes = ['offer', 'privacy', 'medical_disclaimer'] as const;
+const hasPublishedRequiredDocuments = computed(() => requiredDocumentTypes.every((documentType) => props.legalDocuments.some((document) =>
+    document.isRequired && document.documentType === documentType,
+)));
 const requiredConsentsAccepted = computed(() => props.legalDocuments
     .filter((document) => document.isRequired)
-    .every((document) => consentValues.value[document.id] === true));
+    .every((document) => consentValues.value[document.id] === true) && hasPublishedRequiredDocuments.value);
+const requiredConsentAttempted = ref(false);
 
 const acknowledgedBookingId = ref<number | null>(null);
 
@@ -226,6 +231,9 @@ function setConsent(id: number, granted: boolean): void {
     const consent = bookingForm.consents.find((item) => item.legal_document_id === id);
     if (consent !== undefined) {
         consent.granted = granted;
+    }
+    if (requiredConsentsAccepted.value) {
+        requiredConsentAttempted.value = false;
     }
 }
 
@@ -404,6 +412,13 @@ function returnToTime(): void {
 
 function submitBooking(): void {
     if (selectedStart.value === null || props.query.serviceId === null || props.query.specialistId === null) {
+        return;
+    }
+
+    if (hasPublishedRequiredDocuments.value && !requiredConsentsAccepted.value) {
+        requiredConsentAttempted.value = true;
+        bookingStep.value = 'confirmation';
+
         return;
     }
 
@@ -672,7 +687,7 @@ function submitBooking(): void {
           :attribution-sources="props.attribution.sources"
           :attribution-source="bookingForm.attribution_source"
           :attribution-needs-manual-source="props.attribution.needsManualSource"
-          :required-consents-accepted="requiredConsentsAccepted"
+          :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
           @update:party-size="bookingForm.party_size = $event"
           @update:location="bookingForm.location = $event"
           @update:consent="setConsent"

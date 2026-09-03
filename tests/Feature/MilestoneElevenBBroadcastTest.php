@@ -647,6 +647,24 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame('Сохранённая рассылка', $campaign->refresh()->name);
     }
 
+    public function test_editing_a_draft_without_media_changes_preserves_the_existing_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['media_url'] = 'https://cdn.example.test/existing.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->fillForm(['name' => 'Сохранённая рассылка с медиа'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
+
+        self::assertSame('https://cdn.example.test/existing.jpg', $campaign->refresh()->media['image'] ?? null);
+    }
+
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void
     {
         [$organization, $actor] = $this->fixture();

@@ -21,6 +21,9 @@ final class EditBroadcastCampaign extends EditRecord
         abort_unless($record instanceof BroadcastCampaign, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        if (! array_key_exists('media', $data)) {
+            $data['media'] = $record->media;
+        }
 
         $updated = app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
         $this->record = $updated;

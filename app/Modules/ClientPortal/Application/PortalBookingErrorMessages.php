@@ -68,6 +68,10 @@ final class PortalBookingErrorMessages
             'ru' => 'Запись временно недоступна: обязательные документы ещё не опубликованы. Свяжитесь с нами.',
             'en' => 'Booking is temporarily unavailable because required legal documents are not published. Please contact us.',
         ],
+        'required_legal_consent' => [
+            'ru' => 'Подтвердите ознакомление с обязательными документами.',
+            'en' => 'Confirm that you have read and accepted the required documents.',
+        ],
         'format_from_list' => [
             'ru' => 'Выберите формат визита из списка.',
             'en' => 'Choose a visit format from the list.',
@@ -276,6 +280,7 @@ final class PortalBookingErrorMessages
                 'specialist', 'specialist_id', 'assignment' => ['specialist_id', 'specialist_unavailable'],
                 'format', 'meetingLinkMode' => ['format', 'format_unavailable'],
                 'legal_configuration' => ['consents', 'legal_documents_unavailable'],
+                'consents' => ['consents', 'required_legal_consent'],
                 'partySize' => ['party_size', 'party_size_invalid'],
                 'location' => ['location', 'provide_address'],
                 'clientTimezone' => ['starts_at', 'timezone_invalid'],

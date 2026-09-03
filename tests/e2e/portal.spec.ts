@@ -210,15 +210,13 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 async function acceptRequiredConsents(page: Page): Promise<void> {
-    const checkboxes = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю документ',
+    const checkbox = page.getByRole('checkbox', {
+        name: 'Я ознакомился(лась) и принимаю обязательные документы',
         exact: true,
     });
 
-    await expect(checkboxes).toHaveCount(3);
-    for (let index = 0; index < 3; index += 1) {
-        await checkboxes.nth(index).check();
-    }
+    await expect(checkbox).toHaveCount(1);
+    await checkbox.check();
 }
 
 async function assertReadableProgress(page: Page, expectedCount: number): Promise<void> {
@@ -627,6 +625,42 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
+});
+
+test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    const requiredCheckbox = page.getByRole('checkbox', {
+        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        exact: true,
+    });
+    const documentLinks = page.getByRole('button', { name: /Открыть:/ });
+    const dialog = page.getByRole('dialog');
+
+    await expect(documentLinks).toHaveCount(3);
+    await expect(requiredCheckbox).not.toBeChecked();
+    await documentLinks.first().click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Оферта' })).toBeVisible();
+    await expect(dialog.getByText('Synthetic legal fixture.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Закрыть' }).first().click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Записаться', exact: true }).click();
+    await expect(page.getByText('Подтвердите ознакомление с обязательными документами.', { exact: true })).toHaveCount(1);
+    await requiredCheckbox.check();
+    await expect(requiredCheckbox).toBeChecked();
+    await assertNoHorizontalOverflow(page);
 });
 
 test('booking uses a service step and selected-day calendar before confirmation', async ({ page }) => {

@@ -1375,6 +1375,138 @@ select.portal-input[aria-invalid='true'] {
         padding-top: var(--portal-space-5);
     }
 
+    .portal-legal-consent-group {
+        gap: var(--portal-space-4);
+    }
+
+    .portal-legal-documents {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface-warm);
+    }
+
+    .portal-legal-document-row {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--portal-space-4);
+        padding: 0.75rem 1rem;
+    }
+
+    .portal-legal-document-row + .portal-legal-document-row {
+        border-top: 1px solid var(--portal-color-border);
+    }
+
+    .portal-legal-document-row__title {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-size: 0.92rem;
+        font-weight: 650;
+        line-height: 1.4;
+    }
+
+    .portal-legal-document-row__action {
+        min-height: 2.5rem;
+        padding: 0.5rem 0.25rem;
+        white-space: nowrap;
+    }
+
+    .portal-legal-required-confirm {
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface-warm);
+        padding: 0.8rem 1rem;
+    }
+
+    .portal-legal-required-confirm--invalid {
+        border-color: var(--portal-color-danger);
+        background: var(--portal-color-danger-soft);
+    }
+
+    .portal-legal-marketing {
+        display: flex;
+        flex-direction: column;
+        gap: var(--portal-space-3);
+        border-top: 1px solid var(--portal-color-border);
+        padding-top: var(--portal-space-4);
+    }
+
+    .portal-legal-modal {
+        position: fixed;
+        z-index: 60;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgb(22 36 61 / 42%);
+        padding: clamp(0.75rem, 3vw, 2rem);
+    }
+
+    .portal-legal-modal__dialog {
+        display: flex;
+        width: min(100%, 44rem);
+        max-height: min(88svh, 52rem);
+        min-height: 0;
+        flex-direction: column;
+        overflow: hidden;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-lg);
+        background: var(--portal-color-surface);
+        box-shadow: 0 1.5rem 4rem rgb(22 36 61 / 22%);
+    }
+
+    .portal-legal-modal__header,
+    .portal-legal-modal__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--portal-space-4);
+        border-bottom: 1px solid var(--portal-color-border);
+        padding: 1rem 1.25rem;
+    }
+
+    .portal-legal-modal__header .portal-heading {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .portal-legal-modal__footer {
+        justify-content: flex-end;
+        border-top: 1px solid var(--portal-color-border);
+        border-bottom: 0;
+    }
+
+    .portal-legal-modal__close {
+        display: inline-flex;
+        width: 2.75rem;
+        height: 2.75rem;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--portal-color-border-strong);
+        border-radius: 50%;
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+
+    .portal-legal-modal__close:focus-visible {
+        outline: 3px solid rgb(194 111 79 / 35%);
+        outline-offset: 3px;
+    }
+
+    .portal-legal-modal__content {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 1.25rem;
+    }
+
     .portal-status-dot {
         width: 0.55rem;
         height: 0.55rem;
@@ -2218,6 +2350,23 @@ select.portal-input[aria-invalid='true'] {
 }
 
 @media (max-width: 47.99rem) {
+    .portal-legal-modal {
+        align-items: end;
+        padding: 0.5rem;
+    }
+
+    .portal-legal-modal__dialog {
+        width: 100%;
+        max-height: 92svh;
+        border-radius: 1.1rem 1.1rem 0.8rem 0.8rem;
+    }
+
+    .portal-legal-modal__header,
+    .portal-legal-modal__content,
+    .portal-legal-modal__footer {
+        padding-inline: 1rem;
+    }
+
     .portal-booking-progress__label {
         min-height: 3.75em;
         overflow-wrap: anywhere;

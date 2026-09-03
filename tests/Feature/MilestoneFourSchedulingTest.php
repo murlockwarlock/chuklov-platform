@@ -507,7 +507,9 @@ class MilestoneFourSchedulingTest extends TestCase
                 'format' => VisitFormat::Office->value,
                 'consents' => [],
             ])
-            ->assertRedirect();
+            ->assertInvalid([
+                'consents' => 'Confirm that you have read and accepted the required documents.',
+            ]);
 
         self::assertSame(0, Booking::query()->count());
 
@@ -528,6 +530,53 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
         self::assertSame(3, DB::table('client_consents')->where('client_id', $client->id)->count());
         self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->count());
+        self::assertSame([
+            'medical_disclaimer' => '2026-08-12-medical_disclaimer',
+            'offer' => '2026-08-12-offer',
+            'privacy' => '2026-08-12-privacy',
+        ], DB::table('client_consents')->where('client_id', $client->id)->orderBy('subject')->pluck('version', 'subject')->all());
+    }
+
+    public function test_portal_booking_records_marketing_consent_separately_when_selected(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $marketing = app(PublishLegalDocument::class)->handle(
+            app(CreatePlatformLegalDocumentDraft::class)->handle(
+                organization: $organization,
+                documentType: 'marketing',
+                purpose: 'marketing_consent',
+                locale: 'en',
+                version: '2026-08-12-marketing',
+                content: 'Configured marketing text.',
+                isRequired: false,
+            ),
+        );
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => $this->portalConsentPayload($documents),
+                'marketing_consent' => true,
+            ])
+            ->assertRedirect();
+
+        self::assertSame(4, DB::table('client_consents')->where('client_id', $client->id)->count());
+        self::assertSame(
+            '2026-08-12-marketing',
+            DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->value('version'),
+        );
+        self::assertSame($marketing->getKey(), DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->value('legal_document_id'));
     }
 
     public function test_portal_booking_replay_returns_before_new_legal_or_attribution_evidence(): void

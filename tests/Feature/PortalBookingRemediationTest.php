@@ -113,6 +113,31 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('availability.slots.16.startsAt', '2026-03-31T09:00:00+00:00'));
     }
 
+    public function test_booking_exposes_each_required_published_document_for_the_compact_consent_flow(): void
+    {
+        [, $client, $specialist, $service] = $this->portalFixture(language: 'en');
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.create', [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'format' => VisitFormat::Office->value,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->has('legalDocuments', 3)
+                ->where('legalDocuments.0.documentType', 'offer')
+                ->where('legalDocuments.1.documentType', 'privacy')
+                ->where('legalDocuments.2.documentType', 'medical_disclaimer')
+                ->where('legalDocuments.0.title', 'Offer')
+                ->where('legalDocuments.1.title', 'Privacy policy')
+                ->where('legalDocuments.2.title', 'Medical disclaimer')
+                ->where('legalDocuments.0.isRequired', true)
+                ->where('legalDocuments.1.isRequired', true)
+                ->where('legalDocuments.2.isRequired', true));
+    }
+
     public function test_ready_auto_online_booking_exposes_the_provider_join_url_to_the_portal(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture(['online']);

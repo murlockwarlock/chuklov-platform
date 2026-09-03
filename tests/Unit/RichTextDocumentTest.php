@@ -9,7 +9,7 @@ final class RichTextDocumentTest extends TestCase
 {
     public function test_formatting_and_emoji_have_one_safe_telegram_projection(): void
     {
-        $html = RichTextDocument::telegramHtml('<p><strong>Bold</strong> <em>italic</em> <u>under</u> <s>strike</s> <a href="https://example.test">link</a> <code>code</code></p><blockquote>quote</blockquote><p>😀<br>next</p>');
+        $html = RichTextDocument::telegramHtml('<p><strong>Bold</strong> <em>italic</em> <u>under</u> <s>strike</s> <a href="https://example.test">link</a> <code>code</code></p><blockquote>quote</blockquote><p>😀 ❤️ 👍 👋<br>next</p>');
 
         self::assertStringContainsString('<b>Bold</b>', $html);
         self::assertStringContainsString('<i>italic</i>', $html);
@@ -18,7 +18,8 @@ final class RichTextDocumentTest extends TestCase
         self::assertStringContainsString('<a href="https://example.test">link</a>', $html);
         self::assertStringContainsString('<code>code</code>', $html);
         self::assertStringContainsString('<blockquote>quote</blockquote>', $html);
-        self::assertStringContainsString("😀\nnext", $html);
+        self::assertStringContainsString("😀 ❤️ 👍 👋\nnext", $html);
+        self::assertStringNotContainsString('<img', $html);
         self::assertStringNotContainsString('<script', RichTextDocument::canonicalHtml('<p>safe</p><script>alert(1)</script>'));
     }
 
