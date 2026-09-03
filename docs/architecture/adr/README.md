@@ -25,5 +25,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 020 | B2B sales-call video projection and shared Specialist occupancy | Proposed for M11D review |
 | 021 | Medical attachment validation and immediate private usability | Accepted |
 | 022 | Telegram managed-media upload | Accepted |
+| 023 | Telegram broadcast media albums and private previews | Accepted |
 
 Use `000-template.md` for new significant decisions.

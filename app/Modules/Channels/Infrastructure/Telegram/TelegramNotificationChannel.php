@@ -6,14 +6,19 @@ use App\Modules\Channels\Domain\Contracts\NotificationChannel;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Support\RichText\RichTextDocument;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Exceptions\TelegramException;
 use SergiX44\Nutgram\Telegram\Properties\ParseMode;
+use SergiX44\Nutgram\Telegram\Types\Input\InputMediaDocument;
+use SergiX44\Nutgram\Telegram\Types\Input\InputMediaPhoto;
+use SergiX44\Nutgram\Telegram\Types\Input\InputMediaVideo;
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
+use SergiX44\Nutgram\Telegram\Types\Message\Message;
 use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
 use Throwable;
 
@@ -42,7 +47,7 @@ final class TelegramNotificationChannel implements NotificationChannel
     public function send(NotificationMessage $message): NotificationDeliveryResult
     {
         if (trim((string) config('nutgram.token')) === '') {
-            $this->closeMediaStream($message);
+            $this->closeMedia($message);
 
             return NotificationDeliveryResult::unavailable('provider_not_configured');
         }
@@ -63,17 +68,17 @@ final class TelegramNotificationChannel implements NotificationChannel
             $lastMessageId = null;
 
             if ($message->mode === NotificationMessageMode::ImageThenText) {
-                $lastMessageId = $this->sendPhoto($message, null, null);
+                $lastMessageId = $this->sendMedia($message, null, null);
                 $successfulSends++;
                 $lastMessageId = $this->sendText($message, $telegramBody, $keyboard);
                 $successfulSends++;
             } elseif ($message->mode === NotificationMessageMode::TextThenImage) {
                 $lastMessageId = $this->sendText($message, $telegramBody, null);
                 $successfulSends++;
-                $lastMessageId = $this->sendPhoto($message, null, $keyboard);
+                $lastMessageId = $this->sendMedia($message, null, $keyboard);
                 $successfulSends++;
             } elseif ($message->mode === NotificationMessageMode::Image || $message->mode === NotificationMessageMode::ImageWithCaption) {
-                $lastMessageId = $this->sendPhoto($message, $message->mode === NotificationMessageMode::ImageWithCaption ? $telegramBody : null, $keyboard);
+                $lastMessageId = $this->sendMedia($message, $message->mode === NotificationMessageMode::ImageWithCaption ? $telegramBody : null, $keyboard);
                 $successfulSends++;
             } else {
                 $lastMessageId = $this->sendText($message, $telegramBody, $keyboard);
@@ -119,7 +124,7 @@ final class TelegramNotificationChannel implements NotificationChannel
                 ? NotificationDeliveryResult::unknown('delivery_outcome_unknown')
                 : NotificationDeliveryResult::retryable('channel_error');
         } finally {
-            $this->closeMediaStream($message);
+            $this->closeMedia($message);
         }
     }
 
@@ -155,14 +160,140 @@ final class TelegramNotificationChannel implements NotificationChannel
 
             return $sent?->message_id === null ? null : (string) $sent->message_id;
         } finally {
-            $this->closeMediaStream($message);
+            $this->closeMedia($message);
         }
     }
 
-    private function closeMediaStream(NotificationMessage $message): void
+    private function sendMedia(NotificationMessage $message, ?string $caption, ?InlineKeyboardMarkup $keyboard): ?string
+    {
+        if ($message->mediaItems === []) {
+            return $this->sendPhoto($message, $caption, $keyboard);
+        }
+
+        try {
+            if (count($message->mediaItems) > 1) {
+                if ($keyboard !== null) {
+                    throw new \InvalidArgumentException('Telegram media groups do not support inline buttons.');
+                }
+
+                return $this->sendMediaGroup($message, $caption);
+            }
+
+            $media = $message->mediaItems[0];
+
+            return $this->sendSingleMedia($message, $media, $caption, $keyboard);
+        } finally {
+            $this->closeMediaItems($message->mediaItems);
+        }
+    }
+
+    private function sendSingleMedia(
+        NotificationMessage $message,
+        NotificationMedia $media,
+        ?string $caption,
+        ?InlineKeyboardMarkup $keyboard,
+    ): ?string {
+        $uploadable = $this->uploadable($media);
+        $caption = $caption === '' ? null : $caption;
+        $parseMode = $caption === null ? null : ParseMode::HTML;
+        $showCaptionAboveMedia = $message->mode === NotificationMessageMode::ImageWithCaption
+            ? $message->showCaptionAboveMedia
+            : null;
+
+        return match ($media->type) {
+            'photo' => $this->messageId($this->bot->sendPhoto(
+                $uploadable,
+                $message->recipientExternalId,
+                caption: $caption,
+                parse_mode: $parseMode,
+                reply_markup: $keyboard,
+                show_caption_above_media: $showCaptionAboveMedia,
+            )),
+            'video' => $this->messageId($this->bot->sendVideo(
+                $uploadable,
+                $message->recipientExternalId,
+                caption: $caption,
+                parse_mode: $parseMode,
+                reply_markup: $keyboard,
+                show_caption_above_media: $showCaptionAboveMedia,
+            )),
+            'document' => $this->messageId($this->bot->sendDocument(
+                $uploadable,
+                $message->recipientExternalId,
+                caption: $caption,
+                parse_mode: $parseMode,
+                reply_markup: $keyboard,
+            )),
+            default => throw new \InvalidArgumentException('The Telegram media type is unavailable.'),
+        };
+    }
+
+    private function sendMediaGroup(NotificationMessage $message, ?string $caption): ?string
+    {
+        if (count($message->mediaItems) < 2 || count($message->mediaItems) > 10) {
+            throw new \InvalidArgumentException('The Telegram media group is unavailable.');
+        }
+
+        $types = array_map(static fn (NotificationMedia $item): string => $item->type, $message->mediaItems);
+        if (in_array('', $types, true)
+            || (in_array('document', $types, true) && count(array_unique($types)) > 1)) {
+            throw new \InvalidArgumentException('The Telegram media group is unavailable.');
+        }
+
+        $media = [];
+        foreach ($message->mediaItems as $index => $item) {
+            $itemCaption = $index === 0 && $caption !== '' ? $caption : null;
+            $parseMode = $itemCaption === null ? null : ParseMode::HTML;
+            $showCaptionAboveMedia = null;
+            if ($itemCaption !== null && $message->mode === NotificationMessageMode::ImageWithCaption) {
+                $showCaptionAboveMedia = $message->showCaptionAboveMedia;
+            }
+            $uploadable = $this->uploadable($item, $index);
+
+            $media[] = match ($item->type) {
+                'photo' => InputMediaPhoto::make(
+                    media: $uploadable,
+                    caption: $itemCaption,
+                    parse_mode: $parseMode,
+                    show_caption_above_media: $showCaptionAboveMedia,
+                ),
+                'video' => InputMediaVideo::make(
+                    media: $uploadable,
+                    caption: $itemCaption,
+                    parse_mode: $parseMode,
+                    show_caption_above_media: $showCaptionAboveMedia,
+                ),
+                'document' => InputMediaDocument::make(
+                    media: $uploadable,
+                    caption: $itemCaption,
+                    parse_mode: $parseMode,
+                ),
+                default => throw new \InvalidArgumentException('The Telegram media type is unavailable.'),
+            };
+        }
+
+        $sent = $this->bot->sendMediaGroup($media, $message->recipientExternalId);
+        $last = is_array($sent) ? end($sent) : null;
+
+        return $this->messageId($last);
+    }
+
+    private function closeMedia(NotificationMessage $message): void
     {
         if (is_resource($message->mediaStream)) {
             fclose($message->mediaStream);
+        }
+
+        $this->closeMediaItems($message->mediaItems);
+    }
+
+    /** @param list<NotificationMedia> $mediaItems */
+    private function closeMediaItems(array $mediaItems): void
+    {
+        foreach ($mediaItems as $media) {
+            if (is_resource($media->stream)) {
+                fclose($media->stream);
+            }
         }
     }
 
@@ -185,6 +316,45 @@ final class TelegramNotificationChannel implements NotificationChannel
         }
 
         return $message->mediaUrl;
+    }
+
+    private function uploadable(NotificationMedia $media, ?int $index = null): InputFile|string
+    {
+        if ($media->stream !== null) {
+            if (! is_resource($media->stream)) {
+                throw new \InvalidArgumentException('The Telegram media is unavailable.');
+            }
+
+            try {
+                return InputFile::make($media->stream, $this->uploadFileName($media->fileName, $index));
+            } catch (\InvalidArgumentException $exception) {
+                throw new \InvalidArgumentException('The Telegram media is unavailable.', previous: $exception);
+            }
+        }
+
+        if ($media->url === null || ! $this->validMediaUrl($media->url)) {
+            throw new \InvalidArgumentException('The Telegram media URL is invalid.');
+        }
+
+        return $media->url;
+    }
+
+    private function uploadFileName(?string $fileName, ?int $index): ?string
+    {
+        if ($fileName === null || $index === null) {
+            return $fileName;
+        }
+
+        $extension = pathinfo($fileName, PATHINFO_EXTENSION);
+        $base = pathinfo($fileName, PATHINFO_FILENAME);
+        $suffix = '-'.($index + 1);
+
+        return $extension === '' ? $base.$suffix : $base.$suffix.'.'.$extension;
+    }
+
+    private function messageId(mixed $message): ?string
+    {
+        return $message instanceof Message ? (string) $message->message_id : null;
     }
 
     private function validateLength(NotificationMessage $message, string $body): void

@@ -65,6 +65,12 @@ final class EditBroadcastCampaign extends EditRecord
         }
         $data['segment_definition'] = $mapped;
 
+        $media = is_array($data['media'] ?? null) ? $data['media'] : [];
+        $firstMedia = is_array($media['items'] ?? null) ? ($media['items'][0] ?? []) : $media;
+        $data['media_alt'] = is_array($firstMedia) && is_string($firstMedia['alt'] ?? null)
+            ? $firstMedia['alt']
+            : null;
+
         if (($data['message_mode'] ?? null) === 'compose' && ! filled($data['message_body'] ?? null)
             && $this->record instanceof BroadcastCampaign) {
             $data['message_body'] = (string) $this->record->russianTemplateVersion()->value('body');

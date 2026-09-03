@@ -24,6 +24,7 @@ use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -109,6 +110,34 @@ final class ContentSectionMediaTest extends TestCase
         self::assertInstanceOf(SchemaImage::class, $preview);
         self::assertSame($image, $preview->getUrl());
         self::assertSame('Текущее изображение', $preview->getAlt());
+    }
+
+    public function test_content_form_preview_and_remove_actions_use_current_form_state(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Об академии',
+            'body' => '<p>Текст раздела</p>',
+            'media' => ['image' => 'https://cdn.example.test/content/current.jpg'],
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful();
+        $schema = $component->instance()->getSchema('form');
+        $previewAction = $schema?->getAction('telegramPreview');
+        $removeAction = $schema?->getAction('removeImage');
+
+        self::assertNotNull($previewAction);
+        self::assertNotNull($removeAction);
+        self::assertInstanceOf(View::class, $previewAction?->getModalContent());
+
+        $removeAction?->call();
+
+        self::assertTrue((bool) $component->get('data.remove_image'));
     }
 
     public function test_telegram_menu_keeps_mini_app_only_content_reachable_for_mixed_rows_and_fallbacks(): void

@@ -11,13 +11,17 @@ use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Support\BroadcastFailurePresentation;
 use App\Filament\Support\RichTextEditor;
 use App\Filament\Support\RichTextPresentation;
+use App\Filament\Support\TelegramPreviewAction;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\BroadcastCampaignMedia;
 use App\Modules\Broadcasts\Application\BroadcastCampaignName;
+use App\Modules\Broadcasts\Application\BroadcastMediaPreviewUrl;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
@@ -26,6 +30,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
@@ -44,19 +49,21 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 
 final class BroadcastCampaignResource extends Resource
@@ -237,44 +244,84 @@ final class BroadcastCampaignResource extends Resource
                         ->icon(Heroicon::OutlinedPlus)
                         ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
                 ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                Actions::make([
+                    TelegramPreviewAction::make(fn (Get $get, ?Model $record) => self::previewMessage($get, $record)),
+                ])->columnSpanFull(),
             ])->columns(1)->columnSpanFull(),
-            Section::make('Изображение')->description('Для одной отправки можно добавить одно изображение. Видео и несколько файлов пока не поддерживаются. Новая загрузка или ссылка заменит текущее изображение после сохранения.')->schema([
+            Section::make('Медиа')->description('Фото до 10 МБ. MP4 и любые другие файлы — до 50 МБ. От 2 до 10 фото/видео отправятся альбомом Telegram. Файлы можно объединять в альбом только с файлами того же типа. Новая загрузка или ссылка заменит текущее медиа после сохранения.')->schema([
                 FileUpload::make('media_image')
-                    ->label('Загрузить изображение')
-                    ->image()
-                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
-                    ->maxSize(self::imageUploadKilobytes())
+                    ->label('Загрузить медиа')
+                    ->multiple()
+                    ->maxFiles(10)
+                    ->reorderable()
+                    ->appendFiles()
+                    ->openable()
+                    ->previewable()
+                    ->deletable()
+                    ->maxSize(self::mediaUploadKilobytes())
                     ->storeFiles(false)
-                    ->helperText('JPG, PNG или WebP размером до 5 МБ. Второй файл заменит текущий только после сохранения.')
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('remove_media', false);
+                    })
+                    ->helperText('Фото до 10 МБ; MP4 и любые файлы до 50 МБ. Выберите до 10 файлов. Для альбома используйте 2–10 фото/видео или файлов одного типа.')
                     ->columnSpanFull(),
                 TextInput::make('media_url')
-                    ->label('HTTPS-ссылка на изображение')
+                    ->label('HTTPS-ссылка на медиа (одно)')
                     ->url()
                     ->maxLength(2000)
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('remove_media', false);
+                    })
                     ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->helperText('Заполните только если не загружаете файл. Видео и несколько файлов не поддерживаются.')
+                    ->helperText('Используйте только вместо загрузки файла. Ссылка должна вести непосредственно на медиа и начинаться с HTTPS.')
                     ->columnSpanFull(),
                 TextInput::make('media_alt')
-                    ->label('Описание изображения')
+                    ->label('Подпись или описание медиа')
                     ->maxLength(255)
                     ->columnSpanFull(),
+                View::make('filament.resources.broadcasts.current-media')
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasSinglePhoto($record))
+                    ->columnSpanFull(),
                 SchemaImage::make(
-                    fn (?BroadcastCampaign $record): string => self::mediaPreviewUrl($record) ?? '',
-                    fn (?BroadcastCampaign $record): string => self::mediaAlt($record),
+                    fn (?BroadcastCampaign $record): string => self::singlePhotoUrl($record) ?? '',
+                    fn (?BroadcastCampaign $record): string => self::singlePhotoAlt($record),
                 )
                     ->imageHeight('16rem')
                     ->imageWidth('24rem')
                     ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
-                    ->visible(fn (?BroadcastCampaign $record): bool => self::mediaPreviewUrl($record) !== null)
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media'))
                     ->columnSpanFull(),
                 Placeholder::make('current_media_status')
-                    ->label('Текущее изображение')
+                    ->label('Текущее медиа')
                     ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
-                    ->visible(fn (?BroadcastCampaign $record): bool => self::hasMedia($record))
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media'))
                     ->columnSpanFull(),
-                Toggle::make('remove_media')
-                    ->label('Удалить текущее изображение')
-                    ->visible(fn (?BroadcastCampaign $record): bool => self::hasMedia($record))
+                Hidden::make('remove_media')->default(false),
+                Actions::make([
+                    Action::make('removeMedia')
+                        ->label('Удалить текущее медиа')
+                        ->icon(Heroicon::OutlinedTrash)
+                        ->color('danger')
+                        ->action(function (Set $set): void {
+                            $set('remove_media', true);
+                        })
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media')),
+                    Action::make('restoreMedia')
+                        ->label('Оставить текущее медиа')
+                        ->icon(Heroicon::OutlinedArrowUturnLeft)
+                        ->color('gray')
+                        ->action(function (Set $set): void {
+                            $set('remove_media', false);
+                        })
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media')),
+                ])
+                    ->columnSpanFull(),
+                Placeholder::make('media_removal_notice')
+                    ->label('Изменение медиа')
+                    ->content('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».')
+                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media'))
                     ->columnSpanFull(),
             ])->columnSpanFull(),
             Section::make('Запуск')->schema([
@@ -681,82 +728,234 @@ final class BroadcastCampaignResource extends Resource
         return $length.' / '.$limit;
     }
 
-    private static function imageUploadKilobytes(): int
+    private static function mediaUploadKilobytes(): int
     {
-        $bytes = max(1, (int) config('content_media.max_bytes', 5_242_880));
+        $bytes = max(1, (int) config('broadcast_media.max_bytes', 52_428_800));
 
         return intdiv($bytes + 1023, 1024);
     }
 
     private static function hasMedia(?BroadcastCampaign $campaign): bool
     {
-        return self::mediaImage($campaign) !== null;
+        return $campaign instanceof BroadcastCampaign
+            && app(BroadcastCampaignMedia::class)->items($campaign->media) !== [];
     }
 
-    private static function mediaImage(?BroadcastCampaign $campaign): ?string
+    /** @return list<array{type: string, url: string, name: string|null, alt: string|null, managed: bool}> */
+    public static function mediaPreviewItems(?BroadcastCampaign $campaign): array
     {
-        $media = $campaign?->media;
-        $image = is_array($media) ? $media['image'] ?? null : null;
-
-        return is_string($image) && trim($image) !== '' ? trim($image) : null;
-    }
-
-    private static function mediaPreviewUrl(?BroadcastCampaign $campaign): ?string
-    {
-        $image = self::mediaImage($campaign);
-
-        if ($image === null || ! $campaign instanceof BroadcastCampaign) {
-            return null;
+        if (! $campaign instanceof BroadcastCampaign) {
+            return [];
         }
 
         $media = app(BroadcastCampaignMedia::class);
+        $items = [];
+        foreach ($media->items($campaign->media) as $index => $item) {
+            $source = $item['source'];
+            $managed = $media->isManagedPath((int) $campaign->organization_id, $source);
+            $url = $managed
+                ? app(BroadcastMediaPreviewUrl::class)->handle($campaign, $index)
+                : self::externalMediaUrl($source);
+            if ($url === null) {
+                continue;
+            }
 
-        if ($media->isManagedPath((int) $campaign->organization_id, $image)) {
-            return $media->url($image);
+            $items[] = [
+                'type' => $item['type'],
+                'url' => $url,
+                'name' => $item['name'],
+                'alt' => $item['alt'],
+                'managed' => $managed,
+            ];
         }
 
+        return $items;
+    }
+
+    private static function hasSinglePhoto(?BroadcastCampaign $campaign): bool
+    {
+        $items = self::mediaPreviewItems($campaign);
+
+        return count($items) === 1 && $items[0]['type'] === 'photo';
+    }
+
+    private static function singlePhotoUrl(?BroadcastCampaign $campaign): ?string
+    {
+        return self::hasSinglePhoto($campaign) ? self::mediaPreviewItems($campaign)[0]['url'] : null;
+    }
+
+    private static function singlePhotoAlt(?BroadcastCampaign $campaign): string
+    {
+        return self::hasSinglePhoto($campaign)
+            ? (self::mediaPreviewItems($campaign)[0]['alt'] ?: 'Фото рассылки')
+            : 'Фото рассылки';
+    }
+
+    private static function externalMediaUrl(string $url): ?string
+    {
         try {
-            return ContentExternalImageUrl::required($image)->value;
+            return ContentExternalImageUrl::required($url)->value;
         } catch (\InvalidArgumentException) {
             return null;
         }
     }
 
-    private static function mediaAlt(?BroadcastCampaign $campaign): string
-    {
-        $media = $campaign?->media;
-        $alt = is_array($media) ? $media['alt'] ?? null : null;
-
-        return is_string($alt) && trim($alt) !== '' ? trim($alt) : 'Изображение рассылки';
-    }
-
     private static function mediaStatus(?BroadcastCampaign $campaign): string
     {
-        $image = self::mediaImage($campaign);
-
-        if ($image === null || ! $campaign instanceof BroadcastCampaign) {
-            return 'Изображение не добавлено.';
+        $items = self::mediaPreviewItems($campaign);
+        if ($items === []) {
+            return 'Медиа не добавлено.';
         }
 
-        $kind = app(BroadcastCampaignMedia::class)->isManagedPath((int) $campaign->organization_id, $image)
-            ? 'Загруженный файл'
-            : 'Внешняя HTTPS-ссылка';
-        $alt = self::mediaAlt($campaign);
+        $managed = collect($items)->where('managed', true)->count();
+        $external = count($items) - $managed;
+        $kind = match (true) {
+            $managed > 0 && $external > 0 => 'Загруженные файлы и внешние HTTPS-ссылки',
+            $managed > 0 => 'Загруженные файлы',
+            default => 'Внешние HTTPS-ссылки',
+        };
+        $typeSummary = collect($items)
+            ->countBy('type')
+            ->map(fn (int $count, string $type): string => match ($type) {
+                'photo' => 'фото: '.$count,
+                'video' => 'видео: '.$count,
+                default => 'файлы: '.$count,
+            })
+            ->implode(', ');
 
-        return $kind.' · '.($alt === 'Изображение рассылки' ? 'описание не задано' : 'описание: '.$alt).'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
+        return $kind.' · '.$typeSummary.'. Удаление и замена применяются после сохранения.';
     }
 
     private static function mediaSummary(BroadcastCampaign $campaign): string
     {
-        if (! self::hasMedia($campaign)) {
+        $items = app(BroadcastCampaignMedia::class)->items($campaign->media);
+        if ($items === []) {
             return 'Не добавлено';
         }
 
-        $alt = is_array($campaign->media) ? $campaign->media['alt'] ?? null : null;
+        return 'Добавлено файлов: '.count($items);
+    }
 
-        return is_string($alt) && trim($alt) !== ''
-            ? 'Изображение добавлено · '.trim($alt)
-            : 'Изображение добавлено';
+    private static function previewMessage(Get $get, ?Model $record): NotificationMessage
+    {
+        $mode = NotificationMessageMode::tryFrom((string) $get('delivery_mode')) ?? NotificationMessageMode::Text;
+        $body = self::previewBody($get, $record);
+        $mediaItems = self::previewMedia($get, $record);
+
+        return new NotificationMessage(
+            recipientExternalId: 'preview',
+            body: $mode->includesText() ? $body : '',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'form-preview',
+            mode: $mode,
+            showCaptionAboveMedia: $get('caption_position') === 'above',
+            mediaItems: $mediaItems,
+        );
+    }
+
+    private static function previewBody(Get $get, ?Model $record): string
+    {
+        if ($get('message_mode') !== 'saved_template') {
+            return is_string($get('message_body')) ? trim($get('message_body')) : '';
+        }
+
+        $templateId = $get('template_version_ru_id') ?: $get('template_version_en_id');
+        if (($templateId === null || $templateId === '') && $record instanceof BroadcastCampaign) {
+            $templateId = $record->template_version_ru_id ?: $record->template_version_en_id;
+        }
+        if (! is_int($templateId) && ! (is_string($templateId) && ctype_digit($templateId))) {
+            return '';
+        }
+
+        $organizationId = app(OrganizationContext::class)->id();
+        $template = NotificationTemplateVersion::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey((int) $templateId)
+            ->first();
+        if (! $template instanceof NotificationTemplateVersion) {
+            return '';
+        }
+
+        return app(NotificationTemplateRenderer::class)
+            ->render($template, ['client' => ['full_name' => 'Aikhana', 'language' => 'ru']], 'ru')
+            ->body;
+    }
+
+    /** @return list<NotificationMedia> */
+    private static function previewMedia(Get $get, ?Model $record): array
+    {
+        if ((bool) $get('remove_media')) {
+            return [];
+        }
+
+        $uploads = $get('media_image');
+        $uploads = $uploads instanceof UploadedFile ? [$uploads] : (is_array($uploads) ? $uploads : []);
+        if ($uploads !== []) {
+            $items = [];
+            foreach ($uploads as $upload) {
+                if (! $upload instanceof UploadedFile || ! method_exists($upload, 'temporaryUrl')) {
+                    continue;
+                }
+
+                try {
+                    $url = $upload->temporaryUrl();
+                } catch (\Throwable) {
+                    $url = null;
+                }
+                $type = self::mediaType($upload->getClientOriginalName(), $upload->getMimeType());
+                if ($url === null && $type !== 'document') {
+                    continue;
+                }
+
+                $items[] = new NotificationMedia(
+                    type: $type,
+                    url: is_string($url) && trim($url) !== '' ? trim($url) : null,
+                    fileName: $upload->getClientOriginalName() ?: null,
+                );
+            }
+
+            return $items;
+        }
+
+        $url = is_string($get('media_url')) ? trim($get('media_url')) : '';
+        if ($url !== '') {
+            return [new NotificationMedia(type: self::mediaType($url), url: $url, fileName: basename((string) parse_url($url, PHP_URL_PATH)))];
+        }
+
+        if ($record instanceof BroadcastCampaign) {
+            $items = [];
+            foreach (self::mediaPreviewItems($record) as $item) {
+                $items[] = new NotificationMedia(
+                    type: $item['type'],
+                    url: $item['url'],
+                    fileName: $item['name'],
+                );
+            }
+
+            return $items;
+        }
+
+        return [];
+    }
+
+    private static function mediaType(string $path, ?string $mimeType = null): string
+    {
+        $mimeType = strtolower((string) $mimeType);
+        if (str_starts_with($mimeType, 'image/')) {
+            return 'photo';
+        }
+        if ($mimeType === 'video/mp4') {
+            return 'video';
+        }
+
+        $extension = strtolower(pathinfo(parse_url($path, PHP_URL_PATH) ?: $path, PATHINFO_EXTENSION));
+
+        return match ($extension) {
+            'mp4' => 'video',
+            'pdf', 'txt', 'csv', 'json', 'xml', 'zip', '7z', 'rar', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp' => 'document',
+            default => 'photo',
+        };
     }
 
     private static function localeLabel(string $locale): string

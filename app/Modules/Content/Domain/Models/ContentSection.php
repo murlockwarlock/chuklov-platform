@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property-read Organization $organization
- * @property array<string, string>|null $media
+ * @property array<string, mixed>|null $media
  * @property ContentDeliveryMode $delivery_mode
  */
 #[Fillable(['section_key', 'locale', 'title', 'body', 'delivery_mode', 'media', 'sort_order', 'is_visible'])]

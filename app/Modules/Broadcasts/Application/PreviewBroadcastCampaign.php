@@ -7,6 +7,7 @@ use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Channels\Application\TelegramMessagePreview;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -24,11 +25,12 @@ final readonly class PreviewBroadcastCampaign
         private BroadcastEligibilityPolicy $eligibility,
         private RecordAuditEvent $audit,
         private BroadcastCampaignMedia $media,
+        private BroadcastMediaPreviewUrl $mediaPreviewUrl,
         private NotificationTemplateRenderer $renderer,
         private TelegramMessagePreview $telegramPreview,
     ) {}
 
-    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
+    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
     public function message(User $actor, BroadcastCampaign $campaign): array
     {
         $organization = $this->authorization->manage($actor);
@@ -44,10 +46,26 @@ final readonly class PreviewBroadcastCampaign
         $body = $mode->includesText() ? $this->previewBody($campaign, $organization->getKey()) : '';
         $media = is_array($campaign->media) ? $campaign->media : [];
         $this->media->ensureAvailable($mode, $media);
-        $image = is_string($media['image'] ?? null) ? trim($media['image']) : null;
-        $mediaUrl = $image === null || $image === ''
-            ? null
-            : ($this->media->isManagedPath($organization->getKey(), $image) ? $this->media->url($image) : $image);
+        $mediaUrl = null;
+        $mediaItems = [];
+        foreach ($this->media->items($media) as $index => $item) {
+            $source = $item['source'];
+            $url = $this->media->isManagedPath($organization->getKey(), $source)
+                ? $this->mediaPreviewUrl->handle($campaign, $index)
+                : $source;
+            if ($url === null) {
+                throw ValidationException::withMessages(['media_image' => 'Медиа недоступно для предпросмотра.']);
+            }
+            $mediaItems[] = new NotificationMedia(
+                type: $item['type'],
+                url: $url,
+                fileName: $item['name'],
+            );
+        }
+        if (array_key_exists('image', $media) && count($mediaItems) === 1) {
+            $mediaUrl = $mediaItems[0]->url;
+            $mediaItems = [];
+        }
 
         try {
             return $this->telegramPreview->handle(new NotificationMessage(
@@ -59,6 +77,7 @@ final readonly class PreviewBroadcastCampaign
                 mediaUrl: $mediaUrl,
                 mode: $mode,
                 showCaptionAboveMedia: $campaign->caption_position === 'above',
+                mediaItems: $mediaItems,
             ));
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages(['message_body' => $exception->getMessage()]);

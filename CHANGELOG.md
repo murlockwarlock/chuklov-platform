@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-03 — Telegram media, previews, and safe replacement
+
+- Broadcasts now accept one media file or up to 10 photos, MP4 videos, or documents with Telegram-compatible limits: 10 MB for photos and 50 MB for videos and files.
+- One file is sent with its dedicated Telegram method; photo/video and document albums are sent through Telegram media groups with clear same-type rules.
+- The broadcast editor now previews the current, removed, replaced, and newly selected media, including video controls and document cards. Private managed files are shown through expiring organization-scoped preview links.
+- Telegram-shaped preview actions are available consistently in broadcast, content, and message-template editors; arbitrary rich-text views no longer expose raw markup.
+
 ## 2026-09-03 — Сохранение рассылок и понятное отображение данных
 
 - После сохранения рассылки оператор сразу попадает на страницу сохранённой версии с предпросмотром и действиями запуска; возвращаться вручную в список больше не нужно.

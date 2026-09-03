@@ -10,6 +10,7 @@ use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScena
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Broadcasts\Application\BroadcastEligibilityPolicy;
+use App\Modules\Broadcasts\Application\BroadcastMediaPreviewUrl;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
@@ -22,6 +23,7 @@ use App\Modules\Broadcasts\Application\SetBroadcastClientClassification;
 use App\Modules\Broadcasts\Application\StartBroadcastCampaign;
 use App\Modules\Broadcasts\Application\TestBroadcastCampaign;
 use App\Modules\Broadcasts\Application\UpdateBroadcastCampaign;
+use App\Modules\Broadcasts\Domain\Contracts\BroadcastMediaStorageInterface;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
@@ -288,9 +290,10 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         app(CreateBroadcastCampaign::class)->handle($actor, $tooLong);
     }
 
-    public function test_broadcast_rejects_multiple_media_uploads_with_a_clear_error(): void
+    public function test_broadcast_persists_multiple_photo_uploads_for_a_telegram_album(): void
     {
         [, $actor] = $this->fixture();
+        Storage::fake('private');
         $data = $this->campaignData([]);
         $data['message_mode'] = 'compose';
         $data['delivery_mode'] = NotificationMessageMode::Image->value;
@@ -300,33 +303,96 @@ final class MilestoneElevenBBroadcastTest extends TestCase
             UploadedFile::fake()->image('two.jpg'),
         ];
 
-        try {
-            app(CreateBroadcastCampaign::class)->handle($actor, $data);
-            self::fail('Multiple media uploads must be rejected.');
-        } catch (ValidationException $exception) {
-            self::assertSame(
-                'Можно добавить только одно изображение. Видео и несколько файлов не поддерживаются.',
-                $exception->errors()['media_image'][0],
-            );
-        }
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertCount(2, $campaign->media['items'] ?? []);
+        self::assertSame(['photo', 'photo'], array_column($campaign->media['items'], 'type'));
     }
 
-    public function test_broadcast_rejects_video_uploads_on_the_media_field(): void
+    public function test_broadcast_persists_a_video_upload_as_video_media(): void
     {
-        [, $actor] = $this->fixture();
+        [$organization, $actor] = $this->fixture();
+        $storage = $this->createMock(BroadcastMediaStorageInterface::class);
+        $storage->expects($this->once())
+            ->method('store')
+            ->willReturn('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000003.mp4');
+        $this->app->instance(BroadcastMediaStorageInterface::class, $storage);
         $data = $this->campaignData([]);
         $data['message_mode'] = 'compose';
         $data['delivery_mode'] = NotificationMessageMode::Image->value;
         $data['message_body'] = '';
         $data['media_image'] = UploadedFile::fake()->create('video.mp4', 10, 'video/mp4');
 
-        try {
-            app(CreateBroadcastCampaign::class)->handle($actor, $data);
-            self::fail('Video uploads must be rejected.');
-        } catch (ValidationException $exception) {
-            self::assertArrayHasKey('media_image', $exception->errors());
-            self::assertStringContainsString('изображения', mb_strtolower($exception->errors()['media_image'][0]));
-        }
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame('video', $campaign->media['items'][0]['type'] ?? null);
+        self::assertSame('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000003.mp4', $campaign->media['items'][0]['source'] ?? null);
+    }
+
+    public function test_broadcast_persists_an_arbitrary_upload_as_document_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $storage = $this->createMock(BroadcastMediaStorageInterface::class);
+        $storage->expects($this->once())
+            ->method('store')
+            ->willReturn('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000004.bin');
+        $this->app->instance(BroadcastMediaStorageInterface::class, $storage);
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = UploadedFile::fake()->create('terms.custom', 10, 'application/octet-stream');
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame('document', $campaign->media['items'][0]['type'] ?? null);
+        self::assertSame('terms.custom', $campaign->media['items'][0]['name'] ?? null);
+    }
+
+    public function test_broadcast_rejects_a_mixed_document_and_photo_album_before_persistence(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media'] = [
+            'items' => [
+                ['type' => 'document', 'source' => 'https://cdn.example.test/terms.pdf'],
+                ['type' => 'photo', 'source' => 'https://cdn.example.test/photo.jpg'],
+            ],
+        ];
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $data);
+    }
+
+    public function test_managed_broadcast_media_preview_uses_a_signed_organization_scoped_route(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        Storage::fake('private');
+        $path = 'broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000005.jpg';
+        Storage::disk('private')->put($path, 'managed broadcast preview');
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'media' => ['items' => [['type' => 'photo', 'source' => $path, 'alt' => null, 'name' => 'preview.jpg']]],
+        ])->save();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        $url = app(BroadcastMediaPreviewUrl::class)->handle($campaign->refresh(), 0);
+        self::assertIsString($url);
+
+        $response = $this->actingAs($actor)->get($url);
+
+        $response->assertOk();
+        self::assertSame('managed broadcast preview', $response->streamedContent());
+        self::assertSame('image/jpeg', $response->headers->get('Content-Type'));
+
+        $otherOrganization = Organization::factory()->create();
+        $otherActor = User::factory()->forOrganization($otherOrganization)->create();
+        config()->set('tenancy.default_organization_id', $otherOrganization->getKey());
+
+        $this->actingAs($otherActor)->get($url)->assertNotFound();
     }
 
     public function test_image_only_mode_does_not_create_or_require_a_text_template(): void
@@ -429,7 +495,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
             app(StartBroadcastCampaign::class)->handle($actor, $campaign);
             self::fail('Image delivery without media must be rejected before dispatch.');
         } catch (ValidationException $exception) {
-            self::assertSame('Добавьте изображение или выберите текстовый режим.', $exception->errors()['media_image'][0]);
+            self::assertSame('Добавьте медиа или выберите текстовый режим.', $exception->errors()['media_image'][0]);
         }
 
         self::assertSame(BroadcastCampaignState::Draft, $campaign->refresh()->state);

@@ -23,10 +23,10 @@ final readonly class CreateBroadcastCampaign
     {
         $organization = $this->authorization->manage($actor);
         $normalized = $this->input->normalize($organization->getKey(), $attributes);
-        $mediaPath = null;
+        $mediaPaths = [];
 
         try {
-            $normalized['media'] = $this->media->resolve($organization->getKey(), $normalized['media_input'] ?? null, $mediaPath);
+            $normalized['media'] = $this->media->resolve($organization->getKey(), $normalized['media_input'] ?? null, $mediaPaths);
             unset($normalized['media_input']);
 
             return DB::transaction(function () use ($actor, $organization, $normalized): BroadcastCampaign {
@@ -38,7 +38,7 @@ final readonly class CreateBroadcastCampaign
                 return $campaign->refresh();
             });
         } catch (Throwable $exception) {
-            if ($mediaPath !== null) {
+            foreach ($mediaPaths as $mediaPath) {
                 $this->media->discard($organization->getKey(), $mediaPath);
             }
 

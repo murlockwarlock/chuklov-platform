@@ -20,7 +20,7 @@ use LogicException;
  * @property list<string> $channel_priority
  * @property string $delivery_mode
  * @property string $caption_position
- * @property array<string, string>|null $media
+ * @property array<string, mixed>|null $media
  * @property int|null $template_version_ru_id
  * @property int|null $template_version_en_id
  * @property int $matched_count

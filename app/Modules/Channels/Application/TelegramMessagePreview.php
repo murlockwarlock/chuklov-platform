@@ -8,11 +8,41 @@ use InvalidArgumentException;
 
 final class TelegramMessagePreview
 {
-    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
+    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
     public function handle(NotificationMessage $message): array
     {
         $bodyHtml = RichTextDocument::telegramHtml($message->body);
-        if ($message->mode->includesImage() && ($message->mediaUrl === null || trim($message->mediaUrl) === '')) {
+        $mediaUrl = $message->mediaUrl !== null && trim($message->mediaUrl) !== ''
+            ? trim($message->mediaUrl)
+            : null;
+        $mediaItems = [];
+
+        foreach ($message->mediaItems as $media) {
+            if (! in_array($media->type, ['photo', 'video', 'document'], true)) {
+                throw new InvalidArgumentException('The Telegram media is unavailable.');
+            }
+
+            $url = $media->url !== null && trim($media->url) !== '' ? trim($media->url) : null;
+            if ($url === null && ($media->type !== 'document' || blank($media->fileName))) {
+                throw new InvalidArgumentException('The Telegram media is unavailable.');
+            }
+
+            $mediaItems[] = [
+                'type' => $media->type,
+                'url' => $url,
+                'name' => $media->fileName,
+            ];
+        }
+
+        if ($mediaItems === [] && $mediaUrl !== null) {
+            $mediaItems[] = [
+                'type' => 'photo',
+                'url' => $mediaUrl,
+                'name' => null,
+            ];
+        }
+
+        if ($message->mode->includesImage() && $mediaItems === []) {
             throw new InvalidArgumentException('The Telegram media is required.');
         }
 
@@ -34,9 +64,12 @@ final class TelegramMessagePreview
             'mode' => $message->mode->value,
             'captionPosition' => $message->showCaptionAboveMedia ? 'above' : 'below',
             'bodyHtml' => $bodyHtml,
-            'mediaUrl' => $message->mediaUrl,
+            'mediaUrl' => $mediaItems !== [] && count($mediaItems) === 1 && $mediaItems[0]['type'] === 'photo'
+                ? $mediaItems[0]['url']
+                : null,
+            'mediaItems' => $mediaItems,
             'hasText' => $message->mode->includesText() && $bodyHtml !== '',
-            'hasImage' => $message->mode->includesImage() && $message->mediaUrl !== null,
+            'hasImage' => $message->mode->includesImage() && $mediaItems !== [],
             'actionButton' => $actionButton,
         ];
     }

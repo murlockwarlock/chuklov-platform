@@ -81,7 +81,7 @@ final readonly class BroadcastCampaignInput
 
         if ($deliveryMode->includesImage()
             && ($media === null || ($media['remove'] ?? false) === true)) {
-            throw ValidationException::withMessages(['media_image' => 'Добавьте изображение для выбранного режима.']);
+            throw ValidationException::withMessages(['media_image' => 'Добавьте медиа для выбранного режима.']);
         }
 
         $scheduledAt = null;
@@ -324,58 +324,99 @@ final readonly class BroadcastCampaignInput
 
         $remove = (bool) ($attributes['remove_media'] ?? false);
         $upload = $attributes['media_image'] ?? null;
-        if (is_array($upload)) {
-            throw ValidationException::withMessages(['media_image' => 'Можно добавить только одно изображение. Видео и несколько файлов не поддерживаются.']);
-        }
-        if ($upload !== null && $upload !== '' && ! $upload instanceof UploadedFile) {
-            throw ValidationException::withMessages(['media_image' => 'Загрузите изображение JPG, PNG или WebP.']);
+        $uploads = [];
+        if ($upload instanceof UploadedFile) {
+            $uploads = [$upload];
+        } elseif (is_array($upload)) {
+            if (! array_is_list($upload)) {
+                throw ValidationException::withMessages(['media_image' => 'Файлы медиа имеют неверный формат.']);
+            }
+            foreach ($upload as $file) {
+                if (! $file instanceof UploadedFile) {
+                    throw ValidationException::withMessages(['media_image' => 'Загрузите корректные файлы медиа.']);
+                }
+            }
+            $uploads = $upload;
+        } elseif ($upload !== null && $upload !== '') {
+            throw ValidationException::withMessages(['media_image' => 'Загрузите корректные файлы медиа.']);
         }
 
-        $url = $attributes['media_url'] ?? null;
-        $url = is_string($url) ? trim($url) : null;
+        $url = is_string($attributes['media_url'] ?? null) ? trim($attributes['media_url']) : null;
         if ($url === '') {
             $url = null;
         }
 
         $existing = $attributes['media'] ?? null;
-        if ($existing !== null) {
-            if (! is_array($existing) || ! is_string($existing['image'] ?? null) || trim($existing['image']) === '') {
-                throw ValidationException::withMessages(['media_url' => 'Данные изображения заполнены некорректно.']);
-            }
-            $url = trim($existing['image']);
+        if ($existing !== null && ! $this->validMediaState($existing)) {
+            throw ValidationException::withMessages(['media_url' => 'Данные медиа заполнены некорректно.']);
         }
 
-        if ($upload !== null && $upload !== '' && $url !== null) {
+        if ($uploads !== [] && $url !== null) {
             throw ValidationException::withMessages([
-                'media_image' => 'Выберите файл или ссылку на изображение, но не оба варианта.',
-                'media_url' => 'Выберите файл или ссылку на изображение, но не оба варианта.',
+                'media_image' => 'Выберите файлы или ссылку на медиа, но не оба варианта.',
+                'media_url' => 'Выберите файлы или ссылку на медиа, но не оба варианта.',
             ]);
         }
-        if ($remove && ($upload !== null && $upload !== '' || $url !== null)) {
-            throw ValidationException::withMessages(['media_image' => 'Нельзя одновременно заменить и удалить изображение.']);
+        if ($remove && ($uploads !== [] || $url !== null)) {
+            throw ValidationException::withMessages(['media_image' => 'Нельзя одновременно заменить и удалить медиа.']);
         }
-        if (! $remove && $upload === null && $url === null) {
+        if (! $remove && $uploads === [] && $url === null && $existing === null) {
             return null;
         }
-        if ($url !== null && ! array_key_exists('media', $attributes)) {
+        if ($url !== null) {
             try {
                 ContentExternalImageUrl::required($url);
             } catch (\InvalidArgumentException) {
-                throw ValidationException::withMessages(['media_url' => 'Укажите корректную HTTPS-ссылку на изображение.']);
+                throw ValidationException::withMessages(['media_url' => 'Укажите корректную HTTPS-ссылку на медиа.']);
             }
         }
 
-        $alt = $attributes['media_alt'] ?? (is_array($existing) ? $existing['alt'] ?? null : null);
+        $alt = $attributes['media_alt'] ?? null;
         if ($alt !== null && (! is_string($alt) || mb_strlen(trim($alt)) > 255)) {
-            throw ValidationException::withMessages(['media_alt' => 'Описание изображения слишком длинное.']);
+            throw ValidationException::withMessages(['media_alt' => 'Описание медиа слишком длинное.']);
         }
 
         return [
-            'upload' => $upload instanceof UploadedFile ? $upload : null,
-            'image' => $url,
+            'uploads' => $uploads,
+            'url' => $url,
             'alt' => is_string($alt) && trim($alt) !== '' ? trim($alt) : null,
             'remove' => $remove,
+            'existing' => is_array($existing) ? $existing : null,
+            'alt_provided' => array_key_exists('media_alt', $attributes),
         ];
+    }
+
+    private function validMediaState(mixed $media): bool
+    {
+        if (! is_array($media)) {
+            return false;
+        }
+
+        if (is_string($media['image'] ?? null) && trim($media['image']) !== '') {
+            return true;
+        }
+
+        $items = $media['items'] ?? null;
+
+        if (! is_array($items)
+            || ! array_is_list($items)
+            || $items === []
+            || count($items) > max(2, (int) config('broadcast_media.max_items', 10))
+            || ! collect($items)->every(fn (mixed $item): bool => is_array($item)
+                && in_array($item['type'] ?? 'photo', ['photo', 'video', 'document'], true)
+                && is_string($item['source'] ?? $item['image'] ?? null)
+                && trim((string) ($item['source'] ?? $item['image'])) !== '')) {
+            return false;
+        }
+
+        $types = array_values(array_unique(array_map(
+            static fn (mixed $item): string => is_array($item) && is_string($item['type'] ?? null)
+                ? $item['type']
+                : 'photo',
+            $items,
+        )));
+
+        return count($items) < 2 || ! in_array('document', $types, true) || count($types) === 1;
     }
 
     /** @param list<int> $selectedClientIds

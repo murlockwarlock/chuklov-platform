@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminB2bSalesCallHostLaunchController;
+use App\Http\Controllers\AdminBroadcastMediaController;
 use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
@@ -45,6 +46,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
         ->middleware(Authenticate::class)
         ->name('admin.attachments.download');
+    Route::get('/admin/broadcasts/{campaignId}/media/{mediaIndex}', AdminBroadcastMediaController::class)
+        ->middleware(Authenticate::class)
+        ->whereNumber(['campaignId', 'mediaIndex'])
+        ->name('admin.broadcasts.media');
     Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
         ->middleware(Authenticate::class)
         ->whereNumber(['knowledgeSourceId', 'knowledgeRevisionId'])

@@ -3,14 +3,21 @@
 namespace App\Filament\Resources\NotificationTemplates\Schemas;
 
 use App\Filament\Support\RichTextEditor;
+use App\Filament\Support\TelegramPreviewAction;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
 
 final class NotificationTemplateForm
 {
@@ -69,8 +76,39 @@ final class NotificationTemplateForm
                                 ? 'Для рассылки доступны имя и язык клиента. Нажмите «Добавить данные» в редакторе или введите {{ client.full_name }}.'
                                 : 'Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора. Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
                             ->columnSpanFull(),
+                        Actions::make([
+                            TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
+                        ])->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
             ]);
+    }
+
+    private static function previewMessage(Get $get, ?Model $record): NotificationMessage
+    {
+        $body = (string) $get('body');
+        $subject = (string) $get('subject');
+        $variables = ScenarioTemplateVariableCatalog::used($body, $subject);
+        $template = new NotificationTemplateVersion;
+        $template->forceFill([
+            'body' => $body,
+            'subject' => $subject === '' ? null : $subject,
+            'variables' => $variables,
+        ]);
+        $locale = (string) ($get('locale') ?: 'ru');
+        $rendered = app(NotificationTemplateRenderer::class)->render(
+            $template,
+            ['client' => ['full_name' => 'Aikhana', 'language' => $locale]],
+            $locale,
+        );
+
+        return new NotificationMessage(
+            recipientExternalId: 'preview',
+            body: $rendered->body,
+            subject: $rendered->subject,
+            locale: $locale,
+            idempotencyKey: 'template-preview',
+            mode: NotificationMessageMode::Text,
+        );
     }
 }

@@ -43,12 +43,12 @@ final readonly class UpdateBroadcastCampaign
         $normalized = $this->input->normalize($organization->getKey(), $attributes);
         $mediaInput = $normalized['media_input'] ?? null;
         unset($normalized['media_input']);
-        $storedPath = null;
+        $storedPaths = [];
         $resolvedMedia = null;
 
         try {
             if ($mediaInput !== null) {
-                $resolvedMedia = $this->media->resolve($organization->getKey(), $mediaInput, $storedPath);
+                $resolvedMedia = $this->media->resolve($organization->getKey(), $mediaInput, $storedPaths);
             }
 
             return DB::transaction(function () use ($actor, $campaign, $normalized, $organization, $mediaInput, $resolvedMedia): BroadcastCampaign {
@@ -110,6 +110,7 @@ final readonly class UpdateBroadcastCampaign
                             ]);
                     }
                 }
+                $oldMedia = is_array($locked->media) ? $locked->media : null;
                 $changes = $normalized;
                 if ($mediaInput !== null) {
                     $changes['media'] = $resolvedMedia;
@@ -124,12 +125,21 @@ final readonly class UpdateBroadcastCampaign
                     'failed_count' => 0,
                     'suppressed_count' => 0,
                 ])->save();
+                $removedMediaPaths = array_diff(
+                    $this->media->managedPaths((int) $locked->organization_id, $oldMedia),
+                    $this->media->managedPaths((int) $locked->organization_id, is_array($changes['media'] ?? null) ? $changes['media'] : null),
+                );
+                foreach ($removedMediaPaths as $removedMediaPath) {
+                    DB::afterCommit(function () use ($organization, $removedMediaPath): void {
+                        $this->media->discard($organization->getKey(), $removedMediaPath);
+                    });
+                }
                 $this->audit->handle($organization, $actor, 'broadcast.campaign.updated', BroadcastCampaign::class, (string) $locked->getKey(), ['draft_version' => $locked->draft_version]);
 
                 return $locked->refresh();
             });
         } catch (Throwable $exception) {
-            if ($storedPath !== null) {
+            foreach ($storedPaths as $storedPath) {
                 $this->media->discard($organization->getKey(), $storedPath);
             }
 

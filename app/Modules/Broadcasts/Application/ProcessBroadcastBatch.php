@@ -14,6 +14,7 @@ use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\Exceptions\NotificationDeliveryException;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -486,15 +487,9 @@ final readonly class ProcessBroadcastBatch
                 return NotificationDeliveryResult::permanentFailure('delivery_configuration_invalid');
             }
             $media = is_array($snapshot->media) ? $snapshot->media : null;
-            $mediaImage = is_string($media['image'] ?? null) ? trim($media['image']) : null;
-            if ($deliveryMode->includesImage() && ($mediaImage === null || $mediaImage === '')) {
+            $campaignMediaItems = $this->media->items($media);
+            if ($deliveryMode->includesImage() && $campaignMediaItems === []) {
                 return NotificationDeliveryResult::unavailable('media_unavailable');
-            }
-            $mediaUrl = $mediaImage;
-            $managedMedia = $mediaImage !== null
-                && $this->media->isManagedPath((int) $recipient->organization_id, $mediaImage);
-            if ($managedMedia) {
-                $mediaUrl = null;
             }
             $imageOnly = ! $deliveryMode->includesText();
             $isComposedMessage = $campaign->message_mode === 'compose';
@@ -612,11 +607,32 @@ final readonly class ProcessBroadcastBatch
                 }
             }
 
+            $mediaUrl = null;
             $mediaStream = null;
-            if ($deliveryMode->includesImage() && $managedMedia) {
-                $mediaStream = $this->media->readStream((int) $recipient->organization_id, (string) $mediaImage);
-                if (! is_resource($mediaStream)) {
-                    return NotificationDeliveryResult::unavailable('media_unavailable');
+            $notificationMedia = [];
+            if ($deliveryMode->includesImage()) {
+                foreach ($campaignMediaItems as $campaignMediaItem) {
+                    $source = $campaignMediaItem['source'];
+                    $stream = $this->media->isManagedPath((int) $recipient->organization_id, $source)
+                        ? $this->media->readStream((int) $recipient->organization_id, $source)
+                        : null;
+                    if ($this->media->isManagedPath((int) $recipient->organization_id, $source) && ! is_resource($stream)) {
+                        $this->closeNotificationMediaStreams($notificationMedia);
+
+                        return NotificationDeliveryResult::unavailable('media_unavailable');
+                    }
+                    $notificationMedia[] = new NotificationMedia(
+                        type: $campaignMediaItem['type'],
+                        url: $stream === null ? $source : null,
+                        stream: $stream,
+                        fileName: $campaignMediaItem['name'],
+                    );
+                }
+
+                if ($media !== null && array_key_exists('image', $media) && count($notificationMedia) === 1 && $notificationMedia[0]->type === 'photo') {
+                    $mediaUrl = $notificationMedia[0]->url;
+                    $mediaStream = $notificationMedia[0]->stream;
+                    $notificationMedia = [];
                 }
             }
 
@@ -631,10 +647,15 @@ final readonly class ProcessBroadcastBatch
                 mediaStream: $mediaStream,
                 mode: $deliveryMode,
                 showCaptionAboveMedia: $snapshot->caption_position === 'above',
+                mediaItems: $notificationMedia,
             );
         } catch (\InvalidArgumentException) {
+            $this->closeNotificationMediaStreams($notificationMedia ?? []);
+
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
         } catch (\Throwable) {
+            $this->closeNotificationMediaStreams($notificationMedia ?? []);
+
             return NotificationDeliveryResult::unavailable('delivery_configuration_unavailable');
         }
 
@@ -646,6 +667,16 @@ final readonly class ProcessBroadcastBatch
                 : NotificationDeliveryResult::retryable('delivery_pre_send_failure');
         } catch (\Throwable) {
             return NotificationDeliveryResult::unknown('delivery_outcome_unknown');
+        }
+    }
+
+    /** @param list<NotificationMedia> $media */
+    private function closeNotificationMediaStreams(array $media): void
+    {
+        foreach ($media as $item) {
+            if (is_resource($item->stream)) {
+                fclose($item->stream);
+            }
         }
     }
 

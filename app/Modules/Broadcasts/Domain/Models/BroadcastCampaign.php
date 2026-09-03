@@ -27,7 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $message_body
  * @property string $delivery_mode
  * @property string $caption_position
- * @property array<string, string>|null $media
+ * @property array<string, mixed>|null $media
  * @property string $segment_summary
  * @property int|null $template_version_ru_id
  * @property int|null $template_version_en_id
