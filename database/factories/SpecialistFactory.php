@@ -19,6 +19,9 @@ class SpecialistFactory extends Factory
             'notifications_enabled' => true,
             'staff_user_id' => null,
             'timezone' => null,
+            'viewer_timezone' => null,
+            'viewer_timezone_source' => 'organization',
+            'viewer_timezone_suggestion' => null,
         ];
     }
 

@@ -15,6 +15,8 @@
                         <span>Сегодня: <strong class="text-slate-900 dark:text-white font-mono">{{ $data->todayCount }}</strong></span>
                         <span>·</span>
                         <span>Завтра: <strong class="text-slate-900 dark:text-white font-mono">{{ $data->tomorrowCount }}</strong></span>
+                        <span>·</span>
+                        <span>Время: <strong class="text-slate-900 dark:text-white">{{ $data->timezone }}</strong></span>
                     </div>
                 </div>
                 <div>
@@ -76,7 +78,11 @@
                                         {{ $booking->service?->name ?: 'Услуга' }}
                                     </div>
 
-                                    {{-- Row 5: Specialist (subtle top divider, secondary text) --}}
+                                    <div class="text-[11px] text-slate-500 dark:text-gray-400 break-words mb-1.5 leading-snug">
+                                        {{ \App\Filament\Widgets\UpcomingBookingsWidget::locationLabel($booking) }}
+                                    </div>
+
+                                    {{-- Row 6: Specialist (subtle top divider, secondary text) --}}
                                     <div class="text-[11px] text-slate-500 dark:text-gray-400 pt-1.5 border-t border-slate-200/60 dark:border-white/5 break-words">
                                         {{ $booking->specialist?->display_name ?: 'Специалист' }}
                                     </div>

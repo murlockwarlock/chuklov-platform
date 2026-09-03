@@ -68,6 +68,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'schedule_timezone',
     'client_timezone',
     'location',
+    'working_location_id',
+    'location_area',
+    'location_snapshot',
     'meeting_link_mode',
     'meeting_url',
     'provider_name',
@@ -126,6 +129,12 @@ class Booking extends Model
         return $this->belongsTo(Service::class);
     }
 
+    /** @return BelongsTo<WorkingLocation, $this> */
+    public function workingLocation(): BelongsTo
+    {
+        return $this->belongsTo(WorkingLocation::class);
+    }
+
     /** @return HasMany<BookingEvent, $this> */
     public function events(): HasMany
     {
@@ -135,6 +144,14 @@ class Booking extends Model
     public function instantInterval(): InstantInterval
     {
         return InstantInterval::from($this->startsAtUtc(), $this->blockingEndsAtUtc());
+    }
+
+    /** @return array<string, mixed> */
+    public function locationSnapshot(): array
+    {
+        $snapshot = $this->getAttribute('location_snapshot');
+
+        return is_array($snapshot) ? $snapshot : [];
     }
 
     public function startsAtUtc(): CarbonImmutable
@@ -208,6 +225,7 @@ class Booking extends Model
             'event_version' => 'integer',
             'provider_sync_version' => 'integer',
             'provider_lease_event_id' => 'integer',
+            'location_snapshot' => 'array',
         ];
     }
 

@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions candidate
+
+- Starting SHA: `e1c714fb7b64ff87f3742671555221b47bd02e31`; branch: `codex/phase1-booking-locations-viewer-timezones`. This draft candidate extends scheduling as one UTC-based architecture: independent client/viewer/location timezones, multiple working locations, location days, Office/HomeVisit/Online snapshots and flows, full HomeVisit occupancy, CRM rendering, specialist Telegram actions, exact Booking links, and authorized idempotent quick confirmation.
+- Focused local checks currently pass: 155 tests / 972 assertions with 4 PostgreSQL-only tests skipped under the local SQLite PHPUnit configuration; scoped PHPStan, Pint, frontend lint/typecheck/build, PHP syntax, and `git diff --check` pass. PostgreSQL, hosted exact-SHA CI, staging deployment/smoke, independent review, and owner acceptance are not yet run for this candidate.
+- No production deployment, merge, M12/M16 work, payment-provider or Zoom-provider rewrite, route optimizer, or unrelated cleanup is included. See the final delivery report for the exact candidate SHA and PR evidence.
+
 ## 2026-09-04 — Telegram media and preview staging deployment
 
 - На staging развернут exact SHA `f09c3326fe3514bae80afec28c1339630f634130`: приватные медиа рассылок, signed preview route, одиночные фото/видео/документы, фото/видео-альбомы и документальные альбомы с Telegram-лимитами; единый Telegram-preview добавлен в рассылки, контент и шаблоны.

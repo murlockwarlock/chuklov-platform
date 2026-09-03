@@ -28,6 +28,8 @@ class PortalBookingQueryRequest extends FormRequest
                 VisitFormat::cases(),
             ))],
             'display_timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'working_location_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'location_area' => ['sometimes', 'nullable', 'string', 'max:160'],
         ];
     }
 

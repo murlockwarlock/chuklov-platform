@@ -60,10 +60,10 @@ final class ListClientBookings
     }
 
     /** @return array<string, mixed> */
-    public function projection(Booking $booking, ?string $locale = null): array
+    public function projection(Booking $booking, ?string $locale = null, ?string $displayTimezone = null): array
     {
         $client = $this->clientContext->client();
-        $timezone = $client->timezone;
+        $timezone = $displayTimezone ?? $client->timezone;
         $localStart = $booking->startsAtUtc()->setTimezone($timezone);
         $localEnd = $booking->endsAtUtc()->setTimezone($timezone);
         $pendingHomeVisit = $booking->status->value === BookingStatus::PendingReview->value
@@ -85,9 +85,13 @@ final class ListClientBookings
             'displayUtcOffset' => $localStart->format('P'),
             'timezone' => $timezone,
             'formatLabel' => $this->formatLabel($booking->visit_format, $locale),
+            'format' => $booking->visit_format->value,
             'statusLabel' => $this->statusLabel($booking->status, $locale),
             'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status, $locale),
             'location' => $booking->location,
+            'workingLocationId' => $booking->working_location_id,
+            'locationArea' => $booking->location_area,
+            'locationSnapshot' => $booking->locationSnapshot(),
             'meetingUrl' => $booking->status === BookingStatus::Confirmed
                 && $booking->visit_format === VisitFormat::Online
                 ? $booking->effectiveMeetingUrl()

@@ -10,6 +10,7 @@ use App\Modules\Scheduling\Application\Data\DashboardUpcomingBookingsResult;
 use App\Modules\Scheduling\Application\GetDashboardUpcomingBookings;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Facades\Auth;
 
@@ -87,6 +88,20 @@ class UpcomingBookingsWidget extends Widget
             VisitFormat::HomeVisit => 'Выезд',
             VisitFormat::Online => 'Онлайн',
             default => 'Визит',
+        };
+    }
+
+    public static function locationLabel(Booking $booking): string
+    {
+        $snapshot = $booking->locationSnapshot();
+
+        return match ($booking->visit_format) {
+            VisitFormat::Office => trim(implode(' · ', array_filter([
+                $snapshot['name'] ?? null,
+                $snapshot['address'] ?? $booking->location,
+            ]))) ?: 'Кабинет',
+            VisitFormat::HomeVisit => 'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+            VisitFormat::Online => 'Онлайн',
         };
     }
 }

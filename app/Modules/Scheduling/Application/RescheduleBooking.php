@@ -46,6 +46,8 @@ final class RescheduleBooking
         ?string $reason = null,
         ?int $expectedEventVersion = null,
         ?string $location = null,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
     ): Booking {
         $this->authorization->authorize($actor, $booking);
         $reason = $this->normalizeReason($reason);
@@ -60,6 +62,8 @@ final class RescheduleBooking
             $reason,
             $expectedEventVersion,
             $location,
+            $workingLocationId,
+            $locationArea,
             $organization,
         ): Booking {
             $lockedBooking = Booking::query()
@@ -114,6 +118,8 @@ final class RescheduleBooking
                 ->whereKey($lockedBooking->service_id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $workingLocationId ??= $lockedBooking->working_location_id;
+            $locationArea ??= $lockedBooking->location_area;
             $resolvedTimezone = $this->resolveTimezone($clientTimezone ?? $client->timezone);
             $availability = $this->availability->forBooking(
                 specialist: $specialist,
@@ -122,6 +128,8 @@ final class RescheduleBooking
                 startsAt: $newStartsAt,
                 displayTimezone: $resolvedTimezone,
                 ignoreBookingId: $lockedBooking->getKey(),
+                workingLocationId: $workingLocationId,
+                locationArea: $locationArea,
             );
             $slot = $this->matchingSlot($availability->slots, $newStartsAt);
 
@@ -133,8 +141,19 @@ final class RescheduleBooking
 
             $oldValues = $this->events->snapshot($lockedBooking);
 
+            $locationResolver = app(BookingLocationResolver::class);
+            $locationSelection = $locationResolver->selection(
+                format: $lockedBooking->visit_format,
+                workingLocationId: $workingLocationId,
+                areaName: $locationArea,
+                startsAt: $newStartsAt,
+            );
+
             if ($actor instanceof User && $lockedBooking->visit_format !== VisitFormat::Online && $location !== null) {
                 $lockedBooking->forceFill(['location' => $this->normalizeLocation($location)]);
+            }
+            if ($locationSelection->workingLocation !== null) {
+                $lockedBooking->forceFill(['location' => $locationSelection->workingLocation->address]);
             }
 
             $lockedBooking->forceFill([
@@ -143,6 +162,18 @@ final class RescheduleBooking
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
                 'client_timezone' => $resolvedTimezone,
+                'working_location_id' => $locationSelection->workingLocation?->getKey(),
+                'location_area' => $locationArea,
+                'location_snapshot' => $locationResolver->snapshot(
+                    format: $lockedBooking->visit_format,
+                    selection: $locationSelection,
+                    scheduleTimezone: $slot->scheduleTimezone,
+                    address: $lockedBooking->location,
+                    areaName: $locationArea,
+                    latitude: $lockedBooking->locationSnapshot()['latitude'] ?? null,
+                    longitude: $lockedBooking->locationSnapshot()['longitude'] ?? null,
+                    mapUrl: $lockedBooking->locationSnapshot()['map_url'] ?? null,
+                ),
                 'event_version' => $lockedBooking->event_version + 1,
             ]);
 

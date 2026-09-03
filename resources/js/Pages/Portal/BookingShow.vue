@@ -15,6 +15,14 @@ type Slot = {
     format: 'office' | 'home' | 'online';
 };
 
+type WorkingLocation = {
+    id: number;
+    name: string;
+    address: string;
+    timezone: string;
+    isDefault: boolean;
+};
+
 type Booking = {
     id: number;
     service: { name: string };
@@ -27,6 +35,7 @@ type Booking = {
     displayUtcOffset: string;
     timezone: string;
     formatLabel: string;
+    format: 'office' | 'home' | 'online';
     statusLabel: string;
     paymentStatusLabel: string;
     location: string | null;
@@ -37,6 +46,15 @@ type Booking = {
     canCancel: boolean;
     canReschedule: boolean;
     pendingReview: boolean;
+    workingLocationId: number | null;
+    locationArea: string | null;
+    locationSnapshot: {
+        name?: string;
+        address?: string;
+        timezone?: string;
+        area_name?: string;
+        [key: string]: unknown;
+    };
     history: { label: string; oldStartsAt: string | null; newStartsAt: string | null; occurredAt: string }[];
 };
 
@@ -51,6 +69,8 @@ const props = defineProps<{
     availability: { displayTimezone: string; slots: Slot[] } | null;
     availabilityRange: AvailabilityRange | null;
     client: { timezone: string };
+    workingLocations: WorkingLocation[];
+    locationDays: Array<{ areaName: string; timezone: string }>;
     urls: { index: string; show: string; cancel: string; reschedule: string; timezone: string; services: string };
 }>();
 
@@ -60,10 +80,26 @@ const selectedDate = ref<string | null>(props.booking.localDate);
 const rescheduleOpen = ref(props.availability !== null);
 const rescheduleLoading = ref(false);
 const meetingReloading = ref(false);
+const savedWorkingLocation = props.workingLocations.find((location) => location.id === props.booking.workingLocationId);
+const defaultWorkingLocation = props.workingLocations.find((location) => location.isDefault) ?? props.workingLocations[0] ?? null;
+const initialWorkingLocationId = savedWorkingLocation?.id ?? defaultWorkingLocation?.id ?? null;
+const locationDayAreas = Array.from(new Set(props.locationDays.map((locationDay) => locationDay.areaName)));
+const initialLocationArea = props.booking.locationArea !== null && locationDayAreas.includes(props.booking.locationArea)
+    ? props.booking.locationArea
+    : locationDayAreas[0] ?? props.booking.locationArea;
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
-const rescheduleForm = useForm<{ starts_at: string | null; client_timezone: string; reason: string | null; expected_event_version: number }>({
+const rescheduleForm = useForm<{
+    starts_at: string | null;
+    client_timezone: string;
+    working_location_id: number | null;
+    location_area: string | null;
+    reason: string | null;
+    expected_event_version: number;
+}>({
     starts_at: null,
     client_timezone: props.client.timezone,
+    working_location_id: initialWorkingLocationId,
+    location_area: initialLocationArea,
     reason: null,
     expected_event_version: props.booking.eventVersion,
 });
@@ -201,6 +237,9 @@ function loadAvailability(range: AvailabilityRange): void {
         reschedule: 1,
         date_from: range.dateFrom,
         date_to: range.dateTo,
+        display_timezone: props.client.timezone,
+        working_location_id: rescheduleForm.working_location_id ?? undefined,
+        location_area: rescheduleForm.location_area ?? undefined,
     }, {
         preserveState: true,
         preserveScroll: true,
@@ -208,6 +247,16 @@ function loadAvailability(range: AvailabilityRange): void {
             rescheduleLoading.value = false;
         },
     });
+}
+
+function changeWorkingLocation(value: string): void {
+    rescheduleForm.working_location_id = value === '' ? null : Number(value);
+    loadAvailability(props.availabilityRange ?? monthRange(props.booking.localDate));
+}
+
+function changeLocationArea(value: string): void {
+    rescheduleForm.location_area = value || null;
+    loadAvailability(props.availabilityRange ?? monthRange(props.booking.localDate));
 }
 
 function openReschedule(): void {
@@ -292,12 +341,30 @@ function rescheduleBooking(): void {
           <span aria-hidden="true"> · </span>
           <span>{{ props.booking.localTime }}–{{ props.booking.localEndsAt }} · UTC{{ props.booking.displayUtcOffset }}</span>
         </p>
-        <p
-          v-if="props.booking.location"
-          class="portal-copy"
+        <section
+          v-if="props.booking.locationSnapshot.address || props.booking.locationSnapshot.name || props.booking.locationArea"
+          class="portal-booking-location-panel portal-stack portal-stack--tight"
+          aria-labelledby="booking-location-heading"
         >
-          {{ props.booking.location }}
-        </p>
+          <h3
+            id="booking-location-heading"
+            class="portal-heading portal-heading--card"
+          >
+            {{ props.booking.locationSnapshot.name ?? (props.booking.format === 'home' ? t('booking.home') : t('booking.location')) }}
+          </h3>
+          <span
+            v-if="props.booking.locationArea"
+            class="portal-copy"
+          >{{ t('booking.area') }}: {{ props.booking.locationArea }}</span>
+          <span
+            v-if="props.booking.locationSnapshot.address || props.booking.location"
+            class="portal-copy"
+          >{{ props.booking.locationSnapshot.address ?? props.booking.location }}</span>
+          <span
+            v-if="props.booking.locationSnapshot.timezone"
+            class="portal-copy portal-copy--small"
+          >{{ t('booking.byLocationTime') }}: {{ props.booking.locationSnapshot.timezone }}</span>
+        </section>
         <a
           v-if="props.booking.meetingUrl"
           :href="props.booking.meetingUrl"
@@ -380,8 +447,48 @@ function rescheduleBooking(): void {
         >
           {{ t('booking.loadingAvailability') }}
         </p>
+        <section
+          v-if="props.booking.format === 'office' && props.workingLocations.length > 0"
+          class="portal-stack portal-stack--tight"
+        >
+          <label class="portal-field">
+            <span class="portal-label">{{ t('booking.whereMeeting') }}</span>
+            <select
+              class="portal-input portal-select"
+              :value="rescheduleForm.working_location_id ?? ''"
+              data-testid="booking-reschedule-location-select"
+              @change="changeWorkingLocation(($event.target as HTMLSelectElement).value)"
+            >
+              <option
+                v-for="location in props.workingLocations"
+                :key="location.id"
+                :value="location.id"
+              >{{ location.name }} — {{ location.address }}</option>
+            </select>
+          </label>
+        </section>
+        <section
+          v-if="props.booking.format === 'home' && props.locationDays.length > 0"
+          class="portal-stack portal-stack--tight"
+        >
+          <label class="portal-field">
+            <span class="portal-label">{{ t('booking.area') }}</span>
+            <select
+              class="portal-input portal-select"
+              :value="rescheduleForm.location_area ?? ''"
+              data-testid="booking-reschedule-area-select"
+              @change="changeLocationArea(($event.target as HTMLSelectElement).value)"
+            >
+              <option
+                v-for="area in Array.from(new Set(props.locationDays.map((day) => day.areaName)))"
+                :key="area"
+                :value="area"
+              >{{ area }}</option>
+            </select>
+          </label>
+        </section>
         <BookingCalendar
-          v-else-if="props.availability && props.availabilityRange"
+          v-if="props.availability && props.availabilityRange"
           :availability="props.availability"
           :date-from="props.availabilityRange.dateFrom"
           :date-to="props.availabilityRange.dateTo"

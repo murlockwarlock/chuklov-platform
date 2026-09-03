@@ -22,6 +22,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\BookingIdempotencyKey;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
@@ -61,6 +62,11 @@ class CreateBooking
         ?string $idempotencyKey = null,
         int $partySize = 1,
         ?string $location = null,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?string $mapUrl = null,
         ?Closure $beforeCreate = null,
     ): Booking {
         $organization = $this->context->organization();
@@ -83,6 +89,9 @@ class CreateBooking
         }
 
         $location = $this->normalizeLocation($location);
+        $locationArea = $this->normalizeArea($locationArea);
+        $mapUrl = $this->normalizeMapUrl($mapUrl);
+        $this->validateCoordinates($latitude, $longitude);
 
         if ($format === VisitFormat::Online && $location !== null) {
             throw ValidationException::withMessages(['location' => 'Адрес не используется для онлайн-визита.']);
@@ -108,6 +117,11 @@ class CreateBooking
             meetingLinkMode: $resolvedMeetingLinkMode,
             partySize: $partySize,
             location: $location,
+            workingLocationId: $workingLocationId,
+            locationArea: $locationArea,
+            latitude: $latitude,
+            longitude: $longitude,
+            mapUrl: $mapUrl,
         );
         $idempotencyKey = $this->resolveIdempotencyKey(
             idempotencyKey: $idempotencyKey,
@@ -133,6 +147,11 @@ class CreateBooking
             $actorType,
             $partySize,
             $location,
+            $workingLocationId,
+            $locationArea,
+            $latitude,
+            $longitude,
+            $mapUrl,
             $requestHash,
             $beforeCreate,
         ): Booking {
@@ -199,12 +218,21 @@ class CreateBooking
             );
 
             $resolvedClientTimezone = $this->resolveClientTimezone($clientTimezone, $lockedClient);
+            $locationResolver = app(BookingLocationResolver::class);
+            $locationSelection = $locationResolver->selection(
+                format: $format,
+                workingLocationId: $workingLocationId,
+                areaName: $locationArea,
+                startsAt: $requestedStart,
+            );
             $availability = $this->availability->forBooking(
                 specialist: $lockedSpecialist,
                 service: $lockedService,
                 format: $format,
                 startsAt: $requestedStart,
                 displayTimezone: $resolvedClientTimezone,
+                workingLocationId: $workingLocationId,
+                locationArea: $locationArea,
             );
             $slot = $this->matchingSlot($availability->slots, $requestedStart);
 
@@ -217,11 +245,31 @@ class CreateBooking
             $status = $format === VisitFormat::HomeVisit
                 ? BookingStatus::PendingReview
                 : BookingStatus::Requested;
-            $officeLocation = $format === VisitFormat::Office
+            $legacyOfficeLocation = $format === VisitFormat::Office
                 ? $organization->settings()
                     ->where('setting_key', 'office_location')
                     ->value('string_value')
                 : null;
+            $snapshotAddress = $format === VisitFormat::HomeVisit
+                ? $location
+                : ($locationSelection->workingLocation instanceof WorkingLocation
+                    ? null
+                    : ($actor instanceof User && $location !== null ? $location : $legacyOfficeLocation));
+            $locationSnapshot = $locationResolver->snapshot(
+                format: $format,
+                selection: $locationSelection,
+                scheduleTimezone: $slot->scheduleTimezone,
+                address: $snapshotAddress,
+                areaName: $locationArea,
+                latitude: $latitude,
+                longitude: $longitude,
+                mapUrl: $mapUrl,
+            );
+            $resolvedLocation = $format === VisitFormat::HomeVisit
+                ? $location
+                : ($locationSelection->workingLocation instanceof WorkingLocation
+                    ? $locationSelection->workingLocation->address
+                    : ($actor instanceof User && $location !== null ? $location : $snapshotAddress));
             $booking = new Booking;
             $booking->forceFill([
                 'organization_id' => $organization->getKey(),
@@ -238,9 +286,10 @@ class CreateBooking
                 'blocking_ends_at' => $slot->blockingEndsAt,
                 'schedule_timezone' => $slot->scheduleTimezone,
                 'client_timezone' => $resolvedClientTimezone,
-                'location' => $format === VisitFormat::HomeVisit
-                    ? $location
-                    : ($actor instanceof User && $location !== null ? $location : $officeLocation),
+                'location' => $resolvedLocation,
+                'working_location_id' => $locationSelection->workingLocation?->getKey(),
+                'location_area' => $locationArea,
+                'location_snapshot' => $locationSnapshot,
                 'meeting_link_mode' => $resolvedMeetingLinkMode,
                 'party_size' => $partySize,
                 'event_version' => 1,
@@ -357,7 +406,7 @@ class CreateBooking
         return null;
     }
 
-    /** @return array<string, string|int|null> */
+    /** @return array<string, mixed> */
     private function bookingSnapshot(Booking $booking): array
     {
         return [
@@ -370,6 +419,9 @@ class CreateBooking
             'schedule_timezone' => $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
             'location' => $booking->location,
+            'working_location_id' => $booking->working_location_id,
+            'location_area' => $booking->location_area,
+            'location_snapshot' => $booking->locationSnapshot(),
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,
@@ -392,6 +444,43 @@ class CreateBooking
         }
 
         return $location === '' ? null : $location;
+    }
+
+    private function normalizeArea(?string $area): ?string
+    {
+        $area = $area === null ? null : trim($area);
+
+        if ($area !== null && mb_strlen($area) > 160) {
+            throw ValidationException::withMessages(['locationArea' => 'Район должен быть не длиннее 160 символов.']);
+        }
+
+        return $area === '' ? null : $area;
+    }
+
+    private function normalizeMapUrl(?string $mapUrl): ?string
+    {
+        $mapUrl = $mapUrl === null ? null : trim($mapUrl);
+
+        if ($mapUrl === null || $mapUrl === '') {
+            return null;
+        }
+
+        if (mb_strlen($mapUrl) > 2000 || filter_var($mapUrl, FILTER_VALIDATE_URL) === false) {
+            throw ValidationException::withMessages(['mapUrl' => 'Ссылка на карту недействительна.']);
+        }
+
+        return $mapUrl;
+    }
+
+    private function validateCoordinates(?float $latitude, ?float $longitude): void
+    {
+        if ($latitude !== null && ($latitude < -90 || $latitude > 90)) {
+            throw ValidationException::withMessages(['latitude' => 'Координата широты недействительна.']);
+        }
+
+        if ($longitude !== null && ($longitude < -180 || $longitude > 180)) {
+            throw ValidationException::withMessages(['longitude' => 'Координата долготы недействительна.']);
+        }
     }
 
     private function resolveIdempotencyKey(
@@ -477,6 +566,11 @@ class CreateBooking
         ?MeetingLinkMode $meetingLinkMode,
         int $partySize,
         ?string $location,
+        ?int $workingLocationId,
+        ?string $locationArea,
+        ?float $latitude,
+        ?float $longitude,
+        ?string $mapUrl,
     ): string {
         return hash('sha256', json_encode([
             'client_id' => $clientId,
@@ -490,6 +584,11 @@ class CreateBooking
                 : null,
             'party_size' => $partySize,
             'location' => $location === null ? null : trim($location),
+            'working_location_id' => $workingLocationId,
+            'location_area' => $locationArea,
+            'latitude' => $latitude,
+            'longitude' => $longitude,
+            'map_url' => $mapUrl,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 

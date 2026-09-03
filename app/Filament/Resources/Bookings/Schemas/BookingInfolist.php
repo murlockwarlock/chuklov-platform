@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
@@ -35,18 +36,18 @@ class BookingInfolist
                         TextEntry::make('starts_at')
                             ->label('Дата и время начала')
                             ->dateTime('d.m.Y H:i')
-                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                            ->timezone(fn (): string => self::viewerTimezone()),
                         TextEntry::make('ends_at')
                             ->label('Окончание')
                             ->dateTime('d.m.Y H:i')
-                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                            ->timezone(fn (): string => self::viewerTimezone()),
                         TextEntry::make('schedule_timezone')->label('Часовой пояс записи'),
                         TextEntry::make('party_size')->label('Количество персон'),
                         TextEntry::make('requested_at')
                             ->label('Заявка создана')
                             ->dateTime('d.m.Y H:i')
-                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
-                        TextEntry::make('location')->label('Адрес приёма')->placeholder('Не указан')->columnSpanFull()->wrap(),
+                            ->timezone(fn (): string => self::viewerTimezone()),
+                        TextEntry::make('location')->label('Место проведения')->state(fn (Booking $record): string => self::locationLabel($record))->placeholder('Не указано')->columnSpanFull()->wrap(),
                         TextEntry::make('meeting_url')
                             ->label('Ссылка на онлайн-встречу')
                             ->placeholder('Не указана')
@@ -145,7 +146,7 @@ class BookingInfolist
         $values = [
             self::eventLabel($event),
             $event->occurred_at->copy()
-                ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                ->setTimezone(self::viewerTimezone())
                 ->format('d.m.Y H:i'),
             'Изменил: '.$actor,
         ];
@@ -164,7 +165,7 @@ class BookingInfolist
     private static function humanDateTime(string $value): string
     {
         return CarbonImmutable::parse($value, 'UTC')
-            ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+            ->setTimezone(self::viewerTimezone())
             ->format('d.m.Y H:i');
     }
 
@@ -225,6 +226,32 @@ class BookingInfolist
     private static function bookingSummary(Booking $booking): ?BookingFinanceSummary
     {
         return app(FinancePresentation::class)->bookingSummary($booking);
+    }
+
+    private static function viewerTimezone(): string
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    private static function locationLabel(Booking $booking): string
+    {
+        $snapshot = $booking->locationSnapshot();
+
+        return match ($booking->visit_format) {
+            VisitFormat::Office => trim(implode("\n", array_filter([
+                $snapshot['name'] ?? 'Кабинет',
+                $snapshot['address'] ?? $booking->location,
+            ]))) ?: 'Не указано',
+            VisitFormat::HomeVisit => trim(implode("\n", [
+                'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+                'Адрес клиента: '.($snapshot['address'] ?? $booking->location ?? 'не указан'),
+            ])),
+            VisitFormat::Online => 'Онлайн',
+        };
     }
 
     /** @param array<string, mixed> $values */

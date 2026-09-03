@@ -14,9 +14,11 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
 use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
 use App\Modules\Scheduling\Domain\ValueObjects\InstantInterval;
@@ -28,6 +30,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -40,6 +43,8 @@ class CalculateAvailability
         private readonly GetBookingLeadTime $leadTime,
         private readonly SlotCalculator $calculator,
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
+        private readonly BookingLocationResolver $locations,
+        private readonly GetHomeVisitOccupiedBuffer $homeVisitBuffer,
     ) {}
 
     public function forStaff(
@@ -50,6 +55,8 @@ class CalculateAvailability
         string $dateTo,
         VisitFormat $format,
         ?string $displayTimezone = null,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -62,6 +69,8 @@ class CalculateAvailability
             dateTo: $dateTo,
             format: $format,
             displayTimezone: $displayTimezone,
+            workingLocationId: $workingLocationId,
+            locationArea: $locationArea,
         );
     }
 
@@ -73,6 +82,8 @@ class CalculateAvailability
         string $dateTo,
         VisitFormat $format,
         ?string $displayTimezone = null,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
 
@@ -90,6 +101,8 @@ class CalculateAvailability
             displayTimezone: $displayTimezone,
             client: $client,
             datesInDisplayTimezone: true,
+            workingLocationId: $workingLocationId,
+            locationArea: $locationArea,
         );
     }
 
@@ -150,14 +163,27 @@ class CalculateAvailability
         ?int $ignoreBookingId = null,
         ?int $leadTimeMinutes = null,
         ?CarbonImmutable $now = null,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
+        bool $allowInactiveLocation = false,
     ): AvailabilityResult {
         $organization = $this->context->organization();
+
+        $locationSelection = $this->locations->selection(
+            format: $format,
+            workingLocationId: $workingLocationId,
+            areaName: $locationArea,
+            startsAt: $startsAt->utc(),
+            allowInactiveLocation: $allowInactiveLocation,
+        );
+        $scheduleTimezone = $this->locations->scheduleTimezone($specialist, $format, $locationSelection);
+        $scheduleDate = LocalDate::from($startsAt->setTimezone($scheduleTimezone)->toDateString());
 
         return $this->calculateForModels(
             specialist: $specialist,
             service: $service,
-            dateFrom: LocalDate::from($startsAt->setTimezone($this->scheduleTimezone($specialist))->toDateString()),
-            dateTo: LocalDate::from($startsAt->setTimezone($this->scheduleTimezone($specialist))->toDateString()),
+            dateFrom: $scheduleDate,
+            dateTo: $scheduleDate,
             format: $format,
             displayTimezone: $displayTimezone,
             client: null,
@@ -167,12 +193,15 @@ class CalculateAvailability
             now: $now,
             durationMinutes: $service->durationMinutes() ?? 0,
             bufferMinutes: $service->buffer_minutes,
+            workingLocation: $locationSelection->workingLocation,
+            locationArea: $locationArea,
+            locationDays: $locationSelection->locationDay === null ? null : new Collection([$locationSelection->locationDay]),
         );
     }
 
     public function isExistingBookingAligned(Booking $booking): bool
     {
-        $booking->loadMissing(['specialist', 'service']);
+        $booking->loadMissing(['specialist', 'service', 'workingLocation']);
         $specialist = $booking->specialist;
         $service = $booking->service;
 
@@ -180,7 +209,7 @@ class CalculateAvailability
             return false;
         }
 
-        $scheduleTimezone = $this->scheduleTimezone($specialist);
+        $scheduleTimezone = $this->bookingScheduleTimezone($booking, $specialist);
         $durationMinutes = $service->durationMinutes();
 
         if ($booking->schedule_timezone !== $scheduleTimezone
@@ -202,6 +231,9 @@ class CalculateAvailability
             ignoreBookingId: $booking->getKey(),
             leadTimeMinutes: 0,
             now: $booking->startsAtUtc()->subSecond(),
+            workingLocationId: $booking->working_location_id,
+            locationArea: $booking->location_area,
+            allowInactiveLocation: true,
         );
 
         foreach ($availability->slots as $slot) {
@@ -224,6 +256,8 @@ class CalculateAvailability
         ?string $displayTimezone,
         ?Client $client = null,
         bool $datesInDisplayTimezone = false,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $specialist = Specialist::query()->find($specialistId);
@@ -247,8 +281,22 @@ class CalculateAvailability
         $displayRangeStart = null;
         $displayRangeEnd = null;
 
+        $workingLocation = $format === VisitFormat::Office
+            ? $this->locations->officeLocation($workingLocationId)
+            : null;
+        $locationDays = $format === VisitFormat::HomeVisit
+            ? $this->locations->activeLocationDays($locationArea)
+            : null;
+        if ($format === VisitFormat::HomeVisit
+            && $this->locations->hasActiveLocationDays()
+            && ($locationArea === null || trim($locationArea) === '' || $locationDays?->isEmpty())) {
+            throw ValidationException::withMessages([
+                'location_area' => 'Для этого района нет подходящего дня выезда.',
+            ]);
+        }
+        $scheduleTimezone = $this->scheduleTimezoneForSelection($specialist, $format, $workingLocation, $locationDays);
+
         if ($datesInDisplayTimezone) {
-            $scheduleTimezone = $this->scheduleTimezone($specialist);
             $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
             $displayRangeStart = $this->localBoundary($requestedDateFrom, $resolvedDisplayTimezone);
             $displayRangeEnd = $this->localBoundary($requestedDateTo->nextDay(), $resolvedDisplayTimezone);
@@ -272,9 +320,13 @@ class CalculateAvailability
             maxDateCount: $datesInDisplayTimezone ? 33 : 31,
             durationMinutes: $service->durationMinutes() ?? 0,
             bufferMinutes: $service->buffer_minutes,
+            workingLocation: $workingLocation,
+            locationArea: $locationArea,
+            locationDays: $locationDays,
         );
     }
 
+    /** @param Collection<int, LocationDay>|null $locationDays */
     private function calculateForModels(
         Specialist $specialist,
         ?Service $service,
@@ -295,6 +347,10 @@ class CalculateAvailability
         int $durationMinutes = 0,
         int $bufferMinutes = 0,
         ?int $maxSlots = null,
+        ?WorkingLocation $workingLocation = null,
+        ?string $locationArea = null,
+        /** @var Collection<int, LocationDay>|null $locationDays */
+        ?Collection $locationDays = null,
     ): AvailabilityResult {
         if ($dateFrom->value > $dateTo->value) {
             throw ValidationException::withMessages(['dateFrom' => 'The availability range is invalid.']);
@@ -311,7 +367,7 @@ class CalculateAvailability
             throw new AuthorizationException('The scheduling records are outside the current organization.');
         }
 
-        $scheduleTimezone = $this->scheduleTimezone($specialist);
+        $scheduleTimezone = $this->scheduleTimezoneForSelection($specialist, $format, $workingLocation, $locationDays);
         $resolvedDisplayTimezone = $this->displayTimezone($displayTimezone, $client, $scheduleTimezone);
 
         if ($service !== null && ! $this->eligibility->exists($organizationId, $specialist->getKey(), $service->getKey())) {
@@ -325,8 +381,8 @@ class CalculateAvailability
         }
 
         $dateEnd = $dateTo->nextDay();
-        $rangeStart = $this->localBoundary($dateFrom, $scheduleTimezone);
-        $rangeEnd = $this->localBoundary($dateEnd, $scheduleTimezone);
+        $rangeStart = $this->localBoundary($dateFrom, $scheduleTimezone)->subDays(2);
+        $rangeEnd = $this->localBoundary($dateEnd, $scheduleTimezone)->addDays(2);
 
         $workingHours = SpecialistWorkingHour::query()
             ->where('organization_id', $organizationId)
@@ -362,6 +418,7 @@ class CalculateAvailability
         $slots = [];
         $now = $now ?? CarbonImmutable::instance(now())->utc();
         $leadTimeMinutes ??= $this->leadTime->handle();
+        $effectiveBufferMinutes = $bufferMinutes + ($format === VisitFormat::HomeVisit ? $this->homeVisitBuffer->handle() : 0);
 
         if (! $specialist->is_active
             || ($service !== null && (! $service->is_active
@@ -380,7 +437,42 @@ class CalculateAvailability
         $cursor = $dateFrom;
 
         for ($index = 0; $index < $dateCount; $index++) {
-            $dateExceptions = $exceptions->get($cursor->value, collect());
+            $locationDay = $format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()
+                ? $this->locations->matchingLocationDay(
+                    (string) $locationArea,
+                    $this->localBoundary($cursor, $scheduleTimezone)->addHours(12),
+                    $locationDays,
+                )
+                : null;
+            if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty() && ! $locationDay instanceof LocationDay) {
+                $cursor = $cursor->nextDay();
+
+                continue;
+            }
+
+            $dayTimezone = $locationDay instanceof LocationDay ? $locationDay->timezone : $scheduleTimezone;
+            $dayDate = LocalDate::from(
+                $this->localBoundary($cursor, $scheduleTimezone)->setTimezone($dayTimezone)->toDateString(),
+            );
+            $allowedIntervals = [];
+            if ($locationDay instanceof LocationDay) {
+                $locationDate = LocalDate::from(
+                    $this->localBoundary($cursor, $scheduleTimezone)->setTimezone($dayTimezone)->toDateString(),
+                );
+                $locationInterval = $this->calculator->wallClockInterval(
+                    $locationDate,
+                    $dayTimezone,
+                    $locationDay->wallClockInterval(),
+                );
+                if ($locationInterval === null) {
+                    $cursor = $cursor->nextDay();
+
+                    continue;
+                }
+                $allowedIntervals = [$locationInterval];
+            }
+
+            $dateExceptions = $exceptions->get($dayDate->value, collect());
             $dayOff = $dateExceptions->contains(
                 fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
             );
@@ -390,26 +482,27 @@ class CalculateAvailability
                 ->filter()
                 ->values()
                 ->all());
-            $workingIntervals = array_values($workingHours->get($cursor->weekday(), collect())
+            $workingIntervals = array_values($workingHours->get($dayDate->weekday(), collect())
                 ->map(fn (SpecialistWorkingHour $workingHour): WallClockInterval => $workingHour->wallClockInterval())
                 ->all());
 
             $slots = [
                 ...$slots,
                 ...$this->calculator->calculate(
-                    date: $cursor,
-                    scheduleTimezone: $scheduleTimezone,
+                    date: $dayDate,
+                    scheduleTimezone: $dayTimezone,
                     workingIntervals: $workingIntervals,
                     customIntervals: $customIntervals,
                     dayOff: $dayOff,
                     unavailableIntervals: $unavailableIntervals,
                     bookingIntervals: $bookingIntervals,
                     durationMinutes: $durationMinutes,
-                    bufferMinutes: $bufferMinutes,
+                    bufferMinutes: $effectiveBufferMinutes,
                     leadTimeMinutes: $leadTimeMinutes,
                     now: $now,
                     format: $format,
                     displayTimezone: $resolvedDisplayTimezone,
+                    allowedIntervals: $allowedIntervals,
                 ),
             ];
             $cursor = $cursor->nextDay();
@@ -455,6 +548,40 @@ class CalculateAvailability
         $timezone = $specialist->timezone ?? $this->context->organization()->defaultTimezone();
 
         return IanaTimezone::from($timezone)->value;
+    }
+
+    /** @param Collection<int, LocationDay>|null $locationDays */
+    private function scheduleTimezoneForSelection(
+        Specialist $specialist,
+        VisitFormat $format,
+        ?WorkingLocation $workingLocation,
+        ?Collection $locationDays,
+    ): string {
+        return match ($format) {
+            VisitFormat::Office => $workingLocation instanceof WorkingLocation
+                ? $workingLocation->timezone
+                : $this->scheduleTimezone($specialist),
+            VisitFormat::HomeVisit => $locationDays?->first() instanceof LocationDay
+                ? $locationDays->first()->timezone
+                : $this->scheduleTimezone($specialist),
+            VisitFormat::Online => $this->scheduleTimezone($specialist),
+        };
+    }
+
+    private function bookingScheduleTimezone(Booking $booking, Specialist $specialist): string
+    {
+        if ($booking->visit_format === VisitFormat::Office && $booking->workingLocation instanceof WorkingLocation) {
+            return IanaTimezone::from($booking->workingLocation->timezone)->value;
+        }
+
+        if ($booking->visit_format === VisitFormat::HomeVisit && $booking->location_area !== null) {
+            $locationDays = $this->locations->activeLocationDays($booking->location_area);
+            if ($locationDays->isNotEmpty()) {
+                return $locationDays->first()->timezone;
+            }
+        }
+
+        return $this->scheduleTimezone($specialist);
     }
 
     private function displayTimezone(?string $displayTimezone, ?Client $client, string $scheduleTimezone): string

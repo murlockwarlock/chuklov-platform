@@ -21,9 +21,11 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scheduling\Application\GetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\GetBookingLeadTime;
+use App\Modules\Scheduling\Application\GetHomeVisitOccupiedBuffer;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
@@ -70,6 +72,8 @@ class SchedulingConfiguration extends Page
     /** @var array<string, mixed>|null */
     public ?array $data = null;
 
+    public ?string $deviceTimezone = null;
+
     protected string $view = 'filament.pages.scheduling-configuration';
 
     public static function canAccess(): bool
@@ -102,6 +106,7 @@ class SchedulingConfiguration extends Page
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->orderBy('display_name')
             ->value('id');
+        $selectedSpecialist = $specialistId === null ? null : Specialist::query()->find((int) $specialistId);
         $zoom = app(GetB2bZoomConfiguration::class)->handle();
 
         $this->form->fill([
@@ -110,6 +115,9 @@ class SchedulingConfiguration extends Page
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
             'default_timezone' => $organization->defaultTimezone(),
+            'viewer_timezone' => $selectedSpecialist?->viewer_timezone,
+            'viewer_timezone_suggestion' => $selectedSpecialist?->viewer_timezone_suggestion,
+            'home_visit_occupied_buffer_minutes' => app(GetHomeVisitOccupiedBuffer::class)->handle(),
             'b2b_zoom_host_licensed' => (bool) $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
                 ->value('boolean_value'),
@@ -139,7 +147,27 @@ class SchedulingConfiguration extends Page
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         $set('working_hours', $state === null ? [] : $this->workingHours((int) $state));
+                        $specialist = $state === null ? null : Specialist::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->find((int) $state);
+                        $set('viewer_timezone', $specialist?->viewer_timezone);
+                        $set('viewer_timezone_suggestion', $specialist?->viewer_timezone_suggestion);
                     }),
+                Select::make('viewer_timezone')
+                    ->label('Часовой пояс CRM')
+                    ->options(fn (Get $get): array => TimezoneOptions::options(
+                        current: $get('viewer_timezone'),
+                        organization: app(OrganizationContext::class)->defaultTimezone(),
+                    ))
+                    ->searchable()
+                    ->nullable()
+                    ->helperText('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.'),
+                TextInput::make('home_visit_occupied_buffer_minutes')
+                    ->label('Буфер выезда после консультации (минуты)')
+                    ->integer()
+                    ->minValue(0)
+                    ->maxValue(1440)
+                    ->helperText('Для Chuklov 150 минут вместе с консультацией дают полный цикл HomeVisit 4,5 часа.'),
                 TextInput::make('lead_time_minutes')
                     ->label('Минимальный срок до записи (минуты)')
                     ->integer()
@@ -307,6 +335,11 @@ class SchedulingConfiguration extends Page
                     OrganizationSettingKey::DefaultTimezone,
                     (string) $data['default_timezone'],
                 );
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::HomeVisitOccupiedBufferMinutes,
+                    (int) ($data['home_visit_occupied_buffer_minutes'] ?? 0),
+                );
                 if (isset($data['b2b_sales_call_duration_minutes']) && $data['b2b_sales_call_duration_minutes'] !== '') {
                     app(SetOrganizationSetting::class)->handle(
                         $actor,
@@ -346,6 +379,14 @@ class SchedulingConfiguration extends Page
                     (bool) ($data['acknowledge_impact'] ?? false),
                     isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                 );
+                app(UpdateSpecialistViewerTimezone::class)->handle(
+                    actor: $actor,
+                    specialist: $specialist,
+                    timezone: isset($data['viewer_timezone']) && $data['viewer_timezone'] !== ''
+                        ? (string) $data['viewer_timezone']
+                        : null,
+                    source: isset($data['viewer_timezone']) && $data['viewer_timezone'] !== '' ? 'manual' : 'organization',
+                );
                 $zoom = app(GetB2bZoomConfiguration::class)->handle();
                 $hasZoomInput = $zoom['exists']
                     || filled($data['zoom_account_id'] ?? null)
@@ -376,6 +417,59 @@ class SchedulingConfiguration extends Page
             ->success()
             ->title('Расписание сохранено')
             ->send();
+    }
+
+    public function useDeviceTimezone(?string $timezone = null): void
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+        if ($timezone !== null) {
+            $this->deviceTimezone = $timezone;
+        }
+        if ($this->deviceTimezone === null || $this->deviceTimezone === '') {
+            return;
+        }
+
+        $specialist = $this->selectedSpecialist();
+        if (! $specialist instanceof Specialist) {
+            return;
+        }
+
+        app(UpdateSpecialistViewerTimezone::class)->handle(
+            actor: $actor,
+            specialist: $specialist,
+            timezone: $this->deviceTimezone,
+            source: 'device',
+        );
+        $this->data['viewer_timezone'] = $this->deviceTimezone;
+        $this->data['viewer_timezone_suggestion'] = null;
+        $this->deviceTimezone = null;
+    }
+
+    public function dismissDeviceTimezone(): void
+    {
+        $this->data['viewer_timezone_suggestion'] = $this->deviceTimezone;
+        $this->deviceTimezone = null;
+    }
+
+    public function currentViewerTimezone(): string
+    {
+        $specialist = $this->selectedSpecialist();
+
+        return $specialist instanceof Specialist && $specialist->viewer_timezone !== null
+            ? $specialist->viewer_timezone
+            : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    private function selectedSpecialist(): ?Specialist
+    {
+        $specialistId = $this->data['specialist_id'] ?? null;
+
+        return $specialistId === null
+            ? null
+            : Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->find((int) $specialistId);
     }
 
     /** @param array<string, mixed>|null $data

@@ -58,7 +58,7 @@ final class TelegramNotificationChannel implements NotificationChannel
             }
 
             $keyboard = $this->keyboard($message);
-            if ($message->actionButton !== null && $keyboard === null) {
+            if (($message->actionButton !== null || $message->actionButtons !== []) && $keyboard === null) {
                 return NotificationDeliveryResult::unavailable('invalid_notification_button');
             }
 
@@ -372,10 +372,19 @@ final class TelegramNotificationChannel implements NotificationChannel
     {
         $keyboard = InlineKeyboardMarkup::make();
 
+        foreach ($message->actionButtons as $actionButton) {
+            $keyboard->addRow(InlineKeyboardButton::make(
+                text: $actionButton->text,
+                url: $actionButton->url,
+                callback_data: $actionButton->callbackData,
+            ));
+        }
+
         if ($message->actionButton !== null) {
             $keyboard->addRow(InlineKeyboardButton::make(
                 text: $message->actionButton->text,
                 url: $message->actionButton->url,
+                callback_data: $message->actionButton->callbackData,
             ));
         }
 
@@ -391,7 +400,7 @@ final class TelegramNotificationChannel implements NotificationChannel
             ));
         }
 
-        return ($message->actionButton !== null || $message->webAppUrl !== null) ? $keyboard : null;
+        return ($message->actionButton !== null || $message->actionButtons !== [] || $message->webAppUrl !== null) ? $keyboard : null;
     }
 
     private function validWebAppUrl(string $url): bool

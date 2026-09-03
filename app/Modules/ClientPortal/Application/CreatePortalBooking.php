@@ -38,6 +38,11 @@ final readonly class CreatePortalBooking
         ?string $clientTimezone,
         int $partySize,
         ?string $location,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?string $mapUrl = null,
         ?string $attributionSource = null,
     ): Booking {
         return $this->createBooking->handle(
@@ -52,6 +57,11 @@ final readonly class CreatePortalBooking
             idempotencyKey: null,
             partySize: $partySize,
             location: $location,
+            workingLocationId: $workingLocationId,
+            locationArea: $locationArea,
+            latitude: $latitude,
+            longitude: $longitude,
+            mapUrl: $mapUrl,
             beforeCreate: function () use ($client, $consents, $marketingConsent, $attributionSource): void {
                 $this->recordConsentsForBooking($client, $consents, $marketingConsent);
 

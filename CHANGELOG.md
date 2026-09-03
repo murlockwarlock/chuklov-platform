@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-04 — Phase 1 booking locations, timezones, and specialist actions
+
+- Added organization-scoped working locations and location days with PostgreSQL-safe default-location constraints, idempotent legacy office-address backfill, and configurable HomeVisit travel/session occupancy.
+- Kept booking `starts_at`/`ends_at`/`blocking_ends_at` canonical in UTC while separating client display, specialist CRM viewer, and physical schedule timezones with DST-sensitive coverage and device suggestions that never silently change saved preferences.
+- Extended Office, HomeVisit, and Online booking flows with location/destination snapshots, location-aware availability, exact CRM Telegram links, specialist-local timestamps, authorized idempotent Office/Online confirmation callbacks, and HomeVisit review actions.
+- Focused local evidence: 155 tests / 972 assertions, 4 PostgreSQL-only tests skipped by the local SQLite configuration, PHPStan, Pint, frontend lint/typecheck/build, PHP syntax, and `git diff --check` are passing. Hosted CI, PostgreSQL execution, staging, and owner acceptance remain pending for this draft candidate; production is untouched.
+
 ## 2026-09-04 — Компактные согласия и общий emoji picker
 
 - В booking flow обязательные документы показываются компактным списком с отдельным просмотром в modal и одной общей галочкой; backend по-прежнему фиксирует отдельное versioned consent evidence для Offer, Privacy и MedicalDisclaimer.

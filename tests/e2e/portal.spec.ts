@@ -10,6 +10,9 @@ type BookingFixture = {
     specialistId: number;
     specialistName: string;
     alternateSpecialistName: string | null;
+    firstWorkingLocationName: string | null;
+    secondWorkingLocationId: number | null;
+    secondWorkingLocationName: string | null;
     date: string;
     bookingId: number | null;
 };
@@ -18,6 +21,7 @@ type BookingFixtureOptions = {
     withBooking?: boolean;
     withCompanionMessages?: boolean;
     multipleChoices?: boolean;
+    multipleLocations?: boolean;
     longServiceTitle?: boolean;
 };
 
@@ -27,6 +31,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
+        $multipleLocations = getenv('PLAYWRIGHT_MULTIPLE_LOCATIONS') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
@@ -124,6 +129,23 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     ]);
             }
         }
+        $workingLocations = [];
+        if ($multipleLocations) {
+            $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+                ->forOrganization($organization)
+                ->create([
+                    'name' => 'Кабинет Алматы '.$suffix,
+                    'address' => 'ул. Абая, 10',
+                    'timezone' => 'Asia/Almaty',
+                ]);
+            $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+                ->forOrganization($organization)
+                ->create([
+                    'name' => 'Berlin Mitte '.$suffix,
+                    'address' => 'Invalidenstraße 1, Berlin',
+                    'timezone' => 'Europe/Berlin',
+                ]);
+        }
         $date = \\Carbon\\CarbonImmutable::now('UTC')->addDay()->toDateString();
         $booking = null;
         if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
@@ -169,6 +191,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'specialistId' => $specialist->getKey(),
             'specialistName' => $specialist->display_name,
             'alternateSpecialistName' => $alternateSpecialist?->display_name,
+            'firstWorkingLocationName' => ($workingLocations[0] ?? null)?->name,
+            'secondWorkingLocationId' => ($workingLocations[1] ?? null)?->getKey(),
+            'secondWorkingLocationName' => ($workingLocations[1] ?? null)?->name,
             'date' => $date,
             'bookingId' => $booking?->getKey(),
         ]);
@@ -192,6 +217,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
+                PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -625,6 +651,36 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
+});
+
+test('client can change display timezone and choose a physical office', async ({ page }) => {
+    const fixture = createBookingFixture({ multipleLocations: true });
+
+    expect(fixture.firstWorkingLocationName).not.toBeNull();
+    expect(fixture.secondWorkingLocationId).not.toBeNull();
+    expect(fixture.secondWorkingLocationName).not.toBeNull();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+
+    const locationSelect = page.getByTestId('booking-working-location-select');
+    await expect(locationSelect).toBeVisible();
+    await locationSelect.selectOption(String(fixture.secondWorkingLocationId));
+    await expect(locationSelect).toHaveValue(String(fixture.secondWorkingLocationId));
+    await expect(page.getByText(fixture.secondWorkingLocationName as string, { exact: false })).toBeVisible();
+    await expect(page.getByTestId('availability-slot').first()).toBeVisible();
+
+    const timezoneSelect = page.getByTestId('booking-client-timezone-select');
+    await expect(timezoneSelect).toHaveValue('UTC');
+    await timezoneSelect.selectOption('Europe/Berlin');
+    await expect(timezoneSelect).toHaveValue('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone')).toHaveText('Europe/Berlin');
+    await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 });
 
 test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {

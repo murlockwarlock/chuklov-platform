@@ -40,7 +40,7 @@ final class RecordBookingEvent
         return $event->refresh();
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, mixed> */
     public function snapshot(Booking $booking): array
     {
         return [
@@ -56,6 +56,9 @@ final class RecordBookingEvent
             'schedule_timezone' => $booking->schedule_timezone,
             'client_timezone' => $booking->client_timezone,
             'location' => $booking->location,
+            'working_location_id' => $booking->working_location_id,
+            'location_area' => $booking->location_area,
+            'location_snapshot' => $booking->locationSnapshot(),
             'meeting_link_mode' => $booking->meeting_link_mode?->value,
             'party_size' => $booking->party_size,
             'event_version' => $booking->event_version,

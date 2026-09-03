@@ -19,6 +19,8 @@ use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationExceptio
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Carbon\CarbonImmutable;
@@ -30,6 +32,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final class ScenarioContextFactory
 {
+    public function __construct(private readonly BookingDateTimeFormatter $bookingDateTime) {}
+
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
     {
         return match ($event->event_name) {
@@ -70,19 +74,32 @@ final class ScenarioContextFactory
         }
 
         if ($context->booking !== null) {
+            $bookingDateTime = $recipient->type === 'internal'
+                ? $this->bookingDateTime->forSpecialist($context->booking)
+                : $this->bookingDateTime->forClient($context->booking);
+            $locationSnapshot = $context->booking->locationSnapshot();
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),
                 'event_version' => (int) $context->booking->event_version,
                 'status' => $context->booking->status->value,
                 'visit_format' => $context->booking->visit_format->value,
+                'visit_format_label' => $this->visitFormatLabel($context->booking->visit_format->value, $recipient->locale),
                 'service_name' => $context->booking->service->name,
                 'specialist_name' => $context->booking->specialist->display_name,
-                'location' => $context->booking->location,
+                'location' => $locationSnapshot['address'] ?? $context->booking->location,
+                'location_label' => $this->locationLabel($context->booking, $locationSnapshot, $recipient->locale),
+                'location_name' => $locationSnapshot['name'] ?? null,
+                'location_address' => $locationSnapshot['address'] ?? $context->booking->location,
+                'location_timezone' => $locationSnapshot['timezone'] ?? null,
+                'location_area' => $context->booking->location_area ?? ($locationSnapshot['area_name'] ?? null),
+                'crm_url' => $recipient->type === 'internal'
+                    ? url('/admin/bookings/'.$context->booking->getKey())
+                    : null,
                 'starts_at' => $context->booking->startsAtUtc()->toIso8601String(),
                 'ends_at' => $context->booking->endsAtUtc()->toIso8601String(),
-                'local_date' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('d-m-Y'),
-                'local_time' => $context->booking->startsAtUtc()->setTimezone($this->bookingTimezone($context->booking))->format('H:i'),
-                'timezone' => $this->bookingTimezone($context->booking),
+                'local_date' => $bookingDateTime['date'],
+                'local_time' => $bookingDateTime['time'],
+                'timezone' => $bookingDateTime['timezone'],
                 'meeting_url' => $context->booking->effectiveMeetingUrl(),
                 'completed_at' => CarbonImmutable::parse((string) $context->event->occurred_at)->toIso8601String(),
             ];
@@ -274,9 +291,47 @@ final class ScenarioContextFactory
             ->isSettled();
     }
 
-    private function bookingTimezone(Booking $booking): string
+    /** @param array<string, mixed> $snapshot */
+    private function locationLabel(Booking $booking, array $snapshot, string $locale): string
     {
-        return (string) ($booking->client_timezone ?: $booking->client->timezone ?: $booking->schedule_timezone);
+        $name = is_string($snapshot['name'] ?? null) ? trim($snapshot['name']) : '';
+        $address = is_string($snapshot['address'] ?? null) ? trim($snapshot['address']) : trim((string) $booking->location);
+        $area = is_string($snapshot['area_name'] ?? null)
+            ? trim($snapshot['area_name'])
+            : trim((string) $booking->location_area);
+
+        $homeVisitLabel = $this->isRussian($locale) ? 'Выезд' : 'Home visit';
+        if ($area !== '') {
+            $homeVisitLabel .= ' · '.$area;
+        }
+        $homeVisitLines = [$homeVisitLabel];
+        if ($address !== '') {
+            $homeVisitLines[] = $this->isRussian($locale) ? 'Адрес клиента: '.$address : 'Client address: '.$address;
+        }
+
+        return match ($booking->visit_format) {
+            VisitFormat::Office => implode("\n", array_values(array_filter([$name, $address])))
+                ?: ($this->isRussian($locale) ? 'В клинике' : 'At the clinic'),
+            VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
+            VisitFormat::Online => $this->isRussian($locale) ? 'Онлайн' : 'Online',
+        };
+    }
+
+    private function visitFormatLabel(string $format, string $locale): string
+    {
+        $label = match ($format) {
+            VisitFormat::Office->value => $this->isRussian($locale) ? 'В клинике' : 'At the clinic',
+            VisitFormat::HomeVisit->value => $this->isRussian($locale) ? 'Выезд на дом' : 'Home visit',
+            VisitFormat::Online->value => $this->isRussian($locale) ? 'Онлайн' : 'Online',
+            default => $format,
+        };
+
+        return $label;
+    }
+
+    private function isRussian(string $locale): bool
+    {
+        return str_starts_with(strtolower($locale), 'ru');
     }
 
     private function clientTelegramContact(Client $client): string

@@ -54,6 +54,7 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 'Клиенты',
                 'Записи',
+                'Настройки',
                 'Команда и услуги',
                 'Коммуникации',
                 'Контент и знания',

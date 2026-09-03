@@ -2,10 +2,13 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -59,7 +62,7 @@ class BookingForm
                     ->required(),
                 DateTimePicker::make('starts_at')
                     ->label('Дата и время')
-                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                    ->timezone(fn (): string => self::viewerTimezone())
                     ->seconds(false)
                     ->required(),
                 Select::make('visit_format')
@@ -73,12 +76,50 @@ class BookingForm
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         if ($state === VisitFormat::Office->value) {
-                            $set('location', app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value'));
+                            $location = WorkingLocation::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->where('is_active', true)
+                                ->orderByDesc('is_default_office')
+                                ->orderBy('name')
+                                ->first();
+                            $set('working_location_id', $location?->getKey());
+                            $set('location', $location->address ?? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value'));
                         }
                         if ($state === VisitFormat::Online->value) {
                             $set('location', null);
+                            $set('working_location_id', null);
                         }
                     }),
+                Select::make('working_location_id')
+                    ->label('Локация')
+                    ->options(fn (): array => WorkingLocation::query()
+                        ->where('organization_id', app(OrganizationContext::class)->id())
+                        ->where('is_active', true)
+                        ->orderByDesc('is_default_office')
+                        ->orderBy('name')
+                        ->get()
+                        ->mapWithKeys(fn (WorkingLocation $location): array => [
+                            $location->getKey() => $location->name.' — '.$location->address,
+                        ])
+                        ->all())
+                    ->searchable()
+                    ->nullable()
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $location = $state === null || $state === ''
+                            ? null
+                            : WorkingLocation::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->whereKey((int) $state)
+                                ->first();
+                        $set('location', $location?->address);
+                    })
+                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::Office->value)
+                    ->helperText('Время доступности рассчитывается по часовому поясу выбранной локации.'),
+                TextInput::make('location_area')
+                    ->label('Район выезда')
+                    ->maxLength(160)
+                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('party_size')
                     ->label('Количество участников')
                     ->integer()
@@ -97,5 +138,14 @@ class BookingForm
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
             ]);
+    }
+
+    private static function viewerTimezone(): string
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
     }
 }

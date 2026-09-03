@@ -13,11 +13,13 @@ use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\MarkBookingNoShow;
 use App\Modules\Scheduling\Application\RejectHomeVisitBooking;
 use App\Modules\Scheduling\Application\RescheduleBooking;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Actions\Action;
@@ -27,6 +29,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Validation\ValidationException;
 
 final class BookingLifecycleActions
@@ -132,9 +135,40 @@ final class BookingLifecycleActions
                 ->schema([
                     DateTimePicker::make('starts_at')
                         ->label('Новая дата и время')
-                        ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                        ->timezone(fn (): string => self::viewerTimezone())
                         ->seconds(false)
                         ->required(),
+                    Select::make('working_location_id')
+                        ->label('Локация')
+                        ->options(fn (): array => WorkingLocation::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->where('is_active', true)
+                            ->orderByDesc('is_default_office')
+                            ->orderBy('name')
+                            ->get()
+                            ->mapWithKeys(fn (WorkingLocation $location): array => [
+                                $location->getKey() => $location->name.' — '.$location->address,
+                            ])
+                            ->all())
+                        ->default(fn (Booking $record): ?int => $record->working_location_id)
+                        ->searchable()
+                        ->nullable()
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, mixed $state): void {
+                            $location = $state === null || $state === ''
+                                ? null
+                                : WorkingLocation::query()
+                                    ->where('organization_id', app(OrganizationContext::class)->id())
+                                    ->whereKey((int) $state)
+                                    ->first();
+                            $set('location', $location?->address);
+                        })
+                        ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::Office),
+                    TextInput::make('location_area')
+                        ->label('Район выезда')
+                        ->default(fn (Booking $record): ?string => $record->location_area)
+                        ->maxLength(160)
+                        ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
                     TextInput::make('location')
                         ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? 'Адрес приёма' : 'Адрес выезда')
                         ->default(fn (Booking $record): ?string => $record->location)
@@ -154,7 +188,7 @@ final class BookingLifecycleActions
                         ? $data['starts_at']
                         : CarbonImmutable::parse(
                             (string) $data['starts_at'],
-                            app(OrganizationContext::class)->defaultTimezone(),
+                            self::viewerTimezone(),
                         );
 
                     try {
@@ -166,6 +200,10 @@ final class BookingLifecycleActions
                             reason: $data['reason'] ?? null,
                             expectedEventVersion: (int) $data['expected_event_version'],
                             location: array_key_exists('location', $data) ? (string) $data['location'] : null,
+                            workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
+                                ? (int) $data['working_location_id']
+                                : null,
+                            locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
                         );
                         $record->refresh();
                         Notification::make()->success()->title('Запись успешно перенесена')->send();
@@ -268,5 +306,14 @@ final class BookingLifecycleActions
             ->title('Действие отклонено')
             ->body($message)
             ->send();
+    }
+
+    private static function viewerTimezone(): string
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
     }
 }

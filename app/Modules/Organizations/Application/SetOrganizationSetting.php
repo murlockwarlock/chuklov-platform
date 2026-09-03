@@ -30,6 +30,7 @@ class SetOrganizationSetting
                 OrganizationSettingKey::B2bSalesCallDurationMinutes,
                 OrganizationSettingKey::B2bZoomHostLicensed,
                 OrganizationSettingKey::DefaultTimezone,
+                OrganizationSettingKey::HomeVisitOccupiedBufferMinutes,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,
@@ -77,6 +78,11 @@ class SetOrganizationSetting
         if ($key === OrganizationSettingKey::B2bSalesCallDurationMinutes
             && (! is_int($value) || $value < 1 || $value > 1440)) {
             throw new InvalidArgumentException('The B2B sales-call duration is outside the supported range.');
+        }
+
+        if ($key === OrganizationSettingKey::HomeVisitOccupiedBufferMinutes
+            && (! is_int($value) || $value > 1440)) {
+            throw new InvalidArgumentException('The HomeVisit occupied buffer is outside the supported range.');
         }
 
         if (in_array($key, [

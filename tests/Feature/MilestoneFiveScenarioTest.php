@@ -272,6 +272,76 @@ final class MilestoneFiveScenarioTest extends TestCase
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
             $this->channel->messages[1]->body,
         );
+        self::assertSame('📋 Открыть запись в CRM', $this->channel->messages[1]->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $this->channel->messages[1]->actionButtons[0]->url);
+        self::assertSame('✅ Подтвердить', $this->channel->messages[1]->actionButtons[1]->text);
+        self::assertSame('booking:confirm:'.$booking->getKey(), $this->channel->messages[1]->actionButtons[1]->callbackData);
+    }
+
+    public function test_pending_home_visit_notification_only_offers_review_link(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::PendingReview);
+        $booking->forceFill([
+            'visit_format' => VisitFormat::HomeVisit,
+            'location' => '123 Moo 5, Bang Tao',
+            'location_area' => 'Bang Tao',
+            'location_snapshot' => [
+                'type' => VisitFormat::HomeVisit->value,
+                'area_name' => 'Bang Tao',
+                'address' => '123 Moo 5, Bang Tao',
+                'timezone' => 'Asia/Bangkok',
+            ],
+        ])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'pending-home-visit-review', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'internal')
+            ->sole();
+
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($message);
+        self::assertCount(1, $message->actionButtons);
+        self::assertSame('🚗 Рассмотреть выезд', $message->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
+        self::assertNull($message->actionButtons[0]->callbackData);
+        self::assertSame(BookingStatus::PendingReview, $booking->refresh()->status);
+    }
+
+    public function test_delayed_booking_notification_does_not_offer_confirmation_after_booking_changes(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'stale-booking-confirmation', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'internal')
+            ->sole();
+
+        app(OrganizationContext::class)->set($organization);
+        app(ConfirmBooking::class)->handle($admin, $booking);
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($message);
+        self::assertCount(1, $message->actionButtons);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
     }
 
     public function test_specialist_notification_without_username_uses_verified_id_and_profile_action(): void

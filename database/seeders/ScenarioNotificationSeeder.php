@@ -255,8 +255,8 @@ final class ScenarioNotificationSeeder extends Seeder
             templateKey: 'booking-created-specialist',
             locale: 'ru',
             name: 'Новая заявка на запись для специалиста',
-            body: 'Новая заявка на запись от клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
-            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            body: 'Новая запись\nНовая заявка на запись от клиента {{ client.full_name }}.\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_format_label }}\n{{ booking.location_label }}\nTelegram клиента: {{ client.telegram_contact }}.',
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_format_label', 'booking.location_label'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
@@ -322,8 +322,8 @@ final class ScenarioNotificationSeeder extends Seeder
             templateKey: 'booking-confirmed-specialist',
             locale: 'ru',
             name: 'Подтверждение записи для специалиста',
-            body: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» подтверждена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
-            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            body: 'Запись подтверждена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_format_label }}\n{{ booking.location_label }}\nTelegram клиента: {{ client.telegram_contact }}.',
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_format_label', 'booking.location_label'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
@@ -357,7 +357,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} was rescheduled to {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}).',
                 'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» перенесена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}).',
             ],
-            specialistBody: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» перенесена на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}). Telegram клиента: {{ client.telegram_contact }}.',
+            specialistBody: 'Запись перенесена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_format_label }}\n{{ booking.location_label }}\nTelegram клиента: {{ client.telegram_contact }}.',
         );
     }
 
@@ -372,7 +372,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'en' => 'Your appointment with {{ booking.specialist_name }} for {{ booking.service_name }} on {{ booking.local_date }} at {{ booking.local_time }} ({{ booking.timezone }}) was cancelled.',
                 'ru' => 'Ваша запись к специалисту {{ booking.specialist_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}) отменена.',
             ],
-            specialistBody: 'Запись клиента {{ client.full_name }} на услугу «{{ booking.service_name }}» на {{ booking.local_date }} в {{ booking.local_time }} ({{ booking.timezone }}) отменена. Telegram клиента: {{ client.telegram_contact }}.',
+            specialistBody: 'Запись отменена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_format_label }}\n{{ booking.location_label }}\nTelegram клиента: {{ client.telegram_contact }}.',
         );
     }
 
@@ -413,7 +413,7 @@ final class ScenarioNotificationSeeder extends Seeder
             locale: 'ru',
             name: $messageName.' для специалиста',
             body: $specialistBody,
-            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone'],
+            variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_format_label', 'booking.location_label'],
         );
         $this->seedBookingLifecycleRule(
             organization: $organization,
