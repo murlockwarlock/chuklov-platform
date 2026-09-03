@@ -5,7 +5,7 @@
 - Fixed broadcast client selection, responsive message composition, image-caption layout, actionable delivery errors, and full-width previews.
 - Rebalanced client, booking, B2B lead, auto-message, feedback, and legal-document screens so primary information and actions remain visible without avoidable overflow or collapsed settings.
 - Normalized rich-text rendering across CRM tables, detail views, previews, and saved-template labels so users see formatted content instead of raw HTML.
-- Focused local UX, broadcast, B2B, scenario, and regression checks pass; staging deployment and owner acceptance remain pending for this candidate.
+- Focused local UX, broadcast, B2B, scenario, and regression checks pass; hosted exact-SHA CI `33744996852` and E2E `33744996664` pass on `d04345ccadaa0ce510fb64cddaa955ec9eca585f`; staging deployment and `staging-smoke.sh` pass on that SHA. Owner UX acceptance remains pending.
 
 ## 2026-09-03 — M11E review follow-up
 

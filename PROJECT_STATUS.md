@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-03 — M11 CRM operator UX and rich content follow-up
+
+- Release candidate d04345ccadaa0ce510fb64cddaa955ec9eca585f completes the requested CRM operator remediation: searchable broadcast clients, stable message/media layouts, actionable Telegram delivery failures, balanced client/booking/B2B/auto-message/legal screens, and safe rich-text rendering across tables, details, and previews. The E2E fixtures now cover the required legal-document setup and current Filament rich editor contract.
+- Targeted local feature checks pass 22 tests / 171 assertions; Pint, changed E2E ESLint, vue-tsc, and git diff --check pass. Hosted exact-SHA CI 33744996852 passes Quality, Integration foundation, Integration RAG, Integration concurrency, Privacy and secret scan, and Docker build/runtime health. Hosted exact-SHA E2E 33744996664 passes 44/44 desktop/mobile tests.
+- Staging is deployed and smoke-verified on the same SHA. Remote REVISION, app image, Horizon, scheduler, Telegram, /health, queue identity, CRM, knowledge, and portal probes all match and pass. Owner UX acceptance remains pending; production remains untouched, and no merge or M12 work is included.
+
 ## 2026-09-02 — M11 CRM operator UX remediation candidate
 
 - This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and is limited to the requested operator-facing remediation. Broadcast creation now defaults to direct searchable client selection and direct message composition, while consent enforcement, saved templates, and advanced segmentation remain available behind human-language controls. Auto-messages, templates, message history, bookings, knowledge, AI, finance, and broadcast tables use compact Russian labels and primary actions.
