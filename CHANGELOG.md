@@ -7,6 +7,7 @@
 - Added server-side broadcast client search for names, phones, Telegram usernames with or without `@`, and Telegram IDs, plus bounded recipient polling and human-readable selection state.
 - Added organization/client timezone preferences with UTC persistence and `Asia/Almaty` seed configuration, Mini App Zoom readiness polling, referral/attribution UX, and the compact language control.
 - Added focused PostgreSQL-backed regression coverage for legal consent, tenant-safe search, Telegram limits/media, timezone persistence, and relevant database constraints. No deployment, merge, production/staging verification, or hosted CI was performed for this candidate.
+- Follow-up: portal booking now fails closed until all required legal subjects are published, and manual attribution acceptance is atomic with consent recording and booking creation; focused SQLite and PostgreSQL regressions cover both failure paths.
 
 ## 2026-09-02 — CRM operator UX remediation candidate
 

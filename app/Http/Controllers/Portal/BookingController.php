@@ -8,7 +8,6 @@ use App\Http\Requests\PortalBookingActionRequest;
 use App\Http\Requests\PortalBookingQueryRequest;
 use App\Http\Requests\PortalBookingRescheduleRequest;
 use App\Http\Requests\PortalTimezonePreferenceRequest;
-use App\Modules\Attribution\Application\AcceptManualAttribution;
 use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\CreatePortalBooking;
@@ -152,7 +151,6 @@ class BookingController extends Controller
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
         CreatePortalBooking $createBooking,
-        AcceptManualAttribution $acceptAttribution,
     ): RedirectResponse {
         $validated = $request->validated();
         $format = VisitFormat::from($validated['format']);
@@ -177,15 +175,12 @@ class BookingController extends Controller
                 clientTimezone: $clientContext->client()->timezone,
                 partySize: (int) ($validated['party_size'] ?? 1),
                 location: isset($validated['location']) ? (string) $validated['location'] : null,
+                attributionSource: filled($validated['attribution_source'] ?? null)
+                    ? (string) $validated['attribution_source']
+                    : null,
             );
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->bookingErrors($exception));
-        }
-        if (filled($validated['attribution_source'] ?? null)) {
-            $acceptAttribution->handle(
-                $clientContext->client(),
-                (string) $validated['attribution_source'],
-            );
         }
         $displayTimezone = $clientContext->client()->timezone;
 

@@ -2,17 +2,21 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Attribution\Application\AcceptManualAttribution;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final readonly class CreatePortalBooking
 {
@@ -20,6 +24,7 @@ final readonly class CreatePortalBooking
         private ListPublishedLegalDocuments $legalDocuments,
         private RecordPortalClientConsents $recordConsents,
         private CreateBooking $createBooking,
+        private AcceptManualAttribution $acceptAttribution,
     ) {}
 
     /** @param list<array{legal_document_id: int, granted: bool}> $consents */
@@ -34,13 +39,15 @@ final readonly class CreatePortalBooking
         ?string $clientTimezone,
         int $partySize,
         ?string $location,
+        ?string $attributionSource = null,
     ): Booking {
-        return DB::transaction(function () use ($client, $specialist, $service, $startsAt, $format, $consents, $marketingConsent, $clientTimezone, $partySize, $location): Booking {
+        return DB::transaction(function () use ($client, $specialist, $service, $startsAt, $format, $consents, $marketingConsent, $clientTimezone, $partySize, $location, $attributionSource): Booking {
             $documents = $this->legalDocuments->handle($client->language);
+            $this->ensureRequiredLegalDocumentsPublished($documents);
             $answers = $consents;
             if ($marketingConsent) {
                 $marketingDocument = $documents
-                    ->first(fn ($document): bool => $document->document_type === ConsentSubject::Marketing->value);
+                    ->first(fn (LegalDocument $document): bool => $document->document_type === ConsentSubject::Marketing->value);
                 if ($marketingDocument !== null) {
                     $answers[] = [
                         'legal_document_id' => (int) $marketingDocument->getKey(),
@@ -49,11 +56,9 @@ final readonly class CreatePortalBooking
                 }
             }
 
-            if ($documents->isNotEmpty()) {
-                $this->recordConsents->handle($client, $answers);
-            }
+            $this->recordConsents->handle($client, $answers);
 
-            return $this->createBooking->handle(
+            $booking = $this->createBooking->handle(
                 actor: $client,
                 client: $client,
                 specialist: $specialist,
@@ -66,6 +71,40 @@ final readonly class CreatePortalBooking
                 partySize: $partySize,
                 location: $location,
             );
+
+            if (filled($attributionSource)) {
+                $this->acceptAttribution->handle($client, $attributionSource);
+            }
+
+            return $booking;
         });
+    }
+
+    /** @param Collection<int, LegalDocument> $documents */
+    private function ensureRequiredLegalDocumentsPublished(Collection $documents): void
+    {
+        $publishedSubjects = [];
+
+        foreach ($documents as $document) {
+            $subject = ConsentSubject::tryFrom((string) $document->document_type);
+
+            if ($subject instanceof ConsentSubject) {
+                $publishedSubjects[$subject->value] = true;
+            }
+        }
+
+        $missingSubjects = [];
+
+        foreach (ConsentSubject::cases() as $subject) {
+            if ($subject->isRequired() && ! isset($publishedSubjects[$subject->value])) {
+                $missingSubjects[] = $subject->label('en');
+            }
+        }
+
+        if ($missingSubjects !== []) {
+            throw ValidationException::withMessages([
+                'legal_configuration' => 'Required legal documents are not configured or published: '.implode(', ', $missingSubjects).'.',
+            ]);
+        }
     }
 }

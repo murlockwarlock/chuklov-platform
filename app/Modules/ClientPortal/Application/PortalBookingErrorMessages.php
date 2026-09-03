@@ -64,6 +64,10 @@ final class PortalBookingErrorMessages
             'ru' => 'Выберите другой формат для этой услуги.',
             'en' => 'Choose another format for this service.',
         ],
+        'legal_documents_unavailable' => [
+            'ru' => 'Запись временно недоступна: обязательные документы ещё не опубликованы. Свяжитесь с нами.',
+            'en' => 'Booking is temporarily unavailable because required legal documents are not published. Please contact us.',
+        ],
         'format_from_list' => [
             'ru' => 'Выберите формат визита из списка.',
             'en' => 'Choose a visit format from the list.',
@@ -271,6 +275,7 @@ final class PortalBookingErrorMessages
                 'service', 'service_id' => ['service_id', 'service_unavailable'],
                 'specialist', 'specialist_id', 'assignment' => ['specialist_id', 'specialist_unavailable'],
                 'format', 'meetingLinkMode' => ['format', 'format_unavailable'],
+                'legal_configuration' => ['consents', 'legal_documents_unavailable'],
                 'partySize' => ['party_size', 'party_size_invalid'],
                 'location' => ['location', 'provide_address'],
                 'clientTimezone' => ['starts_at', 'timezone_invalid'],

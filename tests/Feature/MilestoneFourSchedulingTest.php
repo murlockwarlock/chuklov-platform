@@ -8,6 +8,8 @@ use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignmentResource;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Models\User;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\ClientPortal\Application\CreatePortalBooking;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
@@ -525,6 +527,156 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->where('subject', 'marketing')->count());
     }
 
+    public function test_portal_booking_fails_closed_when_no_required_legal_documents_are_published(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+
+        $response = $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => [],
+            ]);
+
+        $response->assertRedirect()->assertSessionHasErrors(['consents']);
+        self::assertStringContainsString(
+            'temporarily unavailable',
+            $response->getSession()->get('errors')->get('consents')[0],
+        );
+        self::assertSame(0, Booking::query()->count());
+        self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->count());
+    }
+
+    public function test_portal_booking_fails_closed_when_only_some_required_legal_documents_are_published(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $documents = $this->publishPortalLegalDocuments($organization, ['offer', 'privacy']);
+
+        $response = $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => [
+                    ['legal_document_id' => $documents['offer']->id, 'granted' => true],
+                    ['legal_document_id' => $documents['privacy']->id, 'granted' => true],
+                ],
+            ]);
+
+        $response->assertRedirect()->assertSessionHasErrors(['consents']);
+        self::assertSame(0, Booking::query()->count());
+        self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->count());
+    }
+
+    public function test_portal_booking_accepts_manual_attribution_without_overwriting_existing_first_touch(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $consents = $this->portalConsentPayload($documents);
+        $manualClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+
+        $this->withSession(['client_portal.client_id' => $manualClient->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => $consents,
+                'attribution_source' => 'social',
+            ])
+            ->assertRedirect();
+
+        $manualAttribution = ClientAttribution::query()->where('client_id', $manualClient->id)->sole();
+        self::assertSame('manual', $manualAttribution->source_type);
+        self::assertSame('social', $manualAttribution->source);
+
+        $automaticClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        ClientAttribution::query()->forceCreate([
+            'organization_id' => $organization->id,
+            'client_id' => $automaticClient->id,
+            'source_type' => 'utm',
+            'utm_source' => 'newsletter',
+            'capture_channel' => 'portal',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $automaticClient->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T10:15:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => $consents,
+                'attribution_source' => 'friend',
+            ])
+            ->assertRedirect();
+
+        $automaticAttribution = ClientAttribution::query()->where('client_id', $automaticClient->id)->sole();
+        self::assertSame('utm', $automaticAttribution->source_type);
+        self::assertSame('newsletter', $automaticAttribution->utm_source);
+        self::assertSame(2, Booking::query()->count());
+    }
+
+    public function test_portal_booking_rolls_back_booking_and_consents_when_manual_attribution_fails(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $documents = $this->publishPortalLegalDocuments($organization);
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+
+        try {
+            app(CreatePortalBooking::class)->handle(
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
+                format: VisitFormat::Office,
+                consents: $this->portalConsentPayload($documents),
+                marketingConsent: false,
+                clientTimezone: 'UTC',
+                partySize: 1,
+                location: null,
+                attributionSource: 'unsupported-source',
+            );
+            self::fail('Invalid manual attribution must reject the portal booking.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('source', $exception->errors());
+        }
+
+        self::assertSame(0, Booking::query()->count());
+        self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->count());
+        self::assertSame(0, ClientAttribution::query()->where('client_id', $client->id)->count());
+    }
+
     public function test_portal_auto_selects_the_only_bookable_specialist(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
@@ -798,5 +950,36 @@ class MilestoneFourSchedulingTest extends TestCase
             'feature_key' => $feature->value,
             'enabled' => true,
         ])->save();
+    }
+
+    private function publishPortalLegalDocuments(Organization $organization, array $documentTypes = ['offer', 'privacy', 'medical_disclaimer']): array
+    {
+        $documents = [];
+
+        foreach ($documentTypes as $documentType) {
+            $draft = app(CreatePlatformLegalDocumentDraft::class)->handle(
+                organization: $organization,
+                documentType: $documentType,
+                purpose: $documentType.'_consent',
+                locale: 'en',
+                version: '2026-08-12-'.$documentType,
+                content: 'Configured '.$documentType.' text.',
+                isRequired: true,
+            );
+            $documents[$documentType] = app(PublishLegalDocument::class)->handle($draft);
+        }
+
+        return $documents;
+    }
+
+    private function portalConsentPayload(array $documents): array
+    {
+        return array_map(
+            static fn (string $documentType): array => [
+                'legal_document_id' => $documents[$documentType]->getKey(),
+                'granted' => true,
+            ],
+            ['offer', 'privacy', 'medical_disclaimer'],
+        );
     }
 }
