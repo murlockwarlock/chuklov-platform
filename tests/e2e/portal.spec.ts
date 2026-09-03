@@ -216,7 +216,9 @@ async function acceptRequiredConsents(page: Page): Promise<void> {
     });
 
     await expect(checkboxes).toHaveCount(3);
-    await checkboxes.check();
+    for (let index = 0; index < 3; index += 1) {
+        await checkboxes.nth(index).check();
+    }
 }
 
 async function assertReadableProgress(page: Page, expectedCount: number): Promise<void> {
