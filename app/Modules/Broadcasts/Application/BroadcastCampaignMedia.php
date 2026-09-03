@@ -28,7 +28,15 @@ final readonly class BroadcastCampaignMedia
         $alt = $mediaInput['alt'] ?? null;
 
         if ($upload instanceof UploadedFile) {
-            $storedPath = $this->media->store($organizationId, $upload);
+            try {
+                $storedPath = $this->media->store($organizationId, $upload);
+            } catch (ValidationException $exception) {
+                $message = collect($exception->errors())->flatten()->first();
+
+                throw ValidationException::withMessages([
+                    'media_image' => is_string($message) ? $message : 'Поддерживаются только изображения JPG, PNG и WebP.',
+                ]);
+            }
             $image = $storedPath;
         } elseif (is_string($image)) {
             if (! $this->media->isManagedPath($organizationId, $image)) {

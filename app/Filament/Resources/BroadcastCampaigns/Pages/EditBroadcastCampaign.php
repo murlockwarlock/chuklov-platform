@@ -22,7 +22,20 @@ final class EditBroadcastCampaign extends EditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
+        $updated = app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
+        $this->record = $updated;
+
+        return $updated;
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return BroadcastCampaignResource::getUrl('view', ['record' => $this->getRecord()]);
+    }
+
+    protected function getSavedNotificationTitle(): string
+    {
+        return 'Рассылка сохранена';
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ReferralRelationships;
 
 use App\Filament\Resources\ReferralRelationships\Pages\ListReferralRelationships;
 use App\Models\User;
+use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -76,6 +77,7 @@ final class ReferralRelationshipResource extends Resource
                 TextColumn::make('referred.attribution.source')
                     ->label('Источник')
                     ->placeholder('Не указан')
+                    ->formatStateUsing(fn (mixed $state): string => AttributionSourcePresentation::label(is_string($state) ? $state : null))
                     ->wrap()
                     ->visibleFrom('md'),
                 TextColumn::make('registered_at')->label('Регистрация')->dateTime('d.m.Y H:i')->sortable(),

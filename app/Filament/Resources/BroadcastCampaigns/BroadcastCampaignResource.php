@@ -12,10 +12,13 @@ use App\Filament\Support\BroadcastFailurePresentation;
 use App\Filament\Support\RichTextEditor;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
+use App\Modules\Broadcasts\Application\BroadcastCampaignMedia;
+use App\Modules\Broadcasts\Application\BroadcastCampaignName;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -45,6 +48,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -234,29 +238,38 @@ final class BroadcastCampaignResource extends Resource
                         ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
                 ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
             ])->columns(1)->columnSpanFull(),
-            Section::make('Изображение')->description('Для одной отправки можно добавить одно изображение. Видео и несколько файлов пока не поддерживаются.')->schema([
+            Section::make('Изображение')->description('Для одной отправки можно добавить одно изображение. Видео и несколько файлов пока не поддерживаются. Новая загрузка или ссылка заменит текущее изображение после сохранения.')->schema([
                 FileUpload::make('media_image')
                     ->label('Загрузить изображение')
                     ->image()
                     ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                     ->maxSize(self::imageUploadKilobytes())
                     ->storeFiles(false)
-                    ->helperText('Только одно изображение: JPG, PNG или WebP размером до 5 МБ.')
+                    ->helperText('JPG, PNG или WebP размером до 5 МБ. Второй файл заменит текущий только после сохранения.')
                     ->columnSpanFull(),
                 TextInput::make('media_url')
                     ->label('HTTPS-ссылка на изображение')
                     ->url()
                     ->maxLength(2000)
                     ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->helperText('Заполните только если не загружаете файл.')
+                    ->helperText('Заполните только если не загружаете файл. Видео и несколько файлов не поддерживаются.')
                     ->columnSpanFull(),
                 TextInput::make('media_alt')
                     ->label('Описание изображения')
                     ->maxLength(255)
                     ->columnSpanFull(),
+                SchemaImage::make(
+                    fn (?BroadcastCampaign $record): string => self::mediaPreviewUrl($record) ?? '',
+                    fn (?BroadcastCampaign $record): string => self::mediaAlt($record),
+                )
+                    ->imageHeight('16rem')
+                    ->imageWidth('24rem')
+                    ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
+                    ->visible(fn (?BroadcastCampaign $record): bool => self::mediaPreviewUrl($record) !== null)
+                    ->columnSpanFull(),
                 Placeholder::make('current_media_status')
                     ->label('Текущее изображение')
-                    ->content('Изображение уже добавлено.')
+                    ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
                     ->visible(fn (?BroadcastCampaign $record): bool => self::hasMedia($record))
                     ->columnSpanFull(),
                 Toggle::make('remove_media')
@@ -331,14 +344,35 @@ final class BroadcastCampaignResource extends Resource
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('name')->label('Рассылка')->searchable()->sortable(),
-                TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state))),
-                TextColumn::make('scheduled_at')->label(fn (): string => 'Запуск ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу')->sortable(),
-                TextColumn::make('audience_count')->label('Получатели')->numeric()->sortable(),
+                TextColumn::make('name')
+                    ->label('Рассылка')
+                    ->searchable()
+                    ->sortable()
+                    ->formatStateUsing(fn (?string $state): string => app(BroadcastCampaignName::class)->displayName($state))
+                    ->limit(48)
+                    ->tooltip(fn (BroadcastCampaign $record): string => app(BroadcastCampaignName::class)->displayName($record->name))
+                    ->wrap()
+                    ->width('16rem'),
+                TextColumn::make('state')
+                    ->label('Состояние')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))
+                    ->width('9rem'),
+                TextColumn::make('scheduled_at')
+                    ->label(fn (): string => 'Запуск ('.app(OrganizationContext::class)->defaultTimezone().')')
+                    ->dateTime('d.m.Y H:i')
+                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                    ->placeholder('Сразу')
+                    ->sortable()
+                    ->width('12rem'),
+                TextColumn::make('audience_count')->label('Получатели')->numeric()->sortable()->width('7rem'),
                 TextColumn::make('delivery_summary')
                     ->label('Результат')
                     ->state(fn (BroadcastCampaign $record): string => "Доставлено {$record->delivered_count} · ошибок {$record->failed_count} · исключено {$record->suppressed_count}")
-                    ->wrap(),
+                    ->limit(48)
+                    ->tooltip(fn (BroadcastCampaign $record): string => "Доставлено {$record->delivered_count} · ошибок {$record->failed_count} · исключено {$record->suppressed_count}")
+                    ->wrap()
+                    ->width('14rem'),
                 TextColumn::make('creator.name')->label('Создал')->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -656,10 +690,60 @@ final class BroadcastCampaignResource extends Resource
 
     private static function hasMedia(?BroadcastCampaign $campaign): bool
     {
+        return self::mediaImage($campaign) !== null;
+    }
+
+    private static function mediaImage(?BroadcastCampaign $campaign): ?string
+    {
         $media = $campaign?->media;
         $image = is_array($media) ? $media['image'] ?? null : null;
 
-        return is_string($image) && trim($image) !== '';
+        return is_string($image) && trim($image) !== '' ? trim($image) : null;
+    }
+
+    private static function mediaPreviewUrl(?BroadcastCampaign $campaign): ?string
+    {
+        $image = self::mediaImage($campaign);
+
+        if ($image === null || ! $campaign instanceof BroadcastCampaign) {
+            return null;
+        }
+
+        $media = app(BroadcastCampaignMedia::class);
+
+        if ($media->isManagedPath((int) $campaign->organization_id, $image)) {
+            return $media->url($image);
+        }
+
+        try {
+            return ContentExternalImageUrl::required($image)->value;
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    private static function mediaAlt(?BroadcastCampaign $campaign): string
+    {
+        $media = $campaign?->media;
+        $alt = is_array($media) ? $media['alt'] ?? null : null;
+
+        return is_string($alt) && trim($alt) !== '' ? trim($alt) : 'Изображение рассылки';
+    }
+
+    private static function mediaStatus(?BroadcastCampaign $campaign): string
+    {
+        $image = self::mediaImage($campaign);
+
+        if ($image === null || ! $campaign instanceof BroadcastCampaign) {
+            return 'Изображение не добавлено.';
+        }
+
+        $kind = app(BroadcastCampaignMedia::class)->isManagedPath((int) $campaign->organization_id, $image)
+            ? 'Загруженный файл'
+            : 'Внешняя HTTPS-ссылка';
+        $alt = self::mediaAlt($campaign);
+
+        return $kind.' · '.($alt === 'Изображение рассылки' ? 'описание не задано' : 'описание: '.$alt).'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
     }
 
     private static function mediaSummary(BroadcastCampaign $campaign): string

@@ -20,6 +20,7 @@ use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Facades\Filament;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -86,6 +87,28 @@ final class ContentSectionMediaTest extends TestCase
         self::assertCount(1, $sections->handle('method', ContentDeliveryMode::MiniApp));
         self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::Telegram));
         self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::MiniApp));
+    }
+
+    public function test_edit_form_shows_current_image_preview_and_clear_control(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $image = 'https://cdn.example.test/content/current.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'media' => ['image' => $image, 'alt' => 'Текущее изображение'],
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Удалить текущее изображение');
+        $preview = collect($component->instance()->getSchema('form')?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $schemaComponent): bool => $schemaComponent instanceof SchemaImage);
+
+        self::assertInstanceOf(SchemaImage::class, $preview);
+        self::assertSame($image, $preview->getUrl());
+        self::assertSame('Текущее изображение', $preview->getAlt());
     }
 
     public function test_telegram_menu_keeps_mini_app_only_content_reachable_for_mixed_rows_and_fallbacks(): void

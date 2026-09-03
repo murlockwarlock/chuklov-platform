@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign as CreateBroadcastCampaignPage;
+use App\Filament\Resources\BroadcastCampaigns\Pages\EditBroadcastCampaign as EditBroadcastCampaignPage;
 use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign as ViewBroadcastCampaignPage;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
@@ -310,6 +311,24 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         }
     }
 
+    public function test_broadcast_rejects_video_uploads_on_the_media_field(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = UploadedFile::fake()->create('video.mp4', 10, 'video/mp4');
+
+        try {
+            app(CreateBroadcastCampaign::class)->handle($actor, $data);
+            self::fail('Video uploads must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('media_image', $exception->errors());
+            self::assertStringContainsString('изображения', mb_strtolower($exception->errors()['media_image'][0]));
+        }
+    }
+
     public function test_image_only_mode_does_not_create_or_require_a_text_template(): void
     {
         [$organization, $actor] = $this->fixture();
@@ -482,6 +501,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         $copy = app(CopyBroadcastCampaign::class)->handle($actor, $campaign);
 
         self::assertNotSame($campaign->getKey(), $copy->getKey());
+        self::assertSame('Проверочная рассылка — повтор', $copy->name);
         self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
         self::assertSame(BroadcastCampaignState::Draft, $copy->state);
         self::assertSame($campaign->message_body, $copy->message_body);
@@ -490,6 +510,14 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame($campaign->media, $copy->media);
         self::assertNull($copy->audience_snapshot_id);
         self::assertSame(0, $copy->audience_count);
+
+        $copy->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        $secondCopy = app(CopyBroadcastCampaign::class)->handle($actor, $copy);
+
+        self::assertSame('Проверочная рассылка — повтор 2', $secondCopy->name);
     }
 
     public function test_run_again_starts_a_new_campaign_and_opens_its_view(): void
@@ -534,6 +562,23 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         $component->assertRedirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
         self::assertSame(BroadcastCampaignState::Draft, $copy->state);
         self::assertSame(0, BroadcastRecipient::query()->where('campaign_id', $copy->getKey())->count());
+    }
+
+    public function test_editing_a_draft_redirects_to_its_saved_view(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->fillForm(['name' => 'Сохранённая рассылка'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertNotified('Рассылка сохранена')
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
+
+        self::assertSame('Сохранённая рассылка', $campaign->refresh()->name);
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void

@@ -15,6 +15,7 @@ final readonly class CopyBroadcastCampaign
     public function __construct(
         private BroadcastAuthorization $authorization,
         private RecordAuditEvent $audit,
+        private BroadcastCampaignName $name,
     ) {}
 
     public function handle(User $actor, BroadcastCampaign $campaign): BroadcastCampaign
@@ -41,7 +42,7 @@ final readonly class CopyBroadcastCampaign
             $copy->forceFill([
                 'organization_id' => $organization->getKey(),
                 'created_by_user_id' => $actor->getKey(),
-                'name' => mb_substr(trim($source->name).' — копия', 0, 160),
+                'name' => $this->name->copyName($source, $organization->getKey()),
                 'state' => BroadcastCampaignState::Draft,
                 'send_mode' => 'immediate',
                 'audience_type' => $source->audience_type,

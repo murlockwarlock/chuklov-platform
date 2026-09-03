@@ -88,12 +88,14 @@ final class FeedbackConfiguration extends Page
                             ->integer()
                             ->minValue(1)
                             ->maxValue(10)
-                            ->required(),
+                            ->required()
+                            ->columnSpanFull(),
                         Toggle::make('low_score_feedback_required')
                             ->label('Требовать текст для низкой оценки')
-                            ->required(),
+                            ->required()
+                            ->columnSpanFull(),
                     ])
-                    ->columns(['default' => 1, 'sm' => 2]),
+                    ->columns(1),
                 Section::make('Внешние площадки')
                     ->description('Ссылки только показываются клиенту после положительной оценки. Сервер их не запрашивает. Текст сообщения и отправка после завершения визита: Коммуникации → Шаблоны сообщений и Коммуникации → Авто-сообщения.')
                     ->schema([

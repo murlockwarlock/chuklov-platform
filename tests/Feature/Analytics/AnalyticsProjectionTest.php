@@ -110,7 +110,7 @@ final class AnalyticsProjectionTest extends TestCase
 
         self::assertSame(3, $acquisition->newClients);
         $sourceCounts = collect($acquisition->sources)->mapWithKeys(fn ($source): array => [$source->label => $source->count]);
-        self::assertSame(1, $sourceCounts->get('social'));
+        self::assertSame(1, $sourceCounts->get('Социальные сети'));
         self::assertSame(1, $sourceCounts->get('Реферальный переход'));
         self::assertSame(1, $sourceCounts->get('Не указан'));
         self::assertSame(6, $scheduling->bookings);

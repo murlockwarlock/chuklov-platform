@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ContentSections\Schemas;
 
 use App\Filament\Support\RichTextEditor;
+use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use Filament\Forms\Components\FileUpload;
@@ -10,6 +11,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 
@@ -66,7 +68,7 @@ class ContentSectionForm
                     ])
                     ->columnSpanFull(),
                 Section::make('Изображение')
-                    ->description('Можно загрузить файл или указать готовую ссылку на изображение.')
+                    ->description('Можно загрузить одно изображение или указать готовую ссылку. Новая загрузка или ссылка заменит текущее изображение после сохранения.')
                     ->schema([
                         FileUpload::make('content_image')
                             ->label('Загрузить изображение')
@@ -78,7 +80,7 @@ class ContentSectionForm
                                 'mimetypes' => 'Поддерживаются только изображения JPG, PNG и WebP.',
                                 'max' => 'Изображение должно быть размером до 5 МБ.',
                             ])
-                            ->helperText('JPG, PNG или WebP размером до 5 МБ.')
+                            ->helperText('JPG, PNG или WebP размером до 5 МБ. Видео и несколько файлов не поддерживаются.')
                             ->columnSpanFull(),
                         TextInput::make('media.image')
                             ->label('Ссылка на изображение')
@@ -91,9 +93,18 @@ class ContentSectionForm
                             ->label('Описание изображения')
                             ->maxLength(255)
                             ->columnSpanFull(),
+                        SchemaImage::make(
+                            fn (?ContentSection $record): string => self::imagePreviewUrl($record) ?? '',
+                            fn (?ContentSection $record): string => self::imageAlt($record),
+                        )
+                            ->imageHeight('16rem')
+                            ->imageWidth('24rem')
+                            ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
+                            ->visible(fn (?ContentSection $record): bool => self::imagePreviewUrl($record) !== null)
+                            ->columnSpanFull(),
                         Placeholder::make('current_image_status')
                             ->label('Текущее изображение')
-                            ->content('Изображение уже добавлено.')
+                            ->content(fn (?ContentSection $record): string => self::imageStatus($record))
                             ->visible(fn (?ContentSection $record): bool => self::hasImage($record))
                             ->columnSpanFull(),
                         Toggle::make('remove_image')
@@ -134,5 +145,36 @@ class ContentSectionForm
         $image = is_array($media) ? $media['image'] ?? null : null;
 
         return is_string($image) && trim($image) !== '';
+    }
+
+    private static function imagePreviewUrl(?ContentSection $record): ?string
+    {
+        if (! $record instanceof ContentSection) {
+            return null;
+        }
+
+        return app(ContentImageUrlResolver::class)->resolve($record);
+    }
+
+    private static function imageAlt(?ContentSection $record): string
+    {
+        $media = $record?->media;
+        $alt = is_array($media) ? $media['alt'] ?? null : null;
+
+        return is_string($alt) && trim($alt) !== '' ? trim($alt) : 'Изображение раздела';
+    }
+
+    private static function imageStatus(?ContentSection $record): string
+    {
+        if (! $record instanceof ContentSection) {
+            return 'Изображение не добавлено.';
+        }
+
+        $kind = app(ContentImageUrlResolver::class)->isManaged($record)
+            ? 'Загруженный файл'
+            : 'Внешняя HTTPS-ссылка';
+        $alt = self::imageAlt($record);
+
+        return $kind.' · '.($alt === 'Изображение раздела' ? 'описание не задано' : 'описание: '.$alt).'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
     }
 }

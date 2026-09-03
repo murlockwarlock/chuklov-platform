@@ -155,7 +155,7 @@ final class RichTextDocument
     private static function telegramNode(\DOMNode $node): string
     {
         if ($node->nodeType === XML_TEXT_NODE) {
-            return htmlspecialchars((string) $node->nodeValue, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            return htmlspecialchars((string) $node->nodeValue, ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
         }
 
         if (! $node instanceof \DOMElement) {

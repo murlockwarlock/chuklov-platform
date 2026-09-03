@@ -90,11 +90,13 @@ final class AcquisitionAnalytics
                 OR semantic_value LIKE '".self::UtmSourceLabelPrefix."%'
                 OR semantic_value LIKE '".self::DirectSourceLabelPrefix."%'
             )";
+        $knownDirectSourceLabel = $this->knownDirectSourceLabelExpression();
         $sourceLabel = "CASE
             WHEN semantic_kind = '".self::SemanticKindUnknown."' THEN '".self::UnknownSourceLabel."'
             WHEN semantic_kind = '".self::SemanticKindReferral."' THEN '".self::ReferralSourceLabel."'
             WHEN semantic_kind = '".self::SemanticKindUtm."' THEN '".self::UtmSourceLabelPrefix."' || semantic_value
             WHEN {$directSourceNeedsPrefix} THEN '".self::DirectSourceLabelPrefix."' || semantic_value
+            WHEN semantic_kind = '".self::SemanticKindDirect."' THEN {$knownDirectSourceLabel}
             ELSE semantic_value
         END";
 
@@ -159,5 +161,18 @@ final class AcquisitionAnalytics
                 count: (int) $row->source_count,
             ))
             ->all());
+    }
+
+    /** @return literal-string */
+    private function knownDirectSourceLabelExpression(): string
+    {
+        return "CASE
+            WHEN LOWER(semantic_value) = 'friend' THEN 'По рекомендации знакомых'
+            WHEN LOWER(semantic_value) = 'social' THEN 'Социальные сети'
+            WHEN LOWER(semantic_value) = 'search' THEN 'Поиск в интернете'
+            WHEN LOWER(semantic_value) = 'partner' THEN 'Партнёр'
+            WHEN LOWER(semantic_value) = 'other' THEN 'Другое'
+            ELSE semantic_value
+        END";
     }
 }
