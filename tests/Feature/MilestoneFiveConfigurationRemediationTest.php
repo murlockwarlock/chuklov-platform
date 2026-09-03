@@ -311,7 +311,7 @@ final class MilestoneFiveConfigurationRemediationTest extends TestCase
                 'purpose' => 'service',
                 'is_active' => true,
                 'subject' => null,
-                'body' => 'Version two {{ client.full_name }}.',
+                'body' => '<p>Version two {{ client.full_name }}.</p>',
                 'variables' => ['client.full_name'],
             ])
             ->call('save')
@@ -320,7 +320,7 @@ final class MilestoneFiveConfigurationRemediationTest extends TestCase
         $versions = $template->versions()->orderBy('version')->get();
         self::assertCount(2, $versions);
         self::assertSame('Version one {{ client.full_name }}.', $versions[0]->body);
-        self::assertSame('Version two {{ client.full_name }}.', $versions[1]->body);
+        self::assertSame('<p>Version two {{ client.full_name }}.</p>', $versions[1]->body);
         self::assertSame(1, $versions[0]->version);
         self::assertSame(2, $versions[1]->version);
         self::assertSame($versionOne->id, $action->fresh()->template_version_id);

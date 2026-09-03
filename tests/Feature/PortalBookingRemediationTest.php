@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
+use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -216,7 +219,8 @@ class PortalBookingRemediationTest extends TestCase
 
     public function test_english_booking_validation_and_domain_failures_are_localized(): void
     {
-        [, $client, $specialist, $service] = $this->portalFixture(language: 'en');
+        [$organization, $client, $specialist, $service] = $this->portalFixture(language: 'en');
+        $consents = $this->acceptedConsents($organization);
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), [])
@@ -230,24 +234,28 @@ class PortalBookingRemediationTest extends TestCase
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
                 'format' => VisitFormat::Online->value,
+                'consents' => $consents,
             ]))
             ->assertInvalid(['format' => 'Choose another format for this service.']);
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
                 'service_id' => 999999,
+                'consents' => $consents,
             ]))
             ->assertInvalid(['service_id' => 'This service is not available.']);
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
                 'specialist_id' => 999999,
+                'consents' => $consents,
             ]))
             ->assertInvalid(['specialist_id' => 'There is no available specialist for this service right now.']);
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
                 'starts_at' => '2026-03-16T11:00:00+00:00',
+                'consents' => $consents,
             ]))
             ->assertInvalid(['starts_at' => 'This time is no longer available. Choose another.']);
     }
@@ -349,6 +357,23 @@ class PortalBookingRemediationTest extends TestCase
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
             'enabled' => true,
         ]);
+        foreach ([
+            'offer' => 'offer_consent',
+            'privacy' => 'privacy_consent',
+            'medical_disclaimer' => 'medical_consent',
+        ] as $documentType => $purpose) {
+            app(PublishLegalDocument::class)->handle(
+                app(CreatePlatformLegalDocumentDraft::class)->handle(
+                    organization: $organization,
+                    documentType: $documentType,
+                    purpose: $purpose,
+                    locale: 'en',
+                    version: '2026-03-15-'.$documentType,
+                    content: 'Synthetic legal fixture.',
+                    isRequired: true,
+                ),
+            );
+        }
         $client = Client::factory()->forOrganization($organization)->create([
             'language' => $language,
             'timezone' => 'UTC',
@@ -385,5 +410,19 @@ class PortalBookingRemediationTest extends TestCase
             'format' => VisitFormat::Office->value,
             ...$overrides,
         ];
+    }
+
+    /** @return list<array{legal_document_id: int, granted: bool}> */
+    private function acceptedConsents(Organization $organization): array
+    {
+        return LegalDocument::query()
+            ->where('organization_id', $organization->getKey())
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (LegalDocument $document): array => [
+                'legal_document_id' => $document->getKey(),
+                'granted' => true,
+            ])
+            ->all();
     }
 }

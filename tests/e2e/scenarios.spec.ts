@@ -120,7 +120,8 @@ test('staff can configure a scenario timing and inspect delivery history', async
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
     await expect(page.getByRole('combobox', { name: 'Добавить данные', exact: true })).toBeVisible();
-    await page.locator('textarea').fill('Обновлённое сообщение для {{ client.full_name }}.');
+    await page.getByRole('textbox', { name: 'Текст сообщения', exact: true })
+        .fill('Обновлённое сообщение для {{ client.full_name }}.');
     const templateSave = page.getByRole('button', { name: 'Сохранить' });
     const templateSaveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'

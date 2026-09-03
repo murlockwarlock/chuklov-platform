@@ -60,9 +60,10 @@ function createCrmFixture(): CrmFixture {
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        $organizationTimezone = $organization->defaultTimezone();
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
             'display_name' => 'CRM Специалист '.$suffix,
-            'timezone' => 'UTC',
+            'timezone' => $organizationTimezone,
         ]);
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => 'CRM Услуга '.$suffix,
@@ -91,7 +92,7 @@ function createCrmFixture(): CrmFixture {
             ->where('organization_id', $organization->getKey())
             ->where('setting_key', 'booking_lead_time_minutes')
             ->value('integer_value') ?? 0);
-        $minimumBookingStart = \\Carbon\\CarbonImmutable::now('UTC')->addMinutes($leadTimeMinutes + 60);
+        $minimumBookingStart = \\Carbon\\CarbonImmutable::now($organizationTimezone)->addMinutes($leadTimeMinutes + 60);
         $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
         config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
         app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
