@@ -68,13 +68,31 @@ class BookingInfolist
                                 default => 'gray',
                             })
                             ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
-                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
+                            ->wrap()
+                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal break-words']),
                         TextEntry::make('payment_requirement')
                             ->label('Условие оплаты')
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
                             ->wrap(),
+                        Section::make('История событий')
+                            ->schema([
+                                TextEntry::make('history')
+                                    ->label('Журнал изменений')
+                                    ->state(function (Booking $record): string {
+                                        return $record->events()
+                                            ->with(['actorUser', 'actorClient'])
+                                            ->orderBy('occurred_at')
+                                            ->get()
+                                            ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
+                                            ->implode("\n");
+                                    })
+                                    ->placeholder('Событий пока нет')
+                                    ->columnSpanFull()
+                                    ->wrap(),
+                            ])
+                            ->columnSpanFull(),
                     ])
-                    ->columns(['default' => 1, 'sm' => 2, 'lg' => 3]),
+                    ->columns(['default' => 1, 'sm' => 2]),
 
                 Section::make('Расчёт')
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
@@ -112,22 +130,6 @@ class BookingInfolist
                     ])
                     ->columns(['default' => 1, 'sm' => 2, 'lg' => 4]),
 
-                Section::make('История событий')
-                    ->schema([
-                        TextEntry::make('history')
-                            ->label('Журнал изменений')
-                            ->state(function (Booking $record): string {
-                                return $record->events()
-                                    ->with(['actorUser', 'actorClient'])
-                                    ->orderBy('occurred_at')
-                                    ->get()
-                                    ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
-                                    ->implode("\n");
-                            })
-                            ->placeholder('Событий пока нет')
-                            ->columnSpanFull()
-                            ->wrap(),
-                    ]),
             ]);
     }
 

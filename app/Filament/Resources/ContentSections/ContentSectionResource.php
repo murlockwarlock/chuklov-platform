@@ -8,10 +8,10 @@ use App\Filament\Resources\ContentSections\Pages\ListContentSections;
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ContentSections\Tables\ContentSectionsTable;
+use App\Filament\Support\RichTextPresentation;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
-use App\Support\RichText\RichTextDocument;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
@@ -65,7 +65,10 @@ class ContentSectionResource extends Resource
                     }),
                 TextEntry::make('body')
                     ->label('Текст')
-                    ->formatStateUsing(fn (string $state): string => RichTextDocument::plainText($state))
+                    ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
+                    ->html()
+                    ->prose()
+                    ->wrap()
                     ->columnSpanFull(),
                 TextEntry::make('media')
                     ->label('Изображение')

@@ -134,7 +134,7 @@ final class NotificationTemplateUxTest extends TestCase
             'organization_id' => $organization->id,
             'template_id' => $template->id,
             'version' => 1,
-            'body' => 'Текст',
+            'body' => '<p><strong>Текст</strong></p>',
             'variables' => [],
             'status' => NotificationTemplateStatus::Published,
         ]);
@@ -169,9 +169,12 @@ final class NotificationTemplateUxTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
 
-        Livewire::test(ViewNotificationTemplate::class, ['record' => $template->getKey()])
+        $templateView = Livewire::test(ViewNotificationTemplate::class, ['record' => $template->getKey()])
             ->assertSuccessful()
             ->assertActionExists('edit');
+
+        self::assertStringContainsString('<strong>Текст</strong>', $templateView->html());
+        self::assertStringNotContainsString('&lt;strong&gt;', $templateView->html());
 
         Livewire::test(ViewScenarioRule::class, ['record' => $rule->getKey()])
             ->assertSuccessful()

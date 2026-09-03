@@ -8,6 +8,7 @@ use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Schemas\NotificationTemplateForm;
 use App\Filament\Resources\NotificationTemplates\Tables\NotificationTemplatesTable;
+use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -67,6 +68,10 @@ final class NotificationTemplateResource extends Resource
                 TextEntry::make('latest_body')
                     ->label('Текст сообщения')
                     ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->body)
+                    ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
+                    ->html()
+                    ->prose()
+                    ->wrap()
                     ->columnSpanFull(),
                 TextEntry::make('latest_variables')
                     ->label('Доступные данные')

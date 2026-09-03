@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ScenarioRules\Schemas;
 
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\RichTextPresentation;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
@@ -364,7 +365,7 @@ final class ScenarioRuleForm
 
                 return [
                     $version->getKey() => ($template?->name ?: 'Сообщение')
-                        .' · '.Str::limit(trim((string) $version->body), 80)
+                        .' · '.Str::limit(RichTextPresentation::text($version->body), 80)
                         .' · '.self::localeLabel($template?->locale),
                 ];
             })

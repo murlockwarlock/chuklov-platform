@@ -8,7 +8,9 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\ListBroadcastCampaigns;
 use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\RelationManagers\RecipientsRelationManager;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\BroadcastFailurePresentation;
 use App\Filament\Support\RichTextEditor;
+use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
@@ -18,6 +20,8 @@ use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -91,6 +95,7 @@ final class BroadcastCampaignResource extends Resource
                     ->placeholder('Начните вводить имя, телефон или Telegram')
                     ->multiple()
                     ->searchable()
+                    ->options(fn (): array => self::clientOptions())
                     ->getSearchResultsUsing(fn (string $search): array => self::clientSearch($search))
                     ->getOptionLabelUsing(fn (mixed $value): ?string => self::clientLabel($value))
                     ->optionsLimit(50)
@@ -187,15 +192,20 @@ final class BroadcastCampaignResource extends Resource
                     ->label('Текст сообщения в Telegram')
                     ->maxLength(100000)
                     ->live()
+                    ->columnSpanFull()
                     ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get))
                     ->required(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
                 Placeholder::make('message_counter')
                     ->label('Лимит Telegram')
                     ->content(fn (Get $get): string => self::messageCounter($get))
+                    ->columnSpanFull()
                     ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
                 Placeholder::make('message_preview')
                     ->label('Предпросмотр')
-                    ->content(fn (Get $get): string => trim((string) $get('message_body')) ?: 'Текст появится здесь.')
+                    ->content(fn (Get $get): string => RichTextPresentation::html((string) $get('message_body')) ?: 'Текст появится здесь.')
+                    ->prose()
+                    ->html()
+                    ->columnSpanFull()
                     ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
                 Select::make('template_version_ru_id')
                     ->label('Сохранённый шаблон')
@@ -219,7 +229,7 @@ final class BroadcastCampaignResource extends Resource
                         ->icon(Heroicon::OutlinedPlus)
                         ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
                 ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
-            ])->columns(2)->columnSpanFull(),
+            ])->columns(1)->columnSpanFull(),
             Section::make('Изображение')->description('Можно загрузить одно изображение или указать готовую HTTPS-ссылку.')->schema([
                 FileUpload::make('media_image')
                     ->label('Загрузить изображение')
@@ -271,8 +281,14 @@ final class BroadcastCampaignResource extends Resource
             TextEntry::make('segment_summary')->label('Получатели')->columnSpanFull(),
             TextEntry::make('message_preview')
                 ->label('Сообщение')
-                ->state(fn (BroadcastCampaign $record): string => trim((string) ($record->message_body ?: $record->russianTemplateVersion?->body ?: $record->englishTemplateVersion?->body)) ?: 'Сообщение не выбрано')
+                ->state(function (BroadcastCampaign $record): string {
+                    $body = trim((string) ($record->message_body ?: $record->russianTemplateVersion?->body ?: $record->englishTemplateVersion?->body));
+
+                    return $body === '' ? 'Сообщение не выбрано' : RichTextPresentation::html($body);
+                })
                 ->columnSpanFull()
+                ->prose()
+                ->html()
                 ->wrap(),
             TextEntry::make('scheduled_at')->label(fn (): string => 'Запланировано ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу'),
             TextEntry::make('audience_count')->label('Найдено'),
@@ -291,6 +307,12 @@ final class BroadcastCampaignResource extends Resource
                     ->unique()
                     ->implode(', ') ?: 'Нет')
                 ->columnSpanFull(),
+            TextEntry::make('dispatch_issue')
+                ->label('Проблема запуска')
+                ->state(fn (BroadcastCampaign $record): string => BroadcastFailurePresentation::label($record->last_dispatch_error_code))
+                ->visible(fn (BroadcastCampaign $record): bool => filled($record->last_dispatch_error_code))
+                ->columnSpanFull()
+                ->wrap(),
             TextEntry::make('creator.name')->label('Создал')->placeholder('Сотрудник удалён'),
             TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
             TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
@@ -393,7 +415,7 @@ final class BroadcastCampaignResource extends Resource
                     return false;
                 }
             })
-            ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [$version->getKey() => ($version->template?->name ?: 'Сообщение').' · '.Str::limit(trim($version->body), 80).' · '.self::localeLabel($locale)])
+            ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [$version->getKey() => ($version->template?->name ?: 'Сообщение').' · '.Str::limit(RichTextPresentation::text($version->body), 80).' · '.self::localeLabel($locale)])
             ->all();
     }
 
@@ -519,11 +541,33 @@ final class BroadcastCampaignResource extends Resource
         if (! $actor instanceof User) {
             return [];
         }
+        if (! app(OrganizationFeatureGate::class)->isEnabled(app(OrganizationContext::class)->organization(), OrganizationFeature::ClientRecords)) {
+            return [];
+        }
 
         return app(ClientSearch::class)
             ->query($actor, $search)
             ->with('channelIdentities')
             ->orderBy('full_name')
+            ->get()
+            ->mapWithKeys(fn (Client $client): array => [$client->getKey() => self::clientDisplayLabel($client)])
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    private static function clientOptions(): array
+    {
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return [];
+        }
+        if (! app(OrganizationFeatureGate::class)->isEnabled(app(OrganizationContext::class)->organization(), OrganizationFeature::ClientRecords)) {
+            return [];
+        }
+
+        return app(ClientSearch::class)
+            ->selectionQuery($actor)
+            ->with('channelIdentities')
             ->get()
             ->mapWithKeys(fn (Client $client): array => [$client->getKey() => self::clientDisplayLabel($client)])
             ->all();
@@ -624,16 +668,6 @@ final class BroadcastCampaignResource extends Resource
 
     private static function failureLabel(string $code): string
     {
-        return match ($code) {
-            'marketing_consent_missing' => 'Нет согласия на маркетинговые сообщения',
-            'marketing_suppressed' => 'Получатель отозвал согласие',
-            'verified_channel_unavailable' => 'Нет доступного Telegram',
-            'snapshot_superseded' => 'Список получателей изменился',
-            'campaign_cancelled' => 'Рассылка отменена',
-            'authorization_revoked' => 'Отправка запрещена настройками доступа',
-            'campaign_state_changed' => 'Состояние рассылки изменилось',
-            'delivery_outcome_unknown', 'delivery_pre_send_failure', 'queue_job_failed_terminal', 'queue_dispatch_failed', 'queue_dispatch_exhausted' => 'Не удалось отправить',
-            default => 'Не удалось отправить',
-        };
+        return BroadcastFailurePresentation::label($code);
     }
 }

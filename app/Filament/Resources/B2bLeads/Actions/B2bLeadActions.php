@@ -42,7 +42,7 @@ final class B2bLeadActions
             OrganizationPermission::ManageB2bLeads,
         );
 
-        return [
+        $actions = [
             Action::make('contacted')
                 ->label('Отметить: связались')
                 ->visible($canManage && $lead->status !== B2bLeadStatus::Closed)
@@ -145,32 +145,35 @@ final class B2bLeadActions
                     && $lead->salesCall->providerIdentity() !== null)
                 ->url(fn (): string => route('admin.b2b.sales-call.host-launch', ['salesCallId' => self::call($lead)->getKey()]))
                 ->openUrlInNewTab(),
-            ActionGroup::make([
-                Action::make('retryProvider')
-                    ->label('Повторить синхронизацию')
-                    ->visible($canManage && in_array($lead->salesCall->provider_sync_status, [VideoMeetingSyncStatus::Failed, VideoMeetingSyncStatus::ReconciliationRequired, VideoMeetingSyncStatus::CancellationPending], true))
-                    ->successNotificationTitle('Синхронизация поставлена в очередь')
-                    ->action(function () use ($actor, $lead, $refresh): void {
-                        abort_unless($actor instanceof User, 403);
-                        $call = self::call($lead);
-                        app(RetryB2bSalesCallProvider::class)->handle($actor, $call, $call->event_version);
-                        $refresh();
-                    }),
-                Action::make('recreateMeeting')
-                    ->label('Создать Zoom заново')
-                    ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic)
-                    ->requiresConfirmation()
-                    ->successNotificationTitle('Создание Zoom поставлено в очередь')
-                    ->action(function () use ($actor, $lead, $refresh): void {
-                        abort_unless($actor instanceof User, 403);
-                        $call = self::call($lead);
-                        app(RecreateB2bSalesCallMeeting::class)->handle($actor, $call, $call->event_version);
-                        $refresh();
-                    }),
-            ])
-                ->label('Ещё')
+            Action::make('retryProvider')
+                ->label('Повторить синхронизацию')
+                ->visible($canManage && in_array($lead->salesCall->provider_sync_status, [VideoMeetingSyncStatus::Failed, VideoMeetingSyncStatus::ReconciliationRequired, VideoMeetingSyncStatus::CancellationPending], true))
+                ->successNotificationTitle('Синхронизация поставлена в очередь')
+                ->action(function () use ($actor, $lead, $refresh): void {
+                    abort_unless($actor instanceof User, 403);
+                    $call = self::call($lead);
+                    app(RetryB2bSalesCallProvider::class)->handle($actor, $call, $call->event_version);
+                    $refresh();
+                }),
+            Action::make('recreateMeeting')
+                ->label('Создать Zoom заново')
+                ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic)
+                ->requiresConfirmation()
+                ->successNotificationTitle('Создание Zoom поставлено в очередь')
+                ->action(function () use ($actor, $lead, $refresh): void {
+                    abort_unless($actor instanceof User, 403);
+                    $call = self::call($lead);
+                    app(RecreateB2bSalesCallMeeting::class)->handle($actor, $call, $call->event_version);
+                    $refresh();
+                }),
+        ];
+
+        return [
+            ActionGroup::make($actions)
+                ->label('Действия')
+                ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
-                ->visible($canManage && ($lead->salesCall->status === B2bSalesCallStatus::Scheduled || in_array($lead->salesCall->provider_sync_status, [VideoMeetingSyncStatus::Failed, VideoMeetingSyncStatus::ReconciliationRequired, VideoMeetingSyncStatus::CancellationPending], true))),
+                ->dropdownAutoPlacement(),
         ];
     }
 

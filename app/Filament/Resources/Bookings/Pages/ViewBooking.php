@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Bookings\Pages;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Support\FinancePaymentActions;
+use Filament\Actions\ActionGroup;
 use Filament\Resources\Pages\ViewRecord;
 
 class ViewBooking extends ViewRecord
@@ -16,9 +17,15 @@ class ViewBooking extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            ...BookingLifecycleActions::all(),
-            FinancePaymentActions::openForBooking(),
-            FinancePaymentActions::forBooking(),
+            ActionGroup::make([
+                ...BookingLifecycleActions::all(),
+                FinancePaymentActions::openForBooking(),
+                FinancePaymentActions::forBooking(),
+            ])
+                ->label('Действия')
+                ->icon('heroicon-o-ellipsis-horizontal')
+                ->button()
+                ->dropdownAutoPlacement(),
         ];
     }
 }

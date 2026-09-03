@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\BroadcastFailurePresentation;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
@@ -75,12 +76,37 @@ final class ViewBroadcastCampaign extends ViewRecord
                 Select::make('test_client_id')->label('Тестовый получатель')->options(fn (): array => Client::query()->where('organization_id', app(OrganizationContext::class)->id())->whereHas('channelIdentities', fn ($query) => $query->where('channel', 'telegram')->where('verification_status', ChannelIdentityStatus::Verified->value))->orderBy('full_name')->limit(200)->pluck('full_name', 'id')->all())->searchable()->required()->helperText('Сообщение уйдёт только выбранному получателю, а не всему сегменту.'),
             ])->action(function (array $data): void {
                 $recipient = app(TestBroadcastCampaign::class)->handle($this->actor(), $this->campaign(), (int) $data['test_client_id']);
-                Notification::make()->title($recipient->state->value === 'delivered' ? 'Тестовое сообщение доставлено' : 'Тестовая отправка завершилась с ошибкой')->body('Тестовая отправка отмечена отдельно и не затрагивает список рассылки.')->status($recipient->state->value === 'delivered' ? 'success' : 'danger')->send();
+                $delivered = $recipient->state->value === 'delivered';
+                $reason = $recipient->last_error_code ?: $recipient->exclusion_code;
+                $body = $delivered
+                    ? 'Тестовая отправка отмечена отдельно и не затрагивает список рассылки.'
+                    : BroadcastFailurePresentation::label($reason);
+
+                Notification::make()
+                    ->title($delivered ? 'Тестовое сообщение доставлено' : 'Тестовая отправка завершилась с ошибкой')
+                    ->body($body)
+                    ->status($delivered ? 'success' : 'danger')
+                    ->send();
             }),
             Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? 'Запланировать' : 'Запустить рассылку')->color('primary')->requiresConfirmation()->modalDescription('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
-                app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                Notification::make()->title('Рассылка подготовлена')->body('Получатели зафиксированы; отправка начнётся в выбранное время.')->success()->send();
-                $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'suppressed_count']);
+                $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                $counts = 'Доставлено: '.$campaign->delivered_count.' · ошибок: '.$campaign->failed_count.' · исключено: '.$campaign->suppressed_count.'.';
+
+                if ($campaign->state === BroadcastCampaignState::Completed) {
+                    Notification::make()
+                        ->title($campaign->failed_count > 0 ? 'Рассылка завершена с ошибками' : 'Рассылка отправлена')
+                        ->body($counts.' Причины ошибок указаны в списке получателей.')
+                        ->status($campaign->failed_count > 0 ? 'warning' : 'success')
+                        ->send();
+                } else {
+                    Notification::make()
+                        ->title($campaign->send_mode === 'scheduled' ? 'Рассылка запланирована' : 'Рассылка поставлена в очередь')
+                        ->body($counts.' Итог появится после обработки очереди; причины ошибок указаны в списке получателей.')
+                        ->success()
+                        ->send();
+                }
+
+                $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'delivered_count', 'failed_count', 'suppressed_count']);
             }),
             Action::make('cancel')->label('Отменить')->color('danger')->requiresConfirmation()->visible(fn (): bool => in_array($this->campaign()->state, [BroadcastCampaignState::Draft, BroadcastCampaignState::Scheduled], true))->action(function (): void {
                 app(CancelBroadcastCampaign::class)->handle($this->actor(), $this->campaign());

@@ -7,6 +7,7 @@ use App\Filament\Resources\LegalDocuments\Pages\EditLegalDocument;
 use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\LegalDocuments\Pages\ViewLegalDocument;
 use App\Filament\Support\RichTextEditor;
+use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Enums\LegalDocumentStatus;
@@ -14,7 +15,6 @@ use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
-use App\Support\RichText\RichTextDocument;
 use BackedEnum;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -103,9 +103,11 @@ final class LegalDocumentResource extends Resource
                 ->state(fn (LegalDocument $record): string => self::requiredLabel($record->document_type)),
             TextEntry::make('content')
                 ->label('Текст')
-                ->formatStateUsing(fn (string $state): string => RichTextDocument::plainText($state))
+                ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
+                ->html()
                 ->columnSpanFull()
-                ->prose(),
+                ->prose()
+                ->wrap(),
             TextEntry::make('published_at')->label('Опубликован')->dateTime('d.m.Y H:i')->placeholder('Не опубликован'),
             TextEntry::make('archived_at')->label('Архивирован')->dateTime('d.m.Y H:i')->placeholder('—'),
         ]);
@@ -124,7 +126,9 @@ final class LegalDocumentResource extends Resource
                     ->state(fn (LegalDocument $record): string => ConsentSubject::tryFrom((string) $record->document_type)?->isRequired() === true ? 'Да' : 'Нет'),
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
             ])
-            ->defaultSort('updated_at', 'desc');
+            ->defaultSort('updated_at', 'desc')
+            ->emptyStateHeading('Документов пока нет')
+            ->emptyStateDescription('Добавьте текст документа здесь. Согласие клиента фиксируется в его карточке, в разделе «Маркетинговые рассылки».');
     }
 
     public static function canAccess(): bool

@@ -25,7 +25,7 @@ final class ClientWorkspaceInfolist
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start'])
+            ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'])
             ->components([
                 Group::make([
                     Section::make('Контакты и связь')
@@ -172,7 +172,7 @@ final class ClientWorkspaceInfolist
                                 ->visible(fn (): bool => app(FinancePresentation::class)->canViewFinance()),
                         ])
                         ->columns(1),
-                ])->extraAttributes(['class' => 'w-full space-y-6']),
+                ])->extraAttributes(['class' => 'contents']),
 
                 Group::make([
                     Section::make('Клинический профиль')
@@ -249,8 +249,9 @@ final class ClientWorkspaceInfolist
                                 ->columnSpanFull()
                                 ->wrap(),
                         ])
-                        ->columns(1),
-                ])->extraAttributes(['class' => 'min-w-0 w-full']),
+                        ->columns(1)
+                        ->extraAttributes(['class' => 'lg:col-span-2']),
+                ])->extraAttributes(['class' => 'contents']),
             ]);
     }
 

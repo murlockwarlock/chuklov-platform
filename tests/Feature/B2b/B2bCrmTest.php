@@ -91,7 +91,7 @@ final class B2bCrmTest extends TestCase
             ->assertActionExists('reschedule')
             ->assertActionExists('cancel')
             ->assertActionExists('meetingMode')
-            ->assertSee('Ещё')
+            ->assertSee('Действия')
             ->callAction('contacted')
             ->assertNotified('Лид отмечен как обработанный')
             ->assertSee('Связались')

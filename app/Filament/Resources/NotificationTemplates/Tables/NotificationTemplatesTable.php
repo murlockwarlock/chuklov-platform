@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\NotificationTemplates\Tables;
 
+use App\Filament\Support\RichTextPresentation;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -30,7 +31,7 @@ final class NotificationTemplatesTable
                     ->wrap(),
                 TextColumn::make('latestVersion.body')
                     ->label('Предпросмотр')
-                    ->formatStateUsing(fn (?string $state): string => Str::limit(trim((string) $state), 90))
+                    ->formatStateUsing(fn (?string $state): string => Str::limit(RichTextPresentation::text($state), 90))
                     ->placeholder('Текст не добавлен')
                     ->wrap(),
                 TextColumn::make('locale')

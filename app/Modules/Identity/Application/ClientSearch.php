@@ -45,6 +45,23 @@ final readonly class ClientSearch
     }
 
     /**
+     * @return Builder<Client>
+     */
+    public function selectionQuery(User $actor): Builder
+    {
+        $organization = $this->context->organization();
+        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+
+        return $this->bounded(
+            Client::query()
+                ->where('organization_id', $organization->getKey())
+                ->orderBy('full_name')
+                ->orderBy('id'),
+        );
+    }
+
+    /**
      * @param  Builder<Client>  $query
      * @return Builder<Client>
      */

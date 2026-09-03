@@ -6,6 +6,7 @@ use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign;
 use App\Filament\Resources\Clients\Pages\ListClients;
+use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule;
@@ -129,6 +130,33 @@ final class CrmUxRemediationTest extends TestCase
         self::assertSame(Heroicon::OutlinedEye, $bookingView->getIcon());
     }
 
+    public function test_broadcast_client_selector_preloads_clients_and_keeps_search_available(): void
+    {
+        [$organization, $admin, $client] = $this->fixture(includePeople: true);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(CreateBroadcastCampaign::class)->assertSuccessful();
+        $field = $component->instance()->getSchemaComponent('form.selected_client_ids');
+        $options = $field->getOptions();
+
+        self::assertArrayHasKey($client->getKey(), $options);
+        self::assertStringContainsString('Aikhana', $options[$client->getKey()]);
+        self::assertArrayHasKey($client->getKey(), $field->getSearchResults('Aikhana'));
+    }
+
+    public function test_legal_documents_screen_offers_creation_when_empty(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ListLegalDocuments::class)
+            ->assertSuccessful()
+            ->assertActionExists('create')
+            ->assertSee('Добавить документ')
+            ->assertSee('Документов пока нет');
+    }
+
     public function test_scheduling_page_exposes_first_class_reminders_and_default_address(): void
     {
         [$organization, $admin] = $this->fixture(includePeople: true);
@@ -192,7 +220,7 @@ final class CrmUxRemediationTest extends TestCase
             'name' => 'Новое сообщение',
             'locale' => 'ru',
         ]);
-        NotificationTemplateVersion::factory()->forTemplate($newer)->create(['body' => 'Новый текст']);
+        NotificationTemplateVersion::factory()->forTemplate($newer)->create(['body' => '<p><strong>Новый</strong> текст</p>']);
         $timestamp = CarbonImmutable::create(2026, 9, 1, 10, 0, 0, 'UTC');
         DB::table('notification_templates')->where('id', $older->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
         DB::table('notification_templates')->where('id', $newer->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
@@ -202,9 +230,10 @@ final class CrmUxRemediationTest extends TestCase
 
         self::assertSame([$newer->getKey(), $older->getKey()], $component->instance()->getTableRecords()->pluck('id')->all());
         $component
-            ->assertTableColumnStateSet('latestVersion.body', 'Новый текст', $newer)
+            ->assertSee('Новый текст')
             ->assertSee('Предпросмотр')
             ->assertSee('Для чего');
+        self::assertStringNotContainsString('<p><strong>Новый</strong> текст</p>', $component->html());
         $view = $component->instance()->getTable()->getAction('view');
         $edit = $component->instance()->getTable()->getAction('edit');
         self::assertNotNull($view);

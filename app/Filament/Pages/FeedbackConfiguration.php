@@ -82,7 +82,7 @@ final class FeedbackConfiguration extends Page
             ->components([
                 Section::make('Правила оценки')
                     ->schema([
-                        Toggle::make('enabled')->label('Включить NPS/обратную связь')->required(),
+                        Toggle::make('enabled')->label('Включить NPS/обратную связь')->required()->columnSpanFull(),
                         TextInput::make('positive_threshold')
                             ->label('Порог положительной оценки')
                             ->integer()
@@ -93,7 +93,7 @@ final class FeedbackConfiguration extends Page
                             ->label('Требовать текст для низкой оценки')
                             ->required(),
                     ])
-                    ->columns(2),
+                    ->columns(['default' => 1, 'sm' => 2]),
                 Section::make('Внешние площадки')
                     ->description('Ссылки только показываются клиенту после положительной оценки. Сервер их не запрашивает. Текст сообщения и отправка после завершения визита: Коммуникации → Шаблоны сообщений и Коммуникации → Авто-сообщения.')
                     ->schema([
@@ -112,12 +112,12 @@ final class FeedbackConfiguration extends Page
                                 Toggle::make('isActive')->label('Показывать клиенту')->default(true),
                                 TextInput::make('sortOrder')->label('Порядок')->integer()->minValue(0)->default(0),
                             ])
-                            ->columns(4)
+                            ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
                             ->defaultItems(0)
                             ->reorderable(false)
                             ->columnSpanFull(),
                     ])
-                    ->columns(2),
+                    ->columns(['default' => 1, 'sm' => 2]),
             ])
             ->statePath('data');
     }

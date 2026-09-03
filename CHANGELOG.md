@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-03 — CRM operator UX and content rendering follow-up
+
+- Fixed broadcast client selection, responsive message composition, image-caption layout, actionable delivery errors, and full-width previews.
+- Rebalanced client, booking, B2B lead, auto-message, feedback, and legal-document screens so primary information and actions remain visible without avoidable overflow or collapsed settings.
+- Normalized rich-text rendering across CRM tables, detail views, previews, and saved-template labels so users see formatted content instead of raw HTML.
+- Focused local UX, broadcast, B2B, scenario, and regression checks pass; staging deployment and owner acceptance remain pending for this candidate.
+
 ## 2026-09-03 — M11E review follow-up
 
 - Starting from `364c57257ff9edc8ac1669492ea32d409f3bcd40`, portal booking idempotency now covers legal evidence, manual attribution, and booking creation; legacy timezone provenance is conservatively backfilled from audit history; image-required campaigns fail before dispatch when media is absent; and mixed Telegram/Mini App content remains reachable.

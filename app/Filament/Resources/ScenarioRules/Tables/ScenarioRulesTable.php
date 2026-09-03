@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ScenarioRules\Tables;
 
+use App\Filament\Support\RichTextPresentation;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
@@ -90,7 +91,7 @@ final class ScenarioRulesTable
     private static function messageLabel(ScenarioRule $record): string
     {
         $template = $record->templateVersion?->template;
-        $body = trim((string) $record->templateVersion?->body);
+        $body = RichTextPresentation::text($record->templateVersion?->body);
 
         return ($template?->name ?: 'Сообщение')
             .($body === '' ? '' : ' · '.Str::limit($body, 70));
