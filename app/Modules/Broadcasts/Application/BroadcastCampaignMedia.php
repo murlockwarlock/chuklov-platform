@@ -76,6 +76,11 @@ final readonly class BroadcastCampaignMedia
         return $this->media->isManagedPath($organizationId, $path);
     }
 
+    public function readStream(int $organizationId, string $path): mixed
+    {
+        return $this->media->readStream($organizationId, $path);
+    }
+
     public function url(string $path): string
     {
         return $this->media->url($path);

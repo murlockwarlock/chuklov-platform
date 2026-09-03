@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-03 — Telegram managed-media delivery remediation
+
+- Managed images in broadcasts and Telegram content sections are now streamed from organization-scoped storage and uploaded through Nutgram multipart data instead of relying on Telegram to fetch a public CRM URL.
+- Telegram media, blocked-chat, deactivated-account, formatting, and generic provider rejections now receive safe actionable reason codes in CRM delivery history; raw provider descriptions remain out of durable records and logs.
+- Focused Telegram, content, broadcast, and failure-presentation checks pass; changed production code passes PHPStan, Pint, and `git diff --check`. Hosted CI and staging deployment for this candidate are pending.
+
 ## 2026-09-03 — CRM operator UX and content rendering follow-up
 
 - Fixed broadcast client selection, responsive message composition, image-caption layout, actionable delivery errors, and full-width previews.

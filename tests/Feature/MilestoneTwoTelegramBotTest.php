@@ -7,8 +7,11 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
+use SergiX44\Nutgram\Telegram\Types\Message\Message;
 use SergiX44\Nutgram\Telegram\Types\User\User;
 use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
@@ -214,6 +217,64 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertSame('delivered', $result->outcome->value);
         self::assertArrayHasKey('text', $this->requestBody($bot, 0));
         self::assertArrayHasKey('photo', $this->requestBody($bot, 1));
+    }
+
+    public function test_media_streams_are_uploaded_to_telegram_as_multipart_files(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $uploaded = null;
+        $bot = $this->createMock(Nutgram::class);
+        $bot->expects($this->once())
+            ->method('sendPhoto')
+            ->willReturnCallback(function (InputFile|string $photo) use (&$uploaded): ?Message {
+                $uploaded = $photo;
+
+                return null;
+            });
+        $stream = fopen(__FILE__, 'rb');
+        self::assertIsResource($stream);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'managed-media-chat',
+            body: '<p>Подпись</p>',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'managed-media',
+            mediaStream: $stream,
+            mode: NotificationMessageMode::ImageWithCaption,
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+        self::assertInstanceOf(InputFile::class, $uploaded);
+        self::assertFalse(is_resource($stream));
+    }
+
+    public function test_telegram_media_rejection_is_saved_as_a_safe_actionable_code(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = FakeNutgram::instance(responses: [new Response(
+            400,
+            [],
+            json_encode([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: failed to get HTTP URL content',
+            ], JSON_THROW_ON_ERROR),
+        )]);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'media-error-chat',
+            body: '<p>Подпись</p>',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'media-error',
+            mediaUrl: 'https://cdn.example.test/image.jpg',
+            mode: NotificationMessageMode::ImageWithCaption,
+            requireKnownExternalOutcome: true,
+        ));
+
+        self::assertSame('permanent_failure', $result->outcome->value);
+        self::assertSame('telegram_media_unavailable', $result->errorCode);
     }
 
     public function test_caption_position_and_telegram_boundaries_are_enforced(): void

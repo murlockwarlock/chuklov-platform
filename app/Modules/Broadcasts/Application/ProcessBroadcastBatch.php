@@ -491,8 +491,10 @@ final readonly class ProcessBroadcastBatch
                 return NotificationDeliveryResult::unavailable('media_unavailable');
             }
             $mediaUrl = $mediaImage;
-            if ($mediaImage !== null && $this->media->isManagedPath((int) $recipient->organization_id, $mediaImage)) {
-                $mediaUrl = $this->media->url($mediaImage);
+            $managedMedia = $mediaImage !== null
+                && $this->media->isManagedPath((int) $recipient->organization_id, $mediaImage);
+            if ($managedMedia) {
+                $mediaUrl = null;
             }
             $template = NotificationTemplateVersion::query()
                 ->where('organization_id', $recipient->organization_id)
@@ -539,18 +541,6 @@ final readonly class ProcessBroadcastBatch
             } catch (\InvalidArgumentException) {
                 return NotificationDeliveryResult::permanentFailure('template_rendering_error');
             }
-            $message = new NotificationMessage(
-                (string) $recipient->external_id,
-                $renderedBody,
-                $renderedSubject,
-                $renderedLocale,
-                $recipient->idempotency_key,
-                true,
-                mediaUrl: $mediaUrl,
-                mode: $deliveryMode,
-                showCaptionAboveMedia: $snapshot->caption_position === 'above',
-            );
-
             $currentCampaign = BroadcastCampaign::query()
                 ->where('organization_id', $recipient->organization_id)
                 ->whereKey($recipient->campaign_id)
@@ -592,6 +582,27 @@ final readonly class ProcessBroadcastBatch
                     return NotificationDeliveryResult::unavailable('template_inactive_or_channel_unavailable');
                 }
             }
+
+            $mediaStream = null;
+            if ($deliveryMode->includesImage() && $managedMedia) {
+                $mediaStream = $this->media->readStream((int) $recipient->organization_id, (string) $mediaImage);
+                if (! is_resource($mediaStream)) {
+                    return NotificationDeliveryResult::unavailable('media_unavailable');
+                }
+            }
+
+            $message = new NotificationMessage(
+                (string) $recipient->external_id,
+                $renderedBody,
+                $renderedSubject,
+                $renderedLocale,
+                $recipient->idempotency_key,
+                true,
+                mediaUrl: $mediaUrl,
+                mediaStream: $mediaStream,
+                mode: $deliveryMode,
+                showCaptionAboveMedia: $snapshot->caption_position === 'above',
+            );
         } catch (\InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
         } catch (\Throwable) {

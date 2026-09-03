@@ -11,6 +11,7 @@ use App\Support\RichText\RichTextDocument;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Exceptions\TelegramException;
 use SergiX44\Nutgram\Telegram\Properties\ParseMode;
+use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
 use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
@@ -18,7 +19,10 @@ use Throwable;
 
 final class TelegramNotificationChannel implements NotificationChannel
 {
-    public function __construct(private readonly Nutgram $bot) {}
+    public function __construct(
+        private readonly Nutgram $bot,
+        private readonly TelegramDeliveryErrorClassifier $errorClassifier = new TelegramDeliveryErrorClassifier,
+    ) {}
 
     public function name(): string
     {
@@ -38,6 +42,8 @@ final class TelegramNotificationChannel implements NotificationChannel
     public function send(NotificationMessage $message): NotificationDeliveryResult
     {
         if (trim((string) config('nutgram.token')) === '') {
+            $this->closeMediaStream($message);
+
             return NotificationDeliveryResult::unavailable('provider_not_configured');
         }
 
@@ -78,11 +84,12 @@ final class TelegramNotificationChannel implements NotificationChannel
                 $lastMessageId,
             );
         } catch (\InvalidArgumentException $exception) {
-            return NotificationDeliveryResult::permanentFailure(
-                str_contains(strtolower($exception->getMessage()), 'too long')
-                    ? 'telegram_message_too_long'
-                    : 'telegram_message_invalid',
-            );
+            $description = mb_strtolower($exception->getMessage());
+            $errorCode = str_contains($description, 'media')
+                ? 'media_unavailable'
+                : (str_contains($description, 'too long') ? 'telegram_message_too_long' : 'telegram_message_invalid');
+
+            return NotificationDeliveryResult::permanentFailure($errorCode);
         } catch (TelegramException $exception) {
             $code = (int) $exception->getCode();
             $successfulSends = $successfulSends ?? 0;
@@ -96,7 +103,7 @@ final class TelegramNotificationChannel implements NotificationChannel
             }
             if ($code >= 400 && $code < 500) {
                 return $message->requireKnownExternalOutcome
-                    ? NotificationDeliveryResult::permanentFailure('telegram_provider_rejected')
+                    ? NotificationDeliveryResult::permanentFailure($this->errorClassifier->classify($exception, $message))
                     : NotificationDeliveryResult::retryable('telegram_api_error');
             }
 
@@ -111,6 +118,8 @@ final class TelegramNotificationChannel implements NotificationChannel
             return $message->requireKnownExternalOutcome
                 ? NotificationDeliveryResult::unknown('delivery_outcome_unknown')
                 : NotificationDeliveryResult::retryable('channel_error');
+        } finally {
+            $this->closeMediaStream($message);
         }
     }
 
@@ -132,22 +141,50 @@ final class TelegramNotificationChannel implements NotificationChannel
 
     private function sendPhoto(NotificationMessage $message, ?string $caption, ?InlineKeyboardMarkup $keyboard): ?string
     {
+        try {
+            $sent = $this->bot->sendPhoto(
+                $this->photo($message),
+                $message->recipientExternalId,
+                caption: $caption === '' ? null : $caption,
+                parse_mode: $caption === null || $caption === '' ? null : ParseMode::HTML,
+                reply_markup: $keyboard,
+                show_caption_above_media: $message->mode === NotificationMessageMode::ImageWithCaption
+                    ? $message->showCaptionAboveMedia
+                    : null,
+            );
+
+            return $sent?->message_id === null ? null : (string) $sent->message_id;
+        } finally {
+            $this->closeMediaStream($message);
+        }
+    }
+
+    private function closeMediaStream(NotificationMessage $message): void
+    {
+        if (is_resource($message->mediaStream)) {
+            fclose($message->mediaStream);
+        }
+    }
+
+    private function photo(NotificationMessage $message): InputFile|string
+    {
+        if ($message->mediaStream !== null) {
+            if (! is_resource($message->mediaStream)) {
+                throw new \InvalidArgumentException('The Telegram media is unavailable.');
+            }
+
+            try {
+                return InputFile::make($message->mediaStream);
+            } catch (\InvalidArgumentException $exception) {
+                throw new \InvalidArgumentException('The Telegram media is unavailable.', previous: $exception);
+            }
+        }
+
         if ($message->mediaUrl === null || ! $this->validMediaUrl($message->mediaUrl)) {
             throw new \InvalidArgumentException('The Telegram media URL is invalid.');
         }
 
-        $sent = $this->bot->sendPhoto(
-            $message->mediaUrl,
-            $message->recipientExternalId,
-            caption: $caption === '' ? null : $caption,
-            parse_mode: $caption === null || $caption === '' ? null : ParseMode::HTML,
-            reply_markup: $keyboard,
-            show_caption_above_media: $message->mode === NotificationMessageMode::ImageWithCaption
-                ? $message->showCaptionAboveMedia
-                : null,
-        );
-
-        return $sent?->message_id === null ? null : (string) $sent->message_id;
+        return $message->mediaUrl;
     }
 
     private function validateLength(NotificationMessage $message, string $body): void

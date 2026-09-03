@@ -58,6 +58,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Livewire\Livewire;
@@ -366,6 +367,54 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         self::assertSame(BroadcastCampaignState::Draft, $campaign->refresh()->state);
         self::assertNull($campaign->audience_snapshot_id);
+    }
+
+    public function test_managed_campaign_media_is_streamed_to_the_channel_after_delivery_claim(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('public');
+        $path = 'content/'.$organization->getKey().'/00000000-0000-4000-8000-000000000001.jpg';
+        $contents = 'managed broadcast image';
+        Storage::disk('public')->put($path, $contents);
+
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $data['message_body'] = '<p>Подпись</p>';
+        $data['media'] = ['image' => $path, 'alt' => null];
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertCount(1, $this->channel->messages);
+        $stream = $this->channel->messages[0]->mediaStream;
+        self::assertIsResource($stream);
+        self::assertSame($contents, stream_get_contents($stream));
+        fclose($stream);
+    }
+
+    public function test_missing_managed_campaign_media_is_recorded_before_channel_delivery(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('public');
+        $path = 'content/'.$organization->getKey().'/00000000-0000-4000-8000-000000000002.jpg';
+
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media'] = ['image' => $path, 'alt' => null];
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(
+            'media_unavailable',
+            BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->sole()->last_error_code,
+        );
     }
 
     public function test_sent_campaign_can_only_be_copied_to_a_new_draft(): void

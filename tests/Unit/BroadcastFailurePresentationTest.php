@@ -18,6 +18,14 @@ final class BroadcastFailurePresentationTest extends TestCase
             BroadcastFailurePresentation::label('telegram_message_too_long'),
         );
         self::assertSame(
+            'Telegram не смог получить изображение. Загрузите файл заново или проверьте ссылку',
+            BroadcastFailurePresentation::label('telegram_media_unavailable'),
+        );
+        self::assertSame(
+            'Клиент заблокировал Telegram-бота',
+            BroadcastFailurePresentation::label('telegram_bot_blocked'),
+        );
+        self::assertSame(
             'Задача отправки не выполнена. Проверьте очередь сообщений',
             BroadcastFailurePresentation::label('queue_job_failed_terminal'),
         );

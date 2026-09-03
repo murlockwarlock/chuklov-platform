@@ -16,6 +16,7 @@ final readonly class NotificationMessage
         public ?string $webAppUrl = null,
         public ?NotificationActionButton $actionButton = null,
         public ?string $mediaUrl = null,
+        public mixed $mediaStream = null,
         public NotificationMessageMode $mode = NotificationMessageMode::Text,
         public bool $showCaptionAboveMedia = false,
     ) {}

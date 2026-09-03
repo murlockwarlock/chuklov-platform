@@ -36,6 +36,7 @@ final class BuildTelegramContentSectionMessage
             )
             : null;
         $updatedAt = $section->updated_at?->getTimestamp() ?? 0;
+        $mediaStream = $this->images->resolveStream($section);
 
         return new NotificationMessage(
             recipientExternalId: $recipientExternalId,
@@ -46,6 +47,7 @@ final class BuildTelegramContentSectionMessage
             mode: $mode,
             actionButton: $button,
             mediaUrl: $imageUrl,
+            mediaStream: $mediaStream,
         );
     }
 }

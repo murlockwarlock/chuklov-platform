@@ -10,6 +10,8 @@ interface ContentMediaStorageInterface
 
     public function isManagedPath(int $organizationId, ?string $path): bool;
 
+    public function readStream(int $organizationId, string $path): mixed;
+
     public function url(string $path): string;
 
     public function deleteManaged(int $organizationId, string $path): void;

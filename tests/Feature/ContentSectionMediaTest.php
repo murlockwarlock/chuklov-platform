@@ -226,6 +226,29 @@ final class ContentSectionMediaTest extends TestCase
         );
     }
 
+    public function test_managed_content_image_is_streamed_for_telegram_delivery(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('academy.jpg', 640, 480),
+            'delivery_mode' => ContentDeliveryMode::Telegram->value,
+        ]);
+        $path = $this->imagePath($section->media);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle('content-chat', $section, 'ru');
+        $stream = $message->mediaStream;
+
+        self::assertIsResource($stream);
+        self::assertSame(Storage::disk(self::DISK)->get($path), stream_get_contents($stream));
+        fclose($stream);
+        self::assertSame(Storage::disk(self::DISK)->url($path), $message->mediaUrl);
+        self::assertSame($organization->getKey(), $section->organization_id);
+    }
+
     public function test_editing_title_and_body_with_blank_url_preserves_managed_image(): void
     {
         [$organization, $admin] = $this->organizationAndAdmin();

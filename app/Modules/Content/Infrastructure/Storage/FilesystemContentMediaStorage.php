@@ -80,6 +80,17 @@ final class FilesystemContentMediaStorage implements ContentMediaStorageInterfac
         return $matched && (int) $matches[1] === $organizationId;
     }
 
+    public function readStream(int $organizationId, string $path): mixed
+    {
+        if (! $this->isManagedPath($organizationId, $path)) {
+            return null;
+        }
+
+        $stream = Storage::disk($this->disk())->readStream($path);
+
+        return is_resource($stream) ? $stream : null;
+    }
+
     public function url(string $path): string
     {
         return Storage::disk($this->disk())->url($path);
