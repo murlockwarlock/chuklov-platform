@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-04 — Telegram media and preview staging deployment
+
+- На staging развернут exact SHA `f09c3326fe3514bae80afec28c1339630f634130`: приватные медиа рассылок, signed preview route, одиночные фото/видео/документы, фото/видео-альбомы и документальные альбомы с Telegram-лимитами; единый Telegram-preview добавлен в рассылки, контент и шаблоны.
+- Деплой прошел с валидированным PostgreSQL backup, frontend build, миграциями, runtime health, PostgreSQL/pgvector, Redis, Horizon, scheduler и Telegram. `./scripts/staging-smoke.sh` — `PASS` для health, app, queue identity, CRM, clients, client card, sessions, surveys, knowledge, portal и Telegram. Production не затронут.
+- Локальные целевые проверки проходят: 125 тестов / 649 утверждений; Pint, scoped PHPStan, PHP syntax и `git diff --check` проходят. Полный hosted CI/E2E не запускался по просьбе владельца; ручная проверка интерфейса и реальная отправка в Telegram остаются за владельцем.
+
 ## 2026-09-03 — CRM UX и staging-проверка финального broadcast-прохода
 
 - На staging развернут exact SHA `dd44a105fbf371aac8663595596108226126a052`: сохранение рассылки переводит на сохраненную карточку, повторные кампании получают понятные имена, список рассылок ограничивает длинные значения и убирает лишнее горизонтальное разрастание, а отсутствующий русский перевод `result_count` больше не выводится как сырой ключ. Также проверены предпросмотр текущего медиа, источник `social`, настройки обратной связи и пояснения по напоминаниям.
