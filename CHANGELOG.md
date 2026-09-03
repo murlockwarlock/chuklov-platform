@@ -4,7 +4,7 @@
 
 - Managed images in broadcasts and Telegram content sections are now streamed from organization-scoped storage and uploaded through Nutgram multipart data instead of relying on Telegram to fetch a public CRM URL.
 - Telegram media, blocked-chat, deactivated-account, formatting, and generic provider rejections now receive safe actionable reason codes in CRM delivery history; raw provider descriptions remain out of durable records and logs.
-- Focused Telegram, content, broadcast, and failure-presentation checks pass; changed production code passes PHPStan, Pint, and `git diff --check`. Hosted CI and staging deployment for this candidate are pending.
+- Focused Telegram, content, broadcast, and failure-presentation checks pass; changed production code passes PHPStan, Pint, and `git diff --check`. Hosted CI `33765624069` and E2E `33765623726` pass on `fcd0e4793730fb9bf23589a2b21242f1cfacee03`; staging deployment and `staging-smoke.sh` pass on the same SHA.
 
 ## 2026-09-03 — CRM operator UX and content rendering follow-up
 
