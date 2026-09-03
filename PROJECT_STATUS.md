@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-09-03 — Повторный запуск рассылки и базовые документы
+
+- «Запустить снова» теперь создаёт копию завершённой рассылки, сразу запускает её и открывает страницу результата; «Редактировать и повторить» оставляет копию draft для изменений.
+- Добавлен идемпотентный seed четырёх русских draft-документов для новой/пустой организации: оферта, политика конфиденциальности, медицинский дисклеймер и маркетинговое согласие. Они явно требуют замены и проверки перед публикацией; клиентские согласия автоматически не выдаются.
+- Локально `MilestoneElevenBBroadcastTest`, `MilestoneTwoLegalDocumentTest`, `StagingDeploymentScriptTest` проходят: 77 тестов / 439 утверждений; Pint и shell syntax checks проходят. Hosted CI `33770133419` и E2E `33773976397` проходят на implementation SHA `f12a9fa30212ec587ab7aed5223734fedce2fc5a`.
+- Staging развернут и проверен на том же SHA: PostgreSQL backup, runtime health, очереди, Horizon, scheduler, Telegram, CRM, knowledge и portal smoke — PASS. Read-only database check подтверждает 4 draft-документа; production не затронут, PR #28 остаётся open/unmerged.
+
 ## 2026-09-03 — Broadcast test-send consent UX remediation
 
 - Test recipient selection now exposes only clients with current marketing consent and a verified Telegram identity. Rejected test-send validation now produces a visible, actionable CRM notification instead of appearing silent; broadcast eligibility and organization authorization remain enforced server-side.
