@@ -175,19 +175,22 @@ final class BroadcastCampaignResource extends Resource
                     ->options(['above' => 'Над изображением', 'below' => 'Под изображением'])
                     ->default('below')
                     ->inline()
+                    ->columnSpanFull()
                     ->visible(fn (Get $get): bool => self::deliveryUsesCaption($get))
                     ->required(fn (Get $get): bool => self::deliveryUsesCaption($get)),
                 Radio::make('message_mode')
-                    ->label('Как подготовить сообщение')
+                    ->label('Источник текста')
                     ->options([
                         'compose' => 'Написать сообщение',
                         'saved_template' => 'Использовать сохранённый шаблон',
                     ])
                     ->default('compose')
                     ->live()
+                    ->inline()
+                    ->helperText('Для разовой рассылки оставьте «Написать сообщение».')
+                    ->columnSpanFull()
                     ->visible(fn (Get $get): bool => self::deliveryIncludesText($get))
-                    ->required(fn (Get $get): bool => self::deliveryIncludesText($get))
-                    ->columns(1),
+                    ->required(fn (Get $get): bool => self::deliveryIncludesText($get)),
                 RichTextEditor::make('message_body', ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing))
                     ->label('Текст сообщения в Telegram')
                     ->maxLength(100000)
@@ -401,7 +404,8 @@ final class BroadcastCampaignResource extends Resource
                 ->where('organization_id', $organizationId)
                 ->where('locale', $locale)
                 ->where('purpose', 'marketing')
-                ->where('is_active', true))
+                ->where('is_active', true)
+                ->where('template_key', 'not like', 'broadcast-campaign-%'))
             ->with('template')
             ->latest('id')
             ->get()

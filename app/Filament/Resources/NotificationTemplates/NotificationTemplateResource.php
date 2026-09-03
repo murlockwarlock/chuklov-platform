@@ -126,6 +126,7 @@ final class NotificationTemplateResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('template_key', 'not like', 'broadcast-campaign-%')
             ->with('latestVersion');
     }
 

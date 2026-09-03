@@ -496,28 +496,54 @@ final readonly class ProcessBroadcastBatch
             if ($managedMedia) {
                 $mediaUrl = null;
             }
-            $template = NotificationTemplateVersion::query()
-                ->where('organization_id', $recipient->organization_id)
-                ->whereKey($templateId)
-                ->with('template')
-                ->first();
-            $channel = $this->channels->get((string) $recipient->channel);
             $imageOnly = ! $deliveryMode->includesText();
-            if ((! $imageOnly && ($template === null
-                || $template->status !== NotificationTemplateStatus::Published
-                || $template->template === null
-                || (int) $template->template->organization_id !== (int) $recipient->organization_id
-                || ! $template->template->is_active
-                || $template->template->purpose !== 'marketing'))
-                || $channel === null
-                || ! $channel->capabilities()->supportsProactiveDelivery) {
-                return NotificationDeliveryResult::unavailable('template_inactive_or_channel_unavailable');
+            $isComposedMessage = $campaign->message_mode === 'compose';
+            $channel = $this->channels->get((string) $recipient->channel);
+            if ($channel === null || ! $channel->capabilities()->supportsProactiveDelivery) {
+                return NotificationDeliveryResult::unavailable('telegram_channel_unavailable');
+            }
+
+            $template = null;
+            if (! $imageOnly && ! $isComposedMessage) {
+                $template = NotificationTemplateVersion::query()
+                    ->where('organization_id', $recipient->organization_id)
+                    ->whereKey($templateId)
+                    ->with('template')
+                    ->first();
+                if ($template === null) {
+                    return NotificationDeliveryResult::unavailable('template_unavailable');
+                }
+                if (! $this->isActiveMarketingTemplate($template, (int) $recipient->organization_id)) {
+                    return NotificationDeliveryResult::unavailable('template_inactive_or_wrong_purpose');
+                }
             }
             $renderedBody = '';
             $renderedSubject = null;
             $renderedLocale = $recipient->language;
             if (! $imageOnly) {
                 $allowedVariables = ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing);
+                if ($isComposedMessage) {
+                    $body = is_string($campaign->message_body) ? trim($campaign->message_body) : '';
+                    if ($body === '') {
+                        return NotificationDeliveryResult::permanentFailure('content_unavailable');
+                    }
+                    try {
+                        $usedVariables = ScenarioTemplateVariableCatalog::used($body);
+                    } catch (\InvalidArgumentException) {
+                        return NotificationDeliveryResult::permanentFailure('template_rendering_error');
+                    }
+                    if (array_diff($usedVariables, $allowedVariables) !== []) {
+                        return NotificationDeliveryResult::permanentFailure('template_rendering_error');
+                    }
+                    $template = new NotificationTemplateVersion;
+                    $template->forceFill([
+                        'body' => $body,
+                        'variables' => $usedVariables,
+                    ]);
+                }
+                if ($template === null) {
+                    return NotificationDeliveryResult::unavailable('template_unavailable');
+                }
                 if (array_diff($template->variables, $allowedVariables) !== []) {
                     return NotificationDeliveryResult::permanentFailure('template_rendering_error');
                 }
@@ -572,14 +598,17 @@ final readonly class ProcessBroadcastBatch
                 return NotificationDeliveryResult::suppressed($currentEligibility['reason'] ?? 'eligibility_changed');
             }
 
-            if (! $imageOnly) {
+            if (! $imageOnly && ! $isComposedMessage) {
                 $currentTemplate = NotificationTemplateVersion::query()
                     ->where('organization_id', $recipient->organization_id)
                     ->whereKey($template->getKey())
                     ->with('template')
                     ->first();
-                if (! $this->isAvailableMarketingTemplate($currentTemplate, (int) $recipient->organization_id)) {
-                    return NotificationDeliveryResult::unavailable('template_inactive_or_channel_unavailable');
+                if ($currentTemplate === null) {
+                    return NotificationDeliveryResult::unavailable('template_unavailable');
+                }
+                if (! $this->isActiveMarketingTemplate($currentTemplate, (int) $recipient->organization_id)) {
+                    return NotificationDeliveryResult::unavailable('template_inactive_or_wrong_purpose');
                 }
             }
 
@@ -738,25 +767,14 @@ final readonly class ProcessBroadcastBatch
         });
     }
 
-    private function isAvailableMarketingTemplate(?NotificationTemplateVersion $template, int $organizationId): bool
+    private function isActiveMarketingTemplate(?NotificationTemplateVersion $template, int $organizationId): bool
     {
-        if ($template === null
-            || $template->status !== NotificationTemplateStatus::Published
-            || $template->template === null
-            || (int) $template->template->organization_id !== $organizationId
-            || ! $template->template->is_active
-            || $template->template->purpose !== ScenarioRulePurpose::Marketing->value
-            || array_diff($template->variables, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
-            return false;
-        }
-
-        try {
-            $usedVariables = ScenarioTemplateVariableCatalog::used($template->body, (string) $template->subject);
-        } catch (\InvalidArgumentException) {
-            return false;
-        }
-
-        return array_diff($usedVariables, $template->variables) === [];
+        return $template !== null
+            && $template->status === NotificationTemplateStatus::Published
+            && $template->template !== null
+            && (int) $template->template->organization_id === $organizationId
+            && $template->template->is_active
+            && $template->template->purpose === ScenarioRulePurpose::Marketing->value;
     }
 
     private function finishBatch(int $organizationId, int $batchId, string $token): bool

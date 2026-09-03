@@ -158,8 +158,8 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         self::assertSame('compose', $campaign->message_mode);
         self::assertSame($data['message_body'], $campaign->message_body);
-        self::assertNotNull($campaign->template_version_ru_id);
-        self::assertSame(1, NotificationTemplateVersion::query()->whereKey($campaign->template_version_ru_id)->count());
+        self::assertNull($campaign->template_version_ru_id);
+        self::assertSame(1, NotificationTemplateVersion::query()->count());
 
         app(StartBroadcastCampaign::class)->handle($actor, $campaign);
 
@@ -167,6 +167,29 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertCount(1, $this->channel->messages);
         self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
         self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
+    }
+
+    public function test_direct_composition_ignores_a_legacy_template_state(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $data = $this->campaignData([]);
+        $data['audience_type'] = 'selected';
+        $data['selected_client_ids'] = [$client->getKey()];
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = 'Здравствуйте, {{ client.full_name }}!';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $legacyTemplate = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'purpose' => ScenarioRulePurpose::Service->value,
+            'locale' => 'ru',
+        ]);
+        $legacyVersion = NotificationTemplateVersion::factory()->forTemplate($legacyTemplate)->create();
+        $campaign->forceFill(['template_version_ru_id' => $legacyVersion->getKey()])->save();
+
+        $recipient = app(TestBroadcastCampaign::class)->handle($actor, $campaign, $client->getKey());
+
+        self::assertSame(BroadcastRecipientState::Delivered, $recipient->state);
+        self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
     }
 
     public function test_selected_client_form_shows_the_exact_human_recipient_count(): void
@@ -852,7 +875,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
         self::assertSame(BroadcastRecipientState::Failed, $recipient->state);
-        self::assertSame('template_inactive_or_channel_unavailable', $recipient->last_error_code);
+        self::assertSame('template_inactive_or_wrong_purpose', $recipient->last_error_code);
         self::assertCount(0, $this->channel->messages);
     }
 

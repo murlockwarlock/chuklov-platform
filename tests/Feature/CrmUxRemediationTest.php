@@ -87,6 +87,10 @@ final class CrmUxRemediationTest extends TestCase
             ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing),
             $messageEditor->getMergeTags(),
         );
+        self::assertFalse($messageEditor->getTools()['mergeTags']->isLabelHidden());
+        self::assertSame(Heroicon::OutlinedTag, $messageEditor->getTools()['mergeTags']->getIcon());
+        self::assertTrue($broadcast->instance()->getSchemaComponent('form.message_mode')->isInline());
+        self::assertStringContainsString('fi-fo-rich-editor-tool-with-label', $broadcast->html());
 
         Livewire::actingAs($admin)
             ->test(CreateScenarioRule::class)
@@ -251,6 +255,22 @@ final class CrmUxRemediationTest extends TestCase
         self::assertNotNull($edit);
         self::assertSame(Heroicon::OutlinedEye, $view->getIcon());
         self::assertSame(Heroicon::OutlinedPencil, $edit->getIcon());
+    }
+
+    public function test_legacy_broadcast_templates_are_not_shown_as_reusable_messages(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $internal = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'broadcast-campaign-legacy',
+            'name' => 'Одноразовая рассылка',
+        ]);
+        NotificationTemplateVersion::factory()->forTemplate($internal)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListNotificationTemplates::class)->assertSuccessful();
+
+        self::assertNotContains($internal->getKey(), $component->instance()->getTableRecords()->pluck('id')->all());
+        $component->assertDontSee('Одноразовая рассылка');
     }
 
     /** @return array{Organization, User, Client|null, Specialist|null, Service|null} */

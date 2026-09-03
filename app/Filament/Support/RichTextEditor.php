@@ -6,6 +6,7 @@ use App\Support\RichText\RichTextDocument;
 use Closure;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\RichEditorTool;
+use Filament\Support\Icons\Heroicon;
 
 final class RichTextEditor
 {
@@ -14,9 +15,14 @@ final class RichTextEditor
     {
         $toolbarButtons = [
             ['bold', 'italic', 'underline', 'strike', 'link'],
-            ['blockquote', 'code', 'codeBlock', ...($mergeTags !== null ? ['mergeTags'] : [])],
-            ['undo', 'redo'],
+            ['blockquote', 'code', 'codeBlock'],
         ];
+
+        if ($mergeTags !== null) {
+            $toolbarButtons[] = ['mergeTags'];
+        }
+
+        $toolbarButtons[] = ['undo', 'redo'];
 
         $editor = RichEditor::make($name)
             ->toolbarButtons($toolbarButtons)
@@ -31,9 +37,10 @@ final class RichTextEditor
                 ->tools([
                     RichEditorTool::make('mergeTags')
                         ->label('Добавить данные')
+                        ->hiddenLabel(false)
+                        ->icon(Heroicon::OutlinedTag)
                         ->jsHandler('togglePanel(\'mergeTags\')')
-                        ->activeJsExpression('isPanelActive(\'mergeTags\')')
-                        ->icon('fi-o-merge-tag'),
+                        ->activeJsExpression('isPanelActive(\'mergeTags\')'),
                 ])
                 ->dehydrateStateUsing(fn (mixed $state): mixed => is_string($state)
                     ? RichTextDocument::normalizeMergeTags($state)

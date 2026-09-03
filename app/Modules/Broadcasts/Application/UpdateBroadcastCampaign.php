@@ -21,7 +21,6 @@ final readonly class UpdateBroadcastCampaign
     public function __construct(
         private BroadcastAuthorization $authorization,
         private BroadcastCampaignInput $input,
-        private CreateBroadcastMessageTemplate $messages,
         private RecordAuditEvent $audit,
         private BroadcastCampaignMedia $media,
     ) {}
@@ -56,15 +55,6 @@ final readonly class UpdateBroadcastCampaign
                 $locked = BroadcastCampaign::query()->where('organization_id', $organization->getKey())->whereKey($campaign->getKey())->lockForUpdate()->firstOrFail();
                 if ($locked->state !== BroadcastCampaignState::Draft) {
                     throw ValidationException::withMessages(['name' => 'После запуска рассылку нельзя изменить.']);
-                }
-                if ($normalized['message_mode'] === 'compose' && $normalized['message_body'] !== null) {
-                    $version = $this->messages->handle(
-                        actor: $actor,
-                        organization: $organization,
-                        campaignName: $normalized['name'],
-                        body: $normalized['message_body'],
-                    );
-                    $normalized['template_version_ru_id'] = $version->getKey();
                 }
                 $previousSnapshotId = $locked->audience_snapshot_id;
                 if ($previousSnapshotId !== null) {

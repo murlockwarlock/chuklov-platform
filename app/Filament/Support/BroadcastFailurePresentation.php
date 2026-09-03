@@ -35,6 +35,8 @@ final class BroadcastFailurePresentation
             'content_unavailable' => 'Содержимое сообщения недоступно',
             'media_unavailable' => 'Изображение недоступно. Проверьте ссылку или загрузите файл заново',
             'delivery_configuration_invalid', 'delivery_configuration_unavailable' => 'Настройки сообщения неполные. Проверьте формат, изображение и шаблон',
+            'template_unavailable' => 'Текстовый шаблон не найден. Выберите сообщение заново',
+            'template_inactive_or_wrong_purpose' => 'Шаблон выключен или не предназначен для маркетинговой рассылки. Выберите маркетинговый шаблон',
             'template_inactive_or_channel_unavailable' => 'Шаблон отключён или Telegram недоступен',
             'delivery_outcome_unknown' => 'Telegram не подтвердил результат. Проверьте чат перед повторной отправкой',
             'delivery_pre_send_failure' => 'Отправка не началась. Повторите попытку',

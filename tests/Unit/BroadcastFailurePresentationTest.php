@@ -29,5 +29,13 @@ final class BroadcastFailurePresentationTest extends TestCase
             'Задача отправки не выполнена. Проверьте очередь сообщений',
             BroadcastFailurePresentation::label('queue_job_failed_terminal'),
         );
+        self::assertSame(
+            'Шаблон выключен или не предназначен для маркетинговой рассылки. Выберите маркетинговый шаблон',
+            BroadcastFailurePresentation::label('template_inactive_or_wrong_purpose'),
+        );
+        self::assertSame(
+            'Не удалось связаться с Telegram. Повторите попытку',
+            BroadcastFailurePresentation::label('telegram_channel_unavailable'),
+        );
     }
 }

@@ -14,7 +14,6 @@ final readonly class CreateBroadcastCampaign
     public function __construct(
         private BroadcastAuthorization $authorization,
         private BroadcastCampaignInput $input,
-        private CreateBroadcastMessageTemplate $messages,
         private RecordAuditEvent $audit,
         private BroadcastCampaignMedia $media,
     ) {}
@@ -31,15 +30,6 @@ final readonly class CreateBroadcastCampaign
             unset($normalized['media_input']);
 
             return DB::transaction(function () use ($actor, $organization, $normalized): BroadcastCampaign {
-                if ($normalized['message_mode'] === 'compose' && $normalized['message_body'] !== null) {
-                    $version = $this->messages->handle(
-                        actor: $actor,
-                        organization: $organization,
-                        campaignName: $normalized['name'],
-                        body: $normalized['message_body'],
-                    );
-                    $normalized['template_version_ru_id'] = $version->getKey();
-                }
                 $campaign = new BroadcastCampaign;
                 $campaign->forceFill([...$normalized, 'organization_id' => $organization->getKey(), 'created_by_user_id' => $actor->getKey(), 'state' => BroadcastCampaignState::Draft]);
                 $campaign->save();
