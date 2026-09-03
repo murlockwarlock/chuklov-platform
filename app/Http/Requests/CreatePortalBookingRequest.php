@@ -27,6 +27,12 @@ class CreatePortalBookingRequest extends FormRequest
             ))],
             'party_size' => ['sometimes', 'integer', 'min:1', 'max:20'],
             'location' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'consents' => ['sometimes', 'array'],
+            'consents.*' => ['required', 'array:legal_document_id,granted'],
+            'consents.*.legal_document_id' => ['required', 'integer', 'min:1'],
+            'consents.*.granted' => ['required', 'boolean'],
+            'marketing_consent' => ['sometimes', 'boolean'],
+            'attribution_source' => ['sometimes', 'nullable', 'string', 'max:120', 'in:friend,social,search,partner,other'],
         ];
     }
 

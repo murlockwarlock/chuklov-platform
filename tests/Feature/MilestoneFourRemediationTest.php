@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Models\User;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
+use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -59,6 +61,31 @@ class MilestoneFourRemediationTest extends TestCase
     public function test_portal_creation_generates_idempotency_key_at_the_application_boundary(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture(formats: ['office', 'home', 'online']);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $documents = [];
+        foreach (['offer', 'privacy', 'medical_disclaimer'] as $documentType) {
+            $documents[$documentType] = app(PublishLegalDocument::class)->handle(
+                app(CreatePlatformLegalDocumentDraft::class)->handle(
+                    organization: $organization,
+                    documentType: $documentType,
+                    purpose: $documentType.'_consent',
+                    locale: 'en',
+                    version: '2026-09-03-'.$documentType,
+                    content: 'Synthetic legal fixture.',
+                    isRequired: true,
+                ),
+            );
+        }
+        $consents = array_map(
+            static fn (string $documentType): array => [
+                'legal_document_id' => $documents[$documentType]->getKey(),
+                'granted' => true,
+            ],
+            ['offer', 'privacy', 'medical_disclaimer'],
+        );
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.bookings.store'), [
@@ -66,6 +93,7 @@ class MilestoneFourRemediationTest extends TestCase
                 'specialist_id' => $specialist->getKey(),
                 'starts_at' => '2026-04-06T09:00:00+00:00',
                 'format' => VisitFormat::Office->value,
+                'consents' => $consents,
                 'idempotency_key' => 'client-controlled-key',
                 'client_timezone' => 'America/New_York',
                 'meeting_link_mode' => 'manual',

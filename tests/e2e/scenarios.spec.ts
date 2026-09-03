@@ -119,8 +119,9 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await expect(page.getByText('3 раза, каждые 12 ч.', { exact: true })).toBeVisible();
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
-    await expect(page.getByRole('combobox', { name: 'Добавить данные', exact: true })).toBeVisible();
-    await page.locator('textarea').fill('Обновлённое сообщение для {{ client.full_name }}.');
+    await expect(page.getByRole('button', { name: 'Добавить данные', exact: true })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Текст сообщения', exact: true })
+        .fill('Обновлённое сообщение для {{ client.full_name }}.');
     const templateSave = page.getByRole('button', { name: 'Сохранить' });
     const templateSaveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
@@ -137,4 +138,32 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await expect(page.getByText('История отправки')).toBeVisible();
     await expect(page.getByText('1 из 3', { exact: true })).toBeVisible();
     await expect(page.getByText('Telegram — Ожидает отправки')).toBeVisible();
+});
+
+test('shared rich editor inserts emoji at the current caret as text', async ({ page }) => {
+    const fixture = createScenarioFixture();
+
+    await page.goto('/admin/login');
+    await page.locator('input[type="email"]').fill(fixture.email);
+    await page.locator('input[type="password"]').fill(fixture.password);
+    await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+
+    await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
+    const editor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    await editor.fill('Привет !');
+    await editor.press('ArrowLeft');
+    await page.getByRole('button', { name: '😊 Смайлик', exact: true }).click();
+    await expect(page.locator('emoji-picker')).toBeVisible();
+    await page.evaluate(() => {
+        document.querySelector('emoji-picker')?.dispatchEvent(new CustomEvent('emoji-click', {
+            detail: { unicode: '👋' },
+        }));
+    });
+
+    await expect(editor).toContainText('Привет 👋!');
+    await expect(editor.locator('img')).toHaveCount(0);
+    await editor.press('End');
+    await editor.type(' обычный текст');
+    await expect(editor).toContainText('Привет 👋! обычный текст');
 });

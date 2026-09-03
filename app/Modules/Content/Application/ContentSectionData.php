@@ -2,6 +2,8 @@
 
 namespace App\Modules\Content\Application;
 
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
+use App\Support\RichText\RichTextDocument;
 use InvalidArgumentException;
 
 final readonly class ContentSectionData
@@ -12,6 +14,7 @@ final readonly class ContentSectionData
         public string $locale,
         public string $title,
         public string $body,
+        public ContentDeliveryMode $deliveryMode,
         public ?array $media,
         public int $sortOrder,
         public bool $isVisible,
@@ -32,7 +35,26 @@ final readonly class ContentSectionData
 
         $title = self::stringValue($attributes['title'] ?? null, 'The content title is invalid.', 160);
         $body = self::stringValue($attributes['body'] ?? null, 'The content body is invalid.', 100000);
+        try {
+            RichTextDocument::canonicalHtml($body);
+        } catch (InvalidArgumentException $exception) {
+            throw new InvalidArgumentException('The content body is invalid.', previous: $exception);
+        }
+        $deliveryMode = ContentDeliveryMode::tryFrom((string) ($attributes['delivery_mode'] ?? ContentDeliveryMode::Both->value));
+        if (! $deliveryMode instanceof ContentDeliveryMode) {
+            throw new InvalidArgumentException('The content delivery mode is invalid.');
+        }
         $media = self::media($attributes['media'] ?? null);
+        if ($deliveryMode->supportsTelegram()) {
+            try {
+                $telegramBody = '<p><strong>'.htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</strong></p>'.$body;
+                if (RichTextDocument::exceedsTelegramLimit($telegramBody)) {
+                    throw new InvalidArgumentException('The Telegram content exceeds the message limit.');
+                }
+            } catch (InvalidArgumentException $exception) {
+                throw new InvalidArgumentException('The Telegram content is invalid.', previous: $exception);
+            }
+        }
         $sortOrder = self::nonNegativeInteger($attributes['sort_order'] ?? 0, 'The content order is invalid.');
 
         return new self(
@@ -40,6 +62,7 @@ final readonly class ContentSectionData
             locale: $locale,
             title: $title,
             body: $body,
+            deliveryMode: $deliveryMode,
             media: $media,
             sortOrder: $sortOrder,
             isVisible: (bool) ($attributes['is_visible'] ?? true),
@@ -54,6 +77,7 @@ final readonly class ContentSectionData
             'locale' => $this->locale,
             'title' => $this->title,
             'body' => $this->body,
+            'delivery_mode' => $this->deliveryMode->value,
             'media' => $this->media,
             'sort_order' => $this->sortOrder,
             'is_visible' => $this->isVisible,

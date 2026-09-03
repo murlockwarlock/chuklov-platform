@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Resources\Sessions\Tables;
 
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -22,7 +23,8 @@ class SessionsTable
             ->columns([
                 TextColumn::make('occurred_at')
                     ->label('Дата сеанса')
-                    ->dateTime('d.m.Y H:i'),
+                    ->dateTime('d.m.Y H:i')
+                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                 TextColumn::make('specialist.display_name')
                     ->label('Специалист')
                     ->placeholder('—')
@@ -31,7 +33,9 @@ class SessionsTable
                     ->label('Дата записи на приём')
                     ->state(fn ($record): ?string => $record->booking === null
                         ? null
-                        : Carbon::parse((string) $record->booking->getAttribute('starts_at'))->format('d.m.Y H:i'))
+                        : Carbon::parse((string) $record->booking->getAttribute('starts_at'), 'UTC')
+                            ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                            ->format('d.m.Y H:i'))
                     ->placeholder('Не связан'),
                 TextColumn::make('booking_status')
                     ->label('Статус записи')

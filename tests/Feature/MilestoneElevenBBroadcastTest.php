@@ -4,12 +4,16 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign as CreateBroadcastCampaignPage;
+use App\Filament\Resources\BroadcastCampaigns\Pages\EditBroadcastCampaign as EditBroadcastCampaignPage;
+use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign as ViewBroadcastCampaignPage;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Broadcasts\Application\BroadcastEligibilityPolicy;
+use App\Modules\Broadcasts\Application\BroadcastMediaPreviewUrl;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
+use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign;
 use App\Modules\Broadcasts\Application\MaterializeBroadcastAudience;
 use App\Modules\Broadcasts\Application\PreviewBroadcastCampaign;
@@ -19,6 +23,7 @@ use App\Modules\Broadcasts\Application\SetBroadcastClientClassification;
 use App\Modules\Broadcasts\Application\StartBroadcastCampaign;
 use App\Modules\Broadcasts\Application\TestBroadcastCampaign;
 use App\Modules\Broadcasts\Application\UpdateBroadcastCampaign;
+use App\Modules\Broadcasts\Domain\Contracts\BroadcastMediaStorageInterface;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
@@ -27,6 +32,7 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastDeliveryAttempt;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
@@ -48,13 +54,16 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Livewire\Livewire;
@@ -152,8 +161,8 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         self::assertSame('compose', $campaign->message_mode);
         self::assertSame($data['message_body'], $campaign->message_body);
-        self::assertNotNull($campaign->template_version_ru_id);
-        self::assertSame(1, NotificationTemplateVersion::query()->whereKey($campaign->template_version_ru_id)->count());
+        self::assertNull($campaign->template_version_ru_id);
+        self::assertSame(1, NotificationTemplateVersion::query()->count());
 
         app(StartBroadcastCampaign::class)->handle($actor, $campaign);
 
@@ -161,6 +170,499 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertCount(1, $this->channel->messages);
         self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
         self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
+    }
+
+    public function test_direct_composition_ignores_a_legacy_template_state(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $data = $this->campaignData([]);
+        $data['audience_type'] = 'selected';
+        $data['selected_client_ids'] = [$client->getKey()];
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = 'Здравствуйте, {{ client.full_name }}!';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $legacyTemplate = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'purpose' => ScenarioRulePurpose::Service->value,
+            'locale' => 'ru',
+        ]);
+        $legacyVersion = NotificationTemplateVersion::factory()->forTemplate($legacyTemplate)->create();
+        $campaign->forceFill(['template_version_ru_id' => $legacyVersion->getKey()])->save();
+
+        $recipient = app(TestBroadcastCampaign::class)->handle($actor, $campaign, $client->getKey());
+
+        self::assertSame(BroadcastRecipientState::Delivered, $recipient->state);
+        self::assertSame('Здравствуйте, '.$client->full_name.'!', $this->channel->messages[0]->body);
+    }
+
+    public function test_selected_client_form_shows_the_exact_human_recipient_count(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($actor)
+            ->test(CreateBroadcastCampaignPage::class)
+            ->fillForm([
+                'audience_type' => 'selected',
+                'selected_client_ids' => [$client->getKey()],
+            ])
+            ->assertSee('Получателей: 1');
+    }
+
+    public function test_broadcast_text_limit_is_validated_at_campaign_boundary(): void
+    {
+        [$organization, $actor] = $this->fixture();
+
+        $text = $this->campaignData([]);
+        $text['message_mode'] = 'compose';
+        $text['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT);
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $text);
+        self::assertSame($text['message_body'], $campaign->message_body);
+
+        $tooLongText = $this->campaignData([]);
+        $tooLongText['message_mode'] = 'compose';
+        $tooLongText['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT + 1);
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $tooLongText);
+    }
+
+    public function test_preview_renders_template_variables_before_the_telegram_projection(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '<p><strong>Здравствуйте, {{ client.full_name }}!</strong> 😀</p>';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $preview = app(PreviewBroadcastCampaign::class)->message($actor, $campaign);
+
+        self::assertStringContainsString('Aikhana', $preview['bodyHtml']);
+        self::assertStringNotContainsString('{{ client.full_name }}', $preview['bodyHtml']);
+        self::assertStringContainsString('<b>', $preview['bodyHtml']);
+    }
+
+    public function test_campaign_preview_rejects_a_stale_message_that_exceeds_the_telegram_limit(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'message_body' => str_repeat('a', RichTextDocument::TELEGRAM_TEXT_LIMIT + 1),
+        ])->save();
+
+        $this->expectException(ValidationException::class);
+        app(PreviewBroadcastCampaign::class)->message($actor, $campaign->refresh());
+    }
+
+    public function test_rendered_template_variables_are_checked_against_telegram_limits(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $text = $this->campaignData([]);
+        $text['message_mode'] = 'compose';
+        $text['message_body'] = str_repeat('a', 3900).' {{ client.full_name }}';
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $text);
+    }
+
+    public function test_photo_caption_mode_persists_caption_position_and_enforces_1024_boundary(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $data['caption_position'] = 'above';
+        $data['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_CAPTION_LIMIT);
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame(NotificationMessageMode::ImageWithCaption->value, $campaign->delivery_mode);
+        self::assertSame('above', $campaign->caption_position);
+        self::assertSame('https://cdn.example.test/image.jpg', $campaign->media['image'] ?? null);
+
+        $tooLong = $this->campaignData([]);
+        $tooLong['message_mode'] = 'compose';
+        $tooLong['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $tooLong['message_body'] = str_repeat('a', RichTextDocument::TELEGRAM_CAPTION_LIMIT + 1);
+        $tooLong['media_url'] = 'https://cdn.example.test/image.jpg';
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $tooLong);
+    }
+
+    public function test_broadcast_persists_multiple_photo_uploads_for_a_telegram_album(): void
+    {
+        [, $actor] = $this->fixture();
+        Storage::fake('private');
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = [
+            UploadedFile::fake()->image('one.jpg'),
+            UploadedFile::fake()->image('two.jpg'),
+        ];
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertCount(2, $campaign->media['items'] ?? []);
+        self::assertSame(['photo', 'photo'], array_column($campaign->media['items'], 'type'));
+    }
+
+    public function test_broadcast_persists_a_video_upload_as_video_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $storage = $this->createMock(BroadcastMediaStorageInterface::class);
+        $storage->expects($this->once())
+            ->method('store')
+            ->willReturn('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000003.mp4');
+        $this->app->instance(BroadcastMediaStorageInterface::class, $storage);
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = UploadedFile::fake()->create('video.mp4', 10, 'video/mp4');
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame('video', $campaign->media['items'][0]['type'] ?? null);
+        self::assertSame('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000003.mp4', $campaign->media['items'][0]['source'] ?? null);
+    }
+
+    public function test_broadcast_persists_an_arbitrary_upload_as_document_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $storage = $this->createMock(BroadcastMediaStorageInterface::class);
+        $storage->expects($this->once())
+            ->method('store')
+            ->willReturn('broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000004.bin');
+        $this->app->instance(BroadcastMediaStorageInterface::class, $storage);
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_image'] = UploadedFile::fake()->create('terms.custom', 10, 'application/octet-stream');
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame('document', $campaign->media['items'][0]['type'] ?? null);
+        self::assertSame('terms.custom', $campaign->media['items'][0]['name'] ?? null);
+    }
+
+    public function test_broadcast_rejects_a_mixed_document_and_photo_album_before_persistence(): void
+    {
+        [, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media'] = [
+            'items' => [
+                ['type' => 'document', 'source' => 'https://cdn.example.test/terms.pdf'],
+                ['type' => 'photo', 'source' => 'https://cdn.example.test/photo.jpg'],
+            ],
+        ];
+
+        $this->expectException(ValidationException::class);
+        app(CreateBroadcastCampaign::class)->handle($actor, $data);
+    }
+
+    public function test_managed_broadcast_media_preview_uses_a_signed_organization_scoped_route(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        Storage::fake('private');
+        $path = 'broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000005.jpg';
+        Storage::disk('private')->put($path, 'managed broadcast preview');
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'media' => ['items' => [['type' => 'photo', 'source' => $path, 'alt' => null, 'name' => 'preview.jpg']]],
+        ])->save();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        $url = app(BroadcastMediaPreviewUrl::class)->handle($campaign->refresh(), 0);
+        self::assertIsString($url);
+
+        $response = $this->actingAs($actor)->get($url);
+
+        $response->assertOk();
+        self::assertSame('managed broadcast preview', $response->streamedContent());
+        self::assertSame('image/jpeg', $response->headers->get('Content-Type'));
+
+        $otherOrganization = Organization::factory()->create();
+        $otherActor = User::factory()->forOrganization($otherOrganization)->create();
+        config()->set('tenancy.default_organization_id', $otherOrganization->getKey());
+
+        $this->actingAs($otherActor)->get($url)->assertNotFound();
+    }
+
+    public function test_image_only_mode_does_not_create_or_require_a_text_template(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertNull($campaign->message_body);
+        self::assertNull($campaign->template_version_ru_id);
+        self::assertSame(NotificationMessageMode::Image->value, $campaign->delivery_mode);
+    }
+
+    public function test_image_mode_rejects_removing_the_only_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Удаление изображения';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = '';
+        $update['delivery_mode'] = NotificationMessageMode::Image->value;
+        $update['remove_media'] = true;
+
+        $this->expectException(ValidationException::class);
+        app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertSame('https://cdn.example.test/image.jpg', $campaign->refresh()->media['image'] ?? null);
+    }
+
+    public function test_switching_to_text_allows_removing_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Только текст';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = 'Обычный текст';
+        $update['delivery_mode'] = NotificationMessageMode::Text->value;
+        $update['remove_media'] = true;
+
+        $updated = app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertNull($updated->media);
+        self::assertSame(NotificationMessageMode::Text->value, $updated->delivery_mode);
+    }
+
+    public function test_image_mode_allows_replacing_campaign_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/old.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        $update = $this->campaignData([]);
+        $update['name'] = 'Новое изображение';
+        $update['message_mode'] = 'compose';
+        $update['message_body'] = '';
+        $update['delivery_mode'] = NotificationMessageMode::Image->value;
+        $update['media_url'] = 'https://cdn.example.test/new.jpg';
+
+        $updated = app(UpdateBroadcastCampaign::class)->handle($actor, $campaign, $update);
+
+        self::assertSame('https://cdn.example.test/new.jpg', $updated->media['image'] ?? null);
+        self::assertSame(NotificationMessageMode::Image->value, $updated->delivery_mode);
+    }
+
+    public function test_image_delivery_cannot_launch_when_persisted_media_is_absent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $campaign->forceFill(['media' => null])->save();
+
+        try {
+            app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+            self::fail('Image delivery without media must be rejected before dispatch.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Добавьте медиа или выберите текстовый режим.', $exception->errors()['media_image'][0]);
+        }
+
+        self::assertSame(BroadcastCampaignState::Draft, $campaign->refresh()->state);
+        self::assertNull($campaign->audience_snapshot_id);
+    }
+
+    public function test_managed_campaign_media_is_streamed_to_the_channel_after_delivery_claim(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('public');
+        $path = 'content/'.$organization->getKey().'/00000000-0000-4000-8000-000000000001.jpg';
+        $contents = 'managed broadcast image';
+        Storage::disk('public')->put($path, $contents);
+
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::ImageWithCaption->value;
+        $data['message_body'] = '<p>Подпись</p>';
+        $data['media'] = ['image' => $path, 'alt' => null];
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertCount(1, $this->channel->messages);
+        $stream = $this->channel->messages[0]->mediaStream;
+        self::assertIsResource($stream);
+        self::assertSame($contents, stream_get_contents($stream));
+        fclose($stream);
+    }
+
+    public function test_missing_managed_campaign_media_is_recorded_before_channel_delivery(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('public');
+        $path = 'content/'.$organization->getKey().'/00000000-0000-4000-8000-000000000002.jpg';
+
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['media'] = ['image' => $path, 'alt' => null];
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        app(StartBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(
+            'media_unavailable',
+            BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->sole()->last_error_code,
+        );
+    }
+
+    public function test_sent_campaign_can_only_be_copied_to_a_new_draft(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'compose';
+        $data['message_body'] = '<p><strong>Повтор</strong> 😀</p>';
+        $data['delivery_mode'] = NotificationMessageMode::ImageThenText->value;
+        $data['media_url'] = 'https://cdn.example.test/image.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+
+        $copy = app(CopyBroadcastCampaign::class)->handle($actor, $campaign);
+
+        self::assertNotSame($campaign->getKey(), $copy->getKey());
+        self::assertSame('Проверочная рассылка — повтор', $copy->name);
+        self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
+        self::assertSame(BroadcastCampaignState::Draft, $copy->state);
+        self::assertSame($campaign->message_body, $copy->message_body);
+        self::assertSame($campaign->delivery_mode, $copy->delivery_mode);
+        self::assertSame($campaign->caption_position, $copy->caption_position);
+        self::assertSame($campaign->media, $copy->media);
+        self::assertNull($copy->audience_snapshot_id);
+        self::assertSame(0, $copy->audience_count);
+
+        $copy->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        $secondCopy = app(CopyBroadcastCampaign::class)->handle($actor, $copy);
+
+        self::assertSame('Проверочная рассылка — повтор 2', $secondCopy->name);
+    }
+
+    public function test_run_again_starts_a_new_campaign_and_opens_its_view(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->callAction('runAgain')
+            ->assertNotified('Рассылка отправлена')
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => BroadcastCampaign::query()->latest('id')->firstOrFail()]));
+
+        $copy = BroadcastCampaign::query()->where('id', '!=', $campaign->getKey())->latest('id')->firstOrFail();
+
+        self::assertSame(BroadcastCampaignState::Completed, $copy->state);
+        self::assertSame(1, BroadcastRecipient::query()->where('campaign_id', $copy->getKey())->where('kind', 'production')->count());
+        self::assertSame(BroadcastCampaignState::Completed, $campaign->refresh()->state);
+    }
+
+    public function test_edit_and_rerun_keeps_the_copy_as_a_draft(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'state' => BroadcastCampaignState::Completed,
+            'completed_at' => now(),
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->callAction('editAndRerun');
+        $copy = BroadcastCampaign::query()->where('id', '!=', $campaign->getKey())->latest('id')->firstOrFail();
+
+        $component->assertRedirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+        self::assertSame(BroadcastCampaignState::Draft, $copy->state);
+        self::assertSame(0, BroadcastRecipient::query()->where('campaign_id', $copy->getKey())->count());
+    }
+
+    public function test_editing_a_draft_redirects_to_its_saved_view(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->fillForm(['name' => 'Сохранённая рассылка'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertNotified('Рассылка сохранена')
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
+
+        self::assertSame('Сохранённая рассылка', $campaign->refresh()->name);
+    }
+
+    public function test_editing_a_draft_without_media_changes_preserves_the_existing_media(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $data = $this->campaignData([]);
+        $data['media_url'] = 'https://cdn.example.test/existing.jpg';
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->fillForm(['name' => 'Сохранённая рассылка с медиа'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
+
+        self::assertSame('https://cdn.example.test/existing.jpg', $campaign->refresh()->media['image'] ?? null);
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void
@@ -211,6 +713,62 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame($target->getKey(), $recipient->client_id);
         self::assertCount(1, $this->channel->messages);
         self::assertSame(0, BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->where('kind', 'production')->count());
+    }
+
+    public function test_test_recipient_selector_excludes_clients_without_current_marketing_consent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $eligible = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $withoutConsent = $this->client($organization, consent: false, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->mountAction('test');
+        $select = $component->instance()->getSchemaComponent('mountedActionSchema0.test_client_id');
+
+        self::assertInstanceOf(Select::class, $select);
+        self::assertArrayHasKey($eligible->getKey(), $select->getOptions());
+        self::assertArrayNotHasKey($withoutConsent->getKey(), $select->getOptions());
+    }
+
+    public function test_test_send_explains_missing_marketing_consent(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        ClientConsent::query()->where('client_id', $target->getKey())->delete();
+        $campaign = $this->campaign($actor, []);
+
+        try {
+            app(TestBroadcastCampaign::class)->handle($actor, $campaign, $target->getKey());
+            self::fail('An ineligible test recipient must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'У тестового получателя нет согласия на маркетинговые сообщения.',
+                $exception->errors()['test_client_id'][0],
+            );
+        }
+    }
+
+    public function test_test_send_action_shows_validation_failures_as_notifications(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->mountAction('test')
+            ->setActionData(['test_client_id' => $target->getKey()]);
+        $campaign->forceFill(['channel_priority' => ['email']])->save();
+
+        $component
+            ->callMountedAction()
+            ->assertNotified('Тестовая отправка не выполнена');
+
+        self::assertSame(0, BroadcastRecipient::query()->count());
     }
 
     public function test_language_referral_source_booking_last_visit_no_rebooking_tags_and_survey_completion_queries_are_scoped(): void
@@ -446,7 +1004,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
         self::assertSame(BroadcastRecipientState::Failed, $recipient->state);
-        self::assertSame('template_inactive_or_channel_unavailable', $recipient->last_error_code);
+        self::assertSame('template_inactive_or_wrong_purpose', $recipient->last_error_code);
         self::assertCount(0, $this->channel->messages);
     }
 

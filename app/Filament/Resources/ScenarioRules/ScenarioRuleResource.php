@@ -83,7 +83,6 @@ final class ScenarioRuleResource extends Resource
                     ->state(fn (ScenarioRule $record): string => self::recipientSummary($record->recipient_strategy))
                     ->columnSpanFull(),
                 Section::make('Дополнительные настройки')
-                    ->collapsed()
                     ->schema([
                         TextEntry::make('purpose')
                             ->label('Тип сообщения')

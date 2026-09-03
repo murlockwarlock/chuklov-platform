@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -26,6 +27,7 @@ class AuthenticateClientWithVerifiedChannel
         VerifiedChannelIdentity $verifiedIdentity,
         ?string $acquisitionSessionId = null,
         ?int $acquisitionRequestId = null,
+        ?string $clientTimezone = null,
     ): Client {
         $organization = $this->context->organization();
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
@@ -40,10 +42,12 @@ class AuthenticateClientWithVerifiedChannel
             throw new AuthorizationException('The verified channel identity is invalid.');
         }
 
+        $clientTimezone = $this->normalizeTimezone($clientTimezone);
+
         try {
-            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId);
+            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId, $clientTimezone);
         } catch (UniqueConstraintViolationException) {
-            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId);
+            return $this->persist($verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId, $clientTimezone);
         }
     }
 
@@ -51,10 +55,11 @@ class AuthenticateClientWithVerifiedChannel
         VerifiedChannelIdentity $verifiedIdentity,
         ?string $acquisitionSessionId,
         ?int $acquisitionRequestId,
+        ?string $clientTimezone,
     ): Client {
         $organization = $this->context->organization();
 
-        return DB::transaction(function () use ($organization, $verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId): Client {
+        return DB::transaction(function () use ($organization, $verifiedIdentity, $acquisitionSessionId, $acquisitionRequestId, $clientTimezone): Client {
             $identity = ClientChannelIdentity::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('channel', $verifiedIdentity->channel)
@@ -63,7 +68,7 @@ class AuthenticateClientWithVerifiedChannel
                 ->first();
 
             if ($identity instanceof ClientChannelIdentity) {
-                return $this->authenticateExistingIdentity($identity, $verifiedIdentity);
+                return $this->authenticateExistingIdentity($identity, $verifiedIdentity, $clientTimezone);
             }
 
             $client = new Client;
@@ -71,7 +76,8 @@ class AuthenticateClientWithVerifiedChannel
                 'organization_id' => $organization->getKey(),
                 'full_name' => $verifiedIdentity->displayName,
                 'language' => $verifiedIdentity->language,
-                'timezone' => $organization->defaultTimezone(),
+                'timezone' => $clientTimezone ?? $organization->defaultTimezone(),
+                'timezone_source' => $clientTimezone === null ? 'organization' : 'device',
                 'lead_source' => $verifiedIdentity->channel,
             ]);
             $client->save();
@@ -123,7 +129,7 @@ class AuthenticateClientWithVerifiedChannel
         });
     }
 
-    private function authenticateExistingIdentity(ClientChannelIdentity $identity, VerifiedChannelIdentity $verifiedIdentity): Client
+    private function authenticateExistingIdentity(ClientChannelIdentity $identity, VerifiedChannelIdentity $verifiedIdentity, ?string $clientTimezone): Client
     {
         if ($identity->verification_status === ChannelIdentityStatus::Revoked) {
             throw new AuthorizationException('This client channel identity is revoked.');
@@ -131,6 +137,14 @@ class AuthenticateClientWithVerifiedChannel
 
         if ($verifiedIdentity->username !== null) {
             $identity->forceFill(['external_username' => $verifiedIdentity->username]);
+        }
+
+        $client = $identity->client()->firstOrFail();
+        if ($clientTimezone !== null && in_array($client->timezone_source, [null, 'organization'], true)) {
+            $client->forceFill([
+                'timezone' => $clientTimezone,
+                'timezone_source' => 'device',
+            ])->save();
         }
 
         if ($identity->verification_status === ChannelIdentityStatus::Unverified) {
@@ -156,6 +170,19 @@ class AuthenticateClientWithVerifiedChannel
             $identity->save();
         }
 
-        return $identity->client()->firstOrFail();
+        return $client->refresh();
+    }
+
+    private function normalizeTimezone(?string $timezone): ?string
+    {
+        if ($timezone === null || trim($timezone) === '') {
+            return null;
+        }
+
+        try {
+            return IanaTimezone::from($timezone)->value;
+        } catch (\InvalidArgumentException) {
+            throw new AuthorizationException('The client timezone is invalid.');
+        }
     }
 }

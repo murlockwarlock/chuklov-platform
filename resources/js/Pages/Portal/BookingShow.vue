@@ -24,6 +24,7 @@ type Booking = {
     localDate: string;
     localTime: string;
     localEndsAt: string;
+    displayUtcOffset: string;
     timezone: string;
     formatLabel: string;
     statusLabel: string;
@@ -76,6 +77,8 @@ const rescheduleError = computed(() => {
 });
 const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
 let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
+let meetingPollStartedAt: number | null = null;
+const meetingPollTimeoutMs = 120000;
 
 function stopMeetingPolling(): void {
     if (meetingPollTimer === null) {
@@ -84,6 +87,7 @@ function stopMeetingPolling(): void {
 
     window.clearInterval(meetingPollTimer);
     meetingPollTimer = null;
+    meetingPollStartedAt = null;
 }
 
 function refreshPendingMeeting(): void {
@@ -94,6 +98,13 @@ function refreshPendingMeeting(): void {
     }
 
     if (meetingReloading.value) {
+        return;
+    }
+
+    meetingPollStartedAt ??= Date.now();
+    if (Date.now() - meetingPollStartedAt >= meetingPollTimeoutMs) {
+        stopMeetingPolling();
+
         return;
     }
 
@@ -114,6 +125,7 @@ function syncMeetingPolling(): void {
     }
 
     if (meetingPollTimer === null) {
+        meetingPollStartedAt ??= Date.now();
         meetingPollTimer = window.setInterval(refreshPendingMeeting, 5000);
     }
 }
@@ -278,7 +290,7 @@ function rescheduleBooking(): void {
             mode="date"
           />
           <span aria-hidden="true"> · </span>
-          <span>{{ props.booking.localTime }}–{{ props.booking.localEndsAt }}</span>
+          <span>{{ props.booking.localTime }}–{{ props.booking.localEndsAt }} · UTC{{ props.booking.displayUtcOffset }}</span>
         </p>
         <p
           v-if="props.booking.location"

@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-09-04 — Компактные согласия и общий emoji picker
+
+- В booking flow обязательные документы показываются компактным списком с отдельным просмотром в modal и одной общей галочкой; backend по-прежнему фиксирует отдельное versioned consent evidence для Offer, Privacy и MedicalDisclaimer.
+- Marketing consent остаётся отдельным необязательным выбором, а отсутствие опубликованного обязательного документа сохраняет fail-closed поведение.
+- В общий `RichTextEditor` добавлены локальный emoji picker с поиском и категориями, вставка Unicode в текущую позицию курсора и сброс залипшего форматирования на границе mark.
+- Исправлены сохранение/перенаправление рассылок и отображение замены/удаления media без потери текущих файлов.
+
+## 2026-09-03 — Telegram media, previews, and safe replacement
+
+- Broadcasts now accept one media file or up to 10 photos, MP4 videos, or documents with Telegram-compatible limits: 10 MB for photos and 50 MB for videos and files.
+- One file is sent with its dedicated Telegram method; photo/video and document albums are sent through Telegram media groups with clear same-type rules.
+- The broadcast editor now previews the current, removed, replaced, and newly selected media, including video controls and document cards. Private managed files are shown through expiring organization-scoped preview links.
+- Telegram-shaped preview actions are available consistently in broadcast, content, and message-template editors; arbitrary rich-text views no longer expose raw markup.
+
+## 2026-09-03 — Сохранение рассылок и понятное отображение данных
+
+- После сохранения рассылки оператор сразу попадает на страницу сохранённой версии с предпросмотром и действиями запуска; возвращаться вручную в список больше не нужно.
+- В редактировании рассылок и контент-разделов показывается текущее изображение; явно указано, что поддерживается одно изображение, а новая загрузка или ссылка заменяет старую после сохранения.
+- Настройки обратной связи переведены в одну колонку без обрезания длинных подписей, напоминания объясняют автоматическую отправку и отсутствие отправки задним числом, а источник `social` отображается как «Социальные сети».
+- В Telegram-тексте апострофы больше не превращаются в HTML-сущности.
+- Для русской CRM добавлены недостающие подписи таблиц Filament, включая счётчик результатов без вывода технического ключа перевода.
+
+## 2026-09-03 — Одноразовые рассылки и редактор текста
+
+- Одноразовый текст рассылки больше не создаёт скрытый шаблон и не зависит от назначения или состояния старого шаблона; уже созданные такие рассылки отправляются из сохранённого текста кампании.
+- Ошибки отправки разделены на недоступный Telegram, отсутствующий шаблон и выключенный шаблон неправильного назначения, чтобы в CRM показывалась реальная причина.
+- Кнопка «Добавить данные» в редакторе стала видимой, а источник текста и положение подписи занимают отдельную строку без двухколоночного разрыва.
+
+## 2026-09-03 — Подстановочные данные и медиа в рассылках
+
+- В редакторе рассылок и шаблонов добавлена кнопка «Добавить данные»: имя и язык клиента вставляются в текущую позицию курсора, а не дописываются в конец сообщения.
+- Исправлено сохранение нативных merge-тегов редактора: в данных и предпросмотрах используется нормальный формат {{ client.full_name }} без сырого HTML.
+- После сохранения шаблона оператор возвращается на его страницу просмотра; на страницах шаблона и рассылки явно показано, где настроено медиа.
+- Для рассылки явно ограничена загрузка одним изображением JPG/PNG/WebP до 5 МБ; загрузка видео и нескольких файлов завершается понятной ошибкой.
+
+## 2026-09-03 — Повторный запуск рассылки и базовая настройка документов
+
+- «Запустить снова» теперь создаёт новую копию завершённой рассылки и сразу запускает её; «Редактировать и повторить» по-прежнему открывает отдельную draft-копию для изменений.
+- Повторный запуск показывает подтверждение, результат и понятную ошибку вместо незаметного перехода на редактирование.
+- Добавлен идемпотентный базовый комплект русских draft-документов: оферта, политика конфиденциальности, медицинский дисклеймер и маркетинговое согласие. Тексты помечены как черновики и требуют проверки владельцем перед публикацией.
+- Согласия клиентов не выдаются автоматически: они остаются неподтверждёнными до явного ответа клиента или фиксации оператором с источником.
+
+## 2026-09-03 — Telegram managed-media delivery remediation
+
+- Managed images in broadcasts and Telegram content sections are now streamed from organization-scoped storage and uploaded through Nutgram multipart data instead of relying on Telegram to fetch a public CRM URL.
+- Telegram media, blocked-chat, deactivated-account, formatting, and generic provider rejections now receive safe actionable reason codes in CRM delivery history; raw provider descriptions remain out of durable records and logs.
+- Test broadcast recipients now require current marketing consent and a verified Telegram identity, and rejected test sends show an actionable CRM notification instead of failing silently.
+- Focused Telegram, content, broadcast, and failure-presentation checks pass; changed production code passes PHPStan, Pint, and `git diff --check`. Hosted CI `33765624069` and E2E `33765623726` pass on `fcd0e4793730fb9bf23589a2b21242f1cfacee03`; staging deployment and `staging-smoke.sh` pass on the same SHA.
+
+## 2026-09-03 — CRM operator UX and content rendering follow-up
+
+- Fixed broadcast client selection, responsive message composition, image-caption layout, actionable delivery errors, and full-width previews.
+- Rebalanced client, booking, B2B lead, auto-message, feedback, and legal-document screens so primary information and actions remain visible without avoidable overflow or collapsed settings.
+- Normalized rich-text rendering across CRM tables, detail views, previews, and saved-template labels so users see formatted content instead of raw HTML.
+- Focused local UX, broadcast, B2B, scenario, and regression checks pass; hosted exact-SHA CI `33744996852` and E2E `33744996664` pass on `d04345ccadaa0ce510fb64cddaa955ec9eca585f`; staging deployment and `staging-smoke.sh` pass on that SHA. Owner UX acceptance remains pending.
+
+## 2026-09-03 — M11E review follow-up
+
+- Starting from `364c57257ff9edc8ac1669492ea32d409f3bcd40`, portal booking idempotency now covers legal evidence, manual attribution, and booking creation; legacy timezone provenance is conservatively backfilled from audit history; image-required campaigns fail before dispatch when media is absent; and mixed Telegram/Mini App content remains reachable.
+- Focused local SQLite and PostgreSQL regressions, Pint, PHPStan, PHP syntax, and `git diff --check` pass. Production remains untouched and PR #28 remains unmerged; staging redeployment and affected-path smoke verification are pending for this follow-up SHA.
+
+## 2026-09-03 — CRM UX, legal consent and Telegram content pass
+
+- Added versioned legal-document drafts/publications with immutable consent evidence, required Offer/Privacy/MedicalDisclaimer booking confirmations, optional Marketing consent, and append-only marketing withdrawal without affecting transactional delivery.
+- Added one safe rich-text representation for CRM-managed content, broadcast text/media modes, Telegram-aware limits and preview rendering, content delivery modes for Telegram/Mini App/Both, and immutable sent-campaign copy/re-run actions.
+- Added server-side broadcast client search for names, phones, Telegram usernames with or without `@`, and Telegram IDs, plus bounded recipient polling and human-readable selection state.
+- Added organization/client timezone preferences with UTC persistence and `Asia/Almaty` seed configuration, Mini App Zoom readiness polling, referral/attribution UX, and the compact language control.
+- Added focused PostgreSQL-backed regression coverage for legal consent, tenant-safe search, Telegram limits/media, timezone persistence, and relevant database constraints. No deployment, merge, production/staging verification, or hosted CI was performed for this candidate.
+- Follow-up: portal booking now fails closed until all required legal subjects are published, and manual attribution acceptance is atomic with consent recording and booking creation; focused SQLite and PostgreSQL regressions cover both failure paths.
+
 ## 2026-09-02 — CRM operator UX remediation candidate
 
 - This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and simplifies the normal CRM workflows for broadcasts, auto-messages, templates, message history, bookings, and operational tables without removing the advanced scenario or segmentation capabilities.

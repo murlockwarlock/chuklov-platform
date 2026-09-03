@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Schemas;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\GetClientBalanceSummary;
@@ -25,7 +26,7 @@ final class ClientWorkspaceInfolist
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start'])
+            ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'])
             ->components([
                 Group::make([
                     Section::make('Контакты и связь')
@@ -79,6 +80,7 @@ final class ClientWorkspaceInfolist
                             TextEntry::make('lead_source')
                                 ->label('Источник визита')
                                 ->placeholder('Не указан')
+                                ->formatStateUsing(fn (mixed $state): string => AttributionSourcePresentation::label(is_string($state) ? $state : null))
                                 ->wrap(),
                             TextEntry::make('referral_code')
                                 ->label('Устаревший код рекомендации')
@@ -87,10 +89,17 @@ final class ClientWorkspaceInfolist
                                 ->wrap(),
                             TextEntry::make('attribution_source')
                                 ->label('Принятая первая атрибуция')
-                                ->state(fn (Client $record): string => (($attribution = $record->getRelationValue('attribution')) instanceof ClientAttribution
-                                    ? ($attribution->source ?? $attribution->source_type)
-                                    : null) ?? 'Не указана')
-                                ->placeholder('Не указана')
+                                ->state(function (Client $record): string {
+                                    $attribution = $record->getRelationValue('attribution');
+
+                                    return $attribution instanceof ClientAttribution
+                                        ? AttributionSourcePresentation::label(
+                                            $attribution->source,
+                                            $attribution->source_type,
+                                        )
+                                        : 'Не указан';
+                                })
+                                ->placeholder('Не указан')
                                 ->wrap(),
                         ])
                         ->columns(1),
@@ -172,7 +181,7 @@ final class ClientWorkspaceInfolist
                                 ->visible(fn (): bool => app(FinancePresentation::class)->canViewFinance()),
                         ])
                         ->columns(1),
-                ])->extraAttributes(['class' => 'w-full space-y-6']),
+                ])->extraAttributes(['class' => 'contents']),
 
                 Group::make([
                     Section::make('Клинический профиль')
@@ -249,8 +258,9 @@ final class ClientWorkspaceInfolist
                                 ->columnSpanFull()
                                 ->wrap(),
                         ])
-                        ->columns(1),
-                ])->extraAttributes(['class' => 'min-w-0 w-full']),
+                        ->columns(1)
+                        ->extraAttributes(['class' => 'lg:col-span-2']),
+                ])->extraAttributes(['class' => 'contents']),
             ]);
     }
 

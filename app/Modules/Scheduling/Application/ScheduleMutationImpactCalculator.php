@@ -260,7 +260,7 @@ final class ScheduleMutationImpactCalculator
             ->orderBy('id')
             ->get();
         $projections = $records->map(function (Booking $booking): array {
-            $timezone = $booking->client_timezone ?: $booking->schedule_timezone;
+            $timezone = $this->context->defaultTimezone();
 
             return [
                 'id' => $booking->getKey(),

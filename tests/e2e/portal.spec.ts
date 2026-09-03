@@ -36,6 +36,30 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'created_at' => now(),
             'updated_at' => now(),
         ]], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
+        foreach ([
+            'offer' => 'offer_consent',
+            'privacy' => 'privacy_consent',
+            'medical_disclaimer' => 'medical_consent',
+        ] as $documentType => $purpose) {
+            $publishedDocumentExists = \\App\\Modules\\Identity\\Domain\\Models\\LegalDocument::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('document_type', $documentType)
+                ->where('status', \\App\\Modules\\Identity\\Domain\\Enums\\LegalDocumentStatus::Published)
+                ->exists();
+            if (! $publishedDocumentExists) {
+                app(\\App\\Modules\\Identity\\Application\\PublishLegalDocument::class)->handle(
+                    app(\\App\\Modules\\Identity\\Application\\CreatePlatformLegalDocumentDraft::class)->handle(
+                        organization: $organization,
+                        documentType: $documentType,
+                        purpose: $purpose,
+                        locale: 'ru',
+                        version: '2026-09-03-'.$documentType,
+                        content: 'Synthetic legal fixture.',
+                        isRequired: true,
+                    ),
+                );
+            }
+        }
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Playwright Client '.$suffix,
             'email' => 'playwright-'.$suffix.'@example.test',
@@ -183,6 +207,16 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function acceptRequiredConsents(page: Page): Promise<void> {
+    const checkbox = page.getByRole('checkbox', {
+        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        exact: true,
+    });
+
+    await expect(checkbox).toHaveCount(1);
+    await checkbox.check();
 }
 
 async function assertReadableProgress(page: Page, expectedCount: number): Promise<void> {
@@ -583,6 +617,7 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await firstSlot.click();
     await expect(page.getByRole('button', { name: 'Продолжить' })).toBeEnabled();
     await page.getByRole('button', { name: 'Продолжить' }).click();
+    await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
 
     await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
@@ -590,6 +625,42 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
+});
+
+test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    const requiredCheckbox = page.getByRole('checkbox', {
+        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        exact: true,
+    });
+    const documentLinks = page.getByRole('button', { name: /Открыть:/ });
+    const dialog = page.getByRole('dialog');
+
+    await expect(documentLinks).toHaveCount(3);
+    await expect(requiredCheckbox).not.toBeChecked();
+    await documentLinks.first().click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Оферта' })).toBeVisible();
+    await expect(dialog.getByText('Synthetic legal fixture.')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Закрыть' }).first().click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Записаться', exact: true }).click();
+    await expect(page.getByText('Подтвердите ознакомление с обязательными документами.', { exact: true })).toHaveCount(1);
+    await requiredCheckbox.check();
+    await expect(requiredCheckbox).toBeChecked();
+    await assertNoHorizontalOverflow(page);
 });
 
 test('booking uses a service step and selected-day calendar before confirmation', async ({ page }) => {
@@ -733,6 +804,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
     await assertReadableProgress(page, 5);
     await assertNoHorizontalOverflow(page);
 
+    await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
     await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();

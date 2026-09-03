@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import SafeRichText from '../../Components/Portal/SafeRichText.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -17,6 +18,7 @@ type ContentItem = {
     locale: Locale;
     title: string;
     body: string;
+    bodyHtml: string;
     media: ContentMedia | null;
     sortOrder: number;
 };
@@ -65,9 +67,10 @@ const pageTitle = computed(() => props.title);
           :alt="item.media.alt ?? item.title"
           class="max-w-full rounded-xl"
         >
-        <p class="portal-copy whitespace-pre-line">
-          {{ item.body }}
-        </p>
+        <SafeRichText
+          :content="item.body"
+          :content-html="item.bodyHtml"
+        />
       </article>
       <EmptyState
         v-if="!props.content.length"

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
@@ -25,7 +26,8 @@ final class SessionInfolist
                     ->schema([
                         TextEntry::make('occurred_at')
                             ->label('Дата и время сеанса')
-                            ->dateTime('d.m.Y H:i'),
+                            ->dateTime('d.m.Y H:i')
+                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('specialist.display_name')
                             ->label('Специалист')
                             ->placeholder('—'),
@@ -38,7 +40,9 @@ final class SessionInfolist
                                     return 'Без записи на приём';
                                 }
 
-                                $date = Carbon::parse((string) $booking->getAttribute('starts_at'))->format('d.m.Y H:i');
+                                $date = Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
+                                    ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                                    ->format('d.m.Y H:i');
                                 $status = self::statusLabel($booking->status);
                                 $parts = array_filter([$date, $status], static fn ($v): bool => filled($v));
 

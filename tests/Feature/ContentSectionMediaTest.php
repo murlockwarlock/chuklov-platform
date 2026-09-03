@@ -7,16 +7,24 @@ use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
 use App\Models\User;
+use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
+use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Application\TelegramMessagePreview;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\CreateContentSection;
+use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Application\UpdateContentSection;
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Facades\Filament;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -53,6 +61,197 @@ final class ContentSectionMediaTest extends TestCase
         }
     }
 
+    public function test_content_delivery_mode_filters_the_same_canonical_section_for_each_channel(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'method',
+            'locale' => 'ru',
+            'delivery_mode' => ContentDeliveryMode::MiniApp,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'partner',
+            'locale' => 'ru',
+            'delivery_mode' => ContentDeliveryMode::Both,
+        ]);
+
+        $sections = app(ListPublishedContentSections::class);
+
+        self::assertCount(1, $sections->handle('author', ContentDeliveryMode::Telegram));
+        self::assertCount(0, $sections->handle('author', ContentDeliveryMode::MiniApp));
+        self::assertCount(0, $sections->handle('method', ContentDeliveryMode::Telegram));
+        self::assertCount(1, $sections->handle('method', ContentDeliveryMode::MiniApp));
+        self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::Telegram));
+        self::assertCount(1, $sections->handle('partner', ContentDeliveryMode::MiniApp));
+    }
+
+    public function test_edit_form_shows_current_image_preview_and_clear_control(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $image = 'https://cdn.example.test/content/current.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'media' => ['image' => $image, 'alt' => 'Текущее изображение'],
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Удалить текущее изображение');
+        $preview = collect($component->instance()->getSchema('form')?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $schemaComponent): bool => $schemaComponent instanceof SchemaImage);
+
+        self::assertInstanceOf(SchemaImage::class, $preview);
+        self::assertSame($image, $preview->getUrl());
+        self::assertSame('Текущее изображение', $preview->getAlt());
+    }
+
+    public function test_content_form_preview_and_remove_actions_use_current_form_state(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Об академии',
+            'body' => '<p>Текст раздела</p>',
+            'media' => ['image' => 'https://cdn.example.test/content/current.jpg'],
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful();
+        $schema = $component->instance()->getSchema('form');
+        $previewAction = $schema?->getAction('telegramPreview');
+        $removeAction = $schema?->getAction('removeImage');
+
+        self::assertNotNull($previewAction);
+        self::assertNotNull($removeAction);
+        self::assertInstanceOf(View::class, $previewAction?->getModalContent());
+
+        $removeAction?->call();
+
+        self::assertTrue((bool) $component->get('data.remove_image'));
+    }
+
+    public function test_telegram_menu_keeps_mini_app_only_content_reachable_for_mixed_rows_and_fallbacks(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $sectionKeys = ['telegram_menu', 'mini_menu', 'both_menu', 'mixed_menu', 'fallback_menu'];
+        $contentSections = config('portal.content_sections');
+        $entries = config('portal.telegram.entries');
+        $menu = config('portal.telegram.menu.en');
+        $ruMenu = config('portal.telegram.menu.ru');
+
+        foreach ($sectionKeys as $sectionKey) {
+            $contentSections[$sectionKey] = ['title' => ['en' => $sectionKey, 'ru' => $sectionKey]];
+            $entries[$sectionKey] = [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => $sectionKey],
+            ];
+            $menu[] = ['key' => $sectionKey, 'label' => $sectionKey];
+            $ruMenu[] = ['key' => $sectionKey, 'label' => $sectionKey];
+        }
+
+        config()->set('portal.content_sections', $contentSections);
+        config()->set('portal.telegram.entries', $entries);
+        config()->set('portal.telegram.menu.en', $menu);
+        config()->set('portal.telegram.menu.ru', $ruMenu);
+
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'telegram_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'mini_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::MiniApp,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'both_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Both,
+        ]);
+        foreach ([ContentDeliveryMode::Telegram, ContentDeliveryMode::MiniApp] as $deliveryMode) {
+            ContentSection::factory()->forOrganization($organization)->create([
+                'section_key' => 'mixed_menu',
+                'locale' => 'en',
+                'delivery_mode' => $deliveryMode,
+            ]);
+        }
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'fallback_menu',
+            'locale' => 'en',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+
+        $resolved = collect(app(GetTelegramMenu::class)->handle('ru'))->keyBy('key');
+
+        self::assertSame('telegram_content', $resolved['telegram_menu']['launch']);
+        self::assertSame('telegram_content', $resolved['both_menu']['launch']);
+        self::assertSame('mini_app', $resolved['mini_menu']['launch']);
+        self::assertSame('mini_app', $resolved['mixed_menu']['launch']);
+        self::assertSame('telegram_content', $resolved['fallback_menu']['launch']);
+        self::assertArrayNotHasKey('callback_data', $resolved['mini_menu']);
+        self::assertArrayNotHasKey('callback_data', $resolved['mixed_menu']);
+    }
+
+    public function test_both_content_builds_one_telegram_projection_with_image_caption_and_mini_app_cta(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'partner',
+            'locale' => 'ru',
+            'title' => 'Партнёры',
+            'body' => '<p><strong>Текст</strong> 😀 ❤️</p>',
+            'delivery_mode' => ContentDeliveryMode::Both,
+            'media' => ['image' => 'https://cdn.example.test/partner.jpg', 'alt' => 'Партнёры'],
+        ]);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle('content-chat', $section, 'ru');
+        $preview = app(TelegramMessagePreview::class)->handle($message);
+
+        self::assertSame(NotificationMessageMode::ImageWithCaption, $message->mode);
+        self::assertSame('https://cdn.example.test/partner.jpg', $message->mediaUrl);
+        self::assertNotNull($message->actionButton);
+        self::assertSame('Открыть полностью', $message->actionButton?->text);
+        self::assertSame('image_caption', $preview['mode']);
+        self::assertStringContainsString('<b>Партнёры</b>', $preview['bodyHtml']);
+        self::assertStringContainsString('😀 ❤️', $preview['bodyHtml']);
+        self::assertStringNotContainsString('<img', $preview['bodyHtml']);
+        self::assertTrue($preview['hasImage']);
+        self::assertTrue($preview['hasText']);
+        self::assertSame('Открыть полностью', $preview['actionButton']['text'] ?? null);
+    }
+
+    public function test_telegram_content_projection_escapes_plain_text_before_adding_the_title(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'partner',
+            'locale' => 'ru',
+            'title' => 'Партнёры',
+            'body' => '5 < 10 & 11 > 3',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle('content-chat', $section, 'ru');
+        $preview = app(TelegramMessagePreview::class)->handle($message);
+
+        self::assertStringContainsString('5 &lt; 10 &amp; 11 &gt; 3', $preview['bodyHtml']);
+    }
+
     public function test_content_image_upload_is_stored_under_the_organization_path(): void
     {
         [$organization, $admin] = $this->organizationAndAdmin();
@@ -79,6 +278,65 @@ final class ContentSectionMediaTest extends TestCase
             Storage::disk(self::DISK)->url($path),
             app(ContentImageUrlResolver::class)->resolve($section),
         );
+    }
+
+    public function test_managed_content_image_is_streamed_for_telegram_delivery(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('academy.jpg', 640, 480),
+            'delivery_mode' => ContentDeliveryMode::Telegram->value,
+        ]);
+        $path = $this->imagePath($section->media);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle(
+            'content-chat',
+            $section,
+            'ru',
+            includeMediaStream: true,
+        );
+        $stream = $message->mediaStream;
+
+        self::assertIsResource($stream);
+        self::assertSame(Storage::disk(self::DISK)->get($path), stream_get_contents($stream));
+        fclose($stream);
+        self::assertNull($message->mediaUrl);
+
+        $previewMessage = app(BuildTelegramContentSectionMessage::class)->handle('content-preview', $section, 'ru');
+
+        self::assertSame(Storage::disk(self::DISK)->url($path), $previewMessage->mediaUrl);
+        self::assertNull($previewMessage->mediaStream);
+        self::assertSame($organization->getKey(), $section->organization_id);
+    }
+
+    public function test_missing_managed_content_image_does_not_fall_back_to_preview_url_for_telegram_delivery(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => UploadedFile::fake()->image('academy.jpg', 640, 480),
+            'delivery_mode' => ContentDeliveryMode::Telegram->value,
+        ]);
+        $path = $this->imagePath($section->media);
+        Storage::disk(self::DISK)->delete($path);
+
+        $message = app(BuildTelegramContentSectionMessage::class)->handle(
+            'content-chat',
+            $section,
+            'ru',
+            includeMediaStream: true,
+        );
+
+        self::assertNull($message->mediaStream);
+        self::assertNull($message->mediaUrl);
+        self::assertTrue($message->mode->includesImage());
     }
 
     public function test_editing_title_and_body_with_blank_url_preserves_managed_image(): void

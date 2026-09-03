@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\BroadcastCampaigns\RelationManagers;
 
+use App\Filament\Support\BroadcastFailurePresentation;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
@@ -27,11 +28,16 @@ final class RecipientsRelationManager extends RelationManager
         abort_unless((int) $campaign->organization_id === app(OrganizationContext::class)->id(), 404);
 
         return $table
+            ->poll(fn (): ?string => $this->shouldPoll() ? '5s' : null)
             ->columns([
                 TextColumn::make('client.full_name')->label('Клиент')->placeholder('Имя не указано')->limit(80),
                 TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
                 TextColumn::make('channel')->label('Канал')->formatStateUsing(fn (?string $state): string => $state === 'telegram' ? 'Telegram' : '—'),
-                TextColumn::make('reason')->label('Причина')->state(fn (BroadcastRecipient $record): string => self::reasonLabel($record->last_error_code ?: $record->exclusion_code))->placeholder('—')->limit(80),
+                TextColumn::make('reason')->label('Причина')->state(function (BroadcastRecipient $record): string {
+                    $code = $record->last_error_code ?: $record->exclusion_code;
+
+                    return $code === null ? '—' : BroadcastFailurePresentation::label($code);
+                })->placeholder('—')->wrap(),
                 TextColumn::make('delivered_at')->label('Доставлено')->dateTime('d.m.Y H:i')->placeholder('—'),
                 TextColumn::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i')->sortable(),
             ])
@@ -61,6 +67,21 @@ final class RecipientsRelationManager extends RelationManager
             ->emptyStateDescription('После фиксации списка здесь появятся результаты отправки.');
     }
 
+    private function shouldPoll(): bool
+    {
+        $campaign = $this->getOwnerRecord();
+        if (! $campaign instanceof BroadcastCampaign) {
+            return false;
+        }
+
+        return BroadcastRecipient::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('campaign_id', $campaign->getKey())
+            ->where('kind', 'production')
+            ->whereIn('state', [BroadcastRecipientState::Pending->value, BroadcastRecipientState::Claimed->value])
+            ->exists();
+    }
+
     private static function stateLabel(BroadcastRecipientState|string $state): string
     {
         $state = $state instanceof BroadcastRecipientState ? $state : BroadcastRecipientState::tryFrom($state);
@@ -72,22 +93,6 @@ final class RecipientsRelationManager extends RelationManager
             BroadcastRecipientState::Delivered => 'Доставлено',
             BroadcastRecipientState::Failed => 'Не отправлено',
             default => 'Неизвестно',
-        };
-    }
-
-    private static function reasonLabel(?string $reason): string
-    {
-        return match ($reason) {
-            'marketing_consent_missing' => 'Нет маркетингового согласия',
-            'marketing_suppressed' => 'Согласие отозвано',
-            'verified_channel_unavailable' => 'Нет подтверждённого канала',
-            'delivery_outcome_unknown' => 'Результат доставки не определён',
-            'template_inactive_or_channel_unavailable' => 'Шаблон или канал недоступен',
-            'authorization_revoked' => 'Полномочия отозваны',
-            'queue_dispatch_exhausted' => 'Очередь не приняла задачу',
-            'snapshot_superseded' => 'Список получателей устарел',
-            'campaign_state_changed' => 'Состояние рассылки изменилось',
-            default => $reason === null ? '—' : 'Отправка не выполнена',
         };
     }
 }

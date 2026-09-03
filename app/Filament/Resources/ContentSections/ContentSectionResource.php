@@ -8,6 +8,8 @@ use App\Filament\Resources\ContentSections\Pages\ListContentSections;
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ContentSections\Tables\ContentSectionsTable;
+use App\Filament\Support\RichTextPresentation;
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
@@ -54,7 +56,20 @@ class ContentSectionResource extends Resource
                     ->label('Язык')
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
                 TextEntry::make('title')->label('Название'),
-                TextEntry::make('body')->label('Текст')->columnSpanFull(),
+                TextEntry::make('delivery_mode')
+                    ->label('Где показывать')
+                    ->formatStateUsing(fn ($state): string => match ($state instanceof ContentDeliveryMode ? $state->value : (string) $state) {
+                        'telegram' => 'Telegram',
+                        'mini_app' => 'Mini App',
+                        default => 'Telegram и Mini App',
+                    }),
+                TextEntry::make('body')
+                    ->label('Текст')
+                    ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
+                    ->html()
+                    ->prose()
+                    ->wrap()
+                    ->columnSpanFull(),
                 TextEntry::make('media')
                     ->label('Изображение')
                     ->formatStateUsing(fn (?array $state): string => $state === null ? 'Не добавлено' : 'Добавлено')

@@ -8,16 +8,19 @@ use App\Http\Requests\PortalBookingActionRequest;
 use App\Http\Requests\PortalBookingQueryRequest;
 use App\Http\Requests\PortalBookingRescheduleRequest;
 use App\Http\Requests\PortalTimezonePreferenceRequest;
+use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\CreatePortalBooking;
 use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
+use App\Modules\Identity\Application\ListPublishedLegalDocuments;
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CancelBooking;
-use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\ListBookableServices;
 use App\Modules\Scheduling\Application\ListBookableSpecialistsForService;
 use App\Modules\Scheduling\Application\ListClientBookings;
@@ -26,6 +29,7 @@ use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
@@ -44,6 +48,8 @@ class BookingController extends Controller
         ListBookableSpecialistsForService $specialists,
         CalculateAvailability $availability,
         ProjectPortalService $serviceProjection,
+        ListPublishedLegalDocuments $legalDocuments,
+        GetClientAttribution $getAttribution,
     ): Response {
         $client = $clientContext->client();
         $validated = $request->validated();
@@ -112,11 +118,30 @@ class BookingController extends Controller
                 'displayTimezone' => $displayTimezone,
             ],
             'bookingResult' => $request->session()->pull('portal_booking_result'),
+            'legalDocuments' => $legalDocuments->handle($client->language)->map(function ($document): array {
+                $subject = ConsentSubject::tryFrom($document->document_type);
+
+                return [
+                    'id' => $document->getKey(),
+                    'title' => $subject?->label(str_starts_with(strtolower((string) $document->locale), 'ru') ? 'ru' : 'en') ?? $document->purpose,
+                    'content' => $document->content,
+                    'contentHtml' => RichTextDocument::canonicalHtml($document->content),
+                    'version' => $document->version,
+                    'documentType' => $document->document_type,
+                    'isRequired' => $subject?->isRequired() ?? false,
+                ];
+            })->values()->all(),
+            'attribution' => [
+                'needsManualSource' => $getAttribution->handle($client) === null,
+                'url' => route('portal.attribution.update'),
+                'sources' => array_values(config('attribution.manual_sources', [])),
+            ],
             'urls' => [
                 'create' => route('portal.bookings.create'),
                 'store' => route('portal.bookings.store'),
                 'services' => route('portal.services.index'),
                 'bookings' => route('portal.bookings.index'),
+                'referrals' => route('portal.referrals'),
             ],
         ]);
     }
@@ -125,7 +150,7 @@ class BookingController extends Controller
         CreatePortalBookingRequest $request,
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
-        CreateBooking $createBooking,
+        CreatePortalBooking $createBooking,
     ): RedirectResponse {
         $validated = $request->validated();
         $format = VisitFormat::from($validated['format']);
@@ -140,17 +165,19 @@ class BookingController extends Controller
 
         try {
             $booking = $createBooking->handle(
-                actor: $clientContext->client(),
                 client: $clientContext->client(),
                 specialist: $this->specialist($validated['specialist_id'], $organizationContext->id()),
                 service: $this->service($validated['service_id'], $organizationContext->id()),
                 startsAt: $startsAt,
                 format: $format,
-                clientTimezone: null,
-                meetingLinkMode: null,
-                idempotencyKey: null,
+                consents: $validated['consents'] ?? [],
+                marketingConsent: (bool) ($validated['marketing_consent'] ?? false),
+                clientTimezone: $clientContext->client()->timezone,
                 partySize: (int) ($validated['party_size'] ?? 1),
                 location: isset($validated['location']) ? (string) $validated['location'] : null,
+                attributionSource: filled($validated['attribution_source'] ?? null)
+                    ? (string) $validated['attribution_source']
+                    : null,
             );
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->bookingErrors($exception));
@@ -170,6 +197,7 @@ class BookingController extends Controller
                     ? $this->bookingErrors->message('request_sent')
                     : $this->bookingErrors->message('booking_created'),
                 'bookingId' => $booking->getKey(),
+                'startsAt' => $booking->startsAtUtc()->toIso8601String(),
             ]);
     }
 

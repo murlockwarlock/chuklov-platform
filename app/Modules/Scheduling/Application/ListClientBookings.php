@@ -82,13 +82,18 @@ final class ListClientBookings
             'localDate' => $localStart->toDateString(),
             'localTime' => $localStart->format('H:i'),
             'localEndsAt' => $localEnd->format('H:i'),
+            'displayUtcOffset' => $localStart->format('P'),
             'timezone' => $timezone,
             'formatLabel' => $this->formatLabel($booking->visit_format, $locale),
             'statusLabel' => $this->statusLabel($booking->status, $locale),
             'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status, $locale),
             'location' => $booking->location,
-            'meetingUrl' => $booking->effectiveMeetingUrl(),
-            'meetingPending' => $booking->visit_format === VisitFormat::Online
+            'meetingUrl' => $booking->status === BookingStatus::Confirmed
+                && $booking->visit_format === VisitFormat::Online
+                ? $booking->effectiveMeetingUrl()
+                : null,
+            'meetingPending' => $booking->status === BookingStatus::Confirmed
+                && $booking->visit_format === VisitFormat::Online
                 && $booking->meeting_link_mode === MeetingLinkMode::Auto
                 && $booking->provider_sync_status === VideoMeetingSyncStatus::Pending,
             'partySize' => $booking->party_size,

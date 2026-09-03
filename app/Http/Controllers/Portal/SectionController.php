@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ListPublishedContentSections;
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Support\RichText\RichTextDocument;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,7 +31,7 @@ class SectionController extends Controller
             abort(404);
         }
 
-        $contentSections = $this->sections->handle($section);
+        $contentSections = $this->sections->handle($section, ContentDeliveryMode::MiniApp);
         $locale = $this->resolveLocale($request, $clientContext);
         $selectedSections = $contentSections->where('locale', $locale);
 
@@ -47,6 +49,7 @@ class SectionController extends Controller
             'locale' => $contentSection->locale,
             'title' => $contentSection->title,
             'body' => $contentSection->body,
+            'bodyHtml' => RichTextDocument::canonicalHtml($contentSection->body),
             'media' => self::projectMedia($contentSection->media, $this->imageResolver->resolve($contentSection)),
             'sortOrder' => $contentSection->sort_order,
         ])->values()->all();

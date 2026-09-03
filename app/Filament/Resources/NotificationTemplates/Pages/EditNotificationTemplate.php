@@ -58,4 +58,14 @@ final class EditNotificationTemplate extends EditRecord
             'locale' => $record->locale,
         ]);
     }
+
+    protected function getRedirectUrl(): string
+    {
+        return NotificationTemplateResource::getUrl('view', ['record' => $this->getRecord()]);
+    }
+
+    protected function getSavedNotificationTitle(): string
+    {
+        return 'Шаблон сохранён';
+    }
 }

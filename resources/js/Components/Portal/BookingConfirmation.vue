@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import LegalConsentChecklist from './LegalConsentChecklist.vue';
 import PortalDateTime from '../PortalDateTime.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalLocale } from '../../types/portal';
 
 type VisitFormat = 'office' | 'home' | 'online';
+
+type LegalDocument = {
+    id: number;
+    documentType: string;
+    title: string;
+    content: string;
+    contentHtml: string;
+    version: string;
+    isRequired: boolean;
+};
 
 const props = defineProps<{
     serviceName: string | null;
@@ -18,6 +29,14 @@ const props = defineProps<{
     location: string | null;
     processing: boolean;
     error: string | undefined;
+    legalDocuments: LegalDocument[];
+    consentValues: Record<number, boolean>;
+    marketingConsent: boolean;
+    showMarketing: boolean;
+    attributionSources: string[];
+    attributionSource: string | null;
+    attributionNeedsManualSource: boolean;
+    requiredAcceptanceError?: string;
 }>();
 
 const emit = defineEmits<{
@@ -25,6 +44,9 @@ const emit = defineEmits<{
     confirm: [];
     'update:partySize': [value: number];
     'update:location': [value: string | null];
+    'update:consent': [id: number, granted: boolean];
+    'update:marketingConsent': [granted: boolean];
+    'update:attributionSource': [source: string | null];
 }>();
 
 const { t } = usePortalLocale();
@@ -121,6 +143,72 @@ const location = computed({
         >
       </div>
     </div>
+
+    <section
+      v-if="props.attributionNeedsManualSource"
+      class="portal-panel portal-stack portal-stack--tight"
+      aria-labelledby="booking-attribution-heading"
+    >
+      <div class="portal-section-heading">
+        <div class="portal-stack portal-stack--tight">
+          <h3
+            id="booking-attribution-heading"
+            class="portal-heading portal-heading--card"
+          >
+            {{ t('attribution.source') }}
+          </h3>
+          <p class="portal-copy portal-copy--small">
+            {{ t('attribution.description') }}
+          </p>
+        </div>
+      </div>
+      <label class="portal-field">
+        <span class="portal-label">{{ t('attribution.source') }}</span>
+        <select
+          class="portal-input portal-select"
+          :value="props.attributionSource ?? ''"
+          @change="emit('update:attributionSource', ($event.target as HTMLSelectElement).value || null)"
+        >
+          <option
+            value=""
+            disabled
+          >{{ t('attribution.choose') }}</option>
+          <option
+            v-for="source in props.attributionSources"
+            :key="source"
+            :value="source"
+          >{{ t('attribution.' + source) }}</option>
+        </select>
+      </label>
+    </section>
+
+    <section
+      v-if="props.legalDocuments.length > 0"
+      class="portal-panel portal-stack portal-stack--tight"
+      aria-labelledby="booking-legal-heading"
+    >
+      <div class="portal-stack portal-stack--tight">
+        <h3
+          id="booking-legal-heading"
+          class="portal-heading portal-heading--card"
+        >
+          {{ t('profile.legal') }}
+        </h3>
+        <p class="portal-copy portal-copy--small">
+          {{ t('legal.requiredDescription') }}
+        </p>
+      </div>
+      <LegalConsentChecklist
+        :documents="props.legalDocuments"
+        :values="props.consentValues"
+        :marketing-value="props.marketingConsent"
+        :show-marketing="props.showMarketing"
+        group-required-acceptance
+        :required-acceptance-error="props.requiredAcceptanceError"
+        @change="(id, granted) => emit('update:consent', id, granted)"
+        @update:marketing-value="(granted) => emit('update:marketingConsent', granted)"
+      />
+    </section>
 
     <p
       v-if="props.error"

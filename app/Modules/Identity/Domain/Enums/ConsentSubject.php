@@ -13,4 +13,23 @@ enum ConsentSubject: string
     {
         return $this !== self::Marketing;
     }
+
+    public function label(string $locale = 'ru'): string
+    {
+        if ($locale === 'en') {
+            return match ($this) {
+                self::Offer => 'Offer',
+                self::Privacy => 'Privacy policy',
+                self::MedicalDisclaimer => 'Medical disclaimer',
+                self::Marketing => 'Marketing messages',
+            };
+        }
+
+        return match ($this) {
+            self::Offer => 'Оферта',
+            self::Privacy => 'Политика конфиденциальности',
+            self::MedicalDisclaimer => 'Медицинский дисклеймер',
+            self::Marketing => 'Маркетинговые сообщения',
+        };
+    }
 }

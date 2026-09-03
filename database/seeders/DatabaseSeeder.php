@@ -17,9 +17,12 @@ class DatabaseSeeder extends Seeder
     {
         Organization::query()->firstOrCreate(
             ['slug' => 'chuklov'],
-            ['name' => 'Chuklov', 'timezone' => 'Asia/Bangkok'],
+            ['name' => 'Chuklov', 'timezone' => 'Asia/Almaty'],
         );
 
-        $this->call(ScenarioNotificationSeeder::class);
+        $this->call([
+            LegalDocumentSeeder::class,
+            ScenarioNotificationSeeder::class,
+        ]);
     }
 }

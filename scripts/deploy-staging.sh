@@ -725,6 +725,7 @@ runtime_compose=(docker compose --project-name "$project" --env-file "$environme
 
 "${runtime_compose[@]}" run --rm --no-deps app php artisan migrate --force < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan portal:validate-configuration < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan db:seed --class=Database\\Seeders\\LegalDocumentSeeder --force < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan db:seed --class=Database\\Seeders\\ScenarioNotificationSeeder --force < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan optimize < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan filament:optimize < /dev/null

@@ -6,6 +6,7 @@ use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
@@ -34,14 +35,17 @@ class BookingInfolist
                         TextEntry::make('starts_at')
                             ->label('Дата и время начала')
                             ->dateTime('d.m.Y H:i')
-                            ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC')),
+                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('ends_at')
                             ->label('Окончание')
                             ->dateTime('d.m.Y H:i')
-                            ->timezone(fn (Booking $record): string => (string) ($record->schedule_timezone ?: 'UTC')),
+                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('schedule_timezone')->label('Часовой пояс записи'),
                         TextEntry::make('party_size')->label('Количество персон'),
-                        TextEntry::make('requested_at')->label('Заявка создана')->dateTime('d.m.Y H:i'),
+                        TextEntry::make('requested_at')
+                            ->label('Заявка создана')
+                            ->dateTime('d.m.Y H:i')
+                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('location')->label('Адрес приёма')->placeholder('Не указан')->columnSpanFull()->wrap(),
                         TextEntry::make('meeting_url')
                             ->label('Ссылка на онлайн-встречу')
@@ -64,13 +68,31 @@ class BookingInfolist
                                 default => 'gray',
                             })
                             ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
-                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal']),
+                            ->wrap()
+                            ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal break-words']),
                         TextEntry::make('payment_requirement')
                             ->label('Условие оплаты')
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
                             ->wrap(),
+                        Section::make('История событий')
+                            ->schema([
+                                TextEntry::make('history')
+                                    ->label('Журнал изменений')
+                                    ->state(function (Booking $record): string {
+                                        return $record->events()
+                                            ->with(['actorUser', 'actorClient'])
+                                            ->orderBy('occurred_at')
+                                            ->get()
+                                            ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
+                                            ->implode("\n");
+                                    })
+                                    ->placeholder('Событий пока нет')
+                                    ->columnSpanFull()
+                                    ->wrap(),
+                            ])
+                            ->columnSpanFull(),
                     ])
-                    ->columns(['default' => 1, 'sm' => 2, 'lg' => 3]),
+                    ->columns(['default' => 1, 'sm' => 2]),
 
                 Section::make('Расчёт')
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
@@ -108,22 +130,6 @@ class BookingInfolist
                     ])
                     ->columns(['default' => 1, 'sm' => 2, 'lg' => 4]),
 
-                Section::make('История событий')
-                    ->schema([
-                        TextEntry::make('history')
-                            ->label('Журнал изменений')
-                            ->state(function (Booking $record): string {
-                                return $record->events()
-                                    ->with(['actorUser', 'actorClient'])
-                                    ->orderBy('occurred_at')
-                                    ->get()
-                                    ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
-                                    ->implode("\n");
-                            })
-                            ->placeholder('Событий пока нет')
-                            ->columnSpanFull()
-                            ->wrap(),
-                    ]),
             ]);
     }
 
@@ -138,7 +144,9 @@ class BookingInfolist
         };
         $values = [
             self::eventLabel($event),
-            $event->occurred_at->format('d.m.Y H:i'),
+            $event->occurred_at->copy()
+                ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+                ->format('d.m.Y H:i'),
             'Изменил: '.$actor,
         ];
 
@@ -155,7 +163,9 @@ class BookingInfolist
 
     private static function humanDateTime(string $value): string
     {
-        return CarbonImmutable::parse($value)->format('d.m.Y H:i');
+        return CarbonImmutable::parse($value, 'UTC')
+            ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+            ->format('d.m.Y H:i');
     }
 
     private static function eventLabel(BookingEvent $event): string

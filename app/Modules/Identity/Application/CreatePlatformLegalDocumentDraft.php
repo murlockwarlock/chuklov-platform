@@ -2,6 +2,7 @@
 
 namespace App\Modules\Identity\Application;
 
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Enums\LegalDocumentManagementMode;
 use App\Modules\Identity\Domain\Enums\LegalDocumentStatus;
 use App\Modules\Identity\Domain\Models\LegalDocument;
@@ -31,7 +32,11 @@ class CreatePlatformLegalDocumentDraft
         $version = trim($version);
         $content = trim($content);
 
-        if ($documentType === '' || mb_strlen($documentType) > 64 || preg_match('/^[a-z0-9._-]+$/', $documentType) !== 1
+        $subject = ConsentSubject::tryFrom($documentType);
+
+        if (! $subject instanceof ConsentSubject
+            || $isRequired !== $subject->isRequired()
+            || $documentType === '' || mb_strlen($documentType) > 64 || preg_match('/^[a-z0-9._-]+$/', $documentType) !== 1
             || $purpose === '' || mb_strlen($purpose) > 120
             || preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/', $locale) !== 1
             || $version === '' || mb_strlen($version) > 64

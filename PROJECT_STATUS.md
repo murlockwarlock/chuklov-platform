@@ -1,5 +1,49 @@
 # Project Status
 
+## 2026-09-04 — Telegram media and preview staging deployment
+
+- На staging развернут exact SHA `f09c3326fe3514bae80afec28c1339630f634130`: приватные медиа рассылок, signed preview route, одиночные фото/видео/документы, фото/видео-альбомы и документальные альбомы с Telegram-лимитами; единый Telegram-preview добавлен в рассылки, контент и шаблоны.
+- Деплой прошел с валидированным PostgreSQL backup, frontend build, миграциями, runtime health, PostgreSQL/pgvector, Redis, Horizon, scheduler и Telegram. `./scripts/staging-smoke.sh` — `PASS` для health, app, queue identity, CRM, clients, client card, sessions, surveys, knowledge, portal и Telegram. Production не затронут.
+- Локальные целевые проверки проходят: 125 тестов / 649 утверждений; Pint, scoped PHPStan, PHP syntax и `git diff --check` проходят. Полный hosted CI/E2E не запускался по просьбе владельца; ручная проверка интерфейса и реальная отправка в Telegram остаются за владельцем.
+
+## 2026-09-03 — CRM UX и staging-проверка финального broadcast-прохода
+
+- На staging развернут exact SHA `dd44a105fbf371aac8663595596108226126a052`: сохранение рассылки переводит на сохраненную карточку, повторные кампании получают понятные имена, список рассылок ограничивает длинные значения и убирает лишнее горизонтальное разрастание, а отсутствующий русский перевод `result_count` больше не выводится как сырой ключ. Также проверены предпросмотр текущего медиа, источник `social`, настройки обратной связи и пояснения по напоминаниям.
+- Деплой прошел с миграциями, сборкой frontend, runtime health, PostgreSQL/pgvector, Redis, Horizon, scheduler и Telegram. `./scripts/staging-smoke.sh` — `PASS` для health, app, CRM, clients, client card, sessions, surveys, knowledge, portal и Telegram. Production не затронут.
+- Локальные целевые проверки проходят: 115 тестов / 596 утверждений, отдельная проверка русского `result_count` — 1 / 1; Pint, scoped PHPStan, синтаксис PHP и `git diff --check` проходят. Полный hosted CI/E2E для этого SHA пропущен по просьбе владельца; ручная UX-проверка на staging остается за владельцем.
+
+## 2026-09-03 — Одноразовая рассылка и видимый редактор данных
+
+- Прямая рассылка теперь не зависит от скрытого шаблона: текст сохраняется в кампании, а старые служебные шаблоны не показываются как переиспользуемые. Состояния шаблона и Telegram разделены, ошибки получили точные подсказки. Кнопка «Добавить данные» видима прямо в редакторе, вставляет переменную в позицию курсора, а источник текста и редактор занимают логичную ширину формы.
+- Локальные целевые проверки проходят: 74 теста / 322 утверждения, Pint, scoped PHPStan (`0` ошибок) и `git diff --check`. Hosted exact-SHA CI `33782088331` и E2E `33782088137` проходят на implementation SHA `32804cdb5be53e544b3f5e7d8c3f30c970cf2c18`; E2E — 44/44 desktop/mobile сценария.
+- Staging развернут и проверен на том же SHA: `./scripts/staging-smoke.sh` — PASS, включая health, приложение, очереди, Horizon, scheduler, Telegram, CRM, knowledge и portal. Production не затронут, PR #28 остаётся open/unmerged.
+
+## 2026-09-03 — Подстановочные данные и медиа в рассылках
+
+- В редакторах рассылок и шаблонов добавлена единая кнопка «Добавить данные» с вставкой в позицию курсора. Нативные merge-теги Filament нормализуются в поддерживаемый формат `{{ ... }}`, поэтому имя клиента больше не превращается в сломанный фрагмент; HTML форматируется безопасно в карточках, таблицах и предпросмотрах.
+- Сохранение шаблона переводит пользователя на страницу просмотра. В шаблоне явно показано, что медиа настраивается в рассылке или авто-сообщении; для рассылки отображается наличие изображения, а видео и несколько файлов отклоняются с понятной ошибкой, поскольку текущий Telegram-сценарий поддерживает одно изображение.
+- Локальные целевые проверки проходят: 71 тест / 306 утверждений, Pint, scoped PHPStan и `git diff --check`. Hosted exact-SHA CI `33778786929` и E2E `33778788813` проходят на implementation SHA `ce99d0aa0e02c1d82d75bbcd6cbc19601a4b6608`.
+- Staging развернут и проверен на том же SHA: runtime health, приложение, очереди, Horizon, scheduler, Telegram и `./scripts/staging-smoke.sh` — PASS. Production не затронут, PR #28 остаётся open/unmerged.
+
+## 2026-09-03 — Повторный запуск рассылки и базовые документы
+
+- «Запустить снова» теперь создаёт копию завершённой рассылки, сразу запускает её и открывает страницу результата; «Редактировать и повторить» оставляет копию draft для изменений.
+- Добавлен идемпотентный seed четырёх русских draft-документов для новой/пустой организации: оферта, политика конфиденциальности, медицинский дисклеймер и маркетинговое согласие. Они явно требуют замены и проверки перед публикацией; клиентские согласия автоматически не выдаются.
+- Локально `MilestoneElevenBBroadcastTest`, `MilestoneTwoLegalDocumentTest`, `StagingDeploymentScriptTest` проходят: 77 тестов / 439 утверждений; Pint и shell syntax checks проходят. Hosted CI `33770133419` и E2E `33773976397` проходят на implementation SHA `f12a9fa30212ec587ab7aed5223734fedce2fc5a`.
+- Staging развернут и проверен на том же SHA: PostgreSQL backup, runtime health, очереди, Horizon, scheduler, Telegram, CRM, knowledge и portal smoke — PASS. Read-only database check подтверждает 4 draft-документа; production не затронут, PR #28 остаётся open/unmerged.
+
+## 2026-09-03 — Broadcast test-send consent UX remediation
+
+- Test recipient selection now exposes only clients with current marketing consent and a verified Telegram identity. Rejected test-send validation now produces a visible, actionable CRM notification instead of appearing silent; broadcast eligibility and organization authorization remain enforced server-side.
+- Focused local `MilestoneElevenBBroadcastTest` passes 52 tests / 171 assertions; Pint and `git diff --check` pass. Hosted exact-SHA CI `33768506391` and E2E `33768507211` pass for implementation SHA `24becdabcfc218be8eed34e76dc398a4c8814e17`.
+- Staging deployment and `./scripts/staging-smoke.sh` pass on the same SHA: health, app, Horizon, scheduler, Telegram, queue identity, CRM, knowledge, and portal checks are green. Production remains untouched and PR #28 remains open/unmerged.
+
+## 2026-09-03 — M11 CRM operator UX and rich content follow-up
+
+- Release candidate d04345ccadaa0ce510fb64cddaa955ec9eca585f completes the requested CRM operator remediation: searchable broadcast clients, stable message/media layouts, actionable Telegram delivery failures, balanced client/booking/B2B/auto-message/legal screens, and safe rich-text rendering across tables, details, and previews. The E2E fixtures now cover the required legal-document setup and current Filament rich editor contract.
+- Targeted local feature checks pass 22 tests / 171 assertions; Pint, changed E2E ESLint, vue-tsc, and git diff --check pass. Hosted exact-SHA CI 33744996852 passes Quality, Integration foundation, Integration RAG, Integration concurrency, Privacy and secret scan, and Docker build/runtime health. Hosted exact-SHA E2E 33744996664 passes 44/44 desktop/mobile tests.
+- Staging is deployed and smoke-verified on the same SHA. Remote REVISION, app image, Horizon, scheduler, Telegram, /health, queue identity, CRM, knowledge, and portal probes all match and pass. Owner UX acceptance remains pending; production remains untouched, and no merge or M12 work is included.
+
 ## 2026-09-02 — M11 CRM operator UX remediation candidate
 
 - This candidate starts exactly at `3198f2c6edbfff05cbaed9a270970cfdb71fc5e9` and is limited to the requested operator-facing remediation. Broadcast creation now defaults to direct searchable client selection and direct message composition, while consent enforcement, saved templates, and advanced segmentation remain available behind human-language controls. Auto-messages, templates, message history, bookings, knowledge, AI, finance, and broadcast tables use compact Russian labels and primary actions.

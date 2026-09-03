@@ -3,6 +3,7 @@
 namespace Tests\Feature\Scenarios;
 
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
+use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Resources\NotificationTemplates\Pages\CreateNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\EditNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
@@ -107,7 +108,8 @@ final class NotificationTemplateUxTest extends TestCase
                 'body' => 'Новый текст для языка {{ client.language }} и услуги {{ booking.service_name }}',
             ])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertHasNoFormErrors()
+            ->assertRedirect(NotificationTemplateResource::getUrl('view', ['record' => $template->getKey()]));
 
         $latestVersion = $template->versions()->latest('version')->firstOrFail();
         self::assertSame(2, $latestVersion->version);
@@ -134,7 +136,7 @@ final class NotificationTemplateUxTest extends TestCase
             'organization_id' => $organization->id,
             'template_id' => $template->id,
             'version' => 1,
-            'body' => 'Текст',
+            'body' => '<p><strong>Текст</strong></p>',
             'variables' => [],
             'status' => NotificationTemplateStatus::Published,
         ]);
@@ -169,9 +171,12 @@ final class NotificationTemplateUxTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
 
-        Livewire::test(ViewNotificationTemplate::class, ['record' => $template->getKey()])
+        $templateView = Livewire::test(ViewNotificationTemplate::class, ['record' => $template->getKey()])
             ->assertSuccessful()
             ->assertActionExists('edit');
+
+        self::assertStringContainsString('<strong>Текст</strong>', $templateView->html());
+        self::assertStringNotContainsString('&lt;strong&gt;', $templateView->html());
 
         Livewire::test(ViewScenarioRule::class, ['record' => $rule->getKey()])
             ->assertSuccessful()

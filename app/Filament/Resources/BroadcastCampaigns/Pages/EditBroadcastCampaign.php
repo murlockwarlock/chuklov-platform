@@ -21,8 +21,24 @@ final class EditBroadcastCampaign extends EditRecord
         abort_unless($record instanceof BroadcastCampaign, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        if (! array_key_exists('media', $data)) {
+            $data['media'] = $record->media;
+        }
 
-        return app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
+        $updated = app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
+        $this->record = $updated;
+
+        return $updated;
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return BroadcastCampaignResource::getUrl('view', ['record' => $this->getRecord()]);
+    }
+
+    protected function getSavedNotificationTitle(): string
+    {
+        return 'Рассылка сохранена';
     }
 
     /**
@@ -51,6 +67,12 @@ final class EditBroadcastCampaign extends EditRecord
             $mapped[] = $filter;
         }
         $data['segment_definition'] = $mapped;
+
+        $media = is_array($data['media'] ?? null) ? $data['media'] : [];
+        $firstMedia = is_array($media['items'] ?? null) ? ($media['items'][0] ?? []) : $media;
+        $data['media_alt'] = is_array($firstMedia) && is_string($firstMedia['alt'] ?? null)
+            ? $firstMedia['alt']
+            : null;
 
         if (($data['message_mode'] ?? null) === 'compose' && ! filled($data['message_body'] ?? null)
             && $this->record instanceof BroadcastCampaign) {

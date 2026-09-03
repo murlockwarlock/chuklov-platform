@@ -5,9 +5,11 @@ namespace App\Modules\ClientPortal\Application;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
+use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Support\RichText\RichTextDocument;
 use Illuminate\Support\Collection;
 
 final class GetClientProfile
@@ -23,6 +25,8 @@ final class GetClientProfile
         $client = $this->clientContext->client();
         $documents = $this->legalDocuments->handle($this->locale($client->language));
         $consents = $this->consents($client, $documents);
+        $marketingDocument = $documents->first(fn (LegalDocument $document): bool => $document->document_type === ConsentSubject::Marketing->value);
+        $marketingConsent = $marketingDocument === null ? null : $consents->get($marketingDocument->getKey());
         $b2bProfile = BroadcastClientProfile::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
@@ -34,6 +38,7 @@ final class GetClientProfile
                 'fullName' => $client->full_name,
                 'email' => $client->email,
                 'phone' => $client->phone,
+                'timezone' => $client->timezone,
                 'locale' => $this->locale($client->language),
                 'emailEditable' => ! $client->channelIdentities()
                     ->where('channel', 'email')
@@ -49,17 +54,29 @@ final class GetClientProfile
             'b2bSpecialistAnswer' => $b2bAnswer,
             'legalDocuments' => $documents->map(function (LegalDocument $document) use ($consents): array {
                 $consent = $consents->get($document->getKey());
+                $subject = ConsentSubject::tryFrom($document->document_type);
 
                 return [
                     'id' => $document->getKey(),
+                    'documentType' => $document->document_type,
+                    'title' => $subject?->label($this->locale($document->locale)) ?? $document->purpose,
                     'purpose' => $document->purpose,
                     'content' => $document->content,
-                    'isRequired' => $document->is_required,
+                    'contentHtml' => RichTextDocument::canonicalHtml($document->content),
+                    'version' => $document->version,
+                    'isRequired' => $subject?->isRequired() ?? false,
                     'accepted' => $consent instanceof ClientConsent
                         && $consent->version === $document->version
                         && $consent->granted,
                 ];
             })->values()->all(),
+            'marketingConsent' => $marketingDocument === null ? null : [
+                'documentId' => $marketingDocument->getKey(),
+                'accepted' => $marketingConsent instanceof ClientConsent
+                    && $marketingConsent->version === $marketingDocument->version
+                    && $marketingConsent->granted,
+            ],
+            'timezoneOptions' => $this->timezoneOptions($client->timezone),
             'urls' => [
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
@@ -84,6 +101,36 @@ final class GetClientProfile
         $default = config('portal.default_locale', 'ru');
 
         return in_array($default, ['ru', 'en'], true) ? $default : 'ru';
+    }
+
+    /** @return list<array{value: string, label: string}> */
+    private function timezoneOptions(string $current): array
+    {
+        $timezones = [
+            'Asia/Almaty',
+            'Asia/Aqtau',
+            'Asia/Aqtobe',
+            'Asia/Atyrau',
+            'Asia/Oral',
+            'Asia/Qostanay',
+            'Asia/Qyzylorda',
+            'Asia/Tashkent',
+            'Europe/Moscow',
+            'Europe/London',
+            'Europe/Berlin',
+            'America/New_York',
+            'America/Los_Angeles',
+            'UTC',
+        ];
+
+        if (! in_array($current, $timezones, true)) {
+            array_unshift($timezones, $current);
+        }
+
+        return array_map(static fn (string $timezone): array => [
+            'value' => $timezone,
+            'label' => $timezone,
+        ], $timezones);
     }
 
     /**

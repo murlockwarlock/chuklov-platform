@@ -8,6 +8,7 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastAudienceSnapshot;
 use App\Modules\Broadcasts\Domain\Models\BroadcastBatch;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,7 +16,11 @@ final readonly class MaterializeBroadcastAudience
 {
     private const BATCH_SIZE = 100;
 
-    public function __construct(private BroadcastSegmentQuery $segments, private BroadcastEligibilityPolicy $eligibility) {}
+    public function __construct(
+        private BroadcastSegmentQuery $segments,
+        private BroadcastEligibilityPolicy $eligibility,
+        private BroadcastCampaignMedia $media,
+    ) {}
 
     public function handle(BroadcastCampaign $campaign): BroadcastAudienceSnapshot
     {
@@ -24,6 +29,11 @@ final readonly class MaterializeBroadcastAudience
             if ($locked->state !== BroadcastCampaignState::Draft) {
                 throw ValidationException::withMessages(['campaign' => 'Список получателей можно зафиксировать только для черновика.']);
             }
+            $deliveryMode = NotificationMessageMode::tryFrom((string) $locked->delivery_mode);
+            if (! $deliveryMode instanceof NotificationMessageMode) {
+                throw ValidationException::withMessages(['campaign' => 'Формат сообщения рассылки недоступен.']);
+            }
+            $this->media->ensureAvailable($deliveryMode, is_array($locked->media) ? $locked->media : null);
             if ($locked->audience_snapshot_id !== null) {
                 $existing = BroadcastAudienceSnapshot::query()->where('organization_id', $locked->organization_id)->findOrFail($locked->audience_snapshot_id);
                 if ((int) $existing->draft_version !== (int) $locked->draft_version) {
@@ -45,6 +55,9 @@ final readonly class MaterializeBroadcastAudience
                 'selected_client_ids' => $locked->selected_client_ids,
                 'segment_summary' => $locked->segment_summary,
                 'channel_priority' => $locked->channel_priority,
+                'delivery_mode' => $locked->delivery_mode,
+                'caption_position' => $locked->caption_position,
+                'media' => $locked->media,
                 'template_version_ru_id' => $locked->template_version_ru_id,
                 'template_version_en_id' => $locked->template_version_en_id,
                 'matched_count' => 0,

@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\FeedbackConfiguration;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign;
+use App\Filament\Resources\BroadcastCampaigns\Pages\ListBroadcastCampaigns;
 use App\Filament\Resources\Clients\Pages\ListClients;
+use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule;
@@ -22,9 +25,11 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -32,6 +37,8 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\RichEditor;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -70,11 +77,31 @@ final class CrmUxRemediationTest extends TestCase
             ->assertFormFieldExists('message_body')
             ->assertSee('Выбрать клиентов')
             ->assertSee('Написать сообщение')
+            ->assertSee('Добавить данные')
             ->assertSee('Получателей');
 
         self::assertSame('Клиенты', $broadcast->instance()->getSchemaComponent('form.selected_client_ids')->getLabel());
         self::assertTrue($broadcast->instance()->getSchemaComponent('form.selected_client_ids')->isMultiple());
         self::assertTrue($broadcast->instance()->getSchemaComponent('form.selected_client_ids')->isSearchable());
+
+        $messageEditor = $broadcast->instance()->getSchemaComponent('form.message_body');
+        self::assertInstanceOf(RichEditor::class, $messageEditor);
+        self::assertSame(
+            ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing),
+            $messageEditor->getMergeTags(),
+        );
+        self::assertSame('😊 Смайлик', $messageEditor->getTools()['emoji']->getLabel());
+        self::assertFalse($messageEditor->getTools()['emoji']->isLabelHidden());
+        self::assertContains('emoji', array_merge(...$messageEditor->getToolbarButtons()));
+        self::assertStringContainsString('ChuklovRichTextEditor', $messageEditor->getExtraInputAttributes()['x-on:keydown']);
+        self::assertFalse($messageEditor->getTools()['mergeTags']->isLabelHidden());
+        self::assertSame(Heroicon::OutlinedTag, $messageEditor->getTools()['mergeTags']->getIcon());
+        self::assertTrue($broadcast->instance()->getSchemaComponent('form.message_mode')->isInline());
+        self::assertStringContainsString('fi-fo-rich-editor-tool-with-label', $broadcast->html());
+
+        $broadcastPreview = collect($broadcast->instance()->getSchema('form')?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $component): bool => $component instanceof SchemaImage);
+        self::assertInstanceOf(SchemaImage::class, $broadcastPreview);
 
         Livewire::actingAs($admin)
             ->test(CreateScenarioRule::class)
@@ -85,6 +112,18 @@ final class CrmUxRemediationTest extends TestCase
             ->assertSee('3. Что отправить?')
             ->assertSee('4. Включить?')
             ->assertSee('Дополнительные настройки');
+    }
+
+    public function test_russian_table_result_count_does_not_render_a_translation_key(): void
+    {
+        $previousLocale = app()->getLocale();
+        app()->setLocale('ru');
+
+        try {
+            self::assertSame('2 результата', trans_choice('filament-tables::table.result_count', 2, ['count' => 2]));
+        } finally {
+            app()->setLocale($previousLocale);
+        }
     }
 
     public function test_operational_tables_keep_primary_actions_compact_and_human(): void
@@ -127,6 +166,43 @@ final class CrmUxRemediationTest extends TestCase
         $bookingView = $bookings->instance()->getTable()->getAction('view');
         self::assertNotNull($bookingView);
         self::assertSame(Heroicon::OutlinedEye, $bookingView->getIcon());
+
+        $broadcasts = Livewire::actingAs($admin)->test(ListBroadcastCampaigns::class)->assertSuccessful();
+        $broadcastName = $broadcasts->instance()->getTable()->getColumn('name');
+        $broadcastResult = $broadcasts->instance()->getTable()->getColumn('delivery_summary');
+        self::assertNotNull($broadcastName);
+        self::assertNotNull($broadcastResult);
+        self::assertSame(48, $broadcastName->getCharacterLimit());
+        self::assertSame('16rem', $broadcastName->getWidth());
+        self::assertSame(48, $broadcastResult->getCharacterLimit());
+        self::assertSame('14rem', $broadcastResult->getWidth());
+    }
+
+    public function test_broadcast_client_selector_preloads_clients_and_keeps_search_available(): void
+    {
+        [$organization, $admin, $client] = $this->fixture(includePeople: true);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(CreateBroadcastCampaign::class)->assertSuccessful();
+        $field = $component->instance()->getSchemaComponent('form.selected_client_ids');
+        $options = $field->getOptions();
+
+        self::assertArrayHasKey($client->getKey(), $options);
+        self::assertStringContainsString('Aikhana', $options[$client->getKey()]);
+        self::assertArrayHasKey($client->getKey(), $field->getSearchResults('Aikhana'));
+    }
+
+    public function test_legal_documents_screen_offers_creation_when_empty(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ListLegalDocuments::class)
+            ->assertSuccessful()
+            ->assertActionExists('create')
+            ->assertSee('Добавить документ')
+            ->assertSee('Документов пока нет');
     }
 
     public function test_scheduling_page_exposes_first_class_reminders_and_default_address(): void
@@ -141,7 +217,22 @@ final class CrmUxRemediationTest extends TestCase
             ->assertSee('Напоминания о записи')
             ->assertSee('Клиенту')
             ->assertSee('Себе / специалисту')
-            ->assertSee('Добавить напоминание');
+            ->assertSee('Добавить напоминание')
+            ->assertSee('задним числом не отправляется');
+    }
+
+    public function test_feedback_rule_controls_use_full_width_without_label_overflow(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(FeedbackConfiguration::class)
+            ->assertSuccessful()
+            ->assertSee('Требовать текст для низкой оценки');
+
+        self::assertSame('full', $component->instance()->getSchemaComponent('form.positive_threshold')->getColumnSpan('default'));
+        self::assertSame('full', $component->instance()->getSchemaComponent('form.low_score_feedback_required')->getColumnSpan('default'));
     }
 
     public function test_history_table_uses_human_columns_and_hides_technical_rule_keys(): void
@@ -192,7 +283,7 @@ final class CrmUxRemediationTest extends TestCase
             'name' => 'Новое сообщение',
             'locale' => 'ru',
         ]);
-        NotificationTemplateVersion::factory()->forTemplate($newer)->create(['body' => 'Новый текст']);
+        NotificationTemplateVersion::factory()->forTemplate($newer)->create(['body' => '<p><strong>Новый</strong> текст</p>']);
         $timestamp = CarbonImmutable::create(2026, 9, 1, 10, 0, 0, 'UTC');
         DB::table('notification_templates')->where('id', $older->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
         DB::table('notification_templates')->where('id', $newer->getKey())->update(['created_at' => $timestamp, 'updated_at' => $timestamp]);
@@ -202,15 +293,32 @@ final class CrmUxRemediationTest extends TestCase
 
         self::assertSame([$newer->getKey(), $older->getKey()], $component->instance()->getTableRecords()->pluck('id')->all());
         $component
-            ->assertTableColumnStateSet('latestVersion.body', 'Новый текст', $newer)
+            ->assertSee('Новый текст')
             ->assertSee('Предпросмотр')
             ->assertSee('Для чего');
+        self::assertStringNotContainsString('<p><strong>Новый</strong> текст</p>', $component->html());
         $view = $component->instance()->getTable()->getAction('view');
         $edit = $component->instance()->getTable()->getAction('edit');
         self::assertNotNull($view);
         self::assertNotNull($edit);
         self::assertSame(Heroicon::OutlinedEye, $view->getIcon());
         self::assertSame(Heroicon::OutlinedPencil, $edit->getIcon());
+    }
+
+    public function test_legacy_broadcast_templates_are_not_shown_as_reusable_messages(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $internal = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'broadcast-campaign-legacy',
+            'name' => 'Одноразовая рассылка',
+        ]);
+        NotificationTemplateVersion::factory()->forTemplate($internal)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListNotificationTemplates::class)->assertSuccessful();
+
+        self::assertNotContains($internal->getKey(), $component->instance()->getTableRecords()->pluck('id')->all());
+        $component->assertDontSee('Одноразовая рассылка');
     }
 
     /** @return array{Organization, User, Client|null, Specialist|null, Service|null} */

@@ -84,7 +84,11 @@ class UpdateClientProfileFromCrm
             }
 
             if ($changedFields !== []) {
-                $lockedClient->forceFill($normalized);
+                $attributesToSave = $normalized;
+                if (in_array('timezone', $changedFields, true)) {
+                    $attributesToSave['timezone_source'] = 'manual';
+                }
+                $lockedClient->forceFill($attributesToSave);
                 $lockedClient->save();
 
                 $this->audit->handle(

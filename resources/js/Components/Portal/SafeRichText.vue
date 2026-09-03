@@ -253,9 +253,15 @@ export default defineComponent({
             type: String,
             required: true,
         },
+        contentHtml: {
+            type: String,
+            default: null,
+        },
     },
     setup(props) {
-        return () => h('div', { class: 'portal-rich-text' }, renderBlocks(blockNodes(props.content)));
+        return () => props.contentHtml !== null
+            ? h('div', { class: 'portal-rich-text', innerHTML: props.contentHtml })
+            : h('div', { class: 'portal-rich-text' }, renderBlocks(blockNodes(props.content)));
     },
 });
 </script>

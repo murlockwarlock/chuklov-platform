@@ -18,6 +18,18 @@ type AuthProps = {
     emailCodeSent: boolean;
 };
 
+function browserTimezone(): string {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    } catch {
+        return '';
+    }
+}
+
 const props = defineProps<{
     portal: PortalShell;
     auth: AuthProps;
@@ -25,9 +37,10 @@ const props = defineProps<{
 
 const { t } = usePortalLocale();
 const runtimeMode: ClientRuntimeMode = resolveClientRuntime();
-const authForm = useForm<{ initData: string; launchEntry: string }>({
+const authForm = useForm<{ initData: string; launchEntry: string; clientTimezone: string }>({
     initData: getTelegramInitData() ?? '',
     launchEntry: props.auth.telegramLaunchEntry ?? '',
+    clientTimezone: browserTimezone(),
 });
 const telegramWebForm = useForm<Record<string, never>>({});
 const emailRequestForm = useForm<{ email: string }>({ email: '' });

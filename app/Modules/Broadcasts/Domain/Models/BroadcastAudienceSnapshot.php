@@ -18,6 +18,9 @@ use LogicException;
  * @property list<int> $selected_client_ids
  * @property string $segment_summary
  * @property list<string> $channel_priority
+ * @property string $delivery_mode
+ * @property string $caption_position
+ * @property array<string, mixed>|null $media
  * @property int|null $template_version_ru_id
  * @property int|null $template_version_en_id
  * @property int $matched_count
@@ -56,6 +59,7 @@ class BroadcastAudienceSnapshot extends Model
             'segment_definition' => 'array',
             'selected_client_ids' => 'array',
             'channel_priority' => 'array',
+            'media' => 'array',
             'version' => 'integer',
             'draft_version' => 'integer',
             'matched_count' => 'integer',

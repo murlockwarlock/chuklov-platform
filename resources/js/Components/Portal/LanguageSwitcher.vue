@@ -81,10 +81,6 @@ onUnmounted(() => {
       @click="toggleMenu"
     >
       <span aria-hidden="true">{{ locale === 'ru' ? '🇷🇺' : '🇬🇧' }}</span>
-      <span
-        class="portal-language-switcher__chevron"
-        aria-hidden="true"
-      >⌄</span>
     </button>
     <div
       v-if="open"

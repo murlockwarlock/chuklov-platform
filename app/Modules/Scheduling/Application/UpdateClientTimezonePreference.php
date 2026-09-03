@@ -35,8 +35,11 @@ final class UpdateClientTimezonePreference
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($lockedClient->timezone !== $timezone) {
-                $lockedClient->forceFill(['timezone' => $timezone])->save();
+            if ($lockedClient->timezone !== $timezone || $lockedClient->timezone_source !== 'manual') {
+                $lockedClient->forceFill([
+                    'timezone' => $timezone,
+                    'timezone_source' => 'manual',
+                ])->save();
                 $this->audit->handle(
                     organization: $this->context->organization(),
                     actor: null,

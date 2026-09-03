@@ -26,9 +26,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $full_name
  * @property string|null $phone_search_key
  * @property string|null $language
+ * @property string|null $timezone_source
  * @property int $organization_id
  */
-#[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'lead_source', 'referral_code'])]
+#[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
 class Client extends Model
 {
     protected $hidden = ['phone_search_key'];

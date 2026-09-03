@@ -42,7 +42,7 @@ final class ScenarioTemplateRenderer implements NotificationTemplateRenderer
                     throw new InvalidArgumentException('The notification template variable value is invalid.');
                 }
 
-                return (string) ($value ?? '');
+                return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             },
             $content,
         ) ?? throw new InvalidArgumentException('The notification template could not be rendered.');
