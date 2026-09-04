@@ -269,6 +269,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: 'withdraw-'.$client->id,
         );
         Carbon::setTestNow(CarbonImmutable::create(2026, 4, 5, 23, 0, 0, 'UTC'));
@@ -331,6 +332,7 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: 'deposit-'.$client->id,
         );
 

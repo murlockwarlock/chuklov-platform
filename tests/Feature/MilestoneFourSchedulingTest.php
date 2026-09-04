@@ -237,6 +237,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 12, 45, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: $this->idempotencyKey(2),
         );
         self::assertSame(BookingStatus::PendingReview, $booking->status);
@@ -347,6 +348,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: $this->idempotencyKey(4),
         );
 
@@ -386,6 +388,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: $this->idempotencyKey(11),
         );
         app(CreateBooking::class)->handle(
@@ -419,6 +422,7 @@ class MilestoneFourSchedulingTest extends TestCase
             service: $service,
             startsAt: CarbonImmutable::create(2026, 3, 30, 9, 0, 0, 'UTC'),
             format: VisitFormat::HomeVisit,
+            location: 'Client destination',
             idempotencyKey: $this->idempotencyKey(6),
         );
 
