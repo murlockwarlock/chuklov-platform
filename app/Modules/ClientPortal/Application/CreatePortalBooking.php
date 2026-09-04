@@ -9,6 +9,7 @@ use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -24,6 +25,7 @@ final readonly class CreatePortalBooking
         private RecordPortalClientConsents $recordConsents,
         private CreateBooking $createBooking,
         private AcceptManualAttribution $acceptAttribution,
+        private UpdateClientTimezonePreference $timezonePreference,
     ) {}
 
     /** @param list<array{legal_document_id: int, granted: bool}> $consents */
@@ -62,7 +64,11 @@ final readonly class CreatePortalBooking
             latitude: $latitude,
             longitude: $longitude,
             mapUrl: $mapUrl,
-            beforeCreate: function () use ($client, $consents, $marketingConsent, $attributionSource): void {
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource): void {
+                if ($clientTimezone !== null) {
+                    $this->timezonePreference->handle($clientTimezone, $client);
+                }
+
                 $this->recordConsentsForBooking($client, $consents, $marketingConsent);
 
                 if (filled($attributionSource)) {

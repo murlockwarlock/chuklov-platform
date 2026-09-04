@@ -214,7 +214,7 @@ class BookingController extends Controller
                 marketingConsent: (bool) ($validated['marketing_consent'] ?? false),
                 clientTimezone: isset($validated['client_timezone']) && is_string($validated['client_timezone'])
                     ? $validated['client_timezone']
-                    : $clientContext->client()->timezone,
+                    : null,
                 partySize: (int) ($validated['party_size'] ?? 1),
                 location: isset($validated['location']) ? (string) $validated['location'] : null,
                 workingLocationId: isset($validated['working_location_id']) ? (int) $validated['working_location_id'] : null,

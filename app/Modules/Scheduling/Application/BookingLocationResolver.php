@@ -9,10 +9,12 @@ use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\ValueObjects\BookingLocationSelection;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
+use App\Modules\Scheduling\Domain\ValueObjects\LocationDayDefinition;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Validation\ValidationException;
 
 final readonly class BookingLocationResolver
@@ -54,27 +56,113 @@ final readonly class BookingLocationResolver
             ->exists();
     }
 
-    /** @param Collection<int, LocationDay>|null $locationDays */
+    /**
+     * @param  Collection<int, LocationDay>|null  $locationDays
+     * @return Collection<int, LocationDay>
+     */
+    public function matchingLocationDays(
+        string $areaName,
+        CarbonImmutable $startsAt,
+        ?Collection $locationDays = null,
+    ): Collection {
+        $locationDays ??= $this->activeLocationDays($areaName);
+        if ($locationDays->isEmpty()) {
+            return new Collection;
+        }
+
+        $timezone = $this->referenceTimezone($locationDays);
+        $date = LocalDate::from($startsAt->setTimezone($timezone)->toDateString());
+
+        return $this->matchingLocationDaysForDate($areaName, $date, $locationDays);
+    }
+
+    /**
+     * @param  Collection<int, LocationDay>|null  $locationDays
+     * @return Collection<int, LocationDay>
+     */
+    public function matchingLocationDaysForDate(
+        string $areaName,
+        LocalDate $date,
+        ?Collection $locationDays = null,
+    ): Collection {
+        $normalizedArea = mb_strtolower(trim($areaName));
+        if ($normalizedArea === '') {
+            return new Collection;
+        }
+
+        $locationDays ??= $this->activeLocationDays($areaName);
+        $areaRules = $locationDays->filter(
+            fn (LocationDay $locationDay): bool => mb_strtolower(trim($locationDay->area_name)) === $normalizedArea,
+        );
+        $specificRules = $areaRules->filter(
+            fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === $date->value,
+        );
+        $applicableRules = $specificRules->isNotEmpty()
+            ? $specificRules
+            : $areaRules->filter(
+                fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === null
+                    && $locationDay->weekday !== null
+                    && (int) $locationDay->weekday === $date->weekday(),
+            );
+
+        $this->ensureSingleTimezone($applicableRules);
+
+        return $applicableRules
+            ->sortBy(fn (LocationDay $locationDay): string => sprintf(
+                '%s|%s|%010d',
+                (string) $locationDay->start_time,
+                (string) $locationDay->end_time,
+                (int) $locationDay->getKey(),
+            ))
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, LocationDay>|null  $locationDays
+     */
     public function matchingLocationDay(
         string $areaName,
         CarbonImmutable $startsAt,
         ?Collection $locationDays = null,
     ): ?LocationDay {
-        $areaName = trim($areaName);
-        if ($areaName === '') {
-            return null;
+        return $this->matchingLocationDays($areaName, $startsAt, $locationDays)->first();
+    }
+
+    /** @param Collection<int, LocationDay>|null $locationDays */
+    public function scheduleTimezoneForLocationDays(Specialist $specialist, ?Collection $locationDays): string
+    {
+        $timezones = $this->validatedTimezones($locationDays);
+        $timezone = $timezones->count() === 1 ? $timezones->first() : null;
+        $timezone ??= $specialist->timezone ?? $this->context->organization()->defaultTimezone();
+
+        return IanaTimezone::from($timezone)->value;
+    }
+
+    public function ensureTimezoneCompatibility(LocationDayDefinition $definition, ?int $ignoreLocationDayId = null): void
+    {
+        if (! $definition->isActive) {
+            return;
         }
 
-        $locationDays ??= $this->activeLocationDays($areaName);
+        $normalizedArea = mb_strtolower($definition->areaName);
+        $existingRules = LocationDay::query()
+            ->where('organization_id', $this->context->id())
+            ->whereRaw('LOWER(area_name) = ?', [$normalizedArea])
+            ->where('is_active', true)
+            ->when($ignoreLocationDayId !== null, fn ($query) => $query->where('id', '<>', $ignoreLocationDayId))
+            ->get();
 
-        foreach ($locationDays as $locationDay) {
-            $localDate = LocalDate::from($startsAt->setTimezone($locationDay->timezone)->toDateString());
-            if ($locationDay->appliesTo($localDate)) {
-                return $locationDay;
+        foreach ($existingRules as $existingRule) {
+            if (! $this->rulesShareApplicability($definition, $existingRule)) {
+                continue;
+            }
+
+            if ($this->validatedTimezone($existingRule, 'timezone') !== $definition->timezone) {
+                throw ValidationException::withMessages([
+                    'timezone' => 'Конфликтующие правила одного района и дня должны использовать один часовой пояс.',
+                ]);
             }
         }
-
-        return null;
     }
 
     public function selection(
@@ -106,14 +194,14 @@ final readonly class BookingLocationResolver
             ]);
         }
 
-        $locationDay = $this->matchingLocationDay($areaName, $startsAt);
-        if (! $locationDay instanceof LocationDay) {
+        $locationDays = $this->matchingLocationDays($areaName, $startsAt);
+        if ($locationDays->isEmpty()) {
             throw ValidationException::withMessages([
                 'location_area' => 'Для этого района нет подходящего дня выезда.',
             ]);
         }
 
-        return new BookingLocationSelection(null, $locationDay);
+        return new BookingLocationSelection(null, $locationDays->first());
     }
 
     public function scheduleTimezone(
@@ -222,5 +310,68 @@ final readonly class BookingLocationResolver
         }
 
         return $locations->first();
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function referenceTimezone(Collection $locationDays): string
+    {
+        $timezones = $this->validatedTimezones($locationDays);
+
+        return $timezones->count() === 1
+            ? (string) $timezones->first()
+            : $this->context->organization()->defaultTimezone();
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function ensureSingleTimezone(Collection $locationDays): void
+    {
+        if ($this->validatedTimezones($locationDays)->count() > 1) {
+            throw ValidationException::withMessages([
+                'location_area' => 'Конфликтующие правила одного района и дня должны использовать один часовой пояс.',
+            ]);
+        }
+    }
+
+    /** @param Collection<int, LocationDay>|null $locationDays
+     * @return SupportCollection<int, string>
+     */
+    private function validatedTimezones(?Collection $locationDays): SupportCollection
+    {
+        return ($locationDays ?? new Collection)
+            ->map(fn (LocationDay $locationDay): string => $this->validatedTimezone($locationDay))
+            ->unique()
+            ->values();
+    }
+
+    private function validatedTimezone(LocationDay $locationDay, string $field = 'location_area'): string
+    {
+        try {
+            return IanaTimezone::from((string) $locationDay->timezone)->value;
+        } catch (\InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                $field => 'Правило дня выезда содержит некорректный часовой пояс.',
+            ]);
+        }
+    }
+
+    private function specificDateKey(LocationDay $locationDay): ?string
+    {
+        return $locationDay->specific_date === null
+            ? null
+            : CarbonImmutable::parse((string) $locationDay->specific_date)->toDateString();
+    }
+
+    private function rulesShareApplicability(LocationDayDefinition $definition, LocationDay $existingRule): bool
+    {
+        $existingSpecificDate = $this->specificDateKey($existingRule);
+
+        if ($definition->specificDate !== null) {
+            return $definition->specificDate === $existingSpecificDate;
+        }
+
+        return $existingSpecificDate === null
+            && $definition->weekday !== null
+            && $existingRule->weekday !== null
+            && $definition->weekday === (int) $existingRule->weekday;
     }
 }

@@ -140,6 +140,8 @@ final class RescheduleBooking
             }
 
             $oldValues = $this->events->snapshot($lockedBooking);
+            $previousLocationSnapshot = $lockedBooking->locationSnapshot();
+            $homeVisitAddressChanged = false;
 
             $locationResolver = app(BookingLocationResolver::class);
             $locationSelection = $locationResolver->selection(
@@ -150,7 +152,13 @@ final class RescheduleBooking
             );
 
             if ($actor instanceof User && $lockedBooking->visit_format !== VisitFormat::Online && $location !== null) {
-                $lockedBooking->forceFill(['location' => $this->normalizeLocation($location)]);
+                $normalizedLocation = $this->normalizeLocation($location);
+                $previousAddress = array_key_exists('address', $previousLocationSnapshot)
+                    ? $previousLocationSnapshot['address']
+                    : $lockedBooking->location;
+                $homeVisitAddressChanged = $lockedBooking->visit_format === VisitFormat::HomeVisit
+                    && $normalizedLocation !== $previousAddress;
+                $lockedBooking->forceFill(['location' => $normalizedLocation]);
             }
             if ($locationSelection->workingLocation !== null) {
                 $lockedBooking->forceFill(['location' => $locationSelection->workingLocation->address]);
@@ -170,9 +178,9 @@ final class RescheduleBooking
                     scheduleTimezone: $slot->scheduleTimezone,
                     address: $lockedBooking->location,
                     areaName: $locationArea,
-                    latitude: $lockedBooking->locationSnapshot()['latitude'] ?? null,
-                    longitude: $lockedBooking->locationSnapshot()['longitude'] ?? null,
-                    mapUrl: $lockedBooking->locationSnapshot()['map_url'] ?? null,
+                    latitude: $homeVisitAddressChanged ? null : ($previousLocationSnapshot['latitude'] ?? null),
+                    longitude: $homeVisitAddressChanged ? null : ($previousLocationSnapshot['longitude'] ?? null),
+                    mapUrl: $homeVisitAddressChanged ? null : ($previousLocationSnapshot['map_url'] ?? null),
                 ),
                 'event_version' => $lockedBooking->event_version + 1,
             ]);

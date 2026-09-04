@@ -168,6 +168,9 @@ class CalculateAvailability
         bool $allowInactiveLocation = false,
     ): AvailabilityResult {
         $organization = $this->context->organization();
+        $locationDays = $format === VisitFormat::HomeVisit
+            ? $this->locations->activeLocationDays($locationArea)
+            : null;
 
         $locationSelection = $this->locations->selection(
             format: $format,
@@ -195,7 +198,7 @@ class CalculateAvailability
             bufferMinutes: $service->buffer_minutes,
             workingLocation: $locationSelection->workingLocation,
             locationArea: $locationArea,
-            locationDays: $locationSelection->locationDay === null ? null : new Collection([$locationSelection->locationDay]),
+            locationDays: $locationDays?->isNotEmpty() ? $locationDays : null,
         );
     }
 
@@ -437,39 +440,39 @@ class CalculateAvailability
         $cursor = $dateFrom;
 
         for ($index = 0; $index < $dateCount; $index++) {
-            $locationDay = $format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()
-                ? $this->locations->matchingLocationDay(
-                    (string) $locationArea,
-                    $this->localBoundary($cursor, $scheduleTimezone)->addHours(12),
-                    $locationDays,
-                )
-                : null;
-            if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty() && ! $locationDay instanceof LocationDay) {
+            $matchingLocationDays = $format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()
+                ? $this->locations->matchingLocationDaysForDate((string) $locationArea, $cursor, $locationDays)
+                : (new LocationDay)->newCollection();
+            if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty() && $matchingLocationDays->isEmpty()) {
                 $cursor = $cursor->nextDay();
 
                 continue;
             }
 
-            $dayTimezone = $locationDay instanceof LocationDay ? $locationDay->timezone : $scheduleTimezone;
-            $dayDate = LocalDate::from(
-                $this->localBoundary($cursor, $scheduleTimezone)->setTimezone($dayTimezone)->toDateString(),
-            );
-            $allowedIntervals = [];
-            if ($locationDay instanceof LocationDay) {
-                $locationDate = LocalDate::from(
+            $dayTimezone = $matchingLocationDays->isNotEmpty()
+                ? $this->locations->scheduleTimezoneForLocationDays($specialist, $matchingLocationDays)
+                : $scheduleTimezone;
+            $dayDate = $matchingLocationDays->isNotEmpty()
+                ? $cursor
+                : LocalDate::from(
                     $this->localBoundary($cursor, $scheduleTimezone)->setTimezone($dayTimezone)->toDateString(),
                 );
+            $allowedIntervals = [];
+            foreach ($matchingLocationDays as $locationDay) {
                 $locationInterval = $this->calculator->wallClockInterval(
-                    $locationDate,
-                    $dayTimezone,
+                    $dayDate,
+                    $locationDay->timezone,
                     $locationDay->wallClockInterval(),
                 );
                 if ($locationInterval === null) {
-                    $cursor = $cursor->nextDay();
-
                     continue;
                 }
-                $allowedIntervals = [$locationInterval];
+                $allowedIntervals[] = $locationInterval;
+            }
+            if ($matchingLocationDays->isNotEmpty() && $allowedIntervals === []) {
+                $cursor = $cursor->nextDay();
+
+                continue;
             }
 
             $dateExceptions = $exceptions->get($dayDate->value, collect());
@@ -561,9 +564,7 @@ class CalculateAvailability
             VisitFormat::Office => $workingLocation instanceof WorkingLocation
                 ? $workingLocation->timezone
                 : $this->scheduleTimezone($specialist),
-            VisitFormat::HomeVisit => $locationDays?->first() instanceof LocationDay
-                ? $locationDays->first()->timezone
-                : $this->scheduleTimezone($specialist),
+            VisitFormat::HomeVisit => $this->locations->scheduleTimezoneForLocationDays($specialist, $locationDays),
             VisitFormat::Online => $this->scheduleTimezone($specialist),
         };
     }
@@ -577,7 +578,14 @@ class CalculateAvailability
         if ($booking->visit_format === VisitFormat::HomeVisit && $booking->location_area !== null) {
             $locationDays = $this->locations->activeLocationDays($booking->location_area);
             if ($locationDays->isNotEmpty()) {
-                return $locationDays->first()->timezone;
+                $matchingLocationDays = $this->locations->matchingLocationDays(
+                    $booking->location_area,
+                    $booking->startsAtUtc(),
+                    $locationDays,
+                );
+                if ($matchingLocationDays->isNotEmpty()) {
+                    return $this->locations->scheduleTimezoneForLocationDays($specialist, $matchingLocationDays);
+                }
             }
         }
 

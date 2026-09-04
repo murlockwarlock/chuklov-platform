@@ -18,6 +18,7 @@ final readonly class SaveLocationDay
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private RecordAuditEvent $audit,
+        private BookingLocationResolver $locations,
     ) {}
 
     public function handle(
@@ -45,6 +46,7 @@ final readonly class SaveLocationDay
                 ->whereKey($locationDay->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $this->locations->ensureTimezoneCompatibility($definition, $locationDay?->getKey());
             $record->forceFill([
                 'organization_id' => $organization->getKey(),
                 ...$definition->attributes(),

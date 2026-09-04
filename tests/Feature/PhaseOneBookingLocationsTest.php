@@ -21,6 +21,7 @@ use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateWorkingLocation;
+use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
@@ -372,6 +373,293 @@ class PhaseOneBookingLocationsTest extends TestCase
         }
     }
 
+    public function test_location_day_rules_include_all_separate_windows(): void
+    {
+        [$organization, $admin, , $specialist, $service] = $this->fixture();
+        $service->forceFill(['formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '09:00', '11:00', 'Asia/Bangkok');
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '14:00', '16:00', 'Asia/Bangkok');
+
+        $availability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+
+        self::assertSame($organization->getKey(), $specialist->organization_id);
+        self::assertSame([
+            '2026-09-04T02:00:00+00:00',
+            '2026-09-04T03:00:00+00:00',
+            '2026-09-04T07:00:00+00:00',
+            '2026-09-04T08:00:00+00:00',
+        ], array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), $availability->slots));
+    }
+
+    public function test_overlapping_location_day_windows_are_merged_without_duplicate_slots(): void
+    {
+        [, $admin, , $specialist, $service] = $this->fixture();
+        $service->forceFill(['formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '09:00', '13:00', 'Asia/Bangkok');
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '11:00', '15:00', 'Asia/Bangkok');
+
+        $availability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+        $starts = array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), $availability->slots);
+
+        self::assertCount(count(array_unique($starts)), $starts);
+        self::assertSame([
+            '2026-09-04T02:00:00+00:00',
+            '2026-09-04T03:00:00+00:00',
+            '2026-09-04T04:00:00+00:00',
+            '2026-09-04T05:00:00+00:00',
+            '2026-09-04T06:00:00+00:00',
+            '2026-09-04T07:00:00+00:00',
+        ], $starts);
+    }
+
+    public function test_specific_date_location_day_rules_override_recurring_rules(): void
+    {
+        [, $admin, , $specialist, $service] = $this->fixture();
+        $service->forceFill(['formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '09:00', '11:00', 'Asia/Bangkok');
+        $this->saveLocationDay($admin, 'Bang Tao', null, '2026-09-04', '14:00', '16:00', 'Asia/Bangkok');
+
+        $specificDate = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+        $recurringDate = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-11',
+            dateTo: '2026-09-11',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+
+        self::assertSame(['07:00', '08:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $specificDate->slots));
+        self::assertSame(['02:00', '03:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $recurringDate->slots));
+    }
+
+    public function test_conflicting_applicable_location_day_timezones_are_rejected(): void
+    {
+        [, $admin] = $this->fixture();
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '09:00', '11:00', 'Asia/Bangkok');
+
+        try {
+            $this->saveLocationDay($admin, 'Bang Tao', 5, null, '14:00', '16:00', 'Europe/Berlin');
+            self::fail('Conflicting location-day timezones must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('timezone', $exception->errors());
+            self::assertStringContainsString('Конфликтующие', $exception->errors()['timezone'][0]);
+        }
+    }
+
+    public function test_location_day_areas_are_case_insensitive_but_isolated(): void
+    {
+        [, $admin, , $specialist, $service] = $this->fixture();
+        $service->forceFill(['formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [
+            ['weekday' => 5, 'start_time' => '09:00', 'end_time' => '18:00'],
+            ['weekday' => 6, 'start_time' => '09:00', 'end_time' => '18:00'],
+        ]);
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '09:00', '11:00', 'Asia/Bangkok');
+        $this->saveLocationDay($admin, 'Patong', 6, null, '09:00', '11:00', 'Asia/Bangkok');
+
+        $bangTao = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'bAnG tAo',
+        );
+        $wrongDay = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-05',
+            dateTo: '2026-09-05',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+        $patong = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-05',
+            dateTo: '2026-09-05',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'patong',
+        );
+
+        self::assertCount(2, $bangTao->slots);
+        self::assertCount(0, $wrongDay->slots);
+        self::assertCount(2, $patong->slots);
+    }
+
+    public function test_location_day_windows_use_berlin_dst_without_double_conversion(): void
+    {
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 3, 28, 12, 0, 0, 'UTC'));
+        [, $admin, , $specialist, $service] = $this->fixture();
+        $service->forceFill(['formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 7,
+            'start_time' => '01:00',
+            'end_time' => '05:00',
+        ]]);
+        $this->saveLocationDay($admin, 'Berlin', null, '2026-03-29', '01:00', '04:00', 'Europe/Berlin');
+
+        $availability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-03-29',
+            dateTo: '2026-03-29',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Berlin',
+        );
+
+        self::assertSame([
+            '2026-03-29T00:00:00+00:00',
+            '2026-03-29T01:00:00+00:00',
+        ], array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), $availability->slots));
+    }
+
+    public function test_home_visit_reschedule_keeps_or_clears_geodata_with_the_destination_address(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $service->forceFill(['duration_minutes' => 120, 'buffer_minutes' => 0, 'formats' => ['home']])->save();
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::HomeVisitOccupiedBufferMinutes, 150);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $this->saveLocationDay($admin, 'Bang Tao', 5, null, '10:00', '18:00', 'Asia/Bangkok');
+        $booking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 4, 3, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+            clientTimezone: 'Europe/Berlin',
+            idempotencyKey: 'phase-one-home-reschedule-snapshot',
+            location: 'Address A',
+            locationArea: 'Bang Tao',
+            latitude: 52.52,
+            longitude: 13.405,
+            mapUrl: 'https://maps.example.test/address-a',
+        );
+
+        $preserved = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            newStartsAt: CarbonImmutable::create(2026, 9, 11, 3, 0, 0, 'UTC'),
+            expectedEventVersion: $booking->event_version,
+            location: 'Address A',
+            locationArea: 'Bang Tao',
+        );
+        self::assertSame('Address A', $preserved->locationSnapshot()['address']);
+        self::assertSame(52.52, $preserved->locationSnapshot()['latitude']);
+        self::assertSame(13.405, $preserved->locationSnapshot()['longitude']);
+        self::assertSame('https://maps.example.test/address-a', $preserved->locationSnapshot()['map_url']);
+
+        $changed = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $preserved,
+            newStartsAt: CarbonImmutable::create(2026, 9, 18, 3, 0, 0, 'UTC'),
+            expectedEventVersion: $preserved->event_version,
+            location: 'Address B',
+            locationArea: 'Bang Tao',
+        );
+        self::assertSame('Address B', $changed->location);
+        self::assertSame('Address B', $changed->locationSnapshot()['address']);
+        self::assertNull($changed->locationSnapshot()['latitude']);
+        self::assertNull($changed->locationSnapshot()['longitude']);
+        self::assertNull($changed->locationSnapshot()['map_url']);
+        self::assertSame($organization->getKey(), $changed->organization_id);
+    }
+
+    public function test_office_reschedule_preserves_the_existing_location_snapshot_shape(): void
+    {
+        [, $admin, $client, $specialist, $service] = $this->fixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $location = app(CreateWorkingLocation::class)->handle(
+            actor: $admin,
+            name: 'Berlin Mitte',
+            address: 'Office A',
+            timezone: 'Europe/Berlin',
+            isDefaultOffice: true,
+            latitude: 52.52,
+            longitude: 13.405,
+            mapUrl: 'https://maps.example.test/office-a',
+        );
+        $booking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 7, 7, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'Europe/Berlin',
+            idempotencyKey: 'phase-one-office-reschedule-snapshot',
+            workingLocationId: $location->getKey(),
+        );
+
+        $rescheduled = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            newStartsAt: CarbonImmutable::create(2026, 9, 14, 7, 0, 0, 'UTC'),
+            expectedEventVersion: $booking->event_version,
+            location: 'Office A',
+            workingLocationId: $location->getKey(),
+        );
+
+        self::assertSame('Office A', $rescheduled->locationSnapshot()['address']);
+        self::assertSame(52.52, $rescheduled->locationSnapshot()['latitude']);
+        self::assertSame(13.405, $rescheduled->locationSnapshot()['longitude']);
+        self::assertSame('https://maps.example.test/office-a', $rescheduled->locationSnapshot()['map_url']);
+    }
+
     public function test_scenario_context_uses_viewer_timezone_for_specialist_and_client_timezone_for_client(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
@@ -527,5 +815,28 @@ class PhaseOneBookingLocationsTest extends TestCase
         app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
 
         return [$organization, $admin, $client, $specialist, $service];
+    }
+
+    private function saveLocationDay(
+        User $admin,
+        string $areaName,
+        ?int $weekday,
+        ?string $specificDate,
+        string $startTime,
+        string $endTime,
+        string $timezone,
+    ): void {
+        app(SaveLocationDay::class)->handle(
+            actor: $admin,
+            locationDay: null,
+            areaName: $areaName,
+            weekday: $weekday,
+            specificDate: $specificDate,
+            startTime: $startTime,
+            endTime: $endTime,
+            timezone: $timezone,
+            isActive: true,
+            notes: null,
+        );
     }
 }

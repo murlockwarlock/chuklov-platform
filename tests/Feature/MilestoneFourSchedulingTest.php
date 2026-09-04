@@ -10,10 +10,14 @@ use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\ClientPortal\Application\CreatePortalBooking;
+use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -470,12 +474,45 @@ class MilestoneFourSchedulingTest extends TestCase
                 'starts_at' => '2026-03-30T09:00:00+00:00',
                 'format' => VisitFormat::Office->value,
                 'consents' => $this->portalConsentPayload($documents),
-                'client_timezone' => 'Europe/Berlin',
+                'client_timezone' => 'Asia/Almaty',
                 'idempotency_key' => 'portal-create-m4',
             ])
             ->assertRedirect();
 
-        self::assertSame(BookingStatus::Requested, Booking::query()->latest('id')->firstOrFail()->status);
+        $booking = Booking::query()->latest('id')->firstOrFail();
+        $client->refresh();
+        self::assertSame(BookingStatus::Requested, $booking->status);
+        self::assertSame('Asia/Almaty', $booking->client_timezone);
+        self::assertSame('Asia/Almaty', $client->timezone);
+        self::assertSame('manual', $client->timezone_source);
+
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'external_id' => 'timezone-persistence-client',
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'verification_method' => 'test',
+            'verified_at' => now(),
+        ]);
+        $returningClient = app(AuthenticateClientWithVerifiedChannel::class)->handle(
+            verifiedIdentity: new VerifiedChannelIdentity('telegram', 'timezone-persistence-client', 'Portal Client', 'en'),
+            clientTimezone: 'Europe/Berlin',
+        );
+        self::assertSame($client->id, $returningClient->id);
+        self::assertSame('Asia/Almaty', $returningClient->timezone);
+        self::assertSame('manual', $returningClient->timezone_source);
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->id,
+                'specialist_id' => $specialist->id,
+                'starts_at' => '2026-03-30T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => $this->portalConsentPayload($documents),
+                'client_timezone' => 'Invalid/Timezone',
+                'idempotency_key' => 'portal-invalid-timezone',
+            ])
+            ->assertInvalid(['client_timezone']);
+
+        self::assertSame(1, Booking::query()->count());
     }
 
     public function test_portal_booking_requires_current_legal_documents_but_not_marketing_consent(): void
@@ -778,6 +815,8 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame(0, Booking::query()->count());
         self::assertSame(0, DB::table('client_consents')->where('client_id', $client->id)->count());
         self::assertSame(0, ClientAttribution::query()->where('client_id', $client->id)->count());
+        self::assertSame('UTC', $client->refresh()->timezone);
+        self::assertNotSame('manual', $client->timezone_source);
     }
 
     public function test_portal_auto_selects_the_only_bookable_specialist(): void

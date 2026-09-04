@@ -7,6 +7,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -18,7 +19,7 @@ final class UpdateClientTimezonePreference
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(string $timezone): Client
+    public function handle(string $timezone, ?Client $client = null): Client
     {
         try {
             $timezone = IanaTimezone::from($timezone)->value;
@@ -26,7 +27,10 @@ final class UpdateClientTimezonePreference
             throw ValidationException::withMessages(['timezone' => 'The timezone must be an IANA identifier.']);
         }
 
-        $client = $this->clientContext->client();
+        $client ??= $this->clientContext->client();
+        if ((int) $client->organization_id !== $this->context->id()) {
+            throw new AuthorizationException('The client is outside the current organization.');
+        }
 
         return DB::transaction(function () use ($client, $timezone): Client {
             $lockedClient = Client::query()

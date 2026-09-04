@@ -49,6 +49,7 @@ class SlotCalculator
         }
 
         $wallIntervals = $customIntervals !== [] ? $customIntervals : $workingIntervals;
+        $allowedIntervals = $this->mergeIntervals($allowedIntervals);
         $blockedIntervals = $this->mergeIntervals([...$unavailableIntervals, ...$bookingIntervals]);
         $slots = [];
         $minimumStart = $now->utc()->addMinutes($leadTimeMinutes);

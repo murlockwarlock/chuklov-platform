@@ -5,10 +5,17 @@ namespace Tests\Integration;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -18,14 +25,23 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class PhaseOneBookingLocationsPostgresTest extends TestCase
 {
     use DatabaseTruncation;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 9, 1, 12, 0, 0, 'UTC'));
+    }
+
     protected function tearDown(): void
     {
+        CarbonImmutable::setTestNow();
+
         if (DB::getDriverName() === 'pgsql') {
             $this->truncateTablesForAllConnections();
         }
@@ -292,6 +308,154 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             ->count());
     }
 
+    public function test_postgresql_location_days_include_all_windows_and_match_area_case_insensitively(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, , $specialist, $service] = $this->availabilityFixture();
+        $service->forceFill(['duration_minutes' => 60, 'buffer_minutes' => 0, 'formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Bang Tao',
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '11:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Bang Tao',
+            'weekday' => 5,
+            'start_time' => '14:00',
+            'end_time' => '16:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+
+        $availability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'bAnG tAo',
+        );
+
+        self::assertSame($organization->getKey(), $specialist->organization_id);
+        self::assertSame([
+            '2026-09-04T02:00:00+00:00',
+            '2026-09-04T03:00:00+00:00',
+            '2026-09-04T07:00:00+00:00',
+            '2026-09-04T08:00:00+00:00',
+        ], array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), $availability->slots));
+    }
+
+    public function test_postgresql_location_days_use_specific_date_precedence_and_reject_conflicting_timezones(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, , $specialist, $service] = $this->availabilityFixture();
+        $service->forceFill(['duration_minutes' => 60, 'buffer_minutes' => 0, 'formats' => ['home']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Bang Tao',
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '11:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->forDate('2026-09-04')->create([
+            'area_name' => 'Bang Tao',
+            'start_time' => '14:00',
+            'end_time' => '16:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Patong',
+            'weekday' => 5,
+            'start_time' => '12:00',
+            'end_time' => '14:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Conflict',
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '11:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Conflict',
+            'weekday' => 5,
+            'start_time' => '12:00',
+            'end_time' => '14:00',
+            'timezone' => 'Europe/Berlin',
+        ]);
+
+        $specificDate = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+        $recurringDate = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-11',
+            dateTo: '2026-09-11',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Bang Tao',
+        );
+        self::assertSame(['07:00', '08:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $specificDate->slots));
+        self::assertSame(['02:00', '03:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $recurringDate->slots));
+
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Overlap',
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '13:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        LocationDay::factory()->forOrganization($organization)->create([
+            'area_name' => 'Overlap',
+            'weekday' => 5,
+            'start_time' => '11:00',
+            'end_time' => '15:00',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        $overlap = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Overlap',
+        );
+        $overlapStarts = array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), $overlap->slots);
+        self::assertCount(count(array_unique($overlapStarts)), $overlapStarts);
+
+        $this->expectException(ValidationException::class);
+        app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-04',
+            dateTo: '2026-09-04',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Conflict',
+        );
+    }
+
     /** @return array{Organization, Client, Specialist, Service} */
     private function bookingFixture(): array
     {
@@ -305,6 +469,25 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
         ]);
 
         return [$organization, $client, $specialist, $service];
+    }
+
+    /** @return array{Organization, User, Client, Specialist, Service} */
+    private function availabilityFixture(): array
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        app(AssignSpecialistToService::class)->handle($admin, $specialist, $service);
+
+        return [$organization, $admin, $client, $specialist, $service];
     }
 
     /** @param array<string, mixed> $attributes */

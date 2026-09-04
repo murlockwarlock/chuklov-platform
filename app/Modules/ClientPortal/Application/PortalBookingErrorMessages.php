@@ -289,7 +289,7 @@ final class PortalBookingErrorMessages
                 'consents' => ['consents', 'required_legal_consent'],
                 'partySize' => ['party_size', 'party_size_invalid'],
                 'location' => ['location', 'provide_address'],
-                'clientTimezone' => ['starts_at', 'timezone_invalid'],
+                'clientTimezone', 'timezone' => ['client_timezone', 'timezone_invalid'],
                 default => ['starts_at', 'booking_create_failed'],
             };
             $errors[$displayField][] = $this->message($key);
