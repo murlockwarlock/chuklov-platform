@@ -474,7 +474,7 @@ class SchedulingConfiguration extends Page
 
     public function currentViewerTimezone(): string
     {
-        $specialist = $this->currentViewerSpecialist();
+        $specialist = $this->currentViewerSpecialist() ?? $this->selectedSpecialist();
 
         return $specialist instanceof Specialist && $specialist->viewer_timezone !== null
             ? $specialist->viewer_timezone

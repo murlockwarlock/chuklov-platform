@@ -134,7 +134,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         }
         $homeVisitDate = null;
         if ($homeVisit) {
-            $homeVisitDate = \Carbon\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
+            $homeVisitDate = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
             \App\Modules\Scheduling\Domain\Models\LocationDay::factory()
                 ->forOrganization($organization)
                 ->forDate($homeVisitDate)
@@ -702,7 +702,7 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(locationSelect).toBeVisible();
     await locationSelect.selectOption(String(fixture.secondWorkingLocationId));
     await expect(locationSelect).toHaveValue(String(fixture.secondWorkingLocationId));
-    await expect(page.getByText(fixture.secondWorkingLocationName as string, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('booking-context-summary')).toContainText(fixture.secondWorkingLocationName as string);
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 
     await expect(page.getByTestId('booking-context-summary')).toBeVisible();
@@ -804,7 +804,7 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     await dialog.getByRole('button', { name: 'Закрыть' }).first().click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Записаться', exact: true }).click();
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page.getByText('Подтвердите ознакомление с обязательными документами.', { exact: true })).toHaveCount(1);
     await requiredCheckbox.check();
     await expect(requiredCheckbox).toBeChecked();

@@ -792,6 +792,7 @@ function submitBooking(): void {
               </p>
               <p class="portal-booking-context-summary__details">
                 <span data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</span>
+                <span v-if="selectedSpecialist"> · <span data-testid="booking-selection-specialist">{{ selectedSpecialist.displayName }}</span></span>
                 <span v-if="selectedWorkingLocation"> · {{ selectedWorkingLocation.name }}</span>
                 <span v-else-if="selectedLocationArea"> · {{ selectedLocationArea }}</span>
               </p>
