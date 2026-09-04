@@ -217,7 +217,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
         await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Оставить Asia/Almaty', exact: true }).click();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toHaveCount(0);
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
 
         await page.reload();
         await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
@@ -233,7 +233,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();
         await expect(page.getByText('Время: Europe/Berlin', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toHaveCount(0);
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
     });
 });
 

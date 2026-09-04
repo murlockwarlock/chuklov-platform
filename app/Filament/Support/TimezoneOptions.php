@@ -43,7 +43,7 @@ final class TimezoneOptions
                 continue;
             }
 
-            $options[$timezone] = self::label($timezone);
+            $options[$timezone] = self::label($timezone).' ('.$timezone.')';
         }
 
         return $options;
@@ -55,9 +55,7 @@ final class TimezoneOptions
             return 'Не указан';
         }
 
-        $label = self::LABELS[$timezone] ?? self::cityLabel($timezone);
-
-        return $label === 'Часовой пояс' ? $timezone : $label.' ('.$timezone.')';
+        return self::LABELS[$timezone] ?? self::cityLabel($timezone);
     }
 
     private static function cityLabel(string $timezone): string

@@ -130,14 +130,15 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             }
         }
         $workingLocations = [];
+        $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+            ->forOrganization($organization)
+            ->defaultOffice()
+            ->create([
+                'name' => 'Кабинет Алматы '.$suffix,
+                'address' => 'ул. Абая, 10',
+                'timezone' => 'UTC',
+            ]);
         if ($multipleLocations) {
-            $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
-                ->forOrganization($organization)
-                ->create([
-                    'name' => 'Кабинет Алматы '.$suffix,
-                    'address' => 'ул. Абая, 10',
-                    'timezone' => 'Asia/Almaty',
-                ]);
             $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
                 ->forOrganization($organization)
                 ->create([
@@ -672,7 +673,7 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(locationSelect).toBeVisible();
     await locationSelect.selectOption(String(fixture.secondWorkingLocationId));
     await expect(locationSelect).toHaveValue(String(fixture.secondWorkingLocationId));
-    await expect(page.getByText(fixture.secondWorkingLocationName as string, { exact: false })).toBeVisible();
+    await expect(page.getByText(fixture.secondWorkingLocationName as string, { exact: true })).toBeVisible();
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 
     const timezoneSelect = page.getByTestId('booking-client-timezone-select');

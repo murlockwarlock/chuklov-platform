@@ -448,7 +448,7 @@ class SchedulingConfiguration extends Page
 
     public function dismissDeviceTimezone(): void
     {
-        $this->data['viewer_timezone_suggestion'] = $this->deviceTimezone;
+        $this->data['viewer_timezone_suggestion'] = null;
         $this->deviceTimezone = null;
     }
 
