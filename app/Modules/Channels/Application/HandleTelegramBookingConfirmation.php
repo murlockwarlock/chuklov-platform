@@ -30,11 +30,13 @@ final readonly class HandleTelegramBookingConfirmation
     public function handle(Nutgram $bot): void
     {
         $data = (string) ($bot->callbackQuery()->data ?? '');
-        if (preg_match('/^booking:confirm:(\d+)$/', $data, $matches) !== 1) {
+        if (preg_match('/^booking:confirm:(\d+)(?::(\d+))?$/', $data, $matches) !== 1) {
             $bot->answerCallbackQuery(text: 'Действие недоступно.');
 
             return;
         }
+
+        $expectedEventVersion = isset($matches[2]) ? (int) $matches[2] : null;
 
         $organization = $this->organization();
         if (! $organization instanceof Organization) {
@@ -86,7 +88,7 @@ final readonly class HandleTelegramBookingConfirmation
                 return;
             }
 
-            $this->confirmBooking->handle($user, $booking);
+            $this->confirmBooking->handle($user, $booking, expectedEventVersion: $expectedEventVersion);
             $bot->answerCallbackQuery(text: '✅ Запись подтверждена');
             try {
                 $bot->editMessageReplyMarkup(reply_markup: null);

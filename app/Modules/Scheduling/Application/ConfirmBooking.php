@@ -26,22 +26,27 @@ final class ConfirmBooking
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(User $actor, Booking $booking, ?string $reason = null): Booking
+    public function handle(User $actor, Booking $booking, ?string $reason = null, ?int $expectedEventVersion = null): Booking
     {
         $this->authorization->authorize($actor, $booking);
         $reason = $this->reason($reason);
         $organization = $this->context->organization();
 
-        return DB::transaction(function () use ($actor, $booking, $reason, $organization): Booking {
+        return DB::transaction(function () use ($actor, $booking, $reason, $expectedEventVersion, $organization): Booking {
             $lockedBooking = Booking::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($booking->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-
             if ($lockedBooking->status !== BookingStatus::Requested
                 || ! in_array($lockedBooking->visit_format, [VisitFormat::Office, VisitFormat::Online], true)) {
                 throw ValidationException::withMessages(['booking' => 'Only requested office or online bookings can be confirmed.']);
+            }
+
+            if ($expectedEventVersion !== null && (int) $lockedBooking->event_version !== $expectedEventVersion) {
+                throw ValidationException::withMessages([
+                    'expected_event_version' => 'This booking changed before confirmation was applied. Refresh and try again.',
+                ]);
             }
 
             $oldValues = $this->events->snapshot($lockedBooking);

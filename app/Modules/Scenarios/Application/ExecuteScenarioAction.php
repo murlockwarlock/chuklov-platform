@@ -326,7 +326,7 @@ final class ExecuteScenarioAction
         if ($status === BookingStatus::Requested->value && in_array($format, ['office', 'online'], true)) {
             $buttons[] = new NotificationActionButton(
                 text: $this->isRussian($locale) ? '✅ Подтвердить' : '✅ Confirm',
-                callbackData: 'booking:confirm:'.$currentBooking->getKey(),
+                callbackData: 'booking:confirm:'.$currentBooking->getKey().':'.$currentBooking->event_version,
             );
         } elseif ($status === BookingStatus::PendingReview->value && $format === 'home') {
             $buttons[0] = new NotificationActionButton(

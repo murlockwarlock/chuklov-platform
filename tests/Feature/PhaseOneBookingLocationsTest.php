@@ -457,18 +457,36 @@ class PhaseOneBookingLocationsTest extends TestCase
             language_code: 'ru',
         ));
         $handler = app(HandleTelegramBookingConfirmation::class);
-        $bot->onCallbackQueryData('booking:confirm:\d+', function (Nutgram $bot) use ($handler): void {
+        $bot->onCallbackQueryData('booking:confirm:\d+(?::\d+)?', function (Nutgram $bot) use ($handler): void {
             $handler->handle($bot);
         });
 
-        $bot->hearCallbackQueryData('booking:confirm:'.$booking->getKey())->reply();
+        $callbackData = 'booking:confirm:'.$booking->getKey().':'.$booking->event_version;
+        $bot->hearCallbackQueryData($callbackData)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => '✅ Запись подтверждена'], 0);
-        $bot->hearCallbackQueryData('booking:confirm:'.$booking->getKey())->reply();
+        $bot->hearCallbackQueryData($callbackData)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Запись уже подтверждена.'], 0);
 
         self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
         self::assertSame(1, BookingEvent::query()->where('booking_id', $booking->getKey())->count());
         self::assertSame(1, DB::table('audit_events')->where('action', 'booking.confirmed')->count());
+
+        $staleBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Office,
+                'event_version' => 1,
+            ]);
+        $staleCallbackData = 'booking:confirm:'.$staleBooking->getKey().':1';
+        $staleBooking->forceFill(['event_version' => 2])->save();
+
+        $bot->hearCallbackQueryData($staleCallbackData)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
+        self::assertSame(BookingStatus::Requested, $staleBooking->refresh()->status);
 
         $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
         $otherClient = Client::factory()->forOrganization($otherOrganization)->create();

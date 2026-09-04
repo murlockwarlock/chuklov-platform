@@ -275,7 +275,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('📋 Открыть запись в CRM', $this->channel->messages[1]->actionButtons[0]->text);
         self::assertSame(url('/admin/bookings/'.$booking->getKey()), $this->channel->messages[1]->actionButtons[0]->url);
         self::assertSame('✅ Подтвердить', $this->channel->messages[1]->actionButtons[1]->text);
-        self::assertSame('booking:confirm:'.$booking->getKey(), $this->channel->messages[1]->actionButtons[1]->callbackData);
+        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $this->channel->messages[1]->actionButtons[1]->callbackData);
     }
 
     public function test_pending_home_visit_notification_only_offers_review_link(): void

@@ -109,7 +109,7 @@ $bot->onCallbackQueryData('/^cc:(?:feedback:(?:helpful|not_helpful)|human):\d+$/
     $handler->handle($bot);
 });
 
-$bot->onCallbackQueryData('booking:confirm:\d+', function (Nutgram $bot, HandleTelegramBookingConfirmation $handler): void {
+$bot->onCallbackQueryData('booking:confirm:\d+(?::\d+)?', function (Nutgram $bot, HandleTelegramBookingConfirmation $handler): void {
     $handler->handle($bot);
 });
 
