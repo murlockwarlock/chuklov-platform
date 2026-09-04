@@ -135,7 +135,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $homeVisitDate = null;
         if ($homeVisit) {
             $homeVisitDate = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
-            \App\Modules\Scheduling\Domain\Models\LocationDay::factory()
+            \\App\Modules\Scheduling\Domain\Models\LocationDay::factory()
                 ->forOrganization($organization)
                 ->forDate($homeVisitDate)
                 ->create([
@@ -665,7 +665,7 @@ test('authenticated client can complete the booking journey', async ({ page }) =
 
     await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
     await expect(page.locator('#booking-specialist')).toHaveCount(0);
-    await expect(page.getByText(/Playwright Specialist/)).toHaveCount(0);
+    await expect(page.getByTestId('booking-selection-specialist')).toContainText(fixture.specialistName);
     await expect(page.locator('input[name="date_from"], input[name="date_to"]')).toHaveCount(0);
     await expect(page.locator('input[name="idempotency_key"], input[name="client_timezone"], select[name="meeting_link_mode"]')).toHaveCount(0);
     const firstSlot = page.getByTestId('availability-slot').first();
@@ -712,8 +712,8 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(timezoneSelect).toBeVisible();
     await expect(timezoneSelect).toHaveValue('UTC');
     await timezoneSelect.selectOption('Europe/Berlin');
-    await expect(timezoneSelect).toHaveValue('Europe/Berlin');
     await expect(page.getByTestId('booking-client-timezone')).toHaveText('Europe/Berlin');
+    await expect(page.getByTestId('booking-client-timezone-select')).toHaveCount(0);
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 });
 
