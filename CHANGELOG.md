@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-04 — PR #29 final owner-acceptance hardening
+
+- Scheduling Configuration now follows the staff-linked Specialist consistently and skips destructive working-hours replacement when an empty repeater is only stale or unrelated form state; clearing a schedule requires an explicit control, while specialist switching reloads the selected schedule.
+- Portal date selection now uses one compact booking context, compact timezone editing, human HomeVisit availability language, nearest available dates, and one range-or-day empty state without changing UTC booking or location persistence.
+- The CRM client workspace now presents balanced «Клиент» and «Клинический профиль» sections while retaining the existing Class C authorization and server-side medical-profile reads.
+
 ## 2026-09-04 — PR #29 owner-acceptance fix pass
 
 - CRM viewer timezone now follows the logged-in staff user, independent of the schedule specialist selector; portal timezone changes, office locations, and HomeVisit areas preserve scroll and replace filter history.

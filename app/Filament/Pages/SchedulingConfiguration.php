@@ -102,12 +102,15 @@ class SchedulingConfiguration extends Page
             app(EnsureAppointmentReminderDefaults::class)->handle($organization);
         }
 
-        $specialistId = Specialist::query()
+        $viewerSpecialist = $this->currentViewerSpecialist();
+        $specialistId = $viewerSpecialist?->getKey() ?? Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->orderBy('display_name')
             ->value('id');
-        $selectedSpecialist = $specialistId === null ? null : Specialist::query()->find((int) $specialistId);
-        $viewerSpecialist = $this->currentViewerSpecialist();
+        $selectedSpecialist = $specialistId === null ? null : Specialist::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->find((int) $specialistId);
+        $viewerSpecialist ??= $selectedSpecialist;
         $zoom = app(GetB2bZoomConfiguration::class)->handle();
 
         $this->form->fill([
@@ -133,6 +136,7 @@ class SchedulingConfiguration extends Page
             'zoom_client_secret' => null,
             'zoom_host_user_id' => $zoom['hostUserId'],
             'working_hours' => $specialistId === null ? [] : $this->workingHours((int) $specialistId),
+            'clear_working_hours' => false,
         ]);
     }
 
@@ -148,9 +152,17 @@ class SchedulingConfiguration extends Page
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         $set('working_hours', $state === null ? [] : $this->workingHours((int) $state));
+                        $set('clear_working_hours', false);
+
+                        if ($this->currentViewerSpecialist() !== null) {
+                            return;
+                        }
+
                         $specialist = $state === null ? null : Specialist::query()
                             ->where('organization_id', app(OrganizationContext::class)->id())
                             ->find((int) $state);
+                        $set('viewer_timezone', $specialist?->viewer_timezone);
+                        $set('viewer_timezone_suggestion', $specialist?->viewer_timezone_suggestion);
                     }),
                 Select::make('viewer_timezone')
                     ->label('Часовой пояс CRM')
@@ -290,6 +302,10 @@ class SchedulingConfiguration extends Page
                     ->addActionLabel('Добавить часы')
                     ->reorderable(false)
                     ->columnSpanFull(),
+                Checkbox::make('clear_working_hours')
+                    ->label('Удалить всё рабочее расписание')
+                    ->helperText('Отметьте и сохраните, только если действительно нужно удалить все рабочие часы выбранного специалиста.')
+                    ->columnSpanFull(),
                 ...ScheduleImpactPreview::components(),
             ])
             ->statePath('data');
@@ -371,13 +387,17 @@ class SchedulingConfiguration extends Page
                     );
                 }
                 app(UpdateAppointmentReminders::class)->handle($actor, $data);
-                app(SetSpecialistWorkingHours::class)->handle(
-                    $actor,
-                    $specialist,
-                    $data['working_hours'] ?? [],
-                    (bool) ($data['acknowledge_impact'] ?? false),
-                    isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
-                );
+                $workingHours = $data['working_hours'] ?? [];
+                $clearWorkingHours = (bool) ($data['clear_working_hours'] ?? false);
+                if ($clearWorkingHours || $workingHours !== []) {
+                    app(SetSpecialistWorkingHours::class)->handle(
+                        $actor,
+                        $specialist,
+                        $clearWorkingHours ? [] : $workingHours,
+                        (bool) ($data['acknowledge_impact'] ?? false),
+                        isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                    );
+                }
                 $viewerSpecialist = $this->currentViewerSpecialist() ?? $specialist;
                 app(UpdateSpecialistViewerTimezone::class)->handle(
                     actor: $actor,

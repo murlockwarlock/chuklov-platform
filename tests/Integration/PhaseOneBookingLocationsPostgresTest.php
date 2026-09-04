@@ -2,6 +2,7 @@
 
 namespace Tests\Integration;
 
+use App\Filament\Pages\SchedulingConfiguration;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -19,16 +20,19 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Closure;
+use Filament\Facades\Filament;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class PhaseOneBookingLocationsPostgresTest extends TestCase
@@ -147,6 +151,63 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             'organization_id' => $organization->getKey(),
             'is_default_office' => true,
         ]);
+    }
+
+    public function test_postgresql_unrelated_scheduling_save_preserves_hours_and_viewer_timezone(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $admin->getKey(),
+        ]);
+        $weeklySchedule = array_map(
+            static fn (int $weekday): array => [
+                'weekday' => $weekday,
+                'start_time' => '09:00',
+                'end_time' => '17:00',
+            ],
+            range(1, 7),
+        );
+        app(OrganizationContext::class)->set($organization);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, $weeklySchedule);
+        $before = SpecialistWorkingHour::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('specialist_id', $specialist->getKey())
+            ->orderBy('weekday')
+            ->get()
+            ->map(static fn (SpecialistWorkingHour $hour): array => [
+                'weekday' => (int) $hour->weekday,
+                'start_time' => substr((string) $hour->start_time, 0, 5),
+                'end_time' => substr((string) $hour->end_time, 0, 5),
+            ])
+            ->all();
+        $this->actingAs($admin);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'lead_time_minutes' => 15,
+                'viewer_timezone' => 'Asia/Bangkok',
+                'working_hours' => [],
+                'clear_working_hours' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame('Asia/Bangkok', $specialist->refresh()->viewer_timezone);
+        self::assertSame($before, SpecialistWorkingHour::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('specialist_id', $specialist->getKey())
+            ->orderBy('weekday')
+            ->get()
+            ->map(static fn (SpecialistWorkingHour $hour): array => [
+                'weekday' => (int) $hour->weekday,
+                'start_time' => substr((string) $hour->start_time, 0, 5),
+                'end_time' => substr((string) $hour->end_time, 0, 5),
+            ])
+            ->all());
     }
 
     public function test_postgresql_corrective_notification_migration_preserves_history_and_is_idempotent(): void

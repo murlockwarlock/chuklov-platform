@@ -14,6 +14,7 @@ type BookingFixture = {
     secondWorkingLocationId: number | null;
     secondWorkingLocationName: string | null;
     date: string;
+    homeVisitDate: string | null;
     bookingId: number | null;
 };
 
@@ -23,6 +24,7 @@ type BookingFixtureOptions = {
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
+    homeVisit?: boolean;
 };
 
 function createBookingFixture(options: BookingFixtureOptions | boolean = false): BookingFixture {
@@ -33,6 +35,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
         $multipleLocations = getenv('PLAYWRIGHT_MULTIPLE_LOCATIONS') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
+        $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
@@ -106,7 +109,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'name' => $longServiceTitle
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
-            'formats' => $multipleChoices ? ['office', 'online'] : ['office'],
+            'formats' => $homeVisit ? ['home'] : ($multipleChoices ? ['office', 'online'] : ['office']),
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
             ->forSpecialist($specialist)
@@ -125,9 +128,21 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     ->create([
                         'weekday' => $weekday,
                         'start_time' => '09:00',
-                        'end_time' => '12:00',
+                        'end_time' => $homeVisit ? '20:00' : '12:00',
                     ]);
             }
+        }
+        $homeVisitDate = null;
+        if ($homeVisit) {
+            $homeVisitDate = \Carbon\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
+            \App\Modules\Scheduling\Domain\Models\LocationDay::factory()
+                ->forOrganization($organization)
+                ->forDate($homeVisitDate)
+                ->create([
+                    'start_time' => '09:00',
+                    'end_time' => '20:00',
+                    'timezone' => 'UTC',
+                ]);
         }
         $defaultLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::query()
             ->where('organization_id', $organization->getKey())
@@ -208,6 +223,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'secondWorkingLocationId' => ($workingLocations[1] ?? null)?->getKey(),
             'secondWorkingLocationName' => ($workingLocations[1] ?? null)?->name,
             'date' => $date,
+            'homeVisitDate' => $homeVisitDate,
             'bookingId' => $booking?->getKey(),
         ]);
     `;
@@ -232,6 +248,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
+                PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -688,12 +705,74 @@ test('client can change display timezone and choose a physical office', async ({
     await expect(page.getByText(fixture.secondWorkingLocationName as string, { exact: true })).toBeVisible();
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
 
+    await expect(page.getByTestId('booking-context-summary')).toBeVisible();
+    await expect(page.getByTestId('booking-client-timezone-select')).toHaveCount(0);
+    await page.getByTestId('booking-client-timezone-edit').click();
     const timezoneSelect = page.getByTestId('booking-client-timezone-select');
+    await expect(timezoneSelect).toBeVisible();
     await expect(timezoneSelect).toHaveValue('UTC');
     await timezoneSelect.selectOption('Europe/Berlin');
     await expect(timezoneSelect).toHaveValue('Europe/Berlin');
     await expect(page.getByTestId('booking-client-timezone')).toHaveText('Europe/Berlin');
     await expect(page.getByTestId('availability-slot').first()).toBeVisible();
+});
+
+test('home visit selection highlights the nearest configured date and keeps the flow compact', async ({ page }) => {
+    const fixture = createBookingFixture({ homeVisit: true });
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 7);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
+
+    expect(fixture.homeVisitDate).not.toBeNull();
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${dateTo}&format=home`);
+
+    const areaSelect = page.getByTestId('booking-location-area-select');
+    await expect(areaSelect).toBeVisible();
+    await areaSelect.selectOption('Bang Tao');
+    await expect(areaSelect).toHaveValue('Bang Tao');
+    await expect(page.getByTestId('booking-context-summary')).toBeVisible();
+    await expect(page.getByText(/Выезды в Bang Tao доступны/)).toBeVisible();
+
+    const nearestDates = page.getByTestId('booking-nearest-dates');
+    await expect(nearestDates).toBeVisible();
+    await expect(nearestDates.locator('button')).toHaveCount(1);
+    await expect(nearestDates.locator('button').first()).toHaveAttribute('data-date', fixture.homeVisitDate as string);
+    await expect(nearestDates.locator('button').first()).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('availability-slot').first()).toBeVisible();
+    await expect(page.getByText('На этот день свободного времени нет.', { exact: true })).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+    await page.locator('#booking-location').fill('Bang Tao, Villa 1');
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+});
+
+test('booking empty search renders one range-level empty state', async ({ page }) => {
+    const fixture = createBookingFixture({ homeVisit: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=home`);
+    await page.getByTestId('booking-location-area-select').selectOption('Bang Tao');
+    await expect(page.getByTestId('booking-range-empty')).toHaveCount(1);
+    await expect(page.getByTestId('booking-day-empty')).toHaveCount(0);
+    await expect(page.getByText('Для выезда в выбранный район пока нет свободного времени. Проверьте другой район или следующую дату.', { exact: true })).toHaveCount(1);
+    await assertNoHorizontalOverflow(page);
 });
 
 test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {

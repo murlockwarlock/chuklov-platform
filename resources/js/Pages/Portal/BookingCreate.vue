@@ -121,6 +121,7 @@ const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
 const selectedClientTimezone = ref<string>(props.query.displayTimezone);
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
+const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
 const bookingForm = useForm<{
     service_id: number | null;
@@ -191,6 +192,7 @@ watch(
         selectedClientTimezone.value = displayTimezone;
         selectedWorkingLocationId.value = workingLocationId;
         selectedLocationArea.value = locationArea;
+        timezoneEditorOpen.value = false;
         bookingForm.service_id = serviceId;
         bookingForm.specialist_id = specialistId;
         bookingForm.format = format;
@@ -233,6 +235,75 @@ const selectedSpecialist = computed(() =>
 const selectedWorkingLocation = computed(() => props.workingLocations.find((location) => location.id === selectedWorkingLocationId.value) ?? null);
 const locationAreaOptions = computed(() => Array.from(new Set(props.locationDays.map((locationDay) => locationDay.areaName))));
 const hasLocationDayRules = computed(() => props.locationDays.length > 0);
+const locationDaySummary = computed(() => {
+    if (props.query.format !== 'home' || selectedLocationArea.value === null || selectedLocationArea.value === '') {
+        return null;
+    }
+
+    const areaDays = props.locationDays.filter((locationDay) => locationDay.areaName === selectedLocationArea.value);
+    const weekdays = Array.from(new Set(areaDays
+        .map((locationDay) => locationDay.weekday)
+        .filter((weekday): weekday is number => weekday !== null)))
+        .sort((first, second) => first - second);
+
+    if (weekdays.length > 0) {
+        const russianWeekdays = [
+            'по понедельникам',
+            'по вторникам',
+            'по средам',
+            'по четвергам',
+            'по пятницам',
+            'по субботам',
+            'по воскресеньям',
+        ];
+        const englishWeekdays = [
+            'on Mondays',
+            'on Tuesdays',
+            'on Wednesdays',
+            'on Thursdays',
+            'on Fridays',
+            'on Saturdays',
+            'on Sundays',
+        ];
+        const labels = weekdays
+            .map((weekday) => (locale.value === 'ru' ? russianWeekdays[weekday - 1] : englishWeekdays[weekday - 1]))
+            .filter((label): label is string => label !== undefined)
+            .join(', ');
+
+        return t('booking.homeVisitAvailableWeekdays', { area: selectedLocationArea.value, days: labels });
+    }
+
+    const dates = areaDays
+        .map((locationDay) => locationDay.specificDate)
+        .filter((date): date is string => date !== null)
+        .sort()
+        .slice(0, 3)
+        .map((date) => new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
+            day: 'numeric',
+            month: 'short',
+            timeZone: 'UTC',
+        }).format(new Date(`${date}T00:00:00Z`)).replace('.', ''))
+        .join(', ');
+
+    return dates === ''
+        ? null
+        : t('booking.homeVisitAvailableDates', { area: selectedLocationArea.value, dates });
+});
+const clientTimezoneOffset = computed(() => {
+    const value = props.availability?.slots[0]?.startsAt ?? new Date().toISOString();
+
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: selectedClientTimezone.value,
+            timeZoneName: 'longOffset',
+        }).formatToParts(new Date(value));
+        const offset = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+
+        return offset === 'GMT' ? 'UTC+00:00' : offset.replace(/^GMT/, 'UTC');
+    } catch {
+        return '';
+    }
+});
 const formatOptions = computed<VisitFormat[]>(() => selectedService.value?.formats ?? []);
 const needsSpecialistChoice = computed(() => props.query.serviceId !== null && props.specialists.length > 1 && props.query.specialistId === null);
 const needsFormatChoice = computed(() => props.query.serviceId !== null && !needsSpecialistChoice.value && formatOptions.value.length > 1 && !props.query.formatSelected);
@@ -480,6 +551,7 @@ function changeClientTimezone(timezone: string): void {
     }
 
     selectedClientTimezone.value = timezone;
+    timezoneEditorOpen.value = false;
     bookingForm.client_timezone = timezone;
     selectedStart.value = null;
     bookingForm.starts_at = null;
@@ -699,161 +771,163 @@ function submitBooking(): void {
         </section>
 
         <template v-else-if="bookingStep === 'time'">
-          <section
-            v-if="selectedService && (hasSpecialistChoice || formatOptions.length > 1)"
-            class="portal-booking-selection-bar"
+          <h2
+            id="booking-time-heading"
+            class="portal-heading portal-heading--section portal-booking-time-heading"
           >
-            <div class="portal-booking-selection-bar__item">
-              <span class="portal-label">{{ t('booking.service') }}</span>
-              <strong data-testid="booking-selection-service">{{ selectedService.name }}</strong>
+            {{ t('booking.chooseDateTime') }}
+          </h2>
+          <section
+            class="portal-booking-context-summary"
+            :aria-label="t('booking.chooseDateTime')"
+            data-testid="booking-context-summary"
+          >
+            <div class="portal-booking-context-summary__main">
+              <p
+                v-if="selectedService"
+                class="portal-booking-context-summary__service"
+                data-testid="booking-selection-service"
+              >
+                {{ selectedService.name }}
+              </p>
+              <p class="portal-booking-context-summary__details">
+                <span data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</span>
+                <span v-if="selectedWorkingLocation"> · {{ selectedWorkingLocation.name }}</span>
+                <span v-else-if="selectedLocationArea"> · {{ selectedLocationArea }}</span>
+              </p>
+              <p class="portal-booking-context-summary__timezone">
+                {{ t('booking.yourTime') }}:
+                <strong data-testid="booking-client-timezone">{{ selectedClientTimezone }}</strong>
+                <span v-if="clientTimezoneOffset"> · {{ clientTimezoneOffset }}</span>
+              </p>
+              <p
+                v-if="selectedWorkingLocation"
+                class="portal-copy portal-copy--small portal-booking-context-summary__location-copy"
+              >
+                {{ selectedWorkingLocation.address }} · {{ selectedWorkingLocation.timezone }}
+              </p>
+              <p
+                v-if="locationDaySummary"
+                class="portal-copy portal-copy--small"
+              >
+                {{ locationDaySummary }}
+              </p>
             </div>
-            <button
-              type="button"
-              class="portal-link portal-link--button"
-              @click="changeService"
-            >
-              {{ t('booking.changeService') }}
-            </button>
 
-            <template v-if="hasSpecialistChoice && selectedSpecialist">
-              <div class="portal-booking-selection-bar__item">
-                <span class="portal-label">{{ t('booking.specialist') }}</span>
-                <strong data-testid="booking-selection-specialist">{{ selectedSpecialist.displayName }}</strong>
-              </div>
+            <div class="portal-booking-context-summary__actions">
               <button
+                type="button"
+                class="portal-link portal-link--button"
+                @click="changeService"
+              >
+                {{ t('booking.changeService') }}
+              </button>
+              <button
+                v-if="hasSpecialistChoice && selectedSpecialist"
                 type="button"
                 class="portal-link portal-link--button"
                 @click="changeSpecialist"
               >
                 {{ t('booking.changeSpecialist') }}
               </button>
-            </template>
-
-            <template v-if="formatOptions.length > 1">
-              <div class="portal-booking-selection-bar__item">
-                <span class="portal-label">{{ t('booking.format') }}</span>
-                <strong data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</strong>
-              </div>
               <button
+                v-if="formatOptions.length > 1"
                 type="button"
                 class="portal-link portal-link--button"
                 @click="changeFormat"
               >
                 {{ t('booking.changeFormat') }}
               </button>
-            </template>
-          </section>
-
-          <section
-            class="portal-booking-selection-bar portal-booking-timezone-bar portal-stack portal-stack--tight"
-            :aria-label="t('booking.timezoneContext')"
-          >
-            <div class="portal-booking-selection-bar__item">
-              <span class="portal-label">{{ t('booking.yourTime') }}</span>
-              <strong data-testid="booking-client-timezone">{{ selectedClientTimezone }}</strong>
+              <button
+                type="button"
+                class="portal-link portal-link--button"
+                data-testid="booking-client-timezone-edit"
+                @click="timezoneEditorOpen = !timezoneEditorOpen"
+              >
+                {{ t('booking.changeTimezone') }}
+              </button>
             </div>
-            <label class="portal-field portal-booking-timezone-field">
-              <span class="portal-label">{{ t('booking.changeTimezone') }}</span>
-              <select
-                class="portal-input portal-select"
-                :value="selectedClientTimezone"
-                data-testid="booking-client-timezone-select"
-                @change="changeClientTimezone(($event.target as HTMLSelectElement).value)"
-              >
-                <option
-                  v-for="option in props.timezoneOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >{{ option.label }}</option>
-              </select>
-            </label>
-          </section>
 
-          <section
-            v-if="props.query.format === 'office' && props.workingLocations.length > 0"
-            class="portal-booking-location-panel portal-panel portal-stack portal-stack--tight"
-            aria-labelledby="booking-location-heading"
-          >
-            <div class="portal-stack portal-stack--tight">
-              <span class="portal-label">{{ t('booking.location') }}</span>
-              <h2
-                id="booking-location-heading"
-                class="portal-heading portal-heading--card"
+            <div class="portal-booking-context-summary__controls">
+              <label
+                v-if="props.query.format === 'office' && props.workingLocations.length > 1"
+                class="portal-field"
               >
-                {{ props.workingLocations.length > 1 ? t('booking.chooseLocation') : selectedWorkingLocation?.name }}
-              </h2>
+                <span class="portal-label">{{ t('booking.whereMeeting') }}</span>
+                <select
+                  class="portal-input portal-select"
+                  :value="selectedWorkingLocationId ?? ''"
+                  data-testid="booking-working-location-select"
+                  @change="changeWorkingLocation(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    value=""
+                    disabled
+                  >{{ t('booking.chooseLocation') }}</option>
+                  <option
+                    v-for="location in props.workingLocations"
+                    :key="location.id"
+                    :value="location.id"
+                  >{{ location.name }} — {{ location.address }}</option>
+                </select>
+              </label>
+              <label
+                v-if="props.query.format === 'home'"
+                class="portal-field"
+              >
+                <span class="portal-label">{{ t('booking.area') }}</span>
+                <select
+                  v-if="hasLocationDayRules"
+                  class="portal-input portal-select"
+                  :value="selectedLocationArea ?? ''"
+                  data-testid="booking-location-area-select"
+                  @change="changeLocationArea(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    value=""
+                    disabled
+                  >{{ t('booking.chooseArea') }}</option>
+                  <option
+                    v-for="area in locationAreaOptions"
+                    :key="area"
+                    :value="area"
+                  >{{ area }}</option>
+                </select>
+                <input
+                  v-else
+                  :value="selectedLocationArea ?? ''"
+                  type="text"
+                  maxlength="160"
+                  class="portal-input"
+                  :placeholder="t('booking.areaPlaceholder')"
+                  @change="changeLocationArea(($event.target as HTMLInputElement).value)"
+                >
+              </label>
+              <label
+                v-if="timezoneEditorOpen"
+                class="portal-field portal-booking-context-summary__timezone-editor"
+              >
+                <span class="portal-label">{{ t('booking.changeTimezone') }}</span>
+                <select
+                  class="portal-input portal-select"
+                  :value="selectedClientTimezone"
+                  data-testid="booking-client-timezone-select"
+                  @change="changeClientTimezone(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    v-for="option in props.timezoneOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >{{ option.label }}</option>
+                </select>
+              </label>
             </div>
-            <label
-              v-if="props.workingLocations.length > 1"
-              class="portal-field"
-            >
-              <span class="portal-label">{{ t('booking.whereMeeting') }}</span>
-              <select
-                class="portal-input portal-select"
-                :value="selectedWorkingLocationId ?? ''"
-                data-testid="booking-working-location-select"
-                @change="changeWorkingLocation(($event.target as HTMLSelectElement).value)"
-              >
-                <option value="" disabled>{{ t('booking.chooseLocation') }}</option>
-                <option
-                  v-for="location in props.workingLocations"
-                  :key="location.id"
-                  :value="location.id"
-                >{{ location.name }} — {{ location.address }}</option>
-              </select>
-            </label>
-            <div
-              v-if="selectedWorkingLocation"
+
+            <p
+              v-if="props.query.format === 'home' && !hasLocationDayRules"
               class="portal-copy portal-copy--small"
             >
-              <strong>{{ selectedWorkingLocation.name }}</strong>
-              <span>{{ selectedWorkingLocation.address }}</span>
-              <span>{{ t('booking.byLocationTime') }}: {{ selectedWorkingLocation.timezone }}</span>
-            </div>
-          </section>
-
-          <section
-            v-if="props.query.format === 'home'"
-            class="portal-booking-location-panel portal-panel portal-stack portal-stack--tight"
-            aria-labelledby="booking-area-heading"
-          >
-            <div class="portal-stack portal-stack--tight">
-              <span class="portal-label">{{ t('booking.location') }}</span>
-              <h2
-                id="booking-area-heading"
-                class="portal-heading portal-heading--card"
-              >
-                {{ t('booking.chooseVisitArea') }}
-              </h2>
-            </div>
-            <label class="portal-field">
-              <span class="portal-label">{{ t('booking.area') }}</span>
-              <select
-                v-if="hasLocationDayRules"
-                class="portal-input portal-select"
-                :value="selectedLocationArea ?? ''"
-                data-testid="booking-location-area-select"
-                @change="changeLocationArea(($event.target as HTMLSelectElement).value)"
-              >
-                <option value="" disabled>{{ t('booking.chooseArea') }}</option>
-                <option
-                  v-for="area in locationAreaOptions"
-                  :key="area"
-                  :value="area"
-                >{{ area }}</option>
-              </select>
-              <input
-                v-else
-                :value="selectedLocationArea ?? ''"
-                type="text"
-                maxlength="160"
-                class="portal-input"
-                :placeholder="t('booking.areaPlaceholder')"
-                @change="changeLocationArea(($event.target as HTMLInputElement).value)"
-              >
-            </label>
-            <p class="portal-copy portal-copy--small">
-              {{ hasLocationDayRules ? t('booking.locationDayHint') : t('booking.locationDayNotConfigured') }}
+              {{ t('booking.locationDayNotConfigured') }}
             </p>
           </section>
 
@@ -864,6 +938,10 @@ function submitBooking(): void {
             :locale="locale"
             :selected-date="selectedDate"
             :selected-start="selectedStart"
+            :show-heading="false"
+            :auto-select-available-date="props.query.format === 'home' && hasLocationDayRules"
+            :show-nearest-dates="props.query.format === 'home'"
+            :empty-range-message="props.query.format === 'home' ? t('booking.noHomeSlots') : t('booking.noSlots')"
             @select-date="selectDate"
             @select-slot="selectSlot"
             @change-month="changeMonth"

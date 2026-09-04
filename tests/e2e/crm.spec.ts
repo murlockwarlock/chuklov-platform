@@ -285,6 +285,12 @@ test('staff sees business labels for client and content settings', async ({ page
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клиент', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клинический профиль', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Контакты и связь', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Настройки клиента', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Операционный статус', exact: true })).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 
