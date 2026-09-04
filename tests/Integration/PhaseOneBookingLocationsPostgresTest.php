@@ -173,7 +173,9 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             ->where('setting_key', 'home_visit_occupied_buffer_minutes')
             ->count());
         self::assertNull($booking->refresh()->working_location_id);
-        self::assertNull($booking->locationSnapshot());
+        self::assertNull(DB::table('bookings')
+            ->where('id', $booking->getKey())
+            ->value('location_snapshot'));
     }
 
     public function test_postgresql_exclusion_constraint_uses_the_full_home_visit_cycle(): void
