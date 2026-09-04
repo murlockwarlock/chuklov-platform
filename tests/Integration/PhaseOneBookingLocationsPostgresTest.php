@@ -17,6 +17,9 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
@@ -144,6 +147,39 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             'organization_id' => $organization->getKey(),
             'is_default_office' => true,
         ]);
+    }
+
+    public function test_postgresql_corrective_notification_migration_preserves_history_and_is_idempotent(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'booking-confirmed',
+            'locale' => 'ru',
+        ]);
+        $old = NotificationTemplateVersion::factory()->forTemplate($template)->create([
+            'body' => 'Ваша запись подтверждена\\n{{ booking.service_name }}',
+        ]);
+        $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($old)->create([
+            'rule_key' => 'booking-confirmed-client-ru',
+        ]);
+
+        $migration = require database_path('migrations/2026_09_04_120000_correct_booking_notification_template_versions.php');
+        $migration->up();
+        $rule->refresh();
+        $firstReplacement = NotificationTemplateVersion::query()->findOrFail($rule->template_version_id);
+
+        self::assertNotSame($old->getKey(), $firstReplacement->getKey());
+        self::assertSame('published', $firstReplacement->status->value);
+        self::assertStringContainsString("\n", $firstReplacement->body);
+        self::assertStringNotContainsString('\\n', $firstReplacement->body);
+        self::assertSame('Ваша запись подтверждена\\n{{ booking.service_name }}', $old->fresh()->body);
+
+        $migration->up();
+        $rule->refresh();
+
+        self::assertSame($firstReplacement->getKey(), $rule->template_version_id);
+        self::assertSame(2, NotificationTemplateVersion::query()->where('template_id', $template->getKey())->count());
     }
 
     public function test_postgresql_legacy_address_backfill_is_idempotent_and_does_not_rewrite_booking_history(): void
