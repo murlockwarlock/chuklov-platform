@@ -55,7 +55,7 @@ final readonly class WorkingLocationDefinition
             throw new InvalidArgumentException('The working location map URL is invalid.');
         }
 
-        return new self($name, $address, $timezone, $latitude, $longitude, $mapUrl, $isActive, $isDefaultOffice);
+        return new self($name, $address, $timezone, $latitude, $longitude, $mapUrl, $isActive, $isActive && $isDefaultOffice);
     }
 
     /** @return array<string, mixed> */
