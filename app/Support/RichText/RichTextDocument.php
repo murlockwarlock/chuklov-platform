@@ -122,7 +122,7 @@ final class RichTextDocument
         );
     }
 
-    private static function isHtml(string $content): bool
+    public static function isHtml(string $content): bool
     {
         return preg_match('/<\/?(?:p|br|strong|b|em|i|u|s|strike|a|code|pre|blockquote|h[2-3]|ul|ol|li)(?:\s|\/?>)/i', $content) === 1;
     }

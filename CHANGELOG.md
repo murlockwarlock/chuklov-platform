@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-05 — PR #30 RichEditor link persistence
+
+- ContentSection writes now persist the canonical safe HTML projection of Filament RichEditor markup, preserving owner-created links through edit/reload and the existing Portal and Telegram delivery paths while leaving plain-text content unchanged.
+- Added a real Filament/Tiptap link-state regression covering the four owner-managed test destinations, portal rendering, Telegram rendering, Both-mode Mini App CTA preservation, edit-time URL replacement, and unsafe URL removal.
+
 ## 2026-09-04 — PR #30 media metadata acceptance fix
 
 - Optional content media metadata now normalizes absent, empty, and whitespace-only values before strict validation, so sections without image descriptions save without persisting alt: null; malformed non-string metadata remains rejected.

@@ -36,7 +36,10 @@ final readonly class ContentSectionData
         $title = self::stringValue($attributes['title'] ?? null, 'The content title is invalid.', 160);
         $body = self::stringValue($attributes['body'] ?? null, 'The content body is invalid.', 100000);
         try {
-            RichTextDocument::canonicalHtml($body);
+            $canonicalBody = RichTextDocument::canonicalHtml($body);
+            if (RichTextDocument::isHtml($body)) {
+                $body = $canonicalBody;
+            }
         } catch (InvalidArgumentException $exception) {
             throw new InvalidArgumentException('The content body is invalid.', previous: $exception);
         }

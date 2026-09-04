@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ContentSections\Pages\CreateContentSection as CreateContentSectionPage;
+use App\Filament\Resources\ContentSections\Pages\EditContentSection;
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Models\User;
 use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
@@ -18,12 +19,13 @@ use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Support\RichText\RichTextDocument;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Livewire\Features\SupportTesting\Testable;
-use Livewire\Livewire;
+use Psr\Http\Message\RequestInterface;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
 use SergiX44\Nutgram\Testing\FakeNutgram;
@@ -77,10 +79,143 @@ final class CommunitiesContentSectionTest extends TestCase
 
         self::assertNull($section->media);
 
-        Livewire::actingAs($admin)
-            ->test(ViewContentSection::class, ['record' => $section->getKey()])
+        Testable::create(ViewContentSection::class, ['record' => $section->getKey()])
             ->assertSuccessful()
             ->assertSee('Не добавлено');
+    }
+
+    public function test_filament_rich_editor_link_state_survives_create_edit_portal_and_telegram_delivery(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = $this->fakeNutgram();
+
+        $links = [
+            'https://t.me/test_one',
+            'https://t.me/test_two',
+            'https://t.me/+testThree',
+            'https://example.test/community-four',
+        ];
+        $labels = [
+            'Вибрационная медицина',
+            'Global Resonance',
+            'Авторский канал',
+            'Канал для Избранных массажистов',
+        ];
+
+        Testable::actingAs($admin);
+        Testable::create(CreateContentSectionPage::class)
+            ->fillForm([
+                'section_key' => 'communities',
+                'locale' => 'ru',
+                'title' => 'Сообщества',
+                'body' => $this->filamentRichEditorLinkState($labels, $links),
+                'delivery_mode' => ContentDeliveryMode::Both->value,
+                'sort_order' => 0,
+                'is_visible' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $section = ContentSection::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('section_key', 'communities')
+            ->where('locale', 'ru')
+            ->latest('id')
+            ->firstOrFail();
+
+        foreach ($links as $link) {
+            self::assertStringContainsString($link, $section->body);
+        }
+        self::assertSame(RichTextDocument::canonicalHtml($section->body), $section->body);
+
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->withSession(['portal.locale' => 'ru'])
+            ->get(route('portal.section', ['section' => 'communities']))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('content.0.bodyHtml', function (string $bodyHtml) use ($labels, $links): bool {
+                    foreach ($labels as $index => $label) {
+                        $pattern = '/<a\b[^>]*href="'.preg_quote($links[$index], '/').'"[^>]*>'.preg_quote($label, '/').'<\/a>/u';
+                        if (preg_match($pattern, $bodyHtml) !== 1) {
+                            return false;
+                        }
+                    }
+
+                    return substr_count($bodyHtml, '<a ') === count($labels);
+                }));
+
+        app(SendTelegramContentSection::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'communities-chat', 'Communities client', 'ru'),
+            'communities',
+            'ru',
+        );
+
+        $bot->assertRaw(function (RequestInterface $request) use ($labels, $links): bool {
+            $payload = json_decode((string) $request->getBody(), true);
+            $text = is_array($payload) ? ($payload['text'] ?? '') : '';
+
+            if (! is_string($text)) {
+                return false;
+            }
+
+            foreach ($labels as $index => $label) {
+                if (! str_contains($text, '<a href="'.$links[$index].'">'.$label.'</a>')) {
+                    return false;
+                }
+            }
+
+            $button = $payload['reply_markup']['inline_keyboard'][0][0] ?? null;
+
+            return is_array($button)
+                && ($button['text'] ?? null) === 'Открыть полностью'
+                && ($button['url'] ?? null) === 'https://mini.example.test/portal/telegram/launch/communities';
+        }, index: 0);
+
+        $updatedLinks = [...$links];
+        $updatedLinks[0] = 'https://t.me/test_one_updated';
+
+        $edit = Testable::create(EditContentSection::class, ['record' => $section->getKey()]);
+        $reloadedBody = $edit->get('data.body');
+        self::assertIsArray($reloadedBody);
+        $reloadedBodyJson = json_encode($reloadedBody, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        foreach ($links as $link) {
+            self::assertStringContainsString($link, $reloadedBodyJson);
+        }
+        $edit
+            ->fillForm([
+                'body' => $this->filamentRichEditorLinkState($labels, $updatedLinks),
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $section->refresh();
+        self::assertStringNotContainsString('href="'.$links[0].'"', $section->body);
+        self::assertStringContainsString($updatedLinks[0], $section->body);
+
+        app(SendTelegramContentSection::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'communities-chat', 'Communities client', 'ru'),
+            'communities',
+            'ru',
+        );
+
+        $bot->assertRaw(function (RequestInterface $request) use ($labels, $links, $updatedLinks): bool {
+            $payload = json_decode((string) $request->getBody(), true);
+            $text = is_array($payload) ? ($payload['text'] ?? '') : '';
+
+            if (! is_string($text)) {
+                return false;
+            }
+
+            foreach ($labels as $index => $label) {
+                if (! str_contains($text, '<a href="'.$updatedLinks[$index].'">'.$label.'</a>')) {
+                    return false;
+                }
+            }
+
+            return ! str_contains($text, '<a href="'.$links[0].'">');
+        }, index: 1);
     }
 
     public function test_unpublished_communities_do_not_create_a_dead_telegram_menu_action(): void
@@ -176,7 +311,7 @@ final class CommunitiesContentSectionTest extends TestCase
         ]);
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
-        $bot = app(Nutgram::class);
+        $bot = $this->fakeNutgram();
 
         $result = app(SendTelegramContentSection::class)->handle(
             new VerifiedChannelIdentity('telegram', 'communities-chat', 'Communities client', 'ru'),
@@ -200,7 +335,7 @@ final class CommunitiesContentSectionTest extends TestCase
         ]);
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
-        $bot = app(Nutgram::class);
+        $bot = $this->fakeNutgram();
         $bot->setCommonUser(TelegramUser::make(
             id: 777001,
             is_bot: false,
@@ -316,11 +451,15 @@ final class CommunitiesContentSectionTest extends TestCase
             'section_key' => 'communities',
             'locale' => 'ru',
             'title' => 'Сообщества',
-            'body' => '<p><a href="https://communities.example.test/one">Первая ссылка</a> <a href="javascript:alert(1)">Небезопасная ссылка</a> <a href="data:text/html,unsafe">Данные</a></p>',
+            'body' => '<p><a href="https://communities.example.test/one">Первая ссылка</a> <a href="javascript:alert(1)">Небезопасная ссылка</a> <a href="data:text/html,unsafe">Данные</a> <a href="vbscript:alert(1)">Сценарий</a></p>',
             'delivery_mode' => ContentDeliveryMode::Both->value,
             'media' => ['image' => 'https://cdn.example.test/communities.jpg', 'alt' => 'Сообщества'],
         ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        self::assertStringNotContainsString('javascript:', strtolower($section->body));
+        self::assertStringNotContainsString('data:text', strtolower($section->body));
+        self::assertStringNotContainsString('vbscript:', strtolower($section->body));
 
         $this->withSession(['portal.locale' => 'ru'])
             ->get(route('portal.section', ['section' => 'communities']))
@@ -328,7 +467,8 @@ final class CommunitiesContentSectionTest extends TestCase
                 ->component('Portal/Section')
                 ->where('content.0.bodyHtml', fn (string $bodyHtml): bool => str_contains($bodyHtml, 'https://communities.example.test/one')
                     && ! str_contains(strtolower($bodyHtml), 'javascript:')
-                    && ! str_contains(strtolower($bodyHtml), 'data:text'))
+                    && ! str_contains(strtolower($bodyHtml), 'data:text')
+                    && ! str_contains(strtolower($bodyHtml), 'vbscript:'))
                 ->where('content.0.media.image', 'https://cdn.example.test/communities.jpg')
                 ->where('content.0.media.alt', 'Сообщества'));
 
@@ -339,6 +479,7 @@ final class CommunitiesContentSectionTest extends TestCase
         self::assertStringContainsString('https://communities.example.test/one', $preview['bodyHtml']);
         self::assertStringNotContainsString('javascript:', strtolower($preview['bodyHtml']));
         self::assertStringNotContainsString('data:text', strtolower($preview['bodyHtml']));
+        self::assertStringNotContainsString('vbscript:', strtolower($preview['bodyHtml']));
         self::assertSame('https://cdn.example.test/communities.jpg', $preview['mediaUrl']);
     }
 
@@ -389,5 +530,51 @@ final class CommunitiesContentSectionTest extends TestCase
         self::assertInstanceOf(CreateContentSectionPage::class, $component);
 
         return $component;
+    }
+
+    /**
+     * @param  list<string>  $labels
+     * @param  list<string>  $links
+     * @return array<string, mixed>
+     */
+    private function filamentRichEditorLinkState(array $labels, array $links): array
+    {
+        $content = [];
+
+        foreach ($labels as $index => $label) {
+            $content[] = [
+                'type' => 'paragraph',
+                'attrs' => [
+                    'textAlign' => 'start',
+                ],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => $label,
+                    'marks' => [[
+                        'type' => 'link',
+                        'attrs' => [
+                            'href' => $links[$index],
+                            'target' => null,
+                            'rel' => null,
+                            'class' => null,
+                            'title' => null,
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+
+        return ['type' => 'doc', 'content' => $content];
+    }
+
+    private function fakeNutgram(): FakeNutgram
+    {
+        $bot = app(Nutgram::class);
+
+        if (! $bot instanceof FakeNutgram) {
+            throw new \LogicException('The test bot is not a FakeNutgram instance.');
+        }
+
+        return $bot;
     }
 }
