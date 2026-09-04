@@ -76,6 +76,26 @@ function createCrmFixture(): CrmFixture {
             'name' => 'CRM Услуга '.$suffix,
             'formats' => ['office'],
         ]);
+        $defaultLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('is_default_office', true)
+            ->first();
+        if ($defaultLocation === null) {
+            $defaultLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+                ->forOrganization($organization)
+                ->defaultOffice()
+                ->create([
+                    'name' => 'Кабинет Алматы '.$suffix,
+                    'address' => 'ул. Абая, 10',
+                    'timezone' => 'UTC',
+                ]);
+        } else {
+            $defaultLocation->update(['is_active' => true]);
+        }
+        \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKeyNot($defaultLocation->getKey())
+            ->update(['is_active' => false]);
         $contentSection = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->forOrganization($organization)->create([
             'section_key' => 'author',
             'locale' => 'ru',
@@ -221,7 +241,7 @@ test.describe('specialist viewer timezone suggestion', () => {
 
         await page.reload();
         await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toHaveCount(0);
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
     });
 
     test('specialist can accept the device timezone without changing booking instants', async ({ page }) => {

@@ -129,15 +129,27 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     ]);
             }
         }
-        $workingLocations = [];
-        $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
-            ->forOrganization($organization)
-            ->defaultOffice()
-            ->create([
-                'name' => 'Кабинет Алматы '.$suffix,
-                'address' => 'ул. Абая, 10',
-                'timezone' => 'UTC',
-            ]);
+        $defaultLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('is_default_office', true)
+            ->first();
+        if ($defaultLocation === null) {
+            $defaultLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+                ->forOrganization($organization)
+                ->defaultOffice()
+                ->create([
+                    'name' => 'Кабинет Алматы '.$suffix,
+                    'address' => 'ул. Абая, 10',
+                    'timezone' => 'UTC',
+                ]);
+        } else {
+            $defaultLocation->update(['is_active' => true]);
+        }
+        \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKeyNot($defaultLocation->getKey())
+            ->update(['is_active' => false]);
+        $workingLocations = [$defaultLocation];
         if ($multipleLocations) {
             $workingLocations[] = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
                 ->forOrganization($organization)
