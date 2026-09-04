@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ContentSections\Pages\CreateContentSection as CreateContentSectionPage;
+use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Models\User;
 use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
 use App\Modules\Channels\Application\GetTelegramMenu;
@@ -22,6 +23,7 @@ use Filament\Forms\Components\Select;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
@@ -73,6 +75,11 @@ final class CommunitiesContentSectionTest extends TestCase
             ->firstOrFail();
 
         self::assertNull($section->media);
+
+        Livewire::actingAs($admin)
+            ->test(ViewContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Не добавлено');
     }
 
     public function test_unpublished_communities_do_not_create_a_dead_telegram_menu_action(): void

@@ -72,7 +72,7 @@ class ContentSectionResource extends Resource
                     ->columnSpanFull(),
                 TextEntry::make('media')
                     ->label('Изображение')
-                    ->formatStateUsing(fn (?array $state): string => $state === null ? 'Не добавлено' : 'Добавлено')
+                    ->state(fn (ContentSection $record): string => self::hasImage($record->media) ? 'Добавлено' : 'Не добавлено')
                     ->columnSpanFull(),
                 TextEntry::make('sort_order')->label('Порядок показа'),
                 TextEntry::make('is_visible')->label('Показывать'),
@@ -106,6 +106,13 @@ class ContentSectionResource extends Resource
             'hidden' => 'Скрытый раздел',
             default => 'Раздел',
         };
+    }
+
+    private static function hasImage(mixed $media): bool
+    {
+        $image = is_array($media) ? $media['image'] ?? null : null;
+
+        return is_string($image) && trim($image) !== '';
     }
 
     public static function getPages(): array

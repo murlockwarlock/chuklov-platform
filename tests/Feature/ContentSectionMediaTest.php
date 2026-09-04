@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ContentSections\Pages\EditContentSection;
+use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
@@ -111,6 +112,19 @@ final class ContentSectionMediaTest extends TestCase
         self::assertInstanceOf(SchemaImage::class, $preview);
         self::assertSame($image, $preview->getUrl());
         self::assertSame('Текущее изображение', $preview->getAlt());
+    }
+
+    public function test_content_section_view_displays_image_status_for_a_stored_image(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'media' => ['image' => 'https://cdn.example.test/content/current.jpg'],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Добавлено');
     }
 
     public function test_content_form_preview_and_remove_actions_use_current_form_state(): void
