@@ -44,6 +44,7 @@ class ContentSectionForm
                                 'method' => 'Методика',
                                 'b2b' => 'Для бизнеса',
                                 'partner' => 'Партнёрам',
+                                'communities' => 'Сообщества',
                                 'hidden' => 'Скрытый раздел',
                             ])
                             ->searchable()

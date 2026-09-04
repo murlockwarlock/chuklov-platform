@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-04 — M11 Telegram / Mini App communities
+
+- Registered the owner-managed `communities` Content Section in the existing CRM form, localized Telegram menu, generic Mini App section route, and shared Telegram content delivery.
+- The Communities menu action is omitted until visible content is published; owner-authored HTTPS links, rich text, and image/media continue through the existing ContentSection safety and delivery projections. No community URLs or content are hardcoded.
+
 ## 2026-09-04 — PR #29 final owner-acceptance hardening
 
 - Scheduling Configuration now follows the staff-linked Specialist consistently and skips destructive working-hours replacement when an empty repeater is only stale or unrelated form state; clearing a schedule requires an explicit control, while specialist switching reloads the selected schedule.

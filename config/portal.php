@@ -20,6 +20,10 @@ return [
         'author' => ['title' => ['en' => 'Author', 'ru' => 'Об авторе']],
         'method' => ['title' => ['en' => 'Method', 'ru' => 'Метод']],
         'partner' => ['title' => ['en' => 'Partners', 'ru' => 'Партнёры']],
+        'communities' => [
+            'title' => ['en' => 'Communities', 'ru' => 'Сообщества'],
+            'requires_published_content' => true,
+        ],
     ],
 
     'telegram' => [
@@ -64,6 +68,12 @@ return [
                 'route' => 'portal.section',
                 'parameters' => ['section' => 'partner'],
             ],
+            'communities' => [
+                'launch' => 'mini_app',
+                'requires_auth' => false,
+                'route' => 'portal.section',
+                'parameters' => ['section' => 'communities'],
+            ],
         ],
         'greeting' => [
             'en' => 'Choose an entry point.',
@@ -76,6 +86,7 @@ return [
                 ['key' => 'method', 'label' => 'Method'],
                 ['key' => 'b2b', 'label' => '🚀 Want a bot like this? / Grow your business'],
                 ['key' => 'partner', 'label' => 'Partners'],
+                ['key' => 'communities', 'label' => 'Communities'],
             ],
             'ru' => [
                 ['key' => 'portal', 'label' => 'Открыть портал'],
@@ -83,6 +94,7 @@ return [
                 ['key' => 'method', 'label' => 'Метод'],
                 ['key' => 'b2b', 'label' => '🚀 Хочешь себе такого бота? / Развить бизнес'],
                 ['key' => 'partner', 'label' => 'Партнёры'],
+                ['key' => 'communities', 'label' => 'Сообщества'],
             ],
         ],
     ],

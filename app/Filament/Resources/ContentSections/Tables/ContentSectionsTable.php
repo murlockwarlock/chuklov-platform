@@ -48,6 +48,7 @@ class ContentSectionsTable
             'method' => 'Методика',
             'b2b' => 'Для бизнеса',
             'partner' => 'Партнёрам',
+            'communities' => 'Сообщества',
             'hidden' => 'Скрытый раздел',
             default => 'Раздел',
         };
