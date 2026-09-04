@@ -62,43 +62,15 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
-async function selectText(page: Page, editor: Locator, value: string): Promise<void> {
-    const selectionPoints = await editor.evaluate((element, text) => {
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-        let node = walker.nextNode();
+async function selectText(editor: Locator, value: string): Promise<void> {
+    await editor.click();
+    await editor.press('ControlOrMeta+A');
+    await editor.press('ArrowLeft');
 
-        while (node !== null) {
-            const content = node.textContent ?? '';
-            const start = content.indexOf(text);
+    for (let index = 0; index < value.length; index++) {
+        await editor.press('Shift+ArrowRight');
+    }
 
-            if (start !== -1) {
-                const range = document.createRange();
-                range.setStart(node, start);
-                range.setEnd(node, start + text.length);
-                const rects = Array.from(range.getClientRects());
-                const firstRect = rects.at(0);
-                const lastRect = rects.at(-1);
-
-                if (!firstRect || !lastRect) {
-                    throw new Error(`Text has no selectable bounds: ${text}`);
-                }
-
-                return {
-                    start: { x: firstRect.left + 1, y: firstRect.top + firstRect.height / 2 },
-                    end: { x: lastRect.right - 1, y: lastRect.top + lastRect.height / 2 },
-                };
-            }
-
-            node = walker.nextNode();
-        }
-
-        throw new Error(`Text not found in editor: ${text}`);
-    }, value);
-
-    await page.mouse.move(selectionPoints.start.x, selectionPoints.start.y);
-    await page.mouse.down();
-    await page.mouse.move(selectionPoints.end.x, selectionPoints.end.y, { steps: 8 });
-    await page.mouse.up();
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
 
@@ -129,12 +101,13 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     const editor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(editor).toContainText(`${communityText} 😀`);
 
-    await selectText(page, editor, communityText);
+    await selectText(editor, communityText);
     await applyLink(page, editor, initialUrl);
     await expect(editor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await page.waitForTimeout(500);
 
-    await selectText(page, editor, `${communityText} 😀`);
+    await editor.click();
+    await editor.press('ControlOrMeta+A');
     await page.locator('button[aria-label="Подчеркнутый"]').click();
     await expect(editor.locator('u')).toHaveCount(1);
 
@@ -162,7 +135,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await expect(previewDialog).toBeHidden();
 
-    await selectText(page, previewEditor, communityText);
+    await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
     await saveContentSection(page, fixture.contentSectionId);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
