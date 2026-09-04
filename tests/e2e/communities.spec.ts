@@ -62,8 +62,8 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
-async function selectText(editor: Locator, value: string): Promise<void> {
-    await editor.evaluate((element, text) => {
+async function selectText(page: Page, editor: Locator, value: string): Promise<void> {
+    const selectionPoints = await editor.evaluate((element, text) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
 
@@ -75,13 +75,18 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 const range = document.createRange();
                 range.setStart(node, start);
                 range.setEnd(node, start + text.length);
-                const selection = window.getSelection();
-                selection?.removeAllRanges();
-                selection?.addRange(range);
-                (element as HTMLElement).focus();
-                document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
+                const rects = Array.from(range.getClientRects());
+                const firstRect = rects.at(0);
+                const lastRect = rects.at(-1);
 
-                return;
+                if (!firstRect || !lastRect) {
+                    throw new Error(`Text has no selectable bounds: ${text}`);
+                }
+
+                return {
+                    start: { x: firstRect.left + 1, y: firstRect.top + firstRect.height / 2 },
+                    end: { x: lastRect.right - 1, y: lastRect.top + lastRect.height / 2 },
+                };
             }
 
             node = walker.nextNode();
@@ -89,11 +94,17 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 
         throw new Error(`Text not found in editor: ${text}`);
     }, value);
+
+    await page.mouse.move(selectionPoints.start.x, selectionPoints.start.y);
+    await page.mouse.down();
+    await page.mouse.move(selectionPoints.end.x, selectionPoints.end.y, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     await page.locator('button[aria-label="Ссылка"]').click();
-    const dialog = page.getByRole('dialog', { name: 'Ссылка' });
+    const dialog = page.locator('[role="dialog"]:visible').filter({ hasText: 'Открывать в новой вкладке' }).first();
     await expect(dialog).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -118,13 +129,14 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     const editor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(editor).toContainText(`${communityText} 😀`);
 
-    await editor.click();
-    await editor.press('ControlOrMeta+A');
-    await page.locator('button[aria-label="Подчеркнутый"]').click();
-    await expect(editor.locator('u')).toHaveCount(1);
-    await selectText(editor, communityText);
+    await selectText(page, editor, communityText);
     await applyLink(page, editor, initialUrl);
     await expect(editor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
+    await page.waitForTimeout(500);
+
+    await selectText(page, editor, `${communityText} 😀`);
+    await page.locator('button[aria-label="Подчеркнутый"]').click();
+    await expect(editor.locator('u')).toHaveCount(1);
 
     await saveContentSection(page, fixture.contentSectionId);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
@@ -150,7 +162,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await expect(previewDialog).toBeHidden();
 
-    await selectText(previewEditor, communityText);
+    await selectText(page, previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
     await saveContentSection(page, fixture.contentSectionId);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
