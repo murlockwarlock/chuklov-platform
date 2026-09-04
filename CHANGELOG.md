@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-04 — PR #30 media metadata acceptance fix
+
+- Optional content media metadata now normalizes absent, empty, and whitespace-only values before strict validation, so sections without image descriptions save without persisting alt: null; malformed non-string metadata remains rejected.
+- Removed technical image-description fields from ordinary ContentSection and BroadcastCampaign forms while preserving stored alt values, human title fallbacks, and visible broadcast captions.
+
 ## 2026-09-04 — M11 Telegram / Mini App communities
 
 - Registered the owner-managed `communities` Content Section in the existing CRM form, localized Telegram menu, generic Mini App section route, and shared Telegram content delivery.

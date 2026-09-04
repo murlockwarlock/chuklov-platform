@@ -277,10 +277,6 @@ final class BroadcastCampaignResource extends Resource
                     ->dehydrated(fn (mixed $state): bool => filled($state))
                     ->helperText('Используйте только вместо загрузки файла. Ссылка должна вести непосредственно на медиа и начинаться с HTTPS.')
                     ->columnSpanFull(),
-                TextInput::make('media_alt')
-                    ->label('Подпись или описание медиа')
-                    ->maxLength(255)
-                    ->columnSpanFull(),
                 View::make('filament.resources.broadcasts.current-media')
                     ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get) && ! self::hasSinglePhoto($record))
                     ->columnSpanFull(),

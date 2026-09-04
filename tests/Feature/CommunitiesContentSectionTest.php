@@ -43,6 +43,36 @@ final class CommunitiesContentSectionTest extends TestCase
             ['en' => 'Communities', 'ru' => 'Сообщества'],
             config('portal.content_sections.communities.title'),
         );
+        self::assertNull($page->getSchemaComponent('form.media.alt'));
+    }
+
+    public function test_communities_can_be_created_without_image_metadata(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        Testable::actingAs($admin);
+
+        Testable::create(CreateContentSectionPage::class)
+            ->assertFormFieldDoesNotExist('media.alt')
+            ->fillForm([
+                'section_key' => 'communities',
+                'locale' => 'ru',
+                'title' => 'Сообщества',
+                'body' => '<p>Содержание сообществ.</p>',
+                'delivery_mode' => ContentDeliveryMode::Both->value,
+                'sort_order' => 0,
+                'is_visible' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $section = ContentSection::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('section_key', 'communities')
+            ->where('locale', 'ru')
+            ->latest('id')
+            ->firstOrFail();
+
+        self::assertNull($section->media);
     }
 
     public function test_unpublished_communities_do_not_create_a_dead_telegram_menu_action(): void

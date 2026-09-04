@@ -75,6 +75,7 @@ final class CrmUxRemediationTest extends TestCase
             ->assertFormFieldExists('selected_client_ids')
             ->assertFormFieldExists('message_mode')
             ->assertFormFieldExists('message_body')
+            ->assertFormFieldDoesNotExist('media_alt')
             ->assertSee('Выбрать клиентов')
             ->assertSee('Написать сообщение')
             ->assertSee('Добавить данные')

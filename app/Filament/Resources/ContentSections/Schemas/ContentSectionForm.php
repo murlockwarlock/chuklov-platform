@@ -115,10 +115,6 @@ class ContentSectionForm
                             ->dehydrated(fn (mixed $state): bool => filled($state))
                             ->helperText('Заполните только если не загружаете файл.')
                             ->columnSpanFull(),
-                        TextInput::make('media.alt')
-                            ->label('Описание изображения')
-                            ->maxLength(255)
-                            ->columnSpanFull(),
                         SchemaImage::make(
                             fn (?ContentSection $record): string => self::imagePreviewUrl($record) ?? '',
                             fn (?ContentSection $record): string => self::imageAlt($record),
@@ -208,7 +204,13 @@ class ContentSectionForm
         $media = $record?->media;
         $alt = is_array($media) ? $media['alt'] ?? null : null;
 
-        return is_string($alt) && trim($alt) !== '' ? trim($alt) : 'Изображение раздела';
+        if (is_string($alt) && trim($alt) !== '') {
+            return trim($alt);
+        }
+
+        $title = $record instanceof ContentSection ? trim($record->title) : '';
+
+        return $title !== '' ? $title : 'Изображение раздела';
     }
 
     private static function imageStatus(?ContentSection $record): string
@@ -220,9 +222,8 @@ class ContentSectionForm
         $kind = app(ContentImageUrlResolver::class)->isManaged($record)
             ? 'Загруженный файл'
             : 'Внешняя HTTPS-ссылка';
-        $alt = self::imageAlt($record);
 
-        return $kind.' · '.($alt === 'Изображение раздела' ? 'описание не задано' : 'описание: '.$alt).'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
+        return $kind.'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
     }
 
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage

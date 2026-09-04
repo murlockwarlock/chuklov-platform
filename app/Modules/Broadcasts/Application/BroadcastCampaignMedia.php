@@ -253,18 +253,50 @@ final readonly class BroadcastCampaignMedia
 
     /**
      * @param  list<array{type: string, source: string, alt: string|null, name: string|null}>  $items
-     * @return array{image: string, alt: string|null}|array{items: list<array{type: string, source: string, alt: string|null, name: string|null}>}
+     * @return array{image: string, alt?: string}|array{items: list<array{type: string, source: string, alt?: string, name: string|null}>}
      */
     private function serialize(array $items): array
     {
-        if (count($items) === 1 && $items[0]['type'] === 'photo') {
-            return [
-                'image' => $items[0]['source'],
-                'alt' => $items[0]['alt'],
+        $serializedItems = $this->serializeItems($items);
+
+        if (count($serializedItems) === 1 && $serializedItems[0]['type'] === 'photo') {
+            $serialized = [
+                'image' => $serializedItems[0]['source'],
             ];
+
+            if (isset($serializedItems[0]['alt'])) {
+                $serialized['alt'] = $serializedItems[0]['alt'];
+            }
+
+            return $serialized;
         }
 
-        return ['items' => $items];
+        return ['items' => $serializedItems];
+    }
+
+    /**
+     * @param  list<array{type: string, source: string, alt: string|null, name: string|null}>  $items
+     * @return list<array{type: string, source: string, alt?: string, name: string|null}>
+     */
+    private function serializeItems(array $items): array
+    {
+        $serialized = [];
+
+        foreach ($items as $item) {
+            $serializedItem = [
+                'type' => $item['type'],
+                'source' => $item['source'],
+                'name' => $item['name'],
+            ];
+
+            if ($item['alt'] !== null) {
+                $serializedItem['alt'] = $item['alt'];
+            }
+
+            $serialized[] = $serializedItem;
+        }
+
+        return $serialized;
     }
 
     private function typeForPath(string $path): string

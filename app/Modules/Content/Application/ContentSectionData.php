@@ -123,20 +123,32 @@ final readonly class ContentSectionData
             return null;
         }
 
-        if (! is_array($value) || count($value) > 20) {
+        if (! is_array($value)) {
             throw new InvalidArgumentException('The content media metadata is invalid.');
         }
 
         $media = [];
 
         foreach ($value as $key => $item) {
-            if (! is_string($key) || preg_match('/^[a-z0-9._-]+$/', $key) !== 1 || ! is_string($item) || mb_strlen($item) > 2000) {
+            if (! is_string($key) || preg_match('/^[a-z0-9._-]+$/', $key) !== 1) {
+                throw new InvalidArgumentException('The content media metadata is invalid.');
+            }
+
+            if ($item === null || (is_string($item) && trim($item) === '')) {
+                continue;
+            }
+
+            if (! is_string($item) || mb_strlen($item) > 2000) {
                 throw new InvalidArgumentException('The content media metadata is invalid.');
             }
 
             $media[$key] = $item;
+
+            if (count($media) > 20) {
+                throw new InvalidArgumentException('The content media metadata is invalid.');
+            }
         }
 
-        return $media;
+        return $media === [] ? null : $media;
     }
 }

@@ -280,6 +280,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         self::assertSame(NotificationMessageMode::ImageWithCaption->value, $campaign->delivery_mode);
         self::assertSame('above', $campaign->caption_position);
         self::assertSame('https://cdn.example.test/image.jpg', $campaign->media['image'] ?? null);
+        self::assertArrayNotHasKey('alt', $campaign->media ?? []);
 
         $tooLong = $this->campaignData([]);
         $tooLong['message_mode'] = 'compose';
@@ -393,6 +394,23 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         config()->set('tenancy.default_organization_id', $otherOrganization->getKey());
 
         $this->actingAs($otherActor)->get($url)->assertNotFound();
+    }
+
+    public function test_existing_broadcast_media_alt_remains_available_for_preview(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $campaign = $this->campaign($actor, []);
+        $image = 'https://cdn.example.test/existing.jpg';
+        $campaign->forceFill([
+            'media' => ['image' => $image, 'alt' => 'Старое описание'],
+        ])->save();
+
+        $items = BroadcastCampaignResource::mediaPreviewItems($campaign->refresh());
+
+        self::assertCount(1, $items);
+        self::assertSame($image, $items[0]['url']);
+        self::assertSame('Старое описание', $items[0]['alt']);
+        self::assertSame($organization->getKey(), $campaign->organization_id);
     }
 
     public function test_image_only_mode_does_not_create_or_require_a_text_template(): void
