@@ -135,7 +135,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $homeVisitDate = null;
         if ($homeVisit) {
             $homeVisitDate = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
-            \\App\Modules\Scheduling\Domain\Models\LocationDay::factory()
+            \\App\\Modules\\Scheduling\\Domain\\Models\\LocationDay::factory()
                 ->forOrganization($organization)
                 ->forDate($homeVisitDate)
                 ->create([
