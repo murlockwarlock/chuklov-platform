@@ -132,6 +132,7 @@ class BookingForm
                     ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
                         ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
                         : null)
+                    ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
                     ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
                         ? 'Можно изменить адрес только для этой записи.'
                         : 'Укажите место выезда для этой записи.')

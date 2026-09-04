@@ -97,6 +97,10 @@ class CreateBooking
             throw ValidationException::withMessages(['location' => 'Адрес не используется для онлайн-визита.']);
         }
 
+        if ($format === VisitFormat::HomeVisit && $location === null) {
+            throw ValidationException::withMessages(['location' => 'Укажите адрес выезда.']);
+        }
+
         if ($format === VisitFormat::Office && $actor instanceof Client && $location !== null) {
             throw ValidationException::withMessages(['location' => 'Адрес приёма может изменить только специалист.']);
         }

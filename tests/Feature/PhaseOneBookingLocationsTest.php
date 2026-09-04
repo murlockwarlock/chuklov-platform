@@ -350,6 +350,28 @@ class PhaseOneBookingLocationsTest extends TestCase
         );
     }
 
+    public function test_new_home_visit_requires_a_destination_address(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        app(OrganizationContext::class)->set($organization);
+
+        try {
+            app(CreateBooking::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::create(2026, 9, 4, 4, 0, 0, 'UTC'),
+                format: VisitFormat::HomeVisit,
+                clientTimezone: 'Asia/Almaty',
+                idempotencyKey: 'phase-one-home-visit-without-address',
+            );
+            self::fail('A HomeVisit without a destination address must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('location', $exception->errors());
+        }
+    }
+
     public function test_scenario_context_uses_viewer_timezone_for_specialist_and_client_timezone_for_client(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
