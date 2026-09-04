@@ -755,11 +755,14 @@ test('home visit selection highlights the nearest configured date and keeps the 
     await page.locator('#booking-location').fill('Bang Tao, Villa 1');
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
 
-    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Заявка отправлена. Мы подтвердим время отдельно.' })).toBeVisible();
 });
 
 test('booking empty search renders one range-level empty state', async ({ page }) => {
     const fixture = createBookingFixture({ homeVisit: true });
+    const emptyDateValue = new Date(`${fixture.date}T00:00:00Z`);
+    emptyDateValue.setUTCMonth(emptyDateValue.getUTCMonth() + 1);
+    const emptyDate = emptyDateValue.toISOString().slice(0, 10);
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -767,7 +770,7 @@ test('booking empty search renders one range-level empty state', async ({ page }
         url: 'http://127.0.0.1:8000',
     }]);
 
-    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=home`);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${emptyDate}&date_to=${emptyDate}&format=home`);
     await page.getByTestId('booking-location-area-select').selectOption('Bang Tao');
     await expect(page.getByTestId('booking-range-empty')).toHaveCount(1);
     await expect(page.getByTestId('booking-day-empty')).toHaveCount(0);
