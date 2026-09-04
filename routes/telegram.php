@@ -113,7 +113,7 @@ $bot->onCallbackQueryData('booking:confirm:\d+(?::\d+)?', function (Nutgram $bot
     $handler->handle($bot);
 });
 
-$bot->onCallbackQueryData('/^content:[a-z0-9][a-z0-9._-]{0,55}$/', function (
+$bot->onCallbackQueryData('content:[a-z0-9][a-z0-9._-]{0,55}', function (
     Nutgram $bot,
     TelegramBotIdentityVerifier $identityVerifier,
     SendTelegramContentSection $sendContent,

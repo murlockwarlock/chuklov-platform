@@ -5,6 +5,7 @@
 - Optional content media metadata now normalizes absent, empty, and whitespace-only values before strict validation, so sections without image descriptions save without persisting alt: null; malformed non-string metadata remains rejected.
 - Removed technical image-description fields from ordinary ContentSection and BroadcastCampaign forms while preserving stored alt values, human title fallbacks, and visible broadcast captions.
 - ContentSection view pages now derive image status from the record safely, including newly created sections without media.
+- Telegram Communities callback routing now follows Nutgram's pattern syntax, so the button delivers the section and acknowledges the callback.
 
 ## 2026-09-04 — M11 Telegram / Mini App communities
 

@@ -25,6 +25,7 @@ use Inertia\Testing\AssertableInertia;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
 use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
 
@@ -186,6 +187,32 @@ final class CommunitiesContentSectionTest extends TestCase
         self::assertSame('delivered', $result->outcome->value);
         self::assertInstanceOf(FakeNutgram::class, $bot);
         $bot->assertCalled('sendMessage');
+    }
+
+    public function test_telegram_communities_callback_delivers_content_and_acknowledges_the_button(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'communities',
+            'locale' => 'ru',
+            'body' => '<p>Содержание сообществ.</p>',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $bot->setCommonUser(TelegramUser::make(
+            id: 777001,
+            is_bot: false,
+            first_name: 'Test',
+            last_name: 'Client',
+            language_code: 'ru',
+        ));
+
+        $bot->hearCallbackQueryData('content:communities')->reply();
+
+        $bot->assertReply('sendMessage', index: 0);
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Готово.'], 1);
     }
 
     public function test_communities_localization_and_existing_locale_fallback_are_preserved(): void
