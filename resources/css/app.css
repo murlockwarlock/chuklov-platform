@@ -675,6 +675,7 @@ select.portal-input[aria-invalid='true'] {
 
     .portal-panel,
     .portal-card {
+        min-width: 0;
         border: 1px solid var(--portal-color-border);
         border-radius: var(--portal-radius-lg);
         background: var(--portal-color-surface);
@@ -1596,9 +1597,14 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-field {
+        min-width: 0;
         display: flex;
         flex-direction: column;
         gap: var(--portal-space-2);
+    }
+
+    .portal-booking-location-panel {
+        min-width: 0;
     }
 
     .portal-field--wide {
