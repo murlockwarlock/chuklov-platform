@@ -1613,8 +1613,10 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-input {
+        min-width: 0;
         min-height: 2.875rem;
         width: 100%;
+        max-width: 100%;
         border: 1px solid var(--portal-color-border-strong);
         border-radius: var(--portal-radius-sm);
         background: rgb(255 253 248 / 84%);
