@@ -130,9 +130,11 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         $message = $this->channel->messages[0] ?? null;
         self::assertNotNull($message);
+        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedServiceName = htmlspecialchars($service->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         self::assertStringContainsString('Appointment confirmed', $message->body);
-        self::assertStringContainsString($specialist->display_name, $message->body);
-        self::assertStringContainsString($service->name, $message->body);
+        self::assertStringContainsString($escapedSpecialistName, $message->body);
+        self::assertStringContainsString($escapedServiceName, $message->body);
         self::assertStringContainsString('Online', $message->body);
         self::assertStringNotContainsString('https://zoom.us/j/ordinary-1', $message->body);
         self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
@@ -267,9 +269,11 @@ final class MilestoneFiveScenarioTest extends TestCase
             [$client->getKey().'-chat', $staffIdentity->external_id],
             array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
         );
+        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         self::assertStringContainsString('Appointment request received', $this->channel->messages[0]->body);
-        self::assertStringContainsString($specialist->display_name, $this->channel->messages[0]->body);
-        self::assertStringContainsString('Новая заявка на запись от клиента '.$client->full_name, $this->channel->messages[1]->body);
+        self::assertStringContainsString($escapedSpecialistName, $this->channel->messages[0]->body);
+        self::assertStringContainsString('Новая заявка на запись от клиента '.$escapedClientName, $this->channel->messages[1]->body);
         self::assertStringContainsString(
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
             $this->channel->messages[1]->body,
@@ -589,7 +593,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(ScenarioDeliveryStatus::Delivered, $action->deliveries()->sole()->status);
         self::assertSame(1, $action->deliveries()->sole()->attempts()->count());
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Hello '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Hello '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
         self::assertSame($action->deliveries()->sole()->idempotency_key, $this->channel->messages[0]->idempotencyKey);
     }
 
@@ -646,7 +653,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         $feedbackUrl = 'https://mini.example.test/portal/telegram/launch/feedback';
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Please rate your visit, '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Please rate your visit, '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
         self::assertStringNotContainsString($feedbackUrl, $this->channel->messages[0]->body);
         self::assertSame($feedbackUrl, $this->channel->messages[0]->webAppUrl);
         self::assertSame(['client.full_name', 'feedback.url'], NotificationTemplateVersion::query()
@@ -698,7 +708,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(ScenarioActionStatus::Suppressed, $feedbackAction->fresh()->status);
         self::assertSame(ScenarioActionStatus::Delivered, $ordinaryAction->fresh()->status);
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Hello '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Hello '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
     }
 
     public function test_feedback_materialization_rejects_missing_http_and_malformed_mini_app_urls_without_calling_provider(): void
