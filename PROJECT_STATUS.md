@@ -1,9 +1,9 @@
 # Project Status
 
-## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions candidate
+## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions candidate verification
 
 - Starting SHA: `e1c714fb7b64ff87f3742671555221b47bd02e31`; branch: `codex/phase1-booking-locations-viewer-timezones`. This draft candidate extends scheduling as one UTC-based architecture: independent client/viewer/location timezones, multiple working locations, location days, Office/HomeVisit/Online snapshots and flows, full HomeVisit occupancy, CRM rendering, specialist Telegram actions, exact Booking links, and authorized idempotent quick confirmation.
-- Focused local checks currently pass: `PhaseOneBookingLocationsTest` 8 tests / 59 assertions and `MilestoneFiveScenarioTest` 26 tests / 157 assertions. The Telegram confirmation callback carries the booking event version, and the authoritative confirmation action rejects stale callbacks. Scoped PHPStan, Pint, frontend lint/typecheck/build, PHP syntax, and `git diff --check` pass. PostgreSQL, hosted exact-SHA CI, final staging deployment/smoke, independent review, and owner acceptance remain closeout gates for this draft candidate.
+- Focused local checks pass: `PhaseOneBookingLocationsTest` 8 tests / 59 assertions and `MilestoneFiveScenarioTest` 26 tests / 157 assertions. The Telegram confirmation callback carries the booking event version, and the authoritative confirmation action rejects stale callbacks. Scoped PHPStan, Pint, frontend lint/typecheck/build, PHP syntax, and `git diff --check` pass. Hosted exact-SHA CI attempt 3 is green, including PostgreSQL integration, and the exact candidate is deployed on staging with `./scripts/staging-smoke.sh` passing. The focused Phase 1 browser scenarios pass; the remaining 6 failures are existing baseline E2E failures. Independent review, manual staging UI verification, and owner acceptance remain pending.
 - No production deployment, merge, M12/M16 work, payment-provider or Zoom-provider rewrite, route optimizer, or unrelated cleanup is included. See the final delivery report for the exact candidate SHA and PR evidence.
 
 ## 2026-09-04 — Telegram media and preview staging deployment
