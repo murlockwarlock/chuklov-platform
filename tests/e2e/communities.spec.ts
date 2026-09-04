@@ -115,7 +115,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await login(page, fixture);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
 
-    const editor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const editor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(editor).toContainText(`${communityText} 😀`);
 
     await editor.click();
@@ -129,7 +129,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await saveContentSection(page, fixture.contentSectionId);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
 
-    const reloadedEditor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const reloadedEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(reloadedEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     await expect(reloadedEditor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await expect(reloadedEditor.locator('u')).toHaveCount(1);
@@ -141,7 +141,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(portalLink).toHaveText(communityText);
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
-    const previewEditor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const previewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
     const previewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
     await expect(previewDialog.locator(`a[href="${initialUrl}"]`)).toHaveText(communityText);
@@ -155,7 +155,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await saveContentSection(page, fixture.contentSectionId);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
 
-    const finalEditor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const finalEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(finalEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     await expect(finalEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
 
