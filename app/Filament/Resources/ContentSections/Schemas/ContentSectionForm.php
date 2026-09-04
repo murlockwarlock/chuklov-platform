@@ -79,6 +79,7 @@ class ContentSectionForm
                             ->label('Текст')
                             ->required()
                             ->maxLength(100000)
+                            ->live(debounce: 300)
                             ->columnSpanFull(),
                         Actions::make([
                             TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
