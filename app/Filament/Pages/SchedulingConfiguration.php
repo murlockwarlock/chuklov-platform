@@ -107,6 +107,7 @@ class SchedulingConfiguration extends Page
             ->orderBy('display_name')
             ->value('id');
         $selectedSpecialist = $specialistId === null ? null : Specialist::query()->find((int) $specialistId);
+        $viewerSpecialist = $this->currentViewerSpecialist();
         $zoom = app(GetB2bZoomConfiguration::class)->handle();
 
         $this->form->fill([
@@ -115,8 +116,8 @@ class SchedulingConfiguration extends Page
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
             'default_timezone' => $organization->defaultTimezone(),
-            'viewer_timezone' => $selectedSpecialist?->viewer_timezone,
-            'viewer_timezone_suggestion' => $selectedSpecialist?->viewer_timezone_suggestion,
+            'viewer_timezone' => $viewerSpecialist?->viewer_timezone,
+            'viewer_timezone_suggestion' => $viewerSpecialist?->viewer_timezone_suggestion,
             'home_visit_occupied_buffer_minutes' => app(GetHomeVisitOccupiedBuffer::class)->handle(),
             'b2b_zoom_host_licensed' => (bool) $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
@@ -150,8 +151,6 @@ class SchedulingConfiguration extends Page
                         $specialist = $state === null ? null : Specialist::query()
                             ->where('organization_id', app(OrganizationContext::class)->id())
                             ->find((int) $state);
-                        $set('viewer_timezone', $specialist?->viewer_timezone);
-                        $set('viewer_timezone_suggestion', $specialist?->viewer_timezone_suggestion);
                     }),
                 Select::make('viewer_timezone')
                     ->label('Часовой пояс CRM')
@@ -379,9 +378,10 @@ class SchedulingConfiguration extends Page
                     (bool) ($data['acknowledge_impact'] ?? false),
                     isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                 );
+                $viewerSpecialist = $this->currentViewerSpecialist() ?? $specialist;
                 app(UpdateSpecialistViewerTimezone::class)->handle(
                     actor: $actor,
-                    specialist: $specialist,
+                    specialist: $viewerSpecialist,
                     timezone: isset($data['viewer_timezone']) && $data['viewer_timezone'] !== ''
                         ? (string) $data['viewer_timezone']
                         : null,
@@ -430,7 +430,7 @@ class SchedulingConfiguration extends Page
             return;
         }
 
-        $specialist = $this->selectedSpecialist();
+        $specialist = $this->currentViewerSpecialist() ?? $this->selectedSpecialist();
         if (! $specialist instanceof Specialist) {
             return;
         }
@@ -454,7 +454,7 @@ class SchedulingConfiguration extends Page
 
     public function currentViewerTimezone(): string
     {
-        $specialist = $this->selectedSpecialist();
+        $specialist = $this->currentViewerSpecialist();
 
         return $specialist instanceof Specialist && $specialist->viewer_timezone !== null
             ? $specialist->viewer_timezone
@@ -470,6 +470,19 @@ class SchedulingConfiguration extends Page
             : Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->find((int) $specialistId);
+    }
+
+    private function currentViewerSpecialist(): ?Specialist
+    {
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return null;
+        }
+
+        return Specialist::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('staff_user_id', $actor->getKey())
+            ->first();
     }
 
     /** @param array<string, mixed>|null $data

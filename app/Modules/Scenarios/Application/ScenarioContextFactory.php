@@ -87,7 +87,7 @@ final class ScenarioContextFactory
                 'service_name' => $context->booking->service->name,
                 'specialist_name' => $context->booking->specialist->display_name,
                 'location' => $locationSnapshot['address'] ?? $context->booking->location,
-                'location_label' => $this->locationLabel($context->booking, $locationSnapshot, $recipient->locale),
+                'location_label' => $this->locationLabel($context->booking, $locationSnapshot, $recipient->locale, $recipient->type === 'internal'),
                 'location_name' => $locationSnapshot['name'] ?? null,
                 'location_address' => $locationSnapshot['address'] ?? $context->booking->location,
                 'location_timezone' => $locationSnapshot['timezone'] ?? null,
@@ -292,7 +292,7 @@ final class ScenarioContextFactory
     }
 
     /** @param array<string, mixed> $snapshot */
-    private function locationLabel(Booking $booking, array $snapshot, string $locale): string
+    private function locationLabel(Booking $booking, array $snapshot, string $locale, bool $internal): string
     {
         $name = is_string($snapshot['name'] ?? null) ? trim($snapshot['name']) : '';
         $address = is_string($snapshot['address'] ?? null) ? trim($snapshot['address']) : trim((string) $booking->location);
@@ -300,17 +300,21 @@ final class ScenarioContextFactory
             ? trim($snapshot['area_name'])
             : trim((string) $booking->location_area);
 
-        $homeVisitLabel = $this->isRussian($locale) ? 'Выезд' : 'Home visit';
+        $homeVisitLabel = $internal
+            ? ($this->isRussian($locale) ? 'Выезд' : 'Home visit')
+            : ($this->isRussian($locale) ? 'Выезд на дом' : 'Home visit');
         if ($area !== '') {
             $homeVisitLabel .= ' · '.$area;
         }
         $homeVisitLines = [$homeVisitLabel];
         if ($address !== '') {
-            $homeVisitLines[] = $this->isRussian($locale) ? 'Адрес клиента: '.$address : 'Client address: '.$address;
+            $homeVisitLines[] = $internal
+                ? ($this->isRussian($locale) ? 'Адрес клиента: '.$address : 'Client address: '.$address)
+                : ($this->isRussian($locale) ? 'Адрес: '.$address : 'Address: '.$address);
         }
 
         return match ($booking->visit_format) {
-            VisitFormat::Office => implode("\n", array_values(array_filter([$name, $address])))
+            VisitFormat::Office => implode("\n", array_values(array_unique(array_filter([$name, $address]), SORT_STRING)))
                 ?: ($this->isRussian($locale) ? 'В клинике' : 'At the clinic'),
             VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
             VisitFormat::Online => $this->isRussian($locale) ? 'Онлайн' : 'Online',

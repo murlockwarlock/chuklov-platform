@@ -2114,6 +2114,12 @@ select.portal-input[aria-invalid='true'] {
     line-height: 1.35;
 }
 
+.portal-booking-selection-bar__item strong[data-testid="booking-client-timezone"] {
+    overflow-wrap: normal;
+    word-break: normal;
+    white-space: nowrap;
+}
+
 .portal-booking-choice__context {
     display: grid;
     min-width: 0;
@@ -2148,6 +2154,18 @@ select.portal-input[aria-invalid='true'] {
     min-width: 0;
     align-self: center;
     text-align: right;
+}
+
+.portal-booking-timezone-bar {
+    grid-template-columns: minmax(max-content, 1fr) minmax(12rem, 1fr);
+}
+
+.portal-booking-timezone-bar .portal-booking-selection-bar__item {
+    min-width: max-content;
+}
+
+.portal-booking-timezone-bar .portal-booking-timezone-field {
+    min-width: 0;
 }
 
 .portal-booking-calendar {
@@ -2424,6 +2442,14 @@ select.portal-input[aria-invalid='true'] {
     .portal-booking-selection-bar__item strong {
         overflow-wrap: anywhere;
         white-space: normal;
+    }
+
+    .portal-booking-timezone-bar {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-booking-timezone-bar .portal-booking-selection-bar__item {
+        min-width: 0;
     }
 
     .portal-booking-selection-bar > .portal-link {

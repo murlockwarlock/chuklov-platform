@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-04 — PR #29 owner-acceptance fix pass
+
+- CRM viewer timezone now follows the logged-in staff user, independent of the schedule specialist selector; portal timezone changes, office locations, and HomeVisit areas preserve scroll and replace filter history.
+- Added RU/EN Profile timezone labels and responsive IANA timezone layout; recipient-aware booking location labels deduplicate identical Office name/address values.
+- Booking lifecycle templates now include format and immutable place details, specialist messages store actual line breaks, and existing environments receive corrective published template versions through `2026_09_04_120000_correct_booking_notification_template_versions`.
+
 ## 2026-09-04 — PR #29 independent audit remediation
 
 - Persisted an explicitly selected portal booking timezone through the existing client preference action, preserving manual provenance and device-detection precedence; HomeVisit reschedules now keep or clear destination geodata as one coherent snapshot; and location-day availability now deterministically applies specific-date precedence, all windows, timezone validation, and overlap normalization.

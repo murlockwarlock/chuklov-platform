@@ -366,10 +366,11 @@ function bookingQuery(
     return query;
 }
 
-function visitBooking(query: Record<string, string | number>): void {
+function visitBooking(query: Record<string, string | number>, preserveScroll = true): void {
     router.get(props.urls.create, query, {
         preserveState: false,
-        preserveScroll: false,
+        preserveScroll,
+        replace: true,
     });
 }
 
@@ -390,7 +391,7 @@ function continueService(): void {
         query.format = service.formats[0];
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function continueSpecialist(): void {
@@ -408,7 +409,7 @@ function continueSpecialist(): void {
         query.format = formatOptions.value[0];
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function continueFormat(): void {
@@ -419,11 +420,11 @@ function continueFormat(): void {
     visitBooking({
         ...bookingQuery(),
         format: selectedFormat.value,
-    });
+    }, false);
 }
 
 function changeService(): void {
-    visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo, display_timezone: selectedClientTimezone.value });
+    visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo, display_timezone: selectedClientTimezone.value }, false);
 }
 
 function changeFormat(): void {
@@ -442,7 +443,7 @@ function changeFormat(): void {
         query.specialist_id = props.query.specialistId;
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function changeSpecialist(): void {
@@ -455,7 +456,7 @@ function changeSpecialist(): void {
         date_to: props.query.dateTo,
         service_id: props.query.serviceId,
         display_timezone: selectedClientTimezone.value,
-    });
+    }, false);
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
@@ -744,7 +745,7 @@ function submitBooking(): void {
           </section>
 
           <section
-            class="portal-booking-selection-bar portal-stack portal-stack--tight"
+            class="portal-booking-selection-bar portal-booking-timezone-bar portal-stack portal-stack--tight"
             :aria-label="t('booking.timezoneContext')"
           >
             <div class="portal-booking-selection-bar__item">
