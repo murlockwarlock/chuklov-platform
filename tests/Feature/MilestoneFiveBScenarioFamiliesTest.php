@@ -155,11 +155,12 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         }
 
         self::assertCount(3, $this->channel->messages);
+        $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         self::assertSame(
             [
-                'Как вы себя чувствуете после визита, '.$client->full_name.'? Если появились вопросы, напишите нам.',
-                'Надеемся, визит был полезен, '.$client->full_name.'. Поделитесь впечатлениями, когда будет удобно.',
-                $client->full_name.', если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
+                'Как вы себя чувствуете после визита, '.$escapedClientName.'? Если появились вопросы, напишите нам.',
+                'Надеемся, визит был полезен, '.$escapedClientName.'. Поделитесь впечатлениями, когда будет удобно.',
+                $escapedClientName.', если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
             ],
             array_map(static fn (NotificationMessage $message): string => $message->body, $this->channel->messages),
         );

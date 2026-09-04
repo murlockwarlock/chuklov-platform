@@ -31,6 +31,8 @@ class AvailabilityController extends Controller
                 dateTo: $validated['date_to'],
                 format: $format,
                 displayTimezone: $validated['display_timezone'] ?? null,
+                workingLocationId: isset($validated['working_location_id']) ? (int) $validated['working_location_id'] : null,
+                locationArea: isset($validated['location_area']) ? (string) $validated['location_area'] : null,
             );
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($bookingErrors->availabilityErrors($exception));
@@ -44,6 +46,8 @@ class AvailabilityController extends Controller
                 'dateFrom' => $validated['date_from'],
                 'dateTo' => $validated['date_to'],
                 'format' => $format->value,
+                'workingLocationId' => isset($validated['working_location_id']) ? (int) $validated['working_location_id'] : null,
+                'locationArea' => isset($validated['location_area']) ? (string) $validated['location_area'] : null,
             ],
         ]);
     }

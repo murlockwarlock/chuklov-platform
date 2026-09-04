@@ -5,12 +5,15 @@ namespace App\Modules\Scenarios\Application;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 
 final class BookingConfirmedGuard
 {
+    public function __construct(private readonly BookingDateTimeFormatter $bookingDateTime) {}
+
     public function waitsForMeeting(?Booking $booking): bool
     {
         return $booking instanceof Booking
@@ -25,6 +28,7 @@ final class BookingConfirmedGuard
         ScenarioEvent $event,
         ?Booking $booking = null,
         ?array $renderContext = null,
+        ?string $recipientType = null,
     ): bool {
         if ($event->event_name !== ScenarioEventType::BookingConfirmed) {
             return false;
@@ -54,14 +58,15 @@ final class BookingConfirmedGuard
             return false;
         }
 
-        $timezone = (string) ($booking->client_timezone ?: $booking->client->timezone ?: $booking->schedule_timezone);
-        $localStart = $booking->startsAtUtc()->setTimezone($timezone);
+        $bookingDateTime = $recipientType === 'internal'
+            ? $this->bookingDateTime->forSpecialist($booking)
+            : $this->bookingDateTime->forClient($booking);
 
         return (int) ($context['id'] ?? 0) === (int) $booking->getKey()
             && (int) ($context['event_version'] ?? 0) === (int) $booking->event_version
-            && ($context['local_date'] ?? null) === $localStart->format('d-m-Y')
-            && ($context['local_time'] ?? null) === $localStart->format('H:i')
-            && ($context['timezone'] ?? null) === $timezone
+            && ($context['local_date'] ?? null) === $bookingDateTime['date']
+            && ($context['local_time'] ?? null) === $bookingDateTime['time']
+            && ($context['timezone'] ?? null) === $bookingDateTime['timezone']
             && ($context['meeting_url'] ?? null) === $booking->effectiveMeetingUrl();
     }
 

@@ -189,6 +189,8 @@ final class PortalBookingErrorMessages
             'party_size.max' => $this->message('party_size_max'),
             'location.string' => $this->message('provide_address'),
             'location.max' => $this->message('address_too_long'),
+            'client_timezone.string' => $this->message('timezone_save_failed'),
+            'client_timezone.max' => $this->message('timezone_save_failed'),
         ];
     }
 
@@ -221,6 +223,10 @@ final class PortalBookingErrorMessages
             'expected_event_version.min' => $this->message('booking_stale'),
             'client_timezone.string' => $this->message('timezone_save_failed'),
             'client_timezone.max' => $this->message('timezone_save_failed'),
+            'working_location_id.integer' => $this->message('request_invalid'),
+            'working_location_id.min' => $this->message('request_invalid'),
+            'location_area.string' => $this->message('request_invalid'),
+            'location_area.max' => $this->message('request_invalid'),
             'reason.string' => $this->message('comment_too_long'),
             'reason.max' => $this->message('comment_too_long'),
         ];
@@ -283,7 +289,7 @@ final class PortalBookingErrorMessages
                 'consents' => ['consents', 'required_legal_consent'],
                 'partySize' => ['party_size', 'party_size_invalid'],
                 'location' => ['location', 'provide_address'],
-                'clientTimezone' => ['starts_at', 'timezone_invalid'],
+                'clientTimezone', 'timezone' => ['client_timezone', 'timezone_invalid'],
                 default => ['starts_at', 'booking_create_failed'],
             };
             $errors[$displayField][] = $this->message($key);

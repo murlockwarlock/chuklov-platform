@@ -130,10 +130,12 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         $message = $this->channel->messages[0] ?? null;
         self::assertNotNull($message);
-        self::assertSame(
-            'Your appointment with '.$specialist->display_name.' for '.$service->name.' is confirmed for 05-09-2026 at 10:00 (UTC).',
-            $message->body,
-        );
+        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedServiceName = htmlspecialchars($service->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        self::assertStringContainsString('Appointment confirmed', $message->body);
+        self::assertStringContainsString($escapedSpecialistName, $message->body);
+        self::assertStringContainsString($escapedServiceName, $message->body);
+        self::assertStringContainsString('Online', $message->body);
         self::assertStringNotContainsString('https://zoom.us/j/ordinary-1', $message->body);
         self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
         self::assertSame('https://zoom.us/j/ordinary-1?pwd=test-password', $message->actionButton->url);
@@ -219,7 +221,8 @@ final class MilestoneFiveScenarioTest extends TestCase
             ? OrganizationChannelIdentity::query()->where('user_id', $staff->getKey())->value('external_id')
             : null);
         self::assertNotNull($clientMessage);
-        self::assertStringContainsString('Ваша запись', $clientMessage->body);
+        self::assertStringContainsString('Запись подтверждена', $clientMessage->body);
+        self::assertStringContainsString('Онлайн', $clientMessage->body);
         self::assertSame('https://zoom.us/j/confirmed-auto', $clientMessage->actionButton?->url);
         self::assertNotNull($specialistMessage);
         self::assertStringContainsString('Aikhana', $specialistMessage->body);
@@ -266,12 +269,85 @@ final class MilestoneFiveScenarioTest extends TestCase
             [$client->getKey().'-chat', $staffIdentity->external_id],
             array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
         );
-        self::assertStringContainsString('Your appointment request with '.$specialist->display_name, $this->channel->messages[0]->body);
-        self::assertStringContainsString('Новая заявка на запись от клиента '.$client->full_name, $this->channel->messages[1]->body);
+        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        self::assertStringContainsString('Appointment request received', $this->channel->messages[0]->body);
+        self::assertStringContainsString($escapedSpecialistName, $this->channel->messages[0]->body);
+        self::assertStringContainsString('Новая заявка на запись от клиента '.$escapedClientName, $this->channel->messages[1]->body);
         self::assertStringContainsString(
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
             $this->channel->messages[1]->body,
         );
+        self::assertSame('📋 Открыть запись в CRM', $this->channel->messages[1]->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $this->channel->messages[1]->actionButtons[0]->url);
+        self::assertSame('✅ Подтвердить', $this->channel->messages[1]->actionButtons[1]->text);
+        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $this->channel->messages[1]->actionButtons[1]->callbackData);
+    }
+
+    public function test_pending_home_visit_notification_only_offers_review_link(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::PendingReview);
+        $booking->forceFill([
+            'visit_format' => VisitFormat::HomeVisit,
+            'location' => '123 Moo 5, Bang Tao',
+            'location_area' => 'Bang Tao',
+            'location_snapshot' => [
+                'type' => VisitFormat::HomeVisit->value,
+                'area_name' => 'Bang Tao',
+                'address' => '123 Moo 5, Bang Tao',
+                'timezone' => 'Asia/Bangkok',
+            ],
+        ])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'pending-home-visit-review', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'internal')
+            ->sole();
+
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($message);
+        self::assertCount(1, $message->actionButtons);
+        self::assertSame('🚗 Рассмотреть выезд', $message->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
+        self::assertNull($message->actionButtons[0]->callbackData);
+        self::assertSame(BookingStatus::PendingReview, $booking->refresh()->status);
+    }
+
+    public function test_delayed_booking_notification_does_not_offer_confirmation_after_booking_changes(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'stale-booking-confirmation', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'internal')
+            ->sole();
+
+        app(OrganizationContext::class)->set($organization);
+        app(ConfirmBooking::class)->handle($admin, $booking);
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $message = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($message);
+        self::assertCount(1, $message->actionButtons);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
     }
 
     public function test_specialist_notification_without_username_uses_verified_id_and_profile_action(): void
@@ -342,7 +418,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($rescheduledAction->getKey());
 
         self::assertSame(ScenarioActionStatus::Delivered, $rescheduledAction->fresh()->status);
-        self::assertStringContainsString('04-09-2026 at 12:00 (Asia/Bangkok)', $this->channel->messages[0]->body);
+        self::assertStringContainsString('04-09-2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[0]->body);
+        self::assertStringContainsString('At the clinic', $this->channel->messages[0]->body);
 
         $cancelled = Booking::factory()
             ->forOrganization($organization)
@@ -365,7 +442,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($cancelledAction->getKey());
 
         self::assertSame(ScenarioActionStatus::Delivered, $cancelledAction->fresh()->status);
-        self::assertStringContainsString('05-09-2026 at 12:00 (Asia/Bangkok) was cancelled.', $this->channel->messages[1]->body);
+        self::assertStringContainsString('05-09-2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[1]->body);
+        self::assertStringContainsString('At the clinic', $this->channel->messages[1]->body);
     }
 
     public function test_auto_rescheduled_notification_waits_for_the_ready_meeting_link(): void
@@ -515,7 +593,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(ScenarioDeliveryStatus::Delivered, $action->deliveries()->sole()->status);
         self::assertSame(1, $action->deliveries()->sole()->attempts()->count());
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Hello '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Hello '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
         self::assertSame($action->deliveries()->sole()->idempotency_key, $this->channel->messages[0]->idempotencyKey);
     }
 
@@ -572,7 +653,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         $feedbackUrl = 'https://mini.example.test/portal/telegram/launch/feedback';
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Please rate your visit, '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Please rate your visit, '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
         self::assertStringNotContainsString($feedbackUrl, $this->channel->messages[0]->body);
         self::assertSame($feedbackUrl, $this->channel->messages[0]->webAppUrl);
         self::assertSame(['client.full_name', 'feedback.url'], NotificationTemplateVersion::query()
@@ -624,7 +708,10 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(ScenarioActionStatus::Suppressed, $feedbackAction->fresh()->status);
         self::assertSame(ScenarioActionStatus::Delivered, $ordinaryAction->fresh()->status);
         self::assertCount(1, $this->channel->messages);
-        self::assertSame('Hello '.$client->full_name.'.', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Hello '.htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'.',
+            $this->channel->messages[0]->body,
+        );
     }
 
     public function test_feedback_materialization_rejects_missing_http_and_malformed_mini_app_urls_without_calling_provider(): void

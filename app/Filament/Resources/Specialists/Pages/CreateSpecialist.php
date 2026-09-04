@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Models\User;
+use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Specialists\Application\CreateSpecialist as CreateSpecialistAction;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Filament\Resources\Pages\CreateRecord;
@@ -20,7 +21,7 @@ class CreateSpecialist extends CreateRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(CreateSpecialistAction::class)->handle(
+        $specialist = app(CreateSpecialistAction::class)->handle(
             actor: $actor,
             displayName: $data['display_name'],
             isActive: (bool) $data['is_active'],
@@ -31,5 +32,16 @@ class CreateSpecialist extends CreateRecord
                 enabled: (bool) ($data['notifications_enabled'] ?? true),
             ),
         );
+
+        if (array_key_exists('viewer_timezone', $data)) {
+            app(UpdateSpecialistViewerTimezone::class)->handle(
+                actor: $actor,
+                specialist: $specialist,
+                timezone: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? null : (string) $data['viewer_timezone'],
+                source: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? 'organization' : 'manual',
+            );
+        }
+
+        return $specialist->refresh();
     }
 }

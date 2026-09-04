@@ -30,7 +30,7 @@ final readonly class PreviewBroadcastCampaign
         private TelegramMessagePreview $telegramPreview,
     ) {}
 
-    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
+    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string|null}|null} */
     public function message(User $actor, BroadcastCampaign $campaign): array
     {
         $organization = $this->authorization->manage($actor);

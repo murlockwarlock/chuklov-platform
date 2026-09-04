@@ -104,27 +104,11 @@ final class GetClientProfile
     }
 
     /** @return list<array{value: string, label: string}> */
-    private function timezoneOptions(string $current): array
+    public function timezoneOptions(?string $current = null): array
     {
-        $timezones = [
-            'Asia/Almaty',
-            'Asia/Aqtau',
-            'Asia/Aqtobe',
-            'Asia/Atyrau',
-            'Asia/Oral',
-            'Asia/Qostanay',
-            'Asia/Qyzylorda',
-            'Asia/Tashkent',
-            'Europe/Moscow',
-            'Europe/London',
-            'Europe/Berlin',
-            'America/New_York',
-            'America/Los_Angeles',
-            'UTC',
-        ];
-
-        if (! in_array($current, $timezones, true)) {
-            array_unshift($timezones, $current);
+        $timezones = timezone_identifiers_list();
+        if ($current !== null && in_array($current, $timezones, true)) {
+            $timezones = [$current, ...array_values(array_diff($timezones, [$current]))];
         }
 
         return array_map(static fn (string $timezone): array => [

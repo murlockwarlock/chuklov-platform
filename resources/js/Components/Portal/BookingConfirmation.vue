@@ -7,6 +7,12 @@ import type { PortalLocale } from '../../types/portal';
 
 type VisitFormat = 'office' | 'home' | 'online';
 
+type WorkingLocation = {
+    name: string;
+    address: string;
+    timezone: string;
+} | null;
+
 type LegalDocument = {
     id: number;
     documentType: string;
@@ -27,6 +33,10 @@ const props = defineProps<{
     formatLabel: string;
     partySize: number;
     location: string | null;
+    workingLocation: WorkingLocation;
+    locationArea: string | null;
+    hasLocationDayRules: boolean;
+    locationAreaOptions: string[];
     processing: boolean;
     error: string | undefined;
     legalDocuments: LegalDocument[];
@@ -128,6 +138,13 @@ const location = computed({
           class="portal-input"
         >
       </div>
+      <div
+        v-if="props.hasLocationDayRules"
+        class="portal-field"
+      >
+        <span class="portal-label">{{ t('booking.area') }}</span>
+        <span class="portal-input portal-input--static">{{ props.locationArea }}</span>
+      </div>
       <div class="portal-field">
         <label
           for="booking-location"
@@ -143,6 +160,19 @@ const location = computed({
         >
       </div>
     </div>
+
+    <section
+      v-if="props.format === 'office' && props.workingLocation"
+      class="portal-booking-location-panel portal-stack portal-stack--tight"
+      aria-labelledby="booking-office-location-heading"
+    >
+      <h3
+        id="booking-office-location-heading"
+        class="portal-heading portal-heading--card"
+      >{{ props.workingLocation.name }}</h3>
+      <span class="portal-copy portal-copy--small">{{ props.workingLocation.address }}</span>
+      <span class="portal-copy portal-copy--small">{{ t('booking.byLocationTime') }}: {{ props.workingLocation.timezone }}</span>
+    </section>
 
     <section
       v-if="props.attributionNeedsManualSource"

@@ -42,6 +42,13 @@ function createCrmFixture(): CrmFixture {
         $password = 'password';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
+            ->where('organization_id', $organization->getKey())
+            ->update([
+                'viewer_timezone' => null,
+                'viewer_timezone_source' => 'organization',
+                'viewer_timezone_suggestion' => null,
+            ]);
         \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1('Filament\\Auth\\Pages\\Login|authenticate|127.0.0.1'));
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
@@ -198,6 +205,38 @@ async function assertBusinessField(page: Page, label: string, value: string): Pr
     await expect(definition).toHaveText(value);
 }
 
+test.describe('specialist viewer timezone suggestion', () => {
+    test.use({ timezoneId: 'Europe/Berlin' });
+
+    test('specialist can reject a device timezone without being asked again', async ({ page }) => {
+        const fixture = createCrmFixture();
+
+        await login(page, fixture);
+        await page.goto('/admin/scheduling-configuration');
+
+        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Оставить Asia/Almaty', exact: true }).click();
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+
+        await page.reload();
+        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+    });
+
+    test('specialist can accept the device timezone without changing booking instants', async ({ page }) => {
+        const fixture = createCrmFixture();
+
+        await login(page, fixture);
+        await page.goto('/admin/scheduling-configuration');
+
+        await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();
+        await expect(page.getByText('Время: Europe/Berlin', { exact: true })).toBeVisible();
+        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+    });
+});
+
 test('staff can create a booking without technical inputs', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -246,6 +285,12 @@ test('staff sees business labels for client and content settings', async ({ page
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клиент', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клинический профиль', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Контакты и связь', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Настройки клиента', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Операционный статус', exact: true })).toHaveCount(0);
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     await assertBusinessField(page, 'Часовой пояс', 'Всемирное время');
 

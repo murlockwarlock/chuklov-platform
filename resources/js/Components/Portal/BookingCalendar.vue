@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import PortalDateTime from '../PortalDateTime.vue';
 import { portalText } from '../../locales/portal';
 import type { PortalLocale } from '../../types/portal';
@@ -35,8 +35,14 @@ const props = withDefaults(defineProps<{
     selectedDate: string | null;
     selectedStart: string | null;
     showHeading?: boolean;
+    autoSelectAvailableDate?: boolean;
+    showNearestDates?: boolean;
+    emptyRangeMessage?: string;
 }>(), {
     showHeading: true,
+    autoSelectAvailableDate: false,
+    showNearestDates: false,
+    emptyRangeMessage: '',
 });
 
 const emit = defineEmits<{
@@ -159,8 +165,21 @@ const selectedDayKey = computed(() => {
         return props.selectedDate;
     }
 
-    return Array.from(availableDateKeys.value).at(0) ?? null;
+    return Array.from(availableDateKeys.value).sort().at(0) ?? null;
 });
+
+const nearestDateOptions = computed(() => Array.from(availableDateKeys.value)
+    .sort()
+    .slice(0, 3)
+    .map((key) => ({
+        key,
+        label: new Intl.DateTimeFormat(props.locale === 'ru' ? 'ru-RU' : 'en-US', {
+            day: 'numeric',
+            month: 'short',
+            weekday: 'short',
+            timeZone: 'UTC',
+        }).format(parseDate(key) as Date).replace('.', ''),
+    })));
 
 const selectedDaySlots = computed(() =>
     selectedDayKey.value === null ? [] : slotsByDate.value.get(selectedDayKey.value) ?? [],
@@ -206,6 +225,18 @@ const timezoneLabel = computed(() => offsetLabel(
     props.availability?.displayTimezone,
 ));
 
+const rangeIsEmpty = computed(() => props.availability !== null && props.availability.slots.length === 0);
+
+const rangeEmptyMessage = computed(() => props.emptyRangeMessage || text('booking.noSlots'));
+
+watch(selectedDayKey, (date) => {
+    if (!props.autoSelectAvailableDate || date === null || date === props.selectedDate) {
+        return;
+    }
+
+    emit('selectDate', date);
+}, { immediate: true });
+
 function slotLabel(slot: AvailabilitySlot): string {
     const time = new Intl.DateTimeFormat(props.locale === 'ru' ? 'ru-RU' : 'en-US', {
         hour: '2-digit',
@@ -250,6 +281,10 @@ function selectDate(day: CalendarDay): void {
     emit('selectDate', day.key);
 }
 
+function selectNearestDate(date: string): void {
+    emit('selectDate', date);
+}
+
 function selectSlot(slot: AvailabilitySlot): void {
     emit('selectDate', selectedDayKey.value ?? localSlotDate(slot.startsAt));
     emit('selectSlot', slot);
@@ -273,6 +308,28 @@ function selectSlot(slot: AvailabilitySlot): void {
         {{ text('booking.chooseDateTime') }}
       </h2>
     </header>
+
+    <div
+      v-if="props.showNearestDates && nearestDateOptions.length > 0"
+      class="portal-booking-nearest-dates"
+      data-testid="booking-nearest-dates"
+    >
+      <span class="portal-label">{{ text('booking.nearestDates') }}</span>
+      <div class="portal-booking-nearest-dates__list">
+        <button
+          v-for="date in nearestDateOptions"
+          :key="date.key"
+          type="button"
+          class="portal-booking-nearest-dates__date"
+          :class="{ 'portal-booking-nearest-dates__date--selected': selectedDayKey === date.key }"
+          :data-date="date.key"
+          :aria-pressed="selectedDayKey === date.key"
+          @click="selectNearestDate(date.key)"
+        >
+          {{ date.label }}
+        </button>
+      </div>
+    </div>
 
     <div class="portal-booking-calendar__layout">
       <section class="portal-calendar-card">
@@ -350,8 +407,17 @@ function selectSlot(slot: AvailabilitySlot): void {
         </header>
 
         <p
-          v-if="selectedDaySlots.length === 0"
+          v-if="rangeIsEmpty"
           class="portal-notice"
+          data-testid="booking-range-empty"
+          role="status"
+        >
+          {{ rangeEmptyMessage }}
+        </p>
+        <p
+          v-else-if="selectedDaySlots.length === 0"
+          class="portal-notice"
+          data-testid="booking-day-empty"
           role="status"
         >
           {{ text('booking.noSlotsForDay') }}
@@ -383,13 +449,5 @@ function selectSlot(slot: AvailabilitySlot): void {
         </div>
       </section>
     </div>
-
-    <p
-      v-if="props.availability && props.availability.slots.length === 0"
-      class="portal-notice"
-      role="status"
-    >
-      {{ text('booking.noSlots') }}
-    </p>
   </section>
 </template>

@@ -39,7 +39,7 @@ final class ClientMarketingConsentCrmTest extends TestCase
             ->test(ViewClient::class, ['record' => $client->getKey()])
             ->assertActionVisible('grantMarketingConsent')
             ->assertActionVisible('revokeMarketingConsent')
-            ->assertSee('Маркетинговые рассылки')
+            ->assertSee('Маркетинговые сообщения')
             ->assertSee('Согласие не зафиксировано')
             ->callAction('grantMarketingConsent', [
                 'version' => 'marketing-2026-01',

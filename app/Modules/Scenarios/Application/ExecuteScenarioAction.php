@@ -113,12 +113,12 @@ final class ExecuteScenarioAction
         }
 
         if ($event->event_name->value === 'booking.confirmed'
-            && ! $this->bookingConfirmedGuard->allows($event, $context->booking, $action->render_context)) {
+            && ! $this->bookingConfirmedGuard->allows($event, $context->booking, $action->render_context, $action->recipient_type)) {
             return false;
         }
 
         if (in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
-            && ! $this->bookingChangedGuard->allows($event, $context->booking, $action->render_context)) {
+            && ! $this->bookingChangedGuard->allows($event, $context->booking, $action->render_context, $action->recipient_type)) {
             return false;
         }
 
@@ -145,9 +145,9 @@ final class ExecuteScenarioAction
                 || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
-                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))
                 || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
-                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))) {
                 return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
 
@@ -207,8 +207,9 @@ final class ExecuteScenarioAction
             }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
             $actionButton = $this->actionButton($action, $rendered->locale);
+            $actionButtons = $this->actionButtons($action, $rendered->locale);
 
-            if ($actionButton !== null && ! $channel->capabilities()->supportsInlineButtons) {
+            if (($actionButton !== null || $actionButtons !== []) && ! $channel->capabilities()->supportsInlineButtons) {
                 return NotificationDeliveryResult::unavailable('inline_buttons_unavailable');
             }
 
@@ -218,9 +219,9 @@ final class ExecuteScenarioAction
                 || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
-                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context))
+                    && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))
                 || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
-                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context))) {
+                    && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))) {
                 return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
             }
 
@@ -232,6 +233,7 @@ final class ExecuteScenarioAction
                 idempotencyKey: $delivery->idempotency_key,
                 webAppUrl: $webAppUrl,
                 actionButton: $actionButton,
+                actionButtons: $actionButtons,
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
@@ -263,7 +265,7 @@ final class ExecuteScenarioAction
             }
 
             return new NotificationActionButton(
-                text: $this->isRussian($locale) ? 'Открыть Telegram клиента' : 'Open client Telegram',
+                text: $this->isRussian($locale) ? '💬 Написать клиенту' : '💬 Message client',
                 url: $url,
             );
         }
@@ -287,6 +289,53 @@ final class ExecuteScenarioAction
             text: $this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting',
             url: $url,
         );
+    }
+
+    /** @return list<NotificationActionButton> */
+    private function actionButtons(ScenarioAction $action, string $locale): array
+    {
+        if ($action->recipient_type !== 'internal' || ! isset($action->render_context['booking']) || ! is_array($action->render_context['booking'])) {
+            return [];
+        }
+
+        $booking = $action->render_context['booking'];
+        $crmUrl = $booking['crm_url'] ?? null;
+        if (! is_string($crmUrl) || trim($crmUrl) === '') {
+            return [];
+        }
+
+        $buttons = [new NotificationActionButton(
+            text: $this->isRussian($locale) ? '📋 Открыть запись в CRM' : '📋 Open booking in CRM',
+            url: $crmUrl,
+        )];
+        $bookingId = $booking['id'] ?? null;
+        $currentBooking = is_int($bookingId) || (is_string($bookingId) && ctype_digit($bookingId))
+            ? Booking::query()
+                ->where('organization_id', $action->organization_id)
+                ->whereKey((int) $bookingId)
+                ->first()
+            : null;
+
+        if (! $currentBooking instanceof Booking) {
+            return $buttons;
+        }
+
+        $status = $currentBooking->status->value;
+        $format = $currentBooking->visit_format->value;
+
+        if ($status === BookingStatus::Requested->value && in_array($format, ['office', 'online'], true)) {
+            $buttons[] = new NotificationActionButton(
+                text: $this->isRussian($locale) ? '✅ Подтвердить' : '✅ Confirm',
+                callbackData: 'booking:confirm:'.$currentBooking->getKey().':'.$currentBooking->event_version,
+            );
+        } elseif ($status === BookingStatus::PendingReview->value && $format === 'home') {
+            $buttons[0] = new NotificationActionButton(
+                text: $this->isRussian($locale) ? '🚗 Рассмотреть выезд' : '🚗 Review home visit',
+                url: $crmUrl,
+            );
+        }
+
+        return $buttons;
     }
 
     private function changeReason(?string $eventName): string

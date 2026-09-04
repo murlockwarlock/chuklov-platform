@@ -45,6 +45,6 @@ Scheduling/configuration mutations never silently rewrite, cancel, delete, or mo
 
 NO_SHOW is a dedicated typed terminal BookingStatus. Only authorized staff may apply it after the scheduled start to an expected/requested or confirmed booking. The transition records an immutable BookingEvent and allowlisted audit metadata. It has no automatic payment, refund, fee, or debt consequence in M4. REJECTED remains a separate terminal request outcome.
 
-### OQ-012 — RESOLVED 2026-08-13
+### OQ-012 — RESOLVED / SUPERSEDED 2026-09-04
 
-Phase 1 has one organization-level office/service location. M4 does not introduce a Location aggregate, multiple offices, location-specific calendars, rooms, room scheduling, multi-site capacity, or practitioner-location assignments. OFFICE bookings use the organization office context; HOME_VISIT destination data is booking-specific. Future managed multi-location support remains possible but is not modeled speculatively.
+The 2026-08-13 single-office decision is superseded by the Phase 1 owner decision to support multiple organization-scoped working locations. The bounded model stores human name, address, IANA timezone, optional map data, active state, and one active default office; it does not introduce rooms, route optimization, multi-site capacity, or practitioner-location assignments. OFFICE bookings select and snapshot a working location, while HOME_VISIT destinations remain booking-specific and location-day rules remain explicit configuration.

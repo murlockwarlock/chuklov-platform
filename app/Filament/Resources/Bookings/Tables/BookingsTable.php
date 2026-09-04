@@ -5,9 +5,11 @@ namespace App\Filament\Resources\Bookings\Tables;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\BookingNeedsAttention;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -30,13 +32,18 @@ class BookingsTable
             TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
             TextColumn::make('starts_at')
-                ->label('Дата и время')
+                ->label(fn (): string => 'Дата и время ('.self::viewerTimezone().')')
                 ->dateTime('d.m.Y H:i')
-                ->timezone(fn (): string => self::organizationTimezone())
+                ->timezone(fn (): string => self::viewerTimezone())
                 ->sortable(),
             TextColumn::make('visit_format')
                 ->label('Формат')
                 ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
+            TextColumn::make('location')
+                ->label('Место')
+                ->state(fn (Booking $record): string => self::locationLabel($record))
+                ->wrap()
+                ->toggleable(),
             TextColumn::make('status')
                 ->label('Статус')
                 ->badge()
@@ -70,7 +77,7 @@ class BookingsTable
                         $query,
                         $data['from'] ?? null,
                         $data['until'] ?? null,
-                        self::organizationTimezone(),
+                        self::viewerTimezone(),
                     );
                 }),
             SelectFilter::make('status')
@@ -204,8 +211,26 @@ class BookingsTable
         return app(OrganizationContext::class)->id();
     }
 
-    private static function organizationTimezone(): string
+    private static function viewerTimezone(): string
     {
-        return app(OrganizationContext::class)->defaultTimezone();
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    private static function locationLabel(Booking $booking): string
+    {
+        $snapshot = $booking->locationSnapshot();
+
+        return match ($booking->visit_format) {
+            VisitFormat::Office => trim(implode(' · ', array_filter([
+                $snapshot['name'] ?? null,
+                $snapshot['address'] ?? $booking->location,
+            ]))) ?: 'Кабинет',
+            VisitFormat::HomeVisit => 'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+            VisitFormat::Online => 'Онлайн',
+        };
     }
 }

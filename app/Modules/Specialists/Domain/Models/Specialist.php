@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read User|null $staffUser
  * @property bool $notifications_enabled
  */
-#[Fillable(['display_name', 'timezone'])]
+#[Fillable(['display_name', 'timezone', 'viewer_timezone', 'viewer_timezone_source', 'viewer_timezone_suggestion'])]
 class Specialist extends Model
 {
     /** @use HasFactory<SpecialistFactory> */

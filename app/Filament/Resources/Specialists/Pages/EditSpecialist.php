@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Specialists\Pages;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
+use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
@@ -27,7 +28,7 @@ class EditSpecialist extends EditRecord
         $impactDigest = isset($data['impact_digest']) ? (string) $data['impact_digest'] : null;
 
         try {
-            return app(UpdateSpecialist::class)->handle(
+            $updated = app(UpdateSpecialist::class)->handle(
                 actor: $actor,
                 specialist: $record,
                 displayName: $data['display_name'],
@@ -41,6 +42,16 @@ class EditSpecialist extends EditRecord
                     enabled: (bool) ($data['notifications_enabled'] ?? true),
                 ),
             );
+            if (array_key_exists('viewer_timezone', $data)) {
+                app(UpdateSpecialistViewerTimezone::class)->handle(
+                    actor: $actor,
+                    specialist: $updated,
+                    timezone: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? null : (string) $data['viewer_timezone'],
+                    source: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? 'organization' : 'manual',
+                );
+            }
+
+            return $updated->refresh();
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
 

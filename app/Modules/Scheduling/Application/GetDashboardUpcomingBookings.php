@@ -26,7 +26,7 @@ final readonly class GetDashboardUpcomingBookings
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
         $orgId = (int) $organization->getKey();
 
-        $tz = $organization->defaultTimezone();
+        $tz = app(ResolveSpecialistViewerTimezone::class)->forUser($actor);
         $now = CarbonImmutable::now($tz);
         $todayStart = $now->startOfDay();
 
@@ -69,6 +69,9 @@ final readonly class GetDashboardUpcomingBookings
                     'starts_at',
                     'visit_format',
                     'status',
+                    'location',
+                    'location_area',
+                    'location_snapshot',
                 ])
                 ->with([
                     'client:id,full_name',

@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionCallback;
@@ -105,6 +106,10 @@ $bot->onPhoto(function (Nutgram $bot, HandleTelegramCompanionPhoto $handler): vo
 });
 
 $bot->onCallbackQueryData('/^cc:(?:feedback:(?:helpful|not_helpful)|human):\d+$/', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
+    $handler->handle($bot);
+});
+
+$bot->onCallbackQueryData('booking:confirm:\d+(?::\d+)?', function (Nutgram $bot, HandleTelegramBookingConfirmation $handler): void {
     $handler->handle($bot);
 });
 

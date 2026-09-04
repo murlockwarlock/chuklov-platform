@@ -28,6 +28,25 @@ type SpecialistOption = {
     displayName: string;
 };
 
+type WorkingLocation = {
+    id: number;
+    name: string;
+    address: string;
+    timezone: string;
+    isDefault: boolean;
+    mapUrl: string | null;
+};
+
+type LocationDay = {
+    areaName: string;
+    weekday: number | null;
+    specificDate: string | null;
+    startTime: string;
+    endTime: string;
+    timezone: string;
+    notes: string | null;
+};
+
 type AvailabilitySlot = {
     startsAt: string;
     endsAt: string;
@@ -39,6 +58,7 @@ type AvailabilitySlot = {
 type Availability = {
     specialistId: number;
     serviceId: number;
+    scheduleTimezone: string;
     displayTimezone: string;
     slots: AvailabilitySlot[];
 };
@@ -51,6 +71,8 @@ type BookingQuery = {
     format: VisitFormat;
     formatSelected: boolean;
     displayTimezone: string;
+    workingLocationId: number | null;
+    locationArea: string | null;
 };
 
 type BookingResult = {
@@ -73,8 +95,11 @@ type Props = {
     portal: PortalShell;
     services: ServiceOption[];
     specialists: SpecialistOption[];
+    workingLocations: WorkingLocation[];
+    locationDays: LocationDay[];
     availability: Availability | null;
     query: BookingQuery;
+    timezoneOptions: Array<{ value: string; label: string }>;
     bookingResult: BookingResult;
     legalDocuments: LegalDocument[];
     attribution: { needsManualSource: boolean; url: string; sources: string[] };
@@ -93,6 +118,10 @@ const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
 const selectedDate = ref<string | null>(props.query.dateFrom);
 const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
+const selectedClientTimezone = ref<string>(props.query.displayTimezone);
+const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
+const selectedLocationArea = ref<string | null>(props.query.locationArea);
+const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
 const bookingForm = useForm<{
     service_id: number | null;
@@ -101,6 +130,12 @@ const bookingForm = useForm<{
     format: VisitFormat;
     party_size: number;
     location: string | null;
+    client_timezone: string;
+    working_location_id: number | null;
+    location_area: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    map_url: string | null;
     consents: Array<{ legal_document_id: number; granted: boolean }>;
     marketing_consent: boolean;
     attribution_source: string | null;
@@ -111,6 +146,12 @@ const bookingForm = useForm<{
     format: props.query.format,
     party_size: 1,
     location: null,
+    client_timezone: props.query.displayTimezone,
+    working_location_id: props.query.workingLocationId,
+    location_area: props.query.locationArea,
+    latitude: null,
+    longitude: null,
+    map_url: null,
     consents: props.legalDocuments
         .filter((document) => document.isRequired)
         .map((document) => ({ legal_document_id: document.id, granted: false })),
@@ -133,15 +174,31 @@ const requiredConsentAttempted = ref(false);
 const acknowledgedBookingId = ref<number | null>(null);
 
 watch(
-    () => [props.query.serviceId, props.query.specialistId, props.query.format, props.query.formatSelected, props.query.dateFrom] as const,
-    ([serviceId, specialistId, format, formatSelected, dateFrom]) => {
+    () => [
+        props.query.serviceId,
+        props.query.specialistId,
+        props.query.format,
+        props.query.formatSelected,
+        props.query.dateFrom,
+        props.query.displayTimezone,
+        props.query.workingLocationId,
+        props.query.locationArea,
+    ] as const,
+    ([serviceId, specialistId, format, formatSelected, dateFrom, displayTimezone, workingLocationId, locationArea]) => {
         selectedServiceId.value = serviceId;
         selectedSpecialistId.value = specialistId;
         selectedFormat.value = formatSelected ? format : null;
         selectedDate.value = dateFrom;
+        selectedClientTimezone.value = displayTimezone;
+        selectedWorkingLocationId.value = workingLocationId;
+        selectedLocationArea.value = locationArea;
+        timezoneEditorOpen.value = false;
         bookingForm.service_id = serviceId;
         bookingForm.specialist_id = specialistId;
         bookingForm.format = format;
+        bookingForm.client_timezone = displayTimezone;
+        bookingForm.working_location_id = workingLocationId;
+        bookingForm.location_area = locationArea;
 
         if (props.bookingResult === null) {
             selectedStart.value = null;
@@ -175,6 +232,78 @@ const selectedService = computed(() =>
 const selectedSpecialist = computed(() =>
     props.specialists.find((specialist) => specialist.id === props.query.specialistId) ?? null,
 );
+const selectedWorkingLocation = computed(() => props.workingLocations.find((location) => location.id === selectedWorkingLocationId.value) ?? null);
+const locationAreaOptions = computed(() => Array.from(new Set(props.locationDays.map((locationDay) => locationDay.areaName))));
+const hasLocationDayRules = computed(() => props.locationDays.length > 0);
+const locationDaySummary = computed(() => {
+    if (props.query.format !== 'home' || selectedLocationArea.value === null || selectedLocationArea.value === '') {
+        return null;
+    }
+
+    const areaDays = props.locationDays.filter((locationDay) => locationDay.areaName === selectedLocationArea.value);
+    const weekdays = Array.from(new Set(areaDays
+        .map((locationDay) => locationDay.weekday)
+        .filter((weekday): weekday is number => weekday !== null)))
+        .sort((first, second) => first - second);
+
+    if (weekdays.length > 0) {
+        const russianWeekdays = [
+            'по понедельникам',
+            'по вторникам',
+            'по средам',
+            'по четвергам',
+            'по пятницам',
+            'по субботам',
+            'по воскресеньям',
+        ];
+        const englishWeekdays = [
+            'on Mondays',
+            'on Tuesdays',
+            'on Wednesdays',
+            'on Thursdays',
+            'on Fridays',
+            'on Saturdays',
+            'on Sundays',
+        ];
+        const labels = weekdays
+            .map((weekday) => (locale.value === 'ru' ? russianWeekdays[weekday - 1] : englishWeekdays[weekday - 1]))
+            .filter((label): label is string => label !== undefined)
+            .join(', ');
+
+        return t('booking.homeVisitAvailableWeekdays', { area: selectedLocationArea.value, days: labels });
+    }
+
+    const dates = areaDays
+        .map((locationDay) => locationDay.specificDate)
+        .filter((date): date is string => date !== null)
+        .sort()
+        .slice(0, 3)
+        .map((date) => new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
+            day: 'numeric',
+            month: 'short',
+            timeZone: 'UTC',
+        }).format(new Date(`${date}T00:00:00Z`)).replace('.', ''))
+        .join(', ');
+
+    return dates === ''
+        ? null
+        : t('booking.homeVisitAvailableDates', { area: selectedLocationArea.value, dates });
+});
+const clientTimezoneOffset = computed(() => {
+    const value = props.availability?.slots[0]?.startsAt ?? new Date().toISOString();
+
+    try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: selectedClientTimezone.value,
+            timeZoneName: 'longOffset',
+        }).formatToParts(new Date(value));
+        const offset = parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
+
+        return offset === 'GMT' ? 'UTC+00:00' : offset.replace(/^GMT/, 'UTC');
+    } catch {
+        return '';
+    }
+});
 const formatOptions = computed<VisitFormat[]>(() => selectedService.value?.formats ?? []);
 const needsSpecialistChoice = computed(() => props.query.serviceId !== null && props.specialists.length > 1 && props.query.specialistId === null);
 const needsFormatChoice = computed(() => props.query.serviceId !== null && !needsSpecialistChoice.value && formatOptions.value.length > 1 && !props.query.formatSelected);
@@ -222,6 +351,9 @@ const bookingError = computed(() => {
         ?? errors.format
         ?? errors.party_size
         ?? errors.location
+        ?? errors.working_location_id
+        ?? errors.location_area
+        ?? errors.client_timezone
         ?? errors.consents
         ?? errors.marketing_consent;
 });
@@ -279,6 +411,7 @@ function bookingQuery(
     const query: Record<string, string | number> = {
         date_from: dateFrom,
         date_to: dateTo,
+        display_timezone: selectedClientTimezone.value,
     };
 
     if (props.query.serviceId !== null) {
@@ -293,13 +426,22 @@ function bookingQuery(
         query.format = props.query.format;
     }
 
+    if (selectedWorkingLocationId.value !== null) {
+        query.working_location_id = selectedWorkingLocationId.value;
+    }
+
+    if (selectedLocationArea.value !== null && selectedLocationArea.value !== '') {
+        query.location_area = selectedLocationArea.value;
+    }
+
     return query;
 }
 
-function visitBooking(query: Record<string, string | number>): void {
+function visitBooking(query: Record<string, string | number>, preserveScroll = true): void {
     router.get(props.urls.create, query, {
         preserveState: false,
-        preserveScroll: false,
+        preserveScroll,
+        replace: true,
     });
 }
 
@@ -313,13 +455,14 @@ function continueService(): void {
         date_from: props.query.dateFrom,
         date_to: props.query.dateTo,
         service_id: selectedServiceId.value,
+        display_timezone: selectedClientTimezone.value,
     };
 
     if (service?.formats.length === 1) {
         query.format = service.formats[0];
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function continueSpecialist(): void {
@@ -337,7 +480,7 @@ function continueSpecialist(): void {
         query.format = formatOptions.value[0];
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function continueFormat(): void {
@@ -348,11 +491,11 @@ function continueFormat(): void {
     visitBooking({
         ...bookingQuery(),
         format: selectedFormat.value,
-    });
+    }, false);
 }
 
 function changeService(): void {
-    visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo });
+    visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo, display_timezone: selectedClientTimezone.value }, false);
 }
 
 function changeFormat(): void {
@@ -364,13 +507,14 @@ function changeFormat(): void {
         date_from: props.query.dateFrom,
         date_to: props.query.dateTo,
         service_id: props.query.serviceId,
+        display_timezone: selectedClientTimezone.value,
     };
 
     if (props.query.specialistId !== null) {
         query.specialist_id = props.query.specialistId;
     }
 
-    visitBooking(query);
+    visitBooking(query, false);
 }
 
 function changeSpecialist(): void {
@@ -382,7 +526,8 @@ function changeSpecialist(): void {
         date_from: props.query.dateFrom,
         date_to: props.query.dateTo,
         service_id: props.query.serviceId,
-    });
+        display_timezone: selectedClientTimezone.value,
+    }, false);
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
@@ -398,6 +543,37 @@ function selectDate(date: string): void {
 function selectSlot(slot: AvailabilitySlot): void {
     selectedStart.value = slot.startsAt;
     bookingForm.starts_at = slot.startsAt;
+}
+
+function changeClientTimezone(timezone: string): void {
+    if (timezone === '' || timezone === selectedClientTimezone.value) {
+        return;
+    }
+
+    selectedClientTimezone.value = timezone;
+    timezoneEditorOpen.value = false;
+    bookingForm.client_timezone = timezone;
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    visitBooking(bookingQuery());
+}
+
+function changeWorkingLocation(value: string): void {
+    const locationId = value === '' ? null : Number(value);
+    selectedWorkingLocationId.value = Number.isInteger(locationId) ? locationId : null;
+    bookingForm.working_location_id = selectedWorkingLocationId.value;
+    bookingForm.location = null;
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    visitBooking(bookingQuery());
+}
+
+function changeLocationArea(value: string): void {
+    selectedLocationArea.value = value === '' ? null : value;
+    bookingForm.location_area = selectedLocationArea.value;
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    visitBooking(bookingQuery());
 }
 
 function continueToConfirmation(): void {
@@ -426,6 +602,9 @@ function submitBooking(): void {
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
     bookingForm.starts_at = selectedStart.value;
+    bookingForm.client_timezone = selectedClientTimezone.value;
+    bookingForm.working_location_id = selectedWorkingLocationId.value;
+    bookingForm.location_area = selectedLocationArea.value;
     bookingForm.post(props.urls.store, { preserveScroll: false });
 }
 </script>
@@ -592,49 +771,165 @@ function submitBooking(): void {
         </section>
 
         <template v-else-if="bookingStep === 'time'">
-          <section
-            v-if="selectedService && (hasSpecialistChoice || formatOptions.length > 1)"
-            class="portal-booking-selection-bar"
+          <h2
+            id="booking-time-heading"
+            class="portal-heading portal-heading--section portal-booking-time-heading"
           >
-            <div class="portal-booking-selection-bar__item">
-              <span class="portal-label">{{ t('booking.service') }}</span>
-              <strong data-testid="booking-selection-service">{{ selectedService.name }}</strong>
+            {{ t('booking.chooseDateTime') }}
+          </h2>
+          <section
+            class="portal-booking-context-summary"
+            :aria-label="t('booking.chooseDateTime')"
+            data-testid="booking-context-summary"
+          >
+            <div class="portal-booking-context-summary__main">
+              <p
+                v-if="selectedService"
+                class="portal-booking-context-summary__service"
+                data-testid="booking-selection-service"
+              >
+                {{ selectedService.name }}
+              </p>
+              <p class="portal-booking-context-summary__details">
+                <span data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</span>
+                <span v-if="selectedSpecialist"> · <span data-testid="booking-selection-specialist">{{ selectedSpecialist.displayName }}</span></span>
+                <span v-if="selectedWorkingLocation"> · {{ selectedWorkingLocation.name }}</span>
+                <span v-else-if="selectedLocationArea"> · {{ selectedLocationArea }}</span>
+              </p>
+              <p class="portal-booking-context-summary__timezone">
+                {{ t('booking.yourTime') }}:
+                <strong data-testid="booking-client-timezone">{{ selectedClientTimezone }}</strong>
+                <span v-if="clientTimezoneOffset"> · {{ clientTimezoneOffset }}</span>
+              </p>
+              <p
+                v-if="selectedWorkingLocation"
+                class="portal-copy portal-copy--small portal-booking-context-summary__location-copy"
+              >
+                {{ selectedWorkingLocation.address }} · {{ selectedWorkingLocation.timezone }}
+              </p>
+              <p
+                v-if="locationDaySummary"
+                class="portal-copy portal-copy--small"
+              >
+                {{ locationDaySummary }}
+              </p>
             </div>
-            <button
-              type="button"
-              class="portal-link portal-link--button"
-              @click="changeService"
-            >
-              {{ t('booking.changeService') }}
-            </button>
 
-            <template v-if="hasSpecialistChoice && selectedSpecialist">
-              <div class="portal-booking-selection-bar__item">
-                <span class="portal-label">{{ t('booking.specialist') }}</span>
-                <strong data-testid="booking-selection-specialist">{{ selectedSpecialist.displayName }}</strong>
-              </div>
+            <div class="portal-booking-context-summary__actions">
               <button
+                type="button"
+                class="portal-link portal-link--button"
+                @click="changeService"
+              >
+                {{ t('booking.changeService') }}
+              </button>
+              <button
+                v-if="hasSpecialistChoice && selectedSpecialist"
                 type="button"
                 class="portal-link portal-link--button"
                 @click="changeSpecialist"
               >
                 {{ t('booking.changeSpecialist') }}
               </button>
-            </template>
-
-            <template v-if="formatOptions.length > 1">
-              <div class="portal-booking-selection-bar__item">
-                <span class="portal-label">{{ t('booking.format') }}</span>
-                <strong data-testid="booking-selection-format">{{ formatLabel(props.query.format) }}</strong>
-              </div>
               <button
+                v-if="formatOptions.length > 1"
                 type="button"
                 class="portal-link portal-link--button"
                 @click="changeFormat"
               >
                 {{ t('booking.changeFormat') }}
               </button>
-            </template>
+              <button
+                type="button"
+                class="portal-link portal-link--button"
+                data-testid="booking-client-timezone-edit"
+                @click="timezoneEditorOpen = !timezoneEditorOpen"
+              >
+                {{ t('booking.changeTimezone') }}
+              </button>
+            </div>
+
+            <div class="portal-booking-context-summary__controls">
+              <label
+                v-if="props.query.format === 'office' && props.workingLocations.length > 1"
+                class="portal-field"
+              >
+                <span class="portal-label">{{ t('booking.whereMeeting') }}</span>
+                <select
+                  class="portal-input portal-select"
+                  :value="selectedWorkingLocationId ?? ''"
+                  data-testid="booking-working-location-select"
+                  @change="changeWorkingLocation(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    value=""
+                    disabled
+                  >{{ t('booking.chooseLocation') }}</option>
+                  <option
+                    v-for="location in props.workingLocations"
+                    :key="location.id"
+                    :value="location.id"
+                  >{{ location.name }} — {{ location.address }}</option>
+                </select>
+              </label>
+              <label
+                v-if="props.query.format === 'home'"
+                class="portal-field"
+              >
+                <span class="portal-label">{{ t('booking.area') }}</span>
+                <select
+                  v-if="hasLocationDayRules"
+                  class="portal-input portal-select"
+                  :value="selectedLocationArea ?? ''"
+                  data-testid="booking-location-area-select"
+                  @change="changeLocationArea(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    value=""
+                    disabled
+                  >{{ t('booking.chooseArea') }}</option>
+                  <option
+                    v-for="area in locationAreaOptions"
+                    :key="area"
+                    :value="area"
+                  >{{ area }}</option>
+                </select>
+                <input
+                  v-else
+                  :value="selectedLocationArea ?? ''"
+                  type="text"
+                  maxlength="160"
+                  class="portal-input"
+                  :placeholder="t('booking.areaPlaceholder')"
+                  @change="changeLocationArea(($event.target as HTMLInputElement).value)"
+                >
+              </label>
+              <label
+                v-if="timezoneEditorOpen"
+                class="portal-field portal-booking-context-summary__timezone-editor"
+              >
+                <span class="portal-label">{{ t('booking.changeTimezone') }}</span>
+                <select
+                  class="portal-input portal-select"
+                  :value="selectedClientTimezone"
+                  data-testid="booking-client-timezone-select"
+                  @change="changeClientTimezone(($event.target as HTMLSelectElement).value)"
+                >
+                  <option
+                    v-for="option in props.timezoneOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >{{ option.label }}</option>
+                </select>
+              </label>
+            </div>
+
+            <p
+              v-if="props.query.format === 'home' && !hasLocationDayRules"
+              class="portal-copy portal-copy--small"
+            >
+              {{ t('booking.locationDayNotConfigured') }}
+            </p>
           </section>
 
           <BookingCalendar
@@ -644,6 +939,10 @@ function submitBooking(): void {
             :locale="locale"
             :selected-date="selectedDate"
             :selected-start="selectedStart"
+            :show-heading="false"
+            :auto-select-available-date="props.query.format === 'home' && hasLocationDayRules"
+            :show-nearest-dates="props.query.format === 'home'"
+            :empty-range-message="props.query.format === 'home' ? t('booking.noHomeSlots') : t('booking.noSlots')"
             @select-date="selectDate"
             @select-slot="selectSlot"
             @change-month="changeMonth"
@@ -678,6 +977,10 @@ function submitBooking(): void {
           :format-label="formatLabel(props.query.format)"
           :party-size="bookingForm.party_size"
           :location="bookingForm.location"
+          :working-location="selectedWorkingLocation"
+          :location-area="selectedLocationArea"
+          :has-location-day-rules="hasLocationDayRules"
+          :location-area-options="locationAreaOptions"
           :processing="bookingForm.processing"
           :error="bookingError"
           :legal-documents="props.legalDocuments"

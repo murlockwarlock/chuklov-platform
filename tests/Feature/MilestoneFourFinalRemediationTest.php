@@ -21,10 +21,13 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Database\Seeders\LegalDocumentSeeder;
+use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -169,6 +172,135 @@ class MilestoneFourFinalRemediationTest extends TestCase
             ->assertHasErrors('schedule_impact')
             ->assertSet('data.impact_digest', $newImpact->digest)
             ->assertSet('data.schedule_impact_bookings.0.id', $booking->getKey());
+    }
+
+    public function test_unrelated_scheduling_save_does_not_clear_existing_weekly_hours(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $weeklySchedule = array_map(
+            static fn (int $weekday): array => [
+                'weekday' => $weekday,
+                'start_time' => '09:00',
+                'end_time' => '17:00',
+            ],
+            range(1, 7),
+        );
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, $weeklySchedule);
+        $before = $this->workingHourSnapshot($organization->getKey(), $specialist->getKey());
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'lead_time_minutes' => 15,
+                'working_hours' => [],
+                'clear_working_hours' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame($before, $this->workingHourSnapshot($organization->getKey(), $specialist->getKey()));
+    }
+
+    public function test_viewer_timezone_uses_the_staff_linked_specialist_on_mount_save_and_reload(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $specialist->forceFill([
+            'staff_user_id' => $admin->getKey(),
+            'viewer_timezone' => null,
+            'viewer_timezone_source' => 'organization',
+        ])->save();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->assertSet('data.specialist_id', $specialist->getKey())
+            ->assertSet('data.viewer_timezone', null)
+            ->set('data.viewer_timezone', 'Asia/Bangkok')
+            ->set('data.working_hours', [])
+            ->set('data.clear_working_hours', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame('Asia/Bangkok', $specialist->fresh()->viewer_timezone);
+        self::assertSame('manual', $specialist->fresh()->viewer_timezone_source);
+
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->assertSet('data.specialist_id', $specialist->getKey())
+            ->assertSet('data.viewer_timezone', 'Asia/Bangkok');
+    }
+
+    public function test_switching_specialists_loads_each_schedule_without_cross_overwrite(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Second Specialist',
+        ]);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $secondSpecialist, [[
+            'weekday' => 2,
+            'start_time' => '13:00',
+            'end_time' => '18:00',
+        ]]);
+        $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $component->assertSet('data.specialist_id', $specialist->getKey());
+        self::assertSame(1, (int) array_values($component->instance()->data['working_hours'])[0]['weekday']);
+
+        $component->set('data.specialist_id', $secondSpecialist->getKey());
+        self::assertSame(2, (int) array_values($component->instance()->data['working_hours'])[0]['weekday']);
+        self::assertSame('13:00', array_values($component->instance()->data['working_hours'])[0]['start_time']);
+
+        $component->set('data.specialist_id', $specialist->getKey());
+        self::assertSame(1, (int) array_values($component->instance()->data['working_hours'])[0]['weekday']);
+        self::assertSame('09:00', array_values($component->instance()->data['working_hours'])[0]['start_time']);
+
+        self::assertSame(1, $specialist->workingHours()->count());
+        self::assertSame(1, $secondSpecialist->workingHours()->count());
+    }
+
+    public function test_explicit_clear_requires_the_clear_schedule_control(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $component = Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->fillForm([
+                'specialist_id' => $specialist->getKey(),
+                'working_hours' => [],
+                'clear_working_hours' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(1, $specialist->workingHours()->count());
+
+        $component
+            ->set('data.clear_working_hours', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(0, $specialist->workingHours()->count());
+    }
+
+    public function test_staging_seeders_do_not_change_specialist_timezone_or_working_hours(): void
+    {
+        [$organization, , , $specialist] = $this->fixture();
+        $specialist->forceFill([
+            'viewer_timezone' => 'Asia/Bangkok',
+            'viewer_timezone_source' => 'manual',
+        ])->save();
+        $before = $this->workingHourSnapshot($organization->getKey(), $specialist->getKey());
+
+        app(LegalDocumentSeeder::class)->run();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $specialist->refresh();
+        self::assertSame('Asia/Bangkok', $specialist->viewer_timezone);
+        self::assertSame('manual', $specialist->viewer_timezone_source);
+        self::assertSame($before, $this->workingHourSnapshot($organization->getKey(), $specialist->getKey()));
     }
 
     public function test_quick_specialist_deactivation_uses_the_visible_impact_handoff(): void
@@ -326,5 +458,24 @@ class MilestoneFourFinalRemediationTest extends TestCase
     {
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
+    }
+
+    /** @return list<array{weekday: int, start_time: string, end_time: string, is_active: bool}> */
+    private function workingHourSnapshot(int $organizationId, int $specialistId): array
+    {
+        return SpecialistWorkingHour::query()
+            ->where('organization_id', $organizationId)
+            ->where('specialist_id', $specialistId)
+            ->orderBy('weekday')
+            ->orderBy('start_time')
+            ->get()
+            ->map(static fn (SpecialistWorkingHour $hour): array => [
+                'weekday' => (int) $hour->weekday,
+                'start_time' => substr((string) $hour->start_time, 0, 5),
+                'end_time' => substr((string) $hour->end_time, 0, 5),
+                'is_active' => (bool) $hour->is_active,
+            ])
+            ->values()
+            ->all();
     }
 }

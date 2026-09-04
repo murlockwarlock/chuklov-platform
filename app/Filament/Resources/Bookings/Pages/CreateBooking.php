@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -32,7 +33,10 @@ class CreateBooking extends CreateRecord
         $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
         $startsAt = $data['starts_at'] instanceof DateTimeInterface
             ? $data['starts_at']
-            : CarbonImmutable::parse((string) $data['starts_at'], $context->organization()->defaultTimezone());
+            : CarbonImmutable::parse(
+                (string) $data['starts_at'],
+                app(ResolveSpecialistViewerTimezone::class)->forUser($actor),
+            );
 
         return app(CreateBookingAction::class)->handle(
             actor: $actor,
@@ -46,6 +50,10 @@ class CreateBooking extends CreateRecord
             idempotencyKey: null,
             partySize: (int) ($data['party_size'] ?? 1),
             location: isset($data['location']) ? (string) $data['location'] : null,
+            workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
+                ? (int) $data['working_location_id']
+                : null,
+            locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
         );
     }
 }

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-09-04 — PR #29 final owner-acceptance hardening
+
+- Scheduling Configuration now follows the staff-linked Specialist consistently and skips destructive working-hours replacement when an empty repeater is only stale or unrelated form state; clearing a schedule requires an explicit control, while specialist switching reloads the selected schedule.
+- Portal date selection now uses one compact booking context, compact timezone editing, human HomeVisit availability language, nearest available dates, and one range-or-day empty state without changing UTC booking or location persistence.
+- The CRM client workspace now presents balanced «Клиент» and «Клинический профиль» sections while retaining the existing Class C authorization and server-side medical-profile reads.
+
+## 2026-09-04 — PR #29 owner-acceptance fix pass
+
+- CRM viewer timezone now follows the logged-in staff user, independent of the schedule specialist selector; portal timezone changes, office locations, and HomeVisit areas preserve scroll and replace filter history.
+- Added RU/EN Profile timezone labels and responsive IANA timezone layout; recipient-aware booking location labels deduplicate identical Office name/address values.
+- Booking lifecycle templates now include format and immutable place details, specialist messages store actual line breaks, and existing environments receive corrective published template versions through `2026_09_04_120000_correct_booking_notification_template_versions`.
+
+## 2026-09-04 — PR #29 independent audit remediation
+
+- Persisted an explicitly selected portal booking timezone through the existing client preference action, preserving manual provenance and device-detection precedence; HomeVisit reschedules now keep or clear destination geodata as one coherent snapshot; and location-day availability now deterministically applies specific-date precedence, all windows, timezone validation, and overlap normalization.
+- Focused local Phase 1 scheduling and portal regressions pass 43 tests / 237 assertions; PostgreSQL foundation integration passes 110 tests / 370 assertions. Pint, PHPStan, PHP syntax, frontend lint/typecheck/build, and `git diff --check` pass.
+- Implementation candidate `d66b33ef54285482ad1f5e8a4c08c25e3127928b` passed hosted CI run `33847260837` and staging deployment/smoke plus server-side timezone, Office/Online availability, HomeVisit snapshot, multi-window, and specific-date checks. No migration was required; production and merge remain untouched.
+
+## 2026-09-04 — Phase 1 booking locations, timezones, and specialist actions
+
+- Added organization-scoped working locations and location days with PostgreSQL-safe default-location constraints, idempotent legacy office-address backfill, and configurable HomeVisit travel/session occupancy.
+- Kept booking `starts_at`/`ends_at`/`blocking_ends_at` canonical in UTC while separating client display, specialist CRM viewer, and physical schedule timezones with DST-sensitive coverage and device suggestions that never silently change saved preferences.
+- Extended Office, HomeVisit, and Online booking flows with location/destination snapshots, location-aware availability, exact CRM Telegram links, specialist-local timestamps, authorized idempotent Office/Online confirmation callbacks, stale callback rejection, and HomeVisit review actions.
+- Focused local evidence: `PhaseOneBookingLocationsTest` 8 / 59 and `MilestoneFiveScenarioTest` 26 / 157 pass; PHPStan, Pint, frontend lint/typecheck/build, PHP syntax, and `git diff --check` are passing. Hosted exact-SHA CI is green, including PostgreSQL integration, and the exact candidate passes `./scripts/staging-smoke.sh`; focused Phase 1 browser scenarios pass while 6 existing baseline E2E failures remain. Manual staging UI verification and owner acceptance are pending; production is untouched.
+
 ## 2026-09-04 — Компактные согласия и общий emoji picker
 
 - В booking flow обязательные документы показываются компактным списком с отдельным просмотром в modal и одной общей галочкой; backend по-прежнему фиксирует отдельное versioned consent evidence для Offer, Privacy и MedicalDisclaimer.

@@ -18,6 +18,7 @@ class SlotCalculator
      * @param  list<WallClockInterval>  $customIntervals
      * @param  list<InstantInterval>  $unavailableIntervals
      * @param  list<InstantInterval>  $bookingIntervals
+     * @param  list<InstantInterval>  $allowedIntervals
      * @return list<AvailabilitySlot>
      */
     public function calculate(
@@ -35,6 +36,7 @@ class SlotCalculator
         VisitFormat $format,
         string $displayTimezone,
         ?int $stepMinutes = null,
+        array $allowedIntervals = [],
     ): array {
         if ($dayOff || $durationMinutes <= 0 || $bufferMinutes < 0 || $leadTimeMinutes < 0) {
             return [];
@@ -47,6 +49,7 @@ class SlotCalculator
         }
 
         $wallIntervals = $customIntervals !== [] ? $customIntervals : $workingIntervals;
+        $allowedIntervals = $this->mergeIntervals($allowedIntervals);
         $blockedIntervals = $this->mergeIntervals([...$unavailableIntervals, ...$bookingIntervals]);
         $slots = [];
         $minimumStart = $now->utc()->addMinutes($leadTimeMinutes);
@@ -59,17 +62,19 @@ class SlotCalculator
             }
 
             foreach ($this->subtract($base, $blockedIntervals) as $segment) {
-                for ($minute = $wallInterval->startMinutes(); $minute <= $wallInterval->endMinutes(); $minute += $stepMinutes) {
-                    if ($minute > 1439) {
-                        break;
-                    }
-
-                    foreach ($this->localInstants($date, $scheduleTimezone, $minute) as $candidate) {
-                        if (! $this->isBookableCandidate($candidate, $segment, $minimumStart, $durationMinutes, $bufferMinutes)) {
-                            continue;
+                foreach ($this->candidateStartMinutes($date, $scheduleTimezone, $wallInterval, $allowedIntervals) as $startMinute) {
+                    for ($minute = $startMinute; $minute <= $wallInterval->endMinutes(); $minute += $stepMinutes) {
+                        if ($minute > 1439) {
+                            break;
                         }
 
-                        $slots[] = $this->slot($candidate, $durationMinutes, $bufferMinutes, $scheduleTimezone, $displayTimezone, $format);
+                        foreach ($this->localInstants($date, $scheduleTimezone, $minute) as $candidate) {
+                            if (! $this->isBookableCandidate($candidate, $segment, $minimumStart, $durationMinutes, $bufferMinutes, $allowedIntervals)) {
+                                continue;
+                            }
+
+                            $slots[] = $this->slot($candidate, $durationMinutes, $bufferMinutes, $scheduleTimezone, $displayTimezone, $format);
+                        }
                     }
                 }
             }
@@ -84,6 +89,14 @@ class SlotCalculator
         }
 
         return array_values($unique);
+    }
+
+    public function wallClockInterval(
+        LocalDate $date,
+        string $timezone,
+        WallClockInterval $interval,
+    ): ?InstantInterval {
+        return $this->toInstantInterval($date, $timezone, $interval);
     }
 
     /**
@@ -150,18 +163,62 @@ class SlotCalculator
         return $segments;
     }
 
+    /** @param list<InstantInterval> $allowedIntervals */
     private function isBookableCandidate(
         CarbonImmutable $candidate,
         InstantInterval $segment,
         CarbonImmutable $minimumStart,
         int $durationMinutes,
         int $bufferMinutes,
+        array $allowedIntervals,
     ): bool {
         $blockingEnd = $candidate->addMinutes($durationMinutes + $bufferMinutes);
 
+        $insideAllowedInterval = $allowedIntervals === [];
+        foreach ($allowedIntervals as $allowed) {
+            if (! $candidate->lessThan($allowed->start) && ! $blockingEnd->greaterThan($allowed->end)) {
+                $insideAllowedInterval = true;
+
+                break;
+            }
+        }
+
         return ! $candidate->lessThan($segment->start)
             && ! $blockingEnd->greaterThan($segment->end)
-            && ! $candidate->lessThan($minimumStart);
+            && ! $candidate->lessThan($minimumStart)
+            && $insideAllowedInterval;
+    }
+
+    /**
+     * @param  list<InstantInterval>  $allowedIntervals
+     * @return list<int>
+     */
+    private function candidateStartMinutes(
+        LocalDate $date,
+        string $scheduleTimezone,
+        WallClockInterval $wallInterval,
+        array $allowedIntervals,
+    ): array {
+        if ($allowedIntervals === []) {
+            return [$wallInterval->startMinutes()];
+        }
+
+        $starts = [];
+        foreach ($allowedIntervals as $allowedInterval) {
+            $localStart = $allowedInterval->start->setTimezone($scheduleTimezone);
+            if ($localStart->toDateString() !== $date->value) {
+                continue;
+            }
+
+            $starts[] = max(
+                $wallInterval->startMinutes(),
+                ($localStart->hour * 60) + $localStart->minute,
+            );
+        }
+
+        sort($starts);
+
+        return array_values(array_unique($starts));
     }
 
     private function toInstantInterval(

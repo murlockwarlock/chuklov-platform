@@ -34,6 +34,18 @@ class SpecialistForm
                     ->searchable()
                     ->nullable()
                     ->helperText('Если не выбрать, используется часовой пояс организации.'),
+                Select::make('viewer_timezone')
+                    ->label('Часовой пояс CRM')
+                    ->options(fn (Get $get): array => TimezoneOptions::options(
+                        current: $get('viewer_timezone'),
+                        organization: app(OrganizationContext::class)->organization()->defaultTimezone(),
+                    ))
+                    ->searchable()
+                    ->nullable()
+                    ->afterStateHydrated(function (Select $component, ?Specialist $record): void {
+                        $component->state($record?->viewer_timezone);
+                    })
+                    ->helperText('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.'),
                 Select::make('staff_user_id')
                     ->label('Сотрудник CRM')
                     ->options(fn (): array => User::query()

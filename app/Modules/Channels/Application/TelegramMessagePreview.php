@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final class TelegramMessagePreview
 {
-    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string}|null} */
+    /** @return array{mode: string, captionPosition: string, bodyHtml: string, mediaUrl: string|null, mediaItems: list<array{type: string, url: string|null, name: string|null}>, hasText: bool, hasImage: bool, actionButton: array{text: string, url: string|null}|null} */
     public function handle(NotificationMessage $message): array
     {
         $bodyHtml = RichTextDocument::telegramHtml($message->body);

@@ -91,6 +91,8 @@ class ApproveHomeVisitBooking
                 format: VisitFormat::HomeVisit,
                 startsAt: $lockedBooking->startsAtUtc(),
                 displayTimezone: $lockedBooking->client_timezone,
+                workingLocationId: $lockedBooking->working_location_id,
+                locationArea: $lockedBooking->location_area,
             );
             $slot = $this->matchingSlot($availability->slots, $lockedBooking->startsAtUtc());
 
@@ -179,7 +181,7 @@ class ApproveHomeVisitBooking
         return $reason === '' ? null : $reason;
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, mixed> */
     private function bookingSnapshot(Booking $booking): array
     {
         return [
@@ -194,6 +196,9 @@ class ApproveHomeVisitBooking
             'blocking_ends_at' => $booking->blockingEndsAtUtc()->toIso8601String(),
             'schedule_timezone' => $booking->schedule_timezone,
             'location' => $booking->location,
+            'working_location_id' => $booking->working_location_id,
+            'location_area' => $booking->location_area,
+            'location_snapshot' => $booking->locationSnapshot(),
             'event_version' => $booking->event_version,
         ];
     }

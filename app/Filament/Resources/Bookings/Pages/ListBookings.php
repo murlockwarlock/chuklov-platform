@@ -4,7 +4,9 @@ namespace App\Filament\Resources\Bookings\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use Carbon\CarbonImmutable;
 use Filament\Resources\Pages\ListRecords;
@@ -27,7 +29,10 @@ class ListBookings extends ListRecords
      */
     public function getTabs(): array
     {
-        $timezone = app(OrganizationContext::class)->defaultTimezone();
+        $actor = auth()->user();
+        $timezone = $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
 
         return [
             'all' => Tab::make('Все'),

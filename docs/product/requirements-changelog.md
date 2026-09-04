@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions
+
+- Extended the accepted scheduling contract into a single candidate slice for canonical UTC booking instants, independent client/specialist-viewer/physical-location timezones, client and specialist IANA preference provenance, multiple organization-scoped working locations, location-day rules, booking location/destination snapshots, and full HomeVisit occupied intervals.
+- Added the specialist-facing CRM/Telegram timezone and action contract: specialist-local notification rendering, exact organization-scoped Booking deep links, authorized/idempotent quick confirmation for Requested Office/Online bookings, and review-only HomeVisit actions.
+- Versioned the Telegram confirmation callback with the booking event version so a stale notification cannot confirm a later requested booking; the existing `ConfirmBooking` action remains the only status transition path.
+- The previous single-office wording in OQ-012 is superseded. No payment-provider, Zoom-provider, route-optimization, M12, M16, or production scope is added.
+
 ## 2026-08-30 — REQ-ATTACHMENT-001 product-contract correction
 
 - Clarified that the client Technical Specification requires private, validated medical attachments to become available to authorized same-organization staff after upload; it does not require malware quarantine or a scanner-backed cleared state.
