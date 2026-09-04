@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-09-04 — PR #29 independent audit remediation
+
+- Starting fix SHA: `2bc90e5a94f2090ee2760afbde2909daa78da531`; implementation candidate: `d66b33ef54285482ad1f5e8a4c08c25e3127928b` on `codex/phase1-booking-locations-viewer-timezones`. The bounded fix persists explicit client timezone selection through `UpdateClientTimezonePreference`, makes HomeVisit reschedule snapshots coherent, and resolves location-day rules deterministically across precedence, multiple windows, timezone conflicts, and overlaps.
+- Focused local regression checks pass: Phase 1 scheduling/portal coverage is 43 tests / 237 assertions; the PostgreSQL foundation integration run is 110 tests / 370 assertions. Hosted full CI run `33847260837` is green on the implementation SHA, including PostgreSQL, quality, Docker runtime, concurrency, RAG, and privacy jobs.
+- Staging was deployed with the implementation SHA and `./scripts/staging-smoke.sh` passed. Server-side staging checks passed for manual client timezone persistence plus later device-login preservation, Office/Online availability, multi-window and specific-date location days, and HomeVisit destination snapshot preservation/clearing. The in-app browser surface was unavailable in this environment, so manual browser-only UI interactions were not claimed; production was not deployed and PR #29 remains an OPEN Draft.
+- No migration was added for this remediation. The HomeVisit travel-buffer distribution remains unchanged and is still an explicit product decision.
+
 ## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions candidate verification
 
 - Starting SHA: `e1c714fb7b64ff87f3742671555221b47bd02e31`; branch: `codex/phase1-booking-locations-viewer-timezones`. This draft candidate extends scheduling as one UTC-based architecture: independent client/viewer/location timezones, multiple working locations, location days, Office/HomeVisit/Online snapshots and flows, full HomeVisit occupancy, CRM rendering, specialist Telegram actions, exact Booking links, and authorized idempotent quick confirmation.

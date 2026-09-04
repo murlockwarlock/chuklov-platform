@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-04 — PR #29 independent audit remediation
+
+- Persisted an explicitly selected portal booking timezone through the existing client preference action, preserving manual provenance and device-detection precedence; HomeVisit reschedules now keep or clear destination geodata as one coherent snapshot; and location-day availability now deterministically applies specific-date precedence, all windows, timezone validation, and overlap normalization.
+- Focused local Phase 1 scheduling and portal regressions pass 43 tests / 237 assertions; PostgreSQL foundation integration passes 110 tests / 370 assertions. Pint, PHPStan, PHP syntax, frontend lint/typecheck/build, and `git diff --check` pass.
+- Implementation candidate `d66b33ef54285482ad1f5e8a4c08c25e3127928b` passed hosted CI run `33847260837` and staging deployment/smoke plus server-side timezone, Office/Online availability, HomeVisit snapshot, multi-window, and specific-date checks. No migration was required; production and merge remain untouched.
+
 ## 2026-09-04 — Phase 1 booking locations, timezones, and specialist actions
 
 - Added organization-scoped working locations and location days with PostgreSQL-safe default-location constraints, idempotent legacy office-address backfill, and configurable HomeVisit travel/session occupancy.
