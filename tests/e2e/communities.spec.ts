@@ -172,7 +172,6 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeHidden();
     await expect(editor.locator(`a[href="${url}"]`)).toHaveCount(1);
     await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
 }
 
 async function saveContentSection(page: Page): Promise<void> {
@@ -203,7 +202,6 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.locator('button[aria-label="Подчеркнутый"]').click();
     await expect(editor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
     await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
 
     await saveContentSection(page);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
@@ -227,7 +225,11 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
     const previewEditor = page.locator('.fi-fo-rich-editor-content').first();
-    await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
+    await expect(previewEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
+    const previewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
+    await expect(previewButton).toBeEnabled();
+    await previewButton.scrollIntoViewIfNeeded();
+    await previewButton.click();
     const previewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
     await expect(previewDialog.locator(`a[href="${initialUrl}"]`)).toHaveText(communityText);
     await expect(previewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
@@ -257,7 +259,12 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(updatedTelegram.requests.some((payload) => String(payload.text ?? '').includes(`<a href="${initialUrl}">`))).toBe(false);
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
-    await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
+    const updatedPreviewEditor = page.locator('.fi-fo-rich-editor-content').first();
+    await expect(updatedPreviewEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
+    const updatedPreviewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
+    await expect(updatedPreviewButton).toBeEnabled();
+    await updatedPreviewButton.scrollIntoViewIfNeeded();
+    await updatedPreviewButton.click();
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
     await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
     await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
