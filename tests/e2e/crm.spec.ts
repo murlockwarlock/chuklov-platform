@@ -480,8 +480,8 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await page.getByRole('button', { name: 'Создать ссылку', exact: true }).click();
     const linkDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Название' }).last();
     await expect(linkDialog).toBeVisible();
-    await linkDialog.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
-    await linkDialog.getByRole('combobox', { name: 'Канал', exact: true }).click();
+    await linkDialog.getByLabel(/^Название/).fill('Instagram — шапка профиля');
+    await linkDialog.getByRole('combobox', { name: /^Канал/ }).click();
     await page.getByText('Instagram', { exact: true }).last().click();
     await linkDialog.getByRole('button', { name: 'Создать', exact: true }).click();
     await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
@@ -500,7 +500,7 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await page.getByRole('button', { name: 'Назначить партнёра', exact: true }).click();
     const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Партнёр' }).last();
-    const partnerSelect = assignmentDialog.getByRole('combobox', { name: 'Партнёр', exact: true });
+    const partnerSelect = assignmentDialog.getByRole('combobox', { name: /^Партнёр/ });
     await partnerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByText(fixture.partnerName, { exact: true }).last().click();
@@ -542,8 +542,8 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     const paymentDialog = page.locator('.fi-modal-window:visible').last();
     await expect(paymentDialog).toBeVisible();
-    await expect(paymentDialog.getByLabel('Сумма оплаты', { exact: true })).toHaveValue('100.00');
-    await paymentDialog.getByLabel('Способ оплаты', { exact: true }).selectOption('cash');
+    await expect(paymentDialog.getByLabel(/^Сумма оплаты/)).toHaveValue('100.00');
+    await paymentDialog.getByLabel(/^Способ оплаты/).selectOption('cash');
     await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     await expect(page.getByText('Оплата записана. Остаток обновлён.', { exact: true })).toBeVisible();
 
@@ -566,7 +566,7 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     await rejectedRow.getByRole('button', { name: 'Отклонить', exact: true }).click();
     const rejectDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Причина отклонения' }).last();
     await expect(rejectDialog).toBeVisible();
-    await rejectDialog.getByLabel('Причина отклонения', { exact: true }).fill('Проверка тестовой выплаты');
+    await rejectDialog.getByLabel(/^Причина отклонения/).fill('Проверка тестовой выплаты');
     await rejectDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(rejectedRow).toContainText('Отклонена');
 
@@ -581,8 +581,8 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     await approvedRow.getByRole('button', { name: 'Отметить как выплаченную', exact: true }).click();
     const paidDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Платёжная пометка или ссылка' }).last();
     await expect(paidDialog).toBeVisible();
-    await paidDialog.getByLabel('Платёжная пометка или ссылка', { exact: true }).fill('manual-test-payout');
-    await paidDialog.getByLabel('Комментарий о ручной выплате', { exact: true }).fill('Тестовая ручная выплата');
+    await paidDialog.getByLabel(/^Платёжная пометка или ссылка/).fill('manual-test-payout');
+    await paidDialog.getByLabel(/^Комментарий о ручной выплате/).fill('Тестовая ручная выплата');
     await paidDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(approvedRow).toContainText('Отмечена как выплаченная');
     await assertNoHorizontalOverflow(page);
