@@ -102,7 +102,9 @@ final class ReferralRewardsConcurrencyTest extends TestCase
         self::assertNotContains('error', $results);
         self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', 'reversed')->count());
         self::assertSame(2, ReferralRewardLedgerEntry::query()->count());
-        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'reversal:'))));
+        $reversalResults = array_values(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'reversal:')));
+        self::assertCount(2, $reversalResults);
+        self::assertCount(1, array_unique($reversalResults));
     }
 
     private static function consumeInProcess(int $eventId): string
