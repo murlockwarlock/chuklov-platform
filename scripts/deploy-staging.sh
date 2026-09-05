@@ -546,6 +546,12 @@ install -d -m 0700 "$composer_cache"
 chmod 0700 "$composer_cache"
 docker run --rm --env-file "$environment" \
     -e COMPOSER_CACHE_DIR=/composer-cache \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e ALL_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    -e all_proxy= \
     -v "$release:/app" \
     -v "$root/shared/storage:/app/storage:ro" \
     -v "$candidate_build_cache:/app/bootstrap/cache" \

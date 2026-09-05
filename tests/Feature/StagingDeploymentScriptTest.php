@@ -70,6 +70,12 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('install -d -m 0700 "$composer_cache"', $script);
         self::assertStringContainsString('chmod 0700 "$composer_cache"', $script);
         self::assertStringContainsString('-e COMPOSER_CACHE_DIR=/composer-cache', $script);
+        self::assertStringContainsString('-e HTTP_PROXY=', $script);
+        self::assertStringContainsString('-e HTTPS_PROXY=', $script);
+        self::assertStringContainsString('-e ALL_PROXY=', $script);
+        self::assertStringContainsString('-e http_proxy=', $script);
+        self::assertStringContainsString('-e https_proxy=', $script);
+        self::assertStringContainsString('-e all_proxy=', $script);
         self::assertStringContainsString('-v "$composer_cache:/composer-cache"', $script);
         self::assertStringNotContainsString('rm -rf -- "$composer_cache"', $script);
         self::assertStringContainsString('queue_preflight_cache', $script);
