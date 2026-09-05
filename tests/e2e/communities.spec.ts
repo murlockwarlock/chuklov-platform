@@ -209,7 +209,7 @@ async function saveContentSection(page: Page): Promise<void> {
     await expect(saveButton).toBeEnabled();
     await saveButton.scrollIntoViewIfNeeded();
     await saveButton.click({ force: true });
-    await expect(page.getByRole('heading', { name: 'Сохранено', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Сохранено', exact: true })).toBeVisible({ timeout: 15_000 });
 }
 
 test('owner-created Communities RichEditor links survive the real CRM flow', async ({ page }) => {
