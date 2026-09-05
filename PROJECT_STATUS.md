@@ -1,5 +1,10 @@
 # Project Status
 
+## 2026-09-04 — M11D B2B closeout and Communities candidate
+
+- M11D B2B is `OWNER ACCEPTED / CLOSED` on current main `c6b89e788d2e5f30cf0d4e7556f29d8d3ee8555c`; PR #26 remains closed/unmerged and was not reopened. The exact remaining M11 user-facing Communities gap is implemented on `codex/m11-communities` through the existing ContentSection, Telegram menu/content, and generic Mini App section route.
+- The candidate now synchronizes the real Filament RichEditor state through actions and save, accepts that live TipTap state in the existing preview projection, and persists one canonical safe HTML body. Owner-created links survive ContentSection edit/reload and the existing Portal/Telegram projections without changing plain-text storage or delivery-mode semantics. It has no migration and keeps Communities out of the Telegram menu until visible published localized content exists. Focused local verification passes; hosted exact-SHA CI, staging verification, and Communities owner acceptance remain the required next gates. Production remains closed and M11 remains `IN_PROGRESS` until owner acceptance.
+
 ## 2026-09-04 — PR #29 independent audit remediation
 
 - Starting fix SHA: `2bc90e5a94f2090ee2760afbde2909daa78da531`; implementation candidate: `d66b33ef54285482ad1f5e8a4c08c25e3127928b` on `codex/phase1-booking-locations-viewer-timezones`. The bounded fix persists explicit client timezone selection through `UpdateClientTimezonePreference`, makes HomeVisit reschedule snapshots coherent, and resolves location-day rules deterministically across precedence, multiple windows, timezone conflicts, and overlaps.

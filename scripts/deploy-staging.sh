@@ -119,6 +119,7 @@ archive="$7"
 remote_normalizer="$8"
 queue_probe_script=''
 candidate_build_cache=''
+composer_cache=''
 current_probe_environment=''
 candidate_probe_environment=''
 queue_preflight_cache=''
@@ -151,6 +152,7 @@ release="$root/releases/$revision"
 compose="$root/compose.yml"
 environment="$root/shared/.env"
 backups="$root/shared/backups"
+composer_cache="$root/shared/composer-cache"
 current_revision="$(cat "$root/REVISION")"
 previous_target="$(readlink -f "$root/current")"
 snapshot="$backups/predeploy-$revision"
@@ -536,10 +538,24 @@ ln -s /app/storage/app/public "$release/public/storage"
 
 docker build -t "chuklov-staging-app:$revision" -f "$release/docker/php/Dockerfile" "$release"
 candidate_build_cache="$(mktemp -d)"
+if [[ -L "$composer_cache" || ( -e "$composer_cache" && ! -d "$composer_cache" ) ]]; then
+    echo "Staging Composer cache path is not a directory: $composer_cache" >&2
+    exit 1
+fi
+install -d -m 0700 "$composer_cache"
+chmod 0700 "$composer_cache"
 docker run --rm --env-file "$environment" \
+    -e COMPOSER_CACHE_DIR=/composer-cache \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e ALL_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    -e all_proxy= \
     -v "$release:/app" \
     -v "$root/shared/storage:/app/storage:ro" \
     -v "$candidate_build_cache:/app/bootstrap/cache" \
+    -v "$composer_cache:/composer-cache" \
     -w /app "chuklov-staging-app:$revision" \
     composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress
 docker run --rm -v "$release:/app" -w /app node:24.6.0-alpine npm ci --ignore-scripts

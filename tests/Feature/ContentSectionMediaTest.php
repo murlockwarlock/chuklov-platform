@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\ContentSections\Pages\EditContentSection;
+use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
@@ -29,6 +30,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -112,6 +114,19 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame('Текущее изображение', $preview->getAlt());
     }
 
+    public function test_content_section_view_displays_image_status_for_a_stored_image(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'media' => ['image' => 'https://cdn.example.test/content/current.jpg'],
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(ViewContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful()
+            ->assertSee('Добавлено');
+    }
+
     public function test_content_form_preview_and_remove_actions_use_current_form_state(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();
@@ -128,9 +143,13 @@ final class ContentSectionMediaTest extends TestCase
             ->test(EditContentSection::class, ['record' => $section->getKey()])
             ->assertSuccessful();
         $schema = $component->instance()->getSchema('form');
+        $preview = collect($schema?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $schemaComponent): bool => $schemaComponent instanceof SchemaImage);
         $previewAction = $schema?->getAction('telegramPreview');
         $removeAction = $schema?->getAction('removeImage');
 
+        self::assertInstanceOf(SchemaImage::class, $preview);
+        self::assertSame('Об академии', $preview->getAlt());
         self::assertNotNull($previewAction);
         self::assertNotNull($removeAction);
         self::assertInstanceOf(View::class, $previewAction?->getModalContent());
@@ -252,6 +271,23 @@ final class ContentSectionMediaTest extends TestCase
         self::assertStringContainsString('5 &lt; 10 &amp; 11 &gt; 3', $preview['bodyHtml']);
     }
 
+    public function test_content_section_without_an_image_omits_blank_media_metadata(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+
+        foreach ([null, '', '   '] as $alt) {
+            $section = app(CreateContentSection::class)->handle($admin, [
+                'section_key' => 'author',
+                'locale' => 'ru',
+                'title' => 'Без изображения',
+                'body' => 'Текст раздела.',
+                'media' => ['alt' => $alt],
+            ]);
+
+            self::assertNull($section->media);
+        }
+    }
+
     public function test_content_image_upload_is_stored_under_the_organization_path(): void
     {
         [$organization, $admin] = $this->organizationAndAdmin();
@@ -261,6 +297,7 @@ final class ContentSectionMediaTest extends TestCase
             'locale' => 'ru',
             'title' => 'О нашей академии',
             'body' => 'Текст раздела.',
+            'media' => ['alt' => null],
             'content_image' => UploadedFile::fake()->image('academy.webp', 640, 480),
             'sort_order' => 10,
             'is_visible' => true,
@@ -269,6 +306,7 @@ final class ContentSectionMediaTest extends TestCase
         $path = $section->media['image'] ?? null;
 
         self::assertIsString($path);
+        self::assertArrayNotHasKey('alt', $section->media ?? []);
         self::assertMatchesRegularExpression(
             '/^content\/'.$organization->id.'\/[0-9a-f-]{36}\.webp$/i',
             $path,
@@ -694,6 +732,32 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame($url, $this->imagePath($updated->media));
     }
 
+    public function test_update_without_alt_preserves_existing_stored_alt(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+        $image = 'https://cdn.example.test/content/with-alt.jpg';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'До изменения',
+            'body' => 'Исходный текст.',
+            'media' => ['image' => $image, 'alt' => 'Старое описание'],
+        ]);
+
+        $updated = app(UpdateContentSection::class)->handle($admin, $section, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'После изменения',
+            'body' => 'Обновлённый текст.',
+            'media' => ['image' => $image],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+
+        self::assertSame($image, $this->imagePath($updated->media));
+        self::assertSame('Старое описание', $updated->media['alt'] ?? null);
+    }
+
     public function test_existing_external_url_is_preserved_when_url_field_is_blank(): void
     {
         [, $admin] = $this->organizationAndAdmin();
@@ -755,10 +819,26 @@ final class ContentSectionMediaTest extends TestCase
             'locale' => 'ru',
             'title' => 'Валидная ссылка',
             'body' => 'Текст раздела.',
-            'media' => ['image' => $url],
+            'media' => ['image' => $url, 'alt' => null],
         ]);
 
         self::assertSame($url, $this->imagePath($section->media));
+        self::assertArrayNotHasKey('alt', $section->media ?? []);
+    }
+
+    public function test_non_string_content_media_metadata_fails_closed(): void
+    {
+        [, $admin] = $this->organizationAndAdmin();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'Неверные метаданные',
+            'body' => 'Текст раздела.',
+            'media' => ['alt' => ['не строка']],
+        ]);
     }
 
     public function test_invalid_external_image_urls_are_rejected_at_application_boundary(): void
@@ -831,7 +911,7 @@ final class ContentSectionMediaTest extends TestCase
         ]);
     }
 
-    public function test_filament_hides_legacy_image_and_preserves_it_on_unrelated_edit(): void
+    public function test_filament_hides_legacy_image_and_technical_alt_field_on_unrelated_edit(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();
         $legacyImage = 'private-reference';
@@ -849,19 +929,19 @@ final class ContentSectionMediaTest extends TestCase
 
         self::assertIsArray($state);
         self::assertNull($state['media']['image'] ?? null);
+        $component->assertFormFieldDoesNotExist('media.alt');
 
         $component
             ->fillForm([
                 'title' => 'После изменения',
                 'body' => 'Обновлённый текст.',
-                'media' => ['alt' => 'Описание legacy-изображения'],
                 'remove_image' => false,
             ])
             ->call('save')
             ->assertHasNoFormErrors();
 
         self::assertSame($legacyImage, $this->imagePath($section->refresh()->media));
-        self::assertSame('Описание legacy-изображения', $section->media['alt'] ?? null);
+        self::assertArrayNotHasKey('alt', $section->media ?? []);
     }
 
     public function test_filament_can_explicitly_remove_a_legacy_image(): void
@@ -908,7 +988,7 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame($newImage, $this->imagePath($section->refresh()->media));
     }
 
-    public function test_filament_can_clear_image_alt_without_removing_the_image(): void
+    public function test_filament_preserves_stored_image_alt_without_exposing_the_technical_field(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();
         $image = 'https://cdn.example.test/content/with-alt.jpg';
@@ -923,12 +1003,12 @@ final class ContentSectionMediaTest extends TestCase
             ],
         ]);
 
-        Livewire::actingAs($admin)
-            ->test(EditContentSection::class, ['record' => $section->getKey()])
-            ->fillForm([
-                'media' => ['alt' => ''],
-                'remove_image' => false,
-            ])
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()]);
+
+        $component
+            ->assertFormFieldDoesNotExist('media.alt')
+            ->fillForm(['remove_image' => false])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -936,7 +1016,7 @@ final class ContentSectionMediaTest extends TestCase
 
         self::assertIsArray($media);
         self::assertSame($image, $this->imagePath($media));
-        self::assertArrayNotHasKey('alt', $media);
+        self::assertSame('Старое описание', $media['alt'] ?? null);
     }
 
     public function test_filament_rejects_an_invalid_replacement_without_clearing_a_legacy_image(): void

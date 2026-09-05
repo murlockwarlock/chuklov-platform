@@ -28,9 +28,7 @@ final class RichTextDocument
             : '<p>'.nl2br(htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8', false), false).'</p>');
 
         try {
-            $html = (new Editor([
-                'extensions' => [new StarterKit, new Underline, new Link],
-            ]))->sanitize($sanitized);
+            $html = self::editor()->sanitize($sanitized);
         } catch (\Throwable $exception) {
             throw new \InvalidArgumentException('The rich text content is invalid.', previous: $exception);
         }
@@ -40,6 +38,27 @@ final class RichTextDocument
         }
 
         return $html;
+    }
+
+    public static function canonicalHtmlFromState(mixed $content): string
+    {
+        if ($content === null || $content === '') {
+            return '';
+        }
+
+        if (is_array($content)) {
+            try {
+                $content = self::editor()->setContent($content)->getHTML();
+            } catch (\Throwable $exception) {
+                throw new \InvalidArgumentException('The rich text content is invalid.', previous: $exception);
+            }
+        }
+
+        if (! is_string($content)) {
+            throw new \InvalidArgumentException('The rich text content is invalid.');
+        }
+
+        return self::canonicalHtml($content);
     }
 
     public static function normalizeMergeTags(string $content): string
@@ -122,7 +141,14 @@ final class RichTextDocument
         );
     }
 
-    private static function isHtml(string $content): bool
+    private static function editor(): Editor
+    {
+        return new Editor([
+            'extensions' => [new StarterKit, new Underline, new Link],
+        ]);
+    }
+
+    public static function isHtml(string $content): bool
     {
         return preg_match('/<\/?(?:p|br|strong|b|em|i|u|s|strike|a|code|pre|blockquote|h[2-3]|ul|ol|li)(?:\s|\/?>)/i', $content) === 1;
     }

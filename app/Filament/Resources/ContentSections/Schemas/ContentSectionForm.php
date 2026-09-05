@@ -44,6 +44,7 @@ class ContentSectionForm
                                 'method' => 'Методика',
                                 'b2b' => 'Для бизнеса',
                                 'partner' => 'Партнёрам',
+                                'communities' => 'Сообщества',
                                 'hidden' => 'Скрытый раздел',
                             ])
                             ->searchable()
@@ -78,6 +79,7 @@ class ContentSectionForm
                             ->label('Текст')
                             ->required()
                             ->maxLength(100000)
+                            ->live(debounce: 300)
                             ->columnSpanFull(),
                         Actions::make([
                             TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
@@ -113,10 +115,6 @@ class ContentSectionForm
                             })
                             ->dehydrated(fn (mixed $state): bool => filled($state))
                             ->helperText('Заполните только если не загружаете файл.')
-                            ->columnSpanFull(),
-                        TextInput::make('media.alt')
-                            ->label('Описание изображения')
-                            ->maxLength(255)
                             ->columnSpanFull(),
                         SchemaImage::make(
                             fn (?ContentSection $record): string => self::imagePreviewUrl($record) ?? '',
@@ -207,7 +205,13 @@ class ContentSectionForm
         $media = $record?->media;
         $alt = is_array($media) ? $media['alt'] ?? null : null;
 
-        return is_string($alt) && trim($alt) !== '' ? trim($alt) : 'Изображение раздела';
+        if (is_string($alt) && trim($alt) !== '') {
+            return trim($alt);
+        }
+
+        $title = $record instanceof ContentSection ? trim($record->title) : '';
+
+        return $title !== '' ? $title : 'Изображение раздела';
     }
 
     private static function imageStatus(?ContentSection $record): string
@@ -219,15 +223,14 @@ class ContentSectionForm
         $kind = app(ContentImageUrlResolver::class)->isManaged($record)
             ? 'Загруженный файл'
             : 'Внешняя HTTPS-ссылка';
-        $alt = self::imageAlt($record);
 
-        return $kind.' · '.($alt === 'Изображение раздела' ? 'описание не задано' : 'описание: '.$alt).'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
+        return $kind.'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
     }
 
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage
     {
         $title = trim((string) $get('title'));
-        $body = trim((string) $get('body'));
+        $body = RichTextDocument::canonicalHtmlFromState($get('body'));
         $content = $title === '' ? $body : '<p><strong>'.htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</strong></p>'.$body;
         $content = $content === '' ? '' : RichTextDocument::canonicalHtml($content);
         $media = self::previewMedia($get, $record);

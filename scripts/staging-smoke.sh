@@ -82,6 +82,35 @@ ok 'APP'
 ok 'SCHEDULER'
 ok 'TELEGRAM'
 
+run_telegram_api_check() {
+    ssh "${ssh_options[@]}" "$remote" bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT" <<'REMOTE_TELEGRAM_API'
+project="$1"
+root="$2"
+compose=(docker compose --project-name "$project" --env-file "$root/shared/.env" -f "$root/compose.yml")
+
+"${compose[@]}" exec -T telegram sh -lc '
+        proxy="${HTTPS_PROXY:-${HTTP_PROXY:-}}"
+        if [ -z "$proxy" ]; then
+            exit 1
+        fi
+        for attempt in 1 2 3; do
+            if curl --silent --show-error --fail --proxy "$proxy" --noproxy "" \
+                --connect-timeout 5 --max-time 12 -o /dev/null \
+                "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe"; then
+                exit 0
+            fi
+            sleep 1
+        done
+        exit 1
+    '
+REMOTE_TELEGRAM_API
+}
+
+if ! run_telegram_api_check > /dev/null 2>&1; then
+    fail 'TELEGRAM API' 'Bot API getMe is unreachable'
+fi
+ok 'TELEGRAM API'
+
 run_php_check() {
     local service="$1"
     local check="$2"

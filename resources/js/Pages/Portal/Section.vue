@@ -64,7 +64,7 @@ const pageTitle = computed(() => props.title);
         <img
           v-if="item.media"
           :src="item.media.image"
-          :alt="item.media.alt ?? item.title"
+          :alt="item.media.alt || item.title"
           class="max-w-full rounded-xl"
         >
         <SafeRichText
