@@ -785,6 +785,8 @@ test('client can activate the partner cabinet and manage multiple campaign links
         await expect(link.getByText('Регистрации', { exact: true })).toBeVisible();
         await expect(link.getByText('Оплатили', { exact: true })).toBeVisible();
         await expect(link.getByText('Начислено', { exact: true })).toBeVisible();
+        await expect(link.getByText('0', { exact: true })).toHaveCount(3);
+        await expect(link.getByText('—', { exact: true })).toHaveCount(1);
     }
 
     await instagramLink.getByRole('button', { name: 'Скопировать', exact: true }).click();

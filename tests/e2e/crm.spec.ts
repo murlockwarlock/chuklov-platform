@@ -485,9 +485,11 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await page.getByText('Instagram', { exact: true }).last().click();
     await linkDialog.getByRole('button', { name: 'Создать', exact: true }).click();
     await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
-    await expect(page.getByText('Переходы', { exact: true }).last()).toBeVisible();
-    await expect(page.getByText('Регистрации', { exact: true }).last()).toBeVisible();
-    await expect(page.getByText('Оплатили', { exact: true }).last()).toBeVisible();
+    const campaignLink = page.locator('.fi-in-repeatable-item').filter({ hasText: 'Instagram — шапка профиля' }).last();
+    await expect(campaignLink.getByText('Instagram', { exact: true })).toBeVisible();
+    await expect(campaignLink.getByRole('link')).toHaveAttribute('href', /\/r\/[A-Za-z0-9_-]{16,128}$/);
+    await expect(campaignLink.getByText('0', { exact: true })).toHaveCount(3);
+    await expect(campaignLink.getByText('—', { exact: true })).toHaveCount(1);
 
     await page.goto('/admin/referral-partner-profiles');
     await expect(page.getByRole('heading', { name: 'Партнёры', exact: true })).toBeVisible();
