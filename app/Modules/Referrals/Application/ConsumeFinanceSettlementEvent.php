@@ -21,6 +21,7 @@ final class ConsumeFinanceSettlementEvent
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly RecordAuditEvent $audit,
+        private readonly QualifyReferralReward $qualifyReward,
     ) {}
 
     public function handle(int $eventId): ?ReferralCommercialEvidence
@@ -185,7 +186,6 @@ final class ConsumeFinanceSettlementEvent
             $relationship = ReferralRelationship::query()
                 ->where('organization_id', $organizationId)
                 ->where('referred_client_id', $obligation->client_id)
-                ->lockForUpdate()
                 ->first();
             $organization = Organization::query()->findOrFail($organizationId);
             $evidence = new ReferralCommercialEvidence;
@@ -216,6 +216,7 @@ final class ConsumeFinanceSettlementEvent
                     'source' => 'finance',
                 ],
             );
+            $this->qualifyReward->handle($evidence);
             $this->markProcessed((int) $lockedEvent->getKey(), $organizationId, $token);
 
             return $evidence->refresh();

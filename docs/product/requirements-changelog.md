@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-09-05 — REQ-REFERRAL-002 reward accounting and manual partner payouts
+
+- Resolved OQ-007 for the bounded Phase 1 referral reward foundation: rewards are organization-scoped, disabled by default, versioned, and configured for first/every authoritative Finance settlement with fixed or percentage calculation using integer minor units and explicit currency.
+- Added append-only earned/reversed reward history and manual partner payout requests with per-currency reservations, auditable lifecycle transitions, and staff confirmation of external payment. Balances remain derived and currencies are never aggregated.
+- Confirmed that only an authoritative ReferralRelationship and authoritative Finance settlement evidence qualify; organic source text, identity similarity, and marketing attribution alone never qualify. Redemption, expiry, automated provider payouts, MLM, and cross-tenant behavior remain out of scope.
+- Added `REQ-REFERRAL-002`. Implementation remains a candidate pending PostgreSQL, hosted CI, staging, and owner acceptance.
+
 ## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions
 
 - Extended the accepted scheduling contract into a single candidate slice for canonical UTC booking instants, independent client/specialist-viewer/physical-location timezones, client and specialist IANA preference provenance, multiple organization-scoped working locations, location-day rules, booking location/destination snapshots, and full HomeVisit occupied intervals.

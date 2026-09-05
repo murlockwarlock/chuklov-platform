@@ -88,6 +88,7 @@ final class ScenarioContextFactory
                 'specialist_name' => $context->booking->specialist->display_name,
                 'location' => $locationSnapshot['address'] ?? $context->booking->location,
                 'location_label' => $this->locationLabel($context->booking, $locationSnapshot, $recipient->locale, $recipient->type === 'internal'),
+                'visit_details' => $this->visitDetails($context->booking, $locationSnapshot, $recipient->locale, $recipient->type === 'internal'),
                 'location_name' => $locationSnapshot['name'] ?? null,
                 'location_address' => $locationSnapshot['address'] ?? $context->booking->location,
                 'location_timezone' => $locationSnapshot['timezone'] ?? null,
@@ -300,13 +301,10 @@ final class ScenarioContextFactory
             ? trim($snapshot['area_name'])
             : trim((string) $booking->location_area);
 
-        $homeVisitLabel = $internal
-            ? ($this->isRussian($locale) ? 'Выезд' : 'Home visit')
-            : ($this->isRussian($locale) ? 'Выезд на дом' : 'Home visit');
+        $homeVisitLines = [];
         if ($area !== '') {
-            $homeVisitLabel .= ' · '.$area;
+            $homeVisitLines[] = $area;
         }
-        $homeVisitLines = [$homeVisitLabel];
         if ($address !== '') {
             $homeVisitLines[] = $internal
                 ? ($this->isRussian($locale) ? 'Адрес клиента: '.$address : 'Client address: '.$address)
@@ -315,10 +313,19 @@ final class ScenarioContextFactory
 
         return match ($booking->visit_format) {
             VisitFormat::Office => implode("\n", array_values(array_unique(array_filter([$name, $address]), SORT_STRING)))
-                ?: ($this->isRussian($locale) ? 'В клинике' : 'At the clinic'),
+                ?: '',
             VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
-            VisitFormat::Online => $this->isRussian($locale) ? 'Онлайн' : 'Online',
+            VisitFormat::Online => '',
         };
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    private function visitDetails(Booking $booking, array $snapshot, string $locale, bool $internal): string
+    {
+        $format = $this->visitFormatLabel($booking->visit_format->value, $locale);
+        $location = $this->locationLabel($booking, $snapshot, $locale, $internal);
+
+        return $location === '' ? $format : $format."\n".$location;
     }
 
     private function visitFormatLabel(string $format, string $locale): string

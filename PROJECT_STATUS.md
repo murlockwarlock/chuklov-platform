@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-05 — Configurable referral rewards and manual partner payouts candidate
+
+- Starting SHA: `f80c1c55ced0fdfbc7730d9eb989fea0fed00ad1`; branch: `codex/configurable-referral-rewards`. This bounded M11 candidate adds an organization-scoped, disabled-by-default, effective-dated reward program, an internal append-only earned/reversed ledger with per-currency projections, and auditable manual partner payout reservations/transitions. It preserves M11A relationship and Finance settlement authorities; organic source detail alone cannot qualify, and no provider payout, cash-out, redemption, expiry, or currency aggregation is added.
+- The booking-created notification projection now gives `visit_format_label` the format-only meaning and `location_label` physical-place-only meaning through `booking.visit_details`; Online renders `Онлайн` once, while Office/HomeVisit retain physical location data and recipient timezone behavior.
+- Focused local SQLite coverage passes: 55 tests / 306 assertions across reward and booking notification regressions. PHP syntax, Pint, PHPStan, frontend lint/typecheck/build, route inspection, and `git diff --check` pass. PostgreSQL-only migrations/constraints/concurrency tests exist but were not run locally because no PostgreSQL service is available; hosted CI, draft PR, staging, and owner acceptance remain pending. Production was not touched.
+
 ## 2026-09-04 — M11D B2B closeout and Communities candidate
 
 - M11D B2B is `OWNER ACCEPTED / CLOSED` on current main `c6b89e788d2e5f30cf0d4e7556f29d8d3ee8555c`; PR #26 remains closed/unmerged and was not reopened. The exact remaining M11 user-facing Communities gap is implemented on `codex/m11-communities` through the existing ContentSection, Telegram menu/content, and generic Mini App section route.

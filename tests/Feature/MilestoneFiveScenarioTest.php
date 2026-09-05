@@ -284,6 +284,102 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $this->channel->messages[1]->actionButtons[1]->callbackData);
     }
 
+    public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $client->forceFill([
+            'language' => 'ru',
+            'timezone' => 'Asia/Almaty',
+        ])->save();
+        $this->verifiedTelegramIdentity($organization, $client);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill([
+            'staff_user_id' => $staff->getKey(),
+            'timezone' => 'Europe/Berlin',
+        ])->save();
+        $staffIdentity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $cases = [
+            VisitFormat::Online->value => [
+                'location' => null,
+                'location_area' => null,
+                'location_snapshot' => [
+                    'type' => VisitFormat::Online->value,
+                    'timezone' => 'UTC',
+                ],
+            ],
+            VisitFormat::Office->value => [
+                'location' => 'Alexanderplatz 1',
+                'location_area' => null,
+                'location_snapshot' => [
+                    'type' => VisitFormat::Office->value,
+                    'name' => 'Berlin Mitte',
+                    'address' => 'Alexanderplatz 1',
+                    'timezone' => 'Europe/Berlin',
+                ],
+            ],
+            VisitFormat::HomeVisit->value => [
+                'location' => '123 Moo 5, Bang Tao',
+                'location_area' => 'Bang Tao',
+                'location_snapshot' => [
+                    'type' => VisitFormat::HomeVisit->value,
+                    'area_name' => 'Bang Tao',
+                    'address' => '123 Moo 5, Bang Tao',
+                    'timezone' => 'Asia/Bangkok',
+                ],
+            ],
+        ];
+
+        foreach ($cases as $format => $attributes) {
+            $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+            $booking->forceFill([
+                'visit_format' => $format,
+                ...$attributes,
+            ])->save();
+            $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'booking-created-'.$format, CarbonImmutable::now());
+            app(MaterializeScenarioEvent::class)->handle($event->getKey());
+            $actions = ScenarioAction::query()
+                ->where('scenario_event_id', $event->getKey())
+                ->orderBy('recipient_type')
+                ->get();
+            $before = count($this->channel->messages);
+
+            foreach ($actions as $action) {
+                $this->makeDue($action);
+                app(ExecuteScenarioAction::class)->handle($action->getKey());
+            }
+
+            $messages = array_slice($this->channel->messages, $before);
+            $clientMessage = collect($messages)->firstWhere('recipientExternalId', $client->getKey().'-chat');
+            $specialistMessage = collect($messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+            self::assertNotNull($clientMessage);
+            self::assertNotNull($specialistMessage);
+
+            if ($format === VisitFormat::Online->value) {
+                self::assertSame(1, substr_count($clientMessage->body, 'Онлайн'));
+                self::assertSame(1, substr_count($specialistMessage->body, 'Онлайн'));
+                self::assertStringNotContainsString("Онлайн\n\n", $clientMessage->body);
+                self::assertStringNotContainsString("Онлайн\n\n", $specialistMessage->body);
+                self::assertStringNotContainsString('Адрес', $clientMessage->body);
+                self::assertStringNotContainsString('Адрес', $specialistMessage->body);
+            }
+
+            if ($format === VisitFormat::Office->value) {
+                self::assertStringContainsString('В клинике', $clientMessage->body);
+                self::assertStringContainsString('Berlin Mitte', $clientMessage->body);
+                self::assertStringContainsString('Alexanderplatz 1', $specialistMessage->body);
+            }
+
+            if ($format === VisitFormat::HomeVisit->value) {
+                self::assertStringContainsString('Выезд на дом', $clientMessage->body);
+                self::assertStringContainsString('Bang Tao', $clientMessage->body);
+                self::assertStringContainsString('123 Moo 5, Bang Tao', $clientMessage->body);
+                self::assertStringContainsString('Адрес клиента: 123 Moo 5, Bang Tao', $specialistMessage->body);
+            }
+        }
+    }
+
     public function test_pending_home_visit_notification_only_offers_review_link(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
