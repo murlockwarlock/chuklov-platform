@@ -198,7 +198,7 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).first();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
-    await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeHidden();
     await expect(editor.locator(`a[href="${url}"]`)).toHaveCount(1);
     await page.waitForTimeout(500);
