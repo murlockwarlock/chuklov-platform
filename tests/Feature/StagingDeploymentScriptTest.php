@@ -486,6 +486,12 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('--deep', $shell);
         self::assertStringContainsString('run_php_check app runtime', $shell);
         self::assertStringContainsString('run_php_check horizon runtime', $shell);
+        self::assertStringContainsString('run_telegram_api_check()', $shell);
+        self::assertStringContainsString('bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT"', $shell);
+        self::assertStringContainsString('exec -T telegram sh -lc', $shell);
+        self::assertStringContainsString('TELEGRAM_TOKEN', $shell);
+        self::assertStringContainsString('--proxy "$proxy"', $shell);
+        self::assertStringContainsString("fail 'TELEGRAM API' 'Bot API getMe is unreachable'", $shell);
         self::assertStringContainsString('B2B_QUEUE_PHYSICAL_FINGERPRINT=', $shell);
         self::assertStringContainsString('application and Horizon resolve different physical queue targets', $shell);
         self::assertStringContainsString('Queue::connection', $php);
