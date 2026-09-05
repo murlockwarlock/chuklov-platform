@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-05 — Configurable referral rewards and manual partner payouts
+
+- Added an organization-scoped referral reward program with a disabled-by-default, versioned configuration for first/every authoritative settled payment and fixed/percentage rewards using the existing integer Money and rounding rules.
+- Added an append-only reward ledger with earned/reversed provenance, derived per-currency balances, idempotent qualification, tenant-safe manual reversals, and PostgreSQL constraints/locking for concurrent settlement retries.
+- Added partner payout requests with immediate per-currency reservation, auditable requested/approved/paid/rejected/cancelled transitions, and CRM confirmation of an external manual payment without a payment-provider integration.
+- Added Portal reward and payout history plus CRM configuration and payout-request actions in human-readable Russian; no redemption, automated payout, or cross-currency aggregation is introduced.
+- Fixed booking-created notification projections so Online renders «Онлайн» once while Office and HomeVisit retain their physical location details.
+
 ## 2026-09-05 — PR #30 RichEditor link persistence
 
 - ContentSection RichEditor state now synchronizes through Filament actions and save, while the preview accepts the live TipTap document state and converts it through the existing canonical safe rich-text pipeline. Owner-created links therefore survive edit/reload and the existing Portal and Telegram delivery paths without changing plain-text content or delivery-mode semantics.

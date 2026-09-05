@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-09-05 — Configurable referral rewards and manual partner payouts candidate
+
+- Starting SHA: `f80c1c55ced0fdfbc7730d9eb989fea0fed00ad1`; branch: `codex/configurable-referral-rewards`. This bounded M11 candidate adds an organization-scoped, disabled-by-default, effective-dated reward program, an internal append-only earned/reversed ledger with per-currency projections, and auditable manual partner payout reservations/transitions. It preserves M11A relationship and Finance settlement authorities; organic source detail alone cannot qualify, and no provider payout, cash-out, redemption, expiry, or currency aggregation is added.
+- The booking-created notification projection now gives `visit_format_label` the format-only meaning and `location_label` physical-place-only meaning through `booking.visit_details`; Online renders `Онлайн` once, while Office/HomeVisit retain physical location data and recipient timezone behavior.
+- Final verified application SHA: `56cb7233128bcb7655503ae3786114dd61faa59a`. PostgreSQL verification is `PASS`; hosted exact-SHA CI is `PASS` in run `33976524654`, including the PostgreSQL foundation and concurrency gates. Focused local SQLite checks, PHP syntax, Pint, PHPStan, frontend lint/typecheck/build, route inspection, and `git diff --check` pass.
+- Staging runtime SHA: `56cb7233128bcb7655503ae3786114dd61faa59a`. PostgreSQL migrations, health, default smoke, real Telegram Bot API `getMe`, reward scenarios, partner payout scenarios, and Online/Office/HomeVisit notification regression are all `PASS`. Owner acceptance is `NOT RUN`; production is `NOT DEPLOYED`.
+- The unrelated pre-existing staging `./scripts/staging-smoke.sh --deep` RAG ingestion check returned `embedding_or_persistence_failed`; this is a known non-blocking limitation for this candidate. Hosted Integration RAG passed.
+
 ## 2026-09-04 — M11D B2B closeout and Communities candidate
 
 - M11D B2B is `OWNER ACCEPTED / CLOSED` on current main `c6b89e788d2e5f30cf0d4e7556f29d8d3ee8555c`; PR #26 remains closed/unmerged and was not reopened. The exact remaining M11 user-facing Communities gap is implemented on `codex/m11-communities` through the existing ContentSection, Telegram menu/content, and generic Mini App section route.

@@ -22,6 +22,7 @@ use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
+use App\Http\Controllers\Portal\ReferralPayoutController;
 use App\Http\Controllers\Portal\ReferralRedirectController;
 use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
@@ -104,6 +105,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
+            Route::post('/portal/referrals/payouts', [ReferralPayoutController::class, 'store'])->name('portal.referrals.payouts.store');
+            Route::post('/portal/referrals/payouts/{payoutRequestId}/cancel', [ReferralPayoutController::class, 'cancel'])
+                ->whereNumber('payoutRequestId')
+                ->name('portal.referrals.payouts.cancel');
             Route::get('/portal/feedback', [FeedbackController::class, 'index'])->name('portal.feedback');
             Route::post('/portal/feedback', [FeedbackController::class, 'store'])->name('portal.feedback.store');
             Route::get('/portal/attribution', [AttributionController::class, 'show'])->name('portal.attribution');

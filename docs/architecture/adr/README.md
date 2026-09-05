@@ -26,5 +26,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 021 | Medical attachment validation and immediate private usability | Accepted |
 | 022 | Telegram managed-media upload | Accepted |
 | 023 | Telegram broadcast media albums and private previews | Accepted |
+| 024 | Referral reward ledger and manual partner payouts | Accepted |
 
 Use `000-template.md` for new significant decisions.
