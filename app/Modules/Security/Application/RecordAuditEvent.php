@@ -37,6 +37,7 @@ class RecordAuditEvent
         'client.self_booking.unblocked' => ['source'],
         'attribution.accepted' => ['source_type', 'capture_channel', 'has_referral', 'has_utm'],
         'attribution.manual_source.accepted' => ['source_type'],
+        'attribution.source_detail.updated' => [],
         'attribution.legacy.adopted' => ['source_type'],
         'referral.identity.created' => ['client_id'],
         'referral.relationship.created' => ['referrer_client_id', 'referred_client_id', 'establishment_method'],

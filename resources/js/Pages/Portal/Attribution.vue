@@ -11,7 +11,7 @@ const props = defineProps<{
 }>();
 
 const { t } = usePortalLocale();
-const form = useForm<{ source: string }>({ source: '' });
+const form = useForm<{ source: string; source_detail: string }>({ source: '', source_detail: '' });
 
 const labels: Record<string, string> = {
     friend: 'attribution.friend',
@@ -22,6 +22,7 @@ const labels: Record<string, string> = {
 };
 
 function submit(): void {
+    if (! ['friend', 'other'].includes(form.source)) form.source_detail = '';
     form.post(props.portal.urls.attribution, { preserveScroll: true });
 }
 </script>
@@ -83,6 +84,24 @@ function submit(): void {
               v-if="form.errors.source"
               class="portal-copy text-[var(--portal-color-danger)]"
             >{{ form.errors.source }}</span>
+          </label>
+          <label
+            v-if="['friend', 'other'].includes(form.source)"
+            class="portal-field"
+          >
+            <span class="portal-label">{{ t('attribution.detail') }}</span>
+            <textarea
+              v-model="form.source_detail"
+              class="portal-input"
+              rows="3"
+              maxlength="500"
+              :placeholder="t('attribution.detailHint')"
+              :aria-invalid="Boolean(form.errors.source_detail)"
+            />
+            <span
+              v-if="form.errors.source_detail"
+              class="portal-copy text-[var(--portal-color-danger)]"
+            >{{ form.errors.source_detail }}</span>
           </label>
           <button
             type="submit"

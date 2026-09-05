@@ -45,6 +45,8 @@ const props = defineProps<{
     showMarketing: boolean;
     attributionSources: string[];
     attributionSource: string | null;
+    attributionSourceDetail: string;
+    attributionDetailError?: string;
     attributionNeedsManualSource: boolean;
     requiredAcceptanceError?: string;
 }>();
@@ -57,6 +59,7 @@ const emit = defineEmits<{
     'update:consent': [id: number, granted: boolean];
     'update:marketingConsent': [granted: boolean];
     'update:attributionSource': [source: string | null];
+    'update:attributionSourceDetail': [detail: string];
 }>();
 
 const { t } = usePortalLocale();
@@ -169,7 +172,9 @@ const location = computed({
       <h3
         id="booking-office-location-heading"
         class="portal-heading portal-heading--card"
-      >{{ props.workingLocation.name }}</h3>
+      >
+        {{ props.workingLocation.name }}
+      </h3>
       <span class="portal-copy portal-copy--small">{{ props.workingLocation.address }}</span>
       <span class="portal-copy portal-copy--small">{{ t('booking.byLocationTime') }}: {{ props.workingLocation.timezone }}</span>
     </section>
@@ -209,6 +214,25 @@ const location = computed({
             :value="source"
           >{{ t('attribution.' + source) }}</option>
         </select>
+      </label>
+      <label
+        v-if="['friend', 'other'].includes(props.attributionSource ?? '')"
+        class="portal-field"
+      >
+        <span class="portal-label">{{ t('attribution.detail') }}</span>
+        <textarea
+          class="portal-input"
+          rows="3"
+          maxlength="500"
+          :value="props.attributionSourceDetail"
+          :placeholder="t('attribution.detailHint')"
+          :aria-invalid="Boolean(props.attributionDetailError)"
+          @input="emit('update:attributionSourceDetail', ($event.target as HTMLTextAreaElement).value)"
+        />
+        <span
+          v-if="props.attributionDetailError"
+          class="portal-copy text-[var(--portal-color-danger)]"
+        >{{ props.attributionDetailError }}</span>
       </label>
     </section>
 

@@ -139,6 +139,7 @@ const bookingForm = useForm<{
     consents: Array<{ legal_document_id: number; granted: boolean }>;
     marketing_consent: boolean;
     attribution_source: string | null;
+    attribution_source_detail: string;
 }>({
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
@@ -157,6 +158,7 @@ const bookingForm = useForm<{
         .map((document) => ({ legal_document_id: document.id, granted: false })),
     marketing_consent: false,
     attribution_source: null,
+    attribution_source_detail: '',
 });
 
 const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
@@ -989,13 +991,16 @@ function submitBooking(): void {
           :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
           :attribution-sources="props.attribution.sources"
           :attribution-source="bookingForm.attribution_source"
+          :attribution-source-detail="bookingForm.attribution_source_detail"
+          :attribution-detail-error="bookingForm.errors.attribution_source_detail"
           :attribution-needs-manual-source="props.attribution.needsManualSource"
           :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
           @update:party-size="bookingForm.party_size = $event"
           @update:location="bookingForm.location = $event"
           @update:consent="setConsent"
           @update:marketing-consent="setMarketingConsent"
-          @update:attribution-source="bookingForm.attribution_source = $event"
+          @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
+          @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"
           @change="returnToTime"
           @confirm="submitBooking"
         />

@@ -8,6 +8,10 @@ final class PortalBookingErrorMessages
 {
     /** @var array<string, array{ru: string, en: string}> */
     private const Messages = [
+        'source_detail_invalid' => [
+            'ru' => 'Укажите не более 500 символов для рекомендации знакомых или другого источника.',
+            'en' => 'Enter up to 500 characters for a friend recommendation or other source.',
+        ],
         'address_too_long' => [
             'ru' => 'Адрес слишком длинный.',
             'en' => 'The address is too long.',
@@ -191,6 +195,8 @@ final class PortalBookingErrorMessages
             'location.max' => $this->message('address_too_long'),
             'client_timezone.string' => $this->message('timezone_save_failed'),
             'client_timezone.max' => $this->message('timezone_save_failed'),
+            'attribution_source_detail.string' => 'Укажите имя, Telegram, телефон или другое уточнение текстом.',
+            'attribution_source_detail.max' => 'Укажите не более 500 символов.',
         ];
     }
 
@@ -281,6 +287,7 @@ final class PortalBookingErrorMessages
         foreach ($exception->errors() as $field => $_messages) {
             [$displayField, $key] = match ($field) {
                 'startsAt' => ['starts_at', 'slot_unavailable'],
+                'source_detail' => ['attribution_source_detail', 'source_detail_invalid'],
                 'client' => ['starts_at', 'self_booking_unavailable'],
                 'service', 'service_id' => ['service_id', 'service_unavailable'],
                 'specialist', 'specialist_id', 'assignment' => ['specialist_id', 'specialist_unavailable'],

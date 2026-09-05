@@ -13,10 +13,14 @@ use Illuminate\Support\Carbon;
 /**
  * @property Carbon $expires_at
  * @property Carbon|null $consumed_at
+ * @property string|null $encrypted_source_detail
+ * @property int|null $source_detail_key_version
  */
 #[Fillable([])]
 class PreAuthAttribution extends Model
 {
+    protected $hidden = ['encrypted_source_detail', 'source_detail_key_version'];
+
     /** @return BelongsTo<Organization, $this> */
     public function organization(): BelongsTo
     {

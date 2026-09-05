@@ -12,6 +12,7 @@ final class CapturePreAuthAttribution
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly AttributionNormalizer $normalizer,
+        private readonly AttributionSourceDetail $detail,
     ) {}
 
     /** @param array<string, mixed> $input */
@@ -20,6 +21,7 @@ final class CapturePreAuthAttribution
         array $input,
         string $captureChannel = 'portal',
         ?string $captureContext = null,
+        mixed $sourceDetail = null,
     ): ?PreAuthAttribution {
         $sessionId = trim($sessionId);
         $data = $this->normalizer->handle($input);
@@ -29,11 +31,12 @@ final class CapturePreAuthAttribution
         }
 
         $organization = $this->context->organization();
+        $detailAttributes = $this->detail->attributes((int) $organization->getKey(), $data->referralCode === null ? $data->source : null, $sourceDetail);
         $now = now();
         $expiresAt = $now->copy()->addSeconds(max(60, min(86400, (int) config('attribution.pre_auth_ttl_seconds', 1800))));
         $sessionHash = hash('sha256', $sessionId);
 
-        return DB::transaction(function () use ($organization, $sessionHash, $data, $captureChannel, $captureContext, $now, $expiresAt): PreAuthAttribution {
+        return DB::transaction(function () use ($organization, $sessionHash, $data, $captureChannel, $captureContext, $now, $expiresAt, $detailAttributes): PreAuthAttribution {
             $existing = PreAuthAttribution::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('session_hash', $sessionHash)
@@ -47,6 +50,7 @@ final class CapturePreAuthAttribution
 
                 $existing->forceFill([
                     ...$data->toArray(),
+                    ...$detailAttributes,
                     'capture_channel' => $captureChannel,
                     'capture_context' => $captureContext,
                     'captured_at' => $now,
@@ -63,6 +67,7 @@ final class CapturePreAuthAttribution
                 'organization_id' => $organization->getKey(),
                 'session_hash' => $sessionHash,
                 ...$data->toArray(),
+                ...$detailAttributes,
                 'capture_channel' => $captureChannel,
                 'capture_context' => $captureContext,
                 'captured_at' => $now,
@@ -83,6 +88,7 @@ final class CapturePreAuthAttribution
 
             $record->forceFill([
                 ...$data->toArray(),
+                ...$detailAttributes,
                 'capture_channel' => $captureChannel,
                 'capture_context' => $captureContext,
                 'captured_at' => $now,

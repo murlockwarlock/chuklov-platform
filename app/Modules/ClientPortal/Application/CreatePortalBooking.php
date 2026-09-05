@@ -46,6 +46,7 @@ final readonly class CreatePortalBooking
         ?float $longitude = null,
         ?string $mapUrl = null,
         ?string $attributionSource = null,
+        ?string $attributionSourceDetail = null,
     ): Booking {
         return $this->createBooking->handle(
             actor: $client,
@@ -64,7 +65,7 @@ final readonly class CreatePortalBooking
             latitude: $latitude,
             longitude: $longitude,
             mapUrl: $mapUrl,
-            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource): void {
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail): void {
                 if ($clientTimezone !== null) {
                     $this->timezonePreference->handle($clientTimezone, $client);
                 }
@@ -72,7 +73,7 @@ final readonly class CreatePortalBooking
                 $this->recordConsentsForBooking($client, $consents, $marketingConsent);
 
                 if (filled($attributionSource)) {
-                    $this->acceptAttribution->handle($client, $attributionSource);
+                    $this->acceptAttribution->handle($client, $attributionSource, $attributionSourceDetail);
                 }
             },
         );

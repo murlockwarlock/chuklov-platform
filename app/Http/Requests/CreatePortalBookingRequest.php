@@ -39,6 +39,7 @@ class CreatePortalBookingRequest extends FormRequest
             'consents.*.granted' => ['required', 'boolean'],
             'marketing_consent' => ['sometimes', 'boolean'],
             'attribution_source' => ['sometimes', 'nullable', 'string', 'max:120', 'in:friend,social,search,partner,other'],
+            'attribution_source_detail' => ['nullable', 'string', 'max:500'],
         ];
     }
 
