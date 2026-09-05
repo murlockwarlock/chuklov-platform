@@ -677,6 +677,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
         // Fail closed if no valid immutable candidate exists
         if (empty($candidates)) {
+            $diagnosis = $this->candidateResolver->diagnose(
+                organizationId: $organizationId,
+                capability: $run->capability,
+                safetyControls: $safetyControls,
+            );
             $fenced = $this->fencedTerminalRunTransition(
                 $organizationId,
                 $runId,
@@ -695,7 +700,10 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
             }
 
-            throw new AiProviderUnavailableException("No enabled AI provider or model configured for capability '{$run->capability->value}'.");
+            throw new AiProviderUnavailableException(
+                "No enabled AI provider or model configured for capability '{$run->capability->value}'.",
+                configurationMissing: $diagnosis['status'] !== 'provider_unavailable',
+            );
         }
 
         $attemptTimeoutSeconds = $executionPolicy->attemptTimeoutSeconds;

@@ -3,8 +3,10 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -21,6 +23,120 @@ use Throwable;
 
 final class ResolveAiExecutionCandidates
 {
+    /** @return array{status: string, issues: list<string>} */
+    public function diagnose(
+        int $organizationId,
+        AiCapability $capability,
+        ?AiOrganizationSafetyControl $safetyControls,
+    ): array {
+        $modelConfigurations = AiModelConfiguration::query()
+            ->where('organization_id', $organizationId)
+            ->with(['activeRelease', 'providerConfiguration.credential'])
+            ->orderBy('failover_priority')
+            ->orderBy('id')
+            ->limit(AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN)
+            ->get();
+
+        if ($modelConfigurations->isEmpty()) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Модель клиентского компаньона не добавлена.'],
+            ];
+        }
+
+        $hasActiveModel = false;
+        $hasCapabilityRelease = false;
+        $hasHealthyProvider = false;
+        $hasProviderOutage = false;
+        $hasDisabledProvider = false;
+
+        foreach ($modelConfigurations as $configuration) {
+            if (! $configuration->is_enabled || $configuration->lifecycle_status !== ModelLifecycleStatus::Active) {
+                continue;
+            }
+
+            $hasActiveModel = true;
+            $release = $configuration->activeRelease;
+            if ($release === null
+                || $release->status !== 'active'
+                || ! in_array($capability->value, $release->capabilities, true)) {
+                continue;
+            }
+
+            $hasCapabilityRelease = true;
+            $providerConfiguration = $configuration->providerConfiguration;
+            if ($providerConfiguration === null
+                || (int) $providerConfiguration->organization_id !== $organizationId
+                || $providerConfiguration->provider_name !== $release->provider_name) {
+                continue;
+            }
+
+            if ($safetyControls !== null && ! $safetyControls->isProviderEnabled($providerConfiguration->provider_name)) {
+                $hasDisabledProvider = true;
+
+                continue;
+            }
+
+            if (! $providerConfiguration->is_enabled) {
+                continue;
+            }
+
+            if (in_array($providerConfiguration->health_status, [ProviderHealthStatus::Degraded, ProviderHealthStatus::Unavailable], true)) {
+                $hasProviderOutage = true;
+
+                continue;
+            }
+
+            if ($providerConfiguration->health_status !== ProviderHealthStatus::Healthy) {
+                continue;
+            }
+
+            $hasHealthyProvider = true;
+            if ($this->validatedCandidate(
+                config: $configuration,
+                release: $release,
+                capability: $capability->value,
+                allowedReleaseStatuses: ['active'],
+                safetyControls: $safetyControls,
+            ) !== null) {
+                return ['status' => 'ready', 'issues' => []];
+            }
+        }
+
+        if ($hasProviderOutage) {
+            return [
+                'status' => 'provider_unavailable',
+                'issues' => ['Провайдер клиентского компаньона временно недоступен.'],
+            ];
+        }
+
+        if ($hasDisabledProvider && ! $hasHealthyProvider) {
+            return [
+                'status' => 'disabled',
+                'issues' => ['Провайдер клиентского компаньона отключён в ограничениях AI.'],
+            ];
+        }
+
+        if ($hasCapabilityRelease) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Провайдер или модель клиентского компаньона требуют завершить настройку и проверку.'],
+            ];
+        }
+
+        if ($hasActiveModel) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Для модели клиентского компаньона нет активной версии с нужным сценарием.'],
+            ];
+        }
+
+        return [
+            'status' => 'not_configured',
+            'issues' => ['Модель клиентского компаньона не настроена.'],
+        ];
+    }
+
     /**
      * @return list<array<string, mixed>>
      */

@@ -57,6 +57,7 @@ final class ViewReferralPartnerProfile extends ViewRecord
                         ->native(false)
                         ->required(),
                 ])
+                ->modalSubmitActionLabel('Создать')
                 ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
                 ->action(function (array $data): void {
                     app(CreateReferralCampaignLink::class)->handle(
@@ -327,7 +328,7 @@ final class ViewReferralPartnerProfile extends ViewRecord
             $values[] = $this->formatMoney((string) $item['amountMinor'], (string) $item['currency']);
         }
 
-        return implode(' · ', $values);
+        return $values === [] ? '—' : implode(' · ', $values);
     }
 
     private function formatMoney(string $amountMinor, string $currency): string

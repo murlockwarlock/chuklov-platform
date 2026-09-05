@@ -5,10 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Application\Actions\UpdateAiSafetyControl;
-use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Enums\AiCapability;
-use App\Modules\AI\Domain\Enums\AiExecutionMode;
-use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Models\AiOrganizationDailyBudget;
 use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -292,6 +289,7 @@ final class AiMonitoringOverview extends Page
         $isAiEnabled = $safety === null || $safety->is_ai_globally_enabled;
         $isCapabilityEnabled = $safety === null || $safety->isCapabilityEnabled(AiCapability::ClientCompanion->value);
         $issues = [];
+        $modelReadiness = ['status' => 'not_configured', 'issues' => []];
 
         if (! $isAiEnabled) {
             $issues[] = 'AI выключен для организации.';
@@ -312,27 +310,28 @@ final class AiMonitoringOverview extends Page
                 $issues[] = 'Промпт клиентского компаньона не настроен.';
             }
 
-            $hasActiveModel = app(ResolveAiExecutionCandidates::class)->snapshot(
+            $modelReadiness = app(ResolveAiExecutionCandidates::class)->diagnose(
                 organizationId: $organizationId,
-                request: new AiRunRequest(
-                    capability: AiCapability::ClientCompanion,
-                    workflowKey: 'client_companion',
-                    origin: AiRunOrigin::ClientCompanion,
-                    executionMode: AiExecutionMode::Sync,
-                ),
+                capability: AiCapability::ClientCompanion,
                 safetyControls: $safety,
-            ) !== [];
+            );
+            $issues = array_merge($issues, $modelReadiness['issues']);
+        }
 
-            if (! $hasActiveModel) {
-                $issues[] = 'Нет активной модели для клиентского компаньона.';
-            }
+        $status = 'ready';
+        if (! $isAiEnabled || ! $isCapabilityEnabled) {
+            $status = 'disabled';
+        } elseif ($issues !== []) {
+            $status = match ($modelReadiness['status']) {
+                'provider_unavailable' => 'provider_unavailable',
+                'disabled' => 'disabled',
+                default => 'needs_setup',
+            };
         }
 
         return [
             'ready' => $issues === [],
-            'status' => $issues === []
-                ? 'ready'
-                : ($isAiEnabled && $isCapabilityEnabled ? 'needs_setup' : 'disabled'),
+            'status' => $status,
             'issues' => $issues,
             'promptUrl' => route('filament.admin.resources.ai-prompts.index'),
             'providerUrl' => route('filament.admin.resources.ai-providers.index'),

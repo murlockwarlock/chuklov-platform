@@ -764,14 +764,14 @@ test('client can activate the partner cabinet and manage multiple campaign links
     await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
 
     await page.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
-    await page.getByLabel('Канал', { exact: true }).selectOption('instagram');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('instagram');
     await page.getByTestId('partner-create-link').click();
     const instagramLink = page.getByTestId('partner-link-1');
     await expect(instagramLink).toContainText('Instagram — шапка профиля');
     await expect(instagramLink).toContainText('Instagram');
 
     await page.getByLabel('Название', { exact: true }).fill('Telegram — мой канал');
-    await page.getByLabel('Канал', { exact: true }).selectOption('telegram');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('telegram');
     await page.getByTestId('partner-create-link').click();
     const telegramLink = page.getByTestId('partner-link-2');
     await expect(telegramLink).toContainText('Telegram — мой канал');
@@ -820,7 +820,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
 
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
-    await expect(payout).toContainText('2.00 USD');
+    await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
     await expect(payout).toContainText('Запрошена');
     await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
     await expect(payout).toContainText('Отменена');

@@ -6,6 +6,7 @@ use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
@@ -143,6 +144,23 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame('provider_unavailable', $first->fresh()->failure_code);
         self::assertSame(CompanionTurnStatus::Escalated, $second->fresh()->status);
         self::assertSame(CompanionEscalationReason::RepeatedExecutionFailure, CompanionEscalation::query()->sole()->reason);
+    }
+
+    public function test_failed_ai_run_result_keeps_provider_failure_category(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Failed,
+            errorCategory: AiErrorCategory::ProviderUnavailable,
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Проверьте ответ при сбое провайдера');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('provider_unavailable', $turn->fresh()->failure_code);
     }
 
     public function test_direct_human_request_escalates_and_pauses_the_same_conversation(): void
@@ -916,7 +934,10 @@ final class NotConfiguredCompanionEngine implements AiWorkflowEngine
 
     public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
     {
-        throw new AiProviderUnavailableException('No healthy or enabled AI providers available for requested capability.');
+        throw new AiProviderUnavailableException(
+            'No enabled AI provider or model configured for capability.',
+            configurationMissing: true,
+        );
     }
 }
 

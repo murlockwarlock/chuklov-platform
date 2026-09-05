@@ -66,7 +66,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
         $profile = app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $this->filament($admin, $organization);
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(ViewReferralPartnerProfile::class, ['record' => $profile->getKey()])
             ->assertSuccessful()
             ->assertSee('Партнёрский кабинет')
@@ -79,6 +79,8 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertSee('История выплат')
             ->assertActionExists('createCampaignLink')
             ->assertActionExists('deactivatePartner');
+
+        self::assertSame('—', $component->instance()->workspaceLinkItems()[0]['rewards']);
     }
 
     public function test_partner_list_is_scoped_to_the_current_organization(): void

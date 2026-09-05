@@ -3,8 +3,10 @@
 namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
@@ -145,6 +147,18 @@ final class CompanionTurnProcessor
                 if (! $this->attachRun($organizationId, $turn->getKey(), $leaseToken, $result->runId)) {
                     return;
                 }
+            }
+
+            if (! $result->isSuccess()) {
+                $this->failSafely(
+                    $organizationId,
+                    $turn->getKey(),
+                    $leaseToken,
+                    $this->failureCodeFromResult($result),
+                    $locale,
+                );
+
+                return;
             }
 
             $response = $this->responseContract->parse($result);
@@ -676,7 +690,7 @@ final class CompanionTurnProcessor
 
         return match (true) {
             $exception instanceof AiProviderUnavailableException
-                && str_contains($message, 'configured for capability'),
+                && $exception->configurationMissing,
             $exception instanceof InvalidArgumentException && (
                 str_contains($message, 'tenant-owned active prompt version')
                 || str_contains($message, 'selected prompt version')
@@ -685,6 +699,20 @@ final class CompanionTurnProcessor
             str_contains($message, 'budget') => CompanionFailureCode::BudgetUnavailable,
             str_contains($message, 'retrieval'), str_contains($message, 'knowledge') => CompanionFailureCode::RetrievalFailure,
             str_contains($message, 'response contract'), str_contains($message, 'empty') => CompanionFailureCode::InvalidOutput,
+            default => CompanionFailureCode::ProviderUnavailable,
+        };
+    }
+
+    private function failureCodeFromResult(AiRunResult $result): CompanionFailureCode
+    {
+        return match ($result->errorCategory) {
+            AiErrorCategory::BudgetExceeded => CompanionFailureCode::BudgetUnavailable,
+            AiErrorCategory::OutputSchemaValidationFailed => CompanionFailureCode::InvalidOutput,
+            AiErrorCategory::RateLimited => CompanionFailureCode::RateLimited,
+            AiErrorCategory::ProviderUnavailable,
+            AiErrorCategory::AuthenticationFailed,
+            AiErrorCategory::ExecutionTimedOut,
+            AiErrorCategory::InternalError => CompanionFailureCode::ProviderUnavailable,
             default => CompanionFailureCode::ProviderUnavailable,
         };
     }

@@ -478,7 +478,7 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Создать ссылку', exact: true }).click();
-    const linkDialog = page.getByRole('dialog').last();
+    const linkDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Название' }).last();
     await expect(linkDialog).toBeVisible();
     await linkDialog.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
     await linkDialog.getByRole('combobox', { name: 'Канал', exact: true }).click();
@@ -499,7 +499,7 @@ test('staff can activate a partner, create a campaign link, and assign the partn
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await page.getByRole('button', { name: 'Назначить партнёра', exact: true }).click();
-    const assignmentDialog = page.getByRole('dialog').last();
+    const assignmentDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Партнёр' }).last();
     const partnerSelect = assignmentDialog.getByRole('combobox', { name: 'Партнёр', exact: true });
     await partnerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
@@ -526,10 +526,16 @@ test('staff can complete a visit and record a manual payment through the normal 
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    const confirmationDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Подтвердить запись' }).last();
+    await expect(confirmationDialog).toBeVisible();
+    await confirmationDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись подтверждена', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('button', { name: 'Завершить визит', exact: true }).click();
+    const completionDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Завершить визит' }).last();
+    await expect(completionDialog).toBeVisible();
+    await completionDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Визит успешно завершён', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
@@ -558,7 +564,7 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     const rejectedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '2.00 USD' }).first();
     await expect(rejectedRow).toBeVisible();
     await rejectedRow.getByRole('button', { name: 'Отклонить', exact: true }).click();
-    const rejectDialog = page.locator('[role="dialog"]:visible').last();
+    const rejectDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Причина отклонения' }).last();
     await expect(rejectDialog).toBeVisible();
     await rejectDialog.getByLabel('Причина отклонения', { exact: true }).fill('Проверка тестовой выплаты');
     await rejectDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -567,13 +573,13 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     const approvedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '3.00 USD' }).first();
     await expect(approvedRow).toBeVisible();
     await approvedRow.getByRole('button', { name: 'Одобрить', exact: true }).click();
-    const approvalDialog = page.locator('[role="dialog"]:visible').last();
+    const approvalDialog = page.locator('[role="dialog"].fi-modal-open').last();
     await expect(approvalDialog).toBeVisible();
     await approvalDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
     await expect(approvedRow).toContainText('Одобрена');
 
     await approvedRow.getByRole('button', { name: 'Отметить как выплаченную', exact: true }).click();
-    const paidDialog = page.locator('[role="dialog"]:visible').last();
+    const paidDialog = page.locator('[role="dialog"].fi-modal-open').filter({ hasText: 'Платёжная пометка или ссылка' }).last();
     await expect(paidDialog).toBeVisible();
     await paidDialog.getByLabel('Платёжная пометка или ссылка', { exact: true }).fill('manual-test-payout');
     await paidDialog.getByLabel('Комментарий о ручной выплате', { exact: true }).fill('Тестовая ручная выплата');
