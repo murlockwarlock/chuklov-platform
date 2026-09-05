@@ -331,8 +331,9 @@ final class MilestoneFiveScenarioTest extends TestCase
             ],
         ];
 
+        $caseNumber = 0;
         foreach ($cases as $format => $attributes) {
-            $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+            $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested, $caseNumber * 90);
             $booking->forceFill([
                 'visit_format' => $format,
                 ...$attributes,
@@ -377,6 +378,8 @@ final class MilestoneFiveScenarioTest extends TestCase
                 self::assertStringContainsString('123 Moo 5, Bang Tao', $clientMessage->body);
                 self::assertStringContainsString('Адрес клиента: 123 Moo 5, Bang Tao', $specialistMessage->body);
             }
+
+            $caseNumber++;
         }
     }
 
@@ -1181,8 +1184,9 @@ final class MilestoneFiveScenarioTest extends TestCase
         Specialist $specialist,
         Service $service,
         BookingStatus $status,
+        int $startOffsetMinutes = 0,
     ): Booking {
-        $start = CarbonImmutable::now()->subHours(3);
+        $start = CarbonImmutable::now()->subHours(3)->addMinutes($startOffsetMinutes);
 
         return Booking::factory()
             ->forOrganization($organization)
