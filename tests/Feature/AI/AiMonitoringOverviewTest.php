@@ -3,7 +3,9 @@
 namespace Tests\Feature\AI;
 
 use App\Filament\Pages\AiMonitoringOverview;
+use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -11,9 +13,14 @@ use App\Modules\AI\Domain\Models\AiOrganizationSafetyControl;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
+use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
+use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Domain\Enums\CredentialStatus;
+use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 final class AiMonitoringOverviewTest extends TestCase
@@ -134,5 +141,130 @@ final class AiMonitoringOverviewTest extends TestCase
 
         self::assertSame('disabled', $viewData['clientCompanion']['status']);
         self::assertContains('Сценарий клиентского компаньона отключён в ограничениях AI.', $viewData['clientCompanion']['issues']);
+    }
+
+    public function test_candidate_diagnosis_filters_capability_before_bounded_configuration_scan(): void
+    {
+        $organization = Organization::factory()->create();
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $organization->id;
+        $credential->credentials = ['api_key' => 'sk-test'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+            'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('openai'),
+        ]);
+
+        for ($index = 0; $index < 100; $index++) {
+            AiModelConfiguration::create([
+                'organization_id' => $organization->id,
+                'provider_config_id' => $provider->id,
+                'model_name' => "irrelevant-{$index}",
+                'display_name' => "Irrelevant {$index}",
+                'capabilities' => [],
+            ]);
+        }
+
+        $pricing = new AiPricingSnapshot(
+            currency: 'USD',
+            inputCostPerMillionMinorUnits: 15,
+            outputCostPerMillionMinorUnits: 60,
+        );
+        $model = AiModelConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'gpt-4o-mini',
+            'display_name' => 'Companion model',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+        ]);
+        $release = AiModelRelease::create([
+            'organization_id' => $organization->id,
+            'model_config_id' => $model->id,
+            'release_number' => 1,
+            'status' => 'active',
+            'provider_name' => 'openai',
+            'model_name' => 'gpt-4o-mini',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+            'activated_at' => now(),
+        ]);
+        $model->update(['active_release_id' => $release->id]);
+
+        $diagnosis = app(ResolveAiExecutionCandidates::class)->diagnose(
+            organizationId: $organization->id,
+            capability: AiCapability::ClientCompanion,
+            safetyControls: null,
+        );
+
+        self::assertSame('ready', $diagnosis['status']);
+    }
+
+    public function test_candidate_diagnosis_rejects_active_models_without_requested_attachment_modality(): void
+    {
+        $organization = Organization::factory()->create();
+        $credential = new OrganizationCredential([
+            'provider' => 'openai',
+            'credential_name' => 'OpenAI',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $organization->id;
+        $credential->credentials = ['api_key' => 'sk-test'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+            'credential_id' => $credential->id,
+            'tested_credential_revision' => $credential->revision_id,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('openai'),
+        ]);
+        $pricing = new AiPricingSnapshot(
+            currency: 'USD',
+            inputCostPerMillionMinorUnits: 15,
+            outputCostPerMillionMinorUnits: 60,
+        );
+        $model = AiModelConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'text-only-companion',
+            'display_name' => 'Text-only companion',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+        ]);
+        $release = AiModelRelease::create([
+            'organization_id' => $organization->id,
+            'model_config_id' => $model->id,
+            'release_number' => 1,
+            'status' => 'active',
+            'provider_name' => 'openai',
+            'model_name' => 'text-only-companion',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => $pricing->toArray(),
+            'activated_at' => now(),
+        ]);
+        $model->update(['active_release_id' => $release->id]);
+
+        $diagnosis = app(ResolveAiExecutionCandidates::class)->diagnose(
+            organizationId: $organization->id,
+            capability: AiCapability::ClientCompanion,
+            safetyControls: null,
+            requiredModalities: [AiModelModality::ImageInput],
+        );
+
+        self::assertSame('not_configured', $diagnosis['status']);
+        self::assertContains('Для выбранного типа вложения нет совместимой модели клиентского компаньона.', $diagnosis['issues']);
     }
 }

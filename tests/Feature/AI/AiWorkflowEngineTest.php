@@ -12,6 +12,7 @@ use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -783,6 +784,11 @@ class AiWorkflowEngineTest extends TestCase
         } catch (AiProviderUnavailableException $exception) {
             self::assertTrue($exception->configurationMissing);
         }
+
+        self::assertSame(
+            AiErrorCategory::ConfigurationMissing,
+            AiRun::query()->where('workflow_key', 'no_candidate_test')->latest('id')->first()?->error_category,
+        );
     }
 
     public function test_unavailable_provider_is_not_misclassified_as_missing_configuration(): void

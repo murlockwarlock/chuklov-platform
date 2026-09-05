@@ -707,6 +707,7 @@ final class CompanionTurnProcessor
     {
         return match ($result->errorCategory) {
             AiErrorCategory::BudgetExceeded => CompanionFailureCode::BudgetUnavailable,
+            AiErrorCategory::ConfigurationMissing => CompanionFailureCode::NotConfigured,
             AiErrorCategory::OutputSchemaValidationFailed => CompanionFailureCode::InvalidOutput,
             AiErrorCategory::RateLimited => CompanionFailureCode::RateLimited,
             AiErrorCategory::ProviderUnavailable,

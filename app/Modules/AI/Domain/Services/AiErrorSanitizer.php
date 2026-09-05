@@ -50,7 +50,9 @@ final class AiErrorSanitizer
 
         if ($throwable instanceof AiProviderUnavailableException) {
             return [
-                'category' => AiErrorCategory::ProviderUnavailable,
+                'category' => $throwable->configurationMissing
+                    ? AiErrorCategory::ConfigurationMissing
+                    : AiErrorCategory::ProviderUnavailable,
                 'message' => 'Configured AI provider is unavailable or not configured.',
             ];
         }

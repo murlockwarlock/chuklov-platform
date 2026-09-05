@@ -754,7 +754,6 @@ test('client can activate the partner cabinet and manage multiple campaign links
         value: fixture.cookieValue,
         url: 'http://127.0.0.1:8000',
     }]);
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto('/portal/referrals');
     await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toBeVisible();

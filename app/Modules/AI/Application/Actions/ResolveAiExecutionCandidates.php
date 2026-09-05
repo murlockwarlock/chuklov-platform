@@ -23,47 +23,54 @@ use Throwable;
 
 final class ResolveAiExecutionCandidates
 {
-    /** @return array{status: string, issues: list<string>} */
+    /**
+     * @param  list<AiModelModality>  $requiredModalities
+     * @return array{status: string, issues: list<string>}
+     */
     public function diagnose(
         int $organizationId,
         AiCapability $capability,
         ?AiOrganizationSafetyControl $safetyControls,
+        array $requiredModalities = [],
     ): array {
+        $hasActiveModel = AiModelConfiguration::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_enabled', true)
+            ->where('lifecycle_status', ModelLifecycleStatus::Active->value)
+            ->exists();
         $modelConfigurations = AiModelConfiguration::query()
             ->where('organization_id', $organizationId)
+            ->where('is_enabled', true)
+            ->where('lifecycle_status', ModelLifecycleStatus::Active->value)
+            ->whereHas('activeRelease', static function (Builder $query) use ($capability): void {
+                $query
+                    ->where('status', 'active')
+                    ->whereJsonContains('capabilities', $capability->value);
+            })
             ->with(['activeRelease', 'providerConfiguration.credential'])
             ->orderBy('failover_priority')
             ->orderBy('id')
             ->limit(AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN)
             ->get();
 
-        if ($modelConfigurations->isEmpty()) {
-            return [
-                'status' => 'not_configured',
-                'issues' => ['Модель клиентского компаньона не добавлена.'],
-            ];
-        }
-
-        $hasActiveModel = false;
-        $hasCapabilityRelease = false;
+        $hasCapabilityRelease = $modelConfigurations->isNotEmpty();
         $hasHealthyProvider = false;
         $hasProviderOutage = false;
         $hasDisabledProvider = false;
+        $hasIncompatibleModality = false;
 
         foreach ($modelConfigurations as $configuration) {
-            if (! $configuration->is_enabled || $configuration->lifecycle_status !== ModelLifecycleStatus::Active) {
-                continue;
-            }
-
-            $hasActiveModel = true;
             $release = $configuration->activeRelease;
-            if ($release === null
-                || $release->status !== 'active'
-                || ! in_array($capability->value, $release->capabilities, true)) {
+            if ($release === null) {
                 continue;
             }
 
-            $hasCapabilityRelease = true;
+            if (! $this->releaseSupportsRequiredModalities($release, $requiredModalities)) {
+                $hasIncompatibleModality = true;
+
+                continue;
+            }
+
             $providerConfiguration = $configuration->providerConfiguration;
             if ($providerConfiguration === null
                 || (int) $providerConfiguration->organization_id !== $organizationId
@@ -117,6 +124,13 @@ final class ResolveAiExecutionCandidates
             ];
         }
 
+        if ($hasIncompatibleModality) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Для выбранного типа вложения нет совместимой модели клиентского компаньона.'],
+            ];
+        }
+
         if ($hasCapabilityRelease) {
             return [
                 'status' => 'not_configured',
@@ -133,7 +147,7 @@ final class ResolveAiExecutionCandidates
 
         return [
             'status' => 'not_configured',
-            'issues' => ['Модель клиентского компаньона не настроена.'],
+            'issues' => ['Модель клиентского компаньона не добавлена.'],
         ];
     }
 
@@ -462,6 +476,16 @@ final class ResolveAiExecutionCandidates
         return AiProviderFactory::supportsAttachments(
             providerName: (string) $candidate['provider'],
             release: $candidate['release'],
+            requiredModalities: $requiredModalities,
+        );
+    }
+
+    /** @param list<AiModelModality> $requiredModalities */
+    private function releaseSupportsRequiredModalities(AiModelRelease $release, array $requiredModalities): bool
+    {
+        return AiProviderFactory::supportsAttachments(
+            providerName: $release->provider_name,
+            release: $release,
             requiredModalities: $requiredModalities,
         );
     }

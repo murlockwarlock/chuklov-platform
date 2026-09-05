@@ -681,13 +681,17 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 organizationId: $organizationId,
                 capability: $run->capability,
                 safetyControls: $safetyControls,
+                requiredModalities: $requiredModalities ?? [],
             );
+            $errorCategory = $diagnosis['status'] === 'provider_unavailable'
+                ? AiErrorCategory::ProviderUnavailable
+                : AiErrorCategory::ConfigurationMissing;
             $fenced = $this->fencedTerminalRunTransition(
                 $organizationId,
                 $runId,
                 $workerLeaseToken,
                 AiRunStatus::Failed,
-                AiErrorCategory::ProviderUnavailable,
+                $errorCategory,
                 "No enabled AI provider or model release configured for capability '{$run->capability->value}'."
             );
 
