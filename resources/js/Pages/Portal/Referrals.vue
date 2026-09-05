@@ -156,9 +156,18 @@ function balanceSummary(key: 'availableMinor' | 'pendingPayoutMinor' | 'paidOutM
 
 async function copyUrl(url: string): Promise<void> {
     try {
+        let copied = false;
+
         if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(url);
-        } else {
+            try {
+                await navigator.clipboard.writeText(url);
+                copied = true;
+            } catch {
+                copied = false;
+            }
+        }
+
+        if (!copied) {
             const field = document.createElement('textarea');
             field.value = url;
             field.setAttribute('readonly', '');
@@ -296,27 +305,27 @@ function cancelPayout(payout: Payout): void {
           data-testid="partner-summary"
         >
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.visits') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.visits') }}</span>
             <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.visits }}</strong>
           </article>
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.registrations') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.registrations') }}</span>
             <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.registrations }}</strong>
           </article>
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.paidClients') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.paidClients') }}</span>
             <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.paidClients }}</strong>
           </article>
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.available') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.available') }}</span>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('availableMinor') }}</strong>
           </article>
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.pendingPayout') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.pendingPayout') }}</span>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('pendingPayoutMinor') }}</strong>
           </article>
           <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <span class="portal-copy portal-copy--small">{{ t('referrals.paidOut') }}</span>
+            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.paidOut') }}</span>
             <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('paidOutMinor') }}</strong>
           </article>
         </section>
