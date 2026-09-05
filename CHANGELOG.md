@@ -4,6 +4,7 @@
 
 - Refined the CRM partner workspace so named campaign links, channels, per-link metrics, referred-client provenance, rewards, and payouts render as separate readable entries instead of one combined summary.
 - Added an actionable AI Companion readiness state to the CRM: missing active prompt/model configuration, provider outages, and disabled capabilities are distinguished with links to the existing setup surfaces where appropriate; provider failure categories returned by an AI run are preserved for safe handling.
+- Preserved an explicitly disabled provider as a distinct AI diagnosis and run/failure category instead of reporting it as missing configuration.
 - Confirmed the staging DeepSeek credential itself is healthy; the current staging conversation remains paused because the organization has no active client_companion prompt/model release and the existing conversation is already in human handoff.
 
 ## 2026-09-05 — Phase 1 partner cabinet and campaign links

@@ -71,4 +71,14 @@ class AiLogRedactionTest extends TestCase
 
         $this->assertSame(AiErrorCategory::ConfigurationMissing, $sanitized['category']);
     }
+
+    public function test_error_sanitizer_preserves_disabled_provider_state(): void
+    {
+        $sanitized = AiErrorSanitizer::sanitize(new AiProviderUnavailableException(
+            providerDisabled: true,
+        ));
+
+        $this->assertSame(AiErrorCategory::ProviderDisabled, $sanitized['category']);
+        $this->assertSame('Configured AI provider is disabled.', $sanitized['message']);
+    }
 }

@@ -57,6 +57,7 @@ final class ResolveAiExecutionCandidates
         $hasHealthyProvider = false;
         $hasProviderOutage = false;
         $hasDisabledProvider = false;
+        $hasDisabledProviderConfiguration = false;
         $hasIncompatibleModality = false;
 
         foreach ($modelConfigurations as $configuration) {
@@ -85,6 +86,8 @@ final class ResolveAiExecutionCandidates
             }
 
             if (! $providerConfiguration->is_enabled) {
+                $hasDisabledProviderConfiguration = true;
+
                 continue;
             }
 
@@ -117,10 +120,18 @@ final class ResolveAiExecutionCandidates
             ];
         }
 
-        if ($hasDisabledProvider && ! $hasHealthyProvider) {
+        if (($hasDisabledProvider || $hasDisabledProviderConfiguration) && ! $hasHealthyProvider) {
+            $issues = [];
+            if ($hasDisabledProvider) {
+                $issues[] = 'Провайдер клиентского компаньона отключён в ограничениях AI.';
+            }
+            if ($hasDisabledProviderConfiguration) {
+                $issues[] = 'Провайдер клиентского компаньона отключён в настройках провайдера.';
+            }
+
             return [
                 'status' => 'disabled',
-                'issues' => ['Провайдер клиентского компаньона отключён в ограничениях AI.'],
+                'issues' => $issues,
             ];
         }
 

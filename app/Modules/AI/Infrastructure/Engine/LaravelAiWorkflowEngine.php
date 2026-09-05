@@ -683,9 +683,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 safetyControls: $safetyControls,
                 requiredModalities: $requiredModalities ?? [],
             );
-            $errorCategory = $diagnosis['status'] === 'provider_unavailable'
-                ? AiErrorCategory::ProviderUnavailable
-                : AiErrorCategory::ConfigurationMissing;
+            $errorCategory = match ($diagnosis['status']) {
+                'provider_unavailable' => AiErrorCategory::ProviderUnavailable,
+                'disabled' => AiErrorCategory::ProviderDisabled,
+                default => AiErrorCategory::ConfigurationMissing,
+            };
             $fenced = $this->fencedTerminalRunTransition(
                 $organizationId,
                 $runId,
@@ -706,7 +708,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
             throw new AiProviderUnavailableException(
                 "No enabled AI provider or model configured for capability '{$run->capability->value}'.",
-                configurationMissing: $diagnosis['status'] !== 'provider_unavailable',
+                configurationMissing: $diagnosis['status'] === 'not_configured',
+                providerDisabled: $diagnosis['status'] === 'disabled',
             );
         }
 

@@ -125,6 +125,48 @@ final class AiMonitoringOverviewTest extends TestCase
         self::assertNotContains('Нет активной модели для клиентского компаньона.', $viewData['clientCompanion']['issues']);
     }
 
+    public function test_monitoring_overview_reports_disabled_provider_configuration_separately_from_missing_configuration(): void
+    {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->id);
+        app(OrganizationContext::class)->set($organization);
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_name' => 'deepseek',
+            'display_name' => 'DeepSeek',
+            'is_enabled' => false,
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+        $model = AiModelConfiguration::create([
+            'organization_id' => $organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'deepseek-chat',
+            'display_name' => 'DeepSeek Chat',
+            'is_enabled' => true,
+            'lifecycle_status' => 'active',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+        ]);
+        $release = AiModelRelease::create([
+            'organization_id' => $organization->id,
+            'model_config_id' => $model->id,
+            'release_number' => 1,
+            'status' => 'active',
+            'provider_name' => 'deepseek',
+            'model_name' => 'deepseek-chat',
+            'capabilities' => [AiCapability::ClientCompanion->value],
+            'pricing_snapshot' => [],
+            'activated_at' => now(),
+        ]);
+        $model->update(['active_release_id' => $release->id]);
+
+        $viewData = (new AiMonitoringOverview)->getViewData();
+
+        self::assertSame('disabled', $viewData['clientCompanion']['status']);
+        self::assertContains('Провайдер клиентского компаньона отключён в настройках провайдера.', $viewData['clientCompanion']['issues']);
+        self::assertNotContains('Провайдер или модель клиентского компаньона требуют завершить настройку и проверку.', $viewData['clientCompanion']['issues']);
+    }
+
     public function test_monitoring_overview_marks_a_disabled_companion_capability_as_disabled(): void
     {
         $organization = Organization::factory()->create();

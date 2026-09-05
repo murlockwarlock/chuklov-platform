@@ -814,6 +814,35 @@ class AiWorkflowEngineTest extends TestCase
         }
     }
 
+    public function test_disabled_provider_is_not_misclassified_as_missing_configuration(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $provider = $model->providerConfiguration;
+        self::assertNotNull($provider);
+        $provider->update(['is_enabled' => false]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'disabled_provider_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('A disabled provider must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertFalse($exception->configurationMissing);
+            self::assertTrue($exception->providerDisabled);
+        }
+
+        self::assertSame(
+            AiErrorCategory::ProviderDisabled,
+            AiRun::query()->where('workflow_key', 'disabled_provider_test')->latest('id')->first()?->error_category,
+        );
+    }
+
     public function test_rag_context_uses_actual_retrieved_content_not_source_reference(): void
     {
         $fakeRetriever = new class implements KnowledgeRetriever

@@ -690,6 +690,8 @@ final class CompanionTurnProcessor
 
         return match (true) {
             $exception instanceof AiProviderUnavailableException
+                && $exception->providerDisabled => CompanionFailureCode::ProviderDisabled,
+            $exception instanceof AiProviderUnavailableException
                 && $exception->configurationMissing,
             $exception instanceof InvalidArgumentException && (
                 str_contains($message, 'tenant-owned active prompt version')
@@ -708,6 +710,7 @@ final class CompanionTurnProcessor
         return match ($result->errorCategory) {
             AiErrorCategory::BudgetExceeded => CompanionFailureCode::BudgetUnavailable,
             AiErrorCategory::ConfigurationMissing => CompanionFailureCode::NotConfigured,
+            AiErrorCategory::ProviderDisabled => CompanionFailureCode::ProviderDisabled,
             AiErrorCategory::OutputSchemaValidationFailed => CompanionFailureCode::InvalidOutput,
             AiErrorCategory::RateLimited => CompanionFailureCode::RateLimited,
             AiErrorCategory::ProviderUnavailable,
