@@ -159,6 +159,17 @@ async function selectText(editor: Locator, value: string): Promise<void> {
         await editor.press('Shift+ArrowRight');
     }
 
+    const selectedText = await editor.evaluate(() => window.getSelection()?.toString() ?? '');
+
+    if (selectedText !== value) {
+        await editor.click();
+        await editor.press('Home');
+
+        for (let index = 0; index < value.length; index++) {
+            await editor.press('Shift+ArrowRight');
+        }
+    }
+
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
 
@@ -175,7 +186,10 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
 }
 
 async function saveContentSection(page: Page): Promise<void> {
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    const saveButton = page.getByRole('button', { name: 'Сохранить', exact: true });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.scrollIntoViewIfNeeded();
+    await saveButton.click({ force: true });
     await expect(page.getByRole('heading', { name: 'Сохранено', exact: true })).toBeVisible();
 }
 
