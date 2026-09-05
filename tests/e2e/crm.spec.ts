@@ -500,12 +500,13 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
+    await assertNoHorizontalOverflow(page);
     await page.getByRole('button', { name: 'Назначить партнёра', exact: true }).click();
     const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Партнёр' }).last();
     const partnerSelect = assignmentDialog.getByRole('combobox', { name: /^Партнёр/ });
     await partnerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
-    await page.getByText(fixture.partnerName, { exact: true }).last().click();
+    await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
     await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Партнёр назначен', { exact: true })).toBeVisible();
 
@@ -550,7 +551,7 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByText('Оплата записана. Остаток обновлён.', { exact: true })).toBeVisible();
 
     await page.goto('/admin/financial-obligations');
-    await expect(page.getByRole('heading', { name: 'Финансовые обязательства', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
     await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено');
 });

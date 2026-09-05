@@ -76,6 +76,7 @@ body {
 .portal-header__inner {
     display: flex;
     width: min(100%, var(--portal-content-width));
+    min-width: 0;
     min-height: 4.5rem;
     align-items: center;
     justify-content: space-between;
@@ -104,12 +105,17 @@ body {
 
 .portal-header__navigation {
     display: none;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: var(--portal-space-8);
     margin-inline: auto;
 }
 
 .portal-header__link {
+    min-width: 0;
     min-height: 2.75rem;
     display: inline-flex;
     align-items: center;
