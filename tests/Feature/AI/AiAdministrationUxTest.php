@@ -304,6 +304,20 @@ final class AiAdministrationUxTest extends TestCase
         $budgetManager->reserveBudget($organization->getKey(), 1);
     }
 
+    public function test_monitoring_overview_explains_missing_client_companion_setup_with_direct_actions(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(AiMonitoringOverview::class)
+            ->assertSee('AI-компаньон требует настройки')
+            ->assertSee('Промпт клиентского компаньона не настроен.')
+            ->assertSee('Нет активной модели для клиентского компаньона.')
+            ->assertSee('Настроить промпт')
+            ->assertSee('Настроить модель');
+    }
+
     public function test_budget_conversion_rejects_malformed_negative_and_excess_precision_values(): void
     {
         [$organization, $admin] = $this->organizationFixture();

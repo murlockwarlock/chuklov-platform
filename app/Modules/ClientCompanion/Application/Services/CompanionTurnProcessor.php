@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
@@ -32,6 +33,7 @@ use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 final class CompanionTurnProcessor
@@ -673,6 +675,13 @@ final class CompanionTurnProcessor
         $message = mb_strtolower($exception->getMessage());
 
         return match (true) {
+            $exception instanceof AiProviderUnavailableException
+                && str_contains($message, 'configured for capability'),
+            $exception instanceof InvalidArgumentException && (
+                str_contains($message, 'tenant-owned active prompt version')
+                || str_contains($message, 'selected prompt version')
+                || str_contains($message, 'draft prompt versions')
+            ) => CompanionFailureCode::NotConfigured,
             str_contains($message, 'budget') => CompanionFailureCode::BudgetUnavailable,
             str_contains($message, 'retrieval'), str_contains($message, 'knowledge') => CompanionFailureCode::RetrievalFailure,
             str_contains($message, 'response contract'), str_contains($message, 'empty') => CompanionFailureCode::InvalidOutput,

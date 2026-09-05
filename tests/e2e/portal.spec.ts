@@ -743,7 +743,7 @@ test('home keeps one primary booking action and makes referrals discoverable at 
 
     await page.getByTestId('home-referrals-cta').click();
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Стать партнёром' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
 });
 
 test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
@@ -754,14 +754,12 @@ test('client can activate the partner cabinet and manage multiple campaign links
         value: fixture.cookieValue,
         url: 'http://127.0.0.1:8000',
     }]);
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
-
     await page.goto('/portal/referrals');
-    await expect(page.getByRole('heading', { name: 'Стать партнёром' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toBeVisible();
     await page.getByTestId('partner-activate').click();
 
-    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-links')).toBeVisible();
     await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
 
@@ -796,7 +794,7 @@ test('client can activate the partner cabinet and manage multiple campaign links
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/portal/referrals');
-        await expect(page.getByRole('heading', { name: 'Партнёрский кабинет' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
         await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
         await expect(page.getByText('Telegram — мой канал', { exact: true })).toBeVisible();
         await assertNoHorizontalOverflow(page);
@@ -814,8 +812,8 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
 
     await page.goto('/portal/referrals');
     await page.getByTestId('partner-activate').click();
-    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет' })).toBeVisible();
-    await expect(page.getByText('10.00 USD', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
 
     await page.getByLabel('Сумма', { exact: true }).fill('2.00');
     await page.getByRole('button', { name: 'Запросить выплату', exact: true }).click();

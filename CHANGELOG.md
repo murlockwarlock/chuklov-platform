@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
+
+- Refined the CRM partner workspace so named campaign links, channels, per-link metrics, referred-client provenance, rewards, and payouts render as separate readable entries instead of one combined summary.
+- Added an actionable AI Companion readiness state to the CRM: missing active prompt/model configuration is shown directly with links to the existing setup surfaces, while provider outages retain their fail-safe handoff semantics.
+- Confirmed the staging DeepSeek credential itself is healthy; the current staging conversation remains paused because the organization has no active client_companion prompt/model release and the existing conversation is already in human handoff.
+
 ## 2026-09-05 — Phase 1 partner cabinet and campaign links
 
 - Added organization-scoped Partner enrollment for existing Clients, direct CRM activation/deactivation, a first-class «Партнёры» workspace, and an obvious «Назначить партнёра» client action that preserves the authoritative first-touch relationship.

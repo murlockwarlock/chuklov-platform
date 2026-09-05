@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-09-06 — Partner acceptance hardening and AI Companion diagnostic
+
+- The working partner candidate now renders CRM campaign links and operational history as separate readable entries, preserving visible per-link name, channel, URL, transitions, registrations, paid clients, rewards, referred-client provenance, and payout history. The CRM finance E2E contract now follows the actual Filament action controls and visible dialogs; the referral relationship list HTTP-500 regression remains covered.
+- The staging AI investigation found no DeepSeek credential failure: the credential is active and its provider health is healthy. The organization has no active client_companion prompt/version and no active model release for that capability. The affected conversation is already human_handoff, so its later turns are correctly paused until the handoff is resolved and AI is resumed.
+- The AI Companion processor now classifies missing configuration as not_configured without escalating repeated setup failures, while a genuine unavailable-provider error still follows the existing provider-failure and repeated-failure handoff policy. CRM AI monitoring now exposes the missing setup prerequisites and links to the existing prompt/model screens.
+- Fresh local verification for this working tree: partner/CRM/Portal/Telegram/Finance/client workspace tests pass 106 tests / 853 assertions; AI administration/monitoring/companion processing pass 43 tests / 282 assertions; Pint, scoped PHPStan, frontend lint, vue-tsc, Vite build, PHP syntax, and git diff --check pass. Hosted CI, hosted Playwright, staging redeployment, and owner acceptance remain pending for the finalized exact SHA.
+- No secret was exposed, no direct staging data mutation was used, no payout was made, production was not deployed, and PR #33 remains Draft.
+
 ## 2026-09-05 — Phase 1 partner operating model candidate
 
 - This candidate extends the existing ClientReferralIdentity, first-touch attribution, ReferralRelationship, Finance commercial evidence, reward ledger, payout reservations, Portal runtime, and Telegram Mini App authentication. It adds an organization-scoped Partner profile, multiple named channel campaign links, append-only link-transition evidence, preserved campaign provenance, first-class CRM partner management, and a responsive Portal/Mini App «Партнёрский кабинет».

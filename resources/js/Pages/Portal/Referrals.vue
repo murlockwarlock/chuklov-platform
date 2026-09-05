@@ -487,6 +487,7 @@ function cancelPayout(payout: Payout): void {
               v-for="balance in props.referrals.rewards.balances"
               :key="balance.currency"
               class="portal-panel portal-stack portal-stack--tight"
+              :data-testid="`partner-balance-${balance.currency}`"
             >
               <strong class="text-xl text-[var(--portal-color-ink)]">{{ balance.currency }}</strong>
               <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">

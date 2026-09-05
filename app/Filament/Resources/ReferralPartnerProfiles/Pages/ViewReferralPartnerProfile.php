@@ -119,31 +119,33 @@ final class ViewReferralPartnerProfile extends ViewRecord
         ];
     }
 
-    public function workspaceLinks(): string
+    /** @return list<array<string, mixed>> */
+    public function workspaceLinkItems(): array
     {
         $links = $this->workspace()['overview']['links'] ?? [];
         if (! is_array($links)) {
-            return '';
+            return [];
         }
 
-        $lines = [];
+        $items = [];
         foreach ($links as $link) {
             if (! is_array($link)) {
                 continue;
             }
 
             $rewardItems = $link['rewards'] ?? [];
-            $rewards = $this->formatMoneyList(is_array($rewardItems) ? $rewardItems : []);
-            $summary = 'Переходы: '.($link['visits'] ?? 0)
-                .', Регистрации: '.($link['registrations'] ?? 0)
-                .', Оплатили: '.($link['paidClients'] ?? 0)
-                .', Начислено: '.($rewards === '' ? '—' : $rewards);
-
-            $lines[] = ($link['name'] ?? 'Ссылка').' · '.($link['channel'] ?? 'Другое')
-                .' — '.$summary.' · '.$link['shareUrl'];
+            $items[] = [
+                'name' => (string) ($link['name'] ?? 'Ссылка'),
+                'channel' => (string) ($link['channel'] ?? 'Другое'),
+                'shareUrl' => (string) ($link['shareUrl'] ?? ''),
+                'visits' => (int) ($link['visits'] ?? 0),
+                'registrations' => (int) ($link['registrations'] ?? 0),
+                'paidClients' => (int) ($link['paidClients'] ?? 0),
+                'rewards' => is_array($rewardItems) ? $this->formatMoneyList($rewardItems) : '—',
+            ];
         }
 
-        return implode("\n", $lines);
+        return $items;
     }
 
     public function workspaceSummary(): string
@@ -187,74 +189,80 @@ final class ViewReferralPartnerProfile extends ViewRecord
         ]);
     }
 
-    public function workspaceClients(): string
+    /** @return list<array<string, string>> */
+    public function workspaceClientItems(): array
     {
         $registrations = $this->workspace()['overview']['registrations'] ?? [];
         if (! is_array($registrations)) {
-            return '';
+            return [];
         }
 
-        $lines = [];
+        $items = [];
         foreach ($registrations as $client) {
             if (! is_array($client)) {
                 continue;
             }
 
-            $registeredAt = $client['registeredAt'] === null
-                ? 'Дата не указана'
-                : CarbonImmutable::parse((string) $client['registeredAt'])->format('d.m.Y H:i');
-
-            $lines[] = ($client['name'] ?? '—').' · '.$registeredAt.' · '
-                .($client['linkName'] ?? 'Назначено в CRM').' / '.($client['channel'] ?? 'CRM')
-                .' · '.(($client['paidClient'] ?? false) ? 'Оплатил' : 'Не оплатил');
+            $items[] = [
+                'name' => (string) ($client['name'] ?? '—'),
+                'registeredAt' => $client['registeredAt'] === null
+                    ? 'Дата не указана'
+                    : CarbonImmutable::parse((string) $client['registeredAt'])->format('d.m.Y H:i'),
+                'origin' => ($client['linkName'] ?? 'Назначено в CRM').' / '.($client['channel'] ?? 'CRM'),
+                'paymentStatus' => ($client['paidClient'] ?? false) ? 'Оплатил' : 'Не оплатил',
+            ];
         }
 
-        return implode("\n", $lines);
+        return $items;
     }
 
-    public function workspaceRewards(): string
+    /** @return list<array<string, string>> */
+    public function workspaceRewardItems(): array
     {
         $history = $this->workspace()['overview']['rewards']['history'] ?? [];
         if (! is_array($history)) {
-            return '';
+            return [];
         }
 
-        $lines = [];
+        $items = [];
         foreach ($history as $reward) {
             if (! is_array($reward)) {
                 continue;
             }
 
-            $occurredAt = CarbonImmutable::parse((string) $reward['occurredAt'])->format('d.m.Y H:i');
-
-            $lines[] = ($reward['typeLabel'] ?? 'Операция').' · '
-                .$this->formatMoney((string) $reward['amountMinor'], (string) $reward['currency'])
-                .' · '.($reward['clientName'] ?? 'Клиент не указан').' · '.$occurredAt;
+            $items[] = [
+                'type' => (string) ($reward['typeLabel'] ?? 'Операция'),
+                'amount' => $this->formatMoney((string) ($reward['amountMinor'] ?? 0), (string) ($reward['currency'] ?? '')),
+                'client' => (string) ($reward['clientName'] ?? 'Клиент не указан'),
+                'occurredAt' => CarbonImmutable::parse((string) ($reward['occurredAt'] ?? now()))->format('d.m.Y H:i'),
+            ];
         }
 
-        return implode("\n", $lines);
+        return $items;
     }
 
-    public function workspacePayouts(): string
+    /** @return list<array<string, string>> */
+    public function workspacePayoutItems(): array
     {
         $payouts = $this->workspace()['overview']['rewards']['payouts'] ?? [];
         if (! is_array($payouts)) {
-            return '';
+            return [];
         }
 
-        $lines = [];
+        $items = [];
         foreach ($payouts as $payout) {
             if (! is_array($payout)) {
                 continue;
             }
 
-            $requestedAt = CarbonImmutable::parse((string) $payout['requestedAt'])->format('d.m.Y H:i');
-
-            $lines[] = $this->formatMoney((string) $payout['amountMinor'], (string) $payout['currency'])
-                .' · '.($payout['statusLabel'] ?? '—').' · '.$requestedAt;
+            $items[] = [
+                'amount' => $this->formatMoney((string) ($payout['amountMinor'] ?? 0), (string) ($payout['currency'] ?? '')),
+                'status' => (string) ($payout['statusLabel'] ?? '—'),
+                'requestedAt' => CarbonImmutable::parse((string) ($payout['requestedAt'] ?? now()))->format('d.m.Y H:i'),
+            ];
         }
 
-        return implode("\n", $lines);
+        return $items;
     }
 
     /** @return array<string, mixed> */

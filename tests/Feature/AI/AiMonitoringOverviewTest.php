@@ -44,5 +44,8 @@ final class AiMonitoringOverviewTest extends TestCase
         self::assertCount(AiMonitoringOverview::PROVIDER_OVERVIEW_LIMIT, $viewData['providers']);
         self::assertFalse($viewData['providers']->first()->relationLoaded('models'));
         self::assertSame(1, (int) $viewData['providers']->first()->models_count);
+        self::assertFalse($viewData['clientCompanion']['ready']);
+        self::assertContains('Промпт клиентского компаньона не настроен.', $viewData['clientCompanion']['issues']);
+        self::assertContains('Нет активной модели для клиентского компаньона.', $viewData['clientCompanion']['issues']);
     }
 }

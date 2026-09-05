@@ -485,7 +485,9 @@ test('staff can activate a partner, create a campaign link, and assign the partn
     await page.getByText('Instagram', { exact: true }).last().click();
     await linkDialog.getByRole('button', { name: 'Создать', exact: true }).click();
     await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
-    await expect(page.getByText('Переходы: 0, Регистрации: 0, Оплатили: 0', { exact: true })).toBeVisible();
+    await expect(page.getByText('Переходы', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Регистрации', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Оплатили', { exact: true }).last()).toBeVisible();
 
     await page.goto('/admin/referral-partner-profiles');
     await expect(page.getByRole('heading', { name: 'Партнёры', exact: true })).toBeVisible();
@@ -523,16 +525,16 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Подтвердить запись', exact: true }).click();
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page.getByText('Запись подтверждена', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Завершить визит', exact: true }).click();
+    await page.getByRole('button', { name: 'Завершить визит', exact: true }).click();
     await expect(page.getByText('Визит успешно завершён', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Записать оплату', exact: true }).click();
-    const paymentDialog = page.getByRole('dialog').last();
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const paymentDialog = page.locator('[role="dialog"]:visible').last();
     await expect(paymentDialog).toBeVisible();
     await expect(paymentDialog.getByLabel('Сумма оплаты', { exact: true })).toHaveValue('100.00');
     await paymentDialog.getByLabel('Способ оплаты', { exact: true }).selectOption('cash');
@@ -556,7 +558,7 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     const rejectedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '2.00 USD' }).first();
     await expect(rejectedRow).toBeVisible();
     await rejectedRow.getByRole('button', { name: 'Отклонить', exact: true }).click();
-    const rejectDialog = page.getByRole('dialog').last();
+    const rejectDialog = page.locator('[role="dialog"]:visible').last();
     await expect(rejectDialog).toBeVisible();
     await rejectDialog.getByLabel('Причина отклонения', { exact: true }).fill('Проверка тестовой выплаты');
     await rejectDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -565,13 +567,13 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     const approvedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '3.00 USD' }).first();
     await expect(approvedRow).toBeVisible();
     await approvedRow.getByRole('button', { name: 'Одобрить', exact: true }).click();
-    const approvalDialog = page.getByRole('dialog').last();
+    const approvalDialog = page.locator('[role="dialog"]:visible').last();
     await expect(approvalDialog).toBeVisible();
     await approvalDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
     await expect(approvedRow).toContainText('Одобрена');
 
     await approvedRow.getByRole('button', { name: 'Отметить как выплаченную', exact: true }).click();
-    const paidDialog = page.getByRole('dialog').last();
+    const paidDialog = page.locator('[role="dialog"]:visible').last();
     await expect(paidDialog).toBeVisible();
     await paidDialog.getByLabel('Платёжная пометка или ссылка', { exact: true }).fill('manual-test-payout');
     await paidDialog.getByLabel('Комментарий о ручной выплате', { exact: true }).fill('Тестовая ручная выплата');

@@ -4,8 +4,10 @@ namespace App\Filament\Resources\ReferralPartnerProfiles\Schemas;
 
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ViewReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
 final class ReferralPartnerProfileInfolist
@@ -36,35 +38,68 @@ final class ReferralPartnerProfileInfolist
                 ]),
             Section::make('Ссылки')
                 ->schema([
-                    TextEntry::make('links_summary')
-                        ->label('Кампании и статистика')
-                        ->state(fn (ViewReferralPartnerProfile $livewire): string => $livewire->workspaceLinks())
+                    RepeatableEntry::make('campaign_links')
+                        ->hiddenLabel()
+                        ->schema([
+                            TextEntry::make('name')
+                                ->label('Название')
+                                ->weight('semibold')
+                                ->columnSpanFull(),
+                            TextEntry::make('channel')->label('Канал'),
+                            TextEntry::make('shareUrl')
+                                ->label('Ссылка')
+                                ->url(fn (Get $get): ?string => filled($url = $get('shareUrl')) ? (string) $url : null)
+                                ->openUrlInNewTab()
+                                ->wrap(),
+                            TextEntry::make('visits')->label('Переходы'),
+                            TextEntry::make('registrations')->label('Регистрации'),
+                            TextEntry::make('paidClients')->label('Оплатили'),
+                            TextEntry::make('rewards')->label('Начислено')->wrap(),
+                        ])
+                        ->columns(2)
+                        ->state(fn (ViewReferralPartnerProfile $livewire): array => $livewire->workspaceLinkItems())
                         ->placeholder('Ссылок пока нет')
-                        ->wrap()
                         ->columnSpanFull(),
                 ]),
             Section::make('Приглашённые клиенты')
                 ->schema([
-                    TextEntry::make('referred_clients_summary')
-                        ->label('Регистрации и оплаты')
-                        ->state(fn (ViewReferralPartnerProfile $livewire): string => $livewire->workspaceClients())
+                    RepeatableEntry::make('referred_clients')
+                        ->hiddenLabel()
+                        ->schema([
+                            TextEntry::make('name')->label('Клиент')->weight('semibold')->wrap(),
+                            TextEntry::make('registeredAt')->label('Регистрация')->wrap(),
+                            TextEntry::make('origin')->label('Источник')->wrap(),
+                            TextEntry::make('paymentStatus')->label('Оплата')->wrap(),
+                        ])
+                        ->columns(2)
+                        ->state(fn (ViewReferralPartnerProfile $livewire): array => $livewire->workspaceClientItems())
                         ->placeholder('Регистраций пока нет')
-                        ->wrap()
                         ->columnSpanFull(),
                 ]),
             Section::make('Вознаграждения и выплаты')
                 ->schema([
-                    TextEntry::make('reward_summary')
+                    RepeatableEntry::make('rewards')
                         ->label('История начислений')
-                        ->state(fn (ViewReferralPartnerProfile $livewire): string => $livewire->workspaceRewards())
+                        ->schema([
+                            TextEntry::make('type')->label('Операция')->wrap(),
+                            TextEntry::make('amount')->label('Сумма')->wrap(),
+                            TextEntry::make('client')->label('Клиент')->wrap(),
+                            TextEntry::make('occurredAt')->label('Дата')->wrap(),
+                        ])
+                        ->columns(2)
+                        ->state(fn (ViewReferralPartnerProfile $livewire): array => $livewire->workspaceRewardItems())
                         ->placeholder('Начислений пока нет')
-                        ->wrap()
                         ->columnSpanFull(),
-                    TextEntry::make('payout_summary')
+                    RepeatableEntry::make('payouts')
                         ->label('История выплат')
-                        ->state(fn (ViewReferralPartnerProfile $livewire): string => $livewire->workspacePayouts())
+                        ->schema([
+                            TextEntry::make('amount')->label('Сумма')->wrap(),
+                            TextEntry::make('status')->label('Статус')->wrap(),
+                            TextEntry::make('requestedAt')->label('Запрошено')->wrap(),
+                        ])
+                        ->columns(2)
+                        ->state(fn (ViewReferralPartnerProfile $livewire): array => $livewire->workspacePayoutItems())
                         ->placeholder('Запросов пока нет')
-                        ->wrap()
                         ->columnSpanFull(),
                 ])
                 ->columns(2),
