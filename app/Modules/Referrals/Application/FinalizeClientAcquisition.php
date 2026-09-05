@@ -91,6 +91,8 @@ final class FinalizeClientAcquisition
                         'organization_id' => $organization->getKey(),
                         'client_id' => $lockedClient->getKey(),
                         ...$acceptedData->toArray(),
+                        'encrypted_source_detail' => $preAuth->encrypted_source_detail,
+                        'source_detail_key_version' => $preAuth->source_detail_key_version,
                         'capture_channel' => $preAuth->capture_channel,
                         'capture_context' => $preAuth->capture_context,
                         'captured_at' => $preAuth->captured_at,

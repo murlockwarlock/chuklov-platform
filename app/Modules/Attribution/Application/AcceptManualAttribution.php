@@ -14,9 +14,10 @@ final class AcceptManualAttribution
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly RecordAuditEvent $audit,
+        private readonly AttributionSourceDetail $detail,
     ) {}
 
-    public function handle(Client $client, string $source): ClientAttribution
+    public function handle(Client $client, string $source, mixed $sourceDetail = null): ClientAttribution
     {
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
@@ -28,7 +29,9 @@ final class AcceptManualAttribution
             throw ValidationException::withMessages(['source' => 'Выберите источник из списка.']);
         }
 
-        return DB::transaction(function () use ($organization, $client, $source): ClientAttribution {
+        $attributes = $this->detail->attributes((int) $organization->getKey(), $source, $sourceDetail);
+
+        return DB::transaction(function () use ($organization, $client, $source, $attributes): ClientAttribution {
             $lockedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($client->getKey())
@@ -49,6 +52,7 @@ final class AcceptManualAttribution
                 'organization_id' => $organization->getKey(),
                 'client_id' => $lockedClient->getKey(),
                 'source_type' => 'manual',
+                ...$attributes,
                 'source' => $source,
                 'capture_channel' => 'portal',
                 'capture_context' => 'manual_fallback',

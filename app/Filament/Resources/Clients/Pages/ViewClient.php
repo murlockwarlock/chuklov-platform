@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Models\User;
+use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\RecordClientConsent;
@@ -121,6 +122,23 @@ class ViewClient extends ViewRecord
             ActionGroup::make([
                 $this->marketingConsentActionGroup(),
                 $this->assignReferrerAction(),
+                Action::make('sourceDetail')
+                    ->label('Уточнение источника')
+                    ->modalHeading('Уточнение источника')
+                    ->modalSubmitActionLabel('Сохранить')
+                    ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
+                    ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))
+                    ->fillForm(fn (): array => ['source_detail' => app(ManageAttributionSourceDetail::class)->read($this->actor(), $this->clientRecord())])
+                    ->schema([
+                        Textarea::make('source_detail')
+                            ->label('Кто порекомендовал или откуда узнали')
+                            ->helperText('Имя, Telegram, телефон или другое уточнение.')
+                            ->maxLength(500)
+                            ->rows(3),
+                    ])
+                    ->action(function (array $data): void {
+                        app(ManageAttributionSourceDetail::class)->update($this->actor(), $this->clientRecord(), $data['source_detail'] ?? null);
+                    }),
                 Action::make('companionHistory')
                     ->label('AI-компаньон / История общения')
                     ->icon('heroicon-o-chat-bubble-left-right')

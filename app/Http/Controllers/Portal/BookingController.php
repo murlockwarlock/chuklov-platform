@@ -225,6 +225,7 @@ class BookingController extends Controller
                 attributionSource: filled($validated['attribution_source'] ?? null)
                     ? (string) $validated['attribution_source']
                     : null,
+                attributionSourceDetail: $validated['attribution_source_detail'] ?? null,
             );
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->bookingErrors($exception));

@@ -39,7 +39,7 @@ class AttributionController extends Controller
             abort(401);
         }
 
-        $accept->handle($client, (string) $request->validated('source'));
+        $accept->handle($client, (string) $request->validated('source'), $request->validated('source_detail'));
 
         return to_route('portal.home');
     }
