@@ -171,6 +171,8 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeHidden();
     await expect(editor.locator(`a[href="${url}"]`)).toHaveCount(1);
+    await page.waitForTimeout(500);
+    await page.waitForLoadState('networkidle');
 }
 
 async function saveContentSection(page: Page): Promise<void> {
@@ -200,6 +202,8 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await selectText(editor, communityText);
     await page.locator('button[aria-label="Подчеркнутый"]').click();
     await expect(editor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
+    await page.waitForTimeout(500);
+    await page.waitForLoadState('networkidle');
 
     await saveContentSection(page);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
