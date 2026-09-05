@@ -162,12 +162,31 @@ async function selectText(editor: Locator, value: string): Promise<void> {
     const selectedText = await editor.evaluate(() => window.getSelection()?.toString() ?? '');
 
     if (selectedText !== value) {
-        await editor.click();
-        await editor.press('Home');
+        await editor.evaluate((element, textToSelect) => {
+            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+            let node = walker.nextNode();
 
-        for (let index = 0; index < value.length; index++) {
-            await editor.press('Shift+ArrowRight');
-        }
+            while (node !== null) {
+                const text = node.textContent ?? '';
+                const start = text.indexOf(textToSelect);
+
+                if (start !== -1) {
+                    const range = document.createRange();
+                    range.setStart(node, start);
+                    range.setEnd(node, start + textToSelect.length);
+
+                    const selection = window.getSelection();
+                    selection?.removeAllRanges();
+                    selection?.addRange(range);
+
+                    return;
+                }
+
+                node = walker.nextNode();
+            }
+
+            throw new Error(`Text not found in the rich editor: ${textToSelect}`);
+        }, value);
     }
 
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
@@ -226,7 +245,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(reloadedEditor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
     await expect(reloadedEditor).toContainText('😀');
 
-    await page.goto('/portal/sections/communities');
+    await page.goto('/portal/sections/communities', { waitUntil: 'domcontentloaded' });
     const portalSection = page.locator('article').filter({ hasText: fixture.title }).first();
     const portalLink = portalSection.locator(`a[href="${initialUrl}"]`);
     await expect(portalLink).toHaveCount(1);
@@ -260,7 +279,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(finalEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     await expect(finalEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
 
-    await page.goto('/portal/sections/communities');
+    await page.goto('/portal/sections/communities', { waitUntil: 'domcontentloaded' });
     const updatedPortalSection = page.locator('article').filter({ hasText: fixture.title }).first();
     await expect(updatedPortalSection.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
     await expect(updatedPortalSection.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
