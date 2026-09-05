@@ -197,8 +197,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(editor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await page.waitForTimeout(500);
 
-    await editor.click();
-    await editor.press('ControlOrMeta+A');
+    await selectText(editor, communityText);
     await page.locator('button[aria-label="Подчеркнутый"]').click();
     await expect(editor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
 
