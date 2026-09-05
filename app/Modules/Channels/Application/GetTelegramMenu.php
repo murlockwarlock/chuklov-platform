@@ -5,6 +5,7 @@ namespace App\Modules\Channels\Application;
 use App\Modules\Channels\Domain\Enums\TelegramMenuLaunchMode;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Database\Eloquent\Collection;
 use LogicException;
 
@@ -16,7 +17,7 @@ final class GetTelegramMenu
     ) {}
 
     /** @return list<array{key: string, label: string, url: string, web_app: bool, launch: string, callback_data?: string}> */
-    public function handle(?string $language): array
+    public function handle(?string $language, ?Client $client = null): array
     {
         $locale = str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
         $entries = config('portal.telegram.menu.'.$locale, []);
@@ -48,7 +49,7 @@ final class GetTelegramMenu
             if ($this->isTelegramContent($localizedContent) && strlen('content:'.$key) <= 64) {
                 $menu[] = [
                     'key' => $key,
-                    'label' => (string) ($entry['label'] ?? $key),
+                    'label' => $this->label($key, $entry, $locale, $client),
                     'url' => '',
                     'web_app' => false,
                     'launch' => 'telegram_content',
@@ -72,7 +73,7 @@ final class GetTelegramMenu
 
             $menu[] = [
                 'key' => $key,
-                'label' => (string) ($entry['label'] ?? $key),
+                'label' => $this->label($key, $entry, $locale, $client),
                 'url' => $url,
                 'web_app' => $launch === TelegramMenuLaunchMode::MiniApp,
                 'launch' => $launch->value,
@@ -118,5 +119,17 @@ final class GetTelegramMenu
         $definition = is_array($registeredSections) ? ($registeredSections[$key] ?? null) : null;
 
         return is_array($definition) && ($definition['requires_published_content'] ?? false) === true;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function label(string $key, array $entry, string $locale, ?Client $client): string
+    {
+        if ($key === 'partner_cabinet') {
+            return $client?->referralPartnerProfile?->isActive() === true
+                ? ($locale === 'ru' ? '🤝 Партнёрский кабинет' : '🤝 Partner cabinet')
+                : ($locale === 'ru' ? '🤝 Стать партнёром' : '🤝 Become a partner');
+        }
+
+        return (string) ($entry['label'] ?? $key);
     }
 }

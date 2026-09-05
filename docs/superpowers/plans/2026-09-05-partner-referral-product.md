@@ -245,4 +245,3 @@
 - [ ] **Step 6: Manually dispatch hosted exact-SHA CI, inspect every required job, and repeat only after batching real defects.**
 - [ ] **Step 7: After green hosted CI, deploy the exact SHA to the same staging target, run migrations/health/smoke/Telegram checks, and use only normal CRM/Portal UI for the harmless acceptance fixture.**
 - [ ] **Step 8: Update status with exact SHAs/run IDs/results, leave PR #33 Draft and production untouched, and do not mark owner acceptance complete.**
-

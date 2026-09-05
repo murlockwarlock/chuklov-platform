@@ -66,7 +66,7 @@ class ReferralPartnerProfile extends Model
 
     public function isActive(): bool
     {
-        return $this->status === ReferralPartnerStatus::Active;
+        return ReferralPartnerStatus::tryFrom((string) $this->getRawOriginal('status')) === ReferralPartnerStatus::Active;
     }
 
     protected function casts(): array
@@ -80,6 +80,9 @@ class ReferralPartnerProfile extends Model
         ];
     }
 
+    /** @param Builder<ReferralPartnerProfile> $query
+     * @return Builder<ReferralPartnerProfile>
+     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', ReferralPartnerStatus::Active->value);

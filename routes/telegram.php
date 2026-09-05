@@ -60,19 +60,20 @@ $bot->onCommand('start', function (
 ): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
     $organizationId = config('tenancy.default_organization_id');
+    $client = null;
     if (is_int($organizationId) || (is_string($organizationId) && ctype_digit($organizationId))) {
         $organization = Organization::query()->find((int) $organizationId);
         if ($organization instanceof Organization) {
             $organizationContext->set($organization);
             try {
-                $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
+                $client = $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
             } catch (UnauthorizedHttpException) {
             }
         }
     }
     $keyboard = InlineKeyboardMarkup::make();
 
-    foreach ($menu->handle($language) as $entry) {
+    foreach ($menu->handle($language, $client) as $entry) {
         $button = match ($entry['launch']) {
             'mini_app' => InlineKeyboardButton::make(
                 text: $entry['label'],

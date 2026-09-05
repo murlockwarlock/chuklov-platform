@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-09-05 — REQ-REFERRAL-003 partner enrollment, campaign links, and partner cabinet
+
+- Recorded the latest owner-confirmed Phase 1 partner operating model: a Partner is an existing organization-scoped Client with an auditable active/inactive enrollment, direct CRM activation, direct client self-enrollment, and a first-class CRM Partners workspace.
+- Added multiple named campaign links with human-facing channel presets (Telegram, Instagram, YouTube, WhatsApp, Сайт, Другое), safe transition evidence, preserved first-touch attribution, per-link provenance/statistics, and historical readability after deactivation. Campaign links extend the existing ClientReferralIdentity and ReferralRelationship authorities rather than creating parallel identity or relationship systems.
+- Confirmed Portal and Telegram Mini App partner cabinets expose registrations, authoritative Finance paid-client counts, conversions, per-currency reward balances, and manual payout lifecycle. Approved promotional copy and banners are not yet authoritative and remain deferred.
+- Added `REQ-REFERRAL-003` as `CANDIDATE`; required PostgreSQL, hosted CI, browser, staging, review, and owner-acceptance gates remain open.
+
 ## 2026-09-05 — REQ-REFERRAL-002 reward accounting and manual partner payouts
 
 - Resolved OQ-007 for the bounded Phase 1 referral reward foundation: rewards are organization-scoped, disabled by default, versioned, and configured for first/every authoritative Finance settlement with fixed or percentage calculation using integer minor units and explicit currency.

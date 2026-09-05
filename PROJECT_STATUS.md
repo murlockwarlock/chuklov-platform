@@ -1,5 +1,13 @@
 # Project Status
 
+## 2026-09-05 — Phase 1 partner operating model candidate
+
+- This candidate extends the existing ClientReferralIdentity, first-touch attribution, ReferralRelationship, Finance commercial evidence, reward ledger, payout reservations, Portal runtime, and Telegram Mini App authentication. It adds an organization-scoped Partner profile, multiple named channel campaign links, append-only link-transition evidence, preserved campaign provenance, first-class CRM partner management, and a responsive Portal/Mini App «Партнёрский кабинет».
+- Functional implementation status: `IMPLEMENTED` in the working candidate. CRM exposes «Сделать партнёром», «Партнёры», «Назначить партнёра», link management, referred-client provenance, reward history, and payout lifecycle. Portal supports self-enrollment, multiple campaign links, per-link/overall statistics, per-currency balances, and payout request/cancellation. Telegram uses the existing verified Mini App path and switches between «🤝 Стать партнёром» and «🤝 Партнёрский кабинет».
+- Local verification status: focused PHPUnit, the referral relationship HTTP-500 regression, Finance readiness UX, Pint, scoped Larastan, frontend lint/typecheck/build, and `git diff --check` are `PASS`. PostgreSQL/concurrency, hosted CI, hosted Playwright, staging, and real Telegram Mini App launch remain `NOT RUN` for this candidate until the exact application SHA is finalized.
+- Finance acceptance status: no payment shortcut was added. The normal CRM path remains authoritative; when a FinancialObligation prerequisite is absent, the booking workspace explains that the visit/service price or other Finance condition must be completed first.
+- Owner acceptance: `NOT RUN`; promotional copy/banner: `DEFERRED` pending approved source; production: `NOT DEPLOYED`; PR #33 remains Draft and must not be merged.
+
 ## 2026-09-05 — Configurable referral rewards and manual partner payouts candidate
 
 - Starting SHA: `f80c1c55ced0fdfbc7730d9eb989fea0fed00ad1`; branch: `codex/configurable-referral-rewards`. This bounded M11 candidate adds an organization-scoped, disabled-by-default, effective-dated reward program, an internal append-only earned/reversed ledger with per-currency projections, and auditable manual partner payout reservations/transitions. It preserves M11A relationship and Finance settlement authorities; organic source detail alone cannot qualify, and no provider payout, cash-out, redemption, expiry, or currency aggregation is added.

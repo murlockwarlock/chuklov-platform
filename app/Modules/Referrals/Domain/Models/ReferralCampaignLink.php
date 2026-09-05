@@ -98,6 +98,9 @@ class ReferralCampaignLink extends Model
         ];
     }
 
+    /** @param Builder<ReferralCampaignLink> $query
+     * @return Builder<ReferralCampaignLink>
+     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);

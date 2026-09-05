@@ -22,6 +22,7 @@ use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
+use App\Http\Controllers\Portal\ReferralPartnerController;
 use App\Http\Controllers\Portal\ReferralPayoutController;
 use App\Http\Controllers\Portal\ReferralRedirectController;
 use App\Http\Controllers\Portal\SectionController;
@@ -105,6 +106,11 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
+            Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
+            Route::post('/portal/referrals/links', [ReferralPartnerController::class, 'store'])->name('portal.referrals.links.store');
+            Route::post('/portal/referrals/links/{campaignLinkId}/disable', [ReferralPartnerController::class, 'disable'])
+                ->whereNumber('campaignLinkId')
+                ->name('portal.referrals.links.disable');
             Route::post('/portal/referrals/payouts', [ReferralPayoutController::class, 'store'])->name('portal.referrals.payouts.store');
             Route::post('/portal/referrals/payouts/{payoutRequestId}/cancel', [ReferralPayoutController::class, 'cancel'])
                 ->whereNumber('payoutRequestId')

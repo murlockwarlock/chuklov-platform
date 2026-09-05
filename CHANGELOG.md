@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-05 — Phase 1 partner cabinet and campaign links
+
+- Added organization-scoped Partner enrollment for existing Clients, direct CRM activation/deactivation, a first-class «Партнёры» workspace, and an obvious «Назначить партнёра» client action that preserves the authoritative first-touch relationship.
+- Added multiple named campaign links for Telegram, Instagram, YouTube, WhatsApp, Сайт, and Другое, with safe transition evidence, preserved link/channel provenance, per-link registrations and authoritative paid-client metrics, and responsive Portal partner-cabinet controls for copy/share/deactivation.
+- Added overall and per-currency partner statistics, reward/payout projections from the existing ledger, dynamic Telegram Mini App partner entry, and human Finance readiness explanations when «Записать оплату» is not yet available. Approved promotional copy/banner assets remain deferred.
+
 ## 2026-09-05 — Configurable referral rewards and manual partner payouts
 
 - Added an organization-scoped referral reward program with a disabled-by-default, versioned configuration for first/every authoritative settled payment and fixed/percentage rewards using the existing integer Money and rounding rules.

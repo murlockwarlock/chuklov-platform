@@ -115,7 +115,7 @@ return new class extends Migration
 
         if (DB::getDriverName() === 'pgsql') {
             DB::statement("ALTER TABLE referral_partner_profiles ADD CONSTRAINT ref_partner_profile_status_check CHECK (status IN ('active', 'inactive') AND activation_source IN ('portal', 'crm'))");
-            DB::statement("ALTER TABLE referral_campaign_links ADD CONSTRAINT ref_campaign_link_shape_check CHECK (char_length(trim(name)) BETWEEN 2 AND 180 AND channel IN ('telegram', 'instagram', 'youtube', 'whatsapp', 'website', 'other') AND (is_active OR disabled_at IS NOT NULL))");
+            DB::statement("ALTER TABLE referral_campaign_links ADD CONSTRAINT ref_campaign_link_shape_check CHECK (char_length(trim(name)) BETWEEN 2 AND 180 AND channel IN ('telegram', 'instagram', 'youtube', 'whatsapp', 'website', 'other') AND ((is_active AND disabled_at IS NULL) OR (NOT is_active AND disabled_at IS NOT NULL)))");
         }
     }
 

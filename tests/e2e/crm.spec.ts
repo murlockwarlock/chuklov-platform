@@ -6,15 +6,18 @@ type CrmFixture = {
     email: string;
     password: string;
     clientId: number;
+    partnerId: number;
     serviceId: number;
     specialistId: number;
     clientName: string;
+    partnerName: string;
     serviceName: string;
     specialistName: string;
     contentSectionId: number;
     contentSectionTitle: string;
     attachmentFilename: string;
     bookingStartsAt: string;
+    financeBookingId: number | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -34,12 +37,13 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $email = 'playwright-crm-'.$suffix.'@example.test';
         $password = 'password';
+        $payoutFlow = getenv('PLAYWRIGHT_PAYOUT_FLOW') === '1';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
         \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
@@ -67,6 +71,9 @@ function createCrmFixture(): CrmFixture {
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        $partner = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'CRM Партнёр '.$suffix,
+        ]);
         $organizationTimezone = $organization->defaultTimezone();
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
             'display_name' => 'CRM Специалист '.$suffix,
@@ -75,6 +82,8 @@ function createCrmFixture(): CrmFixture {
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => 'CRM Услуга '.$suffix,
             'formats' => ['office'],
+            'price_minor' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 10000 : null,
+            'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
         $contentSection = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->forOrganization($organization)->create([
             'section_key' => 'author',
@@ -101,6 +110,138 @@ function createCrmFixture(): CrmFixture {
             ->value('integer_value') ?? 0);
         $minimumBookingStart = \\Carbon\\CarbonImmutable::now($organizationTimezone)->addMinutes($leadTimeMinutes + 60);
         $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
+        $financeBooking = null;
+        if (getenv('PLAYWRIGHT_FINANCE_FLOW') === '1') {
+            app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            $financeBooking = app(\\App\\Modules\\Scheduling\\Application\\CreateBooking::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: $bookingStartsAt,
+                format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
+                idempotencyKey: 'playwright-finance-'.$suffix,
+            );
+            $pastStartsAt = \\Carbon\\CarbonImmutable::now('UTC')->subHours(2);
+            $financeBooking->forceFill([
+                'starts_at' => $pastStartsAt,
+                'ends_at' => $pastStartsAt->addHour(),
+                'blocking_ends_at' => $pastStartsAt->addHour(),
+                ])->save();
+        }
+        if ($payoutFlow) {
+            app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            app(\\App\\Modules\\Referrals\\Application\\SaveReferralRewardProgram::class)->handle(
+                actor: $admin,
+                enabled: true,
+                qualificationRule: 'first_settled_payment',
+                formula: 'fixed_amount',
+                fixedAmount: '10.00',
+                fixedCurrency: 'USD',
+                percentage: null,
+                effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
+            );
+            $profile = app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
+            $defaultLink = $profile->campaignLinks()->where('is_default', true)->firstOrFail();
+            $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => 'CRM Referred '.$suffix,
+                'email' => 'crm-referred-'.$suffix.'@example.test',
+            ]);
+            $relationship = new \\App\\Modules\\Referrals\\Domain\\Models\\ReferralRelationship;
+            $relationship->forceFill([
+                'organization_id' => $organization->getKey(),
+                'referrer_client_id' => $partner->getKey(),
+                'referred_client_id' => $referred->getKey(),
+                'establishment_method' => 'automatic_referral_link',
+                'referral_campaign_link_id' => $defaultLink->getKey(),
+                'registered_at' => now(),
+            ]);
+            $relationship->save();
+            $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                ->forOrganization($organization)
+                ->forClient($referred)
+                ->forSpecialist($specialist)
+                ->forService($service)
+                ->create();
+            $amountMinor = 10000;
+            $snapshot = [
+                'source_amount_minor' => (string) $amountMinor,
+                'source_currency' => 'USD',
+                'target_amount_minor' => (string) $amountMinor,
+                'target_currency' => 'USD',
+                'rate' => '1',
+                'rate_id' => null,
+                'rate_version' => null,
+                'effective_at' => null,
+                'rounding_mode' => 'half_up',
+                'source_scale' => 2,
+                'target_scale' => 2,
+            ];
+            $obligation = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialObligation;
+            $obligation->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $referred->getKey(),
+                'booking_id' => $booking->getKey(),
+                'service_id' => $service->getKey(),
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'price_snapshot' => ['amount_minor' => $amountMinor],
+                'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+                'creation_key' => 'playwright-crm-payout-'.$suffix,
+            ]);
+            $obligation->save();
+            $entry = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialLedgerEntry;
+            $entry->forceFill([
+                'organization_id' => $organization->getKey(),
+                'obligation_id' => $obligation->getKey(),
+                'entry_type' => 'manual_payment',
+                'source' => 'crm',
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'payment_method' => 'cash',
+                'conversion_snapshot' => null,
+                'occurred_at' => now(),
+                'idempotency_key' => 'playwright-crm-payout-entry-'.$suffix,
+                'created_at' => now(),
+            ]);
+            $entry->save();
+            app(\\App\\Modules\\Finance\\Application\\RecordFinancialSettlementEvent::class)->handle($obligation, $entry, $entry->occurred_at);
+            $event = \\App\\Modules\\Integration\\Domain\\Models\\IntegrationEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('aggregate_id', $obligation->getKey())
+                ->firstOrFail();
+            app(\\App\\Modules\\Referrals\\Application\\ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+            app(\\App\\Modules\\Referrals\\Application\\RequestReferralPayout::class)->handle($partner, '2.00', 'USD', 'playwright-crm-payout-reject-'.$suffix);
+            app(\\App\\Modules\\Referrals\\Application\\RequestReferralPayout::class)->handle($partner, '3.00', 'USD', 'playwright-crm-payout-paid-'.$suffix);
+        }
         config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
         app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
             $admin,
@@ -130,15 +271,18 @@ function createCrmFixture(): CrmFixture {
             'email' => $email,
             'password' => $password,
             'clientId' => $client->getKey(),
+            'partnerId' => $partner->getKey(),
             'serviceId' => $service->getKey(),
             'specialistId' => $specialist->getKey(),
             'clientName' => $client->full_name,
+            'partnerName' => $partner->full_name,
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
             'attachmentFilename' => $attachmentFilename,
             'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
+            'financeBookingId' => $financeBooking?->getKey(),
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -157,6 +301,8 @@ function createCrmFixture(): CrmFixture {
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
+                PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -174,6 +320,10 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await page.locator('input[type="password"]').fill(fixture.password);
     await page.locator('button[type="submit"]').click();
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+}
+
+async function assertNoHorizontalOverflow(page: Page): Promise<void> {
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
 async function searchTableFor(page: Page, query: string): Promise<void> {
@@ -310,6 +460,124 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Раздел', 'Об академии');
     await assertBusinessField(page, 'Язык', 'Русский');
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
+});
+
+test('staff can activate a partner, create a campaign link, and assign the partner from a client page', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.partnerId}`);
+    await expect(page.getByRole('heading', { name: fixture.partnerName, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Сделать партнёром', exact: true }).click();
+    await expect(page.getByText('Клиент стал партнёром', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Открыть партнёрский кабинет', exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Открыть партнёрский кабинет', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/referral-partner-profiles\/\d+$/);
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Создать ссылку', exact: true }).click();
+    const linkDialog = page.getByRole('dialog').last();
+    await expect(linkDialog).toBeVisible();
+    await linkDialog.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
+    await linkDialog.getByRole('combobox', { name: 'Канал', exact: true }).click();
+    await page.getByText('Instagram', { exact: true }).last().click();
+    await linkDialog.getByRole('button', { name: 'Создать', exact: true }).click();
+    await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
+    await expect(page.getByText('Переходы: 0, Регистрации: 0, Оплатили: 0', { exact: true })).toBeVisible();
+
+    await page.goto('/admin/referral-partner-profiles');
+    await expect(page.getByRole('heading', { name: 'Партнёры', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.partnerName);
+    const partnerRow = page.getByRole('row').filter({ hasText: fixture.partnerName });
+    await expect(partnerRow.getByText('Активен', { exact: true })).toBeVisible();
+    await partnerRow.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('button', { name: 'Назначить партнёра', exact: true }).click();
+    const assignmentDialog = page.getByRole('dialog').last();
+    const partnerSelect = assignmentDialog.getByRole('combobox', { name: 'Партнёр', exact: true });
+    await partnerSelect.click();
+    await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
+    await page.getByText(fixture.partnerName, { exact: true }).last().click();
+    await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Партнёр назначен', { exact: true })).toBeVisible();
+
+    await page.goto('/admin/referral-relationships');
+    await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
+});
+
+test('staff can complete a visit and record a manual payment through the normal CRM actions', async ({ page }) => {
+    const fixture = createCrmFixture({ financeFlow: true });
+
+    if (fixture.financeBookingId === null) {
+        throw new Error('The finance fixture did not create a booking.');
+    }
+
+    await login(page, fixture);
+    await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
+    await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page.getByText('Запись подтверждена', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Завершить визит', exact: true }).click();
+    await expect(page.getByText('Визит успешно завершён', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Записать оплату', exact: true }).click();
+    const paymentDialog = page.getByRole('dialog').last();
+    await expect(paymentDialog).toBeVisible();
+    await expect(paymentDialog.getByLabel('Сумма оплаты', { exact: true })).toHaveValue('100.00');
+    await paymentDialog.getByLabel('Способ оплаты', { exact: true }).selectOption('cash');
+    await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(page.getByText('Оплата записана. Остаток обновлён.', { exact: true })).toBeVisible();
+
+    await page.goto('/admin/financial-obligations');
+    await expect(page.getByRole('heading', { name: 'Финансовые обязательства', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.clientName);
+    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено');
+});
+
+test('staff can reject, approve, and mark a partner payout as paid from CRM', async ({ page }) => {
+    const fixture = createCrmFixture({ payoutFlow: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/referral-payout-requests');
+    await expect(page.getByRole('heading', { name: 'Запросы выплат', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.partnerName);
+
+    const rejectedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '2.00 USD' }).first();
+    await expect(rejectedRow).toBeVisible();
+    await rejectedRow.getByRole('button', { name: 'Отклонить', exact: true }).click();
+    const rejectDialog = page.getByRole('dialog').last();
+    await expect(rejectDialog).toBeVisible();
+    await rejectDialog.getByLabel('Причина отклонения', { exact: true }).fill('Проверка тестовой выплаты');
+    await rejectDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(rejectedRow).toContainText('Отклонена');
+
+    const approvedRow = page.getByRole('row').filter({ hasText: fixture.partnerName }).filter({ hasText: '3.00 USD' }).first();
+    await expect(approvedRow).toBeVisible();
+    await approvedRow.getByRole('button', { name: 'Одобрить', exact: true }).click();
+    const approvalDialog = page.getByRole('dialog').last();
+    await expect(approvalDialog).toBeVisible();
+    await approvalDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(approvedRow).toContainText('Одобрена');
+
+    await approvedRow.getByRole('button', { name: 'Отметить как выплаченную', exact: true }).click();
+    const paidDialog = page.getByRole('dialog').last();
+    await expect(paidDialog).toBeVisible();
+    await paidDialog.getByLabel('Платёжная пометка или ссылка', { exact: true }).fill('manual-test-payout');
+    await paidDialog.getByLabel('Комментарий о ручной выплате', { exact: true }).fill('Тестовая ручная выплата');
+    await paidDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(approvedRow).toContainText('Отмечена как выплаченная');
+    await assertNoHorizontalOverflow(page);
 });
 
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {

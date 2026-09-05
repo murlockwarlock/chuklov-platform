@@ -411,11 +411,13 @@ final class FinanceCrmUxTest extends TestCase
             ]);
             self::fail('An invalid submitted exchange rate must be rejected.');
         } catch (ValidationException) {
-            self::assertSame('500.000000000000000000', (string) DB::table('organization_exchange_rates')
+            $rate = (string) DB::table('organization_exchange_rates')
                 ->where('organization_id', $organization->getKey())
                 ->where('source_currency', 'USD')
                 ->where('target_currency', 'RUB')
-                ->value('rate'));
+                ->value('rate');
+            $normalizedRate = str_contains($rate, '.') ? rtrim(rtrim($rate, '0'), '.') : $rate;
+            self::assertSame('500', $normalizedRate);
             self::assertSame($version, DB::table('organization_currency_configurations')
                 ->where('organization_id', $organization->getKey())
                 ->value('version'));
@@ -578,6 +580,32 @@ final class FinanceCrmUxTest extends TestCase
             ])
             ->loadTable()
             ->assertTableActionHidden('correctPayment', $payment);
+    }
+
+    public function test_booking_detail_explains_why_payment_is_not_yet_available(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'price_minor' => null,
+            'price_currency' => null,
+        ]);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Оплата пока недоступна')
+            ->assertSee('Сначала завершите визит.')
+            ->assertSee('Для услуги не настроена положительная цена.')
+            ->assertActionHidden('recordBookingPayment');
     }
 
     public function test_manage_finance_user_sees_advanced_currency_controls_only_in_multi_currency_mode(): void

@@ -10,6 +10,7 @@ use App\Modules\Identity\Domain\Models\ClientAcquisitionRegistration;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ final class FinalizeClientAcquisition
         private readonly OrganizationContext $context,
         private readonly EnsureReferralIdentity $ensureIdentity,
         private readonly RecordAuditEvent $audit,
+        private readonly ResolveReferralCode $resolver,
     ) {}
 
     public function handle(
@@ -145,10 +147,11 @@ final class FinalizeClientAcquisition
             return null;
         }
 
-        $identity = ClientReferralIdentity::query()
-            ->where('organization_id', $organizationId)
-            ->where('public_code', $data->referralCode)
-            ->first();
+        $resolved = $this->resolver->handle($organizationId, $data->referralCode);
+        $campaignLink = $resolved instanceof ReferralCampaignLink ? $resolved : null;
+        $identity = $campaignLink instanceof ReferralCampaignLink
+            ? $campaignLink->referralIdentity
+            : ($resolved instanceof ClientReferralIdentity ? $resolved : null);
 
         if (! $identity instanceof ClientReferralIdentity
             || (int) $identity->client_id === (int) $client->getKey()) {
@@ -160,18 +163,41 @@ final class FinalizeClientAcquisition
             ->where('client_id', $client->getKey())
             ->lockForUpdate()
             ->first();
+        $authoritativeCampaignLink = $campaignLink;
+        $firstTouchMatches = false;
 
         if ($firstTouch?->source_type === 'referral') {
-            $firstTouchIdentity = ClientReferralIdentity::query()
-                ->where('organization_id', $organizationId)
-                ->where('public_code', $firstTouch->referral_code)
-                ->first();
+            $firstTouchResolved = $this->resolver->handle($organizationId, (string) $firstTouch->referral_code);
+            $firstTouchIdentity = $firstTouchResolved instanceof ReferralCampaignLink
+                ? $firstTouchResolved->referralIdentity
+                : ($firstTouchResolved instanceof ClientReferralIdentity ? $firstTouchResolved : null);
 
             if (! $firstTouchIdentity instanceof ClientReferralIdentity
                 || (int) $firstTouchIdentity->client_id !== (int) $identity->client_id) {
                 return null;
             }
+
+            $firstTouchMatches = true;
+            $authoritativeCampaignLink = $firstTouchResolved instanceof ReferralCampaignLink
+                ? $firstTouchResolved
+                : null;
         }
+
+        if ($campaignLink instanceof ReferralCampaignLink
+            && ! $campaignLink->is_active
+            && (! $firstTouchMatches || $authoritativeCampaignLink?->getKey() !== $campaignLink->getKey())) {
+            return null;
+        }
+
+        if ($authoritativeCampaignLink instanceof ReferralCampaignLink) {
+            $profile = $authoritativeCampaignLink->partnerProfile()->first();
+
+            if ($profile === null || (! $profile->isActive() && ! $firstTouchMatches)) {
+                return null;
+            }
+        }
+
+        $campaignLink = $authoritativeCampaignLink;
 
         $existing = ReferralRelationship::query()
             ->where('organization_id', $organizationId)
@@ -189,6 +215,7 @@ final class FinalizeClientAcquisition
             'referrer_client_id' => $identity->client_id,
             'referred_client_id' => $client->getKey(),
             'establishment_method' => ReferralEstablishmentMethod::AutomaticReferralLink,
+            'referral_campaign_link_id' => $campaignLink?->getKey(),
             'registered_at' => now(),
         ]);
         $relationship->save();
@@ -202,13 +229,14 @@ final class FinalizeClientAcquisition
                 'referrer_client_id' => $identity->client_id,
                 'referred_client_id' => $client->getKey(),
                 'establishment_method' => ReferralEstablishmentMethod::AutomaticReferralLink->value,
+                'referral_campaign_link_id' => $campaignLink?->getKey(),
             ],
         );
 
         return $identity;
     }
 
-    private function acceptedData(AttributionData $data, ?ClientReferralIdentity $identity): ?AttributionData
+    private function acceptedData(AttributionData $data, ClientReferralIdentity|ReferralCampaignLink|null $identity): ?AttributionData
     {
         if ($data->referralCode === null || $identity instanceof ClientReferralIdentity) {
             return $data;

@@ -148,7 +148,7 @@ final class ActivateReferralPartner
                 ]);
                 $link->save();
                 $this->audit->handle(
-                    organization: $profile->organization()->firstOrFail(),
+                    organization: $this->context->organization(),
                     actor: $actor,
                     action: 'referral.campaign_link.created',
                     targetType: ReferralCampaignLink::class,

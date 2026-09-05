@@ -8,6 +8,8 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
+use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -67,6 +69,50 @@ class PortalProductUxTest extends TestCase
                 ->where('referrals.registrations', [])
                 ->missing('referrals.reward')
                 ->missing('referrals.commission'));
+    }
+
+    public function test_client_can_activate_partner_cabinet_and_create_channel_links(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('referrals.isPartner', false)
+                ->where('referrals.links', []));
+
+        $this->post(route('portal.referrals.activate'))
+            ->assertRedirect(route('portal.referrals'));
+
+        $this->post(route('portal.referrals.links.store'), [
+            'name' => 'Instagram — шапка профиля',
+            'channel' => ReferralCampaignChannel::Instagram->value,
+        ])->assertRedirect(route('portal.referrals'));
+
+        $links = ReferralCampaignLink::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('partner_client_id', $client->getKey())
+            ->orderBy('created_at')
+            ->get();
+
+        self::assertCount(2, $links);
+        self::assertSame('Instagram — шапка профиля', $links[1]->name);
+        self::assertSame(ReferralCampaignChannel::Instagram, $links[1]->channel);
+
+        $this->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('referrals.isPartner', true)
+                ->where('referrals.links.1.name', 'Instagram — шапка профиля')
+                ->where('referrals.links.1.channel', 'Instagram'));
+
+        $this->get(route('portal.referral', ['referralCode' => $links[1]->public_token]))
+            ->assertRedirect(route('portal.home'));
+
+        self::assertDatabaseHas('referral_link_visits', [
+            'organization_id' => $organization->getKey(),
+            'campaign_link_id' => $links[1]->getKey(),
+        ]);
     }
 
     public function test_incomplete_optional_profile_does_not_block_home_or_profile_updates(): void

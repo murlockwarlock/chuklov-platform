@@ -44,7 +44,7 @@ class RecordAuditEvent
         'referral.partner.deactivated' => ['client_id', 'campaign_link_count'],
         'referral.campaign_link.created' => ['client_id', 'channel', 'is_default'],
         'referral.campaign_link.disabled' => ['client_id', 'channel'],
-        'referral.relationship.created' => ['referrer_client_id', 'referred_client_id', 'establishment_method'],
+        'referral.relationship.created' => ['referrer_client_id', 'referred_client_id', 'establishment_method', 'referral_campaign_link_id'],
         'referral.commercial_evidence.observed' => ['relationship_id', 'referred_client_id', 'obligation_id', 'ledger_entry_id', 'evidence_type', 'source'],
         'referral.reward_program.updated' => ['enabled', 'qualification_rule', 'formula', 'fixed_amount_minor', 'fixed_currency', 'percentage_basis_points', 'rounding_mode', 'version', 'effective_at'],
         'referral.reward.earned' => ['beneficiary_client_id', 'referred_client_id', 'relationship_id', 'evidence_id', 'program_version_id', 'amount_minor', 'currency'],
