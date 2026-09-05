@@ -178,6 +178,91 @@ Make reversible implementation assumptions only when they do not alter business 
 
 A task is complete only when relevant REQs, boundaries, organization isolation, security, tests, static/lint/build checks, migrations, and documentation are all accurate and no temporary residue remains.
 
+## Superpowers integration
+
+Superpowers is available as an engineering skill set. Use it when it materially
+improves correctness, debugging, review quality, or delivery reliability. The
+Chuklov instructions override generic Superpowers methodology. Superpowers is a
+risk amplifier, not a default amount of ceremony.
+
+### Risk-based use
+
+Use Superpowers aggressively for work involving:
+
+- PostgreSQL migrations, schema, or constraints
+- concurrency, idempotency, finance, rewards, or ledger behavior
+- tenant isolation, authorization, security, protected/Class C data
+- timezone semantics, queues, retries, or external API lifecycles
+- unclear cross-layer regressions or destructive/data-loss-sensitive operations
+
+Especially prefer `systematic-debugging`, `verification-before-completion`,
+`test-driven-development`, `requesting-code-review`, and
+`receiving-code-review`. Use worktrees, subagents, and detailed plans only when
+task size or parallelism actually benefits from them.
+
+### Bounded work fast path
+
+When the root cause or area, desired behavior, existing abstraction, and
+acceptance criteria are clear, do not force brainstorming ceremony, broad
+specification discovery, repository-wide archaeology, long implementation
+plans, subagent decomposition, a separate worktree purely for ceremony, or
+strict full TDD for trivial copy/template-only fixes. Use:
+
+inspect relevant code → add appropriate regression coverage → implement →
+verify at the real risk boundary → report
+
+For example, a confirmed notification bug where
+`booking.visit_format_label` and `booking.location_label` both render `Онлайн`
+needs no brainstorming phase.
+
+### Verification must match the claim
+
+Unit/feature tests provide logic and regression signal; browser/E2E checks actual
+UI interaction; PostgreSQL checks production database semantics; staging checks
+production-equivalent integration acceptance; external API checks reachability;
+and owner manual checks establish owner acceptance. SQLite green is not
+PostgreSQL verification, a live process is not external integration proof, and
+injected internal state is not proof of a real UI interaction.
+
+### Project precedence
+
+When instructions conflict, use this order:
+
+1. latest owner instruction
+2. current task
+3. owner-accepted architecture and behavior
+4. current authoritative TZ/changelog
+5. current repository implementation
+6. generic Superpowers methodology
+
+### Architecture
+
+Superpowers must not cause the agent to rebuild an accepted subsystem, create a
+second source of truth, introduce unnecessary frameworks or infrastructure,
+reopen accepted architecture without a concrete defect, broaden a bounded task
+into a general audit, invent legal/business/financial/medical rules, or block
+delivery on cosmetic findings. Extend existing abstractions first.
+
+### Review
+
+Classify findings as `BLOCKING`, `REAL BUG`, `WORTHWHILE`, or `COSMETIC`. Fix
+`BLOCKING` and `REAL BUG` findings, use judgment for `WORTHWHILE` findings, and
+do not repeat review cycles for `COSMETIC` findings.
+
+### Git/deployment
+
+For major work, branch from current main, record the Starting SHA and Final SHA,
+and use a Draft PR. Do not merge or deploy production without owner permission.
+Production remains closed until the project's production milestone.
+
+### Practical rule
+
+Use the minimum process necessary for production-quality correctness. High-risk
+work receives more structure; obvious bounded fixes remain fast.
+
+The lightweight outcome protocol is
+[`docs/engineering/superpowers-evaluation.md`](docs/engineering/superpowers-evaluation.md).
+
 ===
 
 <laravel-boost-guidelines>
