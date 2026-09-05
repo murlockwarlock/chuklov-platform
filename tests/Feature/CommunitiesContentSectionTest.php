@@ -84,7 +84,7 @@ final class CommunitiesContentSectionTest extends TestCase
             ->assertSee('Не добавлено');
     }
 
-    public function test_filament_rich_editor_link_state_survives_create_edit_portal_and_telegram_delivery(): void
+    public function test_serialized_rich_editor_link_state_survives_content_section_persistence_and_delivery(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
@@ -111,7 +111,7 @@ final class CommunitiesContentSectionTest extends TestCase
                 'section_key' => 'communities',
                 'locale' => 'ru',
                 'title' => 'Сообщества',
-                'body' => $this->filamentRichEditorLinkState($labels, $links),
+                'body' => $this->tiptapEditorLinkState($labels, $links),
                 'delivery_mode' => ContentDeliveryMode::Both->value,
                 'sort_order' => 0,
                 'is_visible' => true,
@@ -185,7 +185,7 @@ final class CommunitiesContentSectionTest extends TestCase
         }
         $edit
             ->fillForm([
-                'body' => $this->filamentRichEditorLinkState($labels, $updatedLinks),
+                'body' => $this->tiptapEditorLinkState($labels, $updatedLinks),
             ])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -537,7 +537,7 @@ final class CommunitiesContentSectionTest extends TestCase
      * @param  list<string>  $links
      * @return array<string, mixed>
      */
-    private function filamentRichEditorLinkState(array $labels, array $links): array
+    private function tiptapEditorLinkState(array $labels, array $links): array
     {
         $content = [];
 

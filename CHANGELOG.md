@@ -2,8 +2,8 @@
 
 ## 2026-09-05 — PR #30 RichEditor link persistence
 
-- ContentSection writes now persist the canonical safe HTML projection of Filament RichEditor markup, preserving owner-created links through edit/reload and the existing Portal and Telegram delivery paths while leaving plain-text content unchanged.
-- Added a real Filament/Tiptap link-state regression covering the four owner-managed test destinations, portal rendering, Telegram rendering, Both-mode Mini App CTA preservation, edit-time URL replacement, and unsafe URL removal.
+- ContentSection RichEditor state now synchronizes through Filament actions and save, while the preview accepts the live TipTap document state and converts it through the existing canonical safe rich-text pipeline. Owner-created links therefore survive edit/reload and the existing Portal and Telegram delivery paths without changing plain-text content or delivery-mode semantics.
+- Added focused serialized-state coverage plus a real hosted-browser RichEditor regression covering owner-entered linked text, underline, emoji, Portal rendering, Telegram delivery, Both-mode Mini App CTA preservation, and edit-time URL replacement.
 
 ## 2026-09-04 — PR #30 media metadata acceptance fix
 

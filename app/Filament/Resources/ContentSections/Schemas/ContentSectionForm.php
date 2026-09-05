@@ -230,7 +230,7 @@ class ContentSectionForm
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage
     {
         $title = trim((string) $get('title'));
-        $body = trim((string) $get('body'));
+        $body = RichTextDocument::canonicalHtmlFromState($get('body'));
         $content = $title === '' ? $body : '<p><strong>'.htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</strong></p>'.$body;
         $content = $content === '' ? '' : RichTextDocument::canonicalHtml($content);
         $media = self::previewMedia($get, $record);

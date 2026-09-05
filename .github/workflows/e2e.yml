@@ -43,6 +43,7 @@ jobs:
       APP_ENV: testing
       APP_DEBUG: false
       APP_URL: http://127.0.0.1:8000
+      CLIENT_PORTAL_URL: https://mini.example.test
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432

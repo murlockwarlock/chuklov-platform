@@ -23,6 +23,42 @@ final class RichTextDocumentTest extends TestCase
         self::assertStringNotContainsString('<script', RichTextDocument::canonicalHtml('<p>safe</p><script>alert(1)</script>'));
     }
 
+    public function test_tiptap_editor_state_keeps_link_marks_in_the_safe_projection(): void
+    {
+        $state = [
+            'type' => 'doc',
+            'content' => [[
+                'type' => 'paragraph',
+                'attrs' => ['textAlign' => 'start'],
+                'content' => [[
+                    'type' => 'text',
+                    'text' => 'Закрытое сообщество 😀',
+                    'marks' => [
+                        [
+                            'type' => 'link',
+                            'attrs' => [
+                                'href' => 'https://t.me/test_community',
+                                'target' => '_blank',
+                                'rel' => 'noopener noreferrer nofollow',
+                            ],
+                        ],
+                        ['type' => 'underline'],
+                    ],
+                ]],
+            ]],
+        ];
+
+        $html = RichTextDocument::canonicalHtmlFromState($state);
+
+        self::assertStringContainsString('href="https://t.me/test_community"', $html);
+        self::assertStringContainsString('Закрытое сообщество 😀', $html);
+        self::assertStringContainsString('<u>', $html);
+        self::assertStringContainsString(
+            '<a href="https://t.me/test_community">',
+            RichTextDocument::telegramHtml($html),
+        );
+    }
+
     public function test_telegram_limits_count_rendered_text_in_utf16_units(): void
     {
         self::assertSame(4096, RichTextDocument::telegramLength(str_repeat('a', 4096)));
