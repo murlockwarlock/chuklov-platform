@@ -42,7 +42,7 @@ final class NotifyReferralPayoutRequest
             ? '—'
             : Money::ofMinor((int) $request->amount_minor, $currency)->toDecimalString().' '.$currency->value;
 
-        Notification::make()
+        $notification = Notification::make()
             ->title('Новая заявка на выплату')
             ->body($partnerName.' · '.$amount)
             ->actions([
@@ -51,7 +51,10 @@ final class NotifyReferralPayoutRequest
                     ->url(ReferralPayoutRequestResource::getUrl('view', ['record' => $request]))
                     ->button()
                     ->markAsRead(),
-            ])
-            ->sendToDatabase($recipients->values()->all());
+            ]);
+
+        foreach ($recipients as $recipient) {
+            $recipient->notifyNow($notification->toDatabase());
+        }
     }
 }
