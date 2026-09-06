@@ -11,6 +11,8 @@ use Tiptap\Marks\Underline;
 
 final class RichTextDocument
 {
+    private const REFERRAL_LINK_PLACEHOLDER = 'https://template.invalid/referral-link';
+
     public const TELEGRAM_TEXT_LIMIT = 4096;
 
     public const TELEGRAM_CAPTION_LIMIT = 1024;
@@ -23,6 +25,7 @@ final class RichTextDocument
             return '';
         }
 
+        $content = self::preserveTemplateLink($content);
         $sanitized = self::sanitizer()->sanitize(self::isHtml($content)
             ? $content
             : '<p>'.nl2br(htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8', false), false).'</p>');
@@ -37,7 +40,7 @@ final class RichTextDocument
             throw new \InvalidArgumentException('The rich text content is empty.');
         }
 
-        return $html;
+        return str_replace(self::REFERRAL_LINK_PLACEHOLDER, '{{ referral_link }}', $html);
     }
 
     public static function canonicalHtmlFromState(mixed $content): string
@@ -70,6 +73,15 @@ final class RichTextDocument
         );
 
         return is_string($normalized) ? $normalized : $content;
+    }
+
+    private static function preserveTemplateLink(string $content): string
+    {
+        return preg_replace(
+            '/(href\s*=\s*["\'])\{\{\s*referral_link\s*\}\}(["\'])/iu',
+            '$1'.self::REFERRAL_LINK_PLACEHOLDER.'$2',
+            $content,
+        ) ?? $content;
     }
 
     public static function telegramHtml(string $content): string
