@@ -462,7 +462,7 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
-test('staff can activate a partner, create a campaign link, and assign the partner from a client page', async ({ page }) => {
+test('staff can activate a partner, create a campaign link, and assign a referrer from a client page', async ({ page }) => {
     const fixture = createCrmFixture();
 
     await login(page, fixture);
@@ -501,14 +501,14 @@ test('staff can activate a partner, create a campaign link, and assign the partn
 
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await assertNoHorizontalOverflow(page);
-    await page.getByRole('button', { name: 'Назначить партнёра', exact: true }).click();
-    const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Партнёр' }).last();
-    const partnerSelect = assignmentDialog.getByRole('combobox', { name: /^Партнёр/ });
-    await partnerSelect.click();
+    await page.getByRole('button', { name: 'Указать, кто пригласил', exact: true }).click();
+    const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Реферер' }).last();
+    const referrerSelect = assignmentDialog.getByRole('combobox', { name: 'Реферер', exact: true });
+    await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
     await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Партнёр назначен', { exact: true })).toBeVisible();
+    await expect(page.getByText('Реферер указан', { exact: true })).toBeVisible();
 
     await page.goto('/admin/referral-relationships');
     await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
