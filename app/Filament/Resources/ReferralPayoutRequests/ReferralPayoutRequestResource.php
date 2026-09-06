@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ReferralPayoutRequests;
 
 use App\Filament\Resources\ReferralPayoutRequests\Pages\ListReferralPayoutRequests;
+use App\Filament\Resources\ReferralPayoutRequests\Pages\ViewReferralPayoutRequest;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -15,7 +16,9 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -93,6 +96,10 @@ final class ReferralPayoutRequestResource extends Resource
                     ->color(fn (mixed $state): string => self::statusColor($state)),
             ])
             ->recordActions([
+                Action::make('open')
+                    ->label('Открыть')
+                    ->icon('heroicon-o-arrow-top-right-on-square')
+                    ->url(fn (ReferralPayoutRequest $record): string => self::getUrl('view', ['record' => $record])),
                 Action::make('approve')
                     ->label('Одобрить')
                     ->color('success')
@@ -153,7 +160,24 @@ final class ReferralPayoutRequestResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([]);
+        return $schema->components([
+            Section::make('Запрос на выплату')
+                ->schema([
+                    TextEntry::make('beneficiary.full_name')->label('Партнёр')->wrap(),
+                    TextEntry::make('amount_minor')
+                        ->label('Сумма')
+                        ->formatStateUsing(fn (mixed $state, ReferralPayoutRequest $record): string => self::amount($record)),
+                    TextEntry::make('currency')->label('Валюта')->badge(),
+                    TextEntry::make('status')
+                        ->label('Статус')
+                        ->formatStateUsing(fn (mixed $state): string => self::statusLabel($state))
+                        ->badge()
+                        ->color(fn (mixed $state): string => self::statusColor($state)),
+                    TextEntry::make('requested_at')->label('Запрошено')->dateTime('d.m.Y H:i'),
+                    TextEntry::make('rejection_reason')->label('Причина отклонения')->placeholder('—')->wrap(),
+                ])
+                ->columns(2),
+        ]);
     }
 
     public static function getEloquentQuery(): Builder
@@ -165,7 +189,10 @@ final class ReferralPayoutRequestResource extends Resource
 
     public static function getPages(): array
     {
-        return ['index' => ListReferralPayoutRequests::route('/')];
+        return [
+            'index' => ListReferralPayoutRequests::route('/'),
+            'view' => ViewReferralPayoutRequest::route('/{record}'),
+        ];
     }
 
     private static function canManage(): bool

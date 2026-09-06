@@ -12,12 +12,14 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class UpdateNotificationTemplate
 {
     public function __construct(
         private readonly ScenarioAuthorization $authorization,
         private readonly RecordAuditEvent $audit,
+        private readonly NotificationTemplateMedia $media,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -25,68 +27,92 @@ final class UpdateNotificationTemplate
     {
         $organization = $this->authorization->authorizeManage($actor);
         $this->authorization->assertOwned($template);
-        $configuration = NotificationTemplateConfiguration::from($data);
+        $latestVersion = $template->versions()->latest('version')->firstOrFail();
+        $storedPaths = [];
 
-        if ($configuration->templateKey !== $template->template_key || $configuration->locale !== $template->locale) {
-            throw new AuthorizationException('Template identity cannot change after creation.');
-        }
-
-        return DB::transaction(function () use ($actor, $configuration, $organization, $template): NotificationTemplate {
-            $lockedTemplate = NotificationTemplate::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereKey($template->getKey())
-                ->lockForUpdate()
-                ->firstOrFail();
-            $latest = $lockedTemplate->versions()->latest('version')->firstOrFail();
-
-            if ($lockedTemplate->purpose !== $configuration->purpose->value
-                && ScenarioRule::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->whereIn('template_version_id', $lockedTemplate->versions()->select('id'))
-                    ->exists()) {
-                throw ValidationException::withMessages(['purpose' => 'Назначение шаблона нельзя изменить, пока он используется правилом сообщений.']);
-            }
-
-            $lockedTemplate->forceFill([
-                'name' => $configuration->name,
-                'purpose' => $configuration->purpose->value,
-                'is_active' => $configuration->isActive,
-            ])->save();
-
-            $changed = $latest->subject !== $configuration->subject
-                || $latest->body !== $configuration->body
-                || $latest->variables !== $configuration->variables;
-
-            if ($changed) {
-                $version = new NotificationTemplateVersion;
-                $version->forceFill([
-                    'organization_id' => $organization->getKey(),
-                    'template_id' => $lockedTemplate->getKey(),
-                    'version' => $latest->version + 1,
-                    'status' => NotificationTemplateStatus::Published,
-                    'subject' => $configuration->subject,
-                    'body' => $configuration->body,
-                    'variables' => $configuration->variables,
-                    'created_by_user_id' => $actor->getKey(),
-                    'published_at' => now(),
-                ]);
-                $version->save();
-            }
-
-            $this->audit->handle(
-                organization: $organization,
-                actor: $actor,
-                action: 'scenario.template.updated',
-                targetType: NotificationTemplate::class,
-                targetId: (string) $lockedTemplate->getKey(),
-                metadata: [
-                    'template_key' => $lockedTemplate->template_key,
-                    'locale' => $lockedTemplate->locale,
-                    'version' => $changed ? $latest->version + 1 : $latest->version,
-                ],
+        try {
+            $data['media'] = $this->media->prepare(
+                organizationId: $organization->getKey(),
+                uploads: $data['media_image'] ?? null,
+                url: $data['media_url'] ?? null,
+                existing: $latestVersion->media,
+                storedPaths: $storedPaths,
             );
+            $configuration = NotificationTemplateConfiguration::from($data);
 
-            return $lockedTemplate->refresh();
-        });
+            if ($configuration->templateKey !== $template->template_key || $configuration->locale !== $template->locale) {
+                throw new AuthorizationException('Template identity cannot change after creation.');
+            }
+
+            return DB::transaction(function () use ($actor, $configuration, $organization, $template): NotificationTemplate {
+                $lockedTemplate = NotificationTemplate::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereKey($template->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $latest = $lockedTemplate->versions()->latest('version')->firstOrFail();
+
+                if ($lockedTemplate->purpose !== $configuration->purpose->value
+                    && ScenarioRule::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->whereIn('template_version_id', $lockedTemplate->versions()->select('id'))
+                        ->exists()) {
+                    throw ValidationException::withMessages(['purpose' => 'Назначение шаблона нельзя изменить, пока он используется правилом сообщений.']);
+                }
+
+                $lockedTemplate->forceFill([
+                    'name' => $configuration->name,
+                    'purpose' => $configuration->purpose->value,
+                    'is_active' => $configuration->isActive,
+                ])->save();
+
+                $changed = $latest->subject !== $configuration->subject
+                    || $latest->body !== $configuration->body
+                    || $latest->variables !== $configuration->variables
+                    || $latest->delivery_mode !== $configuration->deliveryMode
+                    || $latest->caption_position !== $configuration->captionPosition
+                    || $latest->media !== $configuration->media;
+
+                if ($changed) {
+                    $version = new NotificationTemplateVersion;
+                    $version->forceFill([
+                        'organization_id' => $organization->getKey(),
+                        'template_id' => $lockedTemplate->getKey(),
+                        'version' => $latest->version + 1,
+                        'status' => NotificationTemplateStatus::Published,
+                        'subject' => $configuration->subject,
+                        'body' => $configuration->body,
+                        'variables' => $configuration->variables,
+                        'delivery_mode' => $configuration->deliveryMode,
+                        'caption_position' => $configuration->captionPosition,
+                        'media' => $configuration->media,
+                        'created_by_user_id' => $actor->getKey(),
+                        'published_at' => now(),
+                    ]);
+                    $version->save();
+                }
+
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'scenario.template.updated',
+                    targetType: NotificationTemplate::class,
+                    targetId: (string) $lockedTemplate->getKey(),
+                    metadata: [
+                        'template_key' => $lockedTemplate->template_key,
+                        'locale' => $lockedTemplate->locale,
+                        'version' => $changed ? $latest->version + 1 : $latest->version,
+                    ],
+                );
+
+                return $lockedTemplate->refresh();
+            });
+        } catch (Throwable $exception) {
+            foreach ($storedPaths as $storedPath) {
+                $this->media->discard($organization->getKey(), $storedPath);
+            }
+
+            throw $exception;
+        }
     }
 }

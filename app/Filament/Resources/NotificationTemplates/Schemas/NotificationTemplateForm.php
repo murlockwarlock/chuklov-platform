@@ -2,22 +2,24 @@
 
 namespace App\Filament\Resources\NotificationTemplates\Schemas;
 
-use App\Filament\Support\RichTextEditor;
-use App\Filament\Support\TelegramPreviewAction;
+use App\Filament\Support\MessageComposer;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 
 final class NotificationTemplateForm
 {
@@ -26,7 +28,7 @@ final class NotificationTemplateForm
         return $schema
             ->components([
                 Section::make('Основная информация')
-                    ->description('Шаблон хранит только текст и подстановочные данные. Фото и видео настраиваются отдельно в рассылке или авто-сообщении.')
+                    ->description('Сообщение может состоять из текста, медиа или их комбинации. Формат и подпись сохраняются в версии шаблона.')
                     ->schema([
                         TextInput::make('name')
                             ->label('Название')
@@ -60,27 +62,29 @@ final class NotificationTemplateForm
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('Текст и подстановочные данные')
-                    ->description('Вы можете использовать данные из CRM. При отправке система подставит реальные значения.')
-                    ->schema([
-                        TextInput::make('subject')
-                            ->label('Тема')
-                            ->maxLength(255)
-                            ->helperText('Необязательно для мессенджеров. Можно использовать подстановочные данные.')
-                            ->columnSpanFull(),
-                        RichTextEditor::make('body', fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')))
-                            ->label('Текст сообщения')
-                            ->required()
-                            ->maxLength(100000)
-                            ->helperText(fn (Get $get): string => $get('purpose') === ScenarioRulePurpose::Marketing->value
-                                ? 'Для рассылки доступны имя, язык и персональная реферальная ссылка. Нажмите «Добавить данные» в редакторе.'
-                                : 'Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора. Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
-                            ->columnSpanFull(),
-                        Actions::make([
-                            TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
-                        ])->columnSpanFull(),
-                    ])
+                TextInput::make('subject')
+                    ->label('Тема')
+                    ->maxLength(255)
+                    ->helperText('Необязательно для мессенджеров. Можно использовать подстановочные данные.')
                     ->columnSpanFull(),
+                ...MessageComposer::make(
+                    bodyField: 'body',
+                    deliveryModeField: 'delivery_mode',
+                    mediaField: 'media_image',
+                    mediaUrlField: 'media_url',
+                    variables: fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')),
+                    preview: fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record),
+                    additionalMediaComponents: [
+                        Placeholder::make('template_current_media')
+                            ->label('Сохранённое медиа')
+                            ->content(fn (?NotificationTemplate $record): string => self::currentMediaSummary($record))
+                            ->visible(fn (?NotificationTemplate $record): bool => $record instanceof NotificationTemplate && $record->latestVersion?->media !== null)
+                            ->columnSpanFull(),
+                    ],
+                    bodyLabel: 'Текст сообщения',
+                    bodyHelper: 'Используйте форматирование, ссылки, эмодзи и данные из списка доступных переменных.',
+                    requireMedia: true,
+                ),
             ]);
     }
 
@@ -94,6 +98,8 @@ final class NotificationTemplateForm
             'body' => $body,
             'subject' => $subject === '' ? null : $subject,
             'variables' => $variables,
+            'delivery_mode' => NotificationMessageMode::tryFrom((string) $get('delivery_mode')) ?? NotificationMessageMode::Text,
+            'caption_position' => (string) ($get('caption_position') ?: 'below'),
         ]);
         $locale = (string) ($get('locale') ?: 'ru');
         $rendered = app(NotificationTemplateRenderer::class)->render(
@@ -111,7 +117,73 @@ final class NotificationTemplateForm
             subject: $rendered->subject,
             locale: $locale,
             idempotencyKey: 'template-preview',
-            mode: NotificationMessageMode::Text,
+            mode: $rendered->mode,
+            showCaptionAboveMedia: $rendered->showCaptionAboveMedia,
+            mediaItems: self::previewMediaItems($get),
         );
+    }
+
+    private static function currentMediaSummary(?NotificationTemplate $template): string
+    {
+        $media = $template?->latestVersion?->media;
+        $items = is_array($media) && is_array($media['items'] ?? null) ? $media['items'] : [];
+
+        return $items === [] ? 'Медиа не добавлено.' : 'Сохранено файлов: '.count($items).'. Новые файлы создадут новую версию шаблона.';
+    }
+
+    /** @return list<NotificationMedia> */
+    private static function previewMediaItems(Get $get): array
+    {
+        $uploads = $get('media_image');
+        $uploads = $uploads instanceof UploadedFile ? [$uploads] : (is_array($uploads) ? $uploads : []);
+        if ($uploads !== []) {
+            $items = [];
+            foreach ($uploads as $upload) {
+                if (! $upload instanceof UploadedFile || ! method_exists($upload, 'temporaryUrl')) {
+                    continue;
+                }
+
+                try {
+                    $url = $upload->temporaryUrl();
+                } catch (\Throwable) {
+                    $url = null;
+                }
+                if (! is_string($url) || trim($url) === '') {
+                    continue;
+                }
+
+                $items[] = new NotificationMedia(
+                    type: self::mediaType($upload->getMimeType(), $upload->getClientOriginalName()),
+                    url: trim($url),
+                    fileName: $upload->getClientOriginalName() ?: null,
+                );
+            }
+
+            return $items;
+        }
+
+        $url = is_string($get('media_url')) ? trim($get('media_url')) : '';
+        if ($url === '') {
+            return [];
+        }
+
+        return [new NotificationMedia(
+            type: self::mediaType('', $url),
+            url: $url,
+            fileName: basename((string) parse_url($url, PHP_URL_PATH)) ?: null,
+        )];
+    }
+
+    private static function mediaType(string $mime, string $name): string
+    {
+        $extension = strtolower(pathinfo(parse_url($name, PHP_URL_PATH) ?: $name, PATHINFO_EXTENSION));
+        if (str_starts_with(strtolower($mime), 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return 'photo';
+        }
+        if (strtolower($mime) === 'video/mp4' || $extension === 'mp4') {
+            return 'video';
+        }
+
+        return 'document';
     }
 }

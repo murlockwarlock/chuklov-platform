@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ReferralPartnerProfiles\Pages;
 
+use App\Filament\Pages\ReferralRewardConfiguration;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
 use App\Models\User;
@@ -27,6 +28,7 @@ use App\Modules\Referrals\Domain\Enums\ReferralRewardQualificationRule;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Field;
 use Filament\Forms\Components\Hidden;
@@ -76,55 +78,41 @@ final class ViewReferralPartnerProfile extends ViewRecord
             Action::make('openClient')
                 ->label('Открыть клиента')
                 ->icon('heroicon-o-user')
+                ->extraAttributes(['data-testid' => 'partner-primary-open-client'])
                 ->url(fn (): string => ClientResource::getUrl('view', ['record' => $this->partnerProfile()->client_id]))
                 ->visible(fn (): bool => $this->canViewClient()),
-            Action::make('rewardTerms')
-                ->label('Условия вознаграждения')
-                ->icon('heroicon-o-adjustments-horizontal')
-                ->schema(self::rewardTermsSchema())
-                ->fillForm(fn (): array => $this->rewardTermsForm())
-                ->modalSubmitActionLabel('Сохранить условия')
-                ->visible(fn (): bool => $this->canManageRewards())
+            Action::make('createCampaignLink')
+                ->label('Создать ссылку')
+                ->icon('heroicon-o-plus')
+                ->extraAttributes(['data-testid' => 'partner-primary-create-link'])
+                ->schema([
+                    TextInput::make('name')
+                        ->label('Название')
+                        ->placeholder('Instagram — шапка профиля')
+                        ->required()
+                        ->maxLength(180),
+                    Select::make('channel')
+                        ->label('Канал')
+                        ->options(ReferralCampaignChannel::options())
+                        ->native(false)
+                        ->required(),
+                ])
+                ->modalSubmitActionLabel('Создать')
+                ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
                 ->action(function (array $data): void {
-                    app(SaveReferralRewardProgram::class)->handle(
+                    app(CreateReferralCampaignLink::class)->handle(
+                        client: $this->partnerClient(),
+                        name: (string) $data['name'],
+                        channel: ReferralCampaignChannel::from((string) $data['channel']),
                         actor: $this->actor(),
-                        enabled: (bool) ($data['enabled'] ?? false),
-                        qualificationRule: is_string($data['qualification_rule'] ?? null) ? $data['qualification_rule'] : null,
-                        formula: is_string($data['formula'] ?? null) ? $data['formula'] : null,
-                        fixedAmount: is_string($data['fixed_amount'] ?? null) ? $data['fixed_amount'] : null,
-                        fixedCurrency: is_string($data['fixed_currency'] ?? null) ? $data['fixed_currency'] : null,
-                        percentage: is_string($data['percentage'] ?? null) ? $data['percentage'] : null,
-                        effectiveAt: $data['effective_at'] ?? null,
-                        partnerProfile: $this->partnerProfile(),
                     );
                     $this->workspace = null;
-                    Notification::make()->title('Индивидуальные условия сохранены')->success()->send();
-                }),
-            Action::make('resetRewardTerms')
-                ->label('Вернуть общие условия')
-                ->icon('heroicon-o-arrow-uturn-left')
-                ->color('gray')
-                ->requiresConfirmation()
-                ->visible(fn (): bool => $this->canManageRewards()
-                    && $this->rewardTermsForm()['isOverride'])
-                ->action(function (): void {
-                    app(SaveReferralRewardProgram::class)->handle(
-                        actor: $this->actor(),
-                        enabled: false,
-                        qualificationRule: null,
-                        formula: null,
-                        fixedAmount: null,
-                        fixedCurrency: null,
-                        percentage: null,
-                        effectiveAt: now(),
-                        partnerProfile: $this->partnerProfile(),
-                    );
-                    $this->workspace = null;
-                    Notification::make()->title('Общие условия восстановлены')->success()->send();
+                    Notification::make()->title('Реферальная ссылка создана')->success()->send();
                 }),
             Action::make('manualBonus')
                 ->label('Начислить бонус')
                 ->icon('heroicon-o-plus-circle')
+                ->extraAttributes(['data-testid' => 'partner-primary-credit-bonus'])
                 ->schema([
                     TextInput::make('amount')
                         ->label('Сумма')
@@ -163,81 +151,110 @@ final class ViewReferralPartnerProfile extends ViewRecord
                     $this->workspace = null;
                     Notification::make()->title('Бонус начислен')->success()->send();
                 }),
-            Action::make('createCampaignLink')
-                ->label('Создать ссылку')
-                ->icon('heroicon-o-plus')
-                ->schema([
-                    TextInput::make('name')
-                        ->label('Название')
-                        ->placeholder('Instagram — шапка профиля')
-                        ->required()
-                        ->maxLength(180),
-                    Select::make('channel')
-                        ->label('Канал')
-                        ->options(ReferralCampaignChannel::options())
-                        ->native(false)
-                        ->required(),
-                ])
-                ->modalSubmitActionLabel('Создать')
-                ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
-                ->action(function (array $data): void {
-                    app(CreateReferralCampaignLink::class)->handle(
-                        client: $this->partnerClient(),
-                        name: (string) $data['name'],
-                        channel: ReferralCampaignChannel::from((string) $data['channel']),
-                        actor: $this->actor(),
-                    );
-                    $this->workspace = null;
-                    Notification::make()->title('Реферальная ссылка создана')->success()->send();
-                }),
-            Action::make('disableCampaignLink')
-                ->label('Отключить ссылку')
-                ->icon('heroicon-o-link-slash')
+            ActionGroup::make([
+                Action::make('rewardTerms')
+                    ->label('Настроить индивидуально')
+                    ->icon('heroicon-o-adjustments-horizontal')
+                    ->schema(self::rewardTermsSchema())
+                    ->fillForm(fn (): array => $this->rewardTermsForm())
+                    ->modalHeading('Индивидуальные условия')
+                    ->modalSubmitActionLabel('Сохранить условия')
+                    ->visible(fn (): bool => $this->canManageRewards())
+                    ->action(function (array $data): void {
+                        app(SaveReferralRewardProgram::class)->handle(
+                            actor: $this->actor(),
+                            enabled: (bool) ($data['enabled'] ?? false),
+                            qualificationRule: is_string($data['qualification_rule'] ?? null) ? $data['qualification_rule'] : null,
+                            formula: is_string($data['formula'] ?? null) ? $data['formula'] : null,
+                            fixedAmount: is_string($data['fixed_amount'] ?? null) ? $data['fixed_amount'] : null,
+                            fixedCurrency: is_string($data['fixed_currency'] ?? null) ? $data['fixed_currency'] : null,
+                            percentage: is_string($data['percentage'] ?? null) ? $data['percentage'] : null,
+                            effectiveAt: $data['effective_at'] ?? null,
+                            partnerProfile: $this->partnerProfile(),
+                        );
+                        $this->workspace = null;
+                        Notification::make()->title('Индивидуальные условия сохранены')->success()->send();
+                    }),
+                Action::make('resetRewardTerms')
+                    ->label('Вернуть общие условия')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('gray')
+                    ->requiresConfirmation()
+                    ->visible(fn (): bool => $this->canManageRewards() && $this->rewardTermsForm()['isOverride'])
+                    ->action(function (): void {
+                        app(SaveReferralRewardProgram::class)->handle(
+                            actor: $this->actor(),
+                            enabled: false,
+                            qualificationRule: null,
+                            formula: null,
+                            fixedAmount: null,
+                            fixedCurrency: null,
+                            percentage: null,
+                            effectiveAt: now(),
+                            partnerProfile: $this->partnerProfile(),
+                        );
+                        $this->workspace = null;
+                        Notification::make()->title('Общие условия восстановлены')->success()->send();
+                    }),
+                Action::make('editDefaultRewardTerms')
+                    ->label('Изменить общие условия')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->url(fn (): string => ReferralRewardConfiguration::getUrl())
+                    ->visible(fn (): bool => $this->canManageRewards()),
+                Action::make('disableCampaignLink')
+                    ->label('Отключить ссылку')
+                    ->icon('heroicon-o-link-slash')
+                    ->color('gray')
+                    ->schema([
+                        Select::make('campaign_link_id')
+                            ->label('Ссылка')
+                            ->options(fn (): array => $this->partnerProfile()
+                                ->activeCampaignLinks()
+                                ->orderBy('name')
+                                ->get()
+                                ->mapWithKeys(fn ($link): array => [$link->getKey() => $link->name.' · '.(ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое')])
+                                ->all())
+                            ->native(false)
+                            ->required(),
+                    ])
+                    ->visible(fn (): bool => $this->partnerProfile()->isActive()
+                        && $this->partnerProfile()->activeCampaignLinks()->exists()
+                        && $this->canManageClients())
+                    ->action(function (array $data): void {
+                        app(DeactivateReferralCampaignLink::class)->handle(
+                            link: (int) $data['campaign_link_id'],
+                            actor: $this->actor(),
+                        );
+                        $this->workspace = null;
+                        Notification::make()->title('Реферальная ссылка отключена')->success()->send();
+                    }),
+                Action::make('activatePartner')
+                    ->label('Активировать партнёра')
+                    ->icon('heroicon-o-user-plus')
+                    ->color('success')
+                    ->visible(fn (): bool => ! $this->partnerProfile()->isActive() && $this->canManageClients())
+                    ->action(function (): void {
+                        app(ActivateReferralPartner::class)->handle($this->partnerClient(), 'crm', $this->actor());
+                        $this->workspace = null;
+                        Notification::make()->title('Партнёрская программа активирована')->success()->send();
+                    }),
+                Action::make('deactivatePartner')
+                    ->label('Отключить партнёрскую программу')
+                    ->icon('heroicon-o-user-minus')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
+                    ->action(function (): void {
+                        app(DeactivateReferralPartner::class)->handle($this->partnerClient(), $this->actor());
+                        $this->workspace = null;
+                        Notification::make()->title('Партнёрская программа отключена')->success()->send();
+                    }),
+            ])
+                ->label('Ещё')
+                ->icon('heroicon-o-ellipsis-horizontal')
+                ->button()
                 ->color('gray')
-                ->schema([
-                    Select::make('campaign_link_id')
-                        ->label('Ссылка')
-                        ->options(fn (): array => $this->partnerProfile()
-                            ->activeCampaignLinks()
-                            ->orderBy('name')
-                            ->get()
-                            ->mapWithKeys(fn ($link): array => [$link->getKey() => $link->name.' · '.(ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое')])
-                            ->all())
-                        ->native(false)
-                        ->required(),
-                ])
-                ->visible(fn (): bool => $this->partnerProfile()->isActive()
-                    && $this->partnerProfile()->activeCampaignLinks()->exists()
-                    && $this->canManageClients())
-                ->action(function (array $data): void {
-                    app(DeactivateReferralCampaignLink::class)->handle(
-                        link: (int) $data['campaign_link_id'],
-                        actor: $this->actor(),
-                    );
-                    $this->workspace = null;
-                    Notification::make()->title('Реферальная ссылка отключена')->success()->send();
-                }),
-            Action::make('activatePartner')
-                ->label('Активировать партнёра')
-                ->icon('heroicon-o-user-plus')
-                ->color('success')
-                ->visible(fn (): bool => ! $this->partnerProfile()->isActive() && $this->canManageClients())
-                ->action(function (): void {
-                    app(ActivateReferralPartner::class)->handle($this->partnerClient(), 'crm', $this->actor());
-                    $this->workspace = null;
-                    Notification::make()->title('Партнёрская программа активирована')->success()->send();
-                }),
-            Action::make('deactivatePartner')
-                ->label('Отключить партнёрскую программу')
-                ->icon('heroicon-o-user-minus')
-                ->color('danger')
-                ->requiresConfirmation()
-                ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
-                ->action(function (): void {
-                    app(DeactivateReferralPartner::class)->handle($this->partnerClient(), $this->actor());
-                    $this->workspace = null;
-                    Notification::make()->title('Партнёрская программа отключена')->success()->send();
-                }),
+                ->dropdownAutoPlacement(),
         ];
     }
 
@@ -314,20 +331,16 @@ final class ViewReferralPartnerProfile extends ViewRecord
     public function rewardTermsSummary(): string
     {
         $terms = app(GetReferralRewardProgram::class)->handle($this->partnerProfile());
+        $lines = [
+            'Используются: '.($terms['isOverride'] ? 'Индивидуальные условия' : 'Общие условия'),
+            'Общие условия: '.(string) ($terms['defaultTerms']['summary'] ?? 'Общие условия: начисление отключено'),
+        ];
 
-        if (! $terms['enabled']) {
-            return $terms['sourceLabel'].': начисление отключено';
+        if (is_array($terms['overrideTerms'] ?? null)) {
+            $lines[] = 'Индивидуальные условия: '.(string) ($terms['overrideTerms']['summary'] ?? '—');
         }
 
-        $formula = $terms['formula'] === ReferralRewardFormula::FixedAmount->value
-            ? ($terms['fixedAmount'] ?? '—').' '.($terms['fixedCurrency'] ?? '')
-            : ($terms['percentage'] ?? '—').'% от оплаты';
-
-        return $terms['sourceLabel'].': '
-            .($terms['qualificationRule'] === ReferralRewardQualificationRule::FirstSettledPayment->value
-                ? 'первая оплата'
-                : 'каждая оплата')
-            .' · '.$formula;
+        return implode("\n", $lines);
     }
 
     /** @return list<array<string, string>> */

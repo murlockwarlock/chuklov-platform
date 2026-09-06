@@ -9,9 +9,8 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\RelationManagers\RecipientsRelationManager;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Support\BroadcastFailurePresentation;
-use App\Filament\Support\RichTextEditor;
+use App\Filament\Support\MessageComposer;
 use App\Filament\Support\RichTextPresentation;
-use App\Filament\Support\TelegramPreviewAction;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\BroadcastCampaignMedia;
 use App\Modules\Broadcasts\Application\BroadcastCampaignName;
@@ -35,13 +34,11 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
-use App\Support\RichText\RichTextDocument;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
@@ -166,165 +163,89 @@ final class BroadcastCampaignResource extends Resource
                     ->visible(fn (Get $get): bool => $get('audience_type') === 'segment')
                     ->columnSpanFull(),
             ])->columnSpanFull(),
-            Section::make('Сообщение')->schema([
-                Radio::make('delivery_mode')
-                    ->label('Формат отправки')
-                    ->options([
-                        NotificationMessageMode::Text->value => 'Только текст',
-                        NotificationMessageMode::Image->value => 'Только изображение',
-                        NotificationMessageMode::ImageThenText->value => 'Изображение, затем текст',
-                        NotificationMessageMode::TextThenImage->value => 'Текст, затем изображение',
-                        NotificationMessageMode::ImageWithCaption->value => 'Изображение с подписью',
+            ...MessageComposer::make(
+                bodyField: 'message_body',
+                deliveryModeField: 'delivery_mode',
+                mediaField: 'media_image',
+                mediaUrlField: 'media_url',
+                variables: ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing),
+                preview: fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record),
+                allowSavedTemplates: true,
+                savedTemplateSchema: fn (): array => [
+                    Select::make('template_version_ru_id')
+                        ->label('Сохранённый шаблон')
+                        ->options(fn (): array => self::templateOptions('ru'))
+                        ->placeholder('Нет опубликованных сообщений')
+                        ->searchable()
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                    Select::make('template_version_en_id')
+                        ->label('Шаблон для английского текста')
+                        ->options(fn (): array => self::templateOptions('en'))
+                        ->placeholder('Нет опубликованных сообщений')
+                        ->searchable()
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                    Placeholder::make('template_empty')
+                        ->label('Готовые сообщения')
+                        ->content('Нет готовых шаблонов для этого типа сообщения.')
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get) && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
+                    Actions::make([
+                        Action::make('createMessage')
+                            ->label('Создать сообщение')
+                            ->icon(Heroicon::OutlinedPlus)
+                            ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
+                    ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                ],
+                additionalMediaComponents: [
+                    View::make('filament.resources.broadcasts.current-media')
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get) && ! self::hasSinglePhoto($record))
+                        ->columnSpanFull(),
+                    SchemaImage::make(
+                        fn (?BroadcastCampaign $record): string => self::singlePhotoUrl($record) ?? '',
+                        fn (?BroadcastCampaign $record): string => self::singlePhotoAlt($record),
+                    )
+                        ->imageHeight('16rem')
+                        ->imageWidth('24rem')
+                        ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
+                        ->columnSpanFull(),
+                    Placeholder::make('current_media_status')
+                        ->label('Текущее медиа')
+                        ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
+                        ->columnSpanFull(),
+                    Placeholder::make('media_replacement_status')
+                        ->label('Новое медиа')
+                        ->content('Новое медиа выбрано и заменит текущее после сохранения.')
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && self::hasPendingMedia($get))
+                        ->columnSpanFull(),
+                    Actions::make([
+                        Action::make('removeMedia')
+                            ->label('Удалить текущее медиа')
+                            ->icon(Heroicon::OutlinedTrash)
+                            ->color('danger')
+                            ->action(function (Set $set): void {
+                                $set('remove_media', true);
+                            })
+                            ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get)),
+                        Action::make('restoreMedia')
+                            ->label('Оставить текущее медиа')
+                            ->icon(Heroicon::OutlinedArrowUturnLeft)
+                            ->color('gray')
+                            ->action(function (Set $set): void {
+                                $set('remove_media', false);
+                            })
+                            ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media')),
                     ])
-                    ->default(NotificationMessageMode::Text->value)
-                    ->live()
-                    ->required()
-                    ->columns(1)
-                    ->columnSpanFull(),
-                Radio::make('caption_position')
-                    ->label('Положение подписи')
-                    ->options(['above' => 'Над изображением', 'below' => 'Под изображением'])
-                    ->default('below')
-                    ->inline()
-                    ->columnSpanFull()
-                    ->visible(fn (Get $get): bool => self::deliveryUsesCaption($get))
-                    ->required(fn (Get $get): bool => self::deliveryUsesCaption($get)),
-                Radio::make('message_mode')
-                    ->label('Источник текста')
-                    ->options([
-                        'compose' => 'Написать сообщение',
-                        'saved_template' => 'Использовать сохранённый шаблон',
-                    ])
-                    ->default('compose')
-                    ->live()
-                    ->inline()
-                    ->helperText('Для разовой рассылки оставьте «Написать сообщение».')
-                    ->columnSpanFull()
-                    ->visible(fn (Get $get): bool => self::deliveryIncludesText($get))
-                    ->required(fn (Get $get): bool => self::deliveryIncludesText($get)),
-                RichTextEditor::make('message_body', ScenarioTemplateVariableCatalog::labelsForPurpose(ScenarioRulePurpose::Marketing))
-                    ->label('Текст сообщения в Telegram')
-                    ->maxLength(100000)
-                    ->live()
-                    ->helperText('Для рассылки доступны имя, язык и персональная реферальная ссылка клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.')
-                    ->columnSpanFull()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get))
-                    ->required(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
-                Placeholder::make('message_counter')
-                    ->label('Лимит Telegram')
-                    ->content(fn (Get $get): string => self::messageCounter($get))
-                    ->columnSpanFull()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
-                Placeholder::make('message_preview')
-                    ->label('Предпросмотр')
-                    ->content(fn (Get $get): string => RichTextPresentation::html((string) $get('message_body')) ?: 'Текст появится здесь.')
-                    ->prose()
-                    ->html()
-                    ->columnSpanFull()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
-                Select::make('template_version_ru_id')
-                    ->label('Сохранённый шаблон')
-                    ->options(fn (): array => self::templateOptions('ru'))
-                    ->placeholder('Нет опубликованных сообщений')
-                    ->searchable()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
-                Select::make('template_version_en_id')
-                    ->label('Шаблон для английского текста')
-                    ->options(fn (): array => self::templateOptions('en'))
-                    ->placeholder('Нет опубликованных сообщений')
-                    ->searchable()
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
-                Placeholder::make('template_empty')
-                    ->label('Готовые сообщения')
-                    ->content('Нет готовых шаблонов для этого типа сообщения.')
-                    ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get) && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
-                Actions::make([
-                    Action::make('createMessage')
-                        ->label('Создать сообщение')
-                        ->icon(Heroicon::OutlinedPlus)
-                        ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
-                ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
-                Actions::make([
-                    TelegramPreviewAction::make(fn (Get $get, ?Model $record) => self::previewMessage($get, $record)),
-                ])->columnSpanFull(),
-            ])->columns(1)->columnSpanFull(),
-            Section::make('Медиа')->description('Фото до 10 МБ. MP4 и любые другие файлы — до 50 МБ. От 2 до 10 фото/видео отправятся альбомом Telegram. Файлы можно объединять в альбом только с файлами того же типа. Новая загрузка или ссылка заменит текущее медиа после сохранения.')->schema([
-                FileUpload::make('media_image')
-                    ->label('Загрузить медиа')
-                    ->multiple()
-                    ->maxFiles(10)
-                    ->reorderable()
-                    ->appendFiles()
-                    ->openable()
-                    ->previewable()
-                    ->deletable()
-                    ->maxSize(self::mediaUploadKilobytes())
-                    ->storeFiles(false)
-                    ->live()
-                    ->afterStateUpdated(function (Set $set): void {
-                        $set('remove_media', false);
-                    })
-                    ->helperText('Фото до 10 МБ; MP4 и любые файлы до 50 МБ. Выберите до 10 файлов. Для альбома используйте 2–10 фото/видео или файлов одного типа.')
-                    ->columnSpanFull(),
-                TextInput::make('media_url')
-                    ->label('HTTPS-ссылка на медиа (одно)')
-                    ->url()
-                    ->maxLength(2000)
-                    ->live()
-                    ->afterStateUpdated(function (Set $set): void {
-                        $set('remove_media', false);
-                    })
-                    ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->helperText('Используйте только вместо загрузки файла. Ссылка должна вести непосредственно на медиа и начинаться с HTTPS.')
-                    ->columnSpanFull(),
-                View::make('filament.resources.broadcasts.current-media')
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get) && ! self::hasSinglePhoto($record))
-                    ->columnSpanFull(),
-                SchemaImage::make(
-                    fn (?BroadcastCampaign $record): string => self::singlePhotoUrl($record) ?? '',
-                    fn (?BroadcastCampaign $record): string => self::singlePhotoAlt($record),
-                )
-                    ->imageHeight('16rem')
-                    ->imageWidth('24rem')
-                    ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
-                    ->columnSpanFull(),
-                Placeholder::make('current_media_status')
-                    ->label('Текущее медиа')
-                    ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
-                    ->columnSpanFull(),
-                Placeholder::make('media_replacement_status')
-                    ->label('Новое медиа')
-                    ->content('Новое медиа выбрано и заменит текущее после сохранения.')
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && self::hasPendingMedia($get))
-                    ->columnSpanFull(),
-                Hidden::make('remove_media')->default(false),
-                Actions::make([
-                    Action::make('removeMedia')
-                        ->label('Удалить текущее медиа')
-                        ->icon(Heroicon::OutlinedTrash)
-                        ->color('danger')
-                        ->action(function (Set $set): void {
-                            $set('remove_media', true);
-                        })
-                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get)),
-                    Action::make('restoreMedia')
-                        ->label('Оставить текущее медиа')
-                        ->icon(Heroicon::OutlinedArrowUturnLeft)
-                        ->color('gray')
-                        ->action(function (Set $set): void {
-                            $set('remove_media', false);
-                        })
-                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media')),
-                ])
-                    ->columnSpanFull(),
-                Placeholder::make('media_removal_notice')
-                    ->label('Изменение медиа')
-                    ->content('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».')
-                    ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media') && ! self::hasPendingMedia($get))
-                    ->columnSpanFull(),
-            ])->columnSpanFull(),
+                        ->columnSpanFull(),
+                    Placeholder::make('media_removal_notice')
+                        ->label('Изменение медиа')
+                        ->content('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».')
+                        ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media') && ! self::hasPendingMedia($get))
+                        ->columnSpanFull(),
+                ],
+                bodyLabel: 'Текст сообщения в Telegram',
+                bodyHelper: 'Для рассылки доступны имя, язык и персональная реферальная ссылка клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.',
+            ),
             Section::make('Запуск')->schema([
                 Select::make('send_mode')->label('Когда отправить')->options(['immediate' => 'Сейчас', 'scheduled' => 'Запланировать'])->default('immediate')->required()->live(),
                 DateTimePicker::make('scheduled_at')
@@ -701,39 +622,6 @@ final class BroadcastCampaignResource extends Resource
     private static function deliveryIncludesText(Get $get): bool
     {
         return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->includesText() ?? true;
-    }
-
-    private static function deliveryUsesCaption(Get $get): bool
-    {
-        return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->usesCaption() ?? false;
-    }
-
-    private static function messageCounter(Get $get): string
-    {
-        $mode = NotificationMessageMode::tryFrom((string) $get('delivery_mode'));
-        $limit = $mode?->usesCaption() === true
-            ? RichTextDocument::TELEGRAM_CAPTION_LIMIT
-            : RichTextDocument::TELEGRAM_TEXT_LIMIT;
-        $body = $get('message_body');
-
-        if (! is_string($body) || trim($body) === '') {
-            return '0 / '.$limit;
-        }
-
-        try {
-            $length = RichTextDocument::telegramLength($body);
-        } catch (\InvalidArgumentException) {
-            return 'Проверьте формат текста · лимит '.$limit;
-        }
-
-        return $length.' / '.$limit;
-    }
-
-    private static function mediaUploadKilobytes(): int
-    {
-        $bytes = max(1, (int) config('broadcast_media.max_bytes', 52_428_800));
-
-        return intdiv($bytes + 1023, 1024);
     }
 
     private static function hasMedia(?BroadcastCampaign $campaign): bool

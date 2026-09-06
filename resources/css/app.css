@@ -287,6 +287,27 @@ body {
     overflow-wrap: anywhere;
 }
 
+.portal-feedback {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.25rem;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--portal-color-border-strong);
+    border-radius: var(--portal-radius-md);
+    padding: var(--portal-space-3) var(--portal-space-4);
+}
+
+.portal-feedback--success {
+    background: var(--portal-color-brand-soft);
+    color: var(--portal-color-ink);
+}
+
+.portal-feedback--error {
+    background: color-mix(in srgb, var(--portal-color-danger) 10%, var(--portal-color-surface));
+    color: var(--portal-color-danger);
+}
+
 .portal-companion-page {
     min-height: calc(100dvh - 4.5rem);
     gap: var(--portal-space-4);

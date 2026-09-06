@@ -12,6 +12,7 @@ use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -22,6 +23,7 @@ final class RequestReferralPayout
         private readonly CurrencyCatalog $catalog,
         private readonly ReferralRewardBalanceProjection $balances,
         private readonly RecordAuditEvent $audit,
+        private readonly NotifyReferralPayoutRequest $notifier,
     ) {}
 
     public function handle(Client $client, string $amount, string $currency, string $idempotencyKey): ReferralPayoutRequest
@@ -43,7 +45,8 @@ final class RequestReferralPayout
         $money = $this->money($amount, $currency);
         $requestHash = $this->requestHash($client, $money);
 
-        return DB::transaction(function () use ($client, $money, $idempotencyKey, $requestHash): ReferralPayoutRequest {
+        $created = false;
+        $request = DB::transaction(function () use ($client, $money, $idempotencyKey, $requestHash, &$created): ReferralPayoutRequest {
             $beneficiary = Client::query()
                 ->where('organization_id', $this->context->id())
                 ->whereKey($client->getKey())
@@ -113,6 +116,7 @@ final class RequestReferralPayout
                 return $request;
             }
 
+            $created = true;
             $this->recordEvent($request, null, ReferralPayoutRequestStatus::Requested, 'client', null, null, null, null, $idempotencyKey, $requestHash);
             $this->audit->handle(
                 organization: $organization,
@@ -131,6 +135,19 @@ final class RequestReferralPayout
 
             return $request->refresh();
         });
+
+        if ($created) {
+            try {
+                $this->notifier->handle($request);
+            } catch (\Throwable) {
+                Log::warning('referral_payout_notification_failed', [
+                    'organization_id' => $request->organization_id,
+                    'payout_request_id' => $request->getKey(),
+                ]);
+            }
+        }
+
+        return $request;
     }
 
     private function money(string $amount, string $currency): Money

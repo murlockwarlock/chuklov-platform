@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -72,6 +72,20 @@ type Payout = {
     cancelUrl: string;
 };
 
+type PayoutFeedback = {
+    message: string;
+    amount: string;
+    currency: string | null;
+    status: string;
+    requested_at: string | null;
+};
+
+type PortalPageProps = {
+    flash?: {
+        payout?: PayoutFeedback | null;
+    };
+};
+
 const props = defineProps<{
     portal: PortalShell;
     referrals: {
@@ -95,8 +109,10 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = usePortalLocale();
+const page = usePage<PortalPageProps>();
 const copiedUrl = ref<string | null>(null);
 const sharedUrl = ref<string | null>(null);
+const payoutFeedback = ref<PayoutFeedback | null>(null);
 const activationForm = useForm<Record<string, never>>({});
 const linkForm = useForm<{ name: string; channel: string }>({ name: '', channel: 'telegram' });
 const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: string }>({
@@ -108,6 +124,7 @@ const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: 
 });
 
 const requestableBalances = computed(() => props.referrals.rewards.balances.filter((balance) => balance.availableMinor > 0));
+const payoutError = computed(() => (payoutForm.errors as Record<string, string | undefined>).payout ?? null);
 const channelOptions = computed(() => [
     { value: 'telegram', label: t('referrals.channelTelegram') },
     { value: 'instagram', label: t('referrals.channelInstagram') },
@@ -116,6 +133,12 @@ const channelOptions = computed(() => [
     { value: 'website', label: t('referrals.channelWebsite') },
     { value: 'other', label: t('referrals.channelOther') },
 ]);
+
+watch(() => page.props.flash?.payout ?? null, (feedback) => {
+    if (feedback !== null) {
+        payoutFeedback.value = feedback;
+    }
+}, { immediate: true });
 
 const pollingStartedAt = Date.now();
 let pollingTimer: number | null = null;
@@ -314,6 +337,7 @@ function disableLink(link: CampaignLink): void {
 }
 
 function submitPayout(): void {
+    payoutFeedback.value = null;
     payoutForm.post(props.referrals.rewards.requestUrl, {
         preserveScroll: true,
         onSuccess: () => {
@@ -356,6 +380,7 @@ function cancelPayout(payout: Payout): void {
       </header>
 
       <section
+        v-if="!props.referrals.isPartner"
         class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
         data-testid="invite-friend"
       >
@@ -410,53 +435,63 @@ function cancelPayout(payout: Payout): void {
 
       <template v-else>
         <section
-          class="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
+          class="portal-panel portal-stack portal-stack--tight"
           data-testid="partner-summary"
         >
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value">{{ props.referrals.stats.visits }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.visits') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }}</span>
-          </article>
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value">{{ props.referrals.stats.registrations }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.registrations') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
-          </article>
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value">{{ props.referrals.stats.paidClients }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.paidClients') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
-          </article>
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('availableMinor') }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.available') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
-          </article>
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('pendingPayoutMinor') }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.pendingPayout') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
-          </article>
-          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('paidOutMinor') }}</strong>
-            <span class="portal-referral-metric__label">{{ t('referrals.paidOut') }}</span>
-            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
-          </article>
-        </section>
-
-        <section class="portal-panel portal-stack portal-stack--tight">
-          <div class="portal-section-heading">
-            <div class="portal-stack portal-stack--tight">
-              <h2 class="portal-heading portal-heading--section">
-                {{ t('referrals.statisticsTitle') }}
-              </h2>
-              <p class="portal-copy portal-copy--small">
-                {{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }} ·
-                {{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}
-              </p>
+          <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
+            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+              <strong class="portal-referral-metric__value">{{ props.referrals.stats.visits }}</strong>
+              <span class="portal-referral-metric__label">{{ t('referrals.visits') }}</span>
+              <span class="portal-referral-metric__context">{{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }}</span>
+            </article>
+            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+              <strong class="portal-referral-metric__value">{{ props.referrals.stats.registrations }}</strong>
+              <span class="portal-referral-metric__label">{{ t('referrals.registrations') }}</span>
+              <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
+            </article>
+            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+              <strong class="portal-referral-metric__value">{{ props.referrals.stats.paidClients }}</strong>
+              <span class="portal-referral-metric__label">{{ t('referrals.paidClients') }}</span>
+              <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
+            </article>
+          </div>
+          <div class="portal-stack portal-stack--tight">
+            <div class="portal-section-heading">
+              <h2 class="portal-heading portal-heading--card">{{ t('referrals.rewardsTitle') }}</h2>
+              <span class="portal-copy portal-copy--small">{{ formatMoneyList(props.referrals.stats.rewardEarned) }}</span>
             </div>
-            <span class="portal-copy portal-copy--small">{{ formatMoneyList(props.referrals.stats.rewardEarned) }}</span>
+            <div
+              v-if="props.referrals.rewards.balances.length"
+              class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2"
+            >
+              <article
+                v-for="balance in props.referrals.rewards.balances"
+                :key="balance.currency"
+                class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0"
+                :data-testid="`partner-balance-${balance.currency}`"
+              >
+                <strong class="text-xl text-[var(--portal-color-ink)]">{{ balance.currency }}</strong>
+                <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
+                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
+                    <p class="portal-copy portal-copy--small">{{ t('referrals.earned') }}</p>
+                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.accruedMinor, balance.currency) }}</strong>
+                  </div>
+                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
+                    <p class="portal-copy portal-copy--small">{{ t('referrals.available') }}</p>
+                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.availableMinor, balance.currency) }}</strong>
+                  </div>
+                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
+                    <p class="portal-copy portal-copy--small">{{ t('referrals.pendingPayout') }}</p>
+                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.pendingPayoutMinor, balance.currency) }}</strong>
+                  </div>
+                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
+                    <p class="portal-copy portal-copy--small">{{ t('referrals.paidOut') }}</p>
+                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.paidOutMinor, balance.currency) }}</strong>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <p v-else class="portal-copy">{{ t('referrals.noRewards') }}</p>
           </div>
         </section>
 
@@ -597,58 +632,24 @@ function cancelPayout(payout: Payout): void {
           </p>
         </section>
 
-        <section class="portal-stack">
-          <div class="portal-section-heading">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.rewardsTitle') }}
-            </h2>
-          </div>
-          <div
-            v-if="props.referrals.rewards.balances.length"
-            class="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2"
-          >
-            <article
-              v-for="balance in props.referrals.rewards.balances"
-              :key="balance.currency"
-              class="portal-panel portal-stack portal-stack--tight"
-              :data-testid="`partner-balance-${balance.currency}`"
-            >
-              <strong class="text-xl text-[var(--portal-color-ink)]">{{ balance.currency }}</strong>
-              <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <p class="portal-copy portal-copy--small">
-                    {{ t('referrals.earned') }}
-                  </p>
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.accruedMinor, balance.currency) }}</strong>
-                </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <p class="portal-copy portal-copy--small">
-                    {{ t('referrals.available') }}
-                  </p>
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.availableMinor, balance.currency) }}</strong>
-                </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <p class="portal-copy portal-copy--small">
-                    {{ t('referrals.pendingPayout') }}
-                  </p>
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.pendingPayoutMinor, balance.currency) }}</strong>
-                </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <p class="portal-copy portal-copy--small">
-                    {{ t('referrals.paidOut') }}
-                  </p>
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.paidOutMinor, balance.currency) }}</strong>
-                </div>
-              </div>
-            </article>
-          </div>
-          <p
-            v-else
-            class="portal-copy"
-          >
-            {{ t('referrals.noRewards') }}
-          </p>
-        </section>
+        <div
+          v-if="payoutFeedback"
+          class="portal-feedback portal-feedback--success"
+          data-testid="payout-feedback"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>{{ payoutFeedback.message }}</strong>
+          <span>{{ payoutFeedback.amount }} · {{ payoutFeedback.status }}</span>
+        </div>
+        <p
+          v-if="payoutError"
+          class="portal-feedback portal-feedback--error"
+          data-testid="payout-error"
+          role="alert"
+        >
+          {{ payoutError }}
+        </p>
 
         <section
           v-if="requestableBalances.length"
@@ -699,13 +700,20 @@ function cancelPayout(payout: Payout): void {
           <button
             type="button"
             class="portal-button portal-button--primary self-start"
+            data-testid="payout-submit"
             :disabled="payoutForm.processing"
+            :aria-busy="payoutForm.processing"
             @click="submitPayout"
           >
             {{ payoutForm.processing ? t('referrals.sendingPayout') : t('referrals.requestPayout') }}
           </button>
         </section>
 
+        <details open class="portal-stack" data-testid="partner-history">
+          <summary class="portal-section-heading cursor-pointer list-none">
+            <h2 class="portal-heading portal-heading--section">{{ t('referrals.history') }}</h2>
+          </summary>
+          <div class="portal-stack">
         <section class="portal-stack">
           <div class="portal-section-heading">
             <h2 class="portal-heading portal-heading--section">
@@ -821,6 +829,8 @@ function cancelPayout(payout: Payout): void {
             </li>
           </ul>
         </section>
+          </div>
+        </details>
       </template>
     </section>
   </AppShell>
