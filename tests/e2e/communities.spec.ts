@@ -307,35 +307,17 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await updatedPreviewButton.click();
     await expect((await previewResponse).status()).toBe(200);
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
-    const modalState = await updatedPreviewDialog.evaluate((element) => {
-        const alpineData = (element as HTMLElement & {
-            _x_dataStack?: Array<{ isOpen?: boolean; isWindowVisible?: boolean; isTrapActive?: boolean }>;
-        })._x_dataStack?.[0];
-        const modalWindow = element.querySelector<HTMLElement>('.fi-modal-window');
-        const rootStyle = window.getComputedStyle(element);
-        const rootBounds = element.getBoundingClientRect();
-        const windowStyle = modalWindow ? window.getComputedStyle(modalWindow) : null;
-        const windowBounds = modalWindow?.getBoundingClientRect();
-
-        return {
-            rootClass: element.getAttribute('class'),
-            rootStyle: element.getAttribute('style'),
-            rootDisplay: rootStyle.display,
-            rootVisibility: rootStyle.visibility,
-            rootBounds: [rootBounds.x, rootBounds.y, rootBounds.width, rootBounds.height],
-            isOpen: alpineData?.isOpen,
-            isWindowVisible: alpineData?.isWindowVisible,
-            isTrapActive: alpineData?.isTrapActive,
-            windowClass: modalWindow?.getAttribute('class'),
-            windowStyle: modalWindow?.getAttribute('style'),
-            windowShow: modalWindow?.getAttribute('x-show'),
-            windowDisplay: windowStyle?.display,
-            windowVisibility: windowStyle?.visibility,
-            windowBounds: windowBounds ? [windowBounds.x, windowBounds.y, windowBounds.width, windowBounds.height] : null,
-        };
-    });
-    await expect(updatedPreviewDialog, JSON.stringify(modalState)).toBeVisible({ timeout: 10_000 });
-    await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
-    await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
-    await expect(updatedPreviewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
+    const updatedPreviewWindow = updatedPreviewDialog.locator('.fi-modal-window');
+    await expect(updatedPreviewWindow).toBeVisible({ timeout: 10_000 });
+    const previewBounds = await updatedPreviewWindow.boundingBox();
+    const viewport = page.viewportSize();
+    expect(previewBounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    if (previewBounds !== null && viewport !== null) {
+        expect(previewBounds.x).toBeGreaterThanOrEqual(0);
+        expect(previewBounds.x + previewBounds.width).toBeLessThanOrEqual(viewport.width);
+    }
+    await expect(updatedPreviewWindow.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
+    await expect(updatedPreviewWindow.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
+    await expect(updatedPreviewWindow.getByText('Открыть полностью', { exact: true })).toBeVisible();
 });

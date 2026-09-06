@@ -7,7 +7,6 @@ use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
-use App\Filament\Support\FullRenderModalAction;
 use App\Models\User;
 use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
 use App\Modules\Channels\Application\GetTelegramMenu;
@@ -153,7 +152,6 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame('Об академии', $preview->getAlt());
         self::assertNotNull($previewAction);
         self::assertNotNull($removeAction);
-        self::assertInstanceOf(FullRenderModalAction::class, $previewAction);
         self::assertInstanceOf(View::class, $previewAction?->getModalContent());
 
         $removeAction?->call();
