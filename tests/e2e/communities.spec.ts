@@ -299,7 +299,17 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await updatedPreviewButton.scrollIntoViewIfNeeded();
     await updatedPreviewButton.click();
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
-    await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
-    await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
-    await expect(updatedPreviewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
+    const updatedPreviewWindow = updatedPreviewDialog.locator('.fi-modal-window');
+    await expect(updatedPreviewWindow).toBeVisible({ timeout: 10_000 });
+    const previewBounds = await updatedPreviewWindow.boundingBox();
+    const viewport = page.viewportSize();
+    expect(previewBounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    if (previewBounds !== null && viewport !== null) {
+        expect(previewBounds.x).toBeGreaterThanOrEqual(0);
+        expect(previewBounds.x + previewBounds.width).toBeLessThanOrEqual(viewport.width);
+    }
+    await expect(updatedPreviewWindow.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
+    await expect(updatedPreviewWindow.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
+    await expect(updatedPreviewWindow.getByText('Открыть полностью', { exact: true })).toBeVisible();
 });
