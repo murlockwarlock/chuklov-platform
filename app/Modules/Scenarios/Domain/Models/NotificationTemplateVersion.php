@@ -17,7 +17,7 @@ use LogicException;
 /**
  * @property NotificationTemplateStatus $status
  * @property array<string> $variables
- * @property NotificationMessageMode $delivery_mode
+ * @property NotificationMessageMode|null $delivery_mode
  * @property string $caption_position
  * @property array<string, mixed>|null $media
  * @property Carbon|null $published_at
