@@ -5,6 +5,7 @@ namespace App\Modules\ClientCompanion\Domain\Enums;
 enum CompanionFailureCode: string
 {
     case NotConfigured = 'not_configured';
+    case ProviderDisabled = 'provider_disabled';
     case BudgetUnavailable = 'budget_unavailable';
     case ProviderUnavailable = 'provider_unavailable';
     case InvalidOutput = 'invalid_output';

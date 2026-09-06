@@ -12,6 +12,7 @@ use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -768,7 +769,6 @@ class AiWorkflowEngineTest extends TestCase
 
     public function test_no_configured_candidate_fails_closed_without_provider_call(): void
     {
-        // No enabled model candidate in database!
         /** @var AiWorkflowEngine $engine */
         $engine = app(AiWorkflowEngine::class);
 
@@ -778,8 +778,69 @@ class AiWorkflowEngineTest extends TestCase
             inputVariables: ['query' => 'Hello'],
         );
 
-        $this->expectException(AiProviderUnavailableException::class);
-        $engine->run($this->organization->id, $request);
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('A missing execution candidate must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertTrue($exception->configurationMissing);
+        }
+
+        self::assertSame(
+            AiErrorCategory::ConfigurationMissing,
+            AiRun::query()->where('workflow_key', 'no_candidate_test')->latest('id')->first()?->error_category,
+        );
+    }
+
+    public function test_unavailable_provider_is_not_misclassified_as_missing_configuration(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $provider = $model->providerConfiguration;
+        self::assertNotNull($provider);
+        $provider->update(['health_status' => ProviderHealthStatus::Unavailable]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'unavailable_provider_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('An unavailable provider must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertFalse($exception->configurationMissing);
+        }
+    }
+
+    public function test_disabled_provider_is_not_misclassified_as_missing_configuration(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $provider = $model->providerConfiguration;
+        self::assertNotNull($provider);
+        $provider->update(['is_enabled' => false]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'disabled_provider_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('A disabled provider must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertFalse($exception->configurationMissing);
+            self::assertTrue($exception->providerDisabled);
+        }
+
+        self::assertSame(
+            AiErrorCategory::ProviderDisabled,
+            AiRun::query()->where('workflow_key', 'disabled_provider_test')->latest('id')->first()?->error_category,
+        );
     }
 
     public function test_rag_context_uses_actual_retrieved_content_not_source_reference(): void

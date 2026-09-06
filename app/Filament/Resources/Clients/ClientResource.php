@@ -120,6 +120,8 @@ class ClientResource extends Resource
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->with('attribution')
             ->with('activeBookingRestriction')
+            ->with('referralPartnerProfile')
+            ->with('referralRelationship.referrer')
             ->withCount('channelIdentities');
     }
 

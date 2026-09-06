@@ -6,8 +6,10 @@ use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
@@ -36,6 +38,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use InvalidArgumentException;
 use Mockery;
 use Tests\TestCase;
 
@@ -106,6 +109,60 @@ final class ClientCompanionProcessingTest extends TestCase
         $outbound = ConversationMessage::query()->findOrFail($turn->outbound_message_id);
         self::assertStringNotContainsString('raw provider payload', app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $outbound));
         self::assertSame('invalid_output', $turn->failure_code);
+    }
+
+    public function test_missing_ai_configuration_is_not_misclassified_as_a_provider_failure_or_handoff(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new NotConfiguredCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $first = $this->accept('Первый вопрос');
+        $first->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+
+        $second = $this->accept('Второй вопрос');
+        $second->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $second->getKey());
+
+        self::assertSame('not_configured', $first->fresh()->failure_code);
+        self::assertSame('not_configured', $second->fresh()->failure_code);
+        self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+    }
+
+    public function test_unavailable_ai_provider_keeps_provider_failure_semantics_and_hands_off_after_repeated_failures(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $first = $this->accept('Первый запрос при сбое провайдера');
+        $first->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+
+        $second = $this->accept('Второй запрос при сбое провайдера');
+        $second->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $second->getKey());
+
+        self::assertSame('provider_unavailable', $first->fresh()->failure_code);
+        self::assertSame(CompanionTurnStatus::Escalated, $second->fresh()->status);
+        self::assertSame(CompanionEscalationReason::RepeatedExecutionFailure, CompanionEscalation::query()->sole()->reason);
+    }
+
+    public function test_failed_ai_run_result_keeps_provider_failure_category(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Failed,
+            errorCategory: AiErrorCategory::ProviderUnavailable,
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Проверьте ответ при сбое провайдера');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('provider_unavailable', $turn->fresh()->failure_code);
     }
 
     public function test_missing_active_companion_prompt_is_logged_as_configuration_failure_without_protected_data(): void
@@ -899,6 +956,35 @@ final class ThrowingInterleavingEngine implements AiWorkflowEngine
     public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
     {
         throw new \RuntimeException($this->message);
+    }
+}
+
+final class NotConfiguredCompanionEngine implements AiWorkflowEngine
+{
+    public function run(int $organizationId, AiRunRequest $request): AiRunResult
+    {
+        throw new InvalidArgumentException('AI execution requires a tenant-owned active prompt version.');
+    }
+
+    public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+    {
+        throw new AiProviderUnavailableException(
+            'No enabled AI provider or model configured for capability.',
+            configurationMissing: true,
+        );
+    }
+}
+
+final class ProviderUnavailableCompanionEngine implements AiWorkflowEngine
+{
+    public function run(int $organizationId, AiRunRequest $request): AiRunResult
+    {
+        throw new AiProviderUnavailableException('No healthy or enabled AI providers available for requested capability.');
+    }
+
+    public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+    {
+        throw new AiProviderUnavailableException('No healthy or enabled AI providers available for requested capability.');
     }
 }
 

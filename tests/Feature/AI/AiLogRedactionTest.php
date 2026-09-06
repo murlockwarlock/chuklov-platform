@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
+use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
 use Monolog\Level;
@@ -60,5 +61,24 @@ class AiLogRedactionTest extends TestCase
         $this->assertStringNotContainsString('John Doe', $sanitized['message']);
         $this->assertStringNotContainsString('medical report', $sanitized['message']);
         $this->assertSame('An internal error occurred during AI execution.', $sanitized['message']);
+    }
+
+    public function test_error_sanitizer_keeps_missing_configuration_distinct_from_provider_outage(): void
+    {
+        $sanitized = AiErrorSanitizer::sanitize(new AiProviderUnavailableException(
+            configurationMissing: true,
+        ));
+
+        $this->assertSame(AiErrorCategory::ConfigurationMissing, $sanitized['category']);
+    }
+
+    public function test_error_sanitizer_preserves_disabled_provider_state(): void
+    {
+        $sanitized = AiErrorSanitizer::sanitize(new AiProviderUnavailableException(
+            providerDisabled: true,
+        ));
+
+        $this->assertSame(AiErrorCategory::ProviderDisabled, $sanitized['category']);
+        $this->assertSame('Configured AI provider is disabled.', $sanitized['message']);
     }
 }

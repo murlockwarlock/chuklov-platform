@@ -1,19 +1,48 @@
 <x-filament-panels::page>
     <div class="space-y-6">
-        <div class="rounded-xl border p-5 {{ $isAiEnabled ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-rose-300 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/30' }}">
+        <div class="rounded-xl border p-5 {{ $clientCompanion['ready'] ? 'border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20' : ($clientCompanion['status'] === 'disabled' ? 'border-rose-300 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/30' : 'border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20') }}">
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <div class="flex items-center gap-2">
-                        <span class="inline-flex h-3 w-3 rounded-full {{ $isAiEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' }}"></span>
+                        <span class="inline-flex h-3 w-3 rounded-full {{ $clientCompanion['ready'] ? 'bg-emerald-500 animate-pulse' : ($clientCompanion['status'] === 'disabled' ? 'bg-rose-500' : 'bg-amber-500') }}"></span>
                         <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-                            {{ $isAiEnabled ? 'AI включён и готов к работе' : 'AI временно отключён' }}
+                            @if($clientCompanion['status'] === 'disabled')
+                                AI временно отключён
+                            @elseif($clientCompanion['ready'])
+                                AI-компаньон готов к работе
+                            @elseif($clientCompanion['status'] === 'provider_unavailable')
+                                AI-компаньон временно недоступен
+                            @else
+                                AI-компаньон требует настройки
+                            @endif
                         </h3>
                     </div>
                     <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                        {{ $isAiEnabled ? 'Запросы обрабатываются в соответствии с установленным дневным бюджетом.' : 'Новые платные AI-запросы временно остановлены для всей организации.' }}
+                        @if(!$isAiEnabled)
+                            Новые платные AI-запросы временно остановлены для всей организации.
+                        @elseif($clientCompanion['status'] === 'disabled')
+                            Сценарий клиентского компаньона отключён в ограничениях AI.
+                        @elseif($clientCompanion['ready'])
+                            Запросы обрабатываются в соответствии с установленным дневным бюджетом.
+                        @elseif($clientCompanion['status'] === 'provider_unavailable')
+                            Настройка сохранена, но провайдер сейчас не отвечает. Проверьте состояние провайдера и повторите попытку.
+                        @else
+                            Для запуска нужны активная модель, проверенный провайдер и версия промпта.
+                        @endif
                     </p>
+                    @if(!$clientCompanion['ready'])
+                        <ul class="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                            @foreach($clientCompanion['issues'] as $issue)
+                                <li>{{ $issue }}</li>
+                            @endforeach
+                        </ul>
+                    @endif
                 </div>
-                <div>
+                <div class="flex flex-wrap gap-2">
+                    @if($canManageAi && in_array($clientCompanion['status'], ['needs_setup', 'provider_unavailable'], true))
+                        <a class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" href="{{ $clientCompanion['promptUrl'] }}">Настроить промпт</a>
+                        <a class="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" href="{{ $clientCompanion['providerUrl'] }}">Настроить модель</a>
+                    @endif
                     <button
                         wire:click="toggleKillSwitch"
                         type="button"

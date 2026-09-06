@@ -305,6 +305,39 @@ final class AiAdministrationUxTest extends TestCase
         $budgetManager->reserveBudget($organization->getKey(), 1);
     }
 
+    public function test_monitoring_overview_explains_missing_client_companion_setup_with_direct_actions(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(AiMonitoringOverview::class)
+            ->assertSee('AI-компаньон требует настройки')
+            ->assertSee('Промпт клиентского компаньона не настроен.')
+            ->assertSee('Модель клиентского компаньона не добавлена.')
+            ->assertSee('Настроить промпт')
+            ->assertSee('Настроить модель');
+    }
+
+    public function test_monitoring_overview_explains_a_disabled_client_companion_without_claiming_global_ai_is_off(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        AiOrganizationSafetyControl::create([
+            'organization_id' => $organization->getKey(),
+            'is_ai_globally_enabled' => true,
+            'disabled_capabilities' => [AiCapability::ClientCompanion->value],
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(AiMonitoringOverview::class)
+            ->assertSee('AI временно отключён')
+            ->assertSee('Сценарий клиентского компаньона отключён в ограничениях AI.')
+            ->assertDontSee('Новые платные AI-запросы временно остановлены для всей организации.')
+            ->assertDontSee('Настроить промпт')
+            ->assertDontSee('Настроить модель');
+    }
+
     public function test_budget_conversion_rejects_malformed_negative_and_excess_precision_values(): void
     {
         [$organization, $admin] = $this->organizationFixture();

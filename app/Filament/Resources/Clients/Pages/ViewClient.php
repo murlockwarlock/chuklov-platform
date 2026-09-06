@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
 use App\Models\User;
 use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
@@ -19,8 +20,10 @@ use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
+use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
-use App\Modules\Referrals\Application\SearchClientsForReferralAssignment;
+use App\Modules\Referrals\Application\SearchActivePartnersForReferralAssignment;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -119,9 +122,12 @@ class ViewClient extends ViewRecord
                         UpdateMedicalProfileCommand::fromArray($data),
                     );
                 }),
+            $this->activatePartnerAction(),
+            $this->openPartnerWorkspaceAction(),
+            $this->deactivatePartnerAction(),
+            $this->assignPartnerAction(),
             ActionGroup::make([
                 $this->marketingConsentActionGroup(),
-                $this->assignReferrerAction(),
                 Action::make('sourceDetail')
                     ->label('Уточнение источника')
                     ->modalHeading('Уточнение источника')
@@ -334,10 +340,55 @@ class ViewClient extends ViewRecord
             });
     }
 
-    private function assignReferrerAction(): Action
+    private function activatePartnerAction(): Action
     {
-        return Action::make('assignReferrer')
-            ->label('Назначить реферера')
+        return Action::make('activatePartner')
+            ->label('Сделать партнёром')
+            ->icon('heroicon-o-user-plus')
+            ->color('success')
+            ->authorize(fn (): bool => $this->canManageClients())
+            ->visible(fn (): bool => ! $this->clientRecord()->referralPartnerProfile?->isActive()
+                && $this->canManageClients())
+            ->action(function (): void {
+                app(ActivateReferralPartner::class)->handle($this->clientRecord(), 'crm', $this->actor());
+                $this->clientRecord()->load('referralPartnerProfile');
+                Notification::make()->title('Клиент стал партнёром')->success()->send();
+            });
+    }
+
+    private function openPartnerWorkspaceAction(): Action
+    {
+        return Action::make('openPartnerWorkspace')
+            ->label('Открыть партнёрский кабинет')
+            ->icon('heroicon-o-user-group')
+            ->url(fn (): string => ReferralPartnerProfileResource::getUrl('view', [
+                'record' => $this->clientRecord()->referralPartnerProfile,
+            ]))
+            ->visible(fn (): bool => $this->clientRecord()->referralPartnerProfile?->isActive() === true
+                && $this->canViewClients());
+    }
+
+    private function deactivatePartnerAction(): Action
+    {
+        return Action::make('deactivatePartner')
+            ->label('Отключить партнёрскую программу')
+            ->icon('heroicon-o-user-minus')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->authorize(fn (): bool => $this->canManageClients())
+            ->visible(fn (): bool => $this->clientRecord()->referralPartnerProfile?->isActive() === true
+                && $this->canManageClients())
+            ->action(function (): void {
+                app(DeactivateReferralPartner::class)->handle($this->clientRecord(), $this->actor());
+                $this->clientRecord()->load('referralPartnerProfile');
+                Notification::make()->title('Партнёрская программа отключена')->success()->send();
+            });
+    }
+
+    private function assignPartnerAction(): Action
+    {
+        return Action::make('assignPartner')
+            ->label('Указать, кто пригласил')
             ->icon('heroicon-o-user-plus')
             ->schema([
                 Select::make('referrer_client_id')
@@ -351,14 +402,14 @@ class ViewClient extends ViewRecord
                         $client = $this->clientRecord();
 
                         return $actor instanceof User
-                            ? app(SearchClientsForReferralAssignment::class)->handle($actor, $search, (int) $client->getKey())
+                            ? app(SearchActivePartnersForReferralAssignment::class)->handle($actor, $search, (int) $client->getKey())
                             : [];
                     })
                     ->getOptionLabelUsing(function (mixed $value): ?string {
                         $actor = auth()->user();
 
                         return $actor instanceof User
-                            ? app(SearchClientsForReferralAssignment::class)->optionLabel($actor, $value)
+                            ? app(SearchActivePartnersForReferralAssignment::class)->optionLabel($actor, $value)
                             : null;
                     })
                     ->required(),
@@ -376,13 +427,47 @@ class ViewClient extends ViewRecord
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
 
-                app(EstablishManualReferralRelationship::class)->handle(
-                    actor: $actor,
-                    referrerClientId: (int) $data['referrer_client_id'],
-                    referredClientId: (int) $this->clientRecord()->getKey(),
-                );
-                Notification::make()->title('Реферер назначен')->success()->send();
+                try {
+                    app(EstablishManualReferralRelationship::class)->handle(
+                        actor: $actor,
+                        referrerClientId: (int) $data['referrer_client_id'],
+                        referredClientId: (int) $this->clientRecord()->getKey(),
+                    );
+                    $this->clientRecord()->load('referralRelationship.referrer');
+                    Notification::make()->title('Реферер указан')->success()->send();
+                } catch (ValidationException $exception) {
+                    Notification::make()
+                        ->title('Не удалось указать реферера')
+                        ->body(implode(' ', array_map(
+                            static fn (array $messages): string => implode(' ', $messages),
+                            $exception->errors(),
+                        )))
+                        ->danger()
+                        ->send();
+                }
             });
+    }
+
+    private function canViewClients(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ViewClients,
+        );
+    }
+
+    private function canManageClients(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ManageClients,
+        );
     }
 
     private function unblockSelfBookingAction(): Action
