@@ -482,6 +482,7 @@ return [
                 'input_price_per_million' => '0.14',
                 'output_price_per_million' => '0.28',
                 'cache_read_input_price_per_million' => '0.0028',
+                'reasoning_price_per_million' => '0',
                 'fixed_request_cost_applicable' => false,
                 'unsupported_meters' => [],
             ],
