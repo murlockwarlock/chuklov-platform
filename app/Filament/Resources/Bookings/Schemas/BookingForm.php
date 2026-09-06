@@ -63,6 +63,7 @@ class BookingForm
                 DateTimePicker::make('starts_at')
                     ->label('Дата и время')
                     ->timezone(fn (): string => self::viewerTimezone())
+                    ->live(onBlur: true)
                     ->seconds(false)
                     ->required(),
                 Select::make('visit_format')
