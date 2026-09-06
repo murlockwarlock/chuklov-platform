@@ -39,7 +39,10 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
+<<<<<<< HEAD
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
+=======
+>>>>>>> pr34-authority-remediation
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
@@ -387,10 +390,10 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_PORT: '5432',
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
-                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
-                PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
-                PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
-                PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
+        DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
+        PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',

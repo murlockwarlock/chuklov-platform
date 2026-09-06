@@ -38,6 +38,7 @@
 - Added partner payout requests with immediate per-currency reservation, auditable requested/approved/paid/rejected/cancelled transitions, and CRM confirmation of an external manual payment without a payment-provider integration.
 - Added Portal reward and payout history plus CRM configuration and payout-request actions in human-readable Russian; no redemption, automated payout, or cross-currency aggregation is introduced.
 - Fixed booking-created notification projections so Online renders «Онлайн» once while Office and HomeVisit retain their physical location details.
+
 ## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow
 
 - Added explicit CRM actions for private medical-document extraction, exactly three role-bound posture photos, and clinical synthesis through the existing `AiRun`/`AiRunPayload`, attachment resolver, prompt/model release, and human-review authorities. Results retain protected provenance and reruns create new history.
