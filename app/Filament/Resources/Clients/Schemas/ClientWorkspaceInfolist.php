@@ -16,6 +16,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -111,7 +112,9 @@ final class ClientWorkspaceInfolist
                                     'manual_crm' => 'Указан в CRM',
                                     'automatic_referral_link' => $relationship->referral_campaign_link_id === null
                                         ? 'Персональная ссылка'
-                                        : 'Кампания: '.($relationship->referralCampaignLink?->name ?? 'не указана'),
+                                        : 'Кампания: '.(($campaign = $relationship->getRelationValue('referralCampaignLink')) instanceof ReferralCampaignLink
+                                            ? ($campaign->name ?: 'не указана')
+                                            : 'не указана'),
                                     default => 'Источник зафиксирован',
                                 };
                             })
