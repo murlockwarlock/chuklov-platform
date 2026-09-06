@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-09-06 — Recovered appendix source reconciliation
+
+- Reconciled recovered Appendix 1 as the onboarding/WebApp source and Appendix 2 as the Agent 1–4 prompt/role source in `docs/product/source-pack/`.
+- Kept OQ-015 and the dependent 9 systems/MSQ definition work blocked because the recovered appendices do not contain the questionnaire bodies or scoring. No REQ-SURVEY-002 content was inferred or fabricated.
+- This source reconciliation does not supersede the newer authenticated Portal, booking, location, timezone, legal, attachment, or AI safety requirements.
+
 ## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions
 
 - Extended the accepted scheduling contract into a single candidate slice for canonical UTC booking instants, independent client/specialist-viewer/physical-location timezones, client and specialist IANA preference provenance, multiple organization-scoped working locations, location-day rules, booking location/destination snapshots, and full HomeVisit occupied intervals.

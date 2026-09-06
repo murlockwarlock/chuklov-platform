@@ -153,7 +153,7 @@ final class RunEvaluationSuite
             $this->privacyValidator->validate((array) $case->expected_assertions);
             $assertionsByCase[$case->getKey()] = $this->assertionRegistry->normalize((array) $case->expected_assertions);
             if ($case->expected_output_schema !== null) {
-                $this->privacyValidator->validate((array) $case->expected_output_schema);
+                $this->privacyValidator->validateOutputSchema((array) $case->expected_output_schema);
                 $this->assertionRegistry->validateSchema((array) $case->expected_output_schema);
             }
         }

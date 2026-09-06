@@ -1,5 +1,11 @@
 # Project Status
 
+## 2026-09-06 — Recovered AI appendices reconciliation candidate
+
+- Starting from main SHA `d3027ca6cefb0904df4f944ed3cd47322bff30a7` on branch `codex/reconcile-ai-source-appendices`. Appendix 1 onboarding source and Appendix 2 specialized-agent prompt source are `FOUND` and normalized in `docs/product/source-pack/`; neither binary DOCX is committed.
+- The complete 9 systems/MSQ questionnaire bodies and scoring remain `MISSING SOURCE`; OQ-015 stays open only for that material. Appendix 2 also leaves the posture “JSON vector shifts” schema undefined, so no permanent vector schema is claimed.
+- Existing AI capabilities, attachment controls, prompt/version lifecycle, Companion runtime, and evaluation framework were extended with source-backed contracts, non-active draft bundles, synthetic baseline fixtures, and the Appendix 1 acceptance matrix. The actual product chain medical upload → Agent 1 → Agent 2 → Agent 3 → persisted practitioner-facing result is not present; Agents 1–3 remain `PARTIAL`, and Agent 4 remains `PARTIAL` for source-specific behavior beyond the accepted Companion runtime. Owner acceptance, staging, production, and merge are not claimed.
+
 ## 2026-09-04 — M11D B2B closeout and Communities candidate
 
 - M11D B2B is `OWNER ACCEPTED / CLOSED` on current main `c6b89e788d2e5f30cf0d4e7556f29d8d3ee8555c`; PR #26 remains closed/unmerged and was not reopened. The exact remaining M11 user-facing Communities gap is implemented on `codex/m11-communities` through the existing ContentSection, Telegram menu/content, and generic Mini App section route.

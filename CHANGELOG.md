@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-06 — Recovered AI source appendices reconciliation
+
+- Added the durable source pack for recovered Appendix 1 onboarding requirements and Appendix 2 Agent 1–4 specifications, including provenance, normalized requirements, traceability, and the current Appendix 1 acceptance matrix.
+- Added non-active source-backed prompt bundles for the existing clinical document extraction, posture analysis, clinical synthesizer, and Client Companion capabilities. The bundles preserve source intent while recording platform safety guardrails and do not select or activate a provider/model.
+- Replaced generic clinical capability contracts with source-backed structured output schemas, including nullable unknown medical measurements, source/fact/hypothesis separation, and posture sections without inventing the undefined vector-shift schema. Added synthetic evaluation baselines and preserved the existing controlled-three-photo posture evaluation blocker.
+- Appendix 1 and Appendix 2 are `FOUND`; the complete 9 systems/MSQ source remains missing and OQ-015 remains open. No end-to-end medical upload-to-practitioner-result workflow, staging activation, production deployment, merge, or owner acceptance is claimed.
+
 ## 2026-09-05 — PR #30 RichEditor link persistence
 
 - ContentSection RichEditor state now synchronizes through Filament actions and save, while the preview accepts the live TipTap document state and converts it through the existing canonical safe rich-text pipeline. Owner-created links therefore survive edit/reload and the existing Portal and Telegram delivery paths without changing plain-text content or delivery-mode semantics.

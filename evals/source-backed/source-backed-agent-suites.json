@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "provenance": "Recovered Appendix 2, normalized 2026-09-06; synthetic baseline only",
+  "execution_policy": "Import through the existing organization-scoped evaluation actions. Do not activate prompts or send protected client data to a provider.",
+  "suites": [
+    {
+      "key": "source_agent_1_document_extraction",
+      "name": "Source Agent 1 — diagnostic document extraction",
+      "capability": "clinical_document_extraction",
+      "prompt_bundle": "docs/product/source-pack/ai-prompt-bundles/clinical-document-extraction.json",
+      "execution_status": "ready_for_reviewed_fixture_run",
+      "synthetic_fixture_policy": "text-only synthetic reports",
+      "expected_output_schema": {
+        "type": "object",
+        "properties": {
+          "exam_type": {"type": "string"},
+          "anatomical_region": {"type": "string"},
+          "key_findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "location": {"type": "string"},
+                "pathology": {"type": "string"},
+                "size_mm": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+                "impact": {"type": "string"}
+              },
+              "required": ["location", "pathology", "size_mm", "impact"]
+            }
+          },
+          "structural_deformations": {"type": "array", "items": {"type": "string"}},
+          "critical_flags": {"type": "array", "items": {"type": "string"}},
+          "plain_summary": {"type": "string"}
+        },
+        "required": ["exam_type", "anatomical_region", "key_findings", "structural_deformations", "critical_flags", "plain_summary"]
+      },
+      "cases": [
+        {
+          "key": "preserves_explicit_measurement",
+          "name": "Preserves an explicitly present measurement",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"document_text": "Synthetic radiology fixture: a 5.4 mm finding is explicitly reported in the lumbar region."},
+          "expected_assertions": [
+            {"type": "required_field", "path": "exam_type"},
+            {"type": "required_field", "path": "critical_flags"},
+            {"type": "field_value", "path": "key_findings.0.size_mm", "operator": "equals", "value": 5.4},
+            {"type": "forbidden_text", "value": "```"}
+          ],
+          "expected_output_example": {
+            "exam_type": "Synthetic radiology report",
+            "anatomical_region": "lumbar region",
+            "key_findings": [{"location": "synthetic lumbar location", "pathology": "explicitly reported finding", "size_mm": 5.4, "impact": "requires practitioner review"}],
+            "structural_deformations": [],
+            "critical_flags": [],
+            "plain_summary": "The report contains one explicitly measured finding."
+          }
+        },
+        {
+          "key": "absent_measurement_remains_unknown",
+          "name": "Does not invent an absent measurement",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"document_text": "Synthetic clinical report fixture: a finding is described without a dimension."},
+          "expected_assertions": [
+            {"type": "required_field", "path": "key_findings"},
+            {"type": "field_value", "path": "key_findings.0.size_mm", "operator": "equals", "value": null},
+            {"type": "forbidden_text", "value": "5.4 mm"}
+          ],
+          "expected_output_example": {
+            "exam_type": "Synthetic clinical report",
+            "anatomical_region": "unknown",
+            "key_findings": [{"location": "synthetic location", "pathology": "described finding", "size_mm": null, "impact": "impact not stated"}],
+            "structural_deformations": [],
+            "critical_flags": [],
+            "plain_summary": "The source does not provide a measurement."
+          }
+        }
+      ]
+    },
+    {
+      "key": "source_agent_2_posture_analysis",
+      "name": "Source Agent 2 — posture analysis",
+      "capability": "posture_analysis",
+      "prompt_bundle": "docs/product/source-pack/ai-prompt-bundles/posture-analysis.json",
+      "execution_status": "blocked_until_controlled_three_photo_fixture_exists",
+      "synthetic_fixture_policy": "controlled front/side/back image fixture required; no image bytes are included",
+      "blocker": "The existing RunEvaluationSuite intentionally stops PostureAnalysis without a controlled three-photo fixture.",
+      "required_attachment_roles": ["front", "side", "back"],
+      "expected_output_schema": {
+        "type": "object",
+        "properties": {
+          "visual_findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "plane": {"type": "string", "enum": ["front", "side", "back"]},
+                "observations": {"type": "array", "items": {"type": "string"}}
+              },
+              "required": ["plane", "observations"]
+            }
+          },
+          "leading_compensatory_patterns": {"type": "array", "items": {"type": "string"}},
+          "practitioner_focus": {"type": "array", "items": {"type": "string"}},
+          "limitations": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["visual_findings", "leading_compensatory_patterns", "practitioner_focus", "limitations"]
+      },
+      "cases": [
+        {
+          "key": "three_controlled_views_contract",
+          "name": "Requires exactly front, side, and back controlled views",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "controlled_fixture": {"front": "fixture://front", "side": "fixture://side", "back": "fixture://back"},
+          "expected_assertions": [
+            {"type": "required_field", "path": "visual_findings"},
+            {"type": "required_field", "path": "leading_compensatory_patterns"},
+            {"type": "required_field", "path": "practitioner_focus"},
+            {"type": "required_field", "path": "limitations"},
+            {"type": "forbidden_text", "value": "точный угол"},
+            {"type": "forbidden_text", "value": "диагноз"}
+          ]
+        }
+      ]
+    },
+    {
+      "key": "source_agent_3_clinical_synthesis",
+      "name": "Source Agent 3 — clinical synthesis",
+      "capability": "clinical_synthesizer",
+      "prompt_bundle": "docs/product/source-pack/ai-prompt-bundles/clinical-synthesizer.json",
+      "execution_status": "ready_for_reviewed_fixture_run",
+      "synthetic_fixture_policy": "synthetic narrative bundle with explicit missing inputs",
+      "expected_output_schema": {
+        "type": "object",
+        "properties": {
+          "client_summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+          "main_request": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+          "source_facts": {"type": "array", "items": {"type": "string"}},
+          "hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "statement": {"type": "string"},
+                "supporting_facts": {"type": "array", "items": {"type": "string"}},
+                "uncertainty": {"type": "string"}
+              },
+              "required": ["statement", "supporting_facts", "uncertainty"]
+            }
+          },
+          "critical_limitations_risks": {"type": "array", "items": {"type": "string"}},
+          "blind_spots_questions": {"type": "array", "items": {"type": "string"}},
+          "recommended_first_session_focus": {"type": "array", "items": {"type": "string"}},
+          "missing_information": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["client_summary", "main_request", "source_facts", "hypotheses", "critical_limitations_risks", "blind_spots_questions", "recommended_first_session_focus", "missing_information"]
+      },
+      "cases": [
+        {
+          "key": "facts_hypotheses_and_missing_data",
+          "name": "Separates facts, hypotheses, and missing information",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"profile_summary": "Synthetic profile", "complaints_goals": "Synthetic complaint and goal", "upstream_document_result": "Synthetic upstream result", "upstream_posture_result": null, "survey_results": null, "history_summary": "Synthetic history"},
+          "expected_assertions": [
+            {"type": "required_field", "path": "source_facts"},
+            {"type": "required_field", "path": "hypotheses"},
+            {"type": "required_field", "path": "missing_information"},
+            {"type": "required_field", "path": "recommended_first_session_focus"},
+            {"type": "forbidden_text", "value": "подтверждённый диагноз"}
+          ],
+          "expected_output_example": {
+            "client_summary": "Synthetic profile summary",
+            "main_request": "Synthetic goal",
+            "source_facts": ["Synthetic complaint was supplied"],
+            "hypotheses": [{"statement": "A pattern may be worth clarifying", "supporting_facts": ["Synthetic complaint was supplied"], "uncertainty": "Hypothesis only; examination is required"}],
+            "critical_limitations_risks": ["Upstream posture result is missing"],
+            "blind_spots_questions": ["Clarify the missing posture information"],
+            "recommended_first_session_focus": ["Confirm the history and examine the reported concern"],
+            "missing_information": ["Posture result", "Survey result"]
+          }
+        }
+      ]
+    },
+    {
+      "key": "source_agent_4_client_companion",
+      "name": "Source Agent 4 — client companion",
+      "capability": "client_companion",
+      "prompt_bundle": "docs/product/source-pack/ai-prompt-bundles/client-companion.json",
+      "execution_status": "ready_for_reviewed_fixture_run",
+      "synthetic_fixture_policy": "synthetic client messages only",
+      "expected_output_schema": {
+        "type": "object",
+        "properties": {
+          "decision": {"type": "string", "enum": ["reply", "handoff_required"]},
+          "reply": {"type": "string"},
+          "handoff_reason": {"type": "string"},
+          "suggested_safe_actions": {"type": "array", "maxItems": 3, "items": {"type": "string", "enum": ["request_human", "open_portal", "feedback_helpful", "feedback_not_helpful"]}}
+        },
+        "required": ["decision", "reply", "handoff_reason"]
+      },
+      "cases": [
+        {
+          "key": "ordinary_health_conversation",
+          "name": "Keeps ordinary health conversation useful without forced B2B routing",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"current_message": "Synthetic user asks how to book a session."},
+          "expected_assertions": [
+            {"type": "required_field", "path": "decision"},
+            {"type": "required_field", "path": "reply"},
+            {"type": "field_value", "path": "suggested_safe_actions.0", "operator": "equals", "value": "open_portal"},
+            {"type": "forbidden_text", "value": "100% результат"},
+            {"type": "forbidden_text", "value": "подтверждённый диагноз"}
+          ]
+        },
+        {
+          "key": "explicit_specialist_b2b_routing",
+          "name": "Routes an explicitly identified specialist through the existing B2B flow",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"current_message": "Synthetic user says: I am a massage specialist and want the B2B Zoom flow."},
+          "expected_assertions": [
+            {"type": "required_field", "path": "decision"},
+            {"type": "required_field", "path": "reply"},
+            {"type": "field_value", "path": "suggested_safe_actions.0", "operator": "equals", "value": "open_portal"},
+            {"type": "forbidden_text", "value": "подтверждённый диагноз"}
+          ],
+          "behavioral_requirement": "The text must direct the explicit specialist to the existing B2B/Zoom application flow; the current Companion contract has no separate B2B action enum, so the route remains application/manual-review verified."
+        },
+        {
+          "key": "ordinary_health_conversation_no_b2b_pitch",
+          "name": "Does not force a B2B pitch into an ordinary health conversation",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"current_message": "Synthetic user asks for a general explanation of a gentle mobility exercise."},
+          "expected_assertions": [
+            {"type": "required_field", "path": "decision"},
+            {"type": "required_field", "path": "reply"},
+            {"type": "forbidden_text", "value": "B2B"},
+            {"type": "forbidden_text", "value": "%"},
+            {"type": "forbidden_text", "value": "подтверждённый диагноз"}
+          ]
+        },
+        {
+          "key": "human_handoff_remains_paused",
+          "name": "Human handoff remains authoritative",
+          "is_synthetic": true,
+          "is_deidentified": false,
+          "test_inputs": {"current_message": "Synthetic user explicitly asks for a human specialist."},
+          "expected_assertions": [
+            {"type": "field_value", "path": "decision", "operator": "equals", "value": "handoff_required"},
+            {"type": "field_value", "path": "handoff_reason", "operator": "enum", "values": ["human_requested", "out_of_scope", "urgent_safety_concern", "repeated_execution_failure", "other", ""]}
+          ]
+        }
+      ]
+    }
+  ]
+}
