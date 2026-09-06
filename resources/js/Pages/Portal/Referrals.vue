@@ -124,7 +124,16 @@ const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: 
 });
 
 const requestableBalances = computed(() => props.referrals.rewards.balances.filter((balance) => balance.availableMinor > 0));
-const payoutError = computed(() => (payoutForm.errors as Record<string, string | undefined>).payout ?? null);
+const payoutError = computed(() => {
+    const errors = payoutForm.errors as Record<string, string | undefined>;
+
+    return errors.payout
+        ?? errors.amount
+        ?? errors.currency
+        ?? errors.idempotency_key
+        ?? errors.partner
+        ?? null;
+});
 const channelOptions = computed(() => [
     { value: 'telegram', label: t('referrals.channelTelegram') },
     { value: 'instagram', label: t('referrals.channelInstagram') },
@@ -224,13 +233,6 @@ function formatDate(value: string | null): string {
 
 function formatRate(value: number | null): string {
     return value === null ? '—' : `${value}%`;
-}
-
-function balanceSummary(key: 'availableMinor' | 'pendingPayoutMinor' | 'paidOutMinor'): string {
-    return formatMoneyList(props.referrals.rewards.balances.map((balance) => ({
-        currency: balance.currency,
-        amountMinor: balance[key],
-    })));
 }
 
 async function copyUrl(url: string): Promise<void> {
@@ -457,7 +459,9 @@ function cancelPayout(payout: Payout): void {
           </div>
           <div class="portal-stack portal-stack--tight">
             <div class="portal-section-heading">
-              <h2 class="portal-heading portal-heading--card">{{ t('referrals.rewardsTitle') }}</h2>
+              <h2 class="portal-heading portal-heading--card">
+                {{ t('referrals.rewardsTitle') }}
+              </h2>
               <span class="portal-copy portal-copy--small">{{ formatMoneyList(props.referrals.stats.rewardEarned) }}</span>
             </div>
             <div
@@ -473,25 +477,38 @@ function cancelPayout(payout: Payout): void {
                 <strong class="text-xl text-[var(--portal-color-ink)]">{{ balance.currency }}</strong>
                 <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
                   <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">{{ t('referrals.earned') }}</p>
+                    <p class="portal-copy portal-copy--small">
+                      {{ t('referrals.earned') }}
+                    </p>
                     <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.accruedMinor, balance.currency) }}</strong>
                   </div>
                   <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">{{ t('referrals.available') }}</p>
+                    <p class="portal-copy portal-copy--small">
+                      {{ t('referrals.available') }}
+                    </p>
                     <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.availableMinor, balance.currency) }}</strong>
                   </div>
                   <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">{{ t('referrals.pendingPayout') }}</p>
+                    <p class="portal-copy portal-copy--small">
+                      {{ t('referrals.pendingPayout') }}
+                    </p>
                     <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.pendingPayoutMinor, balance.currency) }}</strong>
                   </div>
                   <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">{{ t('referrals.paidOut') }}</p>
+                    <p class="portal-copy portal-copy--small">
+                      {{ t('referrals.paidOut') }}
+                    </p>
                     <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.paidOutMinor, balance.currency) }}</strong>
                   </div>
                 </div>
               </article>
             </div>
-            <p v-else class="portal-copy">{{ t('referrals.noRewards') }}</p>
+            <p
+              v-else
+              class="portal-copy"
+            >
+              {{ t('referrals.noRewards') }}
+            </p>
           </div>
         </section>
 
@@ -709,126 +726,132 @@ function cancelPayout(payout: Payout): void {
           </button>
         </section>
 
-        <details open class="portal-stack" data-testid="partner-history">
+        <details
+          open
+          class="portal-stack"
+          data-testid="partner-history"
+        >
           <summary class="portal-section-heading cursor-pointer list-none">
-            <h2 class="portal-heading portal-heading--section">{{ t('referrals.history') }}</h2>
+            <h2 class="portal-heading portal-heading--section">
+              {{ t('referrals.history') }}
+            </h2>
           </summary>
           <div class="portal-stack">
-        <section class="portal-stack">
-          <div class="portal-section-heading">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.registrations') }}
-            </h2>
-            <span class="portal-copy portal-copy--small">{{ props.referrals.referredClientsCount }}</span>
-          </div>
-          <div
-            v-if="props.referrals.registrations.length"
-            class="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2"
-          >
-            <article
-              v-for="(registration, index) in props.referrals.registrations"
-              :key="registration.name + (registration.registeredAt ?? '') + index"
-              class="portal-card portal-stack portal-stack--tight min-w-0"
-            >
-              <strong class="break-words text-[var(--portal-color-ink)]">{{ registration.name }}</strong>
-              <span class="portal-card__summary">{{ registration.linkName }} · {{ registration.channel }}</span>
-              <span class="portal-card__summary">{{ formatDate(registration.registeredAt) }}</span>
-              <span class="portal-card__summary">{{ registration.paidClient ? t('referrals.paidClient') : t('referrals.financeEvidenceMissing') }}</span>
-            </article>
-          </div>
-          <p
-            v-else
-            class="portal-copy"
-          >
-            {{ t('referrals.empty') }}
-          </p>
-        </section>
-
-        <section class="portal-stack">
-          <div class="portal-section-heading">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.payoutHistory') }}
-            </h2>
-          </div>
-          <div
-            v-if="props.referrals.rewards.payouts.length"
-            class="min-w-0 overflow-hidden rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]"
-          >
-            <ul class="divide-y divide-[var(--portal-color-border)]">
-              <li
-                v-for="(payout, index) in props.referrals.rewards.payouts"
-                :key="(payout.requestedAt ?? '') + payout.amountMinor + payout.currency + index"
-                :data-testid="`partner-payout-${index}`"
-                class="flex min-w-0 flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div class="min-w-0">
-                  <p class="break-words font-medium text-[var(--portal-color-ink)]">
-                    {{ formatMoney(payout.amountMinor, payout.currency) }}
-                  </p>
-                  <p class="portal-copy portal-copy--small">
-                    {{ payout.statusLabel }} · {{ formatDate(payout.requestedAt) }}
-                  </p>
-                  <p
-                    v-if="payout.rejectionReason"
-                    class="portal-copy portal-copy--small"
-                  >
-                    {{ payout.rejectionReason }}
-                  </p>
-                </div>
-                <button
-                  v-if="payout.canCancel"
-                  type="button"
-                  class="portal-button portal-button--secondary self-start sm:self-auto"
-                  @click="cancelPayout(payout)"
-                >
-                  {{ t('referrals.cancelPayout') }}
-                </button>
-              </li>
-            </ul>
-          </div>
-          <p
-            v-else
-            class="portal-copy"
-          >
-            {{ t('referrals.noPayouts') }}
-          </p>
-        </section>
-
-        <section
-          v-if="props.referrals.rewards.history.length"
-          class="portal-stack"
-        >
-          <div class="portal-section-heading">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.rewardHistory') }}
-            </h2>
-          </div>
-          <ul class="min-w-0 divide-y divide-[var(--portal-color-border)] rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]">
-            <li
-              v-for="(entry, index) in props.referrals.rewards.history"
-              :key="(entry.occurredAt ?? '') + entry.amountMinor + entry.currency + index"
-              class="flex min-w-0 flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div class="min-w-0">
-                <p class="break-words font-medium text-[var(--portal-color-ink)]">
-                  {{ entry.typeLabel }}<span v-if="entry.clientName"> · {{ entry.clientName }}</span>
-                </p>
-                <p class="portal-copy portal-copy--small">
-                  {{ formatDate(entry.occurredAt) }}
-                </p>
-                <p
-                  v-if="entry.reason"
-                  class="portal-copy portal-copy--small break-words"
-                >
-                  {{ entry.reason }}
-                </p>
+            <section class="portal-stack">
+              <div class="portal-section-heading">
+                <h2 class="portal-heading portal-heading--section">
+                  {{ t('referrals.registrations') }}
+                </h2>
+                <span class="portal-copy portal-copy--small">{{ props.referrals.referredClientsCount }}</span>
               </div>
-              <strong :class="entry.isReversal ? 'text-[var(--portal-color-danger)]' : 'text-[var(--portal-color-ink)]'">
-                {{ entry.isReversal ? '−' : '+' }}{{ formatMoney(entry.amountMinor, entry.currency) }}
-              </strong>
-            </li>
-          </ul>
-        </section>
+              <div
+                v-if="props.referrals.registrations.length"
+                class="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2"
+              >
+                <article
+                  v-for="(registration, index) in props.referrals.registrations"
+                  :key="registration.name + (registration.registeredAt ?? '') + index"
+                  class="portal-card portal-stack portal-stack--tight min-w-0"
+                >
+                  <strong class="break-words text-[var(--portal-color-ink)]">{{ registration.name }}</strong>
+                  <span class="portal-card__summary">{{ registration.linkName }} · {{ registration.channel }}</span>
+                  <span class="portal-card__summary">{{ formatDate(registration.registeredAt) }}</span>
+                  <span class="portal-card__summary">{{ registration.paidClient ? t('referrals.paidClient') : t('referrals.financeEvidenceMissing') }}</span>
+                </article>
+              </div>
+              <p
+                v-else
+                class="portal-copy"
+              >
+                {{ t('referrals.empty') }}
+              </p>
+            </section>
+
+            <section class="portal-stack">
+              <div class="portal-section-heading">
+                <h2 class="portal-heading portal-heading--section">
+                  {{ t('referrals.payoutHistory') }}
+                </h2>
+              </div>
+              <div
+                v-if="props.referrals.rewards.payouts.length"
+                class="min-w-0 overflow-hidden rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]"
+              >
+                <ul class="divide-y divide-[var(--portal-color-border)]">
+                  <li
+                    v-for="(payout, index) in props.referrals.rewards.payouts"
+                    :key="(payout.requestedAt ?? '') + payout.amountMinor + payout.currency + index"
+                    :data-testid="`partner-payout-${index}`"
+                    class="flex min-w-0 flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div class="min-w-0">
+                      <p class="break-words font-medium text-[var(--portal-color-ink)]">
+                        {{ formatMoney(payout.amountMinor, payout.currency) }}
+                      </p>
+                      <p class="portal-copy portal-copy--small">
+                        {{ payout.statusLabel }} · {{ formatDate(payout.requestedAt) }}
+                      </p>
+                      <p
+                        v-if="payout.rejectionReason"
+                        class="portal-copy portal-copy--small"
+                      >
+                        {{ payout.rejectionReason }}
+                      </p>
+                    </div>
+                    <button
+                      v-if="payout.canCancel"
+                      type="button"
+                      class="portal-button portal-button--secondary self-start sm:self-auto"
+                      @click="cancelPayout(payout)"
+                    >
+                      {{ t('referrals.cancelPayout') }}
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              <p
+                v-else
+                class="portal-copy"
+              >
+                {{ t('referrals.noPayouts') }}
+              </p>
+            </section>
+
+            <section
+              v-if="props.referrals.rewards.history.length"
+              class="portal-stack"
+            >
+              <div class="portal-section-heading">
+                <h2 class="portal-heading portal-heading--section">
+                  {{ t('referrals.rewardHistory') }}
+                </h2>
+              </div>
+              <ul class="min-w-0 divide-y divide-[var(--portal-color-border)] rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]">
+                <li
+                  v-for="(entry, index) in props.referrals.rewards.history"
+                  :key="(entry.occurredAt ?? '') + entry.amountMinor + entry.currency + index"
+                  class="flex min-w-0 flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div class="min-w-0">
+                    <p class="break-words font-medium text-[var(--portal-color-ink)]">
+                      {{ entry.typeLabel }}<span v-if="entry.clientName"> · {{ entry.clientName }}</span>
+                    </p>
+                    <p class="portal-copy portal-copy--small">
+                      {{ formatDate(entry.occurredAt) }}
+                    </p>
+                    <p
+                      v-if="entry.reason"
+                      class="portal-copy portal-copy--small break-words"
+                    >
+                      {{ entry.reason }}
+                    </p>
+                  </div>
+                  <strong :class="entry.isReversal ? 'text-[var(--portal-color-danger)]' : 'text-[var(--portal-color-ink)]'">
+                    {{ entry.isReversal ? '−' : '+' }}{{ formatMoney(entry.amountMinor, entry.currency) }}
+                  </strong>
+                </li>
+              </ul>
+            </section>
           </div>
         </details>
       </template>
