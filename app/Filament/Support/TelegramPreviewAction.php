@@ -12,6 +12,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Livewire\Component;
 use Throwable;
 
 final class TelegramPreviewAction
@@ -21,6 +22,11 @@ final class TelegramPreviewAction
         return Action::make('telegramPreview')
             ->label('Предпросмотр Telegram')
             ->icon(Heroicon::OutlinedEye)
+            ->mountUsing(function (Component $livewire): void {
+                if (method_exists($livewire, 'forceRender')) {
+                    $livewire->forceRender();
+                }
+            })
             ->modalHeading('Предпросмотр Telegram')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')

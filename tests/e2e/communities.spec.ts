@@ -299,9 +299,12 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(updatedPreviewEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     const updatedPreviewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
     await expect(updatedPreviewButton).toBeEnabled({ timeout: 15_000 });
+    const previewResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST');
     await updatedPreviewButton.click();
+    await expect((await previewResponse).status()).toBe(200);
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
-    await expect(updatedPreviewDialog).toBeVisible();
+    await expect(updatedPreviewDialog).toBeVisible({ timeout: 10_000 });
     await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
     await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
     await expect(updatedPreviewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
