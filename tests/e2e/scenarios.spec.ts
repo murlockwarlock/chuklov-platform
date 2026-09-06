@@ -155,7 +155,13 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await page.goto('/admin/scenario-rules');
     await expect(page.getByRole('heading', { name: 'Авто-сообщения' })).toBeVisible();
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}/edit`);
-    await page.getByRole('spinbutton', { name: 'Через сколько*', exact: true }).fill('48');
+    const delayInput = page.getByRole('spinbutton', { name: 'Через сколько*', exact: true });
+    await delayInput.fill('48');
+    const delayCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST'
+        && response.status() === 200);
+    await delayInput.blur();
+    await delayCommitResponse;
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
@@ -176,9 +182,9 @@ test('staff can configure a scenario timing and inspect delivery history', async
         && response.status() === 200);
     await templateSave.click();
     await templateSaveResponse;
-    await expect(page.getByRole('heading', { name: 'Шаблон сохранён', exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.fi-no-notification-title', { hasText: 'Шаблон сохранён' })).toBeVisible({ timeout: 3_000 });
     await page.goto(`/admin/notification-templates/${fixture.templateId}`);
-    await expect(page.getByRole('heading', { name: 'Шаблон сохранён', exact: true })).toBeVisible();
+    await expect(page.getByText('Версия сохранена', { exact: true })).toBeVisible();
     await expect(page.getByText('Обновлённое сообщение для {{ client.full_name }}.')).toBeVisible();
 
     await page.goto('/admin/scenario-actions');

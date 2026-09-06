@@ -472,7 +472,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
         && response.status() === 200);
     const dateInput = page.getByLabel('Дата и время');
     await dateInput.fill(fixture.bookingStartsAt);
-    await dateInput.press('Tab');
+    await dateInput.blur();
     await dateCommitResponse;
     const formatCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
