@@ -4,6 +4,13 @@ namespace App\Modules\AI\Application\Data;
 
 final readonly class AiRunProtectedTraceData
 {
+    /**
+     * @param  array<string, mixed>|null  $outputPayload
+     * @param  list<array<string, mixed>>  $inputReferences
+     * @param  array<string, mixed>  $contextProvenance
+     * @param  list<array<string, mixed>>  $ragReferences
+     * @param  array<string, mixed>  $model
+     */
     public function __construct(
         public int $aiRunId,
         public int $encryptionKeyVersion,

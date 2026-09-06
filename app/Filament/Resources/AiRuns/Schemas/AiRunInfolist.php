@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AiRunInfolist
 {
+    /** @var \WeakMap<AiRun, AiRunProtectedTraceData|null>|null */
     private static ?\WeakMap $traceCache = null;
 
     public static function configure(Schema $schema): Schema
@@ -237,7 +238,8 @@ class AiRunInfolist
         return hash('sha256', json_encode([
             $record->context_provenance,
             $record->input_references,
-            $record->ragReferences
+            $record->ragReferences()
+                ->get()
                 ->map(static fn ($reference): array => [
                     'index' => $reference->reference_index,
                     'source_id' => $reference->knowledge_source_id,
