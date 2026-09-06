@@ -41,6 +41,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -566,7 +567,7 @@ final class AiAdministrationUxTest extends TestCase
             ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
             ->assertFormFieldDisabled('key');
 
-        Livewire::actingAs($admin)
+        $promptVersions = Livewire::actingAs($admin)
             ->test(PromptVersionsRelationManager::class, [
                 'ownerRecord' => $prompt->refresh(),
                 'pageClass' => EditAiPrompt::class,
@@ -578,6 +579,14 @@ final class AiAdministrationUxTest extends TestCase
                 'temperature' => 0.7,
                 'max_tokens' => 2048,
             ]);
+        self::assertInstanceOf(
+            Placeholder::class,
+            $promptVersions->instance()->getSchemaComponent('mountedActionSchema0.source_text_preview'),
+        );
+        self::assertInstanceOf(
+            Placeholder::class,
+            $promptVersions->instance()->getSchemaComponent('mountedActionSchema0.guardrails_preview'),
+        );
 
         try {
             app(UpdateAiPrompt::class)->handle($admin, $prompt, ['key' => 'changed_key']);

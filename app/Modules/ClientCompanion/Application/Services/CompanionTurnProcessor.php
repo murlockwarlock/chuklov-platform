@@ -10,6 +10,10 @@ use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
+use App\Modules\AI\Domain\Models\AiModelRelease;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Services\AiErrorSanitizer;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
@@ -34,6 +38,7 @@ use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
@@ -73,6 +78,7 @@ final class CompanionTurnProcessor
         $leaseToken = $claimed['lease_token'];
         $this->startTyping($turn);
         $locale = 'en';
+        $result = null;
 
         try {
             $inbound = $turn->inboundMessage()->firstOrFail();
@@ -182,7 +188,9 @@ final class CompanionTurnProcessor
 
             $this->complete($organizationId, $turn->getKey(), $leaseToken, $response['reply'], $locale, $response['suggested_safe_actions']);
         } catch (Throwable $exception) {
-            $this->failSafely($organizationId, $turn->getKey(), $leaseToken, $this->failureCode($exception), $locale);
+            $failureCode = $this->failureCode($exception, $result);
+            $this->logExecutionFailure($organizationId, $turn, $failureCode, $result, $exception);
+            $this->failSafely($organizationId, $turn->getKey(), $leaseToken, $failureCode, $locale);
         }
     }
 
@@ -684,8 +692,20 @@ final class CompanionTurnProcessor
         };
     }
 
-    private function failureCode(Throwable $exception): CompanionFailureCode
+    private function failureCode(Throwable $exception, mixed $result = null): CompanionFailureCode
     {
+        if ($result instanceof AiRunResult
+            && $result->errorCategory instanceof AiErrorCategory) {
+            return match ($result->errorCategory) {
+                AiErrorCategory::BudgetExceeded => CompanionFailureCode::BudgetUnavailable,
+                AiErrorCategory::RateLimited => CompanionFailureCode::RateLimited,
+                AiErrorCategory::OutputSchemaValidationFailed => CompanionFailureCode::InvalidOutput,
+                AiErrorCategory::ToolExecutionFailed => CompanionFailureCode::RetrievalFailure,
+                AiErrorCategory::ExecutionTimedOut => CompanionFailureCode::ExecutionDeadlineExceeded,
+                default => CompanionFailureCode::ProviderUnavailable,
+            };
+        }
+
         $message = mb_strtolower($exception->getMessage());
 
         return match (true) {
@@ -701,6 +721,7 @@ final class CompanionTurnProcessor
             str_contains($message, 'budget') => CompanionFailureCode::BudgetUnavailable,
             str_contains($message, 'retrieval'), str_contains($message, 'knowledge') => CompanionFailureCode::RetrievalFailure,
             str_contains($message, 'response contract'), str_contains($message, 'empty') => CompanionFailureCode::InvalidOutput,
+            str_contains($message, 'active prompt'), str_contains($message, 'prompt version') => CompanionFailureCode::NotConfigured,
             default => CompanionFailureCode::ProviderUnavailable,
         };
     }
@@ -719,5 +740,66 @@ final class CompanionTurnProcessor
             AiErrorCategory::InternalError => CompanionFailureCode::ProviderUnavailable,
             default => CompanionFailureCode::ProviderUnavailable,
         };
+    }
+
+    private function logExecutionFailure(
+        int $organizationId,
+        CompanionTurn $turn,
+        CompanionFailureCode $failureCode,
+        mixed $result,
+        Throwable $exception,
+    ): void {
+        $run = $result instanceof AiRunResult && $result->runId > 0
+            ? AiRun::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($result->runId)
+                ->with(['promptVersion', 'modelRelease'])
+                ->first()
+            : null;
+        $run ??= $turn->ai_run_id !== null
+            ? AiRun::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey($turn->ai_run_id)
+                ->with(['promptVersion', 'modelRelease'])
+                ->first()
+            : null;
+        $activePrompt = AiPrompt::query()
+            ->where('organization_id', $organizationId)
+            ->where('capability', AiCapability::ClientCompanion->value)
+            ->latest('id')
+            ->first(['id', 'active_version_id']);
+        $safeError = AiErrorSanitizer::sanitize($exception);
+        $runErrorCategory = $result instanceof AiRunResult
+            ? $result->errorCategory?->value
+            : $run?->error_category?->value;
+        $runStatus = $result instanceof AiRunResult
+            ? $result->status->value
+            : $run?->status?->value;
+
+        Log::warning('client_companion_ai_failure', [
+            'organization_id' => $organizationId,
+            'companion_turn_id' => $turn->getKey(),
+            'ai_run_id' => $run?->getKey(),
+            'prompt_id' => $run?->promptVersion?->prompt_id ?? $activePrompt?->getKey(),
+            'prompt_version_id' => $run?->prompt_version_id ?? $activePrompt?->active_version_id,
+            'prompt_version' => $run?->promptVersion?->version,
+            'model_release_id' => $run?->model_release_id,
+            'model_provider' => $run?->actual_provider ?? $run?->requested_provider ?? $run?->modelRelease?->provider_name,
+            'model_name' => $run?->actual_model ?? $run?->requested_model ?? $run?->modelRelease?->model_name,
+            'model_release_number' => $run?->modelRelease?->release_number,
+            'configured_model_release_ids' => AiModelRelease::query()
+                ->where('organization_id', $organizationId)
+                ->whereJsonContains('capabilities', AiCapability::ClientCompanion->value)
+                ->orderBy('id')
+                ->pluck('id')
+                ->all(),
+            'run_status' => $runStatus,
+            'provider_error_category' => $runErrorCategory,
+            'failure_code' => $failureCode->value,
+            'sanitized_failure_category' => $safeError['category']->value,
+            'conversation_state' => $turn->conversation()->value('automation_state'),
+            'turn_status' => $turn->status->value,
+            'exception_class' => $exception::class,
+        ]);
     }
 }

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $organization_id
  * @property int $eval_suite_id
  * @property string $name
+ * @property string|null $source_key
  * @property array<string, mixed> $test_inputs
  * @property array<string, mixed>|null $expected_output_schema
  * @property array<string, mixed> $expected_assertions
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'organization_id',
     'eval_suite_id',
     'name',
+    'source_key',
     'is_synthetic',
     'is_deidentified',
     'test_inputs',

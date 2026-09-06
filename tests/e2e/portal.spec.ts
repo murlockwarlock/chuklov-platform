@@ -22,6 +22,7 @@ type BookingFixtureOptions = {
     withBooking?: boolean;
     withCompanionMessages?: boolean;
     withPartnerRewards?: boolean;
+    withCompanionPending?: boolean;
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
@@ -39,6 +40,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
+        $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -199,7 +201,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'timezone' => 'UTC',
             ]);
         }
-        if ($withCompanionMessages) {
+        if ($withCompanionMessages || $withCompanionPending) {
             config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
             $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
                 ->forOrganization($organization)
@@ -209,15 +211,44 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ]);
             $fence = str_repeat(chr(96), 3);
             $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n[Безопасная HTTPS ссылка](https://example.test/secure)\n[HTTP ссылка не должна быть активной](http://example.test/insecure)\n[javascript ссылка не должна быть активной](javascript:alert(1))\n[data ссылка не должна быть активной](data:text/html,unsafe)\n[file ссылка не должна быть активной](file:///tmp/unsafe)\n[Относительная ссылка не должна быть активной](//example.test/insecure)\n[userinfo ссылка не должна быть активной](https://user:pass@example.test/insecure)\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
-            app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
-                organizationId: $organization->getKey(),
-                client: $client,
-                conversation: $conversation,
-                channel: 'portal',
-                direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
-                authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
-                body: $body,
-            );
+            if ($withCompanionMessages) {
+                app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                    body: $body,
+                );
+            }
+            if ($withCompanionPending) {
+                $pendingInbound = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Inbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Client,
+                    body: 'Synthetic pending companion message',
+                    metadata: ['locale' => 'ru', 'transport' => 'portal'],
+                );
+                \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'conversation_id' => $conversation->getKey(),
+                    'sequence' => ((int) \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->where('conversation_id', $conversation->getKey())->max('sequence')) + 1,
+                    'context_epoch' => $conversation->context_epoch,
+                    'inbound_message_id' => $pendingInbound->getKey(),
+                    'origin_channel' => 'portal',
+                    'idempotency_key' => 'playwright-pending-'.$suffix,
+                    'request_hash' => hash('sha256', $suffix),
+                    'status' => 'pending',
+                    'input_modality' => 'text',
+                    'image_reference_mode' => 'none',
+                    'accepted_at' => now(),
+                ]);
+            }
         }
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => $longServiceTitle
@@ -360,6 +391,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
                 PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
@@ -1004,9 +1036,11 @@ test('companion safely renders rich long messages without viewport overflow', as
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [390, 760]) {
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/portal/companion');
+        await expect(page.getByRole('heading', { name: 'AI-компаньон', exact: true })).toBeVisible();
+        await expect(page.locator('.portal-companion__help')).toHaveCount(0);
         await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
         await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
         await expect(page.locator('.portal-rich-text__code')).toBeVisible();
@@ -1025,8 +1059,75 @@ test('companion safely renders rich long messages without viewport overflow', as
             await expect(renderedParagraph).toBeVisible();
         }
         await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
-        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-companion__composer button[type="submit"]'],
+            ['.portal-companion__history', '.portal-companion__composer'],
+        );
+        expect(await page.locator('.portal-companion__message').evaluateAll((messages) => messages.every((message) => {
+            const bounds = message.getBoundingClientRect();
+
+            return bounds.left >= -1 && bounds.right <= document.documentElement.clientWidth + 1;
+        }))).toBe(true);
     }
+});
+
+test('companion shows accessible typing feedback and respects intentional history scrolling', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionMessages: true, withCompanionPending: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
+    await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
+    await expect(page.getByText('AI-компаньон печатает ответ', { exact: true })).toHaveCount(1);
+
+    await page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+
+    await page.route('**/portal/companion**', async (route) => {
+        const response = await route.fetch();
+        const payload = await response.json() as {
+            props?: { companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> } };
+        };
+        const companion = payload.props?.companion;
+        if (companion !== undefined) {
+            companion.pending = false;
+            companion.messages = [
+                ...(companion.messages ?? []),
+                {
+                    type: 'message',
+                    id: 'synthetic-new-message',
+                    role: 'ai',
+                    roleLabel: 'AI-помощник',
+                    content: 'Новый синтетический ответ.',
+                    occurredAt: new Date().toISOString(),
+                    transportLabel: 'Портал',
+                    feedback: null,
+                    attachmentCount: 0,
+                    traceUrl: null,
+                },
+            ];
+        }
+        await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
+
+    await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
+    await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+
+    await page.getByTestId('companion-new-messages').click();
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        return element.scrollHeight - element.scrollTop - element.clientHeight;
+    })).toBeLessThanOrEqual(96);
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
@@ -1272,6 +1373,30 @@ test('booking shell stays readable at narrow Mini App widths', async ({ page }) 
         await expect(page.locator('.portal-calendar-card__weekdays span')).toHaveCount(7);
         await expect(page.getByTestId('availability-slot').first()).toBeVisible();
         await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+});
+
+test('booking primary action stays inside every acceptance viewport', async ({ page }) => {
+    const fixture = createBookingFixture();
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
+        await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-booking-flow__cta'],
+            ['.portal-booking-flow'],
+        );
     }
 });
 

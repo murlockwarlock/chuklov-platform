@@ -36,8 +36,10 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
+use Mockery;
 use Tests\TestCase;
 
 final class ClientCompanionProcessingTest extends TestCase
@@ -161,6 +163,35 @@ final class ClientCompanionProcessingTest extends TestCase
 
         self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
         self::assertSame('provider_unavailable', $turn->fresh()->failure_code);
+    }
+
+    public function test_missing_active_companion_prompt_is_logged_as_configuration_failure_without_protected_data(): void
+    {
+        Log::spy();
+        $this->app->instance(AiWorkflowEngine::class, new ThrowingInterleavingEngine(
+            fn (): null => null,
+            'AI execution requires a tenant-owned active prompt version.',
+        ));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+        $turn = $this->accept('Проверка настроек компаньона');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('not_configured', $turn->fresh()->failure_code);
+        Log::shouldHaveReceived('warning')
+            ->with('client_companion_ai_failure', Mockery::on(function (array $context) use ($turn): bool {
+                return $context['organization_id'] === $this->organization->getKey()
+                    && $context['companion_turn_id'] === $turn->getKey()
+                    && $context['ai_run_id'] === null
+                    && $context['prompt_version_id'] === null
+                    && $context['failure_code'] === 'not_configured'
+                    && ! array_key_exists('client_id', $context)
+                    && ! array_key_exists('exception_message', $context)
+                    && ! array_key_exists('provider_response', $context);
+            }))
+            ->once();
     }
 
     public function test_direct_human_request_escalates_and_pauses_the_same_conversation(): void
@@ -911,17 +942,20 @@ final class InterleavingCompanionEngine implements AiWorkflowEngine
 
 final class ThrowingInterleavingEngine implements AiWorkflowEngine
 {
-    public function __construct(private readonly \Closure $beforeThrow) {}
+    public function __construct(
+        private readonly \Closure $beforeThrow,
+        private readonly string $message = 'provider unavailable',
+    ) {}
 
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
     {
         ($this->beforeThrow)();
-        throw new \RuntimeException('provider unavailable');
+        throw new \RuntimeException($this->message);
     }
 
     public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
     {
-        throw new \RuntimeException('provider unavailable');
+        throw new \RuntimeException($this->message);
     }
 }
 

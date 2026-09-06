@@ -39,6 +39,7 @@ class CreateEvalCase
         ?array $expectedOutputSchema = null,
         bool $isSynthetic = false,
         bool $isDeidentified = false,
+        ?string $sourceKey = null,
     ): AiEvalCase {
         if ((int) $organization->getKey() !== $this->context->id()) {
             throw new AuthorizationException('Evaluation case is outside the current organization.');
@@ -50,6 +51,7 @@ class CreateEvalCase
         }
 
         $this->privacyValidator->validateClassification($isSynthetic, $isDeidentified);
+        $sourceKey = self::sourceKey($sourceKey);
         $this->privacyValidator->validate($testInputs);
         $this->privacyValidator->validate($expectedAssertions);
         $expectedAssertions = $this->assertionRegistry->normalize($expectedAssertions);
@@ -67,6 +69,7 @@ class CreateEvalCase
             'organization_id' => $organization->id,
             'eval_suite_id' => $suite->id,
             'name' => trim($name),
+            'source_key' => $sourceKey,
             'is_synthetic' => $isSynthetic,
             'is_deidentified' => $isDeidentified,
             'test_inputs' => $testInputs,
@@ -105,5 +108,19 @@ class CreateEvalCase
     public function validateClassification(bool $isSynthetic, bool $isDeidentified): void
     {
         $this->privacyValidator->validateClassification($isSynthetic, $isDeidentified);
+    }
+
+    private static function sourceKey(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        $value = trim($value);
+        if (mb_strlen($value) > 120 || preg_match('/^[a-z0-9][a-z0-9_-]*$/', $value) !== 1) {
+            throw new InvalidArgumentException('Evaluation source key is invalid.');
+        }
+
+        return $value;
     }
 }
