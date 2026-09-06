@@ -2,6 +2,7 @@
 
 namespace App\Modules\Identity\Domain\Models;
 
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
@@ -120,6 +121,12 @@ class Client extends Model
     public function medicalAttachments(): HasMany
     {
         return $this->hasMany(MedicalAttachment::class);
+    }
+
+    /** @return HasMany<AiRun, $this> */
+    public function aiRuns(): HasMany
+    {
+        return $this->hasMany(AiRun::class, 'client_id');
     }
 
     /** @return HasMany<MedicalSession, $this> */

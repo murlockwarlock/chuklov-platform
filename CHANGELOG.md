@@ -1,11 +1,18 @@
 # Changelog
 
+## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow
+
+- Added explicit CRM actions for private medical-document extraction, exactly three role-bound posture photos, and clinical synthesis through the existing `AiRun`/`AiRunPayload`, attachment resolver, prompt/model release, and human-review authorities. Results retain protected provenance and reruns create new history.
+- Added a Client Clinical AI relation in the existing client cockpit with business-language statuses, source availability, result/history views, review actions, explicit reruns, failure-safe notifications, and targeted bounded polling.
+- Added reviewed upstream-run references and encrypted Agent 3 input snapshots, a synthetic-only controlled posture fixture repository for the existing evaluation framework, evaluation isolation from production attachments, a PostgreSQL concurrent-review regression, and browser coverage gated for explicitly configured synthetic-data real-provider runs.
+- Focused local workflow/evaluation/CRM checks, Pint, and scoped PHPStan pass. PostgreSQL, hosted CI, staging real-provider verification, and owner acceptance remain pending; production is not deployed and no merge was performed.
+
 ## 2026-09-06 — Recovered AI source appendices reconciliation
 
 - Added the durable source pack for recovered Appendix 1 onboarding requirements and Appendix 2 Agent 1–4 specifications, including provenance, normalized requirements, traceability, and the current Appendix 1 acceptance matrix.
 - Added non-active source-backed prompt bundles for the existing clinical document extraction, posture analysis, clinical synthesizer, and Client Companion capabilities. The bundles preserve source intent while recording platform safety guardrails and do not select or activate a provider/model.
-- Replaced generic clinical capability contracts with source-backed structured output schemas, including nullable unknown medical measurements, source/fact/hypothesis separation, and posture sections without inventing the undefined vector-shift schema. Added synthetic evaluation baselines and preserved the existing controlled-three-photo posture evaluation blocker.
-- Appendix 1 and Appendix 2 are `FOUND`; the complete 9 systems/MSQ source remains missing and OQ-015 remains open. No end-to-end medical upload-to-practitioner-result workflow, staging activation, production deployment, merge, or owner acceptance is claimed.
+- Replaced generic clinical capability contracts with source-backed structured output schemas, including nullable unknown medical measurements, source/fact/hypothesis separation, and posture sections without inventing the undefined vector-shift schema. Added synthetic evaluation baselines and preserved the existing controlled-three-photo posture evaluation boundary.
+- Appendix 1 and Appendix 2 are `FOUND`; the complete 9 systems/MSQ source remains missing and OQ-015 remains open. The follow-up runtime candidate is documented above; staging activation, production deployment, merge, and owner acceptance remain unclaimed.
 
 ## 2026-09-05 — PR #30 RichEditor link persistence
 

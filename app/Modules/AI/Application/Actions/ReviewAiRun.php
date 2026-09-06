@@ -58,14 +58,24 @@ class ReviewAiRun
         $keyVersion = (int) Config::get('medical.key_version', 1);
 
         return DB::transaction(function () use ($organization, $actor, $run, $decision, $reasonCode, $notes, $editedOutput, $keyVersion) {
+            $lockedRun = AiRun::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($run->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($lockedRun === null) {
+                throw new InvalidArgumentException('AI Run not found.');
+            }
+
             $latestStep = AiRunHumanReview::query()
                 ->where('organization_id', $organization->getKey())
-                ->where('ai_run_id', $run->id)
+                ->where('ai_run_id', $lockedRun->id)
                 ->max('review_step') ?? 0;
 
             $review = new AiRunHumanReview([
                 'organization_id' => $organization->getKey(),
-                'ai_run_id' => $run->id,
+                'ai_run_id' => $lockedRun->id,
                 'review_step' => $latestStep + 1,
                 'decision' => $decision,
                 'reviewer_user_id' => $actor->getKey(),
@@ -80,14 +90,14 @@ class ReviewAiRun
                 HumanReviewDecision::EditedAndAccepted => HumanReviewStatus::EditedAndAccepted,
             };
 
-            $run->update([
+            $lockedRun->update([
                 'human_review_status' => $newStatus,
             ]);
 
             if ($notes !== null || $editedOutput !== null) {
                 $payload = AiRunPayload::query()
                     ->where('organization_id', $organization->getKey())
-                    ->where('ai_run_id', $run->id)
+                    ->where('ai_run_id', $lockedRun->id)
                     ->first();
 
                 if ($payload !== null) {

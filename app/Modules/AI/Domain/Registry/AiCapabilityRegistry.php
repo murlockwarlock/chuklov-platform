@@ -114,7 +114,7 @@ class AiCapabilityRegistry
                     capability: AiCapability::ClinicalSynthesizer,
                     displayName: 'Клинический синтезатор и динамика',
                     description: 'Синтез динамики состояния пациента между сессиями на основе анамнеза и подтвержденных протоколов.',
-                    allowedInputReferenceTypes: ['client', 'medical_session', 'medical_attachment', 'survey_attempt', 'knowledge_source'],
+                    allowedInputReferenceTypes: ['client', 'medical_session', 'medical_attachment', 'survey_attempt', 'knowledge_source', 'ai_run'],
                     supportsRag: true,
                     allowedTools: ['search_knowledge_base'],
                     defaultTimeoutSeconds: 60,

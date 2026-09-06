@@ -9,6 +9,7 @@ use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientAttachmentsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSessionsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
@@ -73,6 +74,7 @@ class ClientResource extends Resource
             ClientBookingsRelationManager::class,
             ClientSurveysRelationManager::class,
             ClientAttachmentsRelationManager::class,
+            ClientClinicalAiRelationManager::class,
         ];
     }
 

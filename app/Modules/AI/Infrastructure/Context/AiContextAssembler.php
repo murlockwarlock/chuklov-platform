@@ -154,7 +154,9 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     'occurred_at' => $session->occurred_at->toDateString(),
                 ];
             }
-            $variables['recent_sessions'] = $sessionsData;
+            if (! array_key_exists('recent_sessions', $variables)) {
+                $variables['recent_sessions'] = $sessionsData;
+            }
             $provenanceSummary['sessions_count'] = count($sessionsData);
         }
 

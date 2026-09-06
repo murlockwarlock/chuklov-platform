@@ -1,10 +1,16 @@
 # Project Status
 
+## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow candidate
+
+- Continuing from application SHA `769bf0b9590f1e98183ef49331471c87b0dbf6d5` on branch `codex/reconcile-ai-source-appendices`. The existing protected `AiRun`/`AiRunPayload`, attachment resolver, prompt/model snapshots, worker fencing, and human-review authorities now have explicit CRM launch actions and a Client Clinical AI workspace for medical-document extraction, exactly three role-bound posture photos, and source-pinned clinical synthesis.
+- Agent 1 and Agent 2 launches are organization/client scoped, private-storage validated, idempotent, and re-runnable without overwriting history. Agent 3 snapshots reviewed upstream results, encrypted profile/session/survey context, and missing 9 systems/MSQ provenance into its own protected run. A controlled synthetic posture fixture now executes through the real resolver and cannot be selected by production posture launch actions.
+- Focused SQLite workflow/evaluation/CRM checks and scoped PHPStan/Pint pass. PostgreSQL concurrency, exact-SHA hosted CI, real-provider staging verification, and the explicitly configured real-provider browser scenario remain candidate gates. Appendix 1/2 remain `FOUND`; 9 systems/MSQ and the posture vector-shift schema remain the only true source gaps. Owner acceptance, production, and merge are not claimed.
+
 ## 2026-09-06 — Recovered AI appendices reconciliation candidate
 
 - Starting from main SHA `d3027ca6cefb0904df4f944ed3cd47322bff30a7` on branch `codex/reconcile-ai-source-appendices`. Appendix 1 onboarding source and Appendix 2 specialized-agent prompt source are `FOUND` and normalized in `docs/product/source-pack/`; neither binary DOCX is committed.
 - The complete 9 systems/MSQ questionnaire bodies and scoring remain `MISSING SOURCE`; OQ-015 stays open only for that material. Appendix 2 also leaves the posture “JSON vector shifts” schema undefined, so no permanent vector schema is claimed.
-- Existing AI capabilities, attachment controls, prompt/version lifecycle, Companion runtime, and evaluation framework were extended with source-backed contracts, non-active draft bundles, synthetic baseline fixtures, and the Appendix 1 acceptance matrix. The actual product chain medical upload → Agent 1 → Agent 2 → Agent 3 → persisted practitioner-facing result is not present; Agents 1–3 remain `PARTIAL`, and Agent 4 remains `PARTIAL` for source-specific behavior beyond the accepted Companion runtime. Owner acceptance, staging, production, and merge are not claimed.
+- Existing AI capabilities, attachment controls, prompt/version lifecycle, Companion runtime, and evaluation framework were extended with source-backed contracts, non-active draft bundles, synthetic baseline fixtures, and the Appendix 1 acceptance matrix. The follow-up runtime candidate above adds the product orchestration while keeping Agents 1–3 `PARTIAL` until the remaining verification gates complete; Agent 4 remains unchanged. Owner acceptance, staging, production, and merge are not claimed.
 
 ## 2026-09-04 — M11D B2B closeout and Communities candidate
 

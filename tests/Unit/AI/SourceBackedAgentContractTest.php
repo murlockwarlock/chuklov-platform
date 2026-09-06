@@ -172,7 +172,7 @@ final class SourceBackedAgentContractTest extends TestCase
             }
         }
         self::assertIsArray($postureSuite);
-        self::assertSame('blocked_until_controlled_three_photo_fixture_exists', $postureSuite['execution_status']);
+        self::assertSame('implemented_with_controlled_synthetic_fixture', $postureSuite['execution_status']);
         self::assertSame(['front', 'side', 'back'], $postureSuite['required_attachment_roles']);
     }
 

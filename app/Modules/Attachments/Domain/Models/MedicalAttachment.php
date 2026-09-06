@@ -27,6 +27,8 @@ use Illuminate\Support\Carbon;
  * @property string $mime_type
  * @property int $size_bytes
  * @property string $sha256_checksum
+ * @property string|null $evaluation_fixture_key
+ * @property string|null $evaluation_fixture_role
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Organization $organization
@@ -46,6 +48,8 @@ use Illuminate\Support\Carbon;
     'mime_type',
     'size_bytes',
     'sha256_checksum',
+    'evaluation_fixture_key',
+    'evaluation_fixture_role',
 ])]
 class MedicalAttachment extends Model
 {

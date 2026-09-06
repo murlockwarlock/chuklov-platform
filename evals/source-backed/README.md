@@ -4,4 +4,4 @@
 
 The manifest is deliberately not auto-imported or auto-executed. An authorized operator must import its cases through the existing organization-scoped actions, pin a reviewed prompt version and model release, and run it through the existing evaluation lifecycle.
 
-Agent 2 remains execution-blocked in the current framework because `RunEvaluationSuite` requires a controlled three-photo fixture and the repository has no safe synthetic image fixture provider. The suite records the exact three-role requirement and tests the source-backed text contract without pretending that text can validate vision behavior.
+Agent 2 uses a controlled synthetic front/side/back fixture through the existing `RunEvaluationSuite` and attachment resolver. The fixture is private, deterministic, marked as evaluation-only, and cannot be selected by the production CRM attachment flow.

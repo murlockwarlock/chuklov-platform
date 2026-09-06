@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Clients\RelationManagers;
 
+use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
@@ -21,6 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Throwable;
 
 final class ClientAttachmentsRelationManager extends RelationManager
 {
@@ -117,6 +120,26 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->label('Открыть')
                     ->action(function (MedicalAttachment $record) use ($actor): mixed {
                         return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
+                    }),
+                Action::make('startDocumentAnalysis')
+                    ->label('Запустить анализ')
+                    ->icon('heroicon-o-sparkles')
+                    ->requiresConfirmation()
+                    ->visible(fn (MedicalAttachment $record): bool => $record->attachment_type === AttachmentType::MedicalReport
+                        && $record->evaluation_fixture_key === null)
+                    ->action(function (MedicalAttachment $record) use ($actor): void {
+                        try {
+                            app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
+                            Notification::make()
+                                ->title('Анализ документа поставлен в очередь')
+                                ->success()
+                                ->send();
+                        } catch (Throwable $exception) {
+                            Notification::make()
+                                ->title(ClinicalAiPresentation::failure(null, $exception))
+                                ->danger()
+                                ->send();
+                        }
                     }),
             ])
             ->paginated([10, 25])

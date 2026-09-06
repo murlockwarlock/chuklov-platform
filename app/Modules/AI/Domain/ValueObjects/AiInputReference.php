@@ -14,11 +14,13 @@ final readonly class AiInputReference
         'survey_attempt',
         'booking',
         'knowledge_source',
+        'ai_run',
     ];
 
     public function __construct(
         public string $type,
         public int $id,
+        public ?string $role = null,
     ) {
         if (! in_array($this->type, self::ALLOWED_TYPES, true)) {
             throw new InvalidArgumentException("Invalid input reference type: {$this->type}");
@@ -35,15 +37,22 @@ final readonly class AiInputReference
         return new self(
             type: (string) ($data['type'] ?? ''),
             id: (int) ($data['id'] ?? 0),
+            role: isset($data['role']) ? (string) $data['role'] : null,
         );
     }
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $data = [
             'type' => $this->type,
             'id' => $this->id,
         ];
+
+        if ($this->role !== null) {
+            $data['role'] = $this->role;
+        }
+
+        return $data;
     }
 }

@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
@@ -256,6 +257,23 @@ final class ClientWorkspaceUxATest extends TestCase
 
         $component->assertSuccessful();
         self::assertCount(0, $component->instance()->getTableRecords());
+    }
+
+    public function test_client_clinical_ai_workspace_tab_mounts_with_business_actions(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ClientClinicalAiRelationManager::class, [
+                'ownerRecord' => $client,
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertTableHeaderActionsExistInOrder(['postureAnalysis', 'clinicalSynthesis'])
+            ->assertSee('Клинический AI')
+            ->assertSee('Анализы ещё не запускались');
     }
 
     public function test_client_bookings_view_action_renders_booking_details_in_relation(): void

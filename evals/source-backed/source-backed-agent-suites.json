@@ -83,9 +83,8 @@
       "name": "Source Agent 2 — posture analysis",
       "capability": "posture_analysis",
       "prompt_bundle": "docs/product/source-pack/ai-prompt-bundles/posture-analysis.json",
-      "execution_status": "blocked_until_controlled_three_photo_fixture_exists",
-      "synthetic_fixture_policy": "controlled front/side/back image fixture required; no image bytes are included",
-      "blocker": "The existing RunEvaluationSuite intentionally stops PostureAnalysis without a controlled three-photo fixture.",
+      "execution_status": "implemented_with_controlled_synthetic_fixture",
+      "synthetic_fixture_policy": "RunEvaluationSuite creates a deterministic private synthetic front/side/back fixture; no real client attachment can be selected",
       "required_attachment_roles": ["front", "side", "back"],
       "expected_output_schema": {
         "type": "object",
