@@ -85,9 +85,11 @@ const savedWorkingLocation = props.workingLocations.find((location) => location.
 const defaultWorkingLocation = props.workingLocations.find((location) => location.isDefault) ?? props.workingLocations[0] ?? null;
 const initialWorkingLocationId = savedWorkingLocation?.id ?? defaultWorkingLocation?.id ?? null;
 const locationDayAreas = Array.from(new Set(props.locationDays.map((locationDay) => locationDay.areaName)));
-const initialLocationArea = props.booking.locationArea !== null && locationDayAreas.includes(props.booking.locationArea)
-    ? props.booking.locationArea
-    : locationDayAreas[0] ?? props.booking.locationArea;
+const initialLocationArea = props.booking.format === 'home'
+    ? (props.booking.locationArea !== null && locationDayAreas.includes(props.booking.locationArea)
+        ? props.booking.locationArea
+        : locationDayAreas[0] ?? props.booking.locationArea)
+    : null;
 const cancelForm = useForm<{ reason: string | null }>({ reason: null });
 const rescheduleForm = useForm<{
     starts_at: string | null;

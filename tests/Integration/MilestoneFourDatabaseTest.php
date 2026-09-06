@@ -106,10 +106,12 @@ class MilestoneFourDatabaseTest extends TestCase
                 'starts_at' => '2027-04-12T09:00:00+00:00',
                 'client_timezone' => 'UTC',
                 'expected_event_version' => $routeBooking->event_version,
+                'location_area' => 'ignored-for-office',
             ])
             ->assertRedirect(route('portal.bookings.show', $routeBooking->getKey()));
 
         self::assertSame('2027-04-12T09:00:00+00:00', $routeBooking->fresh()->startsAtUtc()->toIso8601String());
+        self::assertNull($routeBooking->fresh()->location_area);
     }
 
     public function test_postgresql_booking_provider_state_persists_non_secret_affinity_without_backfill(): void

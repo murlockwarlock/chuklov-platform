@@ -119,7 +119,9 @@ final class RescheduleBooking
                 ->lockForUpdate()
                 ->firstOrFail();
             $workingLocationId ??= $lockedBooking->working_location_id;
-            $locationArea ??= $lockedBooking->location_area;
+            $locationArea = $lockedBooking->visit_format === VisitFormat::HomeVisit
+                ? ($locationArea ?? $lockedBooking->location_area)
+                : null;
             $resolvedTimezone = $this->resolveTimezone($clientTimezone ?? $client->timezone);
             $availability = $this->availability->forBooking(
                 specialist: $specialist,
