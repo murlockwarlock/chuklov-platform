@@ -65,14 +65,14 @@ final class ReferralRelationshipResource extends Resource
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('referrer.full_name')->label('Кто пригласил')->searchable()->wrap(),
-                TextColumn::make('referred.full_name')->label('Приглашённый клиент')->searchable()->wrap(),
+                TextColumn::make('referred.full_name')
+                    ->label('Приглашённый клиент')
+                    ->searchable()
+                    ->wrap()
+                    ->description(fn (ReferralRelationship $record): string => self::establishmentMethodLabel($record->establishment_method)),
                 TextColumn::make('establishment_method')
                     ->label('Способ установления')
-                    ->formatStateUsing(fn (ReferralEstablishmentMethod|string $state): string => match ($state instanceof ReferralEstablishmentMethod ? $state->value : $state) {
-                        ReferralEstablishmentMethod::AutomaticReferralLink->value => 'Автоматическая ссылка',
-                        ReferralEstablishmentMethod::ManualCrm->value => 'Назначено в CRM',
-                        default => 'Неизвестно',
-                    })
+                    ->formatStateUsing(fn (ReferralEstablishmentMethod|string $state): string => self::establishmentMethodLabel($state))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('referred.attribution.source')
@@ -121,6 +121,15 @@ final class ReferralRelationshipResource extends Resource
         return $referred instanceof Client
             ? trim((string) ($referred->full_name ?? '')) ?: 'Рекомендация'
             : 'Рекомендация';
+    }
+
+    private static function establishmentMethodLabel(ReferralEstablishmentMethod|string $state): string
+    {
+        return match ($state instanceof ReferralEstablishmentMethod ? $state->value : $state) {
+            ReferralEstablishmentMethod::AutomaticReferralLink->value => 'Автоматическая ссылка',
+            ReferralEstablishmentMethod::ManualCrm->value => 'Назначено в CRM',
+            default => 'Неизвестно',
+        };
     }
 
     public static function getPages(): array
