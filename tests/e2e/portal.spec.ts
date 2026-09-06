@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
     cookieName: string;
@@ -410,6 +410,32 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function assertPortalResponseAccepted(responsePromise: Promise<Response>, action: string): Promise<void> {
+    const response = await responsePromise;
+
+    if (response.status() < 400) {
+        return;
+    }
+
+    const body = await response.text();
+    let details = body.replace(/\s+/g, ' ').trim().slice(0, 400);
+
+    try {
+        const payload = JSON.parse(body) as { errors?: unknown; message?: unknown };
+        const errorFields = payload.errors !== null && typeof payload.errors === 'object'
+            ? Object.keys(payload.errors as Record<string, unknown>)
+            : [];
+        const message = typeof payload.message === 'string' ? payload.message : null;
+        details = JSON.stringify({ message, errorFields });
+    } catch (error) {
+        if (!(error instanceof SyntaxError)) {
+            throw error;
+        }
+    }
+
+    throw new Error(`${action} returned HTTP ${response.status()} (${response.url()}): ${details}`);
 }
 
 type RenderedGeometry = {
@@ -1500,7 +1526,10 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(alternateSlot).toBeVisible();
     await expect(page.getByRole('button', { name: 'Перенести запись', exact: true })).toBeDisabled();
     await alternateSlot.click();
+    const firstRescheduleResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && /\/portal\/bookings\/\d+\/reschedule$/.test(new URL(response.url()).pathname));
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
+    await assertPortalResponseAccepted(firstRescheduleResponse, 'First portal reschedule');
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toBeVisible({ timeout: 15_000 });
 
@@ -1511,7 +1540,10 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     const secondAlternateSlot = page.getByTestId('availability-slot').nth(1);
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
+    const secondRescheduleResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && /\/portal\/bookings\/\d+\/reschedule$/.test(new URL(response.url()).pathname));
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
+    await assertPortalResponseAccepted(secondRescheduleResponse, 'Second portal reschedule');
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toHaveCount(2, { timeout: 15_000 });
 

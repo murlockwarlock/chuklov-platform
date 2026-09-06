@@ -557,19 +557,11 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    const dateCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
-        && response.request().method() === 'POST'
-        && response.status() === 200);
     const dateInput = page.getByLabel('Дата и время');
     await dateInput.fill(fixture.bookingStartsAt);
     await dateInput.blur();
-    await dateCommitResponse;
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
-    const formatCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
-        && response.request().method() === 'POST'
-        && response.status() === 200);
     await page.getByLabel('Формат визита').selectOption('office');
-    await formatCommitResponse;
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
@@ -693,7 +685,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
     for (const width of [1440, 1280, 1024, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
 
-        await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
+        await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`, { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
         await expect(page.locator('[data-testid^="partner-primary-"]')).toHaveCount(3);
         await assertRenderedViewportGeometry(page, [

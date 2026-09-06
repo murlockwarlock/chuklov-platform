@@ -157,16 +157,12 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}/edit`);
     const delayInput = page.getByRole('spinbutton', { name: 'Через сколько*', exact: true });
     await delayInput.fill('48');
-    const delayCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
-        && response.request().method() === 'POST'
-        && response.status() === 200);
-    await delayInput.blur();
-    await delayCommitResponse;
-    await expect(delayInput).toHaveValue('48');
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
-        && response.status() === 200);
+        && response.status() === 200
+        && (response.request().postData() ?? '').includes('delay_value')
+        && (response.request().postData() ?? '').includes('48'));
     await save.click();
     await saveResponse;
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}`);
