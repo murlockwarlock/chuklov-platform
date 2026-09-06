@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
+use InvalidArgumentException;
 
 class CreateEvalCase
 {

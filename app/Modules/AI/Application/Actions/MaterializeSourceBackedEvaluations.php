@@ -30,19 +30,9 @@ final class MaterializeSourceBackedEvaluations
     {
         $organization = $this->context->organization();
         $manifest = $this->readManifest();
-        $summary = [
-            'prompts_created' => 0,
-            'prompt_versions_created' => 0,
-            'prompts_activated' => 0,
-            'suites_created' => 0,
-            'cases_created' => 0,
-        ];
+        $summary = $this->newSummary();
 
         foreach ($manifest['suites'] as $suiteData) {
-            if (! is_array($suiteData)) {
-                throw new InvalidArgumentException('Source-backed evaluation suite is invalid.');
-            }
-
             $bundle = $this->readBundle($suiteData['prompt_bundle'] ?? null);
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organization->getKey())
@@ -75,7 +65,8 @@ final class MaterializeSourceBackedEvaluations
             }
 
             $suite = $this->findOrCreateSuite($actor, $suiteData, $bundle->capability, $prompt->getKey(), $summary);
-            $this->materializeCases($actor, $suite, $suiteData['cases'] ?? [], $suiteData['expected_output_schema'] ?? null, $summary);
+            $cases = $this->normalizeObjectList($suiteData['cases'] ?? [], 'Source-backed evaluation cases are invalid.');
+            $this->materializeCases($actor, $suite, $cases, $suiteData['expected_output_schema'] ?? null, $summary);
         }
 
         return $summary;
@@ -99,7 +90,10 @@ final class MaterializeSourceBackedEvaluations
             throw new InvalidArgumentException('Source-backed evaluation manifest has an invalid structure.');
         }
 
-        return $manifest;
+        return [
+            'schema_version' => $manifest['schema_version'],
+            'suites' => $this->normalizeObjectList($manifest['suites'], 'Source-backed evaluation suites are invalid.'),
+        ];
     }
 
     private function readBundle(mixed $relativePath): PromptBundle
@@ -139,7 +133,10 @@ final class MaterializeSourceBackedEvaluations
             ->first(fn (AiPromptVersion $version): bool => self::promptVersionFingerprint($version) === $fingerprint);
     }
 
-    /** @param array<string, mixed> $suiteData */
+    /**
+     * @param  array<string, mixed>  $suiteData
+     * @param  array{prompts_created: int, prompt_versions_created: int, prompts_activated: int, suites_created: int, cases_created: int}  $summary
+     */
     private function findOrCreateSuite(User $actor, array $suiteData, AiCapability $capability, int $promptId, array &$summary): AiEvalSuite
     {
         $organization = $this->context->organization();
@@ -169,7 +166,10 @@ final class MaterializeSourceBackedEvaluations
         return $suite;
     }
 
-    /** @param list<array<string, mixed>> $cases */
+    /**
+     * @param  list<array<string, mixed>>  $cases
+     * @param  array{prompts_created: int, prompt_versions_created: int, prompts_activated: int, suites_created: int, cases_created: int}  $summary
+     */
     private function materializeCases(User $actor, AiEvalSuite $suite, array $cases, mixed $outputSchema, array &$summary): void
     {
         if (! is_array($outputSchema)) {
@@ -177,10 +177,6 @@ final class MaterializeSourceBackedEvaluations
         }
 
         foreach ($cases as $caseData) {
-            if (! is_array($caseData)) {
-                throw new InvalidArgumentException('Source-backed evaluation case is invalid.');
-            }
-
             $sourceKey = (string) ($caseData['key'] ?? '');
             if ($sourceKey === '') {
                 throw new InvalidArgumentException('Source-backed evaluation case key is required.');
@@ -209,6 +205,52 @@ final class MaterializeSourceBackedEvaluations
             );
             $summary['cases_created']++;
         }
+    }
+
+    /** @return array{prompts_created: int, prompt_versions_created: int, prompts_activated: int, suites_created: int, cases_created: int} */
+    private function newSummary(): array
+    {
+        return [
+            'prompts_created' => 0,
+            'prompt_versions_created' => 0,
+            'prompts_activated' => 0,
+            'suites_created' => 0,
+            'cases_created' => 0,
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function normalizeObjectList(mixed $value, string $message): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            throw new InvalidArgumentException($message);
+        }
+
+        $normalized = [];
+        foreach ($value as $item) {
+            $normalized[] = $this->normalizeObject($item, $message);
+        }
+
+        return $normalized;
+    }
+
+    /** @return array<string, mixed> */
+    private function normalizeObject(mixed $value, string $message): array
+    {
+        if (! is_array($value)) {
+            throw new InvalidArgumentException($message);
+        }
+
+        $normalized = [];
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                throw new InvalidArgumentException($message);
+            }
+
+            $normalized[$key] = $item;
+        }
+
+        return $normalized;
     }
 
     private static function promptFingerprint(PromptBundle $bundle): string

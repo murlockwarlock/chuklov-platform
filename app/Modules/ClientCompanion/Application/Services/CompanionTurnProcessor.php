@@ -775,17 +775,25 @@ final class CompanionTurnProcessor
         $runStatus = $result instanceof AiRunResult
             ? $result->status->value
             : $run?->status?->value;
+        $runPromptId = $run instanceof AiRun ? $run->promptVersion?->prompt_id : null;
+        $runPromptVersionId = $run instanceof AiRun ? $run->prompt_version_id : null;
+        $runProvider = $run instanceof AiRun ? $run->actual_provider : null;
+        $runProvider ??= $run instanceof AiRun ? $run->requested_provider : null;
+        $runProvider ??= $run instanceof AiRun ? $run->modelRelease?->provider_name : null;
+        $runModel = $run instanceof AiRun ? $run->actual_model : null;
+        $runModel ??= $run instanceof AiRun ? $run->requested_model : null;
+        $runModel ??= $run instanceof AiRun ? $run->modelRelease?->model_name : null;
 
         Log::warning('client_companion_ai_failure', [
             'organization_id' => $organizationId,
             'companion_turn_id' => $turn->getKey(),
             'ai_run_id' => $run?->getKey(),
-            'prompt_id' => $run?->promptVersion?->prompt_id ?? $activePrompt?->getKey(),
-            'prompt_version_id' => $run?->prompt_version_id ?? $activePrompt?->active_version_id,
+            'prompt_id' => $runPromptId ?? $activePrompt?->getKey(),
+            'prompt_version_id' => $runPromptVersionId ?? $activePrompt?->active_version_id,
             'prompt_version' => $run?->promptVersion?->version,
             'model_release_id' => $run?->model_release_id,
-            'model_provider' => $run?->actual_provider ?? $run?->requested_provider ?? $run?->modelRelease?->provider_name,
-            'model_name' => $run?->actual_model ?? $run?->requested_model ?? $run?->modelRelease?->model_name,
+            'model_provider' => $runProvider,
+            'model_name' => $runModel,
             'model_release_number' => $run?->modelRelease?->release_number,
             'configured_model_release_ids' => AiModelRelease::query()
                 ->where('organization_id', $organizationId)
