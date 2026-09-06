@@ -593,7 +593,7 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await assertNoHorizontalOverflow(page);
     await page.getByRole('button', { name: 'Указать, кто пригласил', exact: true }).click();
     const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Реферер' }).last();
-    const referrerSelect = assignmentDialog.getByRole('combobox', { name: 'Реферер', exact: true });
+    const referrerSelect = assignmentDialog.getByRole('combobox', { name: /^Реферер/ });
     await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
