@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\ReferralRewardConfiguration;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProfiles;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ViewReferralPartnerProfile;
@@ -14,6 +15,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Filament\Facades\Filament;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -30,7 +32,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
         app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $this->filament($admin, $organization);
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(ListReferralPartnerProfiles::class)
             ->assertSuccessful()
             ->assertTableColumnExists('client.full_name')
@@ -42,6 +44,11 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertTableColumnExists('paid_summary')
             ->assertSee('wire:poll.5s', false)
             ->assertSee('Алина Партнёр');
+
+        self::assertSame(
+            RecordActionsPosition::BeforeColumns,
+            $component->instance()->getTable()->getRecordActionsPosition(),
+        );
     }
 
     public function test_client_page_exposes_partner_activation_as_a_primary_action(): void
@@ -83,6 +90,22 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertSee('wire:poll.5s.visible="refreshWorkspace"', false);
 
         self::assertSame('—', $component->instance()->workspaceLinkItems()[0]['rewards']);
+    }
+
+    public function test_referral_program_toggle_is_inline_and_full_width(): void
+    {
+        $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->filament($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ReferralRewardConfiguration::class)
+            ->assertSuccessful()
+            ->assertSee('Включена');
+        $toggle = $component->instance()->getSchemaComponent('form.enabled');
+
+        self::assertTrue($toggle->isInline());
+        self::assertSame('full', $toggle->getColumnSpan('default'));
     }
 
     public function test_partner_list_is_scoped_to_the_current_organization(): void

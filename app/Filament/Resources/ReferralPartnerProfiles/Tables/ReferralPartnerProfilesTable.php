@@ -10,6 +10,7 @@ use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
@@ -21,6 +22,7 @@ final class ReferralPartnerProfilesTable
             ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPartnerProfiles
                 && $livewire->shouldPollMetrics() ? '5s' : null)
             ->stackedOnMobile()
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
             ->columns([
                 TextColumn::make('client.full_name')
                     ->label('Партнёр')
@@ -44,8 +46,7 @@ final class ReferralPartnerProfilesTable
                 TextColumn::make('available_summary')
                     ->label('Доступно к выплате')
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'available'))
-                    ->wrap()
-                    ->visibleFrom('sm'),
+                    ->wrap(),
                 TextColumn::make('pending_summary')
                     ->label('Ожидает выплаты')
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'pending'))

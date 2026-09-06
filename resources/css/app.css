@@ -244,6 +244,48 @@ body {
     box-shadow: var(--portal-shadow-panel);
 }
 
+.portal-referral-metric {
+    display: flex;
+    min-width: 0;
+    min-height: 8.5rem;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.3rem;
+}
+
+.portal-referral-metric__value {
+    max-width: 100%;
+    color: var(--portal-color-ink);
+    font-size: clamp(1.6rem, 4vw, 2.25rem);
+    font-weight: 760;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    overflow-wrap: anywhere;
+}
+
+.portal-referral-metric__value--money {
+    font-size: clamp(1.05rem, 2.4vw, 1.45rem);
+    line-height: 1.2;
+}
+
+.portal-referral-metric__label {
+    max-width: 100%;
+    color: var(--portal-color-ink);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.portal-referral-metric__context {
+    max-width: 100%;
+    color: var(--portal-color-ink-soft);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 .portal-companion-page {
     min-height: calc(100dvh - 4.5rem);
 }

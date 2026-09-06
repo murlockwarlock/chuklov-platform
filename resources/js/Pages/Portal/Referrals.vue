@@ -413,35 +413,35 @@ function cancelPayout(payout: Payout): void {
           class="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"
           data-testid="partner-summary"
         >
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.visits }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.visits') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value">{{ props.referrals.stats.visits }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.visits') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }}</span>
           </article>
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.registrations }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.registrations') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value">{{ props.referrals.stats.registrations }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.registrations') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
           </article>
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-2xl text-[var(--portal-color-ink)]">{{ props.referrals.stats.paidClients }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.paidClients') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.registrations') }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value">{{ props.referrals.stats.paidClients }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.paidClients') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
           </article>
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('availableMinor') }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.available') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.currency') }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('availableMinor') }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.available') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
           </article>
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('pendingPayoutMinor') }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.pendingPayout') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.currency') }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('pendingPayoutMinor') }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.pendingPayout') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
           </article>
-          <article class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0">
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">{{ balanceSummary('paidOutMinor') }}</strong>
-            <span class="portal-copy portal-copy--small break-words">{{ t('referrals.paidOut') }}</span>
-            <span class="portal-copy portal-copy--small">{{ t('referrals.currency') }}</span>
+          <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
+            <strong class="portal-referral-metric__value portal-referral-metric__value--money">{{ balanceSummary('paidOutMinor') }}</strong>
+            <span class="portal-referral-metric__label">{{ t('referrals.paidOut') }}</span>
+            <span class="portal-referral-metric__context">{{ t('referrals.currency') }}</span>
           </article>
         </section>
 

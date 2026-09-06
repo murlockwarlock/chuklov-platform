@@ -105,6 +105,8 @@ final class ReferralRewardConfiguration extends Page
                         Toggle::make('enabled')
                             ->label('Включена')
                             ->live()
+                            ->inline()
+                            ->columnSpanFull()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Grid::make(2)
                             ->schema([
@@ -162,6 +164,7 @@ final class ReferralRewardConfiguration extends Page
                             ->columnSpanFull(),
                     ])
                     ->columns(1)
+                    ->compact()
                     ->columnSpanFull(),
             ])
             ->statePath('data');

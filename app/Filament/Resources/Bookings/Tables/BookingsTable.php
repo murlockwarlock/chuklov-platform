@@ -18,6 +18,7 @@ use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -132,6 +133,7 @@ class BookingsTable
 
         return $table
             ->stackedOnMobile()
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
             ->defaultSort(fn (Builder $query): Builder => $query
                 ->orderByDesc('created_at')
                 ->orderByDesc('id'))

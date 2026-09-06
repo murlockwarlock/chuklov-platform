@@ -40,6 +40,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\RichEditor;
 use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -167,6 +168,7 @@ final class CrmUxRemediationTest extends TestCase
         $bookingView = $bookings->instance()->getTable()->getAction('view');
         self::assertNotNull($bookingView);
         self::assertSame(Heroicon::OutlinedEye, $bookingView->getIcon());
+        self::assertSame(RecordActionsPosition::BeforeColumns, $bookings->instance()->getTable()->getRecordActionsPosition());
 
         $broadcasts = Livewire::actingAs($admin)->test(ListBroadcastCampaigns::class)->assertSuccessful();
         $broadcastName = $broadcasts->instance()->getTable()->getColumn('name');
