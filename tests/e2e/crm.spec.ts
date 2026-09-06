@@ -16,6 +16,7 @@ type CrmFixture = {
     contentSectionId: number;
     contentSectionTitle: string;
     attachmentFilename: string;
+    workingLocationName: string;
     bookingStartsAt: string;
     financeBookingId: number | null;
     partnerProfileId: number | null;
@@ -86,6 +87,13 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'price_minor' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 10000 : null,
             'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
+        $workingLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
+            ->forOrganization($organization)
+            ->create([
+                'name' => 'CRM Локация '.$suffix,
+                'address' => 'CRM адрес '.$suffix,
+                'timezone' => $organizationTimezone,
+            ]);
         $contentSection = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->forOrganization($organization)->create([
             'section_key' => 'author',
             'locale' => 'ru',
@@ -374,6 +382,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
             'attachmentFilename' => $attachmentFilename,
+            'workingLocationName' => $workingLocation->name,
             'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
@@ -567,7 +576,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
     await workingLocation.click();
-    const locationOption = workingLocation.locator('xpath=..').getByRole('option').filter({ hasText: /—/ }).first();
+    const locationOption = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first();
     await expect(locationOption).toBeVisible({ timeout: 15_000 });
     await locationOption.click();
     await expect(workingLocation).not.toContainText('Выбрать вариант', { timeout: 15_000 });

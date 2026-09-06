@@ -18,7 +18,7 @@ final class TelegramPreviewAction
 {
     public static function make(Closure $messageBuilder): Action
     {
-        return Action::make('telegramPreview')
+        return FullRenderModalAction::make('telegramPreview')
             ->label('Предпросмотр Telegram')
             ->icon(Heroicon::OutlinedEye)
             ->modalHeading('Предпросмотр Telegram')
