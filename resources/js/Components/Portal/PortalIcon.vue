@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type IconName = 'home' | 'calendar' | 'check' | 'sparkles' | 'wallet' | 'user' | 'paperclip';
+type IconName = 'home' | 'calendar' | 'check' | 'sparkles' | 'wallet' | 'user' | 'paperclip' | 'info' | 'refresh';
 
 defineProps<{
     name: IconName;
@@ -66,6 +66,18 @@ defineProps<{
     <path
       v-if="name === 'paperclip'"
       d="m9.5 12.5 5.25-5.25a3.18 3.18 0 0 1 4.5 4.5L11 20a5 5 0 0 1-7.07-7.07l8-8a3.5 3.5 0 0 1 4.95 4.95L8.7 18.06a2 2 0 1 1-2.83-2.83l7.42-7.42"
+    />
+    <template v-if="name === 'info'">
+      <circle
+        cx="12"
+        cy="12"
+        r="8.5"
+      />
+      <path d="M12 10.5v5M12 7.5h.01" />
+    </template>
+    <path
+      v-if="name === 'refresh'"
+      d="M19 8.5V4.75h-3.75M19 4.75a8.5 8.5 0 1 0 1.25 8.75"
     />
   </svg>
 </template>

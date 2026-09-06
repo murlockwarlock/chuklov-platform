@@ -42,8 +42,8 @@ class PromptVersionsRelationManager extends RelationManager
         return $schema
             ->components([
                 Textarea::make('system_prompt')
-                    ->label('Системные инструкции / поведение AI')
-                    ->helperText('Опишите, как AI должен рассуждать, что учитывать и каких ошибок избегать.')
+                    ->label('Исходный промпт и защитные правила платформы')
+                    ->helperText('Сохраняйте отдельные блоки [SOURCE TEXT] и [PLATFORM SAFETY GUARDRAIL]. Первый содержит исходную роль и рабочие инструкции, второй — обязательные правила безопасности платформы.')
                     ->default($latestVersion?->system_prompt)
                     ->required()
                     ->rows(6)

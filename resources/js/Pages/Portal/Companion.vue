@@ -144,30 +144,21 @@ onUnmounted(() => {
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose portal-companion-page">
       <header class="portal-page-heading portal-companion-page__heading">
-        <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
+        <h1 class="portal-heading portal-heading--section">
+          {{ t('companion.title') }}
+        </h1>
+        <details class="portal-companion__help">
+          <summary
+            :aria-label="t('companion.about')"
+            :title="t('companion.about')"
+          >
+            <PortalIcon name="info" />
+            <span class="sr-only">{{ t('companion.about') }}</span>
+          </summary>
+          <p class="portal-copy portal-copy--small">
+            {{ t('companion.description') }}
           </p>
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('companion.title') }}
-          </h1>
-          <details class="portal-companion__help">
-            <summary>{{ t('companion.about') }}</summary>
-            <p class="portal-copy portal-copy--small">
-              {{ t('companion.description') }}
-            </p>
-          </details>
-        </div>
-        <button
-          class="portal-companion__reset"
-          type="button"
-          :aria-label="t('companion.reset')"
-          :title="t('companion.reset')"
-          @click="resetContext"
-        >
-          <span aria-hidden="true">↺</span>
-          <span class="sr-only">{{ t('companion.reset') }}</span>
-        </button>
+        </details>
       </header>
 
       <section
@@ -310,7 +301,7 @@ onUnmounted(() => {
             >
             <span>{{ t('companion.reinspectRecentImage') }}</span>
           </label>
-          <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="portal-companion__composer-actions">
             <p
               v-if="sendForm.errors.body || sendForm.errors.idempotency_key"
               class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
@@ -323,14 +314,25 @@ onUnmounted(() => {
             >
               {{ t('companion.sending') }}
             </p>
-            <span v-else />
-            <button
-              class="portal-button portal-button--primary"
-              type="submit"
-              :disabled="sendForm.processing || (!body.trim() && !sendForm.images.length)"
-            >
-              {{ sendForm.processing ? t('companion.sending') : t('companion.send') }}
-            </button>
+            <div class="portal-companion__composer-buttons">
+              <button
+                class="portal-companion__reset"
+                type="button"
+                :aria-label="t('companion.reset')"
+                :title="t('companion.reset')"
+                @click="resetContext"
+              >
+                <PortalIcon name="refresh" />
+                <span class="sr-only">{{ t('companion.reset') }}</span>
+              </button>
+              <button
+                class="portal-button portal-button--primary"
+                type="submit"
+                :disabled="sendForm.processing || (!body.trim() && !sendForm.images.length)"
+              >
+                {{ sendForm.processing ? t('companion.sending') : t('companion.send') }}
+              </button>
+            </div>
           </div>
         </form>
       </section>

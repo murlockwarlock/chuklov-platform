@@ -88,6 +88,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
                 TextColumn::make('status')
                     ->label('Состояние')
                     ->badge()
+                    ->wrap()
                     ->color(fn (AiRunStatus|string $state): string => self::statusColor($state))
                     ->formatStateUsing(fn (AiRunStatus|string $state): string => ClinicalAiPresentation::status($state)),
                 TextColumn::make('human_review_status')

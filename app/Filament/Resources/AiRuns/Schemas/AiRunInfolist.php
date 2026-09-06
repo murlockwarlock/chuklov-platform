@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AiRuns\Schemas;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetAiRunProtectedTrace;
+use App\Modules\AI\Application\Data\AiRunProtectedTraceData;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -11,11 +12,13 @@ use App\Modules\AI\Domain\Models\AiRun;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 
 class AiRunInfolist
 {
+    /** @var array<int, AiRunProtectedTraceData|null> */
+    private static array $traceCache = [];
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -32,6 +35,7 @@ class AiRunInfolist
                         TextEntry::make('status')
                             ->label('Статус')
                             ->badge()
+                            ->wrap()
                             ->color(fn ($state): string => match ($state instanceof AiRunStatus ? $state->value : (string) $state) {
                                 'succeeded' => 'success',
                                 'running' => 'info',
@@ -52,6 +56,7 @@ class AiRunInfolist
                         TextEntry::make('human_review_status')
                             ->label('Статус проверки')
                             ->badge()
+                            ->wrap()
                             ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? $state->label() : (string) $state),
                     ])
                     ->columns(3),
@@ -105,29 +110,206 @@ class AiRunInfolist
 
                 Section::make('Защищённый след (Protected Trace)')
                     ->schema([
-                        TextEntry::make('protected_trace')
-                            ->label('Текст вывода')
-                            ->state(function (AiRun $record): string {
-                                $user = Auth::user();
-                                if (! $user instanceof User) {
-                                    return 'Требуется аутентификация.';
-                                }
-
-                                $traceAction = app(GetAiRunProtectedTrace::class);
-
-                                try {
-                                    $trace = $traceAction->handle($user, $record->id);
-
-                                    return $trace->outputText ?: 'Текст вывода отсутствует.';
-                                } catch (AuthorizationException) {
-                                    return 'Доступ к защищенному следу ограничен политикой безопасности (требуется разрешение ViewAiTrace).';
-                                } catch (\Throwable) {
-                                    return 'След не найден.';
-                                }
-                            })
+                        TextEntry::make('protected_trace_request')
+                            ->label('Запрос / ввод')
+                            ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->userPrompt ?: 'Ввод отсутствует.'))
                             ->columnSpanFull()
-                            ->wrap(),
+                            ->wrap()
+                            ->markdown(),
+                        TextEntry::make('protected_trace_sources')
+                            ->label('Источники ввода')
+                            ->state(fn (AiRun $record): string => self::traceText($record, [self::class, 'sourceText']))
+                            ->columnSpanFull()
+                            ->wrap()
+                            ->markdown(),
+                        Section::make('Промпт')
+                            ->schema([
+                                TextEntry::make('protected_trace_prompt_name')
+                                    ->label('Промпт и версия')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => trim(($trace->promptName ?? '—').' · версия '.($trace->promptVersion ?? '—')))),
+                                TextEntry::make('protected_trace_source_prompt')
+                                    ->label('Исходный текст промпта')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->sourcePrompt ?: 'Исходный текст недоступен.'))
+                                    ->columnSpanFull()
+                                    ->wrap()
+                                    ->markdown(),
+                                TextEntry::make('protected_trace_guardrails')
+                                    ->label('Платформенные защитные правила')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->platformSafetyGuardrails ?: 'Отдельные правила не записаны.'))
+                                    ->columnSpanFull()
+                                    ->wrap()
+                                    ->markdown(),
+                            ])
+                            ->columns(2),
+                        Section::make('Модель и контекст')
+                            ->schema([
+                                TextEntry::make('protected_trace_model')
+                                    ->label('Модель')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->model)))
+                                    ->wrap(),
+                                TextEntry::make('protected_trace_context')
+                                    ->label('Снимок контекста')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->contextProvenance)))
+                                    ->wrap(),
+                                TextEntry::make('protected_trace_rag')
+                                    ->label('Источники базы знаний')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->ragReferences === [] ? 'База знаний не использовалась.' : self::pretty($trace->ragReferences)))
+                                    ->columnSpanFull()
+                                    ->wrap(),
+                            ])
+                            ->columns(2),
+                        Section::make('Результат')
+                            ->schema([
+                                TextEntry::make('protected_trace_output')
+                                    ->label('Результат для специалиста')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, [self::class, 'outputText']))
+                                    ->columnSpanFull()
+                                    ->wrap()
+                                    ->markdown(),
+                                TextEntry::make('protected_trace_review')
+                                    ->label('Проверка специалиста')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => implode("\n\n", array_filter([
+                                        $trace->humanReviewNotes !== null ? 'Заметки: '.$trace->humanReviewNotes : null,
+                                        $trace->humanEditedOutput !== null ? 'Исправленный результат: '.$trace->humanEditedOutput : null,
+                                    ])) ?: 'Дополнительных заметок нет.'))
+                                    ->columnSpanFull()
+                                    ->wrap()
+                                    ->markdown(),
+                            ]),
+                        Section::make('Показать исходный JSON')
+                            ->collapsed()
+                            ->schema([
+                                TextEntry::make('protected_trace_raw_json')
+                                    ->label('Исходный JSON')
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->outputPayload)))
+                                    ->columnSpanFull()
+                                    ->wrap(),
+                            ]),
                     ]),
             ]);
+    }
+
+    private static function trace(AiRun $record): ?AiRunProtectedTraceData
+    {
+        $runId = (int) $record->getKey();
+        if (array_key_exists($runId, self::$traceCache)) {
+            return self::$traceCache[$runId];
+        }
+
+        $user = Auth::user();
+        if (! $user instanceof User) {
+            return self::$traceCache[$runId] = null;
+        }
+
+        try {
+            return self::$traceCache[$runId] = app(GetAiRunProtectedTrace::class)->handle($user, $runId);
+        } catch (\Throwable) {
+            return self::$traceCache[$runId] = null;
+        }
+    }
+
+    /** @param callable(AiRunProtectedTraceData): string $resolver */
+    private static function traceText(AiRun $record, callable $resolver): string
+    {
+        $trace = self::trace($record);
+        if ($trace === null) {
+            return 'Доступ к защищённому следу ограничен политикой безопасности.';
+        }
+
+        return $resolver($trace);
+    }
+
+    private static function sourceText(AiRunProtectedTraceData $trace): string
+    {
+        $labels = [
+            'client' => 'Профиль клиента',
+            'medical_attachment' => 'Медицинское вложение',
+            'companion_attachment' => 'Вложение диалога',
+            'medical_session' => 'Медицинский сеанс',
+            'survey_attempt' => 'Результат опроса',
+            'booking' => 'Запись на приём',
+            'ai_run' => 'Предыдущий AI-анализ',
+            'knowledge_source' => 'Источник базы знаний',
+        ];
+        $references = collect($trace->inputReferences)
+            ->map(static function (array $reference) use ($labels): string {
+                $type = (string) ($reference['type'] ?? 'Источник');
+                $label = $labels[$type] ?? $type;
+                $role = isset($reference['role']) ? ' · '.(string) $reference['role'] : '';
+
+                return $label.$role.' (ID '.(string) ($reference['id'] ?? '—').')';
+            })
+            ->implode("\n");
+
+        return implode("\n\n", array_filter([
+            $references !== '' ? $references : 'Явные ссылки на источники не записаны.',
+            'Извлечённый контекст: '.self::pretty($trace->contextProvenance),
+        ]));
+    }
+
+    private static function outputText(AiRunProtectedTraceData $trace): string
+    {
+        if ($trace->outputPayload === null) {
+            return $trace->outputText ?: 'Результат отсутствует.';
+        }
+
+        $labels = [
+            'client_summary' => 'Клиент',
+            'main_request' => 'Основной запрос',
+            'source_facts' => 'Факты',
+            'hypotheses' => 'Гипотезы',
+            'critical_limitations_risks' => 'Ограничения и риски',
+            'blind_spots_questions' => 'Что уточнить',
+            'recommended_first_session_focus' => 'Фокус первой сессии',
+            'missing_information' => 'Недостающая информация',
+            'exam_type' => 'Тип исследования',
+            'anatomical_region' => 'Анатомическая область',
+            'key_findings' => 'Ключевые находки',
+            'structural_deformations' => 'Структурные изменения',
+            'critical_flags' => 'Критические ограничения',
+            'plain_summary' => 'Понятное резюме',
+            'visual_findings' => 'Визуальные наблюдения',
+            'leading_compensatory_patterns' => 'Ведущие компенсаторные паттерны',
+            'practitioner_focus' => 'Фокус специалиста',
+            'limitations' => 'Ограничения анализа',
+        ];
+        $sections = [];
+        foreach ($trace->outputPayload as $key => $value) {
+            $label = $labels[(string) $key] ?? (string) $key;
+            $sections[] = '### '.$label."\n".self::humanValue($value);
+        }
+
+        return implode("\n\n", $sections);
+    }
+
+    private static function humanValue(mixed $value): string
+    {
+        if (is_array($value)) {
+            $items = [];
+            foreach ($value as $item) {
+                if (is_array($item)) {
+                    $items[] = '- '.implode(' · ', array_map(
+                        static fn (string|int $key, mixed $itemValue): string => (string) $key.': '.self::humanValue($itemValue),
+                        array_keys($item),
+                        array_values($item),
+                    ));
+                } else {
+                    $items[] = '- '.self::humanValue($item);
+                }
+            }
+
+            return implode("\n", $items) ?: 'Нет данных.';
+        }
+
+        if ($value === null || $value === '') {
+            return 'Нет данных.';
+        }
+
+        return (string) $value;
+    }
+
+    private static function pretty(mixed $value): string
+    {
+        return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: 'Нет данных.';
     }
 }
