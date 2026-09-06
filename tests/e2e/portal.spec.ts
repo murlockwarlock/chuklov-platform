@@ -769,7 +769,7 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+    for (const width of [1440, 1280, 1024, 768, 390, 360, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
@@ -853,7 +853,7 @@ test('client can activate the partner cabinet and manage multiple campaign links
     await expect(instagramLink.getByRole('button', { name: 'Ссылка скопирована', exact: true })).toBeVisible();
     await instagramLink.getByRole('button', { name: 'Поделиться', exact: true }).click();
 
-    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+    for (const width of [1440, 1280, 1024, 768, 390, 360, 320]) {
         await page.setViewportSize({ width, height: 900 });
         await page.goto('/portal/referrals');
         await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
