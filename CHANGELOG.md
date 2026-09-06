@@ -7,6 +7,12 @@
 - Added the reusable media-capable Message Composer to broadcasts and notification templates, including Telegram limits, previews, variables, rich text, emoji, links, and media persistence.
 - Added rendered browser geometry coverage for primary controls at the required acceptance widths. Persistent floating CRM popup/toast notifications are intentionally excluded by owner decision.
 
+## 2026-09-06 — Owner acceptance remediation: AI Companion and source-backed evaluations
+
+- Added idempotent CRM materialization of the existing source-backed Agent 1–4 evaluation suites and their full prompt bundles, with explicit «Демонстрационный тест» and «Синтетические данные» labels.
+- Made full source prompts editable with separate source and platform-safety views, and let Playground/evaluation runs choose an organization-scoped staging model release.
+- Made the Companion page chat-first and mobile-safe with bottom-aware follow mode, a «Новые сообщения ↓» recovery action, and an accessible animated «печатает…» indicator. The staging failure diagnosis is recorded through safe configuration/run identifiers without protected content.
+
 ## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
 
 - Clarified CRM referral terminology and current-referrer provenance, added partner-specific versioned reward terms, audited manual partner credits through the existing ledger, and kept partner/bookings tables focused on primary actions at normal widths.
