@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-06 — Owner acceptance remediation: AI Companion and source-backed evaluations
+
+- Added idempotent CRM materialization of the existing source-backed Agent 1–4 evaluation suites and their full prompt bundles, with explicit «Демонстрационный тест» and «Синтетические данные» labels.
+- Made full source prompts editable with separate source and platform-safety views, and let Playground/evaluation runs choose an organization-scoped staging model release.
+- Made the Companion page chat-first and mobile-safe with bottom-aware follow mode, a «Новые сообщения ↓» recovery action, and an accessible animated «печатает…» indicator. The staging failure diagnosis is recorded through safe configuration/run identifiers without protected content.
+
 ## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow
 
 - Added explicit CRM actions for private medical-document extraction, exactly three role-bound posture photos, and clinical synthesis through the existing `AiRun`/`AiRunPayload`, attachment resolver, prompt/model release, and human-review authorities. Results retain protected provenance and reruns create new history.
