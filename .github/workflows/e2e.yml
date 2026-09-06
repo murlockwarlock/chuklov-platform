@@ -75,6 +75,9 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:e2e
       - if: failure()
+        name: Print safe portal reschedule diagnostics
+        run: rg -F 'portal.booking.reschedule.failed' storage/logs || true
+      - if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: playwright-diagnostics

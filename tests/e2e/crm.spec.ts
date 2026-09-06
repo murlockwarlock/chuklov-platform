@@ -563,13 +563,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
-    const createResponse = page.waitForResponse((response) => response.request().method() === 'POST'
-        && response.url().includes('/livewire/update'));
-    await page.getByRole('button', { name: 'Создать', exact: true }).click({ force: true });
-    const response = await createResponse;
-    if (response.status() >= 400) {
-        throw new Error(`CRM booking create returned HTTP ${response.status()}`);
-    }
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();

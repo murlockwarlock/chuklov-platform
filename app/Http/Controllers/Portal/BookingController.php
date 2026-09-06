@@ -36,6 +36,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -388,6 +389,7 @@ class BookingController extends Controller
         int $bookingId,
         ListClientBookings $bookings,
         ClientPortalContext $clientContext,
+        OrganizationContext $organizationContext,
         RescheduleBooking $rescheduleBooking,
         UpdateClientTimezonePreference $timezonePreference,
     ): RedirectResponse {
@@ -417,12 +419,37 @@ class BookingController extends Controller
             );
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->rescheduleErrors($exception));
+        } catch (Throwable $exception) {
+            $this->logUnexpectedRescheduleFailure($exception, 'reschedule', $bookingId, $organizationContext->id());
+            throw $exception;
         }
         if (is_string($clientTimezone)) {
-            $timezonePreference->handle($clientTimezone);
+            try {
+                $timezonePreference->handle($clientTimezone);
+            } catch (Throwable $exception) {
+                $this->logUnexpectedRescheduleFailure($exception, 'timezone_preference', $bookingId, $organizationContext->id());
+                throw $exception;
+            }
         }
 
         return to_route('portal.bookings.show', $bookingId);
+    }
+
+    private function logUnexpectedRescheduleFailure(
+        Throwable $exception,
+        string $phase,
+        int $bookingId,
+        int $organizationId,
+    ): void {
+        Log::error('portal.booking.reschedule.failed', [
+            'phase' => $phase,
+            'organization_id' => $organizationId,
+            'booking_id' => $bookingId,
+            'exception_class' => $exception::class,
+            'exception_code' => (string) $exception->getCode(),
+            'exception_file' => basename($exception->getFile()),
+            'exception_line' => $exception->getLine(),
+        ]);
     }
 
     public function updateTimezone(
