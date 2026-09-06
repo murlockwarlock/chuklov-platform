@@ -378,6 +378,17 @@ async function assertRenderedViewportGeometry(
     }
 }
 
+async function assertNoTableHorizontalOverflow(page: Page): Promise<void> {
+    const overflowingTables = await page.evaluate(() => Array.from(document.querySelectorAll<HTMLElement>('.fi-ta-content'))
+        .map((element) => ({
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+        }))
+        .filter(({ clientWidth, scrollWidth }) => scrollWidth > clientWidth + 1));
+
+    expect(overflowingTables, 'visible table containers must not require horizontal scrolling').toEqual([]);
+}
+
 async function searchTableFor(page: Page, query: string): Promise<void> {
     const searchInput = page.getByRole('searchbox', {
         name: 'Поиск',
@@ -598,6 +609,9 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
         await page.goto('/admin/referral-relationships');
         await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
         await assertRenderedViewportGeometry(page, ['[role="searchbox"]']);
+        if (width >= 1024) {
+            await assertNoTableHorizontalOverflow(page);
+        }
 
         await page.goto('/admin/bookings/create');
         await expect(page.getByRole('heading', { name: /Создать запись/i })).toBeVisible();
