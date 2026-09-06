@@ -5,6 +5,8 @@ namespace App\Modules\AI\Application\Actions;
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunProtectedTraceData;
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Models\AiModelConfiguration;
+use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -137,13 +139,14 @@ final class GetAiRunProtectedTrace
     /** @return array<string, mixed> */
     private function contextProvenance(AiRun $run): array
     {
-        return is_array($run->context_provenance) ? $run->context_provenance : [];
+        return $run->context_provenance;
     }
 
     /** @return list<array<string, mixed>> */
     private function ragReferences(AiRun $run): array
     {
-        return $run->ragReferences
+        return array_values($run->ragReferences()
+            ->get()
             ->map(static fn ($reference): array => [
                 'index' => $reference->reference_index,
                 'source_id' => $reference->knowledge_source_id,
@@ -154,7 +157,7 @@ final class GetAiRunProtectedTrace
                 'retrieval_type' => $reference->retrieval_type,
             ])
             ->values()
-            ->all();
+            ->all());
     }
 
     /** @return array<string, mixed> */
@@ -162,13 +165,16 @@ final class GetAiRunProtectedTrace
     {
         $release = $run->modelRelease;
         $modelConfiguration = $release?->modelConfiguration;
+        $capabilities = $release instanceof AiModelRelease
+            ? $release->capabilities
+            : ($modelConfiguration instanceof AiModelConfiguration ? $modelConfiguration->capabilities : []);
 
         return [
             'provider' => $run->actual_provider ?? $run->requested_provider ?? $release?->provider_name,
             'model' => $run->actual_model ?? $run->requested_model ?? $release?->model_name,
             'release_id' => $release?->getKey() ?? $run->model_release_id,
             'release_number' => $release?->release_number,
-            'modalities' => collect($release?->capabilities ?? $modelConfiguration?->capabilities ?? [])
+            'modalities' => collect($capabilities)
                 ->filter(static fn (mixed $value): bool => in_array($value, array_map(static fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()), true))
                 ->values()
                 ->all(),
