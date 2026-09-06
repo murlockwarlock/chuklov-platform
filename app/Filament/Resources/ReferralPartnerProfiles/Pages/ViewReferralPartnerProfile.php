@@ -254,7 +254,8 @@ final class ViewReferralPartnerProfile extends ViewRecord
                 ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
                 ->color('gray')
-                ->dropdownPlacement('bottom-end'),
+                ->dropdownPlacement('bottom-end')
+                ->dropdownTeleport(),
         ];
     }
 
