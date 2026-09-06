@@ -564,7 +564,9 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-    await page.getByRole('button', { name: 'Создать', exact: true }).click({ force: true });
+    const createButton = page.getByRole('button', { name: 'Создать', exact: true });
+    await expect(createButton).toBeEnabled({ timeout: 15_000 });
+    await createButton.click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();

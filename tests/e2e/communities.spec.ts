@@ -292,13 +292,12 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(updatedTelegram.requests.some((payload) => String(payload.text ?? '').includes(`<a href="${initialUrl}">`))).toBe(false);
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
     const updatedPreviewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(updatedPreviewEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     const updatedPreviewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
-    await expect(updatedPreviewButton).toBeEnabled();
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-    await expect(updatedPreviewButton).toBeEnabled();
-    await updatedPreviewButton.click({ force: true });
+    await expect(updatedPreviewButton).toBeEnabled({ timeout: 15_000 });
+    await updatedPreviewButton.click();
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
     await expect(updatedPreviewDialog).toBeVisible();
     await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
