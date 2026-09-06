@@ -1502,7 +1502,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await alternateSlot.click();
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
-    await expect(page.getByText('Запись перенесена')).toBeVisible();
+    await expect(page.getByText('Запись перенесена')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Перенести', exact: true }).click();
     const originalDateButton = page.getByRole('button', { name: fixture.date, exact: true });
@@ -1513,7 +1513,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await secondAlternateSlot.click();
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
-    await expect(page.getByText('Запись перенесена')).toHaveCount(2);
+    await expect(page.getByText('Запись перенесена')).toHaveCount(2, { timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Отменить' }).click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();

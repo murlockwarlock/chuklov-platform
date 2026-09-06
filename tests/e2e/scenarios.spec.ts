@@ -176,6 +176,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
         && response.status() === 200);
     await templateSave.click();
     await templateSaveResponse;
+    await expect(page.getByRole('heading', { name: 'Шаблон сохранён', exact: true })).toBeVisible({ timeout: 15_000 });
     await page.goto(`/admin/notification-templates/${fixture.templateId}`);
     await expect(page.getByRole('heading', { name: 'Шаблон сохранён', exact: true })).toBeVisible();
     await expect(page.getByText('Обновлённое сообщение для {{ client.full_name }}.')).toBeVisible();
