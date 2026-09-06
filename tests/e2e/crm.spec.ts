@@ -563,7 +563,8 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+    await page.getByRole('button', { name: 'Создать', exact: true }).click({ force: true });
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/);
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();

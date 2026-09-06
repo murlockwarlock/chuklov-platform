@@ -5,6 +5,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -27,4 +28,19 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+        $exceptions->report(function (Throwable $exception): void {
+            $request = request();
+            if (! $request->routeIs('portal.bookings.reschedule')) {
+                return;
+            }
+
+            Log::error('portal.booking.reschedule.exception', [
+                'organization_id' => config('tenancy.default_organization_id'),
+                'booking_id' => $request->route('bookingId'),
+                'exception_class' => $exception::class,
+                'exception_code' => (string) $exception->getCode(),
+                'exception_file' => basename($exception->getFile()),
+                'exception_line' => $exception->getLine(),
+            ]);
+        });
     })->create();
