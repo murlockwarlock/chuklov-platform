@@ -18,6 +18,7 @@ type CrmFixture = {
     attachmentFilename: string;
     bookingStartsAt: string;
     financeBookingId: number | null;
+    partnerProfileId: number | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -111,6 +112,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $minimumBookingStart = \\Carbon\\CarbonImmutable::now($organizationTimezone)->addMinutes($leadTimeMinutes + 60);
         $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
         $financeBooking = null;
+        $partnerProfileId = null;
         if (getenv('PLAYWRIGHT_FINANCE_FLOW') === '1') {
             app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
                 'base_currency' => 'USD',
@@ -154,6 +156,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
             );
             $profile = app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
+            $partnerProfileId = $profile->getKey();
             $defaultLink = $profile->campaignLinks()->where('is_default', true)->firstOrFail();
             $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
                 'full_name' => 'CRM Referred '.$suffix,
@@ -373,6 +376,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'attachmentFilename' => $attachmentFilename,
             'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
             'financeBookingId' => $financeBooking?->getKey(),
+            'partnerProfileId' => $partnerProfileId,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -414,6 +418,54 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+type RenderedGeometry = {
+    clientWidth: number;
+    scrollWidth: number;
+    primary: Array<{ selector: string; left: number; right: number }>;
+    boundaries: Array<{ selector: string; left: number; right: number }>;
+};
+
+async function assertRenderedViewportGeometry(
+    page: Page,
+    primarySelectors: string[],
+    boundarySelectors: string[] = [],
+): Promise<void> {
+    const geometry = await page.evaluate(({ primarySelectors: selectors, boundarySelectors: boundaries }): RenderedGeometry => {
+        const visible = (element: Element): boolean => {
+            const htmlElement = element as HTMLElement;
+            const styles = window.getComputedStyle(htmlElement);
+            const bounds = htmlElement.getBoundingClientRect();
+
+            return styles.display !== 'none'
+                && styles.visibility !== 'hidden'
+                && bounds.width > 0
+                && bounds.height > 0;
+        };
+        const collect = (selectors: string[]): Array<{ selector: string; left: number; right: number }> => selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))
+            .filter(visible)
+            .map((element) => {
+                const bounds = (element as HTMLElement).getBoundingClientRect();
+
+                return { selector, left: bounds.left, right: bounds.right };
+            }));
+
+        return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            primary: collect(selectors),
+            boundaries: collect(boundaries),
+        };
+    }, { primarySelectors, boundarySelectors });
+
+    expect(geometry.scrollWidth, `document scrollWidth at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.primary, 'expected rendered primary controls').not.toHaveLength(0);
+
+    for (const box of [...geometry.primary, ...geometry.boundaries]) {
+        expect(box.left, `${box.selector} left edge at ${geometry.clientWidth}px`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${box.selector} right edge at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    }
 }
 
 async function searchTableFor(page: Page, query: string): Promise<void> {
@@ -604,6 +656,47 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
     await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
+});
+
+test('CRM partner, recommendations, bookings, and AI run controls fit every acceptance viewport', async ({ page }) => {
+    const fixture = createCrmFixture({ payoutFlow: true });
+
+    if (fixture.partnerProfileId === null) {
+        throw new Error('The partner fixture did not create a profile.');
+    }
+
+    await login(page, fixture);
+
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+
+        await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
+        await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+        await expect(page.locator('[data-testid^="partner-primary-"]')).toHaveCount(3);
+        await assertRenderedViewportGeometry(page, [
+            '[data-testid="partner-primary-open-client"]',
+            '[data-testid="partner-primary-create-link"]',
+            '[data-testid="partner-primary-credit-bonus"]',
+        ]);
+
+        await page.getByRole('button', { name: 'Ещё', exact: true }).click();
+        const partnerMenu = page.locator('.fi-dropdown-panel:visible').last();
+        await expect(partnerMenu).toBeVisible();
+        await assertRenderedViewportGeometry(page, ['[data-testid="partner-primary-open-client"]'], ['.fi-dropdown-panel:visible']);
+        await page.keyboard.press('Escape');
+
+        await page.goto('/admin/referral-relationships');
+        await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+        await assertRenderedViewportGeometry(page, ['[role="searchbox"]']);
+
+        await page.goto('/admin/bookings/create');
+        await expect(page.getByRole('heading', { name: /Создать запись/i })).toBeVisible();
+        await assertRenderedViewportGeometry(page, ['button[type="submit"]']);
+
+        await page.goto('/admin/ai-runs');
+        await expect(page.getByRole('heading', { name: 'История запусков', exact: true })).toBeVisible();
+        await assertRenderedViewportGeometry(page, ['[role="searchbox"]']);
+    }
 });
 
 test('staff can complete a visit and record a manual payment through the normal CRM actions', async ({ page }) => {

@@ -380,6 +380,54 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
 
+type RenderedGeometry = {
+    clientWidth: number;
+    scrollWidth: number;
+    primary: Array<{ selector: string; left: number; right: number }>;
+    boundaries: Array<{ selector: string; left: number; right: number }>;
+};
+
+async function assertRenderedViewportGeometry(
+    page: Page,
+    primarySelectors: string[],
+    boundarySelectors: string[] = [],
+): Promise<void> {
+    const geometry = await page.evaluate(({ primarySelectors: selectors, boundarySelectors: boundaries }): RenderedGeometry => {
+        const visible = (element: Element): boolean => {
+            const htmlElement = element as HTMLElement;
+            const styles = window.getComputedStyle(htmlElement);
+            const bounds = htmlElement.getBoundingClientRect();
+
+            return styles.display !== 'none'
+                && styles.visibility !== 'hidden'
+                && bounds.width > 0
+                && bounds.height > 0;
+        };
+        const collect = (selectors: string[]): Array<{ selector: string; left: number; right: number }> => selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))
+            .filter(visible)
+            .map((element) => {
+                const bounds = (element as HTMLElement).getBoundingClientRect();
+
+                return { selector, left: bounds.left, right: bounds.right };
+            }));
+
+        return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            primary: collect(selectors),
+            boundaries: collect(boundaries),
+        };
+    }, { primarySelectors, boundarySelectors });
+
+    expect(geometry.scrollWidth, `document scrollWidth at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.primary, 'expected rendered primary controls').not.toHaveLength(0);
+
+    for (const box of [...geometry.primary, ...geometry.boundaries]) {
+        expect(box.left, `${box.selector} left edge at ${geometry.clientWidth}px`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${box.selector} right edge at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    }
+}
+
 async function acceptRequiredConsents(page: Page): Promise<void> {
     const checkbox = page.getByRole('checkbox', {
         name: 'Я ознакомился(лась) и принимаю обязательные документы',
@@ -772,7 +820,8 @@ test('client can activate the partner cabinet and manage multiple campaign links
 
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-links')).toBeVisible();
-    await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('invite-friend')).toHaveCount(0);
+    await expect(page.getByText('Мои ссылки', { exact: true })).toBeVisible();
 
     await page.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
     await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('instagram');
@@ -810,7 +859,11 @@ test('client can activate the partner cabinet and manage multiple campaign links
         await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
         await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
         await expect(page.getByText('Telegram — мой канал', { exact: true })).toBeVisible();
-        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(page, [
+            '[data-testid="partner-create-link"]',
+            '[data-testid^="partner-link-copy-"]',
+            '[data-testid^="partner-link-share-"]',
+        ]);
     }
 });
 
@@ -826,10 +879,37 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await page.goto('/portal/referrals');
     await page.getByTestId('partner-activate').click();
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('invite-friend')).toHaveCount(0);
     await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
 
     await page.getByLabel('Сумма', { exact: true }).fill('2.00');
-    await page.getByRole('button', { name: 'Запросить выплату', exact: true }).click();
+    let requestStarted!: () => void;
+    let releaseRequest!: () => void;
+    const payoutRequestStarted = new Promise<void>((resolve) => {
+        requestStarted = resolve;
+    });
+    const payoutRequestRelease = new Promise<void>((resolve) => {
+        releaseRequest = resolve;
+    });
+    await page.route('**/portal/referrals/payouts', async (route) => {
+        if (route.request().method() === 'POST') {
+            requestStarted();
+            await payoutRequestRelease;
+        }
+
+        await route.continue();
+    });
+
+    const payoutSubmit = page.getByTestId('payout-submit');
+    await payoutSubmit.click();
+    await payoutRequestStarted;
+    await expect(payoutSubmit).toBeDisabled();
+    await expect(payoutSubmit).toHaveAttribute('aria-busy', 'true');
+    releaseRequest();
+    await expect(page.getByTestId('payout-feedback')).toBeVisible();
+    await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
+    await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
+    await expect(page.getByTestId('payout-feedback')).toContainText('Запрошена');
 
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
@@ -837,6 +917,11 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(payout).toContainText('Запрошена');
     await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
     await expect(payout).toContainText('Отменена');
+
+    await page.getByLabel('Сумма', { exact: true }).fill('999.00');
+    await payoutSubmit.click();
+    await expect(page.getByTestId('payout-error')).toBeVisible();
+    await expect(page.getByTestId('payout-error')).toContainText('Сумма превышает доступный остаток.');
 });
 
 test('B2B answer stays in one journey and Profile shows the same compact classification', async ({ page }) => {
