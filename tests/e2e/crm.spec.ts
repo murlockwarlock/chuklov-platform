@@ -564,11 +564,13 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await dateInput.fill(fixture.bookingStartsAt);
     await dateInput.blur();
     await dateCommitResponse;
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
     const formatCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
         && response.status() === 200);
     await page.getByLabel('Формат визита').selectOption('office');
     await formatCommitResponse;
+    await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/);

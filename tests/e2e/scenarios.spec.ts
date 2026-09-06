@@ -162,6 +162,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
         && response.status() === 200);
     await delayInput.blur();
     await delayCommitResponse;
+    await expect(delayInput).toHaveValue('48');
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'

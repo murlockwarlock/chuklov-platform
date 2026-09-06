@@ -104,17 +104,29 @@ const rescheduleForm = useForm<{
     reason: null,
     expected_event_version: props.booking.eventVersion,
 });
-const rescheduleError = computed(() => {
-    const errors = rescheduleForm.errors as Record<string, string | undefined>;
 
-    return errors.starts_at
-        ?? errors.startsAt
-        ?? errors.booking
-        ?? errors.expected_event_version
-        ?? errors.client_timezone
-        ?? errors.working_location_id
-        ?? errors.location_area
-        ?? errors.reason
+function errorMessage(value: unknown): string | null {
+    const values = Array.isArray(value) ? value : [value];
+    const message = values.find((item): item is string => typeof item === 'string' && item.trim() !== '');
+
+    return message ?? null;
+}
+
+function firstErrorMessage(errors: Record<string, unknown>): string | null {
+    return Object.values(errors).reduce<string | null>((message, value) => message ?? errorMessage(value), null);
+}
+
+const rescheduleError = computed(() => {
+    const errors = rescheduleForm.errors as Record<string, unknown>;
+
+    return errorMessage(errors.starts_at)
+        ?? errorMessage(errors.startsAt)
+        ?? errorMessage(errors.booking)
+        ?? errorMessage(errors.expected_event_version)
+        ?? errorMessage(errors.client_timezone)
+        ?? errorMessage(errors.working_location_id)
+        ?? errorMessage(errors.location_area)
+        ?? errorMessage(errors.reason)
         ?? rescheduleRequestError.value;
 });
 const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
@@ -305,9 +317,7 @@ function rescheduleBooking(): void {
             rescheduleForm.starts_at = null;
         },
         onError: (errors) => {
-            rescheduleRequestError.value = Object.values(errors).find(
-                (error): error is string => typeof error === 'string' && error.length > 0,
-            )
+            rescheduleRequestError.value = firstErrorMessage(errors as Record<string, unknown>)
                 ?? t('booking.rescheduleFailed');
         },
         onHttpException: () => {
