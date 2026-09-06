@@ -45,9 +45,12 @@ class TelegramAuthenticationController extends Controller
         try {
             $identity = $verifier->handle($validated['initData']);
             if ($identity->startParameter !== null) {
+                $referralCode = str_starts_with($identity->startParameter, 'ref_')
+                    ? substr($identity->startParameter, 4)
+                    : $identity->startParameter;
                 $captureAttribution->handle(
                     sessionId: $request->session()->getId(),
-                    input: ['referral_code' => $identity->startParameter],
+                    input: ['referral_code' => $referralCode],
                     captureChannel: 'telegram_mini_app',
                     captureContext: 'telegram_start_param',
                 );

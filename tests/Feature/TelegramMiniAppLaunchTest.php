@@ -9,6 +9,7 @@ use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
+use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -18,6 +19,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
@@ -106,6 +108,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
             'method' => route('portal.section', ['section' => 'method'], false),
             'b2b' => route('portal.b2b', [], false),
             'partner' => route('portal.section', ['section' => 'partner'], false),
+            'partner_cabinet' => route('portal.referrals', [], false),
         ] as $key => $destination) {
             $this->withSession(['client_portal.client_id' => $client->getKey()])
                 ->get(route('portal.telegram.launch', ['entry' => $key]))
@@ -117,7 +120,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
     {
         $this->organizationWithClientRecords();
 
-        foreach (['portal', 'b2b'] as $key) {
+        foreach (['portal', 'b2b', 'partner_cabinet'] as $key) {
             $this->get(route('portal.telegram.launch', ['entry' => $key]))
                 ->assertRedirect(route('portal.home', ['telegram_entry' => $key], false));
 
@@ -228,6 +231,52 @@ final class TelegramMiniAppLaunchTest extends TestCase
         ]);
     }
 
+    public function test_partner_cabinet_menu_label_follows_the_verified_partner_profile(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+
+        $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
+        self::assertSame('🤝 Стать партнёром', $menu->firstWhere('key', 'partner_cabinet')['label']);
+
+        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        $client->load('referralPartnerProfile');
+        $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
+
+        self::assertSame('🤝 Партнёрский кабинет', $menu->firstWhere('key', 'partner_cabinet')['label']);
+        self::assertSame(
+            'https://mini.example.test'.route('portal.telegram.launch', ['entry' => 'partner_cabinet'], false),
+            $menu->firstWhere('key', 'partner_cabinet')['url'],
+        );
+        self::assertTrue($menu->firstWhere('key', 'partner_cabinet')['web_app']);
+    }
+
+    public function test_verified_telegram_launch_opens_the_partner_cabinet_inside_the_mini_app(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        ClientChannelIdentity::factory()->forClient($client)->create(['external_id' => '820123']);
+        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        $this->useTelegramToken();
+
+        $this->get(route('portal.telegram.launch', ['entry' => 'partner_cabinet']))
+            ->assertRedirect(route('portal.home', ['telegram_entry' => 'partner_cabinet'], false));
+
+        $this->get(route('portal.home', ['telegram_entry' => 'partner_cabinet']))->assertOk();
+
+        $this->post(route('portal.telegram.auth'), [
+            'initData' => TelegramInitData::make(820123, now()->timestamp),
+            'launchEntry' => 'partner_cabinet',
+        ])->assertRedirect(route('portal.referrals'));
+
+        $this->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Referrals')
+                ->where('referrals.isPartner', true)
+                ->where('portal.authenticated', true));
+    }
+
     /** @return array{organization: Organization, client: Client, specialist: Specialist, service: Service} */
     private function b2bFixture(): array
     {
@@ -286,6 +335,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
     private function setOrganization(Organization $organization): void
     {
         config()->set('tenancy.default_organization_id', $organization->getKey());
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
     }
 

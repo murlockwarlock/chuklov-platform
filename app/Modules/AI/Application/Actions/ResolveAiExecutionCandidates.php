@@ -3,8 +3,10 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -21,6 +23,145 @@ use Throwable;
 
 final class ResolveAiExecutionCandidates
 {
+    /**
+     * @param  list<AiModelModality>  $requiredModalities
+     * @return array{status: string, issues: list<string>}
+     */
+    public function diagnose(
+        int $organizationId,
+        AiCapability $capability,
+        ?AiOrganizationSafetyControl $safetyControls,
+        array $requiredModalities = [],
+    ): array {
+        $hasActiveModel = AiModelConfiguration::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_enabled', true)
+            ->where('lifecycle_status', ModelLifecycleStatus::Active->value)
+            ->exists();
+        $modelConfigurations = AiModelConfiguration::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_enabled', true)
+            ->where('lifecycle_status', ModelLifecycleStatus::Active->value)
+            ->whereHas('activeRelease', static function (Builder $query) use ($capability): void {
+                $query
+                    ->where('status', 'active')
+                    ->whereJsonContains('capabilities', $capability->value);
+            })
+            ->with(['activeRelease', 'providerConfiguration.credential'])
+            ->orderBy('failover_priority')
+            ->orderBy('id')
+            ->limit(AiRuntimeLimits::PLATFORM_MAX_MODEL_CONFIGURATION_SCAN)
+            ->get();
+
+        $hasCapabilityRelease = $modelConfigurations->isNotEmpty();
+        $hasHealthyProvider = false;
+        $hasProviderOutage = false;
+        $hasDisabledProvider = false;
+        $hasDisabledProviderConfiguration = false;
+        $hasIncompatibleModality = false;
+
+        foreach ($modelConfigurations as $configuration) {
+            $release = $configuration->activeRelease;
+            if ($release === null) {
+                continue;
+            }
+
+            if (! $this->releaseSupportsRequiredModalities($release, $requiredModalities)) {
+                $hasIncompatibleModality = true;
+
+                continue;
+            }
+
+            $providerConfiguration = $configuration->providerConfiguration;
+            if ($providerConfiguration === null
+                || (int) $providerConfiguration->organization_id !== $organizationId
+                || $providerConfiguration->provider_name !== $release->provider_name) {
+                continue;
+            }
+
+            if ($safetyControls !== null && ! $safetyControls->isProviderEnabled($providerConfiguration->provider_name)) {
+                $hasDisabledProvider = true;
+
+                continue;
+            }
+
+            if (! $providerConfiguration->is_enabled) {
+                $hasDisabledProviderConfiguration = true;
+
+                continue;
+            }
+
+            if (in_array($providerConfiguration->health_status, [ProviderHealthStatus::Degraded, ProviderHealthStatus::Unavailable], true)) {
+                $hasProviderOutage = true;
+
+                continue;
+            }
+
+            if ($providerConfiguration->health_status !== ProviderHealthStatus::Healthy) {
+                continue;
+            }
+
+            $hasHealthyProvider = true;
+            if ($this->validatedCandidate(
+                config: $configuration,
+                release: $release,
+                capability: $capability->value,
+                allowedReleaseStatuses: ['active'],
+                safetyControls: $safetyControls,
+            ) !== null) {
+                return ['status' => 'ready', 'issues' => []];
+            }
+        }
+
+        if ($hasProviderOutage) {
+            return [
+                'status' => 'provider_unavailable',
+                'issues' => ['Провайдер клиентского компаньона временно недоступен.'],
+            ];
+        }
+
+        if (($hasDisabledProvider || $hasDisabledProviderConfiguration) && ! $hasHealthyProvider) {
+            $issues = [];
+            if ($hasDisabledProvider) {
+                $issues[] = 'Провайдер клиентского компаньона отключён в ограничениях AI.';
+            }
+            if ($hasDisabledProviderConfiguration) {
+                $issues[] = 'Провайдер клиентского компаньона отключён в настройках провайдера.';
+            }
+
+            return [
+                'status' => 'disabled',
+                'issues' => $issues,
+            ];
+        }
+
+        if ($hasIncompatibleModality) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Для выбранного типа вложения нет совместимой модели клиентского компаньона.'],
+            ];
+        }
+
+        if ($hasCapabilityRelease) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Провайдер или модель клиентского компаньона требуют завершить настройку и проверку.'],
+            ];
+        }
+
+        if ($hasActiveModel) {
+            return [
+                'status' => 'not_configured',
+                'issues' => ['Для модели клиентского компаньона нет активной версии с нужным сценарием.'],
+            ];
+        }
+
+        return [
+            'status' => 'not_configured',
+            'issues' => ['Модель клиентского компаньона не добавлена.'],
+        ];
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -346,6 +487,16 @@ final class ResolveAiExecutionCandidates
         return AiProviderFactory::supportsAttachments(
             providerName: (string) $candidate['provider'],
             release: $candidate['release'],
+            requiredModalities: $requiredModalities,
+        );
+    }
+
+    /** @param list<AiModelModality> $requiredModalities */
+    private function releaseSupportsRequiredModalities(AiModelRelease $release, array $requiredModalities): bool
+    {
+        return AiProviderFactory::supportsAttachments(
+            providerName: $release->provider_name,
+            release: $release,
             requiredModalities: $requiredModalities,
         );
     }

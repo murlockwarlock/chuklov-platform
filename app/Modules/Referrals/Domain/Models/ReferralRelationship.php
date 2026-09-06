@@ -39,6 +39,12 @@ class ReferralRelationship extends Model
         return $this->belongsTo(Client::class, 'referred_client_id');
     }
 
+    /** @return BelongsTo<ReferralCampaignLink, $this> */
+    public function referralCampaignLink(): BelongsTo
+    {
+        return $this->belongsTo(ReferralCampaignLink::class, 'referral_campaign_link_id');
+    }
+
     /** @return HasMany<ReferralCommercialEvidence, $this> */
     public function commercialEvidence(): HasMany
     {

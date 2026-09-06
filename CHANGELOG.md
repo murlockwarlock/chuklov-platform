@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
+
+- Hardened partner payout authorization at the Application boundary, corrected tracked campaign conversion and legacy referral provenance, and made all current reward presentation use net accrued balances including reversals without changing the append-only ledger.
+- Made the Partner Home CTA state-aware and bounded refreshes update Portal and CRM partner/payout views after asynchronous changes.
+- Routed personal and campaign referral links through the Telegram bot with a namespaced `ref_` payload, preserved legacy `/r/{token}` compatibility, campaign provenance, first-touch protection, and idempotent campaign visits; Communities «Открыть полностью» now uses Telegram's Mini App button instead of a browser URL.
+- Refined the CRM partner workspace so named campaign links, channels, per-link metrics, referred-client provenance, rewards, and payouts render as separate readable entries instead of one combined summary.
+- Added an actionable AI Companion readiness state to the CRM: missing active prompt/model configuration, provider outages, and disabled capabilities are distinguished with links to the existing setup surfaces where appropriate; provider failure categories returned by an AI run are preserved for safe handling.
+- Preserved an explicitly disabled provider as a distinct AI diagnosis and run/failure category instead of reporting it as missing configuration.
+- Confirmed the staging DeepSeek credential itself is healthy; the current staging conversation remains paused because the organization has no active client_companion prompt/model release and the existing conversation is already in human handoff.
+
+## 2026-09-05 — Phase 1 partner cabinet and campaign links
+
+- Added organization-scoped Partner enrollment for existing Clients, direct CRM activation/deactivation, a first-class «Партнёры» workspace, and an obvious «Назначить партнёра» client action that preserves the authoritative first-touch relationship.
+- Added multiple named campaign links for Telegram, Instagram, YouTube, WhatsApp, Сайт, and Другое, with safe transition evidence, preserved link/channel provenance, per-link registrations and authoritative paid-client metrics, and responsive Portal partner-cabinet controls for copy/share/deactivation.
+- Added overall and per-currency partner statistics, reward/payout projections from the existing ledger, dynamic Telegram Mini App partner entry, and human Finance readiness explanations when «Записать оплату» is not yet available. Approved promotional copy/banner assets remain deferred.
+
+## 2026-09-05 — Configurable referral rewards and manual partner payouts
+
+- Added an organization-scoped referral reward program with a disabled-by-default, versioned configuration for first/every authoritative settled payment and fixed/percentage rewards using the existing integer Money and rounding rules.
+- Added an append-only reward ledger with earned/reversed provenance, derived per-currency balances, idempotent qualification, tenant-safe manual reversals, and PostgreSQL constraints/locking for concurrent settlement retries.
+- Added partner payout requests with immediate per-currency reservation, auditable requested/approved/paid/rejected/cancelled transitions, and CRM confirmation of an external manual payment without a payment-provider integration.
+- Added Portal reward and payout history plus CRM configuration and payout-request actions in human-readable Russian; no redemption, automated payout, or cross-currency aggregation is introduced.
+- Fixed booking-created notification projections so Online renders «Онлайн» once while Office and HomeVisit retain their physical location details.
+
 ## 2026-09-05 — PR #30 RichEditor link persistence
 
 - ContentSection RichEditor state now synchronizes through Filament actions and save, while the preview accepts the live TipTap document state and converts it through the existing canonical safe rich-text pipeline. Owner-created links therefore survive edit/reload and the existing Portal and Telegram delivery paths without changing plain-text content or delivery-mode semantics.

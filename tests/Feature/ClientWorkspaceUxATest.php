@@ -299,7 +299,7 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertStringContainsString('https://meet.example.test/booking', $modalHtml);
     }
 
-    public function test_view_client_header_keeps_secondary_actions_in_the_overflow_group(): void
+    public function test_view_client_header_exposes_partner_actions_and_keeps_secondary_actions_grouped(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
         $client = Client::factory()->forOrganization($organization)->create();
@@ -309,7 +309,10 @@ final class ClientWorkspaceUxATest extends TestCase
             'record' => (string) $client->getKey(),
         ]);
 
-        self::assertCount(3, $component->instance()->getCachedHeaderActions());
+        $component
+            ->assertActionExists('activatePartner')
+            ->assertActionExists('assignPartner')
+            ->assertSee('Дополнительные действия');
     }
 
     public function test_view_client_page_renders_successfully(): void

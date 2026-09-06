@@ -8,6 +8,8 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
+use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -38,6 +40,7 @@ class PortalProductUxTest extends TestCase
                 ->component('Portal/Home')
                 ->where('portal.authenticated', true)
                 ->where('portal.clientName', 'Portal Client')
+                ->where('isPartner', false)
                 ->missing('auth')
                 ->missing('onboardingUrl'));
     }
@@ -63,10 +66,66 @@ class PortalProductUxTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/Referrals')
-                ->where('referrals.link', route('portal.referral', ['referralCode' => $identity->public_code]))
+                ->where('referrals.link', 'https://t.me/chuklov_test_bot?start=ref_'.$identity->public_code)
                 ->where('referrals.registrations', [])
                 ->missing('referrals.reward')
                 ->missing('referrals.commission'));
+    }
+
+    public function test_client_can_activate_partner_cabinet_and_create_channel_links(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('referrals.isPartner', false)
+                ->where('referrals.links', []));
+
+        $this->post(route('portal.referrals.activate'))
+            ->assertRedirect(route('portal.referrals'));
+
+        $this->post(route('portal.referrals.links.store'), [
+            'name' => 'Instagram — шапка профиля',
+            'channel' => ReferralCampaignChannel::Instagram->value,
+        ])->assertRedirect(route('portal.referrals'));
+
+        $links = ReferralCampaignLink::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('partner_client_id', $client->getKey())
+            ->orderBy('created_at')
+            ->get();
+
+        self::assertCount(2, $links);
+        self::assertSame('Instagram — шапка профиля', $links[1]->name);
+        self::assertSame(ReferralCampaignChannel::Instagram, $links[1]->channel);
+
+        $this->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('referrals.isPartner', true)
+                ->where('referrals.links.1.name', 'Instagram — шапка профиля')
+                ->where('referrals.links.1.channel', 'Instagram'));
+
+        $this->get(route('portal.referral', ['referralCode' => $links[1]->public_token]))
+            ->assertRedirect('https://t.me/chuklov_test_bot?start=ref_'.$links[1]->public_token);
+
+        self::assertDatabaseMissing('referral_link_visits', ['campaign_link_id' => $links[1]->getKey()]);
+    }
+
+    public function test_direct_payout_post_from_a_non_partner_is_rejected_at_the_backend_boundary(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->post(route('portal.referrals.payouts.store'), [
+            'amount' => '1.00',
+            'currency' => 'USD',
+            'idempotency_key' => 'non-partner-direct-post',
+        ])->assertInvalid('partner');
+
+        self::assertDatabaseCount('referral_payout_requests', 0);
     }
 
     public function test_incomplete_optional_profile_does_not_block_home_or_profile_updates(): void
@@ -142,6 +201,7 @@ class PortalProductUxTest extends TestCase
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->id);
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
 
         return $organization;
     }

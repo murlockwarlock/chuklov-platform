@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Referrals\Application\ListReferralRelationshipsForCrm;
+use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use BackedEnum;
 use Filament\Resources\Resource;
@@ -67,9 +68,9 @@ final class ReferralRelationshipResource extends Resource
                 TextColumn::make('referred.full_name')->label('Приглашённый клиент')->searchable()->wrap(),
                 TextColumn::make('establishment_method')
                     ->label('Способ установления')
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'automatic_referral_link' => 'Автоматическая ссылка',
-                        'manual_crm' => 'Назначено в CRM',
+                    ->formatStateUsing(fn (ReferralEstablishmentMethod|string $state): string => match ($state instanceof ReferralEstablishmentMethod ? $state->value : $state) {
+                        ReferralEstablishmentMethod::AutomaticReferralLink->value => 'Автоматическая ссылка',
+                        ReferralEstablishmentMethod::ManualCrm->value => 'Назначено в CRM',
                         default => 'Неизвестно',
                     })
                     ->badge()

@@ -21,6 +21,7 @@ type BookingFixture = {
 type BookingFixtureOptions = {
     withBooking?: boolean;
     withCompanionMessages?: boolean;
+    withPartnerRewards?: boolean;
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
@@ -37,6 +38,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
+        $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -78,6 +80,118 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
+        if ($withPartnerRewards) {
+            $rewardAdmin = \\App\\Models\\User::factory()->forOrganization($organization)->create();
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($rewardAdmin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            app(\\App\\Modules\\Referrals\\Application\\SaveReferralRewardProgram::class)->handle(
+                actor: $rewardAdmin,
+                enabled: true,
+                qualificationRule: 'first_settled_payment',
+                formula: 'fixed_amount',
+                fixedAmount: '10.00',
+                fixedCurrency: 'USD',
+                percentage: null,
+                effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
+            );
+            $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => 'Playwright Referred '.$suffix,
+                'email' => 'playwright-referred-'.$suffix.'@example.test',
+                'language' => 'ru',
+                'timezone' => 'UTC',
+            ]);
+            $relationship = new \\App\\Modules\\Referrals\\Domain\\Models\\ReferralRelationship;
+            $relationship->forceFill([
+                'organization_id' => $organization->getKey(),
+                'referrer_client_id' => $client->getKey(),
+                'referred_client_id' => $referred->getKey(),
+                'establishment_method' => 'manual_crm',
+                'registered_at' => now(),
+            ]);
+            $relationship->save();
+            $amountMinor = 10000;
+            $rewardService = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
+                'name' => 'Playwright Reward Service '.$suffix,
+                'formats' => ['office'],
+                'price_minor' => $amountMinor,
+                'price_currency' => 'USD',
+            ]);
+            $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                ->forOrganization($organization)
+                ->forClient($referred)
+                ->forSpecialist($specialist)
+                ->forService($rewardService)
+                ->create();
+            $snapshot = [
+                'source_amount_minor' => (string) $amountMinor,
+                'source_currency' => 'USD',
+                'target_amount_minor' => (string) $amountMinor,
+                'target_currency' => 'USD',
+                'rate' => '1',
+                'rate_id' => null,
+                'rate_version' => null,
+                'effective_at' => null,
+                'rounding_mode' => 'half_up',
+                'source_scale' => 2,
+                'target_scale' => 2,
+            ];
+            $obligation = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialObligation;
+            $obligation->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $referred->getKey(),
+                'booking_id' => $booking->getKey(),
+                'service_id' => $rewardService->getKey(),
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'price_snapshot' => ['amount_minor' => $amountMinor],
+                'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+                'creation_key' => 'playwright-partner-reward-'.$suffix,
+            ]);
+            $obligation->save();
+            $entry = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialLedgerEntry;
+            $entry->forceFill([
+                'organization_id' => $organization->getKey(),
+                'obligation_id' => $obligation->getKey(),
+                'entry_type' => 'manual_payment',
+                'source' => 'crm',
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'payment_method' => 'cash',
+                'conversion_snapshot' => null,
+                'occurred_at' => now(),
+                'idempotency_key' => 'playwright-partner-reward-entry-'.$suffix,
+                'created_at' => now(),
+            ]);
+            $entry->save();
+            app(\\App\\Modules\\Finance\\Application\\RecordFinancialSettlementEvent::class)->handle($obligation, $entry, $entry->occurred_at);
+            $event = \\App\\Modules\\Integration\\Domain\\Models\\IntegrationEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('aggregate_id', $obligation->getKey())
+                ->firstOrFail();
+            app(\\App\\Modules\\Referrals\\Application\\ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+        }
         $alternateSpecialist = null;
         if ($multipleChoices) {
             $alternateSpecialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
@@ -245,6 +359,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
+                PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
@@ -339,6 +454,7 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 props: {
                     services: [],
                     upcomingBooking: null,
+                    isPartner: false,
                     attribution: {
                         needsManualSource: false,
                     },
@@ -447,6 +563,91 @@ test('Telegram Mini App B2B launch authenticates before showing the requested de
     expect(authenticationRequests).toBe(1);
 });
 
+test('Telegram Mini App partner launch authenticates and displays the partner cabinet', async ({ page }) => {
+    let authenticationRequests = 0;
+
+    await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+        await route.fulfill({
+            contentType: 'application/javascript',
+            body: 'window.Telegram = { WebApp: { initData: "verified-init-data", ready() {} } };',
+        });
+    });
+    await page.route('**/portal/telegram/auth', async (route) => {
+        authenticationRequests += 1;
+        expect(route.request().postDataJSON()).toMatchObject({
+            initData: 'verified-init-data',
+            launchEntry: 'partner_cabinet',
+        });
+        await route.fulfill({
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Vary': 'Accept',
+                'X-Inertia': 'true',
+            },
+            body: JSON.stringify({
+                component: 'Portal/Referrals',
+                props: {
+                    portal: {
+                        authenticated: true,
+                        clientName: 'Telegram Partner',
+                        locale: 'ru',
+                        localeUrl: '/portal/locale',
+                        urls: {
+                            home: '/',
+                            services: '/portal/services',
+                            bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
+                            profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
+                            booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
+                        },
+                    },
+                    referrals: {
+                        isPartner: true,
+                        status: 'active',
+                        activatedAt: null,
+                        link: 'https://t.me/chuklov_test_bot?start=ref_legacy-referral-code',
+                        activationUrl: '/portal/referrals/activate',
+                        createLinkUrl: '/portal/referrals/links',
+                        stats: {
+                            visits: 0,
+                            registrations: 0,
+                            paidClients: 0,
+                            visitToRegistrationRate: null,
+                            registrationToPaidClientRate: null,
+                            rewardEarned: [],
+                        },
+                        links: [],
+                        referredClientsCount: 0,
+                        registrations: [],
+                        rewards: {
+                            balances: [],
+                            history: [],
+                            payouts: [],
+                            requestUrl: '/portal/referrals/payouts',
+                        },
+                    },
+                },
+                url: '/portal/referrals',
+                version: null,
+            }),
+        });
+    });
+
+    await page.goto('/portal/telegram/launch/partner_cabinet');
+
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-summary')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticationRequests).toBe(1);
+});
+
 test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', async ({ page }) => {
     const fixture = createBookingFixture();
 
@@ -520,30 +721,122 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [390, 760]) {
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
-        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
-        const navigationItems = page.locator('.portal-bottom-nav__link');
-        expect(await navigationItems.count()).toBe(6);
-        expect(await navigationItems.evaluateAll((items) => {
-            const widths = items.map((item) => item.getBoundingClientRect().width);
-            const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+        if (width < 768) {
+            await expect(page.locator('.portal-bottom-nav')).toBeVisible();
 
-            return Math.max(...widths) - Math.min(...widths) <= 1
-                && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
-        })).toBe(true);
+            const navigationItems = page.locator('.portal-bottom-nav__link');
+            expect(await navigationItems.count()).toBe(6);
+            expect(await navigationItems.evaluateAll((items) => {
+                const widths = items.map((item) => item.getBoundingClientRect().width);
+                const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+
+                return Math.max(...widths) - Math.min(...widths) <= 1
+                    && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
+            })).toBe(true);
+        }
 
         await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
     }
 
     await page.getByTestId('home-referrals-cta').click();
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Пригласить друга' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
+    await page.getByTestId('partner-activate').click();
+    await page.goto('/');
+    await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Партнёрский кабинет');
+    await page.getByTestId('home-referrals-cta').click();
+    await expect(page).toHaveURL(/\/portal\/referrals$/);
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+});
+
+test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+    await page.goto('/portal/referrals');
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-activate')).toBeVisible();
+    await page.getByTestId('partner-activate').click();
+
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-links')).toBeVisible();
+    await expect(page.getByText('Личные рекомендации', { exact: true })).toBeVisible();
+
+    await page.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('instagram');
+    await page.getByTestId('partner-create-link').click();
+    const instagramLink = page.getByTestId('partner-link-1');
+    await expect(instagramLink).toContainText('Instagram — шапка профиля');
+    await expect(instagramLink).toContainText('Instagram');
+
+    await page.getByLabel('Название', { exact: true }).fill('Telegram — мой канал');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('telegram');
+    await page.getByTestId('partner-create-link').click();
+    const telegramLink = page.getByTestId('partner-link-2');
+    await expect(telegramLink).toContainText('Telegram — мой канал');
+    await expect(telegramLink).toContainText('Telegram');
+
+    for (const link of [instagramLink, telegramLink]) {
+        await expect(link.locator('code')).toHaveText(/https:\/\/t\.me\/[^?]+\?start=ref_[A-Za-z0-9_-]{16,128}/);
+        await expect(link.getByRole('button', { name: 'Скопировать', exact: true })).toBeVisible();
+        await expect(link.getByRole('button', { name: 'Поделиться', exact: true })).toBeVisible();
+        await expect(link.getByText('Переходы', { exact: true })).toBeVisible();
+        await expect(link.getByText('Регистрации', { exact: true })).toBeVisible();
+        await expect(link.getByText('Оплатили', { exact: true })).toBeVisible();
+        await expect(link.getByText('Начислено', { exact: true })).toBeVisible();
+        await expect(link.getByText('0', { exact: true })).toHaveCount(3);
+        await expect(link.getByText('—', { exact: true })).toHaveCount(1);
+    }
+
+    await instagramLink.getByRole('button', { name: 'Скопировать', exact: true }).click();
+    await expect(instagramLink.getByRole('button', { name: 'Ссылка скопирована', exact: true })).toBeVisible();
+    await instagramLink.getByRole('button', { name: 'Поделиться', exact: true }).click();
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/portal/referrals');
+        await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+        await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
+        await expect(page.getByText('Telegram — мой канал', { exact: true })).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
+test('partner can request and cancel a payout from the cabinet', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/referrals');
+    await page.getByTestId('partner-activate').click();
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
+
+    await page.getByLabel('Сумма', { exact: true }).fill('2.00');
+    await page.getByRole('button', { name: 'Запросить выплату', exact: true }).click();
+
+    const payout = page.getByTestId('partner-payout-0');
+    await expect(payout).toBeVisible();
+    await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
+    await expect(payout).toContainText('Запрошена');
+    await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
+    await expect(payout).toContainText('Отменена');
 });
 
 test('B2B answer stays in one journey and Profile shows the same compact classification', async ({ page }) => {

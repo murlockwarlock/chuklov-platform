@@ -14,6 +14,7 @@ use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
 use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Application\HandleReferralTelegramStart;
 use Illuminate\Auth\Access\AuthorizationException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
@@ -36,6 +37,58 @@ $bot->onCommand('start web_{token}', function (
     }
 });
 
+$bot->onCommand('start ref_{token}', function (
+    Nutgram $bot,
+    string $token,
+    TelegramBotIdentityVerifier $identityVerifier,
+    HandleReferralTelegramStart $referrals,
+    OrganizationContext $organizationContext,
+): void {
+    $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
+    $invalidMessage = $language === 'ru'
+        ? 'Реферальная ссылка недействительна или отключена.'
+        : 'This referral link is invalid or disabled.';
+    $organizationId = config('tenancy.default_organization_id');
+
+    if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
+        $bot->sendMessage($invalidMessage);
+
+        return;
+    }
+
+    $organization = Organization::query()->find((int) $organizationId);
+
+    if (! $organization instanceof Organization) {
+        $bot->sendMessage($invalidMessage);
+
+        return;
+    }
+
+    try {
+        $organizationContext->set($organization);
+        $identity = $identityVerifier->handle($bot);
+        $url = $referrals->handle('ref_'.$token, $identity->externalId);
+
+        if ($url === null) {
+            $bot->sendMessage($invalidMessage);
+
+            return;
+        }
+
+        $keyboard = InlineKeyboardMarkup::make();
+        $keyboard->addRow(InlineKeyboardButton::make(
+            text: $language === 'ru' ? 'Открыть приложение' : 'Open app',
+            web_app: WebAppInfo::make($url),
+        ));
+        $bot->sendMessage(
+            $language === 'ru' ? 'Откройте приложение, чтобы продолжить.' : 'Open the app to continue.',
+            reply_markup: $keyboard,
+        );
+    } catch (AuthorizationException|UnauthorizedHttpException|LogicException) {
+        $bot->sendMessage($invalidMessage);
+    }
+})->where('token', '[A-Za-z0-9_-]{16,128}')->description('Открыть реферальное приложение');
+
 $bot->onCommand('start {token}', function (
     Nutgram $bot,
     string $token,
@@ -49,7 +102,7 @@ $bot->onCommand('start {token}', function (
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
-})->where('token', '(?!web_)[A-Za-z0-9_-]+')->description('Запустить приложение');
+})->where('token', '(?!web_|ref_)[A-Za-z0-9_-]+')->description('Запустить приложение');
 
 $bot->onCommand('start', function (
     Nutgram $bot,
@@ -60,19 +113,20 @@ $bot->onCommand('start', function (
 ): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
     $organizationId = config('tenancy.default_organization_id');
+    $client = null;
     if (is_int($organizationId) || (is_string($organizationId) && ctype_digit($organizationId))) {
         $organization = Organization::query()->find((int) $organizationId);
         if ($organization instanceof Organization) {
             $organizationContext->set($organization);
             try {
-                $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
+                $client = $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
             } catch (UnauthorizedHttpException) {
             }
         }
     }
     $keyboard = InlineKeyboardMarkup::make();
 
-    foreach ($menu->handle($language) as $entry) {
+    foreach ($menu->handle($language, $client) as $entry) {
         $button = match ($entry['launch']) {
             'mini_app' => InlineKeyboardButton::make(
                 text: $entry['label'],

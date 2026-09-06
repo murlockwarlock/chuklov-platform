@@ -68,6 +68,12 @@ return [
                 'route' => 'portal.section',
                 'parameters' => ['section' => 'partner'],
             ],
+            'partner_cabinet' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.referrals',
+                'parameters' => [],
+            ],
             'communities' => [
                 'launch' => 'mini_app',
                 'requires_auth' => false,
@@ -86,6 +92,7 @@ return [
                 ['key' => 'method', 'label' => 'Method'],
                 ['key' => 'b2b', 'label' => '🚀 Want a bot like this? / Grow your business'],
                 ['key' => 'partner', 'label' => 'Partners'],
+                ['key' => 'partner_cabinet', 'label' => '🤝 Partner cabinet'],
                 ['key' => 'communities', 'label' => 'Communities'],
             ],
             'ru' => [
@@ -94,6 +101,7 @@ return [
                 ['key' => 'method', 'label' => 'Метод'],
                 ['key' => 'b2b', 'label' => '🚀 Хочешь себе такого бота? / Развить бизнес'],
                 ['key' => 'partner', 'label' => 'Партнёры'],
+                ['key' => 'partner_cabinet', 'label' => '🤝 Стать партнёром'],
                 ['key' => 'communities', 'label' => 'Сообщества'],
             ],
         ],

@@ -7,7 +7,6 @@ Questions block only their dependent work.
 | OQ-003 | REQ-PRODUCT-002 | Does Phase 1 product selling require cart, quantity, inventory, variants/SKU, delivery/fulfilment, and refunds? | Product commerce implementation |
 | OQ-004 | REQ-SUBSCRIPTION-002 | Confirm manual vs recurring billing, auto-renew, cancellation, failure, grace period, and entitlement end. | Milestone 12 billing lifecycle |
 | OQ-005 | REQ-PAYMENT-006 | Which real payment providers, merchant entities, currencies, refund capabilities, and rollout order are contracted? | Milestone 13 adapters |
-| OQ-007 | REQ-REFERRAL-001 | Confirm qualification per referral program/product; earning and eligibility rules; reward amount, percentage, points, and currency; redemption; expiry; refund reversal; and cash-out. | Milestone 11 reward/accounting scope |
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
 | OQ-013 | REQ-CLIENT-005 | Confirm jurisdiction, legal basis, retention schedules, consent-withdrawal consequences, deletion/anonymization rules, and records that must be preserved for the client data lifecycle. | M15/M16 legal and security production readiness; earlier support only where M7 medical data requires it |
 | OQ-014 | REQ-NOTIFY-004 | Confirm the business/clinical condition intended by the conditional +72h post-session follow-up. M5B seeds only the supported neutral `booking.status = completed` guard until this is confirmed. | Owner decision before changing the +72h rule condition; generic scenario capability is unblocked |
@@ -15,7 +14,13 @@ Questions block only their dependent work.
 
 No open question blocks Milestone 0.
 
-OQ-007 remains OPEN. The existence of paid practitioner/healer services and the ability to establish a relationship automatically through a referral link or manually in CRM are now owner-confirmed. M11A records the product-neutral relationship and neutral finance settlement evidence only; it does not define which program or product qualifies an event, or any amount/percentage/points, reward currency, earning eligibility, redemption, expiry, refund reversal, or cash-out behavior.
+## Resolved M11 decisions
+
+### OQ-007 — RESOLVED 2026-09-05
+
+Phase 1 uses an organization-scoped referral reward program that is disabled by default. An authorized CRM administrator can create effective-dated immutable versions selecting first or every authoritative settled Finance payment and a fixed amount in an explicit currency or a percentage of the settled amount. Percentage calculation uses the existing integer minor-unit Money and deterministic rounding conventions; fixed and percentage rewards preserve their applied version and currency.
+
+Only an authoritative same-organization ReferralRelationship, the matching referred Client, and authoritative Finance settlement/commercial evidence can qualify a reward. Organic source text, Telegram username, phone/name similarity, and marketing attribution alone never qualify. Reward history is an append-only earned/reversed ledger with derived per-currency balances. Partners may request manual payout reservations one currency at a time; CRM may approve, reject, cancel, or mark a request paid after an external payment, with all transitions audited. There is no automated payment-provider payout, redemption, expiry, MLM, cross-currency aggregation, or cross-tenant qualification.
 
 ## Resolved M2 decisions
 

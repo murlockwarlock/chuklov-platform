@@ -9,6 +9,7 @@ use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -66,6 +67,12 @@ class Client extends Model
     public function referralIdentity(): HasOne
     {
         return $this->hasOne(ClientReferralIdentity::class, 'client_id');
+    }
+
+    /** @return HasOne<ReferralPartnerProfile, $this> */
+    public function referralPartnerProfile(): HasOne
+    {
+        return $this->hasOne(ReferralPartnerProfile::class, 'client_id');
     }
 
     /** @return HasOne<ReferralRelationship, $this> */

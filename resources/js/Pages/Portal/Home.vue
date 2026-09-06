@@ -37,6 +37,7 @@ const props = defineProps<{
     upcomingBooking: Booking | null;
     services: Service[];
     attribution: { needsManualSource: boolean };
+    isPartner: boolean;
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -132,7 +133,7 @@ const { locale, t } = usePortalLocale();
           data-testid="home-referrals-cta"
         >
           <strong class="portal-heading portal-heading--section">
-            {{ t('home.referrals') }}
+            {{ props.isPartner ? t('home.partnerCabinet') : t('home.referrals') }}
           </strong>
           <span class="portal-card__summary">
             {{ t('home.referralsDescription') }}
