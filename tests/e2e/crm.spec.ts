@@ -565,7 +565,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
-    const workingLocation = page.getByLabel('Локация', { exact: true });
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
     await expect(workingLocation).toHaveValue(/^\d+$/, { timeout: 15_000 });
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
     const createButton = page.getByRole('button', { name: 'Создать', exact: true });
