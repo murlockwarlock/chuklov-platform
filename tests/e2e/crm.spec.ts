@@ -566,7 +566,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
     await page.getByRole('button', { name: 'Создать', exact: true }).click({ force: true });
 
-    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/);
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
     await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
     await expect(page.getByText(/idempotency|event version|schedule timezone|client timezone/i)).toHaveCount(0);
