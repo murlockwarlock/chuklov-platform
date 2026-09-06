@@ -565,14 +565,12 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+    const workingLocation = page.getByLabel('Локация', { exact: true });
+    await expect(workingLocation).toHaveValue(/^\d+$/, { timeout: 15_000 });
+    await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
     const createButton = page.getByRole('button', { name: 'Создать', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
-    const createResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
-        && response.request().method() === 'POST');
     await createButton.click();
-    const createPayload = await (await createResponse).json() as { effects?: { redirect?: string } };
-    expect(createPayload.effects?.redirect ?? '').toMatch(/\/admin\/bookings\/\d+$/);
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
