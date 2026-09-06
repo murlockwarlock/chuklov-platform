@@ -35,6 +35,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
             'method' => 'Метод',
             'b2b' => '🚀 Хочешь себе такого бота? / Развить бизнес',
             'partner' => 'Партнёры',
+            'invite_friend' => '🎁 Пригласить друга',
             'partner_cabinet' => '🤝 Стать партнёром',
         ]);
         $this->assertLocalizedMenu('en', [
@@ -43,6 +44,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
             'method' => 'Method',
             'b2b' => '🚀 Want a bot like this? / Grow your business',
             'partner' => 'Partners',
+            'invite_friend' => '🎁 Invite a friend',
             'partner_cabinet' => '🤝 Become a partner',
         ]);
     }
@@ -471,7 +473,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
         foreach (['https://mini.example.test', 'https://mini.example.test/'] as $configuredUrl) {
             config()->set('portal.telegram.portal_url', $configuredUrl);
 
-            self::assertCount(6, app(GetTelegramMenu::class)->handle('en'));
+            self::assertCount(7, app(GetTelegramMenu::class)->handle('en'));
         }
     }
 
