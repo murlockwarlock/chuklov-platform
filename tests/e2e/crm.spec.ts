@@ -693,7 +693,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
         await page.getByRole('button', { name: 'Ещё', exact: true }).click();
         const partnerMenu = page.locator('.fi-dropdown-panel:visible').last();
         await expect(partnerMenu).toBeVisible();
-        await assertRenderedViewportGeometry(page, ['[data-testid="partner-primary-open-client"]'], ['.fi-dropdown-panel:visible']);
+        await assertRenderedViewportGeometry(page, ['[data-testid="partner-primary-open-client"]'], ['.fi-dropdown-panel']);
         await page.keyboard.press('Escape');
 
         await page.goto('/admin/referral-relationships');
