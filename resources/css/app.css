@@ -420,6 +420,39 @@ body {
     padding-bottom: max(var(--portal-space-4), env(safe-area-inset-bottom));
 }
 
+.portal-companion__composer-toolbar {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--portal-space-3);
+}
+
+.portal-companion__composer-tools {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 12rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--portal-space-2);
+}
+
+.portal-companion__selection,
+.portal-companion__reinspect {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.portal-companion__reinspect {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--portal-color-ink-soft);
+    font-size: 0.875rem;
+}
+
 .portal-companion__textarea {
     width: 100%;
     min-height: 5rem;
@@ -470,6 +503,7 @@ body {
 .portal-companion__composer-actions {
     display: flex;
     min-width: 0;
+    flex: 1 1 14rem;
     align-items: center;
     justify-content: space-between;
     gap: var(--portal-space-3);
@@ -2651,7 +2685,7 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-companion {
-        height: min(48rem, calc(100dvh - 9.25rem - env(safe-area-inset-bottom)));
+        height: min(48rem, calc(100dvh - 13.5rem - env(safe-area-inset-bottom)));
         min-height: 0;
     }
 
@@ -2666,6 +2700,11 @@ select.portal-input[aria-invalid='true'] {
     }
 
     .portal-companion__textarea {
+        min-height: 3.75rem;
         max-height: 8rem;
+    }
+
+    .portal-companion__composer-actions {
+        flex-basis: 100%;
     }
 }

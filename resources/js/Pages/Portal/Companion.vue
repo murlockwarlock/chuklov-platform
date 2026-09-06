@@ -264,74 +264,78 @@ onUnmounted(() => {
             :placeholder="t('companion.placeholder')"
             :disabled="sendForm.processing"
             maxlength="8000"
-            rows="3"
+            rows="2"
           />
-          <button
-            type="button"
-            class="portal-companion__upload"
-            :aria-label="t('companion.attachImages')"
-            :title="t('companion.attachImages')"
-            :disabled="sendForm.processing"
-            @click="openImagePicker"
-          >
-            <PortalIcon name="paperclip" />
-            <span class="sr-only">{{ t('companion.attachImages') }}</span>
-          </button>
-          <input
-            ref="imageInput"
-            class="sr-only"
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            @change="selectImages"
-          >
-          <p
-            v-if="sendForm.images.length"
-            class="portal-copy portal-copy--small"
-          >
-            {{ t('companion.selectedImages', { count: sendForm.images.length }) }}
-          </p>
-          <label
-            v-if="props.companion.canReinspectRecentImages && !sendForm.images.length"
-            class="flex items-center gap-2 text-sm text-[var(--portal-color-ink-soft)]"
-          >
-            <input
-              v-model="sendForm.reinspect_recent_images"
-              type="checkbox"
-            >
-            <span>{{ t('companion.reinspectRecentImage') }}</span>
-          </label>
-          <div class="portal-companion__composer-actions">
-            <p
-              v-if="sendForm.errors.body || sendForm.errors.idempotency_key"
-              class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
-            >
-              {{ t('common.error') }}
-            </p>
-            <p
-              v-else-if="sendForm.processing"
-              class="portal-copy portal-copy--small"
-            >
-              {{ t('companion.sending') }}
-            </p>
-            <div class="portal-companion__composer-buttons">
+          <div class="portal-companion__composer-toolbar">
+            <div class="portal-companion__composer-tools">
               <button
-                class="portal-companion__reset"
                 type="button"
-                :aria-label="t('companion.reset')"
-                :title="t('companion.reset')"
-                @click="resetContext"
+                class="portal-companion__upload"
+                :aria-label="t('companion.attachImages')"
+                :title="t('companion.attachImages')"
+                :disabled="sendForm.processing"
+                @click="openImagePicker"
               >
-                <PortalIcon name="refresh" />
-                <span class="sr-only">{{ t('companion.reset') }}</span>
+                <PortalIcon name="paperclip" />
+                <span class="sr-only">{{ t('companion.attachImages') }}</span>
               </button>
-              <button
-                class="portal-button portal-button--primary"
-                type="submit"
-                :disabled="sendForm.processing || (!body.trim() && !sendForm.images.length)"
+              <input
+                ref="imageInput"
+                class="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                @change="selectImages"
               >
-                {{ sendForm.processing ? t('companion.sending') : t('companion.send') }}
-              </button>
+              <p
+                v-if="sendForm.images.length"
+                class="portal-copy portal-copy--small portal-companion__selection"
+              >
+                {{ t('companion.selectedImages', { count: sendForm.images.length }) }}
+              </p>
+              <label
+                v-if="props.companion.canReinspectRecentImages && !sendForm.images.length"
+                class="portal-companion__reinspect"
+              >
+                <input
+                  v-model="sendForm.reinspect_recent_images"
+                  type="checkbox"
+                >
+                <span>{{ t('companion.reinspectRecentImage') }}</span>
+              </label>
+            </div>
+            <div class="portal-companion__composer-actions">
+              <p
+                v-if="sendForm.errors.body || sendForm.errors.idempotency_key"
+                class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
+              >
+                {{ t('common.error') }}
+              </p>
+              <p
+                v-else-if="sendForm.processing"
+                class="portal-copy portal-copy--small"
+              >
+                {{ t('companion.sending') }}
+              </p>
+              <div class="portal-companion__composer-buttons">
+                <button
+                  class="portal-companion__reset"
+                  type="button"
+                  :aria-label="t('companion.reset')"
+                  :title="t('companion.reset')"
+                  @click="resetContext"
+                >
+                  <PortalIcon name="refresh" />
+                  <span class="sr-only">{{ t('companion.reset') }}</span>
+                </button>
+                <button
+                  class="portal-button portal-button--primary"
+                  type="submit"
+                  :disabled="sendForm.processing || (!body.trim() && !sendForm.images.length)"
+                >
+                  {{ sendForm.processing ? t('companion.sending') : t('companion.send') }}
+                </button>
+              </div>
             </div>
           </div>
         </form>

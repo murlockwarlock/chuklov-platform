@@ -16,8 +16,7 @@ use Illuminate\Support\Facades\Auth;
 
 class AiRunInfolist
 {
-    /** @var array<int, AiRunProtectedTraceData|null> */
-    private static array $traceCache = [];
+    private static ?\WeakMap $traceCache = null;
 
     public static function configure(Schema $schema): Schema
     {
@@ -25,7 +24,6 @@ class AiRunInfolist
             ->components([
                 Section::make('Сводка запуска')
                     ->schema([
-                        TextEntry::make('id')->label('ID запуска')->fontFamily('mono'),
                         TextEntry::make('capability')
                             ->label('Возможность')
                             ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
@@ -58,6 +56,25 @@ class AiRunInfolist
                             ->badge()
                             ->wrap()
                             ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? $state->label() : (string) $state),
+                    ])
+                    ->columns(3),
+
+                Section::make('Технические данные')
+                    ->collapsed()
+                    ->schema([
+                        TextEntry::make('id')->label('ID запуска')->fontFamily('mono'),
+                        TextEntry::make('prompt_version_id')->label('ID версии промпта')->fontFamily('mono')->placeholder('—'),
+                        TextEntry::make('model_release_id')->label('ID релиза модели')->fontFamily('mono')->placeholder('—'),
+                        TextEntry::make('rendered_prompt_digest')->label('Хеш промпта')->fontFamily('mono')->placeholder('—')->wrap(),
+                        TextEntry::make('context_hash')
+                            ->label('Хеш контекста')
+                            ->state(fn (AiRun $record): string => self::contextHash($record))
+                            ->fontFamily('mono'),
+                        TextEntry::make('technical_input_references')
+                            ->label('Ссылки на источники')
+                            ->state(fn (AiRun $record): string => self::pretty($record->input_references))
+                            ->columnSpanFull()
+                            ->wrap(),
                     ])
                     ->columns(3),
 
@@ -191,21 +208,45 @@ class AiRunInfolist
 
     private static function trace(AiRun $record): ?AiRunProtectedTraceData
     {
-        $runId = (int) $record->getKey();
-        if (array_key_exists($runId, self::$traceCache)) {
-            return self::$traceCache[$runId];
+        $cache = self::$traceCache ??= new \WeakMap;
+        if ($cache->offsetExists($record)) {
+            return $cache[$record];
         }
 
         $user = Auth::user();
         if (! $user instanceof User) {
-            return self::$traceCache[$runId] = null;
+            $cache[$record] = null;
+
+            return null;
         }
 
         try {
-            return self::$traceCache[$runId] = app(GetAiRunProtectedTrace::class)->handle($user, $runId);
+            $trace = app(GetAiRunProtectedTrace::class)->handle($user, (int) $record->getKey());
+            $cache[$record] = $trace;
+
+            return $trace;
         } catch (\Throwable) {
-            return self::$traceCache[$runId] = null;
+            $cache[$record] = null;
+
+            return null;
         }
+    }
+
+    private static function contextHash(AiRun $record): string
+    {
+        return hash('sha256', json_encode([
+            $record->context_provenance,
+            $record->input_references,
+            $record->ragReferences
+                ->map(static fn ($reference): array => [
+                    'index' => $reference->reference_index,
+                    'source_id' => $reference->knowledge_source_id,
+                    'revision_id' => $reference->knowledge_revision_id,
+                    'chunk_id' => $reference->knowledge_chunk_id,
+                ])
+                ->values()
+                ->all(),
+        ], JSON_THROW_ON_ERROR));
     }
 
     /** @param callable(AiRunProtectedTraceData): string $resolver */
@@ -236,8 +277,13 @@ class AiRunInfolist
                 $type = (string) ($reference['type'] ?? 'Источник');
                 $label = $labels[$type] ?? $type;
                 $role = isset($reference['role']) ? ' · '.(string) $reference['role'] : '';
+                $details = collect([
+                    $reference['name'] ?? null,
+                    $reference['filename'] ?? null,
+                    $reference['title'] ?? null,
+                ])->filter(static fn (mixed $value): bool => is_string($value) && trim($value) !== '')->implode(' · ');
 
-                return $label.$role.' (ID '.(string) ($reference['id'] ?? '—').')';
+                return $label.$role.($details === '' ? '' : ': '.$details);
             })
             ->implode("\n");
 
