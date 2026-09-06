@@ -87,6 +87,29 @@ class MilestoneFourDatabaseTest extends TestCase
         self::assertSame('2027-04-05T09:00:00+00:00', $rescheduled->startsAtUtc()->toIso8601String());
         self::assertSame(2, $rescheduled->event_version);
         self::assertSame(1, BookingEvent::query()->where('booking_id', $booking->getKey())->where('event_type', 'rescheduled')->count());
+
+        $routeBooking = app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2027, 4, 13, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'UTC',
+            workingLocationId: $location->getKey(),
+            idempotencyKey: 'postgres-office-route-reschedule',
+        );
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.reschedule', $routeBooking->getKey()), [
+                'starts_at' => '2027-04-12T09:00:00+00:00',
+                'client_timezone' => 'UTC',
+                'expected_event_version' => $routeBooking->event_version,
+            ])
+            ->assertRedirect(route('portal.bookings.show', $routeBooking->getKey()));
+
+        self::assertSame('2027-04-12T09:00:00+00:00', $routeBooking->fresh()->startsAtUtc()->toIso8601String());
     }
 
     public function test_postgresql_booking_provider_state_persists_non_secret_affinity_without_backfill(): void

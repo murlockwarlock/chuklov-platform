@@ -219,7 +219,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     const updatedUrl = 'https://example.test/community-updated';
 
     await login(page, fixture);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const editor = page.locator('.fi-fo-rich-editor-content').first();
     await editor.click({ force: true });
@@ -237,7 +237,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.waitForTimeout(500);
 
     await saveContentSection(page);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const reloadedEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(reloadedEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
@@ -256,7 +256,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(initialTelegram.persistedBody).toContain(`href="${initialUrl}"`);
     expect(telegramHasLinkedText(initialTelegram, initialUrl, communityText)).toBe(true);
 
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
     const previewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(previewEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     const previewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
@@ -273,7 +273,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
     await saveContentSection(page);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const finalEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(finalEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
@@ -291,7 +291,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(telegramHasLinkedText(updatedTelegram, updatedUrl, communityText)).toBe(true);
     expect(updatedTelegram.requests.some((payload) => String(payload.text ?? '').includes(`<a href="${initialUrl}">`))).toBe(false);
 
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
     const updatedPreviewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(updatedPreviewEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     const updatedPreviewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
