@@ -454,6 +454,7 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 props: {
                     services: [],
                     upcomingBooking: null,
+                    isPartner: false,
                     attribution: {
                         needsManualSource: false,
                     },
@@ -611,7 +612,7 @@ test('Telegram Mini App partner launch authenticates and displays the partner ca
                         isPartner: true,
                         status: 'active',
                         activatedAt: null,
-                        link: '/r/legacy-referral-code',
+                        link: 'https://t.me/chuklov_test_bot?start=ref_legacy-referral-code',
                         activationUrl: '/portal/referrals/activate',
                         createLinkUrl: '/portal/referrals/links',
                         stats: {
@@ -720,10 +721,11 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [390, 760]) {
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await assertNoHorizontalOverflow(page);
@@ -744,6 +746,12 @@ test('home keeps one primary booking action and makes referrals discoverable at 
     await page.getByTestId('home-referrals-cta').click();
     await expect(page).toHaveURL(/\/portal\/referrals$/);
     await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
+    await page.getByTestId('partner-activate').click();
+    await page.goto('/');
+    await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Партнёрский кабинет');
+    await page.getByTestId('home-referrals-cta').click();
+    await expect(page).toHaveURL(/\/portal\/referrals$/);
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
 });
 
 test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
@@ -778,7 +786,7 @@ test('client can activate the partner cabinet and manage multiple campaign links
     await expect(telegramLink).toContainText('Telegram');
 
     for (const link of [instagramLink, telegramLink]) {
-        await expect(link.locator('code')).toHaveText(/\/r\/[A-Za-z0-9_-]{16,128}/);
+        await expect(link.locator('code')).toHaveText(/https:\/\/t\.me\/[^?]+\?start=ref_[A-Za-z0-9_-]{16,128}/);
         await expect(link.getByRole('button', { name: 'Скопировать', exact: true })).toBeVisible();
         await expect(link.getByRole('button', { name: 'Поделиться', exact: true })).toBeVisible();
         await expect(link.getByText('Переходы', { exact: true })).toBeVisible();

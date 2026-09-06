@@ -2,6 +2,9 @@
 
 ## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
 
+- Hardened partner payout authorization at the Application boundary, corrected tracked campaign conversion and legacy referral provenance, and made all current reward presentation use net accrued balances including reversals without changing the append-only ledger.
+- Made the Partner Home CTA state-aware and bounded refreshes update Portal and CRM partner/payout views after asynchronous changes.
+- Routed personal and campaign referral links through the Telegram bot with a namespaced `ref_` payload, preserved legacy `/r/{token}` compatibility, campaign provenance, first-touch protection, and idempotent campaign visits; Communities «Открыть полностью» now uses Telegram's Mini App button instead of a browser URL.
 - Refined the CRM partner workspace so named campaign links, channels, per-link metrics, referred-client provenance, rewards, and payouts render as separate readable entries instead of one combined summary.
 - Added an actionable AI Companion readiness state to the CRM: missing active prompt/model configuration, provider outages, and disabled capabilities are distinguished with links to the existing setup surfaces where appropriate; provider failure categories returned by an AI run are preserved for safe handling.
 - Preserved an explicitly disabled provider as a distinct AI diagnosis and run/failure category instead of reporting it as missing configuration.

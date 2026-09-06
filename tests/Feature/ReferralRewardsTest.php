@@ -13,13 +13,16 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
+use App\Modules\Referrals\Application\CreateReferralCampaignLink;
 use App\Modules\Referrals\Application\GetClientReferralOverview;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
 use App\Modules\Referrals\Application\SaveReferralRewardProgram;
 use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
+use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
@@ -32,6 +35,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 final class ReferralRewardsTest extends TestCase
@@ -184,6 +188,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
+        $this->activatePartner($referrer);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'payout');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -212,6 +217,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
+        $this->activatePartner($referrer);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'limits');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -225,6 +231,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
+        $this->activatePartner($referrer);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'reverse');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -241,6 +248,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
+        $this->activatePartner($referrer);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'overview');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -257,6 +265,86 @@ final class ReferralRewardsTest extends TestCase
         self::assertArrayNotHasKey('status', $overview['rewards']['payouts'][0]);
     }
 
+    public function test_non_partner_cannot_request_a_payout_even_with_an_accrued_reward(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureFixed($organization, $admin, '10.00', 'USD');
+        $event = $this->settledEvent($organization, $referred, 'non-partner-payout');
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+
+        $this->expectException(ValidationException::class);
+        app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'non-partner-payout-request');
+    }
+
+    public function test_partner_payout_is_accepted_once_and_cross_tenant_client_is_rejected(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->activatePartner($referrer);
+        $this->configureFixed($organization, $admin, '10.00', 'USD');
+        $event = $this->settledEvent($organization, $referred, 'partner-payout-boundary');
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+
+        $first = app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'partner-payout-idempotency');
+        $retry = app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'partner-payout-idempotency');
+
+        self::assertSame($first->getKey(), $retry->getKey());
+        self::assertSame(1, ReferralPayoutRequest::query()->count());
+
+        $otherOrganization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($otherOrganization);
+
+        $this->expectException(HttpException::class);
+        app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'cross-tenant-payout-request');
+    }
+
+    public function test_reversed_campaign_reward_is_net_accrued_in_stats_per_link_and_balance_history(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->activatePartner($referrer);
+        $link = app(CreateReferralCampaignLink::class)->handle(
+            client: $referrer,
+            name: 'Telegram campaign',
+            channel: ReferralCampaignChannel::Telegram,
+        );
+        $relationship = $this->relationship($organization, $referrer, $referred, 'automatic_referral_link', $link->getKey());
+        $this->configureFixed($organization, $admin, '10.00', 'USD', 'every_settled_payment');
+        $usdEvent = $this->settledEvent($organization, $referred, 'net-usd', 10000, 'USD');
+        app(ConsumeFinanceSettlementEvent::class)->handle($usdEvent->getKey());
+
+        $this->configureCurrency($organization, $admin, 'half_up', ['USD', 'EUR'], [
+            ['source_currency' => 'EUR', 'target_currency' => 'USD', 'rate' => '1'],
+            ['source_currency' => 'USD', 'target_currency' => 'EUR', 'rate' => '1'],
+        ]);
+        $this->configureFixed($organization, $admin, '5.00', 'EUR', 'every_settled_payment');
+        $eurEvent = $this->settledEvent($organization, $referred, 'net-eur', 10000, 'EUR');
+        app(ConsumeFinanceSettlementEvent::class)->handle($eurEvent->getKey());
+
+        $earnedUsd = ReferralRewardLedgerEntry::query()
+            ->where('referral_relationship_id', $relationship->getKey())
+            ->where('currency', 'USD')
+            ->where('entry_type', ReferralRewardLedgerEntryType::Earned)
+            ->sole();
+        app(ReverseReferralReward::class)->handle($admin, $earnedUsd, 'Сторно тестового начисления');
+
+        $overview = app(GetClientReferralOverview::class)->handle($referrer);
+        $balances = collect($overview['rewards']['balances'])->keyBy('currency');
+        $linkRewards = collect($overview['links'][1]['rewards'])->keyBy('currency');
+
+        $statsRewards = collect($overview['stats']['rewardEarned'])->keyBy('currency');
+        self::assertSame(0, $statsRewards['USD']['amountMinor']);
+        self::assertSame(0, $balances['USD']['accruedMinor']);
+        self::assertSame(0, $balances['USD']['availableMinor']);
+        self::assertSame(500, $balances['EUR']['accruedMinor']);
+        self::assertSame(500, $balances['EUR']['availableMinor']);
+        self::assertSame('0', (string) $linkRewards['USD']['amountMinor']);
+        self::assertSame('500', (string) $linkRewards['EUR']['amountMinor']);
+        self::assertCount(3, $overview['rewards']['history']);
+        self::assertCount(1, ReferralRewardLedgerEntry::query()->where('entry_type', ReferralRewardLedgerEntryType::Reversed)->get());
+        self::assertSame(3, ReferralRewardLedgerEntry::query()->count());
+    }
+
     /** @return array{Organization, User, Client, Client} */
     private function fixture(): array
     {
@@ -264,13 +352,14 @@ final class ReferralRewardsTest extends TestCase
         $admin = User::factory()->forOrganization($organization)->create();
         $referrer = Client::factory()->forOrganization($organization)->create();
         $referred = Client::factory()->forOrganization($organization)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
         $this->configureCurrency($organization, $admin);
 
         return [$organization, $admin, $referrer, $referred];
     }
 
-    private function relationship(Organization $organization, Client $referrer, Client $referred, string $method = 'automatic_referral_link'): ReferralRelationship
+    private function relationship(Organization $organization, Client $referrer, Client $referred, string $method = 'automatic_referral_link', ?int $linkId = null): ReferralRelationship
     {
         $relationship = new ReferralRelationship;
         $relationship->forceFill([
@@ -278,11 +367,17 @@ final class ReferralRewardsTest extends TestCase
             'referrer_client_id' => $referrer->getKey(),
             'referred_client_id' => $referred->getKey(),
             'establishment_method' => $method,
+            'referral_campaign_link_id' => $linkId,
             'registered_at' => now(),
         ]);
         $relationship->save();
 
         return $relationship;
+    }
+
+    private function activatePartner(Client $client): void
+    {
+        app(ActivateReferralPartner::class)->handle($client, 'portal');
     }
 
     /**

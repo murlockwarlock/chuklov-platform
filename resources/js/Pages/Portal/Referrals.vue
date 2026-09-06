@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -115,6 +115,61 @@ const channelOptions = computed(() => [
     { value: 'website', label: t('referrals.channelWebsite') },
     { value: 'other', label: t('referrals.channelOther') },
 ]);
+
+const pollingStartedAt = Date.now();
+let pollingTimer: number | null = null;
+let pollingInFlight = false;
+let pollingMounted = false;
+
+function scheduleRefresh(): void {
+    if (!pollingMounted
+        || !props.referrals.isPartner
+        || pollingTimer !== null
+        || Date.now() - pollingStartedAt >= 120000) {
+        return;
+    }
+
+    pollingTimer = window.setTimeout(() => {
+        pollingTimer = null;
+        refreshReferralData();
+    }, 5000);
+}
+
+function refreshReferralData(): void {
+    if (!pollingMounted
+        || !props.referrals.isPartner
+        || pollingInFlight
+        || Date.now() - pollingStartedAt >= 120000) {
+        return;
+    }
+
+    pollingInFlight = true;
+    router.reload({
+        only: ['referrals'],
+        onFinish: () => {
+            pollingInFlight = false;
+            scheduleRefresh();
+        },
+    });
+}
+
+onMounted(() => {
+    pollingMounted = true;
+    scheduleRefresh();
+});
+onBeforeUnmount(() => {
+    if (pollingTimer !== null) {
+        window.clearTimeout(pollingTimer);
+        pollingTimer = null;
+    }
+    pollingMounted = false;
+});
+
+watch(() => props.referrals.isPartner, (isPartner) => {
+    if (isPartner) {
+        scheduleRefresh();
+    }
+});
 
 function createIdempotencyKey(prefix: string): string {
     return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
@@ -504,7 +559,7 @@ function cancelPayout(payout: Payout): void {
                   <p class="portal-copy portal-copy--small">
                     {{ t('referrals.earned') }}
                   </p>
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.earnedMinor, balance.currency) }}</strong>
+                  <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.accruedMinor, balance.currency) }}</strong>
                 </div>
                 <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
                   <p class="portal-copy portal-copy--small">

@@ -335,6 +335,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
     private function setOrganization(Organization $organization): void
     {
         config()->set('tenancy.default_organization_id', $organization->getKey());
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
     }
 

@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
@@ -164,7 +165,9 @@ final class ReferralRewardsConcurrencyTest extends TestCase
         $admin = User::factory()->forOrganization($organization)->create();
         $referrer = Client::factory()->forOrganization($organization)->create();
         $referred = Client::factory()->forOrganization($organization)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
+        app(ActivateReferralPartner::class)->handle($referrer, 'portal');
         app(SaveCurrencyConfiguration::class)->handle($admin, [
             'base_currency' => 'USD',
             'display_currency' => 'USD',

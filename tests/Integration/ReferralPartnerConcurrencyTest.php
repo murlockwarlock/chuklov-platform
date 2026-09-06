@@ -11,6 +11,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\CreateReferralCampaignLink;
 use App\Modules\Referrals\Application\FinalizeClientAcquisition;
+use App\Modules\Referrals\Application\RecordReferralLinkVisit;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
@@ -103,6 +104,32 @@ final class ReferralPartnerConcurrencyTest extends TestCase
         self::assertNotNull(DB::table('client_acquisition_registrations')->where('organization_id', $organization->getKey())->where('client_id', $referred->getKey())->value('finalized_at'));
     }
 
+    public function test_postgresql_concurrent_same_campaign_visit_is_counted_once(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $partner = Client::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $link = app(CreateReferralCampaignLink::class)->handle(
+            client: $partner,
+            name: 'Concurrent campaign',
+            channel: ReferralCampaignChannel::Telegram,
+        );
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::recordVisitInProcess($organization->getKey(), $link->public_token),
+            static fn (): string => self::recordVisitInProcess($organization->getKey(), $link->public_token),
+        ]);
+
+        self::assertNotContains('error', $results, implode(', ', $results));
+        self::assertSame(1, DB::table('referral_link_visits')
+            ->where('organization_id', $organization->getKey())
+            ->where('campaign_link_id', $link->getKey())
+            ->count());
+        self::assertSame(['visit'], array_values(array_unique($results)));
+    }
+
     private static function activateInProcess(int $organizationId, int $clientId): string
     {
         try {
@@ -144,6 +171,19 @@ final class ReferralPartnerConcurrencyTest extends TestCase
             );
 
             return 'finalized';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function recordVisitInProcess(int $organizationId, string $token): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $visit = app(RecordReferralLinkVisit::class)->handle($token, 'concurrent-telegram-session');
+
+            return $visit === null ? 'no-visit' : 'visit';
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();
         }

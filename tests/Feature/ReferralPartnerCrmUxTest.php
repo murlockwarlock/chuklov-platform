@@ -40,6 +40,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertTableColumnExists('available_summary')
             ->assertTableColumnExists('pending_summary')
             ->assertTableColumnExists('paid_summary')
+            ->assertSee('wire:poll.5s', false)
             ->assertSee('Алина Партнёр');
     }
 
@@ -78,7 +79,8 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertSee('История начислений')
             ->assertSee('История выплат')
             ->assertActionExists('createCampaignLink')
-            ->assertActionExists('deactivatePartner');
+            ->assertActionExists('deactivatePartner')
+            ->assertSee('wire:poll.5s.visible="refreshWorkspace"', false);
 
         self::assertSame('—', $component->instance()->workspaceLinkItems()[0]['rewards']);
     }
@@ -111,6 +113,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
 
         return $organization;

@@ -7,6 +7,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -48,6 +49,18 @@ final class RequestReferralPayout
                 ->whereKey($client->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $partnerProfile = ReferralPartnerProfile::query()
+                ->where('organization_id', $this->context->id())
+                ->where('client_id', $beneficiary->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if (! $partnerProfile instanceof ReferralPartnerProfile) {
+                throw ValidationException::withMessages([
+                    'partner' => 'Только партнёры могут запрашивать денежную выплату.',
+                ]);
+            }
+
             $existing = ReferralPayoutRequest::query()
                 ->where('organization_id', $this->context->id())
                 ->where('idempotency_key', $idempotencyKey)

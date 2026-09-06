@@ -31,8 +31,30 @@ final class ViewReferralPartnerProfile extends ViewRecord
 
     protected static ?string $title = 'Партнёрский кабинет';
 
+    protected string $view = 'filament.resources.referral-partner-profiles.pages.view';
+
+    public int $workspacePollingStartedAt = 0;
+
     /** @var array<string, mixed>|null */
     private ?array $workspace = null;
+
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+        $this->workspacePollingStartedAt = now()->getTimestamp();
+    }
+
+    public function refreshWorkspace(): void
+    {
+        $this->workspace = null;
+        $this->getRecord()->refresh();
+    }
+
+    public function shouldPollWorkspace(): bool
+    {
+        return $this->workspacePollingStartedAt > 0
+            && now()->getTimestamp() < $this->workspacePollingStartedAt + 120;
+    }
 
     protected function getHeaderActions(): array
     {

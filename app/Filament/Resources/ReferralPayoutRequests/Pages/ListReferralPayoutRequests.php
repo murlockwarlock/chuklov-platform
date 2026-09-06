@@ -11,6 +11,20 @@ final class ListReferralPayoutRequests extends ListRecords
 
     protected static ?string $title = 'Запросы выплат';
 
+    public int $statusPollingStartedAt = 0;
+
+    public function mount(): void
+    {
+        parent::mount();
+        $this->statusPollingStartedAt = now()->getTimestamp();
+    }
+
+    public function shouldPollStatus(): bool
+    {
+        return $this->statusPollingStartedAt > 0
+            && now()->getTimestamp() < $this->statusPollingStartedAt + 120;
+    }
+
     public function getBreadcrumbs(): array
     {
         return [];

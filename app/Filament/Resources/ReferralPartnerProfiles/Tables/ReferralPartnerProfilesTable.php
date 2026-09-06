@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources\ReferralPartnerProfiles\Tables;
 
+use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProfiles;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 
@@ -16,6 +18,8 @@ final class ReferralPartnerProfilesTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPartnerProfiles
+                && $livewire->shouldPollMetrics() ? '5s' : null)
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('client.full_name')

@@ -11,6 +11,20 @@ final class ListReferralPartnerProfiles extends ListRecords
 
     protected static ?string $title = 'Партнёры';
 
+    public int $metricsPollingStartedAt = 0;
+
+    public function mount(): void
+    {
+        parent::mount();
+        $this->metricsPollingStartedAt = now()->getTimestamp();
+    }
+
+    public function shouldPollMetrics(): bool
+    {
+        return $this->metricsPollingStartedAt > 0
+            && now()->getTimestamp() < $this->metricsPollingStartedAt + 120;
+    }
+
     public function getBreadcrumbs(): array
     {
         return [];

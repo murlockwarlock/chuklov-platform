@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
@@ -193,6 +194,17 @@ final class FinalizeClientAcquisition
             $profile = $authoritativeCampaignLink->partnerProfile()->first();
 
             if ($profile === null || (! $profile->isActive() && ! $firstTouchMatches)) {
+                return null;
+            }
+        } else {
+            $profile = ReferralPartnerProfile::query()
+                ->where('organization_id', $organizationId)
+                ->where('client_id', $identity->client_id)
+                ->first();
+
+            if ($profile instanceof ReferralPartnerProfile
+                && ! $profile->isActive()
+                && ! $firstTouchMatches) {
                 return null;
             }
         }

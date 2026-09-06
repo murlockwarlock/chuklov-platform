@@ -14,6 +14,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
 use App\Modules\Referrals\Application\GetClientReferralOverview;
@@ -38,6 +39,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 final class ReferralRewardsPostgresTest extends TestCase
@@ -327,6 +329,40 @@ final class ReferralRewardsPostgresTest extends TestCase
         app(TransitionReferralPayoutRequest::class)->handle($request, ReferralPayoutRequestStatus::Approved, $otherAdmin, 'cross-tenant-approve');
     }
 
+    public function test_postgresql_payout_requests_require_a_partner_and_keep_idempotency(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $ordinaryClient = Client::factory()->forOrganization($organization)->create();
+        $ordinaryReferred = Client::factory()->forOrganization($organization)->create();
+        $this->relationship($organization, $ordinaryClient, $ordinaryReferred);
+        $this->configureFixed($admin, '10.00', 'USD');
+        $ordinaryEvent = $this->settledEvent($organization, $ordinaryReferred, 'ordinary-payout');
+        app(ConsumeFinanceSettlementEvent::class)->handle($ordinaryEvent->getKey());
+
+        try {
+            app(RequestReferralPayout::class)->handle($ordinaryClient, '1.00', 'USD', 'ordinary-payout-request');
+            self::fail('An ordinary client cannot request a cash payout.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('partner', $exception->errors());
+        }
+
+        $this->relationship($organization, $referrer, $referred);
+        $partnerEvent = $this->settledEvent($organization, $referred, 'partner-payout');
+        app(ConsumeFinanceSettlementEvent::class)->handle($partnerEvent->getKey());
+        $first = app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'partner-idempotency');
+        $retry = app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'partner-idempotency');
+
+        self::assertSame($first->getKey(), $retry->getKey());
+        self::assertSame(1, ReferralPayoutRequest::query()->count());
+
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        app(OrganizationContext::class)->set($otherOrganization);
+
+        $this->expectException(HttpException::class);
+        app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'cross-tenant-payout');
+    }
+
     /** @return array{0: Organization, 1: User, 2: Client, 3: Client} */
     private function fixture(): array
     {
@@ -334,7 +370,9 @@ final class ReferralRewardsPostgresTest extends TestCase
         $admin = User::factory()->forOrganization($organization)->create();
         $referrer = Client::factory()->forOrganization($organization)->create();
         $referred = Client::factory()->forOrganization($organization)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
+        app(ActivateReferralPartner::class)->handle($referrer, 'portal');
         $this->configureCurrency($admin);
 
         return [$organization, $admin, $referrer, $referred];

@@ -94,6 +94,60 @@ final class ReferralPartnerStatisticsTest extends TestCase
         self::assertTrue($overview['registrations'][0]['paidClient']);
     }
 
+    public function test_visit_conversion_uses_only_campaign_registrations_while_total_registrations_stays_overall(): void
+    {
+        $organization = $this->organization();
+        $partner = Client::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $link = app(CreateReferralCampaignLink::class)->handle(
+            client: $partner,
+            name: 'Campaign',
+            channel: ReferralCampaignChannel::Instagram,
+        );
+        foreach (['campaign-1', 'campaign-2', 'campaign-3', 'campaign-4'] as $session) {
+            app(RecordReferralLinkVisit::class)->handle($link->public_token, $session);
+        }
+
+        $this->relationship($organization, $partner, Client::factory()->forOrganization($organization)->create(), $link->getKey());
+        $this->relationship($organization, $partner, Client::factory()->forOrganization($organization)->create(), $link->getKey());
+        $this->relationshipWithoutCampaign($organization, $partner, Client::factory()->forOrganization($organization)->create(), 'manual_crm');
+        $this->relationshipWithoutCampaign($organization, $partner, Client::factory()->forOrganization($organization)->create(), 'automatic_referral_link');
+
+        $overview = app(GetReferralPartnerOverview::class)->handle($partner);
+
+        self::assertSame(4, $overview['stats']['registrations']);
+        self::assertSame(50.0, $overview['stats']['visitToRegistrationRate']);
+        self::assertSame(4, $overview['referredClientsCount']);
+    }
+
+    public function test_registration_labels_preserve_manual_and_legacy_automatic_provenance(): void
+    {
+        $organization = $this->organization();
+        $partner = Client::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $campaign = app(CreateReferralCampaignLink::class)->handle(
+            client: $partner,
+            name: 'Telegram campaign',
+            channel: ReferralCampaignChannel::Telegram,
+        );
+        $manual = Client::factory()->forOrganization($organization)->create(['full_name' => 'Manual']);
+        $legacy = Client::factory()->forOrganization($organization)->create(['full_name' => 'Legacy']);
+        $campaignClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Campaign']);
+        $this->relationshipWithoutCampaign($organization, $partner, $manual, 'manual_crm');
+        $this->relationshipWithoutCampaign($organization, $partner, $legacy, 'automatic_referral_link');
+        $this->relationship($organization, $partner, $campaignClient, $campaign->getKey());
+
+        $overview = app(GetReferralPartnerOverview::class)->handle($partner);
+        $registrations = collect($overview['registrations'])->keyBy('name');
+
+        self::assertSame('Назначено в CRM', $registrations['Manual']['linkName']);
+        self::assertSame('CRM', $registrations['Manual']['channel']);
+        self::assertSame('Персональная ссылка', $registrations['Legacy']['linkName']);
+        self::assertSame('Ссылка', $registrations['Legacy']['channel']);
+        self::assertSame('Telegram campaign', $registrations['Campaign']['linkName']);
+        self::assertSame('Telegram', $registrations['Campaign']['channel']);
+    }
+
     private function relationship(Organization $organization, Client $partner, Client $client, int $linkId): ReferralRelationship
     {
         return ReferralRelationship::forceCreate([
@@ -102,6 +156,17 @@ final class ReferralPartnerStatisticsTest extends TestCase
             'referred_client_id' => $client->getKey(),
             'establishment_method' => 'automatic_referral_link',
             'referral_campaign_link_id' => $linkId,
+            'registered_at' => now(),
+        ]);
+    }
+
+    private function relationshipWithoutCampaign(Organization $organization, Client $partner, Client $client, string $method): ReferralRelationship
+    {
+        return ReferralRelationship::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'referrer_client_id' => $partner->getKey(),
+            'referred_client_id' => $client->getKey(),
+            'establishment_method' => $method,
             'registered_at' => now(),
         ]);
     }
@@ -201,6 +266,7 @@ final class ReferralPartnerStatisticsTest extends TestCase
     {
         $organization = Organization::factory()->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
 
         return $organization;

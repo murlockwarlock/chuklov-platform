@@ -395,7 +395,7 @@ final class TelegramNotificationChannel implements NotificationChannel
             }
 
             $keyboard->addRow(InlineKeyboardButton::make(
-                text: $message->locale === 'ru' ? 'Оценить визит' : 'Rate your visit',
+                text: $message->webAppButtonText ?? ($message->locale === 'ru' ? 'Оценить визит' : 'Rate your visit'),
                 web_app: WebAppInfo::make($url),
             ));
         }

@@ -11,7 +11,6 @@ use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Application\TelegramMessagePreview;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
-use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Content\Application\CreateContentSection;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
@@ -170,7 +169,8 @@ final class CommunitiesContentSectionTest extends TestCase
 
             return is_array($button)
                 && ($button['text'] ?? null) === 'Открыть полностью'
-                && ($button['url'] ?? null) === 'https://mini.example.test/portal/telegram/launch/communities';
+                && ($button['web_app']['url'] ?? null) === 'https://mini.example.test/portal/telegram/launch/communities'
+                && ! array_key_exists('url', $button);
         }, index: 0);
 
         $updatedLinks = [...$links];
@@ -294,9 +294,9 @@ final class CommunitiesContentSectionTest extends TestCase
         self::assertIsArray($entry);
         self::assertSame('telegram_content', $entry['launch']);
         self::assertSame(NotificationMessageMode::Text, $message->mode);
-        self::assertInstanceOf(NotificationActionButton::class, $message->actionButton);
-        self::assertSame('Открыть полностью', $message->actionButton->text);
-        self::assertSame('https://mini.example.test/portal/telegram/launch/communities', $message->actionButton->url);
+        self::assertSame('Открыть полностью', $message->webAppButtonText);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/communities', $message->webAppUrl);
+        self::assertNull($message->actionButton);
         self::assertStringContainsString('https://communities.example.test/one', $preview['bodyHtml']);
     }
 

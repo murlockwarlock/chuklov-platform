@@ -19,6 +19,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -70,6 +71,8 @@ final class ReferralPayoutRequestResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPayoutRequests
+                && $livewire->shouldPollStatus() ? '5s' : null)
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('beneficiary.full_name')->label('Партнёр / клиент')->searchable()->wrap(),

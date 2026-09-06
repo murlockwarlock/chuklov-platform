@@ -47,11 +47,22 @@ final class RecordReferralLinkVisit
                 return null;
             }
 
+            $sessionHash = hash('sha256', $sessionId);
+            $existing = ReferralLinkVisit::query()
+                ->where('organization_id', $organizationId)
+                ->where('campaign_link_id', $campaignLink->getKey())
+                ->where('session_hash', $sessionHash)
+                ->first();
+
+            if ($existing instanceof ReferralLinkVisit) {
+                return $campaignLink->refresh();
+            }
+
             $visit = new ReferralLinkVisit;
             $visit->forceFill([
                 'organization_id' => $organizationId,
                 'campaign_link_id' => $campaignLink->getKey(),
-                'session_hash' => hash('sha256', $sessionId),
+                'session_hash' => $sessionHash,
                 'occurred_at' => now(),
             ]);
             $visit->save();

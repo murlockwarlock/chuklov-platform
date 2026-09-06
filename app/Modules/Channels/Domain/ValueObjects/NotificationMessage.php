@@ -20,6 +20,7 @@ final readonly class NotificationMessage
         public string $idempotencyKey,
         public bool $requireKnownExternalOutcome = false,
         public ?string $webAppUrl = null,
+        public ?string $webAppButtonText = null,
         public ?NotificationActionButton $actionButton = null,
         public array $actionButtons = [],
         public ?string $mediaUrl = null,

@@ -6,6 +6,7 @@ use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
+use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
@@ -25,6 +26,7 @@ final class GetReferralPartnerOverview
         private readonly OrganizationContext $context,
         private readonly EnsureReferralIdentity $ensureIdentity,
         private readonly ReferralRewardBalanceProjection $balances,
+        private readonly BuildReferralTelegramUrl $telegramUrl,
     ) {}
 
     /** @return array<string, mixed> */
@@ -83,6 +85,9 @@ final class GetReferralPartnerOverview
                 ->where('organization_id', $organizationId)
                 ->whereIn('campaign_link_id', $linkIds)
                 ->count();
+        $trackedRegistrationCount = $linkIds === []
+            ? 0
+            : (clone $relationshipQuery)->whereIn('referral_campaign_link_id', $linkIds)->count();
 
         return [
             'isPartner' => $profile?->isActive() === true,
@@ -92,7 +97,7 @@ final class GetReferralPartnerOverview
             'activatedAt' => $profile === null || $profile->getRawOriginal('activated_at') === null
                 ? null
                 : CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'))->toIso8601String(),
-            'link' => route('portal.referral', ['referralCode' => $identity->public_code]),
+            'link' => $this->telegramUrl->handle($identity->public_code),
             'activationUrl' => route('portal.referrals.activate'),
             'createLinkUrl' => route('portal.referrals.links.store'),
             'referredClientsCount' => $registrationCount,
@@ -100,7 +105,7 @@ final class GetReferralPartnerOverview
                 'visits' => $visitCount,
                 'registrations' => $registrationCount,
                 'paidClients' => $paidClientCount,
-                'visitToRegistrationRate' => $this->conversion($registrationCount, $visitCount),
+                'visitToRegistrationRate' => $this->conversion($trackedRegistrationCount, $visitCount),
                 'registrationToPaidClientRate' => $this->conversion($paidClientCount, $registrationCount),
                 'rewardEarned' => $this->moneyList($rewardBalances),
             ],
@@ -111,7 +116,7 @@ final class GetReferralPartnerOverview
                 'createdAt' => $link->getRawOriginal('created_at') === null
                     ? null
                     : CarbonImmutable::parse((string) $link->getRawOriginal('created_at'))->toIso8601String(),
-                'shareUrl' => route('portal.referral', ['referralCode' => $link->public_token]),
+                'shareUrl' => $this->telegramUrl->handle($link->public_token),
                 'disableUrl' => route('portal.referrals.links.disable', ['campaignLinkId' => $link->getKey()]),
                 'visits' => (int) ($visitsByLink[(int) $link->getKey()] ?? 0),
                 'registrations' => (int) ($registrationsByLink[(int) $link->getKey()] ?? 0),
@@ -208,10 +213,16 @@ final class GetReferralPartnerOverview
             ->join($relationshipTable, $relationshipTable.'.id', '=', $ledgerTable.'.referral_relationship_id')
             ->where($ledgerTable.'.organization_id', $organizationId)
             ->where($ledgerTable.'.beneficiary_client_id', $clientId)
-            ->where($ledgerTable.'.entry_type', ReferralRewardLedgerEntryType::Earned->value)
+            ->whereIn($ledgerTable.'.entry_type', [
+                ReferralRewardLedgerEntryType::Earned->value,
+                ReferralRewardLedgerEntryType::Reversed->value,
+            ])
             ->whereNotNull($relationshipTable.'.referral_campaign_link_id')
             ->select($relationshipTable.'.referral_campaign_link_id AS link_id', $ledgerTable.'.currency')
-            ->selectRaw('SUM(referral_reward_ledger_entries.amount_minor) AS amount_minor')
+            ->selectRaw(
+                'SUM(CASE WHEN referral_reward_ledger_entries.entry_type = ? THEN referral_reward_ledger_entries.amount_minor ELSE -referral_reward_ledger_entries.amount_minor END) AS amount_minor',
+                [ReferralRewardLedgerEntryType::Earned->value],
+            )
             ->groupBy($relationshipTable.'.referral_campaign_link_id', $ledgerTable.'.currency')
             ->get();
         $rewards = [];
@@ -244,7 +255,7 @@ final class GetReferralPartnerOverview
         return array_map(
             fn (ReferralRewardBalance $balance): array => [
                 'currency' => $balance->currency->value,
-                'amountMinor' => $balance->earned->minorUnits(),
+                'amountMinor' => $balance->accrued()->minorUnits(),
             ],
             $balances,
         );
@@ -264,10 +275,14 @@ final class GetReferralPartnerOverview
                 ? null
                 : CarbonImmutable::parse((string) $relationship->commercial_evidence_max_observed_at)->toIso8601String(),
             'paidClient' => $paidClient,
-            'linkName' => $link instanceof ReferralCampaignLink ? $link->name : 'Назначено в CRM',
+            'linkName' => $link instanceof ReferralCampaignLink
+                ? $link->name
+                : ($relationship->establishment_method === ReferralEstablishmentMethod::ManualCrm
+                    ? 'Назначено в CRM'
+                    : 'Персональная ссылка'),
             'channel' => $link instanceof ReferralCampaignLink
                 ? (ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое')
-                : 'CRM',
+                : ($relationship->establishment_method === ReferralEstablishmentMethod::ManualCrm ? 'CRM' : 'Ссылка'),
         ];
     }
 

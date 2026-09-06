@@ -27,11 +27,23 @@ final class ResolveTelegramMiniAppEntry
         return TelegramMenuLaunchMode::tryFrom((string) ($definition['launch'] ?? ''));
     }
 
-    public function launchUrl(string $key): string
+    /** @param array<string, mixed> $query */
+    public function launchUrl(string $key, array $query = []): string
     {
         $this->requireMiniApp($key);
         $baseUrl = $this->canonicalPortalUrl();
         $path = route('portal.telegram.launch', ['entry' => $key], false);
+
+        if ($query !== []) {
+            if (count($query) !== 1
+                || ! array_key_exists('referral_code', $query)
+                || ! is_string($query['referral_code'])
+                || preg_match('/^[A-Za-z0-9_-]{16,128}$/', $query['referral_code']) !== 1) {
+                throw new LogicException('The Telegram Mini App launch query is not allowlisted.');
+            }
+
+            $path .= '?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
 
         return $baseUrl.'/'.ltrim($path, '/');
     }

@@ -48,6 +48,7 @@ class HomeController extends Controller
             ]);
         }
 
+        $client->loadMissing('referralPartnerProfile');
         $upcoming = $bookings->handle(app()->getLocale())['upcoming'];
 
         return Inertia::render('Portal/Home', [
@@ -59,6 +60,7 @@ class HomeController extends Controller
             'attribution' => [
                 'needsManualSource' => $getAttribution->handle($client) === null,
             ],
+            'isPartner' => $client->referralPartnerProfile?->isActive() === true,
         ]);
     }
 

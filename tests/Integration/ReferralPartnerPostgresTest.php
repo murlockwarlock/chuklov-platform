@@ -37,6 +37,7 @@ final class ReferralPartnerPostgresTest extends TestCase
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $partner = Client::factory()->forOrganization($organization)->create(['full_name' => 'Partner A']);
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
         $profile = app(ActivateReferralPartner::class)->handle($partner, 'portal');
         $link = app(CreateReferralCampaignLink::class)->handle(
