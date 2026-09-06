@@ -1044,7 +1044,7 @@ test('booking primary action stays inside every acceptance viewport', async ({ p
         await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
         await assertRenderedViewportGeometry(
             page,
-            ['.portal-booking-flow__cta'],
+            ['.portal-booking-choice > .portal-button--primary, .portal-booking-flow__cta'],
             ['.portal-booking-flow'],
         );
     }
