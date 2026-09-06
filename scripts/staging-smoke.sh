@@ -147,7 +147,7 @@ ok 'QUEUE IDENTITY' 'application and Horizon agree'
 ok 'APP RUNTIME'
 ok 'HORIZON RUNTIME'
 
-for check in crm-home clients client-card sessions survey-definitions survey-attempts knowledge-sources knowledge-inspector portal; do
+for check in crm-home clients client-card partner-profiles referral-payout-requests financial-obligations finance-configuration partner-client-actions sessions survey-definitions survey-attempts knowledge-sources knowledge-inspector portal; do
     run_php_check app "$check"
 done
 
