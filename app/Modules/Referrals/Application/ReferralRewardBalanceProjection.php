@@ -42,7 +42,10 @@ final class ReferralRewardBalanceProjection
             $totals[$key] ??= $this->emptyTotals($currency);
             $entryType = (string) $row->entry_type;
 
-            if ($entryType === ReferralRewardLedgerEntryType::Earned->value) {
+            if (in_array($entryType, [
+                ReferralRewardLedgerEntryType::Earned->value,
+                ReferralRewardLedgerEntryType::ManualCredit->value,
+            ], true)) {
                 $totals[$key]['earned'] = $this->add($totals[$key]['earned'], $row->total_minor, $currency);
             } elseif ($entryType === ReferralRewardLedgerEntryType::Reversed->value) {
                 $totals[$key]['reversed'] = $this->add($totals[$key]['reversed'], $row->total_minor, $currency);

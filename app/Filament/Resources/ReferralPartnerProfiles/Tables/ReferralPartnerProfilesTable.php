@@ -31,9 +31,16 @@ final class ReferralPartnerProfilesTable
                     ->label('Статус')
                     ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => self::statusLabel($state))
                     ->badge(),
-                TextColumn::make('visits_count')->label('Переходы')->numeric()->sortable(),
+                TextColumn::make('visits_count')
+                    ->label('Переходы')
+                    ->numeric()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('registrations_count')->label('Регистрации')->numeric()->sortable(),
-                TextColumn::make('paid_clients_count')->label('Оплатили')->numeric()->sortable(),
+                TextColumn::make('paid_clients_count')
+                    ->label('Оплатили')
+                    ->numeric()
+                    ->sortable(),
                 TextColumn::make('available_summary')
                     ->label('Доступно к выплате')
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'available'))
@@ -43,12 +50,12 @@ final class ReferralPartnerProfilesTable
                     ->label('Ожидает выплаты')
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'pending'))
                     ->wrap()
-                    ->visibleFrom('md'),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('paid_summary')
                     ->label('Выплачено')
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'paid'))
                     ->wrap()
-                    ->visibleFrom('lg'),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('status')

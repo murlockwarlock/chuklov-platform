@@ -299,6 +299,7 @@ final class GetReferralPartnerOverview
             'currency' => $currency->value,
             'clientName' => $entry->referred?->full_name,
             'reason' => $entry->reason,
+            'comment' => $entry->comment,
             'occurredAt' => CarbonImmutable::parse((string) $entry->occurred_at)->toIso8601String(),
         ];
     }

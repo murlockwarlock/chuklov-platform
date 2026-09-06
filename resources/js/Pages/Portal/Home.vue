@@ -140,6 +140,18 @@ const { locale, t } = usePortalLocale();
           </span>
         </Link>
         <Link
+          :href="props.portal.urls.referrals"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+          data-testid="home-invite-friend-cta"
+        >
+          <strong class="portal-heading portal-heading--section">
+            {{ t('home.inviteFriend') }}
+          </strong>
+          <span class="portal-card__summary">
+            {{ t('home.inviteFriendDescription') }}
+          </span>
+        </Link>
+        <Link
           :href="props.portal.urls.feedback"
           class="portal-card portal-card--interactive portal-stack portal-stack--tight"
         >

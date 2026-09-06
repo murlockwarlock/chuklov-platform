@@ -2,6 +2,8 @@
 
 ## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
 
+- Clarified CRM referral terminology and current-referrer provenance, added partner-specific versioned reward terms, audited manual partner credits through the existing ledger, and kept partner/bookings tables focused on primary actions at normal widths.
+- Restored ordinary-client «Пригласить друга» alongside partner enrollment, added the recipient-aware `{{ referral_link }}` variable to the shared message composer and delivery contexts, and kept the editable invite template on the existing versioned notification-template path.
 - Hardened partner payout authorization at the Application boundary, corrected tracked campaign conversion and legacy referral provenance, and made all current reward presentation use net accrued balances including reversals without changing the append-only ledger.
 - Made the Partner Home CTA state-aware and bounded refreshes update Portal and CRM partner/payout views after asynchronous changes.
 - Routed personal and campaign referral links through the Telegram bot with a namespaced `ref_` payload, preserved legacy `/r/{token}` compatibility, campaign provenance, first-touch protection, and idempotent campaign visits; Communities «Открыть полностью» now uses Telegram's Mini App button instead of a browser URL.

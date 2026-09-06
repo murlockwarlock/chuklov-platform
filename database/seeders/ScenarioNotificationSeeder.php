@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
+use App\Modules\Scenarios\Application\EnsureReferralInviteTemplate;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -32,6 +33,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
                 $this->seedFeedback($organization, 'ru', 'Оцените визит, {{ client.full_name }}.');
                 app(EnsureAppointmentReminderDefaults::class)->handle($organization);
+                app(EnsureReferralInviteTemplate::class)->handle($organization);
             });
     }
 

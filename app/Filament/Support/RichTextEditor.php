@@ -52,7 +52,7 @@ final class RichTextEditor
                 ->mergeTags($mergeTags)
                 ->noMergeTagSearchResultsMessage('Доступные данные не найдены.')
                 ->dehydrateStateUsing(fn (mixed $state): mixed => is_string($state)
-                    ? RichTextDocument::normalizeMergeTags($state)
+                    ? RichTextDocument::canonicalHtml(RichTextDocument::normalizeMergeTags($state))
                     : $state);
         }
 

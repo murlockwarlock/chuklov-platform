@@ -4,6 +4,7 @@ namespace App\Modules\Referrals\Application;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -20,7 +21,14 @@ final class EnsureReferralIdentity
     {
         $organization = $this->context->organization();
 
-        abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
+        return $this->handleForOrganization($organization, $client);
+    }
+
+    public function handleForOrganization(Organization $organization, Client $client): ClientReferralIdentity
+    {
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
+            abort(404);
+        }
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {

@@ -78,7 +78,7 @@ class Client extends Model
     /** @return HasOne<ReferralRelationship, $this> */
     public function referralRelationship(): HasOne
     {
-        return $this->hasOne(ReferralRelationship::class, 'referred_client_id');
+        return $this->hasOne(ReferralRelationship::class, 'referred_client_id')->with('referrer');
     }
 
     /** @return HasMany<ReferralRelationship, $this> */

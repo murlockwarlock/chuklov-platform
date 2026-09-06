@@ -48,6 +48,12 @@ class ReferralRewardProgramVersion extends Model
         return $this->belongsTo(ReferralRewardProgram::class, 'program_id');
     }
 
+    /** @return BelongsTo<ReferralPartnerProfile, $this> */
+    public function partnerProfile(): BelongsTo
+    {
+        return $this->belongsTo(ReferralPartnerProfile::class, 'partner_profile_id');
+    }
+
     /** @return BelongsTo<User, $this> */
     public function createdBy(): BelongsTo
     {

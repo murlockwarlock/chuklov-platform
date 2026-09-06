@@ -428,6 +428,21 @@ function saveB2bAnswer(): void {
 
       <section class="portal-panel portal-stack portal-stack--tight">
         <h2 class="portal-heading portal-heading--card">
+          {{ t('home.inviteFriend') }}
+        </h2>
+        <p class="portal-copy portal-copy--small">
+          {{ t('home.inviteFriendDescription') }}
+        </p>
+        <Link
+          :href="props.portal.urls.referrals"
+          class="portal-button portal-button--secondary self-start"
+        >
+          {{ t('home.inviteFriend') }}
+        </Link>
+      </section>
+
+      <section class="portal-panel portal-stack portal-stack--tight">
+        <h2 class="portal-heading portal-heading--card">
           {{ t('home.referrals') }}
         </h2>
         <p class="portal-copy portal-copy--small">

@@ -29,7 +29,11 @@ class BookingsTable
     {
         $canManageScheduling = BookingResource::canCreate();
         $columns = [
-            TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
+            TextColumn::make('specialist.display_name')
+                ->label('Специалист')
+                ->sortable()
+                ->wrap()
+                ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
             TextColumn::make('starts_at')
                 ->label(fn (): string => 'Дата и время ('.self::viewerTimezone().')')
@@ -43,7 +47,7 @@ class BookingsTable
                 ->label('Место')
                 ->state(fn (Booking $record): string => self::locationLabel($record))
                 ->wrap()
-                ->toggleable(),
+                ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('status')
                 ->label('Статус')
                 ->badge()
