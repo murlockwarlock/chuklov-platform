@@ -269,8 +269,11 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(previewDialog.locator(`a[href="${initialUrl}"]`)).toHaveText(communityText);
     await expect(previewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
     await expect(previewDialog.locator('a')).toHaveCount(2);
+    const closePreviewResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST');
     await previewDialog.locator('button.fi-modal-close-btn').click({ force: true });
     await expect(previewDialog).toBeHidden();
+    await expect((await closePreviewResponse).status()).toBe(200);
 
     await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);

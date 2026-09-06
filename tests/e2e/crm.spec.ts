@@ -566,7 +566,11 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
-    await expect(workingLocation).toHaveValue(/^\d+$/, { timeout: 15_000 });
+    await workingLocation.click();
+    const locationOption = workingLocation.locator('xpath=..').getByRole('option').filter({ hasText: /—/ }).first();
+    await expect(locationOption).toBeVisible({ timeout: 15_000 });
+    await locationOption.click();
+    await expect(workingLocation).not.toContainText('Выбрать вариант', { timeout: 15_000 });
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
     const createButton = page.getByRole('button', { name: 'Создать', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
