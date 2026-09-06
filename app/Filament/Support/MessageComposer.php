@@ -80,7 +80,7 @@ final class MessageComposer
         $messageComponents[] = RichTextEditor::make($bodyField, $variables)
             ->label($bodyLabel)
             ->maxLength(100000)
-            ->live()
+            ->live(onBlur: true)
             ->helperText($bodyHelper)
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
