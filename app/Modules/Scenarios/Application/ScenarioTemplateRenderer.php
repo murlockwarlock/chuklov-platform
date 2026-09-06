@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\RenderedNotification;
@@ -17,7 +18,7 @@ final class ScenarioTemplateRenderer implements NotificationTemplateRenderer
         $variables = array_values(array_filter(array_map('strval', $template->variables)));
         $body = $this->renderString($template->body, $variables, $context);
         $subject = $template->subject === null ? null : $this->renderString($template->subject, $variables, $context);
-        $mode = $template->delivery_mode;
+        $mode = $template->delivery_mode ?? NotificationMessageMode::Text;
 
         return new RenderedNotification(
             body: $body,
