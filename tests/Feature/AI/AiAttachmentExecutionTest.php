@@ -91,6 +91,88 @@ final class AiAttachmentExecutionTest extends TestCase
         $this->assertCount(3, $imageParts);
     }
 
+    public function test_deepseek_vision_gateway_sends_private_images_as_chat_completion_parts(): void
+    {
+        $attachments = collect([
+            $this->attachment(AttachmentType::PosturePhoto, 'image/jpeg', 'front.jpg', 'front-image'),
+            $this->attachment(AttachmentType::PosturePhoto, 'image/png', 'side.png', 'side-image'),
+            $this->attachment(AttachmentType::PosturePhoto, 'image/webp', 'back.webp', 'back-image'),
+        ]);
+        $references = $attachments->map(fn (MedicalAttachment $attachment): AiInputReference => new AiInputReference('medical_attachment', $attachment->id))->all();
+        $files = app(AiAttachmentResolver::class)->resolve(
+            organizationId: $this->organization->id,
+            capability: AiCapability::PostureAnalysis,
+            references: $references,
+            actor: $this->admin,
+        )['files'];
+
+        $body = $this->sendToDeepSeek($files, 'deepseek-v4-flash-vision-exp');
+        $userMessage = collect($body['messages'])->firstWhere('role', 'user');
+        $imageParts = collect($userMessage['content'])->where('type', 'image_url');
+
+        $this->assertCount(3, $imageParts);
+        $this->assertStringContainsString(
+            base64_encode('front-image'),
+            $imageParts->first()['image_url']['url'],
+        );
+    }
+
+    public function test_deepseek_structured_prompt_enables_json_output(): void
+    {
+        $schema = [
+            'type' => 'object',
+            'properties' => [
+                'exam_type' => ['type' => 'string'],
+                'size_mm' => ['anyOf' => [['type' => 'number'], ['type' => 'null']]],
+            ],
+            'required' => ['exam_type', 'size_mm'],
+        ];
+        $credential = new OrganizationCredential([
+            'provider' => 'deepseek',
+            'credential_name' => 'Structured DeepSeek',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organization->id;
+        $credential->credentials = ['api_key' => 'structured-test-key'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+        Http::fake([
+            'https://api.deepseek.com/v1/chat/completions' => function ($request) {
+                $this->capturedProviderBody = $request->data();
+
+                return Http::response([
+                    'id' => 'deepseek_structured_response',
+                    'model' => 'deepseek-v4-flash-vision-exp',
+                    'choices' => [[
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => '{"exam_type":"MRI","size_mm":null}',
+                        ],
+                        'finish_reason' => 'stop',
+                    ]],
+                    'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
+                ]);
+            },
+        ]);
+        $agent = new DynamicWorkflowAgent(
+            instructionsText: 'Return JSON only.',
+            outputSchema: $schema,
+        );
+        $provider = app(AiProviderFactory::class)->createTextProvider('deepseek', $credential, $agent);
+        $provider->prompt(new AgentPrompt(
+            agent: $agent,
+            prompt: 'Return the medical document as JSON.',
+            attachments: [],
+            provider: $provider,
+            model: 'deepseek-v4-flash-vision-exp',
+        ));
+
+        $this->assertSame(['type' => 'json_object'], $this->capturedProviderBody['response_format']);
+        $this->assertStringContainsString('exam_type', json_encode($this->capturedProviderBody['messages'], JSON_THROW_ON_ERROR));
+        $this->assertStringContainsString('size_mm', json_encode($this->capturedProviderBody['messages'], JSON_THROW_ON_ERROR));
+    }
+
     public function test_posture_analysis_rejects_zero_one_two_or_four_photos_before_provider_io(): void
     {
         foreach ([0, 1, 2, 4] as $count) {
@@ -236,6 +318,50 @@ final class AiAttachmentExecutionTest extends TestCase
         $provider->prompt(new AgentPrompt(
             agent: $agent,
             prompt: 'Protected attachment request',
+            attachments: $files,
+            provider: $provider,
+            model: $model,
+        ));
+
+        return $this->capturedProviderBody;
+    }
+
+    /** @param list<File> $files */
+    private function sendToDeepSeek(array $files, string $model): array
+    {
+        $credential = new OrganizationCredential([
+            'provider' => 'deepseek',
+            'credential_name' => 'Attachment DeepSeek',
+            'revision_id' => (string) Str::uuid(),
+        ]);
+        $credential->organization_id = $this->organization->id;
+        $credential->credentials = ['api_key' => 'attachment-test-key'];
+        $credential->status = CredentialStatus::Active;
+        $credential->save();
+        Http::fake([
+            'https://api.deepseek.com/v1/chat/completions' => function ($request) {
+                $this->capturedProviderBody = $request->data();
+
+                return Http::response([
+                    'id' => 'deepseek_attachment_response',
+                    'model' => 'deepseek-v4-flash-vision-exp',
+                    'choices' => [[
+                        'index' => 0,
+                        'message' => [
+                            'role' => 'assistant',
+                            'content' => 'ok',
+                        ],
+                        'finish_reason' => 'stop',
+                    ]],
+                    'usage' => ['prompt_tokens' => 1, 'completion_tokens' => 1],
+                ]);
+            },
+        ]);
+        $agent = new DynamicWorkflowAgent(instructionsText: 'Process safely.');
+        $provider = app(AiProviderFactory::class)->createTextProvider('deepseek', $credential, $agent);
+        $provider->prompt(new AgentPrompt(
+            agent: $agent,
+            prompt: 'Protected posture request',
             attachments: $files,
             provider: $provider,
             model: $model,

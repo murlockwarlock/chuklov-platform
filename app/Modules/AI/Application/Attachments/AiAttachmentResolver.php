@@ -102,7 +102,11 @@ final class AiAttachmentResolver
 
         $files = [];
         $provenance = [];
-        foreach ($attachmentReferences as $reference) {
+        $postureRoles = $capability === AiCapability::PostureAnalysis
+            ? $this->postureRoles($attachmentReferences)
+            : [];
+
+        foreach ($attachmentReferences as $index => $reference) {
             $attachment = $attachments->get($reference->id);
             if (! $attachment instanceof MedicalAttachment) {
                 throw new InvalidArgumentException('AI medical attachment input reference was not found in the current organization.');
@@ -122,7 +126,7 @@ final class AiAttachmentResolver
             }
 
             $this->assertCompatible($capability, $attachment, count($ids), $reference->type);
-            $provenance[] = $this->safeProvenance($attachment, $reference->type);
+            $provenance[] = $this->safeProvenance($attachment, $reference->type, $postureRoles[$index] ?? null);
             $files[] = $this->toSdkFile($attachment, $reference->type === 'companion_attachment');
         }
 
@@ -130,7 +134,7 @@ final class AiAttachmentResolver
     }
 
     /** @return array<string, mixed> */
-    private function safeProvenance(MedicalAttachment $attachment, string $referenceType): array
+    private function safeProvenance(MedicalAttachment $attachment, string $referenceType, ?string $role = null): array
     {
         if ($attachment->disk !== 'private'
             || ! str_starts_with($attachment->storage_path, 'medical/attachments/'.((int) $attachment->organization_id).'/')) {
@@ -161,7 +165,7 @@ final class AiAttachmentResolver
             throw new InvalidArgumentException('Medical attachment checksum does not match its immutable record.');
         }
 
-        return [
+        $provenance = [
             'attachment_id' => (int) $attachment->id,
             'attachment_uuid' => (string) $attachment->uuid,
             'attachment_type' => $attachment->attachment_type->value,
@@ -170,6 +174,37 @@ final class AiAttachmentResolver
             'size_bytes' => $actualSize,
             'reference_type' => $referenceType,
         ];
+
+        if ($role !== null) {
+            $provenance['role'] = $role;
+        }
+
+        if ($attachment->evaluation_fixture_key !== null) {
+            $provenance['evaluation_fixture_key'] = $attachment->evaluation_fixture_key;
+        }
+
+        return $provenance;
+    }
+
+    /**
+     * @param  list<AiInputReference>  $references
+     * @return list<string>
+     */
+    private function postureRoles(array $references): array
+    {
+        $roles = array_map(static fn (AiInputReference $reference): ?string => $reference->role, $references);
+
+        if (count(array_filter($roles, static fn (?string $role): bool => $role !== null)) === 0) {
+            return ['front', 'side', 'back'];
+        }
+
+        if (count(array_filter($roles, static fn (?string $role): bool => in_array($role, ['front', 'side', 'back'], true))) !== 3
+            || count(array_unique($roles)) !== 3
+            || array_diff(['front', 'side', 'back'], $roles) !== []) {
+            throw new InvalidArgumentException('Posture analysis requires one front, side, and back image.');
+        }
+
+        return array_map(static fn (?string $role): string => (string) $role, $roles);
     }
 
     private function assertCompatible(AiCapability $capability, MedicalAttachment $attachment, int $count, string $referenceType): void

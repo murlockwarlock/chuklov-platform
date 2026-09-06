@@ -61,7 +61,7 @@ class UpdateEvalCase
             ? ($data['expected_output_schema'] === null ? null : $this->schemaValue($data['expected_output_schema']))
             : $case->expected_output_schema;
         if ($expectedOutputSchema !== null) {
-            $this->createAction->assertNoProductionPatientReferences($organization->id, $expectedOutputSchema);
+            $this->createAction->assertNoProductionOutputSchemaReferences($expectedOutputSchema);
             $this->assertionRegistry->validateSchema($expectedOutputSchema);
         }
 

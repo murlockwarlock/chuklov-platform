@@ -23,6 +23,23 @@
 - Added partner payout requests with immediate per-currency reservation, auditable requested/approved/paid/rejected/cancelled transitions, and CRM confirmation of an external manual payment without a payment-provider integration.
 - Added Portal reward and payout history plus CRM configuration and payout-request actions in human-readable Russian; no redemption, automated payout, or cross-currency aggregation is introduced.
 - Fixed booking-created notification projections so Online renders «Онлайн» once while Office and HomeVisit retain their physical location details.
+## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow
+
+- Added explicit CRM actions for private medical-document extraction, exactly three role-bound posture photos, and clinical synthesis through the existing `AiRun`/`AiRunPayload`, attachment resolver, prompt/model release, and human-review authorities. Results retain protected provenance and reruns create new history.
+- Added a Client Clinical AI relation in the existing client cockpit with business-language statuses, source availability, result/history views, review actions, explicit reruns, failure-safe notifications, and targeted bounded polling.
+- Added reviewed upstream-run references and encrypted Agent 3 input snapshots, a synthetic-only controlled posture fixture repository for the existing evaluation framework, evaluation isolation from production attachments, a PostgreSQL concurrent-review regression, and browser coverage gated for explicitly configured synthetic-data real-provider runs.
+- Updated the stale DeepSeek provider catalog for the official experimental `deepseek-v4-flash-vision-exp` model. The installed `laravel/ai` v0.10.3 Chat Completions adapter already transports image attachments, while text-only DeepSeek releases remain fail-closed for image workflows; the exact Vision model is non-recommended and requires an explicit organization model release rather than becoming a production default.
+- Added explicit zero-rate entries for DeepSeek meters that the installed adapter does not report, so the existing bounded billing guard can reserve a safe worst-case before a real provider call.
+- The schema-bound application candidate is `ca82e29a54f68a13c64fe4a4c3031c7d6ca9c86c`; exact-SHA hosted CI run `34023642465` is green, including PostgreSQL/concurrency, quality, privacy, and runtime jobs. The exact candidate is deployed to staging and `./scripts/staging-smoke.sh` passes.
+- Staging uses the explicitly activated, non-recommended experimental DeepSeek `deepseek-v4-flash-vision-exp` release with `image_input`; source-backed prompt versions for Agents 1–3 are active only in staging. Synthetic real-provider runs for document extraction, three-photo posture analysis, and clinical synthesis all succeeded with valid structured output, pinned prompt/model provenance, and existing human review accepted. The same Vision model handled the synthetic image-based report and posture inputs; this is staging evidence, not permanent production model approval.
+- The real browser workflow remains `BLOCKED/NOT RUN`: no connected authenticated staging browser session was available, and the existing browser scenario remains explicitly gated for a configured synthetic-data provider. No direct controller/API call is counted as browser evidence. Production is not deployed, no merge was performed, and owner acceptance remains pending.
+
+## 2026-09-06 — Recovered AI source appendices reconciliation
+
+- Added the durable source pack for recovered Appendix 1 onboarding requirements and Appendix 2 Agent 1–4 specifications, including provenance, normalized requirements, traceability, and the current Appendix 1 acceptance matrix.
+- Added non-active source-backed prompt bundles for the existing clinical document extraction, posture analysis, clinical synthesizer, and Client Companion capabilities. The bundles preserve source intent while recording platform safety guardrails and do not select or activate a provider/model.
+- Replaced generic clinical capability contracts with source-backed structured output schemas, including nullable unknown medical measurements, source/fact/hypothesis separation, and posture sections without inventing the undefined vector-shift schema. Added synthetic evaluation baselines and preserved the existing controlled-three-photo posture evaluation boundary.
+- Appendix 1 and Appendix 2 are `FOUND`; the complete 9 systems/MSQ source remains missing and OQ-015 remains open. The follow-up runtime candidate is documented above; staging activation, production deployment, merge, and owner acceptance remain unclaimed.
 
 ## 2026-09-05 — PR #30 RichEditor link persistence
 

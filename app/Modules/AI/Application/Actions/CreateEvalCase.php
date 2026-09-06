@@ -54,7 +54,7 @@ class CreateEvalCase
         $this->privacyValidator->validate($expectedAssertions);
         $expectedAssertions = $this->assertionRegistry->normalize($expectedAssertions);
         if ($expectedOutputSchema !== null) {
-            $this->privacyValidator->validate($expectedOutputSchema);
+            $this->privacyValidator->validateOutputSchema($expectedOutputSchema);
             $this->assertionRegistry->validateSchema($expectedOutputSchema);
         }
 
@@ -94,6 +94,12 @@ class CreateEvalCase
     public function assertNoProductionPatientReferences(int $organizationId, array $testInputs): void
     {
         $this->privacyValidator->validate($testInputs);
+    }
+
+    /** @param array<string, mixed> $schema */
+    public function assertNoProductionOutputSchemaReferences(array $schema): void
+    {
+        $this->privacyValidator->validateOutputSchema($schema);
     }
 
     public function validateClassification(bool $isSynthetic, bool $isDeidentified): void

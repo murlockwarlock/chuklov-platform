@@ -253,6 +253,96 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 result: 'Предыдущий подтверждённый результат',
             ),
         );
+        if (getenv('CLINICAL_AI_E2E_ENABLED') === '1') {
+            $providerName = getenv('CLINICAL_AI_PROVIDER') ?: 'openai';
+            $modelName = getenv('CLINICAL_AI_MODEL') ?: '';
+            $apiKey = getenv('CLINICAL_AI_API_KEY') ?: '';
+            if ($modelName === '' || $apiKey === '') {
+                throw new \\RuntimeException('Clinical AI E2E requires CLINICAL_AI_MODEL and CLINICAL_AI_API_KEY.');
+            }
+
+            $credential = new \\App\\Modules\\Security\\Domain\\Models\\OrganizationCredential([
+                'provider' => $providerName,
+                'credential_name' => 'Playwright clinical AI '.$suffix,
+                'revision_id' => (string) \\Illuminate\\Support\\Str::uuid(),
+            ]);
+            $credential->organization_id = $organization->getKey();
+            $credential->credentials = ['api_key' => $apiKey];
+            $credential->status = \\App\\Modules\\Security\\Domain\\Enums\\CredentialStatus::Active;
+            $credential->save();
+
+            $provider = \\App\\Modules\\AI\\Domain\\Models\\AiProviderConfiguration::query()->updateOrCreate(
+                ['organization_id' => $organization->getKey(), 'provider_name' => $providerName],
+                [
+                    'display_name' => 'Playwright clinical AI '.$suffix,
+                    'is_enabled' => true,
+                    'health_status' => 'healthy',
+                    'credential_id' => $credential->getKey(),
+                    'tested_credential_revision' => $credential->revision_id,
+                    'tested_configuration_digest' => \\App\\Modules\\AI\\Infrastructure\\Providers\\AiProviderExecutionConfiguration::digest($providerName),
+                ],
+            );
+            $pricing = new \\App\\Modules\\AI\\Domain\\ValueObjects\\AiPricingSnapshot('USD', 15, 60);
+            $capabilities = [
+                'clinical_document_extraction',
+                'posture_analysis',
+                'clinical_synthesizer',
+                'text_generation',
+                'structured_output',
+                'image_input',
+                'document_input',
+            ];
+            $model = \\App\\Modules\\AI\\Domain\\Models\\AiModelConfiguration::query()->create([
+                'organization_id' => $organization->getKey(),
+                'provider_config_id' => $provider->getKey(),
+                'model_name' => $modelName,
+                'display_name' => 'Playwright clinical AI '.$suffix,
+                'is_enabled' => true,
+                'capabilities' => $capabilities,
+                'pricing_snapshot' => $pricing->toArray(),
+                'failover_priority' => 1,
+            ]);
+            $release = \\App\\Modules\\AI\\Domain\\Models\\AiModelRelease::query()->create([
+                'organization_id' => $organization->getKey(),
+                'model_config_id' => $model->getKey(),
+                'release_number' => 1,
+                'status' => 'active',
+                'provider_name' => $providerName,
+                'model_name' => $modelName,
+                'capabilities' => $capabilities,
+                'pricing_snapshot' => $pricing->toArray(),
+                'activated_at' => now(),
+            ]);
+            $model->update(['active_release_id' => $release->getKey()]);
+
+            $prompts = [
+                ['capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::ClinicalDocumentExtraction, 'key' => 'e2e-document-'.$suffix, 'template' => '{{document_text}}', 'system' => 'Return only valid JSON matching the configured medical-document schema. Preserve only facts present in the attachment. Use null or empty arrays for unknown information. Never invent a diagnosis, measurement, severity, or contraindication.'],
+                ['capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::PostureAnalysis, 'key' => 'e2e-posture-'.$suffix, 'template' => 'Analyze the three attached posture images as front, side, and back views.', 'system' => 'Return only valid JSON matching the configured posture schema. Describe visual observations and practitioner focus. Do not invent angles or measurements and do not make a diagnosis.'],
+                ['capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::ClinicalSynthesizer, 'key' => 'e2e-synthesis-'.$suffix, 'template' => '{{client_name}} {{anamnesis}} {{complaints_goals}} {{recent_sessions}} {{agent_one_result}} {{agent_two_result}} {{survey_results}}', 'system' => 'Return only valid JSON matching the configured clinical synthesis schema. Separate source facts, hypotheses, missing information, risks, and practitioner focus. Do not turn hypotheses into diagnoses.'],
+            ];
+            foreach ($prompts as $definition) {
+                $prompt = \\App\\Modules\\AI\\Domain\\Models\\AiPrompt::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'key' => $definition['key'],
+                    'name' => $definition['key'],
+                    'capability' => $definition['capability'],
+                ]);
+                $version = \\App\\Modules\\AI\\Domain\\Models\\AiPromptVersion::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'prompt_id' => $prompt->getKey(),
+                    'version' => 1,
+                    'status' => 'active',
+                    'system_prompt' => $definition['system'],
+                    'user_prompt_template' => $definition['template'],
+                    'output_schema' => \\App\\Modules\\AI\\Domain\\Registry\\AiCapabilityRegistry::get($definition['capability'])->defaultOutputSchema,
+                    'context_policy' => $definition['capability'] === \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::ClinicalSynthesizer
+                        ? ['include_client_profile' => true, 'include_medical_summary' => true, 'include_recent_sessions_count' => 5]
+                        : [],
+                    'activated_at' => now(),
+                ]);
+                $prompt->update(['active_version_id' => $version->getKey()]);
+            }
+        }
         $attachmentFilename = 'Заключение '.$suffix.'.pdf';
         \\App\\Modules\\Attachments\\Domain\\Models\\MedicalAttachment::query()->create([
             'uuid' => (string) \\Illuminate\\Support\\Str::uuid(),
@@ -673,6 +763,101 @@ test('staff can use the client cockpit for medical profile and private files', a
         throw new Error('The authorized attachment download did not produce a file.');
     }
     expect(readFileSync(downloadPath)).toEqual(validPdfBuffer());
+});
+
+test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
+    test.skip(
+        process.env.CLINICAL_AI_E2E_ENABLED !== '1'
+            || !process.env.CLINICAL_AI_MODEL
+            || !process.env.CLINICAL_AI_API_KEY,
+        'The real clinical AI browser workflow requires an explicitly configured synthetic-data provider.',
+    );
+
+    const fixture = createCrmFixture();
+    const report = validPdfBuffer();
+    const posture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
+
+    const upload = async (name: string, mimeType: string, buffer: Buffer): Promise<void> => {
+        await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
+        const type = dialog.getByLabel('Тип файла');
+        await type.selectOption(mimeType === 'application/pdf' ? 'medical_report' : 'posture_photo');
+        const uploadControl = dialog
+            .getByRole('group', { name: 'Файл*', exact: true })
+            .locator('label')
+            .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+        const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            uploadControl.click(),
+        ]);
+        await fileChooser.setFiles({ name, mimeType, buffer });
+        await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(dialog).toBeHidden();
+    };
+
+    await upload('clinical-e2e-report.pdf', 'application/pdf', report);
+    await upload('clinical-e2e-front.png', 'image/png', posture);
+    await upload('clinical-e2e-side.png', 'image/png', posture);
+    await upload('clinical-e2e-back.png', 'image/png', posture);
+
+    const attachments = page.getByRole('table', { name: 'Файлы и МРТ' });
+    const reportRow = attachments.getByRole('row').filter({ hasText: 'clinical-e2e-report.pdf' });
+    await reportRow.getByRole('button', { name: 'Запустить анализ', exact: true }).click();
+    const reportConfirm = page.getByRole('button', { name: 'Подтвердить', exact: true });
+    if (await reportConfirm.isVisible()) {
+        await reportConfirm.click();
+    }
+
+    await page.getByRole('tab', { name: 'Клинический AI', exact: true }).click();
+    const clinicalTable = page.getByRole('table', { name: 'Клинический AI' });
+    const documentRow = clinicalTable.getByRole('row').filter({ hasText: 'Анализ документов' }).first();
+    await expect(documentRow).toBeVisible({ timeout: 120_000 });
+    await expect(documentRow).toContainText('Ожидает проверки');
+    await documentRow.getByRole('button', { name: 'Проверено', exact: true }).click();
+    const documentReviewConfirm = page.getByRole('button', { name: 'Подтвердить', exact: true });
+    if (await documentReviewConfirm.isVisible()) {
+        await documentReviewConfirm.click();
+    }
+
+    await page.getByRole('button', { name: 'Анализ осанки', exact: true }).click();
+    for (const [label, filename] of [['Спереди', 'clinical-e2e-front.png'], ['Сбоку', 'clinical-e2e-side.png'], ['Сзади', 'clinical-e2e-back.png']] as const) {
+        await page.getByRole('combobox', { name: label, exact: true }).click();
+        await page.getByRole('option', { name: filename, exact: true }).click();
+    }
+    await page.getByRole('dialog').getByRole('button', { name: 'Отправить', exact: true }).click();
+
+    const postureRow = clinicalTable.getByRole('row').filter({ hasText: 'Анализ осанки' }).first();
+    await expect(postureRow).toBeVisible({ timeout: 120_000 });
+    await expect(postureRow).toContainText('Ожидает проверки');
+    await postureRow.getByRole('button', { name: 'Проверено', exact: true }).click();
+    const postureReviewConfirm = page.getByRole('button', { name: 'Подтвердить', exact: true });
+    if (await postureReviewConfirm.isVisible()) {
+        await postureReviewConfirm.click();
+    }
+
+    await page.getByRole('button', { name: 'Клиническое резюме', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText('9 систем/MSQ');
+    await page.getByRole('dialog').getByRole('button', { name: 'Подтвердить', exact: true }).click();
+
+    const synthesisRow = clinicalTable.getByRole('row').filter({ hasText: 'Клиническое резюме' }).first();
+    await expect(synthesisRow).toBeVisible({ timeout: 120_000 });
+    await expect(synthesisRow).toContainText('Ожидает проверки');
+    await synthesisRow.getByRole('button', { name: 'Проверено', exact: true }).click();
+    const synthesisReviewConfirm = page.getByRole('button', { name: 'Подтвердить', exact: true });
+    if (await synthesisReviewConfirm.isVisible()) {
+        await synthesisReviewConfirm.click();
+    }
+
+    await page.reload();
+    await page.getByRole('tab', { name: 'Клинический AI', exact: true }).click();
+    await expect(page.getByRole('row').filter({ hasText: 'Клиническое резюме' }).first()).toContainText('Проверено');
+    await expect(page.getByRole('row').filter({ hasText: 'Анализ документов' }).first()).toContainText('Проверено');
+    await expect(page.getByRole('row').filter({ hasText: 'Анализ осанки' }).first()).toContainText('Проверено');
+    await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {

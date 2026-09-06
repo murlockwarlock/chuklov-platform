@@ -63,6 +63,12 @@ final class EvalInputPrivacyValidator
         $this->walk($input, '$', 0);
     }
 
+    /** @param array<string, mixed> $schema */
+    public function validateOutputSchema(array $schema): void
+    {
+        $this->walkOutputSchema($schema, '$', 0);
+    }
+
     private function walk(mixed $value, string $path, int $depth): void
     {
         if ($depth > self::MAX_DEPTH) {
@@ -96,6 +102,38 @@ final class EvalInputPrivacyValidator
 
         if (preg_match('/\\+?[0-9]{11,15}/', $value) === 1) {
             throw new InvalidArgumentException('Raw phone numbers are prohibited in evaluation input.');
+        }
+    }
+
+    private function walkOutputSchema(mixed $value, string $path, int $depth): void
+    {
+        if ($depth > self::MAX_DEPTH) {
+            throw new InvalidArgumentException('Evaluation output schema nesting exceeds the bounded privacy limit.');
+        }
+
+        if (! is_array($value)) {
+            return;
+        }
+
+        foreach ($value as $key => $nested) {
+            if ($key === 'properties' && is_array($nested)) {
+                foreach ($nested as $propertyName => $propertySchema) {
+                    $normalizedPropertyName = strtolower((string) $propertyName);
+                    $normalizedPropertyName = preg_replace('/[^a-z0-9_]+/', '_', $normalizedPropertyName) ?? $normalizedPropertyName;
+                    if ($normalizedPropertyName !== 'client_summary') {
+                        foreach (self::PROHIBITED_KEY_FRAGMENTS as $fragment) {
+                            if (str_contains($normalizedPropertyName, $fragment)) {
+                                throw new InvalidArgumentException("Production reference '{$path}.properties.{$propertyName}' is prohibited in evaluation output schema.");
+                            }
+                        }
+                    }
+                    $this->walkOutputSchema($propertySchema, "{$path}.properties.{$propertyName}", $depth + 1);
+                }
+
+                continue;
+            }
+
+            $this->walkOutputSchema($nested, "{$path}.{$key}", $depth + 1);
         }
     }
 }

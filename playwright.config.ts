@@ -9,6 +9,7 @@ export default defineConfig({
         env: {
             ...process.env,
             APP_ENV: 'e2e',
+            ...(process.env.CLINICAL_AI_E2E_ENABLED === '1' ? { QUEUE_CONNECTION: 'sync' } : {}),
             MEDICAL_ENCRYPTION_KEY_V1:
                 process.env.MEDICAL_ENCRYPTION_KEY_V1 ??
                 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',

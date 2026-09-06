@@ -1,0 +1,56 @@
+{
+  "prompt_key": "posture_analysis_source_draft",
+  "name": "Agent 2 — Posture Vision & Biomechanics",
+  "description": "Source-backed draft for posture_analysis. Draft only; the undefined vector-shift schema is deliberately excluded.",
+  "capability": "posture_analysis",
+  "version": 1,
+  "system_prompt": "[SOURCE TEXT]\nAnalyze exactly three controlled posture images: front, side, and back. For front and back views consider head or ear level, shoulder level, waist asymmetry, pelvic position, knee valgus or varus, and foot loading. For the side view consider forward head, thoracic kyphosis, lumbar lordosis, pelvic tilt, and knee hyperextension. Return sections for visual findings, leading compensatory patterns, and suggested practitioner focus.\n\n[PLATFORM SAFETY GUARDRAIL]\nDescribe only visible observations and cautious patterns. Do not invent precise anatomical angles or measurements that were not produced by a validated measurement system. Do not make a categorical diagnosis from an image. The source mentions JSON vector shifts but does not define their schema; do not emit an invented permanent vector contract. Return only the defined report sections as JSON and state limitations when the image evidence is insufficient. Human review is required.",
+  "user_prompt_template": "Analyze the three attached controlled posture images in front, side, and back order and return the contract-shaped JSON result.",
+  "variables_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "parameter_config": {
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "max_tokens": 4096,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "timeout_seconds": 90
+  },
+  "context_policy": {
+    "include_client_profile": false,
+    "include_medical_summary": false,
+    "include_recent_sessions_count": 0,
+    "include_rag": false,
+    "rag_knowledge_source_ids": [],
+    "rag_max_chunks": 3,
+    "rag_min_similarity": 0.65,
+    "allowed_context_types": [],
+    "require_grounded_rag": false,
+    "allow_rag_degradation": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "visual_findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "plane": {"type": "string", "enum": ["front", "side", "back"]},
+            "observations": {"type": "array", "items": {"type": "string"}}
+          },
+          "required": ["plane", "observations"]
+        }
+      },
+      "leading_compensatory_patterns": {"type": "array", "items": {"type": "string"}},
+      "practitioner_focus": {"type": "array", "items": {"type": "string"}},
+      "limitations": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["visual_findings", "leading_compensatory_patterns", "practitioner_focus", "limitations"]
+  },
+  "allowed_tools": [],
+  "change_notes": "Draft only. SOURCE TEXT: three-view posture observations and practitioner focus. PLATFORM SAFETY GUARDRAIL: no unmeasured angles, categorical diagnosis, or invented vector-shift schema; limitations and human review are mandatory."
+}

@@ -13,6 +13,11 @@
 - Added append-only earned/reversed reward history and manual partner payout requests with per-currency reservations, auditable lifecycle transitions, and staff confirmation of external payment. Balances remain derived and currencies are never aggregated.
 - Confirmed that only an authoritative ReferralRelationship and authoritative Finance settlement evidence qualify; organic source text, identity similarity, and marketing attribution alone never qualify. Redemption, expiry, automated provider payouts, MLM, and cross-tenant behavior remain out of scope.
 - Added `REQ-REFERRAL-002`. Implementation remains a candidate pending PostgreSQL, hosted CI, staging, and owner acceptance.
+## 2026-09-06 — Recovered appendix source reconciliation
+
+- Reconciled recovered Appendix 1 as the onboarding/WebApp source and Appendix 2 as the Agent 1–4 prompt/role source in `docs/product/source-pack/`.
+- Kept OQ-015 and the dependent 9 systems/MSQ definition work blocked because the recovered appendices do not contain the questionnaire bodies or scoring. No REQ-SURVEY-002 content was inferred or fabricated.
+- This source reconciliation does not supersede the newer authenticated Portal, booking, location, timezone, legal, attachment, or AI safety requirements.
 
 ## 2026-09-04 — Phase 1 booking locations, viewer timezones, and specialist actions
 

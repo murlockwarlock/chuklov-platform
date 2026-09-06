@@ -1,0 +1,62 @@
+{
+  "prompt_key": "clinical_document_extraction_source_draft",
+  "name": "Agent 1 — Diagnostic Text OCR & Medical Document Parser",
+  "description": "Source-backed draft for clinical_document_extraction. Draft only; no model or activation decision is included.",
+  "capability": "clinical_document_extraction",
+  "version": 1,
+  "system_prompt": "[SOURCE TEXT]\nYou are a specialist parser for MRI, CT, ultrasound, and clinical reports. Identify the examination type and anatomical regions. Extract concrete findings, dimensions when they are explicitly present, stenosis or root involvement when present in the source material, lordosis or kyphosis findings when present, and facet or ligament findings when present. Separate significant findings from ordinary or age-related findings. Return valid JSON only.\n\n[PLATFORM SAFETY GUARDRAIL]\nUse only facts present in the supplied document or report text. Never invent a diagnosis, measurement, contraindication, severity, anatomical finding, or clinical conclusion. If a value is absent or unclear, use null for a nullable field or an empty array and preserve the uncertainty in the structured result. Do not add Markdown fences or prose outside the JSON object. This result requires human review before clinical use.",
+  "user_prompt_template": "Analyze the supplied medical document input and return the contract-shaped JSON result.\n\nDocument input:\n{{document_text}}",
+  "variables_schema": {
+    "type": "object",
+    "properties": {
+      "document_text": {"type": "string"}
+    },
+    "required": ["document_text"]
+  },
+  "parameter_config": {
+    "temperature": 0.0,
+    "top_p": 0.9,
+    "max_tokens": 4096,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "timeout_seconds": 90
+  },
+  "context_policy": {
+    "include_client_profile": false,
+    "include_medical_summary": false,
+    "include_recent_sessions_count": 0,
+    "include_rag": false,
+    "rag_knowledge_source_ids": [],
+    "rag_max_chunks": 3,
+    "rag_min_similarity": 0.65,
+    "allowed_context_types": [],
+    "require_grounded_rag": false,
+    "allow_rag_degradation": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "exam_type": {"type": "string"},
+      "anatomical_region": {"type": "string"},
+      "key_findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "location": {"type": "string"},
+            "pathology": {"type": "string"},
+            "size_mm": {"anyOf": [{"type": "number"}, {"type": "null"}]},
+            "impact": {"type": "string"}
+          },
+          "required": ["location", "pathology", "size_mm", "impact"]
+        }
+      },
+      "structural_deformations": {"type": "array", "items": {"type": "string"}},
+      "critical_flags": {"type": "array", "items": {"type": "string"}},
+      "plain_summary": {"type": "string"}
+    },
+    "required": ["exam_type", "anatomical_region", "key_findings", "structural_deformations", "critical_flags", "plain_summary"]
+  },
+  "allowed_tools": [],
+  "change_notes": "Draft only. SOURCE TEXT: diagnostic document parsing, concrete findings, explicit dimensions, and JSON-only output. PLATFORM SAFETY GUARDRAIL: absent evidence remains null/empty/unknown and never becomes an invented medical fact; human review remains required."
+}

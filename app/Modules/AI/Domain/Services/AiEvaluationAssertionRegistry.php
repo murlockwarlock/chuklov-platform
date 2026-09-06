@@ -482,17 +482,17 @@ final class AiEvaluationAssertionRegistry
         }
 
         foreach (array_keys($schema) as $key) {
-            if (! in_array($key, ['type', 'required', 'properties', 'items', 'enum'], true)) {
+            if (! in_array($key, ['type', 'required', 'properties', 'items', 'enum', 'anyOf', 'minItems', 'maxItems', 'minimum', 'maximum'], true)) {
                 throw new InvalidArgumentException('Evaluation JSON schema contains an unsupported keyword.');
             }
         }
 
-        if (array_key_exists('type', $schema) && (! is_string($schema['type']) || ! in_array($schema['type'], ['object', 'array', 'string', 'integer', 'number', 'boolean'], true))) {
+        if (array_key_exists('type', $schema) && (! is_string($schema['type']) || ! in_array($schema['type'], ['object', 'array', 'string', 'integer', 'number', 'boolean', 'null'], true))) {
             throw new InvalidArgumentException('Evaluation JSON schema type is unsupported.');
         }
 
         $type = $schema['type'] ?? null;
-        if ($type === null && ! array_key_exists('enum', $schema)) {
+        if ($type === null && ! array_key_exists('enum', $schema) && ! array_key_exists('anyOf', $schema)) {
             throw new InvalidArgumentException('Evaluation JSON schema type is required.');
         }
         if ($type !== 'object' && (array_key_exists('required', $schema) || array_key_exists('properties', $schema))) {
@@ -500,6 +500,13 @@ final class AiEvaluationAssertionRegistry
         }
         if ($type !== 'array' && array_key_exists('items', $schema)) {
             throw new InvalidArgumentException('Evaluation JSON schema items require an array type.');
+        }
+        if ($type !== 'array' && (array_key_exists('minItems', $schema) || array_key_exists('maxItems', $schema))) {
+            throw new InvalidArgumentException('Evaluation JSON schema item bounds require an array type.');
+        }
+        if (! in_array($type, ['integer', 'number'], true)
+            && (array_key_exists('minimum', $schema) || array_key_exists('maximum', $schema))) {
+            throw new InvalidArgumentException('Evaluation JSON schema numeric bounds require a numeric type.');
         }
 
         if (array_key_exists('required', $schema) && (! is_array($schema['required']) || ! array_is_list($schema['required']) || count($schema['required']) > self::MAX_ASSERTIONS)) {
@@ -533,6 +540,40 @@ final class AiEvaluationAssertionRegistry
                 throw new InvalidArgumentException('Evaluation JSON schema items are invalid.');
             }
             $this->validateSchemaNode($schema['items'], $depth + 1);
+        }
+
+        if (array_key_exists('anyOf', $schema)) {
+            if (! is_array($schema['anyOf']) || ! array_is_list($schema['anyOf']) || $schema['anyOf'] === [] || count($schema['anyOf']) > self::MAX_ASSERTIONS) {
+                throw new InvalidArgumentException('Evaluation JSON schema anyOf is invalid.');
+            }
+            foreach ($schema['anyOf'] as $variant) {
+                if (! is_array($variant)) {
+                    throw new InvalidArgumentException('Evaluation JSON schema anyOf variant is invalid.');
+                }
+                $this->validateSchemaNode($variant, $depth + 1);
+            }
+        }
+
+        foreach (['minItems', 'maxItems'] as $bound) {
+            if (array_key_exists($bound, $schema)
+                && (! is_int($schema[$bound]) || $schema[$bound] < 0 || $schema[$bound] > self::MAX_ASSERTIONS)) {
+                throw new InvalidArgumentException('Evaluation JSON schema item bounds are invalid.');
+            }
+        }
+        if (array_key_exists('minItems', $schema)
+            && array_key_exists('maxItems', $schema)
+            && $schema['minItems'] > $schema['maxItems']) {
+            throw new InvalidArgumentException('Evaluation JSON schema item bounds are invalid.');
+        }
+        foreach (['minimum', 'maximum'] as $bound) {
+            if (array_key_exists($bound, $schema)) {
+                $this->number($schema[$bound]);
+            }
+        }
+        if (array_key_exists('minimum', $schema)
+            && array_key_exists('maximum', $schema)
+            && $schema['minimum'] > $schema['maximum']) {
+            throw new InvalidArgumentException('Evaluation JSON schema numeric bounds are invalid.');
         }
 
         if (array_key_exists('enum', $schema)) {
