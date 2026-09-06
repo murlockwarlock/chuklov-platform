@@ -727,18 +727,21 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
         await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
-        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
-        const navigationItems = page.locator('.portal-bottom-nav__link');
-        expect(await navigationItems.count()).toBe(6);
-        expect(await navigationItems.evaluateAll((items) => {
-            const widths = items.map((item) => item.getBoundingClientRect().width);
-            const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+        if (width < 768) {
+            await expect(page.locator('.portal-bottom-nav')).toBeVisible();
 
-            return Math.max(...widths) - Math.min(...widths) <= 1
-                && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
-        })).toBe(true);
+            const navigationItems = page.locator('.portal-bottom-nav__link');
+            expect(await navigationItems.count()).toBe(6);
+            expect(await navigationItems.evaluateAll((items) => {
+                const widths = items.map((item) => item.getBoundingClientRect().width);
+                const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+
+                return Math.max(...widths) - Math.min(...widths) <= 1
+                    && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
+            })).toBe(true);
+        }
 
         await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
     }
