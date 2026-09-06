@@ -177,7 +177,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await templateSave.click();
     await templateSaveResponse;
     await page.goto(`/admin/notification-templates/${fixture.templateId}`);
-    await expect(page.getByText('Текст сохранён')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Шаблон сохранён', exact: true })).toBeVisible();
     await expect(page.getByText('Обновлённое сообщение для {{ client.full_name }}.')).toBeVisible();
 
     await page.goto('/admin/scenario-actions');
@@ -198,7 +198,7 @@ test('shared rich editor inserts emoji at the current caret as text', async ({ p
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
-    const editor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const editor = page.getByRole('textbox', { name: 'Текст сообщения', exact: true });
     await editor.fill('Привет !');
     await editor.press('ArrowLeft');
     await page.getByRole('button', { name: '😊 Смайлик', exact: true }).click();
