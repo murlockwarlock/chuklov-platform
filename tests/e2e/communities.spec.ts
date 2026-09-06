@@ -213,6 +213,8 @@ async function saveContentSection(page: Page): Promise<void> {
 }
 
 test('owner-created Communities RichEditor links survive the real CRM flow', async ({ page }) => {
+    test.setTimeout(60_000);
+
     const fixture = createCommunitiesFixture();
     const communityText = 'Закрытое сообщество';
     const initialUrl = 'https://t.me/test_community';

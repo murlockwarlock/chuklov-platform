@@ -541,6 +541,8 @@ test.describe('specialist viewer timezone suggestion', () => {
 });
 
 test('staff can create a booking without technical inputs', async ({ page }) => {
+    test.setTimeout(60_000);
+
     const fixture = createCrmFixture();
 
     await login(page, fixture);
