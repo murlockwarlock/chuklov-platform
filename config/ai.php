@@ -508,7 +508,7 @@ return [
                 'fixed_request_cost_applicable' => false,
                 'unsupported_meters' => [],
             ],
-            'lifecycle' => 'preview',
+            'lifecycle' => 'active',
             'catalog_source' => 'https://api-docs.deepseek.com/guides/vision/',
             'pricing_as_of' => '2026-08-22',
         ],

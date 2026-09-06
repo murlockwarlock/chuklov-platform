@@ -847,7 +847,6 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             self::assertSame(
                 match ($definition->modelName) {
                     'gemini-3.1-flash-lite' => 'deprecated',
-                    'deepseek-v4-flash-vision-exp' => 'preview',
                     default => 'active',
                 },
                 $definition->lifecycleStatus->value,
@@ -873,7 +872,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertSame([], $deepseekFlash->modalities);
         self::assertNotNull($deepseekVision);
         self::assertSame([AiModelModality::ImageInput], $deepseekVision->modalities);
-        self::assertSame('preview', $deepseekVision->lifecycleStatus->value);
+        self::assertSame('active', $deepseekVision->lifecycleStatus->value);
     }
 
     public function test_switching_between_known_and_custom_models_clears_catalog_metadata_but_preserves_user_fields(): void
