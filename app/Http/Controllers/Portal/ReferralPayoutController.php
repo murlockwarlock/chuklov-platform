@@ -56,7 +56,7 @@ final class ReferralPayoutController extends Controller
                 'amount' => $amount,
                 'currency' => $currency?->value,
                 'status' => ReferralPayoutRequestStatus::Requested->label(),
-                'requested_at' => $payout->requested_at?->toIso8601String(),
+                'requested_at' => $payout->requested_at->toIso8601String(),
             ]);
     }
 

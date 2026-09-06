@@ -27,7 +27,7 @@ final class EditNotificationTemplate extends EditRecord
             ...$data,
             'subject' => $latest->subject,
             'body' => $latest->body,
-            'delivery_mode' => $latest->delivery_mode?->value ?? 'text',
+            'delivery_mode' => $latest->delivery_mode->value,
             'caption_position' => $latest->caption_position ?: 'below',
         ];
     }

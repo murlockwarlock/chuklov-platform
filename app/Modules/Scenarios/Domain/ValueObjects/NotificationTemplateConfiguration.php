@@ -9,7 +9,10 @@ use InvalidArgumentException;
 
 final readonly class NotificationTemplateConfiguration
 {
-    /** @param list<string> $variables */
+    /**
+     * @param  list<string>  $variables
+     * @param  array{items: list<array{type: string, source: string, name: string|null}>}|null  $media
+     */
     public function __construct(
         public string $templateKey,
         public string $name,

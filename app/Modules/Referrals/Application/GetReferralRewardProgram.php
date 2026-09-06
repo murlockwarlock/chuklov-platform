@@ -74,7 +74,7 @@ final class GetReferralRewardProgram
             ? 'первая оплата'
             : 'каждая оплата';
         $formulaLabel = $formula === ReferralRewardFormula::FixedAmount->value
-            ? ($fixedAmount ?? '—').' '.($fixedCurrency?->value ?? '')
+            ? ($fixedAmount ?? '—').' '.($fixedCurrency === null ? '' : $fixedCurrency->value)
             : ($percentage ?? '—').'% от оплаты';
         $summary = (bool) $version->enabled
             ? $sourceLabel.': '.$qualificationLabel.' · '.$formulaLabel

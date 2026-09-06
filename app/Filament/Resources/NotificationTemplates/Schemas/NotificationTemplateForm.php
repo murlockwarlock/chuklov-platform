@@ -126,7 +126,7 @@ final class NotificationTemplateForm
     private static function currentMediaSummary(?NotificationTemplate $template): string
     {
         $media = $template?->latestVersion?->media;
-        $items = is_array($media) && is_array($media['items'] ?? null) ? $media['items'] : [];
+        $items = $media === null || ! is_array($media['items'] ?? null) ? [] : $media['items'];
 
         return $items === [] ? 'Медиа не добавлено.' : 'Сохранено файлов: '.count($items).'. Новые файлы создадут новую версию шаблона.';
     }
@@ -174,13 +174,13 @@ final class NotificationTemplateForm
         )];
     }
 
-    private static function mediaType(string $mime, string $name): string
+    private static function mediaType(?string $mime, string $name): string
     {
         $extension = strtolower(pathinfo(parse_url($name, PHP_URL_PATH) ?: $name, PATHINFO_EXTENSION));
-        if (str_starts_with(strtolower($mime), 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+        if (str_starts_with(strtolower($mime ?? ''), 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
             return 'photo';
         }
-        if (strtolower($mime) === 'video/mp4' || $extension === 'mp4') {
+        if (strtolower($mime ?? '') === 'video/mp4' || $extension === 'mp4') {
             return 'video';
         }
 
