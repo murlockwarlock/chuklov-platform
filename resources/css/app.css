@@ -235,7 +235,8 @@ body {
 
 .portal-companion {
     display: grid;
-    min-height: 32rem;
+    height: min(50rem, calc(100dvh - 10rem));
+    min-height: 28rem;
     grid-template-rows: minmax(0, 1fr) auto;
     overflow: hidden;
     border: 1px solid var(--portal-color-border);
@@ -288,6 +289,7 @@ body {
 
 .portal-companion-page {
     min-height: calc(100dvh - 4.5rem);
+    gap: var(--portal-space-4);
 }
 
 .portal-companion-page__heading {
@@ -295,20 +297,48 @@ body {
 }
 
 .portal-companion__help {
+    position: relative;
     max-width: 38rem;
     color: var(--portal-color-ink-soft);
     font-size: 0.86rem;
 }
 
 .portal-companion__help summary {
-    width: max-content;
+    display: inline-flex;
+    width: 2.5rem;
+    height: 2.5rem;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
+    border: 1px solid var(--portal-color-border-strong);
+    border-radius: 50%;
+    list-style: none;
     color: var(--portal-color-ink);
     font-weight: 700;
 }
 
+.portal-companion__help summary::-webkit-details-marker {
+    display: none;
+}
+
+.portal-companion__help summary:hover,
+.portal-companion__help summary:focus-visible {
+    border-color: var(--portal-color-brand);
+    background: var(--portal-color-brand-soft);
+}
+
 .portal-companion__help p {
-    margin: 0.5rem 0 0;
+    position: absolute;
+    z-index: 2;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: min(20rem, calc(100vw - 2rem));
+    margin: 0;
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-md);
+    background: var(--portal-color-surface);
+    padding: var(--portal-space-3);
+    box-shadow: var(--portal-shadow-panel);
 }
 
 .portal-companion__reset {
@@ -428,11 +458,47 @@ body {
 }
 
 .portal-companion__composer {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     gap: var(--portal-space-3);
     border-top: 1px solid var(--portal-color-border);
     padding: var(--portal-space-4);
+    padding-bottom: max(var(--portal-space-4), env(safe-area-inset-bottom));
+}
+
+.portal-companion__composer-toolbar {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--portal-space-3);
+}
+
+.portal-companion__composer-tools {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 12rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--portal-space-2);
+}
+
+.portal-companion__selection,
+.portal-companion__reinspect {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.portal-companion__reinspect {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--portal-color-ink-soft);
+    font-size: 0.875rem;
 }
 
 .portal-companion__textarea {
@@ -480,6 +546,22 @@ body {
 .portal-companion__upload:disabled {
     cursor: not-allowed;
     opacity: 0.55;
+}
+
+.portal-companion__composer-actions {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 14rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--portal-space-3);
+}
+
+.portal-companion__composer-buttons {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--portal-space-2);
 }
 
 .portal-bottom-nav__link {
@@ -2645,11 +2727,13 @@ select.portal-input[aria-invalid='true'] {
 @media (max-width: 40rem) {
     .portal-companion-page {
         min-height: calc(100dvh - 4.5rem - 5.75rem);
-        gap: var(--portal-space-5);
+        gap: var(--portal-space-3);
+        padding-top: var(--portal-space-4);
+        padding-bottom: calc(var(--portal-space-3) + env(safe-area-inset-bottom));
     }
 
     .portal-companion {
-        height: min(42rem, calc(100dvh - 12rem));
+        height: min(48rem, calc(100dvh - 13.5rem - env(safe-area-inset-bottom)));
         min-height: 0;
     }
 
@@ -2660,9 +2744,15 @@ select.portal-input[aria-invalid='true'] {
 
     .portal-companion__composer {
         padding: var(--portal-space-3);
+        padding-bottom: max(var(--portal-space-3), env(safe-area-inset-bottom));
     }
 
     .portal-companion__textarea {
+        min-height: 3.75rem;
         max-height: 8rem;
+    }
+
+    .portal-companion__composer-actions {
+        flex-basis: 100%;
     }
 }

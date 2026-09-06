@@ -132,6 +132,14 @@ final class SourceBackedAgentContractTest extends TestCase
             self::assertStringContainsString('Draft', $bundle->changeNotes ?? '');
             self::assertArrayNotHasKey('model', $data);
             self::assertArrayNotHasKey('provider', $data);
+
+            $sourceFragments = [
+                AiCapability::ClientCompanion->value => 'официальный ИИ-ассистент',
+                AiCapability::ClinicalDocumentExtraction->value => 'узкоспециализированный медицинский эксперт',
+                AiCapability::ClinicalSynthesizer->value => 'персональный AI-ассистент остеопата',
+                AiCapability::PostureAnalysis->value => 'биомеханик и остеопатический аналитик',
+            ];
+            self::assertStringContainsString($sourceFragments[$bundle->capability->value], $bundle->systemPrompt);
         }
     }
 

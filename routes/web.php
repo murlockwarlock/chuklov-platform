@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
+use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AttributionController;
@@ -70,6 +71,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.export');
     Route::get('/admin/clients/{client}/companion/metadata-export', [CompanionExportController::class, 'metadata'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.metadata-export');
+    Route::get('/admin/ai-runs/{runId}/export', AiRunExportController::class)
+        ->middleware('auth')->whereNumber('runId')->name('admin.ai-runs.export');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');

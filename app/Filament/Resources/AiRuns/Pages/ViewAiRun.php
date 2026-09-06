@@ -9,7 +9,11 @@ use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
@@ -29,6 +33,27 @@ class ViewAiRun extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            ActionGroup::make([
+                Action::make('download_json')
+                    ->label('JSON с данными')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'json', 'identified'))
+                    ->openUrlInNewTab(),
+                Action::make('download_txt')
+                    ->label('TXT с данными')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'txt', 'identified'))
+                    ->openUrlInNewTab(),
+                Action::make('download_anonymized_json')
+                    ->label('JSON анонимизированный')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'json', 'anonymized'))
+                    ->openUrlInNewTab(),
+                Action::make('download_anonymized_txt')
+                    ->label('TXT анонимизированный')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'txt', 'anonymized'))
+                    ->openUrlInNewTab(),
+            ])
+                ->label('Скачать')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->visible(fn (): bool => $this->canViewTrace()),
             Action::make('accept_review')
                 ->label('Принять предложение')
                 ->color('success')
@@ -107,5 +132,28 @@ class ViewAiRun extends ViewRecord
                     }
                 }),
         ];
+    }
+
+    private function canViewTrace(): bool
+    {
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        return app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ViewAiTrace,
+        );
+    }
+
+    private function exportUrl(AiRun $record, string $format, string $identity): string
+    {
+        return route('admin.ai-runs.export', [
+            'runId' => $record->getKey(),
+            'format' => $format,
+            'identity' => $identity,
+        ]);
     }
 }
