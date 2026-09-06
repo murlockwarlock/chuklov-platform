@@ -61,8 +61,12 @@ final class EstablishManualReferralRelationship
                     ->first();
 
                 if ($existing instanceof ReferralRelationship) {
+                    $existing->loadMissing('referrer');
+                    $referrerName = trim((string) $existing->referrer?->full_name);
+                    $referrerName = $referrerName !== '' ? $referrerName : 'клиент #'.$existing->referrer_client_id;
+
                     throw ValidationException::withMessages([
-                        'referrer_client_id' => 'У этого клиента уже есть реферер. Переназначение не выполняется.',
+                        'referrer_client_id' => 'У клиента уже указан реферер: '.$referrerName.'. Обычное назначение не меняет зафиксированный источник.',
                     ]);
                 }
 
@@ -104,7 +108,7 @@ final class EstablishManualReferralRelationship
             });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages([
-                'referrer_client_id' => 'У этого клиента уже есть реферер. Переназначение не выполняется.',
+                'referrer_client_id' => 'У клиента уже указан реферер. Обычное назначение не меняет зафиксированный источник.',
             ]);
         }
     }

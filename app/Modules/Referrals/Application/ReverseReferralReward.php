@@ -48,7 +48,10 @@ final class ReverseReferralReward
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($original->getRawOriginal('entry_type') !== ReferralRewardLedgerEntryType::Earned->value) {
+            if (! in_array($original->getRawOriginal('entry_type'), [
+                ReferralRewardLedgerEntryType::Earned->value,
+                ReferralRewardLedgerEntryType::ManualCredit->value,
+            ], true)) {
                 throw ValidationException::withMessages(['entry' => 'Можно отменить только начисление.']);
             }
 
@@ -91,6 +94,7 @@ final class ReverseReferralReward
                 'idempotency_key' => 'referral.reward.reversed:'.$organization->getKey().':'.$original->getKey(),
                 'request_hash' => hash('sha256', $original->getKey().'|'.trim($reason)),
                 'occurred_at' => now(),
+                'created_by_user_id' => $actor->getKey(),
             ]);
             $reversal->save();
             $this->audit->handle(

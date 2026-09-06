@@ -16,7 +16,9 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
 use App\Modules\Referrals\Application\CreateReferralCampaignLink;
+use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\GetClientReferralOverview;
+use App\Modules\Referrals\Application\GetReferralRewardProgram;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
@@ -343,6 +345,89 @@ final class ReferralRewardsTest extends TestCase
         self::assertCount(3, $overview['rewards']['history']);
         self::assertCount(1, ReferralRewardLedgerEntry::query()->where('entry_type', ReferralRewardLedgerEntryType::Reversed)->get());
         self::assertSame(3, ReferralRewardLedgerEntry::query()->count());
+    }
+
+    public function test_partner_override_is_versioned_and_snapshotted_without_changing_old_rewards(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $profile = app(ActivateReferralPartner::class)->handle($referrer, 'crm', $admin);
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureFixed($organization, $admin, '10.00', 'USD', 'every_settled_payment');
+        $override = app(SaveReferralRewardProgram::class)->handle(
+            actor: $admin,
+            enabled: true,
+            qualificationRule: 'every_settled_payment',
+            formula: 'fixed_amount',
+            fixedAmount: '25.00',
+            fixedCurrency: 'USD',
+            percentage: null,
+            effectiveAt: CarbonImmutable::now()->subMinute(),
+            partnerProfile: $profile,
+        );
+
+        self::assertSame('Индивидуальные условия', app(GetReferralRewardProgram::class)->handle($profile)['sourceLabel']);
+        $first = $this->settledEvent($organization, $referred, 'partner-override-first');
+        app(ConsumeFinanceSettlementEvent::class)->handle($first->getKey());
+        $firstEntry = ReferralRewardLedgerEntry::query()->sole();
+
+        self::assertSame(2500, $firstEntry->amount_minor);
+        self::assertSame($override->getKey(), $firstEntry->reward_program_version_id);
+
+        app(SaveReferralRewardProgram::class)->handle(
+            actor: $admin,
+            enabled: true,
+            qualificationRule: 'every_settled_payment',
+            formula: 'fixed_amount',
+            fixedAmount: '5.00',
+            fixedCurrency: 'USD',
+            percentage: null,
+            effectiveAt: CarbonImmutable::now()->subMinute(),
+            partnerProfile: $profile,
+        );
+        $secondReferred = Client::factory()->forOrganization($organization)->create();
+        $this->relationship($organization, $referrer, $secondReferred);
+        $second = $this->settledEvent($organization, $secondReferred, 'partner-override-second');
+        app(ConsumeFinanceSettlementEvent::class)->handle($second->getKey());
+
+        self::assertSame([2500, 500], ReferralRewardLedgerEntry::query()->orderBy('id')->pluck('amount_minor')->all());
+        self::assertSame(2500, ReferralRewardLedgerEntry::query()->findOrFail($firstEntry->getKey())->amount_minor);
+    }
+
+    public function test_manual_partner_bonus_is_append_only_idempotent_and_payout_eligible(): void
+    {
+        [$organization, $admin, $referrer] = $this->fixture();
+        $profile = app(ActivateReferralPartner::class)->handle($referrer, 'crm', $admin);
+
+        $entry = app(CreditManualReferralBonus::class)->handle(
+            actor: $admin,
+            partner: $profile,
+            amount: '12.50',
+            currency: 'USD',
+            reason: 'Бонус за ручную рекомендацию',
+            comment: 'Проверено специалистом',
+            idempotencyKey: 'manual-bonus-feature-1',
+        );
+        $retry = app(CreditManualReferralBonus::class)->handle(
+            actor: $admin,
+            partner: $profile,
+            amount: '12.50',
+            currency: 'USD',
+            reason: 'Бонус за ручную рекомендацию',
+            comment: 'Проверено специалистом',
+            idempotencyKey: 'manual-bonus-feature-1',
+        );
+
+        self::assertSame($entry->getKey(), $retry->getKey());
+        self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', ReferralRewardLedgerEntryType::ManualCredit)->count());
+        self::assertSame(1250, app(ReferralRewardBalanceProjection::class)->forCurrency($referrer, CurrencyCode::USD)->available()->minorUnits());
+
+        $payout = app(RequestReferralPayout::class)->handle($referrer, '10.00', 'USD', 'manual-bonus-payout');
+
+        self::assertSame(250, app(ReferralRewardBalanceProjection::class)->forCurrency($referrer, CurrencyCode::USD)->available()->minorUnits());
+        self::assertSame($referrer->getKey(), $payout->beneficiary_client_id);
+        self::assertSame('manual_bonus', $entry->reason_type);
+        self::assertSame($admin->getKey(), $entry->created_by_user_id);
+        self::assertSame('Проверено специалистом', $entry->comment);
     }
 
     /** @return array{Organization, User, Client, Client} */

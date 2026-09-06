@@ -275,7 +275,7 @@ final readonly class BroadcastCampaignInput
             throw ValidationException::withMessages(['message_body' => 'В тексте есть неподдерживаемые данные.']);
         }
         if (array_diff($used, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
-            throw ValidationException::withMessages(['message_body' => 'В рассылке можно использовать только имя и язык клиента.']);
+            throw ValidationException::withMessages(['message_body' => 'В рассылке можно использовать имя, язык и персональную реферальную ссылку клиента.']);
         }
 
         try {
@@ -303,7 +303,10 @@ final readonly class BroadcastCampaignInput
 
         return $this->renderer->render(
             $template,
-            ['client' => ['full_name' => str_repeat('😀', 160), 'language' => str_repeat('😀', 10)]],
+            [
+                'client' => ['full_name' => str_repeat('😀', 160), 'language' => str_repeat('😀', 10)],
+                'referral_link' => 'https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456',
+            ],
             $locale,
         )->body;
     }

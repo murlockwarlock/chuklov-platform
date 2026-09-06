@@ -21,6 +21,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -104,58 +105,66 @@ final class ReferralRewardConfiguration extends Page
                         Toggle::make('enabled')
                             ->label('Включена')
                             ->live()
+                            ->inline()
+                            ->columnSpanFull()
                             ->disabled(fn (): bool => ! self::canManage()),
-                        Select::make('qualification_rule')
-                            ->label('Начислять')
-                            ->options([
-                                ReferralRewardQualificationRule::FirstSettledPayment->value => ReferralRewardQualificationRule::FirstSettledPayment->label(),
-                                ReferralRewardQualificationRule::EverySettledPayment->value => ReferralRewardQualificationRule::EverySettledPayment->label(),
+                        Grid::make(2)
+                            ->schema([
+                                Select::make('qualification_rule')
+                                    ->label('Начислять')
+                                    ->options([
+                                        ReferralRewardQualificationRule::FirstSettledPayment->value => ReferralRewardQualificationRule::FirstSettledPayment->label(),
+                                        ReferralRewardQualificationRule::EverySettledPayment->value => ReferralRewardQualificationRule::EverySettledPayment->label(),
+                                    ])
+                                    ->visible(fn (Get $get): bool => (bool) $get('enabled'))
+                                    ->required(fn (Get $get): bool => (bool) $get('enabled'))
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                Select::make('formula')
+                                    ->label('Размер бонуса')
+                                    ->options([
+                                        ReferralRewardFormula::FixedAmount->value => ReferralRewardFormula::FixedAmount->label(),
+                                        ReferralRewardFormula::PercentageOfSettlement->value => ReferralRewardFormula::PercentageOfSettlement->label(),
+                                    ])
+                                    ->live()
+                                    ->visible(fn (Get $get): bool => (bool) $get('enabled'))
+                                    ->required(fn (Get $get): bool => (bool) $get('enabled'))
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                TextInput::make('fixed_amount')
+                                    ->label('Фиксированная сумма')
+                                    ->inputMode('decimal')
+                                    ->placeholder('Укажите сумму')
+                                    ->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/')
+                                    ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
+                                    ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                Select::make('fixed_currency')
+                                    ->label('Валюта фиксированной суммы')
+                                    ->options(fn (): array => app(CurrencyCatalog::class)->options())
+                                    ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
+                                    ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                TextInput::make('percentage')
+                                    ->label('Процент от оплаты')
+                                    ->inputMode('decimal')
+                                    ->placeholder('Укажите процент')
+                                    ->suffix('%')
+                                    ->regex('/^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,2})?$/')
+                                    ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
+                                    ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                DateTimePicker::make('effective_at')
+                                    ->label('Дата начала действия')
+                                    ->helperText('Оплата, подтверждённая раньше этой даты, не использует эту версию правила.')
+                                    ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                                    ->seconds(false)
+                                    ->required()
+                                    ->disabled(fn (): bool => ! self::canManage()),
                             ])
                             ->visible(fn (Get $get): bool => (bool) $get('enabled'))
-                            ->required(fn (Get $get): bool => (bool) $get('enabled'))
-                            ->disabled(fn (): bool => ! self::canManage()),
-                        Select::make('formula')
-                            ->label('Размер бонуса')
-                            ->options([
-                                ReferralRewardFormula::FixedAmount->value => ReferralRewardFormula::FixedAmount->label(),
-                                ReferralRewardFormula::PercentageOfSettlement->value => ReferralRewardFormula::PercentageOfSettlement->label(),
-                            ])
-                            ->live()
-                            ->visible(fn (Get $get): bool => (bool) $get('enabled'))
-                            ->required(fn (Get $get): bool => (bool) $get('enabled'))
-                            ->disabled(fn (): bool => ! self::canManage()),
-                        TextInput::make('fixed_amount')
-                            ->label('Фиксированная сумма')
-                            ->inputMode('decimal')
-                            ->placeholder('Укажите сумму')
-                            ->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/')
-                            ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
-                            ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
-                            ->disabled(fn (): bool => ! self::canManage()),
-                        Select::make('fixed_currency')
-                            ->label('Валюта фиксированной суммы')
-                            ->options(fn (): array => app(CurrencyCatalog::class)->options())
-                            ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
-                            ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
-                            ->disabled(fn (): bool => ! self::canManage()),
-                        TextInput::make('percentage')
-                            ->label('Процент от оплаты')
-                            ->inputMode('decimal')
-                            ->placeholder('Укажите процент')
-                            ->suffix('%')
-                            ->regex('/^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,2})?$/')
-                            ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
-                            ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
-                            ->disabled(fn (): bool => ! self::canManage()),
-                        DateTimePicker::make('effective_at')
-                            ->label('Дата начала действия')
-                            ->helperText('Оплата, подтверждённая раньше этой даты, не использует эту версию правила.')
-                            ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
-                            ->seconds(false)
-                            ->required()
-                            ->disabled(fn (): bool => ! self::canManage()),
+                            ->columnSpanFull(),
                     ])
-                    ->columns(2)
+                    ->columns(1)
+                    ->compact()
                     ->columnSpanFull(),
             ])
             ->statePath('data');

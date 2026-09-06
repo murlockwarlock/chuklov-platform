@@ -14,6 +14,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Referrals\Application\BuildClientReferralLink;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -32,7 +33,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final class ScenarioContextFactory
 {
-    public function __construct(private readonly BookingDateTimeFormatter $bookingDateTime) {}
+    public function __construct(
+        private readonly BookingDateTimeFormatter $bookingDateTime,
+        private readonly BuildClientReferralLink $referralLinks,
+    ) {}
 
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
     {
@@ -67,6 +71,13 @@ final class ScenarioContextFactory
             ],
             'recipient_locale' => $recipient->locale,
         ];
+
+        if ($recipient->type === 'client') {
+            try {
+                $renderContext['referral_link'] = $this->referralLinks->handle($context->client);
+            } catch (LogicException) {
+            }
+        }
 
         if ($recipient->type === 'internal') {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);

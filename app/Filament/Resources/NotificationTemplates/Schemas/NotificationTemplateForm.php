@@ -73,7 +73,7 @@ final class NotificationTemplateForm
                             ->required()
                             ->maxLength(100000)
                             ->helperText(fn (Get $get): string => $get('purpose') === ScenarioRulePurpose::Marketing->value
-                                ? 'Для рассылки доступны имя и язык клиента. Нажмите «Добавить данные» в редакторе или введите {{ client.full_name }}.'
+                                ? 'Для рассылки доступны имя, язык и персональная реферальная ссылка. Нажмите «Добавить данные» в редакторе.'
                                 : 'Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора. Пример: «Здравствуйте, {{ client.full_name }}! Напоминаем о записи {{ booking.starts_at }}.»')
                             ->columnSpanFull(),
                         Actions::make([
@@ -98,7 +98,10 @@ final class NotificationTemplateForm
         $locale = (string) ($get('locale') ?: 'ru');
         $rendered = app(NotificationTemplateRenderer::class)->render(
             $template,
-            ['client' => ['full_name' => 'Aikhana', 'language' => $locale]],
+            [
+                'client' => ['full_name' => 'Aikhana', 'language' => $locale],
+                'referral_link' => 'https://t.me/chuklov_test_bot?start=ref_preview',
+            ],
             $locale,
         );
 

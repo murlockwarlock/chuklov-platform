@@ -72,7 +72,7 @@ final class ListReferralPartnersForCrm
                 SUM(pending_minor) AS pending_minor,
                 SUM(paid_minor) AS paid_minor
             FROM (SELECT referral_reward_ledger_entries.currency,
-                SUM(CASE WHEN referral_reward_ledger_entries.entry_type = 'earned' THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS earned_minor,
+                SUM(CASE WHEN referral_reward_ledger_entries.entry_type IN ('earned', 'manual_credit') THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS earned_minor,
                 SUM(CASE WHEN referral_reward_ledger_entries.entry_type = 'reversed' THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS reversed_minor,
                 0 AS pending_minor,
                 0 AS paid_minor
@@ -101,7 +101,7 @@ final class ListReferralPartnersForCrm
                 SUM(pending_minor) AS pending_minor,
                 SUM(paid_minor) AS paid_minor
             FROM (SELECT referral_reward_ledger_entries.currency,
-                SUM(CASE WHEN referral_reward_ledger_entries.entry_type = 'earned' THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS earned_minor,
+                SUM(CASE WHEN referral_reward_ledger_entries.entry_type IN ('earned', 'manual_credit') THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS earned_minor,
                 SUM(CASE WHEN referral_reward_ledger_entries.entry_type = 'reversed' THEN referral_reward_ledger_entries.amount_minor ELSE 0 END) AS reversed_minor,
                 0 AS pending_minor,
                 0 AS paid_minor

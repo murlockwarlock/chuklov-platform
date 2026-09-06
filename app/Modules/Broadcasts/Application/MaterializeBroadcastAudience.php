@@ -9,6 +9,8 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastBatch;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Referrals\Application\BuildClientReferralLink;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -20,6 +22,7 @@ final readonly class MaterializeBroadcastAudience
         private BroadcastSegmentQuery $segments,
         private BroadcastEligibilityPolicy $eligibility,
         private BroadcastCampaignMedia $media,
+        private BuildClientReferralLink $referralLinks,
     ) {}
 
     public function handle(BroadcastCampaign $campaign): BroadcastAudienceSnapshot
@@ -81,8 +84,9 @@ final readonly class MaterializeBroadcastAudience
                 selectedClientIds: $locked->selected_client_ids,
                 filters: $locked->segment_definition,
             );
+            $needsReferralLink = $this->usesReferralLink($locked);
 
-            $query->chunkById(200, function ($clients) use (&$matched, &$eligible, &$suppressed, &$batch, &$batchPosition, &$batchSequence, $locked, $snapshot): void {
+            $query->chunkById(200, function ($clients) use (&$matched, &$eligible, &$suppressed, &$batch, &$batchPosition, &$batchSequence, $locked, $snapshot, $needsReferralLink): void {
                 foreach ($clients as $client) {
                     $matched++;
                     $result = $this->eligibility->evaluate($client, (int) $locked->organization_id, $locked->channel_priority);
@@ -99,6 +103,13 @@ final readonly class MaterializeBroadcastAudience
                         $suppressed++;
                     }
 
+                    $renderContext = $result['eligible']
+                        ? ['client' => ['full_name' => $client->full_name, 'language' => $client->language ?: 'ru']]
+                        : [];
+                    if ($needsReferralLink && $result['eligible']) {
+                        $renderContext['referral_link'] = $this->referralLinks->handle($client);
+                    }
+
                     BroadcastRecipient::query()->create([
                         'organization_id' => $locked->organization_id,
                         'campaign_id' => $locked->getKey(),
@@ -109,9 +120,7 @@ final readonly class MaterializeBroadcastAudience
                         'language' => $client->language ?: 'ru',
                         'channel' => $result['channel'],
                         'external_id' => $result['external_id'],
-                        'render_context' => $result['eligible']
-                            ? ['client' => ['full_name' => $client->full_name, 'language' => $client->language ?: 'ru']]
-                            : [],
+                        'render_context' => $renderContext,
                         'state' => $result['eligible'] ? BroadcastRecipientState::Pending : BroadcastRecipientState::Suppressed,
                         'exclusion_code' => $result['reason'],
                         'idempotency_key' => hash('sha256', $locked->organization_id.'|broadcast|'.$locked->getKey().'|'.$snapshot->getKey().'|'.$client->getKey().'|production'),
@@ -124,5 +133,23 @@ final readonly class MaterializeBroadcastAudience
 
             return $snapshot->refresh();
         }, attempts: 3);
+    }
+
+    private function usesReferralLink(BroadcastCampaign $campaign): bool
+    {
+        $ids = array_values(array_filter([
+            $campaign->template_version_ru_id,
+            $campaign->template_version_en_id,
+        ], static fn (mixed $id): bool => is_numeric($id)));
+
+        if ($ids === []) {
+            return str_contains((string) $campaign->message_body, 'referral_link');
+        }
+
+        return NotificationTemplateVersion::query()
+            ->where('organization_id', $campaign->organization_id)
+            ->whereIn('id', $ids)
+            ->get()
+            ->contains(static fn (NotificationTemplateVersion $version): bool => in_array('referral_link', $version->variables, true));
     }
 }

@@ -206,7 +206,7 @@ final class BroadcastCampaignResource extends Resource
                     ->label('Текст сообщения в Telegram')
                     ->maxLength(100000)
                     ->live()
-                    ->helperText('Для рассылки доступны имя и язык клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.')
+                    ->helperText('Для рассылки доступны имя, язык и персональная реферальная ссылка клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.')
                     ->columnSpanFull()
                     ->visible(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get))
                     ->required(fn (Get $get): bool => $get('message_mode') === 'compose' && self::deliveryIncludesText($get)),
@@ -892,7 +892,10 @@ final class BroadcastCampaignResource extends Resource
         }
 
         return app(NotificationTemplateRenderer::class)
-            ->render($template, ['client' => ['full_name' => 'Aikhana', 'language' => 'ru']], 'ru')
+            ->render($template, [
+                'client' => ['full_name' => 'Aikhana', 'language' => 'ru'],
+                'referral_link' => 'https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456',
+            ], 'ru')
             ->body;
     }
 

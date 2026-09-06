@@ -3,6 +3,7 @@
 use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Channels\Application\SendTelegramContentSection;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionCallback;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto;
@@ -15,6 +16,7 @@ use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\HandleReferralTelegramStart;
+use App\Modules\Referrals\Application\SendReferralInvite;
 use Illuminate\Auth\Access\AuthorizationException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
@@ -43,6 +45,8 @@ $bot->onCommand('start ref_{token}', function (
     TelegramBotIdentityVerifier $identityVerifier,
     HandleReferralTelegramStart $referrals,
     OrganizationContext $organizationContext,
+    GetTelegramMenu $menu,
+    RefreshTelegramClientIdentity $refreshIdentity,
 ): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
     $invalidMessage = $language === 'ru'
@@ -80,8 +84,32 @@ $bot->onCommand('start ref_{token}', function (
             text: $language === 'ru' ? 'Открыть приложение' : 'Open app',
             web_app: WebAppInfo::make($url),
         ));
+
+        $client = $refreshIdentity->handle($organization, $identity);
+        foreach ($menu->handle($language, $client) as $entry) {
+            if ($entry['key'] === 'portal') {
+                continue;
+            }
+
+            $button = match ($entry['launch']) {
+                'mini_app' => InlineKeyboardButton::make(
+                    text: $entry['label'],
+                    web_app: WebAppInfo::make($entry['url']),
+                ),
+                'telegram_content' => InlineKeyboardButton::make(
+                    text: $entry['label'],
+                    callback_data: $entry['callback_data'],
+                ),
+                default => InlineKeyboardButton::make(
+                    text: $entry['label'],
+                    url: $entry['url'],
+                ),
+            };
+            $keyboard->addRow($button);
+        }
+
         $bot->sendMessage(
-            $language === 'ru' ? 'Откройте приложение, чтобы продолжить.' : 'Open the app to continue.',
+            $language === 'ru' ? 'Откройте приложение, чтобы продолжить. Ниже доступны основные разделы.' : 'Open the app to continue. The main sections are available below.',
             reply_markup: $keyboard,
         );
     } catch (AuthorizationException|UnauthorizedHttpException|LogicException) {
@@ -103,6 +131,48 @@ $bot->onCommand('start {token}', function (
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
 })->where('token', '(?!web_|ref_)[A-Za-z0-9_-]+')->description('Запустить приложение');
+
+$bot->onCommand('invite', function (
+    Nutgram $bot,
+    TelegramBotIdentityVerifier $identityVerifier,
+    RefreshTelegramClientIdentity $refreshIdentity,
+    OrganizationContext $organizationContext,
+    SendReferralInvite $sendInvite,
+): void {
+    $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
+    $organizationId = config('tenancy.default_organization_id');
+
+    if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
+        $bot->sendMessage($language === 'ru' ? 'Приглашение сейчас недоступно.' : 'Invites are currently unavailable.');
+
+        return;
+    }
+
+    $organization = Organization::query()->find((int) $organizationId);
+    if (! $organization instanceof Organization) {
+        $bot->sendMessage($language === 'ru' ? 'Приглашение сейчас недоступно.' : 'Invites are currently unavailable.');
+
+        return;
+    }
+
+    try {
+        $organizationContext->set($organization);
+        $identity = $identityVerifier->handle($bot);
+        $client = $refreshIdentity->handle($organization, $identity);
+        if ($client === null) {
+            $bot->sendMessage($language === 'ru' ? 'Откройте приложение, чтобы продолжить.' : 'Open the app to continue.');
+
+            return;
+        }
+
+        $result = $sendInvite->handle($client, $identity->externalId);
+        if ($result->outcome !== NotificationDeliveryOutcome::Delivered) {
+            $bot->sendMessage($language === 'ru' ? 'Не удалось подготовить приглашение. Откройте приложение и попробуйте ещё раз.' : 'The invite could not be prepared. Open the app and try again.');
+        }
+    } catch (AuthorizationException|UnauthorizedHttpException|LogicException|InvalidArgumentException) {
+        $bot->sendMessage($language === 'ru' ? 'Приглашение сейчас недоступно.' : 'Invites are currently unavailable.');
+    }
+})->description('Пригласить друга');
 
 $bot->onCommand('start', function (
     Nutgram $bot,

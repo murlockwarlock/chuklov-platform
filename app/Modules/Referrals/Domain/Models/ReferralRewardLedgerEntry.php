@@ -2,6 +2,7 @@
 
 namespace App\Modules\Referrals\Domain\Models;
 
+use App\Models\User;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -19,10 +20,15 @@ use LogicException;
  * @property CurrencyCode $currency
  * @property int $amount_minor
  * @property int $beneficiary_client_id
- * @property int $referred_client_id
- * @property int $referral_relationship_id
- * @property int $referral_commercial_evidence_id
+ * @property int|null $referred_client_id
+ * @property int|null $referral_relationship_id
+ * @property int|null $referral_commercial_evidence_id
+ * @property int|null $financial_obligation_id
+ * @property int|null $financial_ledger_entry_id
+ * @property int|null $reward_program_version_id
  * @property string|null $reason
+ * @property string|null $comment
+ * @property int|null $created_by_user_id
  * @property Carbon $occurred_at
  * @property-read Client|null $referred
  */
@@ -93,6 +99,12 @@ class ReferralRewardLedgerEntry extends Model
     public function reversedEntry(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reverses_entry_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
     }
 
     protected function casts(): array

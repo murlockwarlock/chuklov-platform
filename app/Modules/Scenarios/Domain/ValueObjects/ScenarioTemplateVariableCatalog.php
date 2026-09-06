@@ -12,6 +12,7 @@ final class ScenarioTemplateVariableCatalog
         'client.full_name',
         'client.language',
         'client.telegram_contact',
+        'referral_link',
         'booking.id',
         'booking.status',
         'booking.visit_format',
@@ -64,7 +65,7 @@ final class ScenarioTemplateVariableCatalog
         }
 
         return $purpose === ScenarioRulePurpose::Marketing
-            ? ['client.full_name', 'client.language']
+            ? ['client.full_name', 'client.language', 'referral_link']
             : self::ALLOWED;
     }
 
@@ -75,6 +76,7 @@ final class ScenarioTemplateVariableCatalog
             'client.full_name' => 'Имя клиента',
             'client.language' => 'Язык клиента',
             'client.telegram_contact' => 'Telegram клиента',
+            'referral_link' => 'Персональная реферальная ссылка',
             'booking.id' => 'Номер записи',
             'booking.status' => 'Статус записи',
             'booking.visit_format' => 'Формат визита',

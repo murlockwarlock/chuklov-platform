@@ -74,6 +74,12 @@ return [
                 'route' => 'portal.referrals',
                 'parameters' => [],
             ],
+            'invite_friend' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.referrals',
+                'parameters' => [],
+            ],
             'communities' => [
                 'launch' => 'mini_app',
                 'requires_auth' => false,
@@ -92,6 +98,7 @@ return [
                 ['key' => 'method', 'label' => 'Method'],
                 ['key' => 'b2b', 'label' => '🚀 Want a bot like this? / Grow your business'],
                 ['key' => 'partner', 'label' => 'Partners'],
+                ['key' => 'invite_friend', 'label' => '🎁 Invite a friend'],
                 ['key' => 'partner_cabinet', 'label' => '🤝 Partner cabinet'],
                 ['key' => 'communities', 'label' => 'Communities'],
             ],
@@ -101,6 +108,7 @@ return [
                 ['key' => 'method', 'label' => 'Метод'],
                 ['key' => 'b2b', 'label' => '🚀 Хочешь себе такого бота? / Развить бизнес'],
                 ['key' => 'partner', 'label' => 'Партнёры'],
+                ['key' => 'invite_friend', 'label' => '🎁 Пригласить друга'],
                 ['key' => 'partner_cabinet', 'label' => '🤝 Стать партнёром'],
                 ['key' => 'communities', 'label' => 'Сообщества'],
             ],

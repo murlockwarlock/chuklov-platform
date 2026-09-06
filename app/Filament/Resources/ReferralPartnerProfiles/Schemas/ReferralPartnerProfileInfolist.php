@@ -36,6 +36,13 @@ final class ReferralPartnerProfileInfolist
                         ->wrap()
                         ->columnSpanFull(),
                 ]),
+            Section::make('Условия вознаграждения')
+                ->schema([
+                    TextEntry::make('reward_terms')
+                        ->label('Текущая схема')
+                        ->state(fn (ViewReferralPartnerProfile $livewire): string => $livewire->rewardTermsSummary())
+                        ->wrap(),
+                ]),
             Section::make('Ссылки')
                 ->schema([
                     RepeatableEntry::make('campaign_links')
@@ -84,6 +91,7 @@ final class ReferralPartnerProfileInfolist
                             TextEntry::make('type')->label('Операция')->wrap(),
                             TextEntry::make('amount')->label('Сумма')->wrap(),
                             TextEntry::make('client')->label('Клиент')->wrap(),
+                            TextEntry::make('reason')->label('Причина')->wrap(),
                             TextEntry::make('occurredAt')->label('Дата')->wrap(),
                         ])
                         ->columns(2)

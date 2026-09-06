@@ -95,4 +95,14 @@ final class RichTextDocumentTest extends TestCase
             RichTextDocument::canonicalHtml($content),
         );
     }
+
+    public function test_referral_template_link_placeholder_survives_safe_html_projection(): void
+    {
+        $html = RichTextDocument::canonicalHtml('<p><a href="{{ referral_link }}">Моя ссылка</a></p>');
+
+        self::assertStringContainsString('href="{{ referral_link }}"', $html);
+        self::assertStringContainsString('<a href="https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456">Моя ссылка</a>', RichTextDocument::telegramHtml(
+            str_replace('{{ referral_link }}', 'https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456', $html),
+        ));
+    }
 }

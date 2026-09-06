@@ -95,6 +95,27 @@ final class ClientWorkspaceInfolist
                             })
                             ->placeholder('Не указан')
                             ->wrap(),
+                        TextEntry::make('referrer_summary')
+                            ->label('Пригласил')
+                            ->state(function (Client $record): string {
+                                $relationship = $record->getRelationValue('referralRelationship');
+                                $referrer = $relationship?->getRelationValue('referrer');
+                                $name = trim((string) $referrer?->full_name);
+
+                                return $name !== '' ? $name : ($referrer === null ? 'Не указан' : 'Клиент #'.$relationship->referrer_client_id);
+                            })
+                            ->helperText(function (Client $record): ?string {
+                                $relationship = $record->getRelationValue('referralRelationship');
+
+                                return $relationship === null ? null : match ($relationship->establishment_method?->value) {
+                                    'manual_crm' => 'Указан в CRM',
+                                    'automatic_referral_link' => $relationship->referral_campaign_link_id === null
+                                        ? 'Персональная ссылка'
+                                        : 'Кампания: '.($relationship->referralCampaignLink?->name ?? 'не указана'),
+                                    default => 'Источник зафиксирован',
+                                };
+                            })
+                            ->wrap(),
                         TextEntry::make('marketing_consent_summary')
                             ->label('Маркетинговые сообщения')
                             ->state(function (Client $record): array {

@@ -11,6 +11,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardFormula;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardQualificationRule;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgram;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgramVersion;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -42,8 +43,13 @@ final class SaveReferralRewardProgram
         ?string $fixedCurrency,
         ?string $percentage,
         string|DateTimeInterface|null $effectiveAt,
+        ?ReferralPartnerProfile $partnerProfile = null,
     ): ReferralRewardProgramVersion {
         $organization = $this->authorization->authorizeManage($actor);
+
+        if ($partnerProfile !== null && (int) $partnerProfile->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['partner_profile' => 'Партнёр относится к другой организации.']);
+        }
         $qualification = $enabled ? $this->qualification($qualificationRule) : null;
         $rewardFormula = $enabled ? $this->formula($formula) : null;
         $effective = $this->effectiveAt($effectiveAt);
@@ -94,6 +100,7 @@ final class SaveReferralRewardProgram
             $basisPoints,
             $rounding,
             $effective,
+            $partnerProfile,
         ): ReferralRewardProgramVersion {
             DB::table('referral_reward_programs')->insertOrIgnore([
                 'organization_id' => $organization->getKey(),
@@ -110,6 +117,7 @@ final class SaveReferralRewardProgram
             $version->forceFill([
                 'organization_id' => $organization->getKey(),
                 'program_id' => $program->getKey(),
+                'partner_profile_id' => $partnerProfile?->getKey(),
                 'version' => $versionNumber,
                 'enabled' => $enabled,
                 'qualification_rule' => $qualification?->value,
@@ -122,7 +130,10 @@ final class SaveReferralRewardProgram
                 'created_by_user_id' => $actor->getKey(),
             ]);
             $version->save();
-            $program->forceFill(['current_version_id' => $version->getKey()])->save();
+
+            if ($partnerProfile === null) {
+                $program->forceFill(['current_version_id' => $version->getKey()])->save();
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -138,6 +149,7 @@ final class SaveReferralRewardProgram
                     'percentage_basis_points' => $basisPoints,
                     'rounding_mode' => $rounding?->value,
                     'version' => $versionNumber,
+                    'partner_profile_id' => $partnerProfile?->getKey(),
                     'effective_at' => $effective->toIso8601String(),
                 ],
             );

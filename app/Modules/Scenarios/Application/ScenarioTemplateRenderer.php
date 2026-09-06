@@ -42,6 +42,10 @@ final class ScenarioTemplateRenderer implements NotificationTemplateRenderer
                     throw new InvalidArgumentException('The notification template variable value is invalid.');
                 }
 
+                if ($variable === 'referral_link' && (! is_string($value) || trim($value) === '')) {
+                    throw new InvalidArgumentException('The referral link is unavailable for this recipient.');
+                }
+
                 return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             },
             $content,

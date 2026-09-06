@@ -388,11 +388,11 @@ class ViewClient extends ViewRecord
     private function assignPartnerAction(): Action
     {
         return Action::make('assignPartner')
-            ->label('Назначить партнёра')
+            ->label('Указать, кто пригласил')
             ->icon('heroicon-o-user-plus')
             ->schema([
                 Select::make('referrer_client_id')
-                    ->label('Партнёр')
+                    ->label('Реферер')
                     ->searchable()
                     ->native(false)
                     ->options([])
@@ -427,12 +427,24 @@ class ViewClient extends ViewRecord
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
 
-                app(EstablishManualReferralRelationship::class)->handle(
-                    actor: $actor,
-                    referrerClientId: (int) $data['referrer_client_id'],
-                    referredClientId: (int) $this->clientRecord()->getKey(),
-                );
-                Notification::make()->title('Партнёр назначен')->success()->send();
+                try {
+                    app(EstablishManualReferralRelationship::class)->handle(
+                        actor: $actor,
+                        referrerClientId: (int) $data['referrer_client_id'],
+                        referredClientId: (int) $this->clientRecord()->getKey(),
+                    );
+                    $this->clientRecord()->load('referralRelationship.referrer');
+                    Notification::make()->title('Реферер указан')->success()->send();
+                } catch (ValidationException $exception) {
+                    Notification::make()
+                        ->title('Не удалось указать реферера')
+                        ->body(implode(' ', array_map(
+                            static fn (array $messages): string => implode(' ', $messages),
+                            $exception->errors(),
+                        )))
+                        ->danger()
+                        ->send();
+                }
             });
     }
 

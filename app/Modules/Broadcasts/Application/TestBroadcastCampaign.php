@@ -12,6 +12,8 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Application\BuildClientReferralLink;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
@@ -22,7 +24,14 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class TestBroadcastCampaign
 {
-    public function __construct(private BroadcastAuthorization $authorization, private BroadcastEligibilityPolicy $eligibility, private ProcessBroadcastBatch $delivery, private RecordAuditEvent $audit, private BroadcastCampaignMedia $media) {}
+    public function __construct(
+        private BroadcastAuthorization $authorization,
+        private BroadcastEligibilityPolicy $eligibility,
+        private ProcessBroadcastBatch $delivery,
+        private RecordAuditEvent $audit,
+        private BroadcastCampaignMedia $media,
+        private BuildClientReferralLink $referralLinks,
+    ) {}
 
     /** @return Collection<int, Client> */
     public function eligibleTestClients(User $actor, BroadcastCampaign $campaign): Collection
@@ -105,7 +114,12 @@ final readonly class TestBroadcastCampaign
             $version = (int) BroadcastAudienceSnapshot::query()->where('organization_id', $organization->getKey())->where('campaign_id', $locked->getKey())->max('version') + 1;
             $snapshot = BroadcastAudienceSnapshot::query()->create(['organization_id' => $organization->getKey(), 'campaign_id' => $locked->getKey(), 'version' => $version, 'draft_version' => $locked->draft_version, 'segment_definition' => [], 'segment_summary' => 'Тестовая отправка выбранному получателю', 'channel_priority' => $locked->channel_priority, 'delivery_mode' => $locked->delivery_mode, 'caption_position' => $locked->caption_position, 'media' => $locked->media, 'template_version_ru_id' => $locked->template_version_ru_id, 'template_version_en_id' => $locked->template_version_en_id, 'matched_count' => 1, 'eligible_count' => 1, 'suppressed_count' => 0, 'materialized_at' => now()]);
 
-            return BroadcastRecipient::query()->create(['organization_id' => $organization->getKey(), 'campaign_id' => $locked->getKey(), 'snapshot_id' => $snapshot->getKey(), 'client_id' => $client->getKey(), 'kind' => 'test', 'language' => $client->language ?: 'ru', 'channel' => $eligible['channel'], 'external_id' => $eligible['external_id'], 'render_context' => ['client' => ['full_name' => $client->full_name, 'language' => $client->language ?: 'ru']], 'state' => BroadcastRecipientState::Pending, 'idempotency_key' => hash('sha256', $organization->getKey().'|broadcast-test|'.$locked->getKey().'|'.$snapshot->getKey().'|'.$client->getKey())]);
+            $renderContext = ['client' => ['full_name' => $client->full_name, 'language' => $client->language ?: 'ru']];
+            if ($this->usesReferralLink($locked)) {
+                $renderContext['referral_link'] = $this->referralLinks->handle($client);
+            }
+
+            return BroadcastRecipient::query()->create(['organization_id' => $organization->getKey(), 'campaign_id' => $locked->getKey(), 'snapshot_id' => $snapshot->getKey(), 'client_id' => $client->getKey(), 'kind' => 'test', 'language' => $client->language ?: 'ru', 'channel' => $eligible['channel'], 'external_id' => $eligible['external_id'], 'render_context' => $renderContext, 'state' => BroadcastRecipientState::Pending, 'idempotency_key' => hash('sha256', $organization->getKey().'|broadcast-test|'.$locked->getKey().'|'.$snapshot->getKey().'|'.$client->getKey())]);
         });
 
         $recipient = $this->delivery->deliverTest($recipient);
@@ -116,5 +130,23 @@ final readonly class TestBroadcastCampaign
         $this->audit->handle($organization, $actor, $action, BroadcastCampaign::class, (string) $campaign->getKey(), ['test_recipient_id' => $recipient->getKey(), 'channel' => $recipient->channel, 'reason' => $reason]);
 
         return $recipient->refresh();
+    }
+
+    private function usesReferralLink(BroadcastCampaign $campaign): bool
+    {
+        $ids = array_values(array_filter([
+            $campaign->template_version_ru_id,
+            $campaign->template_version_en_id,
+        ], static fn (mixed $id): bool => is_numeric($id)));
+
+        if ($ids === []) {
+            return str_contains((string) $campaign->message_body, 'referral_link');
+        }
+
+        return NotificationTemplateVersion::query()
+            ->where('organization_id', $campaign->organization_id)
+            ->whereIn('id', $ids)
+            ->get()
+            ->contains(static fn (NotificationTemplateVersion $version): bool => in_array('referral_link', $version->variables, true));
     }
 }

@@ -121,6 +121,7 @@ class ClientResource extends Resource
             ->with('attribution')
             ->with('activeBookingRestriction')
             ->with('referralPartnerProfile')
+            ->with('referralRelationship.referrer')
             ->withCount('channelIdentities');
     }
 

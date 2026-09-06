@@ -12,6 +12,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardQualificationRule;
 use App\Modules\Referrals\Domain\Models\ReferralCommercialEvidence;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgram;
@@ -77,9 +78,26 @@ final class QualifyReferralReward
                 return null;
             }
 
-            $version = ReferralRewardProgramVersion::query()
+            $partnerProfile = ReferralPartnerProfile::query()
+                ->where('organization_id', $organizationId)
+                ->where('client_id', $relationship->referrer_client_id)
+                ->first();
+            $version = $partnerProfile === null
+                ? null
+                : ReferralRewardProgramVersion::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('program_id', $program->getKey())
+                    ->where('partner_profile_id', $partnerProfile->getKey())
+                    ->where('effective_at', '<=', $evidence->observed_at)
+                    ->where('enabled', true)
+                    ->orderByDesc('effective_at')
+                    ->orderByDesc('version')
+                    ->first();
+
+            $version ??= ReferralRewardProgramVersion::query()
                 ->where('organization_id', $organizationId)
                 ->where('program_id', $program->getKey())
+                ->whereNull('partner_profile_id')
                 ->where('effective_at', '<=', $evidence->observed_at)
                 ->orderByDesc('effective_at')
                 ->orderByDesc('version')

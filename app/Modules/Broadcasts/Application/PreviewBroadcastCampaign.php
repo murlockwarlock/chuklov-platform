@@ -111,7 +111,10 @@ final readonly class PreviewBroadcastCampaign
 
             return $this->renderer->render(
                 $previewTemplate,
-                ['client' => ['full_name' => 'Aikhana', 'language' => $locale]],
+                [
+                    'client' => ['full_name' => 'Aikhana', 'language' => $locale],
+                    'referral_link' => 'https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456',
+                ],
                 $locale,
             )->body;
         } catch (InvalidArgumentException) {
