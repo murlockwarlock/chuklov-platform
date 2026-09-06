@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiPrompts\RelationManagers;
 
+use App\Filament\Support\AiPromptTextSections;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\CreatePromptDraft;
@@ -13,11 +14,13 @@ use App\Modules\AI\Domain\ValueObjects\AiParameterConfig;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -42,11 +45,24 @@ class PromptVersionsRelationManager extends RelationManager
         return $schema
             ->components([
                 Textarea::make('system_prompt')
-                    ->label('Исходный промпт и защитные правила платформы')
-                    ->helperText('Сохраняйте отдельные блоки [SOURCE TEXT] и [PLATFORM SAFETY GUARDRAIL]. Первый содержит исходную роль и рабочие инструкции, второй — обязательные правила безопасности платформы.')
+                    ->label('Полный исходный prompt')
+                    ->helperText('Редактируется весь исходный текст версии, включая блоки [SOURCE TEXT] и [PLATFORM SAFETY GUARDRAIL].')
                     ->default($latestVersion?->system_prompt)
                     ->required()
-                    ->rows(6)
+                    ->live(debounce: 500)
+                    ->rows(18)
+                    ->columnSpanFull(),
+                Section::make('Границы инструкции')
+                    ->description('Проверяйте исходные рабочие инструкции и обязательные safety guardrails отдельно. Текст выше остаётся полным и редактируемым.')
+                    ->schema([
+                        Placeholder::make('source_text_preview')
+                            ->label('SOURCE TEXT')
+                            ->content(fn (Get $get): string => AiPromptTextSections::source((string) $get('system_prompt'))),
+                        Placeholder::make('guardrails_preview')
+                            ->label('Safety guardrails платформы')
+                            ->content(fn (Get $get): string => AiPromptTextSections::guardrails((string) $get('system_prompt'))),
+                    ])
+                    ->columns(2)
                     ->columnSpanFull(),
                 Textarea::make('user_prompt_template')
                     ->label('Шаблон запроса')

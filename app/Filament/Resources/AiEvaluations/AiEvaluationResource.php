@@ -92,6 +92,18 @@ final class AiEvaluationResource extends Resource
                 TextColumn::make('capability')
                     ->label('Что проверяем')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
+                TextColumn::make('demo_status')
+                    ->label('Тип данных')
+                    ->state(fn (AiEvalSuite $record): string => str_starts_with($record->key, 'source_agent_')
+                        ? 'Демонстрационный тест · Синтетические данные'
+                        : 'Рабочая проверка')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Рабочая проверка' ? 'gray' : 'info'),
+                TextColumn::make('description')
+                    ->label('Описание')
+                    ->limit(80)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('cases_count')->counts('cases')->label('Примеров')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('runs_count')->counts('runs')->label('Запусков')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
@@ -257,6 +269,7 @@ final class AiEvaluationResource extends Resource
         $release = AiModelRelease::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->whereKey((int) $value)
+            ->whereJsonContains('capabilities', $suite->capability->value)
             ->with(['modelConfiguration:id,display_name'])
             ->first(['id', 'model_config_id', 'provider_name', 'model_name', 'release_number', 'status']);
 

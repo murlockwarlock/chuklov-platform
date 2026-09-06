@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useForm } from '@inertiajs/vue3';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
@@ -42,6 +42,9 @@ const { t, locale } = usePortalLocale();
 const body = ref('');
 const olderLoading = ref(false);
 const imageInput = ref<HTMLInputElement | null>(null);
+const historyElement = ref<HTMLElement | null>(null);
+const showNewMessages = ref(false);
+const followNewest = ref(true);
 const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
     body: '',
     idempotency_key: '',
@@ -49,6 +52,40 @@ const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]
     reinspect_recent_images: false,
 });
 let poller: number | undefined;
+
+function isNearBottom(element: HTMLElement | null): boolean {
+    if (element === null) {
+        return true;
+    }
+
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= 96;
+}
+
+function scrollToNewest(behavior: 'auto' | 'smooth' = 'auto'): void {
+    const element = historyElement.value;
+    if (element === null) {
+        return;
+    }
+
+    element.scrollTo({ top: element.scrollHeight, behavior });
+    showNewMessages.value = false;
+}
+
+function handleHistoryScroll(): void {
+    const nearBottom = isNearBottom(historyElement.value);
+    followNewest.value = nearBottom;
+    if (nearBottom) {
+        showNewMessages.value = false;
+    }
+}
+
+function prepareForIncomingMessages(): void {
+    followNewest.value = isNearBottom(historyElement.value);
+}
+
+function messageSignature(): string {
+    return `${props.companion.messages.map((message) => `${message.type}:${message.id}:${message.content}`).join('|')}|${props.companion.pending ? 'pending' : 'idle'}`;
+}
 
 function newIdempotencyKey(): string {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -63,6 +100,7 @@ function send(): void {
     if ((!text && sendForm.images.length === 0) || sendForm.processing) {
         return;
     }
+    prepareForIncomingMessages();
     sendForm.body = text;
     sendForm.reinspect_recent_images = sendForm.images.length === 0 && sendForm.reinspect_recent_images;
     sendForm.idempotency_key = newIdempotencyKey();
@@ -94,6 +132,7 @@ function loadOlder(): void {
     if (!props.companion.nextBeforeMessageId || olderLoading.value) {
         return;
     }
+    followNewest.value = false;
     olderLoading.value = true;
     router.get(props.urls.history, { before: props.companion.nextBeforeMessageId }, {
         preserveScroll: true,
@@ -122,17 +161,31 @@ function formatDate(value: string): string {
 }
 
 onMounted(() => {
+    historyElement.value?.addEventListener('scroll', handleHistoryScroll, { passive: true });
+    nextTick(() => scrollToNewest());
     poller = window.setInterval(() => {
         if (props.companion.pending) {
+            prepareForIncomingMessages();
             router.reload({ only: ['companion'] });
         }
     }, 4000);
 });
 
 onUnmounted(() => {
+    historyElement.value?.removeEventListener('scroll', handleHistoryScroll);
     if (poller !== undefined) {
         window.clearInterval(poller);
     }
+});
+
+watch(messageSignature, async () => {
+    await nextTick();
+    if (followNewest.value) {
+        scrollToNewest();
+        return;
+    }
+
+    showNewMessages.value = true;
 });
 </script>
 
@@ -147,25 +200,17 @@ onUnmounted(() => {
         <h1 class="portal-heading portal-heading--section">
           {{ t('companion.title') }}
         </h1>
-        <details class="portal-companion__help">
-          <summary
-            :aria-label="t('companion.about')"
-            :title="t('companion.about')"
-          >
-            <PortalIcon name="info" />
-            <span class="sr-only">{{ t('companion.about') }}</span>
-          </summary>
-          <p class="portal-copy portal-copy--small">
-            {{ t('companion.description') }}
-          </p>
-        </details>
       </header>
 
       <section
         class="portal-companion"
         aria-live="polite"
       >
-        <div class="portal-companion__history">
+        <div
+          ref="historyElement"
+          class="portal-companion__history"
+          data-testid="companion-history"
+        >
           <button
             v-if="props.companion.hasOlder"
             class="portal-button portal-button--secondary self-center"
@@ -233,10 +278,30 @@ onUnmounted(() => {
 
           <div
             v-if="props.companion.pending"
-            class="portal-copy portal-copy--small"
+            class="portal-companion__typing"
+            role="status"
+            aria-live="polite"
           >
-            {{ t('companion.pending') }}
+            <span class="sr-only">{{ t('companion.typingAccessible') }}</span>
+            <span aria-hidden="true">{{ t('companion.typing') }}</span>
+            <span
+              class="portal-companion__typing-dots"
+              aria-hidden="true"
+            >
+              <i />
+              <i />
+              <i />
+            </span>
           </div>
+          <button
+            v-if="showNewMessages"
+            class="portal-companion__new-messages"
+            type="button"
+            data-testid="companion-new-messages"
+            @click="scrollToNewest('smooth')"
+          >
+            {{ t('companion.newMessages') }}
+          </button>
           <div
             v-if="props.companion.state === 'human_handoff'"
             class="portal-panel"

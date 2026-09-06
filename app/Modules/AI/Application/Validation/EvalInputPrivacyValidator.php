@@ -120,7 +120,7 @@ final class EvalInputPrivacyValidator
                 foreach ($nested as $propertyName => $propertySchema) {
                     $normalizedPropertyName = strtolower((string) $propertyName);
                     $normalizedPropertyName = preg_replace('/[^a-z0-9_]+/', '_', $normalizedPropertyName) ?? $normalizedPropertyName;
-                    if ($normalizedPropertyName !== 'client_summary') {
+                    if (! in_array($normalizedPropertyName, ['client_summary', 'recommended_first_session_focus'], true)) {
                         foreach (self::PROHIBITED_KEY_FRAGMENTS as $fragment) {
                             if (str_contains($normalizedPropertyName, $fragment)) {
                                 throw new InvalidArgumentException("Production reference '{$path}.properties.{$propertyName}' is prohibited in evaluation output schema.");

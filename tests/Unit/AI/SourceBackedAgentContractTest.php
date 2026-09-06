@@ -190,6 +190,7 @@ final class SourceBackedAgentContractTest extends TestCase
             'type' => 'object',
             'properties' => [
                 'client_summary' => ['type' => 'string'],
+                'recommended_first_session_focus' => ['type' => 'array'],
             ],
         ]);
 
