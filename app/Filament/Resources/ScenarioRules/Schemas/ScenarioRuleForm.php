@@ -60,6 +60,7 @@ final class ScenarioRuleForm
                         TextInput::make('delay_value')
                             ->label('Через сколько')
                             ->integer()
+                            ->live(onBlur: true)
                             ->required()
                             ->minValue(0)
                             ->maxValue(PHP_INT_MAX)

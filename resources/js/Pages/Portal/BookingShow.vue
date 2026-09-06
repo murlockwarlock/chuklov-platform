@@ -79,6 +79,7 @@ const selectedSlot = ref<string | null>(null);
 const selectedDate = ref<string | null>(props.booking.localDate);
 const rescheduleOpen = ref(props.availability !== null);
 const rescheduleLoading = ref(false);
+const rescheduleRequestError = ref<string | null>(null);
 const meetingReloading = ref(false);
 const savedWorkingLocation = props.workingLocations.find((location) => location.id === props.booking.workingLocationId);
 const defaultWorkingLocation = props.workingLocations.find((location) => location.isDefault) ?? props.workingLocations[0] ?? null;
@@ -109,7 +110,12 @@ const rescheduleError = computed(() => {
     return errors.starts_at
         ?? errors.startsAt
         ?? errors.booking
-        ?? errors.expected_event_version;
+        ?? errors.expected_event_version
+        ?? errors.client_timezone
+        ?? errors.working_location_id
+        ?? errors.location_area
+        ?? errors.reason
+        ?? rescheduleRequestError.value;
 });
 const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
 let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -227,6 +233,7 @@ function monthRange(dateValue: string): AvailabilityRange {
 }
 
 function loadAvailability(range: AvailabilityRange): void {
+    rescheduleRequestError.value = null;
     rescheduleOpen.value = true;
     rescheduleLoading.value = true;
     selectedDate.value = range.dateFrom;
@@ -270,6 +277,7 @@ function openReschedule(): void {
 }
 
 function closeReschedule(): void {
+    rescheduleRequestError.value = null;
     rescheduleOpen.value = false;
     selectedSlot.value = null;
     rescheduleForm.starts_at = null;
@@ -288,12 +296,25 @@ function rescheduleBooking(): void {
         return;
     }
 
+    rescheduleRequestError.value = null;
     rescheduleForm.post(props.urls.reschedule, {
         preserveScroll: true,
         onSuccess: () => {
             rescheduleOpen.value = false;
             selectedSlot.value = null;
             rescheduleForm.starts_at = null;
+        },
+        onError: (errors) => {
+            rescheduleRequestError.value = Object.values(errors).find(
+                (error): error is string => typeof error === 'string' && error.length > 0,
+            )
+                ?? t('booking.rescheduleFailed');
+        },
+        onHttpException: () => {
+            rescheduleRequestError.value = t('booking.rescheduleFailed');
+        },
+        onNetworkError: () => {
+            rescheduleRequestError.value = t('common.error');
         },
     });
 }
