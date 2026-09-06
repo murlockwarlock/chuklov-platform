@@ -307,7 +307,24 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await updatedPreviewButton.click();
     await expect((await previewResponse).status()).toBe(200);
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
-    await expect(updatedPreviewDialog).toBeVisible({ timeout: 10_000 });
+    const modalState = await updatedPreviewDialog.evaluate((element) => {
+        const alpineData = (element as HTMLElement & {
+            _x_dataStack?: Array<{ isOpen?: boolean; isWindowVisible?: boolean; isTrapActive?: boolean }>;
+        })._x_dataStack?.[0];
+        const modalWindow = element.querySelector<HTMLElement>('.fi-modal-window');
+
+        return {
+            rootClass: element.getAttribute('class'),
+            rootStyle: element.getAttribute('style'),
+            isOpen: alpineData?.isOpen,
+            isWindowVisible: alpineData?.isWindowVisible,
+            isTrapActive: alpineData?.isTrapActive,
+            windowClass: modalWindow?.getAttribute('class'),
+            windowStyle: modalWindow?.getAttribute('style'),
+            windowShow: modalWindow?.getAttribute('x-show'),
+        };
+    });
+    await expect(updatedPreviewDialog, JSON.stringify(modalState)).toBeVisible({ timeout: 10_000 });
     await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
     await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
     await expect(updatedPreviewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
