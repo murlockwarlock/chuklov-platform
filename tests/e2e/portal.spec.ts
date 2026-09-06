@@ -771,7 +771,7 @@ test('companion shows accessible typing feedback and respects intentional histor
 
     await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
-    await expect(page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
 
     await page.getByTestId('companion-new-messages').click();
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
