@@ -698,7 +698,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 
         await page.goto('/admin/referral-relationships');
         await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
-        await assertRenderedViewportGeometry(page, ['[role="searchbox"]']);
+        await assertRenderedViewportGeometry(page, ['input[type="search"]']);
         if (width >= 1024) {
             await assertNoTableHorizontalOverflow(page);
         }
@@ -709,7 +709,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 
         await page.goto('/admin/ai-runs');
         await expect(page.getByRole('heading', { name: 'История запусков', exact: true })).toBeVisible();
-        await assertRenderedViewportGeometry(page, ['[role="searchbox"]']);
+        await assertRenderedViewportGeometry(page, ['input[type="search"]']);
     }
 });
 
