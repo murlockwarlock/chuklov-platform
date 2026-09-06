@@ -172,7 +172,7 @@ final class NotificationTemplateResource extends Resource
     private static function mediaSummary(NotificationTemplate $template): string
     {
         $media = $template->latestVersion?->media;
-        $items = is_array($media) && is_array($media['items'] ?? null) ? $media['items'] : [];
+        $items = $media === null || ! is_array($media['items'] ?? null) ? [] : $media['items'];
 
         return $items === [] ? 'Не добавлено' : 'Файлов: '.count($items);
     }

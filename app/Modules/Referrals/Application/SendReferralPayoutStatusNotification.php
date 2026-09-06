@@ -21,12 +21,11 @@ final class SendReferralPayoutStatusNotification
     public function handle(ReferralPayoutRequest $request): NotificationDeliveryResult
     {
         $status = $request->status;
-        if (! $status instanceof ReferralPayoutRequestStatus
-            || ! in_array($status, [
-                ReferralPayoutRequestStatus::Approved,
-                ReferralPayoutRequestStatus::Rejected,
-                ReferralPayoutRequestStatus::Paid,
-            ], true)) {
+        if (! in_array($status, [
+            ReferralPayoutRequestStatus::Approved,
+            ReferralPayoutRequestStatus::Rejected,
+            ReferralPayoutRequestStatus::Paid,
+        ], true)) {
             return NotificationDeliveryResult::suppressed('payout_status_not_notifiable');
         }
 
@@ -48,7 +47,7 @@ final class SendReferralPayoutStatusNotification
         }
 
         $amount = Money::ofMinor((int) $request->amount_minor, $currency)->toDecimalString().' '.$currency->value;
-        $locale = str_starts_with(strtolower((string) $identity->client?->language), 'en') ? 'en' : 'ru';
+        $locale = str_starts_with(strtolower((string) $identity->client->language), 'en') ? 'en' : 'ru';
         $body = $this->body($status, $amount, $request->rejection_reason, $locale);
 
         $result = $channel->send(new NotificationMessage(

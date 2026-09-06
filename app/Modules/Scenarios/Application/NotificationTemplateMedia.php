@@ -14,7 +14,11 @@ final readonly class NotificationTemplateMedia
         private NotificationTemplateMediaStorageInterface $storage,
     ) {}
 
-    /** @param list<string> $storedPaths */
+    /**
+     * @param  array<string, mixed>|null  $existing
+     * @param  list<string>  $storedPaths
+     * @return array<string, mixed>|null
+     */
     public function prepare(
         int $organizationId,
         mixed $uploads,
@@ -78,7 +82,7 @@ final readonly class NotificationTemplateMedia
         return null;
     }
 
-    /** @param array{items: list<array{type: string, source: string, name: string|null}>}|null $media
+    /** @param array<string, mixed>|null $media
      * @return list<NotificationMedia>
      */
     public function messages(int $organizationId, ?array $media): array
@@ -114,7 +118,7 @@ final readonly class NotificationTemplateMedia
         $this->storage->delete($organizationId, $path);
     }
 
-    /** @param array{items: list<array{type: string, source: string, name: string|null}>} $media
+    /** @param array<string, mixed> $media
      * @return list<array{type: string, source: string, name: string|null}>
      */
     private function items(array $media): array
@@ -199,9 +203,9 @@ final readonly class NotificationTemplateMedia
         }
     }
 
-    private function typeFor(string $mime, string $name): string
+    private function typeFor(?string $mime, string $name): string
     {
-        $mime = strtolower($mime);
+        $mime = strtolower($mime ?? '');
         $extension = strtolower(pathinfo(parse_url($name, PHP_URL_PATH) ?: $name, PATHINFO_EXTENSION));
 
         if (str_starts_with($mime, 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {

@@ -17,6 +17,9 @@ use LogicException;
 /**
  * @property NotificationTemplateStatus $status
  * @property array<string> $variables
+ * @property NotificationMessageMode $delivery_mode
+ * @property string $caption_position
+ * @property array<string, mixed>|null $media
  * @property Carbon|null $published_at
  */
 #[Fillable(['version', 'status', 'subject', 'body', 'variables', 'delivery_mode', 'caption_position', 'media', 'published_at'])]
