@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-09-06 — Owner acceptance remediation: partners, payouts, and messaging
+
+- Consolidated the Partner CRM and partner cabinet around primary results, reward provenance, campaign links, balances, payout controls, and secondary history while keeping destructive CRM actions in a secondary group.
+- Made common versus individual reward terms explicit, routed common-term editing to the existing organization configuration, and added visible payout success, validation, and notification workflows.
+- Added the reusable media-capable Message Composer to broadcasts and notification templates, including Telegram limits, previews, variables, rich text, emoji, links, and media persistence.
+- Added rendered browser geometry coverage for primary controls at the required acceptance widths. Persistent floating CRM popup/toast notifications are intentionally excluded by owner decision.
+
 ## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
 
 - Clarified CRM referral terminology and current-referrer provenance, added partner-specific versioned reward terms, audited manual partner credits through the existing ledger, and kept partner/bookings tables focused on primary actions at normal widths.
