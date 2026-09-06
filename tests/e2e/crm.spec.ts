@@ -136,6 +136,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 service: $service,
                 startsAt: $bookingStartsAt,
                 format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
+                workingLocationId: $workingLocation->getKey(),
                 idempotencyKey: 'playwright-finance-'.$suffix,
             );
             $pastStartsAt = \\Carbon\\CarbonImmutable::now('UTC')->subHours(2);
@@ -1068,10 +1069,12 @@ test('crm sidebar navigation operates via SPA mode without full page reloads', a
 
         if (await openSidebarToggle.isVisible()) {
             await openSidebarToggle.click();
+            await expect(navigationSidebar).toHaveClass(/fi-sidebar-open/);
         }
 
         await expect(targetLink).toBeVisible();
         await expect(targetLink).toBeEnabled();
+        await targetLink.scrollIntoViewIfNeeded();
         await targetLink.click();
 
         await expect(page).toHaveURL(expectedUrl);
