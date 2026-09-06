@@ -460,10 +460,12 @@ final class AiCatalogPricingValidityTest extends TestCase
         $definition = AiModelCatalog::find('deepseek', 'deepseek-v4-flash');
 
         self::assertNotNull($definition?->pricing);
+        self::assertSame(0, $definition->pricing->cacheWriteRatePerMillionUnits());
         self::assertSame(0, $definition->pricing->reasoningRatePerMillionUnits());
         self::assertGreaterThan(0, $definition->pricing->calculateCostMinorUnits(
             promptTokens: 12_288,
             completionTokens: 4_096,
+            cacheWriteInputTokens: 4_096,
             reasoningTokens: 4_096,
             providerRequests: 1,
         ));
