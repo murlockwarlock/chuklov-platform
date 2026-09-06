@@ -462,10 +462,10 @@ function httpCheck(string $check, int $userId, int $clientId): void
             ->first();
         if ($partnerProfile instanceof ReferralPartnerProfile) {
             $path = '/admin/clients/'.$partnerProfile->client_id;
-            $markers = ['Открыть партнёрский кабинет', 'Назначить партнёра'];
+            $markers = ['Открыть партнёрский кабинет', 'Указать, кто пригласил'];
         } else {
             $path = '/admin/clients/'.$client->getKey();
-            $markers = ['Сделать партнёром', 'Назначить партнёра'];
+            $markers = ['Сделать партнёром', 'Указать, кто пригласил'];
         }
     }
     if ($check === 'portal') {
