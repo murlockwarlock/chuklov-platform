@@ -151,7 +151,7 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 }
 
 async function selectText(editor: Locator, value: string): Promise<void> {
-    await editor.click();
+    await editor.click({ force: true });
     await editor.press('ControlOrMeta+A');
     await editor.press('ArrowLeft');
 
@@ -222,7 +222,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
 
     const editor = page.locator('.fi-fo-rich-editor-content').first();
-    await editor.click();
+    await editor.click({ force: true });
     await editor.pressSequentially(`${communityText} 😀`);
     await expect(editor).toContainText(`${communityText} 😀`);
 
