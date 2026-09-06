@@ -17,3 +17,5 @@ a0746bad2d4e0695d80ff8689c49b1c57a24161e:tests/Feature/AI/AiLogRedactionTest.php
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:547
 69cf6bc6189fab424c6274c944af5e9abb8c4704:tests/Feature/MilestoneFourSchedulingTest.php:generic-api-key:644
 6f2fefd3822671edd9087cda71c2c814a621dd9d:PROJECT_STATUS.md:generic-api-key:12
+# Synthetic evaluation case identifier in the candidate's first commit, not a credential.
+fd1f6c900db370abd61ba4d33511d0e3df1fa6b4:evals/source-backed/source-backed-agent-suites.json:generic-api-key:234

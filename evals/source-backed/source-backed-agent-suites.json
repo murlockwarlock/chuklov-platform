@@ -231,7 +231,7 @@
           "behavioral_requirement": "The text must direct the explicit specialist to the existing B2B/Zoom application flow; the current Companion contract has no separate B2B action enum, so the route remains application/manual-review verified."
         },
         {
-          "key": "ordinary_health_conversation_no_b2b_pitch",
+          "key": "ordinary_health_no_offer",
           "name": "Does not force a B2B pitch into an ordinary health conversation",
           "is_synthetic": true,
           "is_deidentified": false,
