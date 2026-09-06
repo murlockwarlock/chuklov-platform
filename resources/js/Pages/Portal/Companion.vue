@@ -67,6 +67,7 @@ function scrollToNewest(behavior: 'auto' | 'smooth' = 'auto'): void {
         return;
     }
 
+    followNewest.value = true;
     element.scrollTo({ top: element.scrollHeight, behavior });
     showNewMessages.value = false;
 }
