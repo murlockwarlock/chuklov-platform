@@ -121,7 +121,7 @@ final class ScheduleBroadcastWork
                 'dispatch_attempt_count' => $campaign->state === BroadcastCampaignState::Scheduled
                     ? $campaign->dispatch_attempt_count + 1
                     : $campaign->dispatch_attempt_count,
-                'next_dispatch_at' => null,
+                'next_dispatch_at' => $now->copy()->addMinutes(self::LEASE_MINUTES),
             ])->save();
 
             return $campaign->refresh();
@@ -168,7 +168,7 @@ final class ScheduleBroadcastWork
                 ->where('organization_id', $campaign->organization_id)
                 ->whereKey($campaign->getKey())
                 ->where('state', BroadcastCampaignState::Dispatching->value)
-                ->where(fn ($query) => $query->whereNull('next_dispatch_at')->orWhere('next_dispatch_at', '<=', now()))
+                ->where('next_dispatch_at', $campaign->next_dispatch_at)
                 ->update(['next_dispatch_at' => now()->addMinute()]);
         }
 

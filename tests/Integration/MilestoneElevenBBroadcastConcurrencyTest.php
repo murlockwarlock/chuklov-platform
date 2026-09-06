@@ -67,8 +67,12 @@ final class MilestoneElevenBBroadcastConcurrencyTest extends TestCase
             static fn (): int => self::scheduleInProcess(),
         ]);
 
-        self::assertSame(1, array_sum($results));
-        self::assertSame(BroadcastCampaignState::Dispatching, $campaign->refresh()->state);
+        $workerResults = array_map(static fn (mixed $result): int => (int) $result, $results);
+        sort($workerResults);
+        self::assertSame([0, 1], $workerResults);
+        $campaign->refresh();
+        self::assertSame(BroadcastCampaignState::Dispatching, $campaign->state);
+        self::assertSame(1, $campaign->dispatch_attempt_count);
         self::assertSame(1, BroadcastBatch::query()->where('campaign_id', $campaign->getKey())->value('dispatch_attempt_count'));
     }
 
