@@ -312,16 +312,26 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
             _x_dataStack?: Array<{ isOpen?: boolean; isWindowVisible?: boolean; isTrapActive?: boolean }>;
         })._x_dataStack?.[0];
         const modalWindow = element.querySelector<HTMLElement>('.fi-modal-window');
+        const rootStyle = window.getComputedStyle(element);
+        const rootBounds = element.getBoundingClientRect();
+        const windowStyle = modalWindow ? window.getComputedStyle(modalWindow) : null;
+        const windowBounds = modalWindow?.getBoundingClientRect();
 
         return {
             rootClass: element.getAttribute('class'),
             rootStyle: element.getAttribute('style'),
+            rootDisplay: rootStyle.display,
+            rootVisibility: rootStyle.visibility,
+            rootBounds: [rootBounds.x, rootBounds.y, rootBounds.width, rootBounds.height],
             isOpen: alpineData?.isOpen,
             isWindowVisible: alpineData?.isWindowVisible,
             isTrapActive: alpineData?.isTrapActive,
             windowClass: modalWindow?.getAttribute('class'),
             windowStyle: modalWindow?.getAttribute('style'),
             windowShow: modalWindow?.getAttribute('x-show'),
+            windowDisplay: windowStyle?.display,
+            windowVisibility: windowStyle?.visibility,
+            windowBounds: windowBounds ? [windowBounds.x, windowBounds.y, windowBounds.width, windowBounds.height] : null,
         };
     });
     await expect(updatedPreviewDialog, JSON.stringify(modalState)).toBeVisible({ timeout: 10_000 });
