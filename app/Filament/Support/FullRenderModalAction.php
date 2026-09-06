@@ -23,7 +23,8 @@ final class FullRenderModalAction extends Action
         $modalId = "fi-{$livewire->getId()}-action-{$this->getNestingIndex()}";
 
         return new HtmlString(Utils::insertAttributesIntoHtmlRoot($modal, [
-            'x-on:open-modal.window.capture' => 'if (($event.detail.id === '.Js::from($modalId).') && isOpen && (! isWindowVisible)) isWindowVisible = true',
+            'wire:partial' => "action-modals.{$this->getNestingIndex()}",
+            'x-on:open-modal.window.capture' => 'if ($event.detail.id === '.Js::from($modalId).') isWindowVisible = true',
         ]));
     }
 }
