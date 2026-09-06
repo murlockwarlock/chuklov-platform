@@ -467,8 +467,18 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    await page.getByLabel('Дата и время').fill(fixture.bookingStartsAt);
+    const dateCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST'
+        && response.status() === 200);
+    const dateInput = page.getByLabel('Дата и время');
+    await dateInput.fill(fixture.bookingStartsAt);
+    await dateInput.press('Tab');
+    await dateCommitResponse;
+    const formatCommitResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST'
+        && response.status() === 200);
     await page.getByLabel('Формат визита').selectOption('office');
+    await formatCommitResponse;
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/);

@@ -8,9 +8,15 @@
     max-width: 100%;
 }
 
+.fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
 .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header-actions-ctn {
     min-width: 0;
     max-width: 100%;
+    flex-basis: 100%;
     flex-shrink: 1;
     flex-wrap: wrap;
 }
@@ -19,15 +25,5 @@
     min-width: 0;
     max-width: 100%;
     flex: 0 1 auto;
-}
-
-@media (min-width: 40rem) {
-    .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header {
-        flex-wrap: wrap;
-        align-items: flex-start;
-    }
-
-    .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header-actions-ctn {
-        flex-basis: 100%;
-    }
+    flex-wrap: wrap;
 }
