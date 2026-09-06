@@ -729,6 +729,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         $maxProviderSteps = min($capabilityDef->maxProviderSteps, AiRuntimeLimits::providerSteps($maxToolCalls));
 
         $tokenCeiling = $executionPolicy->maxOutputTokens;
+        $outputSchema = $promptVersion->output_schema
+            ?? ($run->origin === AiRunOrigin::ClientCompanion ? $capabilityDef->defaultOutputSchema : null);
 
         $attemptNumber = (int) AiRunAttempt::query()
             ->where('organization_id', $organizationId)
@@ -978,6 +980,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     agentTools: $resolvedSdkTools,
                     defaultProvider: $candidate['provider'],
                     defaultModel: $candidate['model'],
+                    outputSchema: $outputSchema,
                 ))
                     ->withMaxTokens($tokenCeiling)
                     ->withMaxSteps($maxProviderSteps);
@@ -1030,8 +1033,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
 
                 $outputPayload = null;
-                $outputSchema = $promptVersion->output_schema
-                    ?? ($run->origin === AiRunOrigin::ClientCompanion ? $capabilityDef->defaultOutputSchema : null);
                 $isValid = true;
 
                 if ($outputSchema !== null) {
