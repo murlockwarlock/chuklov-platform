@@ -76,8 +76,10 @@ use App\Modules\Scenarios\Application\OnboardingCompletedConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingStageConditionEvaluator;
 use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
 use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateMediaStorageInterface;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
+use App\Modules\Scenarios\Infrastructure\Storage\FilesystemNotificationTemplateMediaStorage;
 use App\Modules\Scheduling\Domain\Contracts\BookingVideoMeetingLifecycle;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
@@ -182,6 +184,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ContentMediaStorageInterface::class, FilesystemContentMediaStorage::class);
         $this->app->bind(BroadcastMediaStorageInterface::class, FilesystemBroadcastMediaStorage::class);
         $this->app->bind(ServiceMediaStorageInterface::class, FilesystemServiceMediaStorage::class);
+        $this->app->bind(NotificationTemplateMediaStorageInterface::class, FilesystemNotificationTemplateMediaStorage::class);
         $this->app->bind(EmbeddingGenerator::class, LaravelEmbeddingGenerator::class);
         $this->app->bind(KnowledgeRetriever::class, PgvectorKnowledgeRetriever::class);
         $this->app->bind(ScenarioRecipientResolver::class, OrganizationScenarioRecipientResolver::class);

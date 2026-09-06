@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
+use App\Modules\Referrals\Jobs\SendReferralPayoutStatusNotification;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -65,7 +66,8 @@ final class TransitionReferralPayoutRequest
             $this->authorization->authorizeManage($user);
         }
 
-        return DB::transaction(function () use ($requestId, $target, $actor, $user, $actorType, $idempotencyKey, $reason, $paymentNote, $paymentReference): ReferralPayoutRequest {
+        $changed = false;
+        $result = DB::transaction(function () use ($requestId, $target, $actor, $user, $actorType, $idempotencyKey, $reason, $paymentNote, $paymentReference, &$changed): ReferralPayoutRequest {
             $candidate = ReferralPayoutRequest::query()
                 ->where('organization_id', $this->context->id())
                 ->whereKey($requestId)
@@ -124,6 +126,7 @@ final class TransitionReferralPayoutRequest
             $this->assertTransition($current, $target, $reason);
             $this->applyTransition($locked, $target, $user, $reason, $paymentNote, $paymentReference);
             $locked->save();
+            $changed = true;
             $this->recordEvent($locked, $current, $target, $actorType, $user?->getKey(), $reason, $paymentNote, $paymentReference, $idempotencyKey, $requestHash);
             $organization = $this->context->organization();
             $this->audit->handle(
@@ -147,6 +150,20 @@ final class TransitionReferralPayoutRequest
 
             return $locked->refresh();
         });
+
+        if ($changed && in_array($target, [
+            ReferralPayoutRequestStatus::Approved,
+            ReferralPayoutRequestStatus::Rejected,
+            ReferralPayoutRequestStatus::Paid,
+        ], true)) {
+            SendReferralPayoutStatusNotification::dispatch(
+                $this->context->id(),
+                (int) $result->getKey(),
+                $target->value,
+            );
+        }
+
+        return $result;
     }
 
     private function assertTransition(

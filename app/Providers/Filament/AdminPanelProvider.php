@@ -44,6 +44,8 @@ class AdminPanelProvider extends PanelProvider
 
         return $panel
             ->spa()
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
             ->spaUrlExceptions([
                 '*/admin/attachments/*',
                 '*/admin/finance/receipts/*',

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
@@ -22,6 +23,9 @@ class NotificationTemplateVersionFactory extends Factory
             'subject' => null,
             'body' => 'Hello {{ client.full_name }}.',
             'variables' => ['client.full_name'],
+            'delivery_mode' => NotificationMessageMode::Text->value,
+            'caption_position' => 'below',
+            'media' => null,
             'published_at' => now(),
         ];
     }

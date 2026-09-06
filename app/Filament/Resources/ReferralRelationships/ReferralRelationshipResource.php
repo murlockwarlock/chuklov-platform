@@ -74,16 +74,16 @@ final class ReferralRelationshipResource extends Resource
                         default => 'Неизвестно',
                     })
                     ->badge()
-                    ->visibleFrom('sm'),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('referred.attribution.source')
                     ->label('Источник')
                     ->placeholder('Не указан')
                     ->formatStateUsing(fn (mixed $state): string => AttributionSourcePresentation::label(is_string($state) ? $state : null))
                     ->wrap()
-                    ->visibleFrom('md'),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('registered_at')->label('Регистрация')->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('commercial_evidence_count')
-                    ->label('Финансовое событие')
+                    ->label('Финансовый статус')
                     ->state(fn (ReferralRelationship $record): string => (int) ($record->commercial_evidence_count ?? 0) > 0 ? 'Оплата зафиксирована' : 'Пока нет')
                     ->badge()
                     ->color(fn (string $state): string => $state === 'Оплата зафиксирована' ? 'success' : 'gray'),
@@ -91,7 +91,7 @@ final class ReferralRelationshipResource extends Resource
                     ->label('Дата зафиксированной оплаты')
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('—')
-                    ->visibleFrom('lg'),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('registered_at', 'desc')
             ->paginated([10, 25, 50]);

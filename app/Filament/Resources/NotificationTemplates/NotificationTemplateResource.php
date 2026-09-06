@@ -10,6 +10,7 @@ use App\Filament\Resources\NotificationTemplates\Schemas\NotificationTemplateFor
 use App\Filament\Resources\NotificationTemplates\Tables\NotificationTemplatesTable;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -61,7 +62,13 @@ final class NotificationTemplateResource extends Resource
                 TextEntry::make('is_active')->label('Включён')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
                 TextEntry::make('version_summary')
                     ->label('Состояние текста')
-                    ->state(fn (NotificationTemplate $record): string => $record->latestVersion === null ? 'Текст не добавлен' : 'Текст сохранён'),
+                    ->state(fn (NotificationTemplate $record): string => $record->latestVersion === null ? 'Сообщение не добавлено' : 'Версия сохранена'),
+                TextEntry::make('delivery_mode')
+                    ->label('Формат сообщения')
+                    ->state(fn (NotificationTemplate $record): string => self::deliveryModeLabel($record->latestVersion?->delivery_mode)),
+                TextEntry::make('media_summary')
+                    ->label('Медиа')
+                    ->state(fn (NotificationTemplate $record): string => self::mediaSummary($record)),
                 TextEntry::make('latest_subject')
                     ->label('Тема')
                     ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->subject),
@@ -82,10 +89,6 @@ final class NotificationTemplateResource extends Resource
                             ? ''
                             : collect($latest->variables)->map(fn (string $variable): string => ScenarioTemplateVariableCatalog::labels()[$variable] ?? 'Данные')->implode(', ');
                     })
-                    ->columnSpanFull(),
-                TextEntry::make('media_note')
-                    ->label('Медиа')
-                    ->state('Фото и видео не входят в текстовый шаблон. Добавьте их в конкретной рассылке или авто-сообщении.')
                     ->columnSpanFull(),
             ]);
     }
@@ -150,5 +153,27 @@ final class NotificationTemplateResource extends Resource
             ScenarioRulePurpose::Marketing => 'Маркетинговая рассылка',
             default => 'Не указано',
         };
+    }
+
+    private static function deliveryModeLabel(NotificationMessageMode|string|null $mode): string
+    {
+        $mode = $mode instanceof NotificationMessageMode ? $mode : NotificationMessageMode::tryFrom((string) $mode);
+
+        return match ($mode) {
+            NotificationMessageMode::Text => 'Только текст',
+            NotificationMessageMode::Image => 'Только медиа',
+            NotificationMessageMode::ImageThenText => 'Медиа, затем текст',
+            NotificationMessageMode::TextThenImage => 'Текст, затем медиа',
+            NotificationMessageMode::ImageWithCaption => 'Медиа с подписью',
+            default => 'Не указано',
+        };
+    }
+
+    private static function mediaSummary(NotificationTemplate $template): string
+    {
+        $media = $template->latestVersion?->media;
+        $items = is_array($media) && is_array($media['items'] ?? null) ? $media['items'] : [];
+
+        return $items === [] ? 'Не добавлено' : 'Файлов: '.count($items);
     }
 }
