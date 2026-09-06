@@ -1128,6 +1128,7 @@ test('companion shows accessible typing feedback and respects intentional histor
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
         return element.scrollHeight - element.scrollTop - element.clientHeight;
     })).toBeLessThanOrEqual(96);
+    await expect(page.getByTestId('companion-new-messages')).toHaveCount(0);
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
