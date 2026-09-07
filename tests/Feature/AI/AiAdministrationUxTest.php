@@ -615,6 +615,77 @@ final class AiAdministrationUxTest extends TestCase
         self::assertSame('active', $version->refresh()->status->value);
     }
 
+    public function test_prompt_workspace_shows_active_instructions_first_and_edits_through_a_draft(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $prompt = app(CreateAiPrompt::class)->handle($admin, [
+            'key' => 'client_companion_workspace',
+            'name' => 'Agent 4',
+            'capability' => AiCapability::ClientCompanion->value,
+            'description' => 'Secondary metadata',
+        ]);
+        $active = AiPromptVersion::create([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 2,
+            'status' => 'active',
+            'system_prompt' => "[SOURCE TEXT]\nМудрый и заботливый друг.\n[CURRENT PLATFORM SAFETY GUARDRAILS]\nНе выдумывать факты.\n[CURRENT RUNTIME CONTRACT]\nИспользовать только доступные действия.",
+            'user_prompt_template' => '{{current_message}}',
+            'parameter_config' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $active->getKey()]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
+            ->assertSee('Agent 4 — AI-компаньон')
+            ->assertSee('Активная версия: v2')
+            ->assertSee('Этот текст сейчас используется AI')
+            ->assertSee('Мудрый и заботливый друг.')
+            ->assertSeeInOrder([
+                'Этот текст сейчас используется AI',
+                'Изменить промпт',
+                'Проверить',
+                'Запустить тесты',
+                'Экспорт',
+                'Полный промпт',
+                'Настройки промпта',
+                'История версий',
+            ])
+            ->assertActionExists('editPrompt')
+            ->assertActionExists('playground')
+            ->assertActionExists('evaluations')
+            ->assertActionExists('export')
+            ->mountAction('editPrompt')
+            ->assertActionDataSet([
+                'system_prompt' => $active->system_prompt,
+                'user_prompt_template' => '{{current_message}}',
+            ])
+            ->fillForm([
+                'system_prompt' => $active->system_prompt."\nНовая правка.",
+                'user_prompt_template' => '{{current_message}}',
+                'temperature' => 0.2,
+                'max_tokens' => 4096,
+                'top_p' => 1,
+                'frequency_penalty' => 0,
+                'presence_penalty' => 0,
+                'timeout_seconds' => 60,
+                'change_notes' => 'Уточнить тон',
+            ])
+            ->callMountedAction();
+
+        $draft = $prompt->versions()->where('status', 'draft')->sole();
+        self::assertSame(3, $draft->version);
+        self::assertStringContainsString('Новая правка.', $draft->system_prompt);
+        self::assertSame('active', $active->fresh()->status->value);
+
+        $component
+            ->assertSee('Продолжить черновик')
+            ->mountAction('editPrompt')
+            ->assertActionDataSet(['change_notes' => 'Уточнить тон']);
+    }
+
     public function test_evaluation_key_and_linked_prompt_lookup_are_immutable_bounded_and_tenant_scoped(): void
     {
         [$organization, $admin] = $this->organizationFixture();

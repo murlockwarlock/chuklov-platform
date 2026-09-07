@@ -28,6 +28,5 @@ final readonly class AiCapabilityDefinition
         public int $maxProviderSteps,
         public bool $requiresHumanReview,
         public ?array $defaultOutputSchema = null,
-        public ?string $systemSafetyPolicy = null,
     ) {}
 }

@@ -181,6 +181,15 @@ final class CompanionTurnProcessor
             }
             if ($response['decision'] === 'handoff_required') {
                 $reason = $this->reasonFromModel($response['handoff_reason']);
+                if ($reason === CompanionEscalationReason::HumanRequested) {
+                    if ($response['reply'] !== '') {
+                        $this->complete($organizationId, $turn->getKey(), $leaseToken, $response['reply'], $locale, $response['suggested_safe_actions']);
+
+                        return;
+                    }
+
+                    throw new InvalidArgumentException('The Companion model cannot infer an explicit human request.');
+                }
                 $this->handoff($organizationId, $turn->getKey(), $leaseToken, $reason, $result->runId, $locale);
 
                 return;
@@ -719,6 +728,7 @@ final class CompanionTurnProcessor
                 || str_contains($message, 'draft prompt versions')
             ) => CompanionFailureCode::NotConfigured,
             str_contains($message, 'budget') => CompanionFailureCode::BudgetUnavailable,
+            str_contains($message, 'cannot infer an explicit human request') => CompanionFailureCode::InvalidOutput,
             str_contains($message, 'retrieval'), str_contains($message, 'knowledge') => CompanionFailureCode::RetrievalFailure,
             str_contains($message, 'response contract'), str_contains($message, 'empty') => CompanionFailureCode::InvalidOutput,
             str_contains($message, 'active prompt'), str_contains($message, 'prompt version') => CompanionFailureCode::NotConfigured,

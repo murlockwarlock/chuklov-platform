@@ -266,11 +266,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 capability: $request->capability,
             );
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
-            if ($capabilityDef->systemSafetyPolicy !== null) {
-                $renderedSystemPrompt = $renderedSystemPrompt
-                    ."\n\n[SYSTEM-OWNED SAFETY POLICY]\n"
-                    .$capabilityDef->systemSafetyPolicy;
-            }
             $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
             AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);

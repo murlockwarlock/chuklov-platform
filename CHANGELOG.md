@@ -3,6 +3,7 @@
 ## 2026-09-07 — Full source-backed AI prompts and evaluation packs
 
 - Replaced the abbreviated Agent 1–4 prompt drafts with full source-backed product instructions from Appendix 2, keeping platform safety guardrails and the current runtime contract as separate editable sections in CRM.
+- Removed hidden runtime safety-policy prose from prompt assembly; the active `AiPromptVersion.system_prompt` is now the sole model instruction source while deterministic controls remain in application code.
 - Expanded the existing organization-scoped synthetic evaluation manifest to 44 practical cases covering source fidelity, missing data, posture validation, clinical fact/hypothesis separation, ordinary Companion conversation, B2B recognition, safety escalation, and no fabricated progress; existing materialization now refreshes previously imported cases idempotently.
 - Narrowed direct Companion handoff matching to explicit human requests and urgent safety phrases, so ordinary mentions of a specialist no longer stop useful AI conversation while accepted human-handoff authority remains unchanged.
 
