@@ -6,7 +6,6 @@ use App\Filament\Support\RichTextEditor;
 use App\Filament\Support\TelegramPreviewAction;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
-use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Application\ContentImageUrlResolver;
@@ -79,7 +78,6 @@ class ContentSectionForm
                             ->label('Текст')
                             ->required()
                             ->maxLength(100000)
-                            ->live(debounce: 300)
                             ->columnSpanFull(),
                         Actions::make([
                             TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
@@ -240,12 +238,12 @@ class ContentSectionForm
                 ? NotificationMessageMode::ImageWithCaption
                 : NotificationMessageMode::ImageThenText);
         $deliveryMode = (string) $get('delivery_mode');
-        $button = $deliveryMode === 'both'
-            ? new NotificationActionButton(
-                text: $get('locale') === 'en' ? 'Open full version' : 'Открыть полностью',
-                url: app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key')),
-            )
+        $webAppUrl = $deliveryMode === 'both'
+            ? app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key'))
             : null;
+        $webAppButtonText = $webAppUrl === null
+            ? null
+            : ($get('locale') === 'en' ? 'Open full version' : 'Открыть полностью');
 
         return new NotificationMessage(
             recipientExternalId: 'preview',
@@ -253,7 +251,8 @@ class ContentSectionForm
             subject: null,
             locale: (string) ($get('locale') ?: 'ru'),
             idempotencyKey: 'content-preview',
-            actionButton: $button,
+            webAppUrl: $webAppUrl,
+            webAppButtonText: $webAppButtonText,
             mode: $mode,
             mediaItems: $media,
         );

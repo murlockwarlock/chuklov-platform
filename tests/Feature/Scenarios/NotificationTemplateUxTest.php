@@ -9,9 +9,12 @@ use App\Filament\Resources\NotificationTemplates\Pages\EditNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
 use App\Filament\Resources\ScenarioRules\Pages\ViewScenarioRule;
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\NotificationTemplateMedia;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
@@ -52,6 +55,41 @@ final class NotificationTemplateUxTest extends TestCase
             'booking.starts_at',
             'client.full_name',
         ], $latestVersion->variables, 'Strict allowlist variables derived automatically');
+    }
+
+    public function test_template_composer_persists_media_only_and_renders_it_for_telegram(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+
+        Livewire::test(CreateNotificationTemplate::class)
+            ->fillForm([
+                'name' => 'Фото для клиента',
+                'locale' => 'ru',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'delivery_mode' => NotificationMessageMode::Image->value,
+                'media_url' => 'https://cdn.example.test/photo.jpg',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $template = NotificationTemplate::query()->where('name', 'Фото для клиента')->firstOrFail();
+        $version = $template->versions()->latest('version')->firstOrFail();
+
+        self::assertSame(NotificationMessageMode::Image, $version->delivery_mode);
+        self::assertSame('https://cdn.example.test/photo.jpg', $version->media['items'][0]['source']);
+
+        $rendered = app(NotificationTemplateRenderer::class)->render($version, [], 'ru');
+        self::assertSame(NotificationMessageMode::Image, $rendered->mode);
+        self::assertSame($version->media, $rendered->media);
+
+        $media = app(NotificationTemplateMedia::class)->messages($organization->getKey(), $version->media);
+        self::assertCount(1, $media);
+        self::assertSame('photo', $media[0]->type);
+        self::assertSame('https://cdn.example.test/photo.jpg', $media[0]->url);
     }
 
     public function test_template_with_unsupported_variable_is_rejected_on_create(): void

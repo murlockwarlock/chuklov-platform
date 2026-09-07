@@ -14,6 +14,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Referrals\Application\BuildClientReferralLink;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -32,7 +33,10 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final class ScenarioContextFactory
 {
-    public function __construct(private readonly BookingDateTimeFormatter $bookingDateTime) {}
+    public function __construct(
+        private readonly BookingDateTimeFormatter $bookingDateTime,
+        private readonly BuildClientReferralLink $referralLinks,
+    ) {}
 
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
     {
@@ -68,6 +72,13 @@ final class ScenarioContextFactory
             'recipient_locale' => $recipient->locale,
         ];
 
+        if ($recipient->type === 'client') {
+            try {
+                $renderContext['referral_link'] = $this->referralLinks->handle($context->client);
+            } catch (LogicException) {
+            }
+        }
+
         if ($recipient->type === 'internal') {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
             $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
@@ -88,6 +99,7 @@ final class ScenarioContextFactory
                 'specialist_name' => $context->booking->specialist->display_name,
                 'location' => $locationSnapshot['address'] ?? $context->booking->location,
                 'location_label' => $this->locationLabel($context->booking, $locationSnapshot, $recipient->locale, $recipient->type === 'internal'),
+                'visit_details' => $this->visitDetails($context->booking, $locationSnapshot, $recipient->locale, $recipient->type === 'internal'),
                 'location_name' => $locationSnapshot['name'] ?? null,
                 'location_address' => $locationSnapshot['address'] ?? $context->booking->location,
                 'location_timezone' => $locationSnapshot['timezone'] ?? null,
@@ -300,13 +312,10 @@ final class ScenarioContextFactory
             ? trim($snapshot['area_name'])
             : trim((string) $booking->location_area);
 
-        $homeVisitLabel = $internal
-            ? ($this->isRussian($locale) ? 'Выезд' : 'Home visit')
-            : ($this->isRussian($locale) ? 'Выезд на дом' : 'Home visit');
+        $homeVisitLines = [];
         if ($area !== '') {
-            $homeVisitLabel .= ' · '.$area;
+            $homeVisitLines[] = $area;
         }
-        $homeVisitLines = [$homeVisitLabel];
         if ($address !== '') {
             $homeVisitLines[] = $internal
                 ? ($this->isRussian($locale) ? 'Адрес клиента: '.$address : 'Client address: '.$address)
@@ -315,10 +324,19 @@ final class ScenarioContextFactory
 
         return match ($booking->visit_format) {
             VisitFormat::Office => implode("\n", array_values(array_unique(array_filter([$name, $address]), SORT_STRING)))
-                ?: ($this->isRussian($locale) ? 'В клинике' : 'At the clinic'),
+                ?: '',
             VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
-            VisitFormat::Online => $this->isRussian($locale) ? 'Онлайн' : 'Online',
+            VisitFormat::Online => '',
         };
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    private function visitDetails(Booking $booking, array $snapshot, string $locale, bool $internal): string
+    {
+        $format = $this->visitFormatLabel($booking->visit_format->value, $locale);
+        $location = $this->locationLabel($booking, $snapshot, $locale, $internal);
+
+        return $location === '' ? $format : $format."\n".$location;
     }
 
     private function visitFormatLabel(string $format, string $locale): string

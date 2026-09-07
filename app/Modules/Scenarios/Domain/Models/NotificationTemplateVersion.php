@@ -3,6 +3,7 @@
 namespace App\Modules\Scenarios\Domain\Models;
 
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use Database\Factories\NotificationTemplateVersionFactory;
@@ -16,9 +17,12 @@ use LogicException;
 /**
  * @property NotificationTemplateStatus $status
  * @property array<string> $variables
+ * @property NotificationMessageMode|null $delivery_mode
+ * @property string $caption_position
+ * @property array<string, mixed>|null $media
  * @property Carbon|null $published_at
  */
-#[Fillable(['version', 'status', 'subject', 'body', 'variables', 'published_at'])]
+#[Fillable(['version', 'status', 'subject', 'body', 'variables', 'delivery_mode', 'caption_position', 'media', 'published_at'])]
 class NotificationTemplateVersion extends Model
 {
     public const UPDATED_AT = null;
@@ -64,6 +68,8 @@ class NotificationTemplateVersion extends Model
         return [
             'status' => NotificationTemplateStatus::class,
             'variables' => 'array',
+            'delivery_mode' => NotificationMessageMode::class,
+            'media' => 'array',
             'published_at' => 'datetime',
         ];
     }

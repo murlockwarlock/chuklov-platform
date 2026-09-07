@@ -41,6 +41,7 @@ use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -304,6 +305,39 @@ final class AiAdministrationUxTest extends TestCase
         $budgetManager->reserveBudget($organization->getKey(), 1);
     }
 
+    public function test_monitoring_overview_explains_missing_client_companion_setup_with_direct_actions(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(AiMonitoringOverview::class)
+            ->assertSee('AI-компаньон требует настройки')
+            ->assertSee('Промпт клиентского компаньона не настроен.')
+            ->assertSee('Модель клиентского компаньона не добавлена.')
+            ->assertSee('Настроить промпт')
+            ->assertSee('Настроить модель');
+    }
+
+    public function test_monitoring_overview_explains_a_disabled_client_companion_without_claiming_global_ai_is_off(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        AiOrganizationSafetyControl::create([
+            'organization_id' => $organization->getKey(),
+            'is_ai_globally_enabled' => true,
+            'disabled_capabilities' => [AiCapability::ClientCompanion->value],
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(AiMonitoringOverview::class)
+            ->assertSee('AI временно отключён')
+            ->assertSee('Сценарий клиентского компаньона отключён в ограничениях AI.')
+            ->assertDontSee('Новые платные AI-запросы временно остановлены для всей организации.')
+            ->assertDontSee('Настроить промпт')
+            ->assertDontSee('Настроить модель');
+    }
+
     public function test_budget_conversion_rejects_malformed_negative_and_excess_precision_values(): void
     {
         [$organization, $admin] = $this->organizationFixture();
@@ -533,7 +567,7 @@ final class AiAdministrationUxTest extends TestCase
             ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
             ->assertFormFieldDisabled('key');
 
-        Livewire::actingAs($admin)
+        $promptVersions = Livewire::actingAs($admin)
             ->test(PromptVersionsRelationManager::class, [
                 'ownerRecord' => $prompt->refresh(),
                 'pageClass' => EditAiPrompt::class,
@@ -545,6 +579,14 @@ final class AiAdministrationUxTest extends TestCase
                 'temperature' => 0.7,
                 'max_tokens' => 2048,
             ]);
+        self::assertInstanceOf(
+            Placeholder::class,
+            $promptVersions->instance()->getSchemaComponent('mountedActionSchema0.source_text_preview'),
+        );
+        self::assertInstanceOf(
+            Placeholder::class,
+            $promptVersions->instance()->getSchemaComponent('mountedActionSchema0.guardrails_preview'),
+        );
 
         try {
             app(UpdateAiPrompt::class)->handle($admin, $prompt, ['key' => 'changed_key']);
@@ -571,6 +613,77 @@ final class AiAdministrationUxTest extends TestCase
         self::assertSame(['type' => 'object'], $newVersion->output_schema);
         self::assertSame(['search_knowledge_base'], $newVersion->allowed_tools);
         self::assertSame('active', $version->refresh()->status->value);
+    }
+
+    public function test_prompt_workspace_shows_active_instructions_first_and_edits_through_a_draft(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $prompt = app(CreateAiPrompt::class)->handle($admin, [
+            'key' => 'client_companion_workspace',
+            'name' => 'Agent 4',
+            'capability' => AiCapability::ClientCompanion->value,
+            'description' => 'Secondary metadata',
+        ]);
+        $active = AiPromptVersion::create([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 2,
+            'status' => 'active',
+            'system_prompt' => "[SOURCE TEXT]\nМудрый и заботливый друг.\n[CURRENT PLATFORM SAFETY GUARDRAILS]\nНе выдумывать факты.\n[CURRENT RUNTIME CONTRACT]\nИспользовать только доступные действия.",
+            'user_prompt_template' => '{{current_message}}',
+            'parameter_config' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $active->getKey()]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
+            ->assertSee('Agent 4 — AI-компаньон')
+            ->assertSee('Активная версия: v2')
+            ->assertSee('Этот промпт сейчас используется AI')
+            ->assertSee('Мудрый и заботливый друг.')
+            ->assertSeeInOrder([
+                'Этот промпт сейчас используется AI',
+                'Изменить промпт',
+                'Проверить',
+                'Запустить тесты',
+                'Экспорт',
+                'Полный промпт',
+                'Настройки промпта',
+                'История версий',
+            ])
+            ->assertActionExists('editPrompt')
+            ->assertActionExists('playground')
+            ->assertActionExists('evaluations')
+            ->assertActionExists('export')
+            ->mountAction('editPrompt')
+            ->assertActionDataSet([
+                'system_prompt' => $active->system_prompt,
+                'user_prompt_template' => '{{current_message}}',
+            ])
+            ->fillForm([
+                'system_prompt' => $active->system_prompt."\nНовая правка.",
+                'user_prompt_template' => '{{current_message}}',
+                'temperature' => 0.2,
+                'max_tokens' => 4096,
+                'top_p' => 1,
+                'frequency_penalty' => 0,
+                'presence_penalty' => 0,
+                'timeout_seconds' => 60,
+                'change_notes' => 'Уточнить тон',
+            ])
+            ->callMountedAction();
+
+        $draft = $prompt->versions()->where('status', 'draft')->sole();
+        self::assertSame(3, $draft->version);
+        self::assertStringContainsString('Новая правка.', $draft->system_prompt);
+        self::assertSame('active', $active->fresh()->status->value);
+
+        $component
+            ->assertSee('Продолжить черновик')
+            ->mountAction('editPrompt')
+            ->assertActionDataSet(['change_notes' => 'Уточнить тон']);
     }
 
     public function test_evaluation_key_and_linked_prompt_lookup_are_immutable_bounded_and_tenant_scoped(): void

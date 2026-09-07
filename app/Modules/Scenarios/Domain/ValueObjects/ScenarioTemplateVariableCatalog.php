@@ -12,10 +12,12 @@ final class ScenarioTemplateVariableCatalog
         'client.full_name',
         'client.language',
         'client.telegram_contact',
+        'referral_link',
         'booking.id',
         'booking.status',
         'booking.visit_format',
         'booking.visit_format_label',
+        'booking.visit_details',
         'booking.service_name',
         'booking.specialist_name',
         'booking.location',
@@ -63,7 +65,7 @@ final class ScenarioTemplateVariableCatalog
         }
 
         return $purpose === ScenarioRulePurpose::Marketing
-            ? ['client.full_name', 'client.language']
+            ? ['client.full_name', 'client.language', 'referral_link']
             : self::ALLOWED;
     }
 
@@ -74,10 +76,12 @@ final class ScenarioTemplateVariableCatalog
             'client.full_name' => 'Имя клиента',
             'client.language' => 'Язык клиента',
             'client.telegram_contact' => 'Telegram клиента',
+            'referral_link' => 'Персональная реферальная ссылка',
             'booking.id' => 'Номер записи',
             'booking.status' => 'Статус записи',
             'booking.visit_format' => 'Формат визита',
             'booking.visit_format_label' => 'Название формата визита',
+            'booking.visit_details' => 'Формат и место встречи',
             'booking.service_name' => 'Название услуги',
             'booking.specialist_name' => 'Имя специалиста',
             'booking.location' => 'Адрес приёма',

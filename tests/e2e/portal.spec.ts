@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
     cookieName: string;
@@ -21,6 +21,8 @@ type BookingFixture = {
 type BookingFixtureOptions = {
     withBooking?: boolean;
     withCompanionMessages?: boolean;
+    withPartnerRewards?: boolean;
+    withCompanionPending?: boolean;
     multipleChoices?: boolean;
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
@@ -37,6 +39,8 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
+        $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
+        $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -78,6 +82,118 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
+        if ($withPartnerRewards) {
+            $rewardAdmin = \\App\\Models\\User::factory()->forOrganization($organization)->create();
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($rewardAdmin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            app(\\App\\Modules\\Referrals\\Application\\SaveReferralRewardProgram::class)->handle(
+                actor: $rewardAdmin,
+                enabled: true,
+                qualificationRule: 'first_settled_payment',
+                formula: 'fixed_amount',
+                fixedAmount: '10.00',
+                fixedCurrency: 'USD',
+                percentage: null,
+                effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
+            );
+            $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => 'Playwright Referred '.$suffix,
+                'email' => 'playwright-referred-'.$suffix.'@example.test',
+                'language' => 'ru',
+                'timezone' => 'UTC',
+            ]);
+            $relationship = new \\App\\Modules\\Referrals\\Domain\\Models\\ReferralRelationship;
+            $relationship->forceFill([
+                'organization_id' => $organization->getKey(),
+                'referrer_client_id' => $client->getKey(),
+                'referred_client_id' => $referred->getKey(),
+                'establishment_method' => 'manual_crm',
+                'registered_at' => now(),
+            ]);
+            $relationship->save();
+            $amountMinor = 10000;
+            $rewardService = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
+                'name' => 'Playwright Reward Service '.$suffix,
+                'formats' => ['office'],
+                'price_minor' => $amountMinor,
+                'price_currency' => 'USD',
+            ]);
+            $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                ->forOrganization($organization)
+                ->forClient($referred)
+                ->forSpecialist($specialist)
+                ->forService($rewardService)
+                ->create();
+            $snapshot = [
+                'source_amount_minor' => (string) $amountMinor,
+                'source_currency' => 'USD',
+                'target_amount_minor' => (string) $amountMinor,
+                'target_currency' => 'USD',
+                'rate' => '1',
+                'rate_id' => null,
+                'rate_version' => null,
+                'effective_at' => null,
+                'rounding_mode' => 'half_up',
+                'source_scale' => 2,
+                'target_scale' => 2,
+            ];
+            $obligation = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialObligation;
+            $obligation->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $referred->getKey(),
+                'booking_id' => $booking->getKey(),
+                'service_id' => $rewardService->getKey(),
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'price_snapshot' => ['amount_minor' => $amountMinor],
+                'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+                'creation_key' => 'playwright-partner-reward-'.$suffix,
+            ]);
+            $obligation->save();
+            $entry = new \\App\\Modules\\Finance\\Domain\\Models\\FinancialLedgerEntry;
+            $entry->forceFill([
+                'organization_id' => $organization->getKey(),
+                'obligation_id' => $obligation->getKey(),
+                'entry_type' => 'manual_payment',
+                'source' => 'crm',
+                'amount_minor' => $amountMinor,
+                'currency' => 'USD',
+                'payment_amount_minor' => $amountMinor,
+                'payment_currency' => 'USD',
+                'base_amount_minor' => $amountMinor,
+                'base_currency' => 'USD',
+                'display_amount_minor' => $amountMinor,
+                'display_currency' => 'USD',
+                'settlement_amount_minor' => $amountMinor,
+                'settlement_currency' => 'USD',
+                'payment_method' => 'cash',
+                'conversion_snapshot' => null,
+                'occurred_at' => now(),
+                'idempotency_key' => 'playwright-partner-reward-entry-'.$suffix,
+                'created_at' => now(),
+            ]);
+            $entry->save();
+            app(\\App\\Modules\\Finance\\Application\\RecordFinancialSettlementEvent::class)->handle($obligation, $entry, $entry->occurred_at);
+            $event = \\App\\Modules\\Integration\\Domain\\Models\\IntegrationEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('aggregate_id', $obligation->getKey())
+                ->firstOrFail();
+            app(\\App\\Modules\\Referrals\\Application\\ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+        }
         $alternateSpecialist = null;
         if ($multipleChoices) {
             $alternateSpecialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
@@ -85,7 +201,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'timezone' => 'UTC',
             ]);
         }
-        if ($withCompanionMessages) {
+        if ($withCompanionMessages || $withCompanionPending) {
             config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
             $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
                 ->forOrganization($organization)
@@ -95,15 +211,44 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ]);
             $fence = str_repeat(chr(96), 3);
             $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n[Безопасная HTTPS ссылка](https://example.test/secure)\n[HTTP ссылка не должна быть активной](http://example.test/insecure)\n[javascript ссылка не должна быть активной](javascript:alert(1))\n[data ссылка не должна быть активной](data:text/html,unsafe)\n[file ссылка не должна быть активной](file:///tmp/unsafe)\n[Относительная ссылка не должна быть активной](//example.test/insecure)\n[userinfo ссылка не должна быть активной](https://user:pass@example.test/insecure)\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
-            app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
-                organizationId: $organization->getKey(),
-                client: $client,
-                conversation: $conversation,
-                channel: 'portal',
-                direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
-                authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
-                body: $body,
-            );
+            if ($withCompanionMessages) {
+                app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                    body: $body,
+                );
+            }
+            if ($withCompanionPending) {
+                $pendingInbound = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Inbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Client,
+                    body: 'Synthetic pending companion message',
+                    metadata: ['locale' => 'ru', 'transport' => 'portal'],
+                );
+                \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'conversation_id' => $conversation->getKey(),
+                    'sequence' => ((int) \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->where('conversation_id', $conversation->getKey())->max('sequence')) + 1,
+                    'context_epoch' => $conversation->context_epoch,
+                    'inbound_message_id' => $pendingInbound->getKey(),
+                    'origin_channel' => 'portal',
+                    'idempotency_key' => 'playwright-pending-'.$suffix,
+                    'request_hash' => hash('sha256', $suffix),
+                    'status' => 'pending',
+                    'input_modality' => 'text',
+                    'image_reference_mode' => 'none',
+                    'accepted_at' => now(),
+                ]);
+            }
         }
         $service = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
             'name' => $longServiceTitle
@@ -242,9 +387,11 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_PORT: '5432',
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
-                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
-                PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
-                PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
+        DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
+        PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
@@ -263,6 +410,80 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function assertPortalResponseAccepted(responsePromise: Promise<Response>, action: string): Promise<void> {
+    const response = await responsePromise;
+
+    if (response.status() < 400) {
+        return;
+    }
+
+    const body = await response.text();
+    let details = body.replace(/\s+/g, ' ').trim().slice(0, 400);
+
+    try {
+        const payload = JSON.parse(body) as { errors?: unknown; message?: unknown };
+        const errorFields = payload.errors !== null && typeof payload.errors === 'object'
+            ? Object.keys(payload.errors as Record<string, unknown>)
+            : [];
+        const message = typeof payload.message === 'string' ? payload.message : null;
+        details = JSON.stringify({ message, errorFields });
+    } catch (error) {
+        if (!(error instanceof SyntaxError)) {
+            throw error;
+        }
+    }
+
+    throw new Error(`${action} returned HTTP ${response.status()} (${response.url()}): ${details}`);
+}
+
+type RenderedGeometry = {
+    clientWidth: number;
+    scrollWidth: number;
+    primary: Array<{ selector: string; left: number; right: number }>;
+    boundaries: Array<{ selector: string; left: number; right: number }>;
+};
+
+async function assertRenderedViewportGeometry(
+    page: Page,
+    primarySelectors: string[],
+    boundarySelectors: string[] = [],
+): Promise<void> {
+    const geometry = await page.evaluate(({ primarySelectors: selectors, boundarySelectors: boundaries }): RenderedGeometry => {
+        const visible = (element: Element): boolean => {
+            const htmlElement = element as HTMLElement;
+            const styles = window.getComputedStyle(htmlElement);
+            const bounds = htmlElement.getBoundingClientRect();
+
+            return styles.display !== 'none'
+                && styles.visibility !== 'hidden'
+                && bounds.width > 0
+                && bounds.height > 0;
+        };
+        const collect = (selectors: string[]): Array<{ selector: string; left: number; right: number }> => selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))
+            .filter(visible)
+            .map((element) => {
+                const bounds = (element as HTMLElement).getBoundingClientRect();
+
+                return { selector, left: bounds.left, right: bounds.right };
+            }));
+
+        return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            primary: collect(selectors),
+            boundaries: collect(boundaries),
+        };
+    }, { primarySelectors, boundarySelectors });
+
+    expect(geometry.scrollWidth, `document scrollWidth at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.primary, 'expected rendered primary controls').not.toHaveLength(0);
+
+    for (const box of [...geometry.primary, ...geometry.boundaries]) {
+        expect(box.left, `${box.selector} left edge at ${geometry.clientWidth}px`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${box.selector} right edge at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    }
 }
 
 async function acceptRequiredConsents(page: Page): Promise<void> {
@@ -339,6 +560,7 @@ test('Telegram Mini App submits initData automatically without a second login ac
                 props: {
                     services: [],
                     upcomingBooking: null,
+                    isPartner: false,
                     attribution: {
                         needsManualSource: false,
                     },
@@ -447,6 +669,91 @@ test('Telegram Mini App B2B launch authenticates before showing the requested de
     expect(authenticationRequests).toBe(1);
 });
 
+test('Telegram Mini App partner launch authenticates and displays the partner cabinet', async ({ page }) => {
+    let authenticationRequests = 0;
+
+    await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
+        await route.fulfill({
+            contentType: 'application/javascript',
+            body: 'window.Telegram = { WebApp: { initData: "verified-init-data", ready() {} } };',
+        });
+    });
+    await page.route('**/portal/telegram/auth', async (route) => {
+        authenticationRequests += 1;
+        expect(route.request().postDataJSON()).toMatchObject({
+            initData: 'verified-init-data',
+            launchEntry: 'partner_cabinet',
+        });
+        await route.fulfill({
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json',
+                'Vary': 'Accept',
+                'X-Inertia': 'true',
+            },
+            body: JSON.stringify({
+                component: 'Portal/Referrals',
+                props: {
+                    portal: {
+                        authenticated: true,
+                        clientName: 'Telegram Partner',
+                        locale: 'ru',
+                        localeUrl: '/portal/locale',
+                        urls: {
+                            home: '/',
+                            services: '/portal/services',
+                            bookings: '/portal/bookings',
+                            finance: '/portal/finance',
+                            surveys: '/portal/surveys',
+                            companion: '/portal/companion',
+                            profile: '/portal/profile',
+                            referrals: '/portal/referrals',
+                            feedback: '/portal/feedback',
+                            attribution: '/portal/attribution',
+                            booking: '/portal/bookings/create',
+                            b2b: '/portal/b2b',
+                        },
+                    },
+                    referrals: {
+                        isPartner: true,
+                        status: 'active',
+                        activatedAt: null,
+                        link: 'https://t.me/chuklov_test_bot?start=ref_legacy-referral-code',
+                        activationUrl: '/portal/referrals/activate',
+                        createLinkUrl: '/portal/referrals/links',
+                        stats: {
+                            visits: 0,
+                            registrations: 0,
+                            paidClients: 0,
+                            visitToRegistrationRate: null,
+                            registrationToPaidClientRate: null,
+                            rewardEarned: [],
+                        },
+                        links: [],
+                        referredClientsCount: 0,
+                        registrations: [],
+                        rewards: {
+                            balances: [],
+                            history: [],
+                            payouts: [],
+                            requestUrl: '/portal/referrals/payouts',
+                        },
+                    },
+                },
+                url: '/portal/referrals',
+                version: null,
+            }),
+        });
+    });
+
+    await page.goto('/portal/telegram/launch/partner_cabinet');
+
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-summary')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticationRequests).toBe(1);
+});
+
 test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', async ({ page }) => {
     const fixture = createBookingFixture();
 
@@ -520,30 +827,159 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [390, 760]) {
+    for (const width of [1440, 1280, 1024, 768, 390, 360, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
-        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
-        const navigationItems = page.locator('.portal-bottom-nav__link');
-        expect(await navigationItems.count()).toBe(6);
-        expect(await navigationItems.evaluateAll((items) => {
-            const widths = items.map((item) => item.getBoundingClientRect().width);
-            const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+        if (width < 768) {
+            await expect(page.locator('.portal-bottom-nav')).toBeVisible();
 
-            return Math.max(...widths) - Math.min(...widths) <= 1
-                && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
-        })).toBe(true);
+            const navigationItems = page.locator('.portal-bottom-nav__link');
+            expect(await navigationItems.count()).toBe(6);
+            expect(await navigationItems.evaluateAll((items) => {
+                const widths = items.map((item) => item.getBoundingClientRect().width);
+                const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+
+                return Math.max(...widths) - Math.min(...widths) <= 1
+                    && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
+            })).toBe(true);
+        }
 
         await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
     }
 
     await page.getByTestId('home-referrals-cta').click();
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Пригласить друга' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
+    await page.getByTestId('partner-activate').click();
+    await page.goto('/');
+    await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Партнёрский кабинет');
+    await page.getByTestId('home-referrals-cta').click();
+    await expect(page).toHaveURL(/\/portal\/referrals$/);
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+});
+
+test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+    await page.goto('/portal/referrals');
+    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-activate')).toBeVisible();
+    await page.getByTestId('partner-activate').click();
+
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('partner-links')).toBeVisible();
+    await expect(page.getByTestId('invite-friend')).toHaveCount(0);
+    await expect(page.getByText('Мои ссылки', { exact: true })).toBeVisible();
+
+    await page.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('instagram');
+    await page.getByTestId('partner-create-link').click();
+    const instagramLink = page.getByTestId('partner-link-1');
+    await expect(instagramLink).toContainText('Instagram — шапка профиля');
+    await expect(instagramLink).toContainText('Instagram');
+
+    await page.getByLabel('Название', { exact: true }).fill('Telegram — мой канал');
+    await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('telegram');
+    await page.getByTestId('partner-create-link').click();
+    const telegramLink = page.getByTestId('partner-link-2');
+    await expect(telegramLink).toContainText('Telegram — мой канал');
+    await expect(telegramLink).toContainText('Telegram');
+
+    for (const link of [instagramLink, telegramLink]) {
+        await expect(link.locator('code')).toHaveText(/https:\/\/t\.me\/[^?]+\?start=ref_[A-Za-z0-9_-]{16,128}/);
+        await expect(link.getByRole('button', { name: 'Скопировать', exact: true })).toBeVisible();
+        await expect(link.getByRole('button', { name: 'Поделиться', exact: true })).toBeVisible();
+        await expect(link.getByText('Переходы', { exact: true })).toBeVisible();
+        await expect(link.getByText('Регистрации', { exact: true })).toBeVisible();
+        await expect(link.getByText('Оплатили', { exact: true })).toBeVisible();
+        await expect(link.getByText('Начислено', { exact: true })).toBeVisible();
+        await expect(link.getByText('0', { exact: true })).toHaveCount(3);
+        await expect(link.getByText('—', { exact: true })).toHaveCount(1);
+    }
+
+    await instagramLink.getByRole('button', { name: 'Скопировать', exact: true }).click();
+    await expect(instagramLink.getByRole('button', { name: 'Ссылка скопирована', exact: true })).toBeVisible();
+    await instagramLink.getByRole('button', { name: 'Поделиться', exact: true }).click();
+
+    for (const width of [1440, 1280, 1024, 768, 390, 360, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/portal/referrals');
+        await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+        await expect(page.getByText('Instagram — шапка профиля', { exact: true })).toBeVisible();
+        await expect(page.getByText('Telegram — мой канал', { exact: true })).toBeVisible();
+        await assertRenderedViewportGeometry(page, [
+            '[data-testid="partner-create-link"]',
+            '[data-testid^="partner-link-copy-"]',
+            '[data-testid^="partner-link-share-"]',
+        ]);
+    }
+});
+
+test('partner can request and cancel a payout from the cabinet', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/portal/referrals');
+    await page.getByTestId('partner-activate').click();
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByTestId('invite-friend')).toHaveCount(0);
+    await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
+
+    await page.getByLabel('Сумма', { exact: true }).fill('2.00');
+    let requestStarted!: () => void;
+    let releaseRequest!: () => void;
+    const payoutRequestStarted = new Promise<void>((resolve) => {
+        requestStarted = resolve;
+    });
+    const payoutRequestRelease = new Promise<void>((resolve) => {
+        releaseRequest = resolve;
+    });
+    await page.route('**/portal/referrals/payouts', async (route) => {
+        if (route.request().method() === 'POST') {
+            requestStarted();
+            await payoutRequestRelease;
+        }
+
+        await route.continue();
+    });
+
+    const payoutSubmit = page.getByTestId('payout-submit');
+    await payoutSubmit.click();
+    await payoutRequestStarted;
+    await expect(payoutSubmit).toBeDisabled();
+    await expect(payoutSubmit).toHaveAttribute('aria-busy', 'true');
+    releaseRequest();
+    await expect(page.getByTestId('payout-feedback')).toBeVisible();
+    await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
+    await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
+    await expect(page.getByTestId('payout-feedback')).toContainText('Запрошена');
+
+    const payout = page.getByTestId('partner-payout-0');
+    await expect(payout).toBeVisible();
+    await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
+    await expect(payout).toContainText('Запрошена');
+    await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
+    await expect(payout).toContainText('Отменена');
+
+    await page.getByLabel('Сумма', { exact: true }).fill('999.00');
+    await payoutSubmit.click();
+    await expect(page.getByTestId('payout-error')).toBeVisible();
+    await expect(page.getByTestId('payout-error')).toContainText('Сумма превышает доступный остаток.');
 });
 
 test('B2B answer stays in one journey and Profile shows the same compact classification', async ({ page }) => {
@@ -626,9 +1062,11 @@ test('companion safely renders rich long messages without viewport overflow', as
         url: 'http://127.0.0.1:8000',
     }]);
 
-    for (const width of [390, 760]) {
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/portal/companion');
+        await expect(page.getByRole('heading', { name: 'AI-компаньон', exact: true })).toBeVisible();
+        await expect(page.locator('.portal-companion__help')).toHaveCount(0);
         await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
         await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
         await expect(page.locator('.portal-rich-text__code')).toBeVisible();
@@ -647,8 +1085,76 @@ test('companion safely renders rich long messages without viewport overflow', as
             await expect(renderedParagraph).toBeVisible();
         }
         await expect(page.locator('.portal-rich-text script')).toHaveCount(0);
-        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-companion__composer button[type="submit"]'],
+            ['.portal-companion__history', '.portal-companion__composer'],
+        );
+        expect(await page.locator('.portal-companion__message').evaluateAll((messages) => messages.every((message) => {
+            const bounds = message.getBoundingClientRect();
+
+            return bounds.left >= -1 && bounds.right <= document.documentElement.clientWidth + 1;
+        }))).toBe(true);
     }
+});
+
+test('companion shows accessible typing feedback and respects intentional history scrolling', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionMessages: true, withCompanionPending: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
+    await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
+    await expect(page.getByText('AI-компаньон печатает ответ', { exact: true })).toHaveCount(1);
+
+    await page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+
+    await page.route('**/portal/companion**', async (route) => {
+        const response = await route.fetch();
+        const payload = await response.json() as {
+            props?: { companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> } };
+        };
+        const companion = payload.props?.companion;
+        if (companion !== undefined) {
+            companion.pending = false;
+            companion.messages = [
+                ...(companion.messages ?? []),
+                {
+                    type: 'message',
+                    id: 'synthetic-new-message',
+                    role: 'ai',
+                    roleLabel: 'AI-помощник',
+                    content: 'Новый синтетический ответ.',
+                    occurredAt: new Date().toISOString(),
+                    transportLabel: 'Портал',
+                    feedback: null,
+                    attachmentCount: 0,
+                    traceUrl: null,
+                },
+            ];
+        }
+        await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
+
+    await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
+    await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+
+    await page.getByTestId('companion-new-messages').click();
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        return element.scrollHeight - element.scrollTop - element.clientHeight;
+    })).toBeLessThanOrEqual(96);
+    await expect(page.getByTestId('companion-new-messages')).toHaveCount(0);
 });
 
 test('authenticated client can complete the booking journey', async ({ page }) => {
@@ -897,6 +1403,30 @@ test('booking shell stays readable at narrow Mini App widths', async ({ page }) 
     }
 });
 
+test('booking primary action stays inside every acceptance viewport', async ({ page }) => {
+    const fixture = createBookingFixture();
+    const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
+    dateToValue.setUTCDate(dateToValue.getUTCDate() + 1);
+    const dateTo = dateToValue.toISOString().slice(0, 10);
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
+        await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-booking-choice > .portal-button--primary, .portal-booking-flow__cta'],
+            ['.portal-booking-flow'],
+        );
+    }
+});
+
 test('long multi-specialist and multi-format booking stays fully readable at 320px', async ({ page }) => {
     const fixture = createBookingFixture({
         multipleChoices: true,
@@ -996,9 +1526,12 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(alternateSlot).toBeVisible();
     await expect(page.getByRole('button', { name: 'Перенести запись', exact: true })).toBeDisabled();
     await alternateSlot.click();
+    const firstRescheduleResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && /\/portal\/bookings\/\d+\/reschedule$/.test(new URL(response.url()).pathname));
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
+    await assertPortalResponseAccepted(firstRescheduleResponse, 'First portal reschedule');
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
-    await expect(page.getByText('Запись перенесена')).toBeVisible();
+    await expect(page.getByText('Запись перенесена')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Перенести', exact: true }).click();
     const originalDateButton = page.getByRole('button', { name: fixture.date, exact: true });
@@ -1007,9 +1540,12 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     const secondAlternateSlot = page.getByTestId('availability-slot').nth(1);
     await expect(secondAlternateSlot).toBeVisible();
     await secondAlternateSlot.click();
+    const secondRescheduleResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && /\/portal\/bookings\/\d+\/reschedule$/.test(new URL(response.url()).pathname));
     await page.getByRole('button', { name: 'Перенести запись', exact: true }).click();
+    await assertPortalResponseAccepted(secondRescheduleResponse, 'Second portal reschedule');
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
-    await expect(page.getByText('Запись перенесена')).toHaveCount(2);
+    await expect(page.getByText('Запись перенесена')).toHaveCount(2, { timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Отменить' }).click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();

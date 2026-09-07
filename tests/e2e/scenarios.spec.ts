@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type ScenarioFixture = {
     email: string;
@@ -95,6 +95,54 @@ function createScenarioFixture(): ScenarioFixture {
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as ScenarioFixture;
 }
 
+type RenderedGeometry = {
+    clientWidth: number;
+    scrollWidth: number;
+    primary: Array<{ selector: string; left: number; right: number }>;
+    boundaries: Array<{ selector: string; left: number; right: number }>;
+};
+
+async function assertRenderedViewportGeometry(
+    page: Page,
+    primarySelectors: string[],
+    boundarySelectors: string[] = [],
+): Promise<void> {
+    const geometry = await page.evaluate(({ primarySelectors: selectors, boundarySelectors: boundaries }): RenderedGeometry => {
+        const visible = (element: Element): boolean => {
+            const htmlElement = element as HTMLElement;
+            const styles = window.getComputedStyle(htmlElement);
+            const bounds = htmlElement.getBoundingClientRect();
+
+            return styles.display !== 'none'
+                && styles.visibility !== 'hidden'
+                && bounds.width > 0
+                && bounds.height > 0;
+        };
+        const collect = (selectors: string[]): Array<{ selector: string; left: number; right: number }> => selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))
+            .filter(visible)
+            .map((element) => {
+                const bounds = (element as HTMLElement).getBoundingClientRect();
+
+                return { selector, left: bounds.left, right: bounds.right };
+            }));
+
+        return {
+            clientWidth: document.documentElement.clientWidth,
+            scrollWidth: document.documentElement.scrollWidth,
+            primary: collect(selectors),
+            boundaries: collect(boundaries),
+        };
+    }, { primarySelectors, boundarySelectors });
+
+    expect(geometry.scrollWidth, `document scrollWidth at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth);
+    expect(geometry.primary, 'expected rendered primary controls').not.toHaveLength(0);
+
+    for (const box of [...geometry.primary, ...geometry.boundaries]) {
+        expect(box.left, `${box.selector} left edge at ${geometry.clientWidth}px`).toBeGreaterThanOrEqual(-1);
+        expect(box.right, `${box.selector} right edge at ${geometry.clientWidth}px`).toBeLessThanOrEqual(geometry.clientWidth + 1);
+    }
+}
+
 test('staff can configure a scenario timing and inspect delivery history', async ({ page }) => {
     const fixture = createScenarioFixture();
 
@@ -111,7 +159,9 @@ test('staff can configure a scenario timing and inspect delivery history', async
     const save = page.getByRole('button', { name: 'Сохранить' });
     const saveResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
         && response.request().method() === 'POST'
-        && response.status() === 200);
+        && response.status() === 200
+        && (response.request().postData() ?? '').includes('delay_value')
+        && (response.request().postData() ?? '').includes('48'));
     await save.click();
     await saveResponse;
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}`);
@@ -128,8 +178,9 @@ test('staff can configure a scenario timing and inspect delivery history', async
         && response.status() === 200);
     await templateSave.click();
     await templateSaveResponse;
+    await expect(page.locator('.fi-no-notification-title', { hasText: 'Шаблон сохранён' })).toBeVisible({ timeout: 3_000 });
     await page.goto(`/admin/notification-templates/${fixture.templateId}`);
-    await expect(page.getByText('Текст сохранён')).toBeVisible();
+    await expect(page.getByText('Версия сохранена', { exact: true })).toBeVisible();
     await expect(page.getByText('Обновлённое сообщение для {{ client.full_name }}.')).toBeVisible();
 
     await page.goto('/admin/scenario-actions');
@@ -150,7 +201,7 @@ test('shared rich editor inserts emoji at the current caret as text', async ({ p
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
-    const editor = page.locator('.fi-fo-rich-editor-content[contenteditable="true"]').first();
+    const editor = page.getByRole('textbox', { name: 'Текст сообщения', exact: true });
     await editor.fill('Привет !');
     await editor.press('ArrowLeft');
     await page.getByRole('button', { name: '😊 Смайлик', exact: true }).click();
@@ -166,4 +217,28 @@ test('shared rich editor inserts emoji at the current caret as text', async ({ p
     await editor.press('End');
     await editor.type(' обычный текст');
     await expect(editor).toContainText('Привет 👋! обычный текст');
+});
+
+test('message composer keeps primary controls and emoji picker inside every acceptance viewport', async ({ page }) => {
+    const fixture = createScenarioFixture();
+
+    await page.goto('/admin/login');
+    await page.locator('input[type="email"]').fill(fixture.email);
+    await page.locator('input[type="password"]').fill(fixture.password);
+    await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+
+    for (const width of [1440, 1280, 1024, 768, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
+        await expect(page.getByRole('heading', { name: 'Редактировать шаблон сообщения', exact: true })).toBeVisible();
+        await assertRenderedViewportGeometry(page, ['button[type="submit"]']);
+
+        if (width === 320) {
+            await page.getByRole('button', { name: '😊 Смайлик', exact: true }).click();
+            await expect(page.locator('emoji-picker')).toBeVisible();
+            await assertRenderedViewportGeometry(page, ['button[type="submit"]'], ['emoji-picker']);
+            await page.keyboard.press('Escape');
+        }
+    }
 });

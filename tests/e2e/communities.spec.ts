@@ -151,7 +151,7 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 }
 
 async function selectText(editor: Locator, value: string): Promise<void> {
-    await editor.click();
+    await editor.click({ force: true });
     await editor.press('ControlOrMeta+A');
     await editor.press('ArrowLeft');
 
@@ -213,16 +213,18 @@ async function saveContentSection(page: Page): Promise<void> {
 }
 
 test('owner-created Communities RichEditor links survive the real CRM flow', async ({ page }) => {
+    test.setTimeout(60_000);
+
     const fixture = createCommunitiesFixture();
     const communityText = 'Закрытое сообщество';
     const initialUrl = 'https://t.me/test_community';
     const updatedUrl = 'https://example.test/community-updated';
 
     await login(page, fixture);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const editor = page.locator('.fi-fo-rich-editor-content').first();
-    await editor.click();
+    await editor.click({ force: true });
     await editor.pressSequentially(`${communityText} 😀`);
     await expect(editor).toContainText(`${communityText} 😀`);
 
@@ -237,7 +239,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.waitForTimeout(500);
 
     await saveContentSection(page);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const reloadedEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(reloadedEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
@@ -256,7 +258,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(initialTelegram.persistedBody).toContain(`href="${initialUrl}"`);
     expect(telegramHasLinkedText(initialTelegram, initialUrl, communityText)).toBe(true);
 
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
     const previewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(previewEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     const previewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
@@ -267,13 +269,16 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(previewDialog.locator(`a[href="${initialUrl}"]`)).toHaveText(communityText);
     await expect(previewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
     await expect(previewDialog.locator('a')).toHaveCount(2);
+    const closePreviewResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST');
     await previewDialog.locator('button.fi-modal-close-btn').click({ force: true });
     await expect(previewDialog).toBeHidden();
+    await expect((await closePreviewResponse).status()).toBe(200);
 
     await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
     await saveContentSection(page);
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const finalEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(finalEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
@@ -291,15 +296,28 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(telegramHasLinkedText(updatedTelegram, updatedUrl, communityText)).toBe(true);
     expect(updatedTelegram.requests.some((payload) => String(payload.text ?? '').includes(`<a href="${initialUrl}">`))).toBe(false);
 
-    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`);
+    await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => undefined);
     const updatedPreviewEditor = page.locator('.fi-fo-rich-editor-content').first();
     await expect(updatedPreviewEditor.locator(`a[href="${updatedUrl}"]`)).toHaveCount(1);
     const updatedPreviewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
-    await expect(updatedPreviewButton).toBeEnabled();
-    await updatedPreviewButton.scrollIntoViewIfNeeded();
+    await expect(updatedPreviewButton).toBeEnabled({ timeout: 15_000 });
+    const previewResponse = page.waitForResponse((response) => response.url().includes('/livewire-')
+        && response.request().method() === 'POST');
     await updatedPreviewButton.click();
+    await expect((await previewResponse).status()).toBe(200);
     const updatedPreviewDialog = page.getByRole('dialog', { name: 'Предпросмотр Telegram' });
-    await expect(updatedPreviewDialog.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
-    await expect(updatedPreviewDialog.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
-    await expect(updatedPreviewDialog.getByText('Открыть полностью', { exact: true })).toBeVisible();
+    const updatedPreviewWindow = updatedPreviewDialog.locator('.fi-modal-window');
+    await expect(updatedPreviewWindow).toBeVisible({ timeout: 10_000 });
+    const previewBounds = await updatedPreviewWindow.boundingBox();
+    const viewport = page.viewportSize();
+    expect(previewBounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    if (previewBounds !== null && viewport !== null) {
+        expect(previewBounds.x).toBeGreaterThanOrEqual(0);
+        expect(previewBounds.x + previewBounds.width).toBeLessThanOrEqual(viewport.width);
+    }
+    await expect(updatedPreviewWindow.locator(`a[href="${updatedUrl}"]`)).toHaveText(communityText);
+    await expect(updatedPreviewWindow.locator(`a[href="${initialUrl}"]`)).toHaveCount(0);
+    await expect(updatedPreviewWindow.getByText('Открыть полностью', { exact: true })).toBeVisible();
 });

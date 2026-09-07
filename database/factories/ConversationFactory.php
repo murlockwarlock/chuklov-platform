@@ -19,6 +19,7 @@ class ConversationFactory extends Factory
         return [
             'channel' => 'telegram',
             'external_key' => fake()->unique()->numerify('##########'),
+            'context_epoch' => 1,
             'started_at' => now(),
             'last_message_at' => null,
         ];

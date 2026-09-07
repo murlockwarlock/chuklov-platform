@@ -95,6 +95,16 @@ class BookingInfolist
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
 
+                Section::make('Оплата пока недоступна')
+                    ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingPaymentReadiness($record) !== null)
+                    ->schema([
+                        TextEntry::make('finance_readiness')
+                            ->label('Что нужно сделать')
+                            ->state(fn (Booking $record): ?string => app(FinancePresentation::class)->bookingPaymentReadiness($record))
+                            ->wrap()
+                            ->columnSpanFull(),
+                    ]),
+
                 Section::make('Расчёт')
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
                     ->schema([

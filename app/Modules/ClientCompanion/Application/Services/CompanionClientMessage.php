@@ -41,6 +41,13 @@ final class CompanionClientMessage
             : 'This message contains too many images to process. Please send fewer images at a time.';
     }
 
+    public function documentFailure(): string
+    {
+        return $this->locale === 'ru'
+            ? 'Не удалось безопасно обработать PDF-документ. Проверьте файл и отправьте его ещё раз.'
+            : 'The PDF document could not be processed safely. Check the file and send it again.';
+    }
+
     public function albumIncomplete(): string
     {
         return $this->locale === 'ru'

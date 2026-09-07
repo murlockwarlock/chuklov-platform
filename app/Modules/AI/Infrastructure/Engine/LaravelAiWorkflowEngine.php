@@ -266,11 +266,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 capability: $request->capability,
             );
             $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
-            if ($capabilityDef->systemSafetyPolicy !== null) {
-                $renderedSystemPrompt = $renderedSystemPrompt
-                    ."\n\n[SYSTEM-OWNED SAFETY POLICY]\n"
-                    .$capabilityDef->systemSafetyPolicy;
-            }
             $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
             AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
@@ -677,12 +672,23 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 
         // Fail closed if no valid immutable candidate exists
         if (empty($candidates)) {
+            $diagnosis = $this->candidateResolver->diagnose(
+                organizationId: $organizationId,
+                capability: $run->capability,
+                safetyControls: $safetyControls,
+                requiredModalities: $requiredModalities ?? [],
+            );
+            $errorCategory = match ($diagnosis['status']) {
+                'provider_unavailable' => AiErrorCategory::ProviderUnavailable,
+                'disabled' => AiErrorCategory::ProviderDisabled,
+                default => AiErrorCategory::ConfigurationMissing,
+            };
             $fenced = $this->fencedTerminalRunTransition(
                 $organizationId,
                 $runId,
                 $workerLeaseToken,
                 AiRunStatus::Failed,
-                AiErrorCategory::ProviderUnavailable,
+                $errorCategory,
                 "No enabled AI provider or model release configured for capability '{$run->capability->value}'."
             );
 
@@ -695,7 +701,11 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
             }
 
-            throw new AiProviderUnavailableException("No enabled AI provider or model configured for capability '{$run->capability->value}'.");
+            throw new AiProviderUnavailableException(
+                "No enabled AI provider or model configured for capability '{$run->capability->value}'.",
+                configurationMissing: $diagnosis['status'] === 'not_configured',
+                providerDisabled: $diagnosis['status'] === 'disabled',
+            );
         }
 
         $attemptTimeoutSeconds = $executionPolicy->attemptTimeoutSeconds;
@@ -729,6 +739,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         $maxProviderSteps = min($capabilityDef->maxProviderSteps, AiRuntimeLimits::providerSteps($maxToolCalls));
 
         $tokenCeiling = $executionPolicy->maxOutputTokens;
+        $outputSchema = $promptVersion->output_schema
+            ?? ($run->origin === AiRunOrigin::ClientCompanion ? $capabilityDef->defaultOutputSchema : null);
 
         $attemptNumber = (int) AiRunAttempt::query()
             ->where('organization_id', $organizationId)
@@ -978,6 +990,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                     agentTools: $resolvedSdkTools,
                     defaultProvider: $candidate['provider'],
                     defaultModel: $candidate['model'],
+                    outputSchema: $outputSchema,
                 ))
                     ->withMaxTokens($tokenCeiling)
                     ->withMaxSteps($maxProviderSteps);
@@ -1030,8 +1043,6 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
 
                 $outputPayload = null;
-                $outputSchema = $promptVersion->output_schema
-                    ?? ($run->origin === AiRunOrigin::ClientCompanion ? $capabilityDef->defaultOutputSchema : null);
                 $isValid = true;
 
                 if ($outputSchema !== null) {

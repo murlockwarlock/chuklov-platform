@@ -4,6 +4,9 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunProtectedTraceData;
+use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\AI\Domain\Models\AiModelConfiguration;
+use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -13,7 +16,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Auth\Access\AuthorizationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-class GetAiRunProtectedTrace
+final class GetAiRunProtectedTrace
 {
     public function __construct(
         private readonly OrganizationContext $context,
@@ -32,6 +35,11 @@ class GetAiRunProtectedTrace
         $run = AiRun::query()
             ->where('organization_id', $organization->getKey())
             ->where('id', $runId)
+            ->with([
+                'promptVersion.prompt',
+                'modelRelease.modelConfiguration.providerConfiguration',
+                'ragReferences.source',
+            ])
             ->first();
 
         if ($run === null) {
@@ -53,6 +61,12 @@ class GetAiRunProtectedTrace
                 outputPayload: null,
                 humanReviewNotes: null,
                 humanEditedOutput: null,
+                promptName: $run->promptVersion?->prompt?->name,
+                promptVersion: $run->promptVersion?->version,
+                inputReferences: $this->inputReferences($run),
+                contextProvenance: $this->contextProvenance($run),
+                ragReferences: $this->ragReferences($run),
+                model: $this->model($run),
             );
         }
 
@@ -91,6 +105,8 @@ class GetAiRunProtectedTrace
             }
         }
 
+        [$sourcePrompt, $platformSafetyGuardrails] = $this->splitPrompt($decryptedSystemPrompt);
+
         return new AiRunProtectedTraceData(
             aiRunId: $run->id,
             encryptionKeyVersion: $keyVersion,
@@ -100,6 +116,86 @@ class GetAiRunProtectedTrace
             outputPayload: $outputPayload,
             humanReviewNotes: $decryptedNotes,
             humanEditedOutput: $decryptedEditedOutput,
+            promptName: $run->promptVersion?->prompt?->name,
+            promptVersion: $run->promptVersion?->version,
+            inputReferences: $this->inputReferences($run),
+            contextProvenance: $this->contextProvenance($run),
+            ragReferences: $this->ragReferences($run),
+            model: $this->model($run),
+            sourcePrompt: $sourcePrompt,
+            platformSafetyGuardrails: $platformSafetyGuardrails,
         );
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function inputReferences(AiRun $run): array
+    {
+        return array_values(array_filter(
+            (array) $run->input_references,
+            static fn (mixed $reference): bool => is_array($reference),
+        ));
+    }
+
+    /** @return array<string, mixed> */
+    private function contextProvenance(AiRun $run): array
+    {
+        return $run->context_provenance;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function ragReferences(AiRun $run): array
+    {
+        return array_values($run->ragReferences()
+            ->get()
+            ->map(static fn ($reference): array => [
+                'index' => $reference->reference_index,
+                'source_id' => $reference->knowledge_source_id,
+                'source_title' => $reference->source?->title,
+                'revision_id' => $reference->knowledge_revision_id,
+                'chunk_id' => $reference->knowledge_chunk_id,
+                'similarity' => $reference->similarity_score,
+                'retrieval_type' => $reference->retrieval_type,
+            ])
+            ->values()
+            ->all());
+    }
+
+    /** @return array<string, mixed> */
+    private function model(AiRun $run): array
+    {
+        $release = $run->modelRelease;
+        $modelConfiguration = $release?->modelConfiguration;
+        $capabilities = $release instanceof AiModelRelease
+            ? $release->capabilities
+            : ($modelConfiguration instanceof AiModelConfiguration ? $modelConfiguration->capabilities : []);
+
+        return [
+            'provider' => $run->actual_provider ?? $run->requested_provider ?? $release?->provider_name,
+            'model' => $run->actual_model ?? $run->requested_model ?? $release?->model_name,
+            'release_id' => $release?->getKey() ?? $run->model_release_id,
+            'release_number' => $release?->release_number,
+            'modalities' => collect($capabilities)
+                ->filter(static fn (mixed $value): bool => in_array($value, array_map(static fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()), true))
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /** @return array{0: ?string, 1: ?string} */
+    private function splitPrompt(?string $prompt): array
+    {
+        if ($prompt === null || trim($prompt) === '') {
+            return [null, null];
+        }
+
+        $source = $prompt;
+        $guardrails = [];
+        $platformMarker = "\n\n[PLATFORM SAFETY GUARDRAIL]\n";
+        if (str_contains($source, $platformMarker)) {
+            [$source, $platformGuardrails] = explode($platformMarker, $source, 2);
+            $guardrails[] = trim($platformGuardrails);
+        }
+
+        return [trim($source), $guardrails === [] ? null : implode("\n\n", array_filter($guardrails))];
     }
 }

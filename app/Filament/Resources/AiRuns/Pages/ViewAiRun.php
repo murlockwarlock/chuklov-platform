@@ -4,12 +4,17 @@ namespace App\Filament\Resources\AiRuns\Pages;
 
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Resources\AiRuns\Schemas\AiRunInfolist;
+use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
@@ -29,13 +34,34 @@ class ViewAiRun extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            ActionGroup::make([
+                Action::make('download_json')
+                    ->label('JSON с данными')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'json', 'identified'))
+                    ->openUrlInNewTab(),
+                Action::make('download_txt')
+                    ->label('TXT с данными')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'txt', 'identified'))
+                    ->openUrlInNewTab(),
+                Action::make('download_anonymized_json')
+                    ->label('JSON анонимизированный')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'json', 'anonymized'))
+                    ->openUrlInNewTab(),
+                Action::make('download_anonymized_txt')
+                    ->label('TXT анонимизированный')
+                    ->url(fn (AiRun $record): string => $this->exportUrl($record, 'txt', 'anonymized'))
+                    ->openUrlInNewTab(),
+            ])
+                ->label('Скачать')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->visible(fn (): bool => $this->canViewTrace()),
             Action::make('accept_review')
-                ->label('Принять предложение')
+                ->label('Ответ AI корректный')
                 ->color('success')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->requiresConfirmation()
-                ->modalHeading('Подтверждение принятия предложения AI')
-                ->modalDescription('Вы подтверждаете, что проверили сгенерированный результат.')
+                ->modalHeading('Подтвердить результат AI')
+                ->modalDescription('Это отметка специалиста о результате AI, а не команда для отправки клиенту.')
                 ->action(function (AiRun $record, ReviewAiRun $reviewAction) {
                     $user = Auth::user();
                     if ($user) {
@@ -45,13 +71,13 @@ class ViewAiRun extends ViewRecord
                             decision: HumanReviewDecision::Accepted,
                             safeReasonCode: 'specialist_confirmed',
                         );
-                        Notification::make()->title('Предложение принято')->success()->send();
+                        Notification::make()->title('Результат AI отмечен как корректный')->success()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),
 
             Action::make('reject_review')
-                ->label('Отклонить')
+                ->label('Ответ AI неверный')
                 ->color('danger')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
@@ -73,13 +99,13 @@ class ViewAiRun extends ViewRecord
                             safeReasonCode: (string) ($data['reason_code'] ?? 'specialist_rejected'),
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                         );
-                        Notification::make()->title('Предложение отклонено')->danger()->send();
+                        Notification::make()->title('Результат AI отмечен как неверный')->danger()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),
 
             Action::make('edit_and_accept_review')
-                ->label('Отредактировать и принять')
+                ->label('Исправить ответ')
                 ->color('info')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
@@ -102,10 +128,33 @@ class ViewAiRun extends ViewRecord
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                             editedOutput: (string) ($data['edited_output'] ?? ''),
                         );
-                        Notification::make()->title('Отредактировано и принято')->success()->send();
+                        Notification::make()->title('Исправленный ответ сохранён')->success()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),
         ];
+    }
+
+    private function canViewTrace(): bool
+    {
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            return false;
+        }
+
+        return app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ViewAiTrace,
+        );
+    }
+
+    private function exportUrl(AiRun $record, string $format, string $identity): string
+    {
+        return route('admin.ai-runs.export', [
+            'runId' => $record->getKey(),
+            'format' => $format,
+            'identity' => $identity,
+        ]);
     }
 }

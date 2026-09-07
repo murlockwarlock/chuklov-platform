@@ -3,11 +3,13 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ExportAiRun;
 use App\Modules\AI\Application\Actions\GetAiRunProtectedTrace;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -72,6 +74,61 @@ class AiProtectedTraceAuthorizationTest extends TestCase
         $this->assertSame('Секретная инструкция', $trace->systemPrompt);
         $this->assertSame('Вопрос клиента с анамнезом', $trace->userPrompt);
         $this->assertSame('Клинический ответ ИИ', $trace->outputText);
+    }
+
+    public function test_authorized_run_exports_identified_and_anonymized_data_server_side(): void
+    {
+        $client = Client::factory()->forOrganization($this->organization)->create([
+            'full_name' => 'Protected Synthetic Client',
+            'email' => 'protected.synthetic@example.test',
+            'phone' => '+70000000000',
+        ]);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => 'export_test',
+            'client_id' => $client->id,
+            'status' => AiRunStatus::Succeeded,
+            'input_references' => [
+                ['type' => 'client', 'id' => $client->id],
+                ['type' => 'medical_attachment', 'id' => 91, 'role' => 'report'],
+            ],
+            'context_provenance' => ['client_included' => true, 'medical_summary_included' => true],
+            'token_usage' => [],
+            'actual_provider' => 'synthetic-provider',
+            'actual_model' => 'synthetic-model',
+            'human_review_status' => 'accepted',
+        ]);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->id,
+            'ai_run_id' => $run->id,
+            'encryption_key_version' => 1,
+            'encrypted_system_prompt' => $encryptor->encryptField($this->organization->id, 'Source prompt', 1),
+            'encrypted_user_prompt' => $encryptor->encryptField($this->organization->id, 'Protected Synthetic Client has a synthetic finding.', 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->id, 'Protected Synthetic Client: synthetic result.', 1),
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->id, json_encode([
+                'source_facts' => ['Synthetic finding'],
+                'missing_information' => ['9 systems/MSQ'],
+            ], JSON_THROW_ON_ERROR), 1),
+        ]);
+
+        $export = app(ExportAiRun::class);
+        $identified = json_decode($export->handle($this->admin, $run->id, 'json', 'identified'), true, 512, JSON_THROW_ON_ERROR);
+        $anonymized = json_decode($export->handle($this->admin, $run->id, 'json', 'anonymized'), true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertSame('Protected Synthetic Client', $identified['client']['full_name']);
+        self::assertSame('synthetic-provider', $identified['model']['provider']);
+        self::assertSame('synthetic-model', $identified['model']['model']);
+        self::assertSame('anonymized', $anonymized['export_kind']);
+        self::assertStringNotContainsString('Protected Synthetic Client', json_encode($anonymized, JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('protected.synthetic@example.test', json_encode($anonymized, JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('+70000000000', json_encode($anonymized, JSON_THROW_ON_ERROR));
+        self::assertDatabaseHas('audit_events', [
+            'organization_id' => $this->organization->id,
+            'action' => 'ai.run.exported',
+            'target_id' => (string) $run->id,
+        ]);
     }
 
     public function test_staff_without_view_ai_trace_permission_is_rejected_with_403(): void

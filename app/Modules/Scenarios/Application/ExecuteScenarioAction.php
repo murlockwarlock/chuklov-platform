@@ -37,6 +37,7 @@ final class ExecuteScenarioAction
         private readonly ScenarioChannelIdentityResolver $identities,
         private readonly NotificationChannelRegistry $channels,
         private readonly NotificationTemplateRenderer $renderer,
+        private readonly NotificationTemplateMedia $media,
         private readonly ScheduleNextScenarioAction $nextActions,
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
@@ -206,6 +207,7 @@ final class ExecuteScenarioAction
                 }
             }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
+            $mediaItems = $this->media->messages($delivery->organization_id, $rendered->media);
             $actionButton = $this->actionButton($action, $rendered->locale);
             $actionButtons = $this->actionButtons($action, $rendered->locale);
 
@@ -234,6 +236,9 @@ final class ExecuteScenarioAction
                 webAppUrl: $webAppUrl,
                 actionButton: $actionButton,
                 actionButtons: $actionButtons,
+                mode: $rendered->mode,
+                showCaptionAboveMedia: $rendered->showCaptionAboveMedia,
+                mediaItems: $mediaItems,
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');

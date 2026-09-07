@@ -94,6 +94,24 @@ final class MilestoneFiveDomainTest extends TestCase
         ]);
     }
 
+    public function test_marketing_templates_can_render_a_declared_recipient_referral_link(): void
+    {
+        $template = new NotificationTemplateVersion;
+        $template->forceFill([
+            'body' => '<p><a href="{{ referral_link }}">Пригласить друга</a></p>',
+            'subject' => null,
+            'variables' => ['referral_link'],
+        ]);
+
+        $rendered = (new ScenarioTemplateRenderer)->render(
+            $template,
+            ['referral_link' => 'https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456'],
+            'ru',
+        );
+
+        self::assertStringContainsString('href="https://t.me/chuklov_test_bot?start=ref_abcdefghijklmnopqrstuvwxyz123456"', $rendered->body);
+    }
+
     public function test_idempotency_keys_are_deterministic_and_scoped(): void
     {
         $first = ScenarioIdempotencyKey::materialization(1, 2, 3, 'client:4');

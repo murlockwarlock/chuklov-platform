@@ -28,6 +28,7 @@ class ExecutePlaygroundRun
         User $actor,
         AiCapability $capability,
         ?int $promptVersionId = null,
+        ?int $modelReleaseId = null,
         array $inputVariables = [],
     ): AiRunResult {
         $organization = $this->context->organization();
@@ -40,6 +41,7 @@ class ExecutePlaygroundRun
             executionMode: AiExecutionMode::Playground,
             initiatedByUserId: $actor->getKey(),
             promptVersionId: $promptVersionId,
+            modelReleaseId: $modelReleaseId,
             inputVariables: $inputVariables,
             actor: $actor,
         );

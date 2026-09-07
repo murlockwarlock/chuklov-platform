@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
+use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
 use App\Http\Controllers\Portal\AttributionController;
@@ -22,6 +23,8 @@ use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
+use App\Http\Controllers\Portal\ReferralPartnerController;
+use App\Http\Controllers\Portal\ReferralPayoutController;
 use App\Http\Controllers\Portal\ReferralRedirectController;
 use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
@@ -58,6 +61,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reply');
     Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve');
+    Route::post('/admin/clients/{client}/companion/resolve-and-resume', [AdminCompanionController::class, 'resolveAndResume'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
     Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
@@ -68,6 +73,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.export');
     Route::get('/admin/clients/{client}/companion/metadata-export', [CompanionExportController::class, 'metadata'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.metadata-export');
+    Route::get('/admin/ai-runs/{runId}/export', AiRunExportController::class)
+        ->middleware('auth')->whereNumber('runId')->name('admin.ai-runs.export');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
@@ -104,6 +111,15 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
+            Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
+            Route::post('/portal/referrals/links', [ReferralPartnerController::class, 'store'])->name('portal.referrals.links.store');
+            Route::post('/portal/referrals/links/{campaignLinkId}/disable', [ReferralPartnerController::class, 'disable'])
+                ->whereNumber('campaignLinkId')
+                ->name('portal.referrals.links.disable');
+            Route::post('/portal/referrals/payouts', [ReferralPayoutController::class, 'store'])->name('portal.referrals.payouts.store');
+            Route::post('/portal/referrals/payouts/{payoutRequestId}/cancel', [ReferralPayoutController::class, 'cancel'])
+                ->whereNumber('payoutRequestId')
+                ->name('portal.referrals.payouts.cancel');
             Route::get('/portal/feedback', [FeedbackController::class, 'index'])->name('portal.feedback');
             Route::post('/portal/feedback', [FeedbackController::class, 'store'])->name('portal.feedback.store');
             Route::get('/portal/attribution', [AttributionController::class, 'show'])->name('portal.attribution');

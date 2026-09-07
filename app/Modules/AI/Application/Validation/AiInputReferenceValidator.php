@@ -3,6 +3,9 @@
 namespace App\Modules\AI\Application\Validation;
 
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
@@ -49,6 +52,7 @@ final class AiInputReferenceValidator
                 'survey_attempt' => $this->findSurveyAttempt($organizationId, $reference->id)->client_id,
                 'booking' => $this->findBooking($organizationId, $reference->id)->client_id,
                 'knowledge_source' => $this->validateKnowledgeSource($organizationId, $reference->id),
+                'ai_run' => $this->findReviewedClinicalRun($organizationId, $reference->id)->client_id,
             };
 
             if ($referenceClientId !== null) {
@@ -100,9 +104,12 @@ final class AiInputReferenceValidator
         $attachment = MedicalAttachment::query()
             ->where('organization_id', $organizationId)
             ->whereKey($id)
-            ->where('attachment_type', AttachmentType::CompanionImage->value)
+            ->whereIn('attachment_type', [
+                AttachmentType::CompanionImage->value,
+                AttachmentType::CompanionDocument->value,
+            ])
             ->first()
-            ?? throw new InvalidArgumentException('AI Companion image reference was not found in the current organization.');
+            ?? throw new InvalidArgumentException('AI Companion attachment reference was not found in the current organization.');
 
         return $attachment;
     }
@@ -139,5 +146,24 @@ final class AiInputReferenceValidator
         $this->findKnowledgeSource($organizationId, $id);
 
         return null;
+    }
+
+    private function findReviewedClinicalRun(int $organizationId, int $id): AiRun
+    {
+        return AiRun::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($id)
+            ->whereIn('capability', [
+                AiCapability::ClinicalDocumentExtraction,
+                AiCapability::PostureAnalysis,
+            ])
+            ->whereNotNull('client_id')
+            ->where('status', AiRunStatus::Succeeded)
+            ->whereIn('human_review_status', [
+                HumanReviewStatus::Accepted,
+                HumanReviewStatus::EditedAndAccepted,
+            ])
+            ->first()
+            ?? throw new InvalidArgumentException('AI upstream result was not found or is not approved for clinical synthesis.');
     }
 }

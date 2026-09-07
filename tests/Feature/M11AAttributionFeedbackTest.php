@@ -244,7 +244,8 @@ final class M11AAttributionFeedbackTest extends TestCase
         $organization = $this->organizationWithClientRecords();
         $referrer = Client::factory()->forOrganization($organization)->create();
         $identity = app(EnsureReferralIdentity::class)->handle($referrer);
-        $this->get(route('portal.referral', ['referralCode' => $identity->public_code]))->assertRedirect(route('portal.home'));
+        $this->get(route('portal.referral', ['referralCode' => $identity->public_code]))
+            ->assertRedirect('https://t.me/chuklov_test_bot?start=ref_'.$identity->public_code);
         $sessionId = session()->getId();
         $referred = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
 
@@ -260,7 +261,7 @@ final class M11AAttributionFeedbackTest extends TestCase
             ->get(route('portal.referrals'))
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('Portal/Referrals')
-                ->where('referrals.link', route('portal.referral', ['referralCode' => $identity->public_code])));
+                ->where('referrals.link', 'https://t.me/chuklov_test_bot?start=ref_'.$identity->public_code));
     }
 
     public function test_portal_referral_projection_exposes_neutral_finance_evidence_without_reward_fields(): void
@@ -299,7 +300,8 @@ final class M11AAttributionFeedbackTest extends TestCase
         $foreignIdentity = app(EnsureReferralIdentity::class)->handle($otherReferrer);
         app(OrganizationContext::class)->set($organization);
         $client = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
-        $this->get(route('portal.referral', ['referralCode' => $foreignIdentity->public_code]))->assertRedirect();
+        $this->get(route('portal.referral', ['referralCode' => $foreignIdentity->public_code]))
+            ->assertRedirect('https://t.me/chuklov_test_bot?start=ref_'.$foreignIdentity->public_code);
         $sessionId = session()->getId();
         app(RegisterClientAcquisition::class)->handle($organization, $client, $sessionId);
         app(FinalizeClientAcquisition::class)->handle($client, $sessionId);
@@ -577,6 +579,7 @@ final class M11AAttributionFeedbackTest extends TestCase
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->id);
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
 
         return $organization;

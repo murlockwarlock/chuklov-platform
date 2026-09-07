@@ -2,6 +2,7 @@
 
 namespace App\Modules\Identity\Domain\Models;
 
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
@@ -9,6 +10,7 @@ use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -68,10 +70,16 @@ class Client extends Model
         return $this->hasOne(ClientReferralIdentity::class, 'client_id');
     }
 
+    /** @return HasOne<ReferralPartnerProfile, $this> */
+    public function referralPartnerProfile(): HasOne
+    {
+        return $this->hasOne(ReferralPartnerProfile::class, 'client_id');
+    }
+
     /** @return HasOne<ReferralRelationship, $this> */
     public function referralRelationship(): HasOne
     {
-        return $this->hasOne(ReferralRelationship::class, 'referred_client_id');
+        return $this->hasOne(ReferralRelationship::class, 'referred_client_id')->with('referrer');
     }
 
     /** @return HasMany<ReferralRelationship, $this> */
@@ -120,6 +128,12 @@ class Client extends Model
     public function medicalAttachments(): HasMany
     {
         return $this->hasMany(MedicalAttachment::class);
+    }
+
+    /** @return HasMany<AiRun, $this> */
+    public function aiRuns(): HasMany
+    {
+        return $this->hasMany(AiRun::class, 'client_id');
     }
 
     /** @return HasMany<MedicalSession, $this> */

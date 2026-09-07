@@ -43,6 +43,25 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
      */
     private function validateNode(mixed $data, array $schema): bool
     {
+        if (array_key_exists('anyOf', $schema)) {
+            $variants = $schema['anyOf'];
+            if (! is_array($variants) || $variants === []) {
+                $this->lastError = 'Schema anyOf must contain at least one schema.';
+
+                return false;
+            }
+
+            foreach ($variants as $variant) {
+                if (is_array($variant) && $this->validateNode($data, $variant)) {
+                    return true;
+                }
+            }
+
+            $this->lastError = 'Value does not match any allowed schema.';
+
+            return false;
+        }
+
         if (array_key_exists('enum', $schema) && ! in_array($data, (array) $schema['enum'], true)) {
             $this->lastError = 'Value is not in the allowed enum.';
 
@@ -91,6 +110,16 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
                         }
                     }
                 }
+                if (array_key_exists('minItems', $schema) && count($data) < (int) $schema['minItems']) {
+                    $this->lastError = 'Array has fewer items than allowed.';
+
+                    return false;
+                }
+                if (array_key_exists('maxItems', $schema) && count($data) > (int) $schema['maxItems']) {
+                    $this->lastError = 'Array has more items than allowed.';
+
+                    return false;
+                }
             } elseif ($expectedType === 'string' && ! is_string($data)) {
                 $this->lastError = 'Expected string value.';
 
@@ -107,7 +136,26 @@ class JsonSchemaOutputValidator implements AiOutputValidatorInterface
                 $this->lastError = 'Expected boolean value.';
 
                 return false;
+            } elseif ($expectedType === 'null' && $data !== null) {
+                $this->lastError = 'Expected null value.';
+
+                return false;
             }
+        }
+
+        if (array_key_exists('minimum', $schema)
+            && (is_int($data) || is_float($data))
+            && $data < $schema['minimum']) {
+            $this->lastError = 'Number is below the allowed minimum.';
+
+            return false;
+        }
+        if (array_key_exists('maximum', $schema)
+            && (is_int($data) || is_float($data))
+            && $data > $schema['maximum']) {
+            $this->lastError = 'Number is above the allowed maximum.';
+
+            return false;
         }
 
         return true;

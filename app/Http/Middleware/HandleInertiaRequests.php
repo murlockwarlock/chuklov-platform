@@ -26,6 +26,10 @@ class HandleInertiaRequests extends Middleware
 
         return [
             ...parent::share($request),
+            'flash' => [
+                'success' => fn (): ?string => $request->session()->get('success'),
+                'payout' => fn (): ?array => $this->payoutFeedback($request->session()->get('payout_feedback')),
+            ],
             'portal' => [
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
@@ -74,5 +78,24 @@ class HandleInertiaRequests extends Middleware
         return Client::query()
             ->where('organization_id', $organizationId)
             ->find((int) $clientId);
+    }
+
+    /** @return array<string, string|null>|null */
+    private function payoutFeedback(mixed $feedback): ?array
+    {
+        if (! is_array($feedback)
+            || ! is_string($feedback['message'] ?? null)
+            || ! is_string($feedback['amount'] ?? null)
+            || ! is_string($feedback['status'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'message' => $feedback['message'],
+            'amount' => $feedback['amount'],
+            'currency' => is_string($feedback['currency'] ?? null) ? $feedback['currency'] : null,
+            'status' => $feedback['status'],
+            'requested_at' => is_string($feedback['requested_at'] ?? null) ? $feedback['requested_at'] : null,
+        ];
     }
 }

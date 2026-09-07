@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiEvaluations;
 
+use App\Filament\Pages\AiEvaluationProgress;
 use App\Filament\Resources\AiEvaluations\Pages\CreateAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\EditAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\ListAiEvaluations;
@@ -9,13 +10,13 @@ use App\Filament\Resources\AiEvaluations\RelationManagers\CasesRelationManager;
 use App\Filament\Resources\AiEvaluations\RelationManagers\RunsRelationManager;
 use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
 use App\Models\User;
-use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\Jobs\RunEvaluationSuiteJob;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -23,15 +24,18 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
+use Livewire\Component;
 
 final class AiEvaluationResource extends Resource
 {
@@ -92,6 +96,18 @@ final class AiEvaluationResource extends Resource
                 TextColumn::make('capability')
                     ->label('Что проверяем')
                     ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
+                TextColumn::make('demo_status')
+                    ->label('Тип данных')
+                    ->state(fn (AiEvalSuite $record): string => str_starts_with($record->key, 'source_agent_')
+                        ? 'Демонстрационный тест · Синтетические данные'
+                        : 'Рабочая проверка')
+                    ->badge()
+                    ->color(fn (string $state): string => $state === 'Рабочая проверка' ? 'gray' : 'info'),
+                TextColumn::make('description')
+                    ->label('Описание')
+                    ->limit(80)
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('cases_count')->counts('cases')->label('Примеров')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('runs_count')->counts('runs')->label('Запусков')->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
@@ -131,24 +147,40 @@ final class AiEvaluationResource extends Resource
                             ->native(false)
                             ->required(),
                     ])
-                    ->action(function (AiEvalSuite $record, array $data, RunEvaluationSuite $runner) {
+                    ->action(function (AiEvalSuite $record, array $data, Component $livewire): void {
                         $user = Auth::user();
-                        if (! $user) {
+                        if (! $user instanceof User) {
                             return;
                         }
 
-                        $evalRun = $runner->handle(
-                            actor: $user,
-                            evalSuiteId: $record->id,
+                        $progressKey = (string) Str::uuid();
+                        $total = (int) $record->cases()->where('is_active', true)->count();
+                        Cache::put('ai-evaluation-progress:'.$progressKey, [
+                            'organization_id' => app(OrganizationContext::class)->id(),
+                            'status' => 'queued',
+                            'processed' => 0,
+                            'total' => $total,
+                            'passed' => 0,
+                            'failed' => 0,
+                            'failed_cases' => [],
+                        ], now()->addHours(4));
+                        RunEvaluationSuiteJob::dispatch(
+                            organizationId: app(OrganizationContext::class)->id(),
+                            actorId: $user->getKey(),
+                            evalSuiteId: $record->getKey(),
                             promptVersionId: (int) $data['prompt_version_id'],
                             modelReleaseId: (int) $data['model_release_id'],
+                            progressKey: $progressKey,
                         );
-
-                        Notification::make()
-                            ->title("Тестирование завершено: {$evalRun->passed_cases} из {$evalRun->total_cases} пройдено")
-                            ->color($evalRun->failed_cases > 0 ? 'warning' : 'success')
-                            ->send();
+                        $livewire->redirect(AiEvaluationProgress::getUrl(['progressKey' => $progressKey]));
                     }),
+            ])
+            ->filters([
+                SelectFilter::make('capability')
+                    ->label('Что проверяем')
+                    ->options(collect(AiCapability::cases())->mapWithKeys(
+                        fn (AiCapability $capability): array => [$capability->value => $capability->label()],
+                    )),
             ])
             ->emptyStateHeading('Проверок AI пока нет')
             ->emptyStateDescription('Создайте набор примеров, чтобы проверить качество ответов AI перед использованием нового промпта или модели.')
@@ -257,6 +289,7 @@ final class AiEvaluationResource extends Resource
         $release = AiModelRelease::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->whereKey((int) $value)
+            ->whereJsonContains('capabilities', $suite->capability->value)
             ->with(['modelConfiguration:id,display_name'])
             ->first(['id', 'model_config_id', 'provider_name', 'model_name', 'release_number', 'status']);
 

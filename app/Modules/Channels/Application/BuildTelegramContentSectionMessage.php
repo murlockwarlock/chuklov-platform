@@ -3,7 +3,6 @@
 namespace App\Modules\Channels\Application;
 
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
-use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
@@ -34,12 +33,12 @@ final class BuildTelegramContentSectionMessage
             : (RichTextDocument::telegramLength($body) <= RichTextDocument::TELEGRAM_CAPTION_LIMIT
                 ? NotificationMessageMode::ImageWithCaption
                 : NotificationMessageMode::ImageThenText);
-        $button = $section->delivery_mode === ContentDeliveryMode::Both
-            ? new NotificationActionButton(
-                text: $locale === 'ru' ? 'Открыть полностью' : 'Open full version',
-                url: $this->entries->launchUrl($section->section_key),
-            )
+        $webAppUrl = $section->delivery_mode === ContentDeliveryMode::Both
+            ? $this->entries->launchUrl($section->section_key)
             : null;
+        $webAppButtonText = $webAppUrl === null
+            ? null
+            : ($locale === 'ru' ? 'Открыть полностью' : 'Open full version');
         $updatedAt = $section->updated_at?->getTimestamp() ?? 0;
         $mediaStream = $includeMediaStream ? $this->images->resolveStream($section) : null;
         $mediaUrl = $includeMediaStream && $managedImage ? null : $previewImageUrl;
@@ -51,7 +50,8 @@ final class BuildTelegramContentSectionMessage
             locale: $locale,
             idempotencyKey: 'content:'.$section->getKey().':'.$recipientExternalId.':'.$updatedAt,
             mode: $mode,
-            actionButton: $button,
+            webAppUrl: $webAppUrl,
+            webAppButtonText: $webAppButtonText,
             mediaUrl: $mediaUrl,
             mediaStream: $mediaStream,
         );

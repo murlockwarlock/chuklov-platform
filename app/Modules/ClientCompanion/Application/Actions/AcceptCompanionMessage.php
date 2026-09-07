@@ -79,14 +79,15 @@ final class AcceptCompanionMessage
         $body = trim((string) $body);
         $attachments = $this->attachments($organizationId, $client, $attachmentIds);
         if ($body === '' && $attachments->isEmpty()) {
-            throw ValidationException::withMessages(['body' => 'Добавьте сообщение или изображение.']);
+            throw ValidationException::withMessages(['body' => 'Добавьте сообщение или вложение.']);
         }
         if (mb_strlen($body) > (int) config('ai.companion.maximum_message_characters', 8000)) {
             throw ValidationException::withMessages(['body' => 'Сообщение слишком длинное.']);
         }
         if ($attachments->isNotEmpty() && $body === '') {
-            $body = '[Изображение]';
+            $body = $this->attachmentPlaceholder($attachments);
         }
+        $inputModality = $this->inputModality($attachments);
 
         $requestHash = $payloadHash !== null && preg_match('/^[a-f0-9]{64}$/', $payloadHash) === 1
             ? $payloadHash
@@ -125,6 +126,7 @@ final class AcceptCompanionMessage
                 $inputFailureCode,
                 $imageReferenceMode,
                 $imageReferenceMessageId,
+                $inputModality,
             ): CompanionTurn {
                 $lockedConversation = Conversation::query()
                     ->where('organization_id', $organizationId)
@@ -211,7 +213,7 @@ final class AcceptCompanionMessage
                     contextEpoch: (int) $lockedConversation->context_epoch,
                     metadata: [
                         'chat_type' => $channel === 'telegram' ? 'private' : 'portal',
-                        'message_type' => $attachments->isNotEmpty() ? 'image' : 'text',
+                        'message_type' => $inputModality,
                         'attachment_count' => $attachments->count(),
                         'media_group_id' => $mediaGroupId,
                         'source_ordinal' => $sourceOrdinal,
@@ -352,7 +354,7 @@ final class AcceptCompanionMessage
                     'album_assembly_deadline_at' => $albumAssemblyDeadlineAt,
                     'burst_message_count' => 0,
                     'burst_text_characters' => 0,
-                    'input_modality' => $attachments->isNotEmpty() ? 'image' : 'text',
+                    'input_modality' => $this->inputModality($attachments),
                     'image_reference_mode' => $imageReferenceMode,
                     'media_group_id' => $mediaGroupId,
                     'input_item_count' => 0,
@@ -416,7 +418,10 @@ final class AcceptCompanionMessage
         $attachments = MedicalAttachment::query()
             ->where('organization_id', $organizationId)
             ->where('client_id', $client->getKey())
-            ->where('attachment_type', AttachmentType::CompanionImage)
+            ->whereIn('attachment_type', [
+                AttachmentType::CompanionImage,
+                AttachmentType::CompanionDocument,
+            ])
             ->whereIn('id', $attachmentIds)
             ->get()
             ->sortBy(static function (MedicalAttachment $attachment) use ($attachmentIds): int {
@@ -426,10 +431,10 @@ final class AcceptCompanionMessage
             })
             ->values();
         if ($attachments->count() !== count($attachmentIds)) {
-            throw ValidationException::withMessages(['images' => 'Изображение недоступно для обработки.']);
+            throw ValidationException::withMessages(['attachments' => 'Вложение недоступно для обработки.']);
         }
         if ((int) $attachments->sum('size_bytes') > (int) config('ai.companion.maximum_image_total_bytes', 20_971_520)) {
-            throw ValidationException::withMessages(['images' => 'Изображения слишком большие. Отправьте меньше или меньшего размера.']);
+            throw ValidationException::withMessages(['attachments' => 'Вложения слишком большие. Отправьте меньше или меньшего размера.']);
         }
 
         return $attachments;
@@ -506,6 +511,56 @@ final class AcceptCompanionMessage
     }
 
     /** @param Collection<int, MedicalAttachment> $attachments */
+    private function inputModality(Collection $attachments): string
+    {
+        $hasImage = $attachments->contains(
+            static fn (MedicalAttachment $attachment): bool => $attachment->attachment_type === AttachmentType::CompanionImage,
+        );
+        $hasDocument = $attachments->contains(
+            static fn (MedicalAttachment $attachment): bool => $attachment->attachment_type === AttachmentType::CompanionDocument,
+        );
+
+        return match (true) {
+            $hasImage && $hasDocument => 'mixed',
+            $hasDocument => 'document',
+            $hasImage => 'image',
+            default => 'text',
+        };
+    }
+
+    /** @param Collection<int, MedicalAttachment> $attachments */
+    private function mergedInputModality(?string $currentModality, Collection $attachments): string
+    {
+        if ($attachments->isEmpty()) {
+            return (string) ($currentModality ?: 'text');
+        }
+
+        $newModality = $this->inputModality($attachments);
+        $currentModality = (string) ($currentModality ?: 'text');
+        if ($currentModality === 'text') {
+            return $newModality;
+        }
+        if ($newModality === 'text' || $currentModality === $newModality) {
+            return $currentModality;
+        }
+        if ($currentModality === 'mixed' || $newModality === 'mixed') {
+            return 'mixed';
+        }
+
+        return 'mixed';
+    }
+
+    /** @param Collection<int, MedicalAttachment> $attachments */
+    private function attachmentPlaceholder(Collection $attachments): string
+    {
+        return match ($this->inputModality($attachments)) {
+            'document' => '[Документ]',
+            'mixed' => '[Вложения]',
+            default => '[Изображение]',
+        };
+    }
+
+    /** @param Collection<int, MedicalAttachment> $attachments */
     private function addToTurn(
         int $organizationId,
         Client $client,
@@ -551,7 +606,7 @@ final class AcceptCompanionMessage
             'burst_message_count' => $sequence,
             'burst_text_characters' => (int) $turn->burst_text_characters + mb_strlen($body),
             'burst_expires_at' => $burstExpiresAt,
-            'input_modality' => $attachments->isNotEmpty() ? 'image' : $turn->input_modality,
+            'input_modality' => $this->mergedInputModality($turn->input_modality, $attachments),
             'input_item_count' => (int) $turn->input_item_count + $attachments->count(),
             'input_total_bytes' => (int) $turn->input_total_bytes + (int) $attachments->sum('size_bytes'),
             'input_failure_code' => $assemblyBoundReached

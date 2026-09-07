@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ExecuteAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
@@ -12,6 +13,7 @@ use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -341,6 +343,55 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($attempt);
         $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
         $this->assertNotNull($attempt->settled_estimated_cost_minor_units);
+    }
+
+    public function test_active_prompt_version_is_the_only_model_instruction_source(): void
+    {
+        DynamicWorkflowAgent::fake([
+            ['decision' => 'reply', 'reply' => 'Первый ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ['decision' => 'reply', 'reply' => 'Второй ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+        ])->preventStrayPrompts();
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $firstVersion = $prompt->activeVersion()->sole();
+        $firstVersion->update(['system_prompt' => 'Первая CRM-инструкция: {{query}}']);
+
+        $engine = app(AiWorkflowEngine::class);
+        $firstResult = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'sole_prompt_source_first',
+            inputVariables: ['query' => 'первый запуск'],
+        ));
+
+        $secondVersion = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 2,
+            'status' => 'draft',
+            'system_prompt' => 'Вторая CRM-инструкция: {{query}}',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => false],
+            'allowed_tools' => [],
+        ]);
+        app(ActivatePromptVersion::class)->handle($this->user, $secondVersion->id);
+        $secondResult = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'sole_prompt_source_second',
+            inputVariables: ['query' => 'второй запуск'],
+        ));
+
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $firstPayload = AiRunPayload::query()->where('ai_run_id', $firstResult->runId)->sole();
+        $secondPayload = AiRunPayload::query()->where('ai_run_id', $secondResult->runId)->sole();
+        $firstInstructions = $encryptor->decryptField($this->organization->id, $firstPayload->encrypted_system_prompt, $firstPayload->encryption_key_version);
+        $secondInstructions = $encryptor->decryptField($this->organization->id, $secondPayload->encrypted_system_prompt, $secondPayload->encryption_key_version);
+
+        self::assertSame('Первая CRM-инструкция: первый запуск', $firstInstructions);
+        self::assertSame('Вторая CRM-инструкция: второй запуск', $secondInstructions);
+        self::assertStringNotContainsString('SYSTEM-OWNED SAFETY POLICY', $firstInstructions);
+        self::assertStringNotContainsString('SYSTEM-OWNED SAFETY POLICY', $secondInstructions);
+        self::assertSame($firstVersion->id, AiRun::query()->findOrFail($firstResult->runId)->prompt_version_id);
+        self::assertSame($secondVersion->id, AiRun::query()->findOrFail($secondResult->runId)->prompt_version_id);
     }
 
     public function test_provider_reported_usage_and_immutable_pricing_drive_persisted_provenance(): void
@@ -768,7 +819,6 @@ class AiWorkflowEngineTest extends TestCase
 
     public function test_no_configured_candidate_fails_closed_without_provider_call(): void
     {
-        // No enabled model candidate in database!
         /** @var AiWorkflowEngine $engine */
         $engine = app(AiWorkflowEngine::class);
 
@@ -778,8 +828,69 @@ class AiWorkflowEngineTest extends TestCase
             inputVariables: ['query' => 'Hello'],
         );
 
-        $this->expectException(AiProviderUnavailableException::class);
-        $engine->run($this->organization->id, $request);
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('A missing execution candidate must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertTrue($exception->configurationMissing);
+        }
+
+        self::assertSame(
+            AiErrorCategory::ConfigurationMissing,
+            AiRun::query()->where('workflow_key', 'no_candidate_test')->latest('id')->first()?->error_category,
+        );
+    }
+
+    public function test_unavailable_provider_is_not_misclassified_as_missing_configuration(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $provider = $model->providerConfiguration;
+        self::assertNotNull($provider);
+        $provider->update(['health_status' => ProviderHealthStatus::Unavailable]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'unavailable_provider_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('An unavailable provider must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertFalse($exception->configurationMissing);
+        }
+    }
+
+    public function test_disabled_provider_is_not_misclassified_as_missing_configuration(): void
+    {
+        $model = $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $provider = $model->providerConfiguration;
+        self::assertNotNull($provider);
+        $provider->update(['is_enabled' => false]);
+
+        /** @var AiWorkflowEngine $engine */
+        $engine = app(AiWorkflowEngine::class);
+        $request = new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'disabled_provider_test',
+            inputVariables: ['query' => 'Hello'],
+        );
+
+        try {
+            $engine->run($this->organization->id, $request);
+            self::fail('A disabled provider must fail closed.');
+        } catch (AiProviderUnavailableException $exception) {
+            self::assertFalse($exception->configurationMissing);
+            self::assertTrue($exception->providerDisabled);
+        }
+
+        self::assertSame(
+            AiErrorCategory::ProviderDisabled,
+            AiRun::query()->where('workflow_key', 'disabled_provider_test')->latest('id')->first()?->error_category,
+        );
     }
 
     public function test_rag_context_uses_actual_retrieved_content_not_source_reference(): void

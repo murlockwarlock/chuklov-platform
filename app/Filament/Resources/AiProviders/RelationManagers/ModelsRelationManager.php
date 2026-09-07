@@ -61,6 +61,7 @@ class ModelsRelationManager extends RelationManager
             ->components([
                 Select::make('model_selection')
                     ->label('Модель')
+                    ->helperText('Рядом с каждой моделью указано, принимает ли она текст, изображения и PDF/документы. Это отдельно от рабочих задач Chuklov ниже.')
                     ->options(fn (?AiModelConfiguration $record): array => AiModelCatalog::optionsForProvider(
                         $provider->provider_name,
                         $record?->model_name,
@@ -112,15 +113,19 @@ class ModelsRelationManager extends RelationManager
                     ->native(false)
                     ->required(),
                 Placeholder::make('supported_inputs')
-                    ->label('Поддерживает модель')
+                    ->label('Что модель принимает')
                     ->content(fn (Get $get, ?AiModelConfiguration $record): string => self::supportedInputs($provider, $get('model_selection'), $record))
-                    ->helperText('Это технические возможности модели из каталога. Ниже отдельно выберите, для каких задач Chuklov её использовать.')
+                    ->helperText('Это реальные форматы входа выбранной модели. Раздел «Задачи Chuklov» ниже не добавляет модели поддержку PDF или изображений.')
                     ->columnSpanFull(),
                 CheckboxList::make('capabilities')
-                    ->label('Использовать для')
+                    ->label('Задачи Chuklov')
                     ->options(self::capabilityOptions())
-                    ->helperText('Выбор определяет, какие рабочие сценарии могут направлять запросы в эту модель.')
+                    ->helperText('Выберите рабочие сценарии для маршрутизации запросов. Это не список форматов файлов и не подтверждение поддержки PDF.')
                     ->columns(2)
+                    ->columnSpanFull(),
+                Placeholder::make('capability_compatibility')
+                    ->label('Проверка выбора')
+                    ->content(fn (Get $get, ?AiModelConfiguration $record): string => self::capabilityCompatibility($provider, $get, $record))
                     ->columnSpanFull(),
                 Placeholder::make('pricing_source')
                     ->label('Стоимость')
@@ -148,9 +153,15 @@ class ModelsRelationManager extends RelationManager
                     ->label('Модель включена')
                     ->default(false),
                 Section::make('Расширенные настройки стоимости и входных данных')
-                    ->description('Используйте этот раздел, если провайдер взимает дополнительную плату или у ручной модели есть особые типы входных данных.')
+                    ->description('Для каталожных моделей типы входа указаны выше. Для ручной модели отметьте только форматы, которые реально принимает выбранная модель.')
                     ->collapsed()
                     ->schema([
+                        Placeholder::make('provider_input_limit')
+                            ->label('Ограничения адаптера провайдера')
+                            ->content(fn (): string => self::providerInputLimit($provider))
+                            ->helperText('Это верхняя граница для ручной модели. Конкретная модель может поддерживать меньше — проверьте её документацию.')
+                            ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
+                            ->columnSpanFull(),
                         TextInput::make('cache_read_input_cost_per_million')
                             ->label('Чтение из кеша')
                             ->prefix('$')
@@ -196,7 +207,7 @@ class ModelsRelationManager extends RelationManager
                                 ? (string) ($state ?? '')
                                 : implode(', ', $record->getPricingSnapshot()->unsupportedMeters)),
                         CheckboxList::make('model_modalities')
-                            ->label('Типы входных данных для ручной модели')
+                            ->label('Типы входных данных ручной модели')
                             ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => $modality->label()])->all())
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): array => $record === null
                                 ? (is_array($state) ? $state : [])
@@ -205,7 +216,7 @@ class ModelsRelationManager extends RelationManager
                                     array_map(fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()),
                                 )))
                             ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
-                            ->helperText('Для модели из каталога эти возможности определяются автоматически.')
+                            ->helperText('Для модели из каталога эти возможности определяются автоматически. Для ручной модели сначала проверьте документацию провайдера.')
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
@@ -421,11 +432,59 @@ class ModelsRelationManager extends RelationManager
             $definition = AiModelCatalog::find($provider->provider_name, $record->model_name);
         }
 
-        $inputs = $definition === null ? [] : AiModelCatalog::humanSupportedInputs($definition);
+        return $definition === null
+            ? 'Ручная модель: поддержка входных данных не подтверждена. Проверьте документацию провайдера и укажите форматы в дополнительных настройках.'
+            : AiModelCatalog::humanInputSupportSummary($definition);
+    }
 
-        return $inputs === []
-            ? 'Возможности не указаны. Для ручной модели настройте типы входных данных в дополнительных настройках.'
-            : implode(' · ', array_map(static fn (string $input): string => '✓ '.$input, $inputs));
+    private static function capabilityCompatibility(
+        AiProviderConfiguration $provider,
+        Get $get,
+        ?AiModelConfiguration $record,
+    ): string {
+        $definition = self::definition($provider, $get('model_selection'), $record);
+        if ($definition === null) {
+            return 'Для ручной модели задачи не подтверждают поддержку файлов. Сначала укажите реальные типы входных данных в дополнительных настройках.';
+        }
+
+        $selectedCapabilities = (array) $get('capabilities');
+        $modalities = array_map(
+            static fn (AiModelModality $modality): string => $modality->value,
+            $definition->modalities,
+        );
+        $warnings = [];
+
+        if (in_array(AiCapability::ClinicalDocumentExtraction->value, $selectedCapabilities, true)
+            && ! in_array(AiModelModality::DocumentInput->value, $modalities, true)) {
+            $warnings[] = 'Извлечение клинических документов выбрано, но эта модель не принимает PDF/документы напрямую.';
+        }
+
+        if (in_array(AiCapability::PostureAnalysis->value, $selectedCapabilities, true)
+            && ! in_array(AiModelModality::ImageInput->value, $modalities, true)) {
+            $warnings[] = 'Анализ фото выбран, но эта модель не принимает изображения напрямую.';
+        }
+
+        return $warnings === []
+            ? 'Выбор задач не расширяет список входных форматов модели. Для этой модели несовместимость с выбранными задачами не обнаружена.'
+            : implode(' ', $warnings).' Выберите модель с нужной поддержкой входных данных.';
+    }
+
+    private static function providerInputLimit(AiProviderConfiguration $provider): string
+    {
+        $modalities = AiProviderCatalog::modalities($provider->provider_name);
+        $labels = [];
+
+        if (in_array(AiModelModality::ImageInput->value, $modalities, true)) {
+            $labels[] = 'изображения';
+        }
+
+        if (in_array(AiModelModality::DocumentInput->value, $modalities, true)) {
+            $labels[] = 'PDF/документы';
+        }
+
+        return $labels === []
+            ? 'Только текстовые входы.'
+            : 'Текст и '.implode(', ', $labels).'.';
     }
 
     private static function pricingSource(

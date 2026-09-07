@@ -26,6 +26,9 @@ final readonly class AiEvaluationCaseResult
         public ?int $modelReleaseId = null,
         public ?string $actualProvider = null,
         public ?string $actualModel = null,
+        public array $testInputs = [],
+        public array $expectedAssertions = [],
+        public ?string $actualOutput = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -46,6 +49,9 @@ final readonly class AiEvaluationCaseResult
             'model_release_id' => $this->modelReleaseId,
             'actual_provider' => $this->actualProvider,
             'actual_model' => $this->actualModel,
+            'test_inputs' => $this->testInputs,
+            'expected_assertions' => $this->expectedAssertions,
+            'actual_output' => $this->actualOutput,
         ];
     }
 }

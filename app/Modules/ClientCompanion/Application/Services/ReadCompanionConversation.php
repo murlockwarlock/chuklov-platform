@@ -63,7 +63,8 @@ final class ReadCompanionConversation
                 'hasOlder' => false,
                 'nextBeforeMessageId' => null,
                 'state' => 'ai_active',
-                'stateLabel' => 'AI-помощник активен',
+                'stateLabel' => 'AI отвечает',
+                'mode' => 'ai_active',
                 'pending' => false,
                 'canReinspectRecentImages' => false,
                 'openEscalation' => null,
@@ -206,6 +207,20 @@ final class ReadCompanionConversation
             ->where('status', 'open')
             ->latest('opened_at')
             ->first();
+        $latestMessage = ConversationMessage::query()
+            ->where('organization_id', $organizationId)
+            ->where('conversation_id', $conversation->getKey())
+            ->latest('occurred_at')
+            ->latest('id')
+            ->first(['author_type']);
+        $mode = $conversation->automation_state->value !== 'human_handoff'
+            ? 'ai_active'
+            : ($latestMessage?->author_type === ConversationAuthorType::Staff ? 'staff_active' : 'waiting_for_staff');
+        $modeLabel = match ($mode) {
+            'staff_active' => 'Специалист отвечает',
+            'waiting_for_staff' => 'Ожидает специалиста',
+            default => 'AI отвечает',
+        };
         $pending = CompanionTurn::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
@@ -226,9 +241,8 @@ final class ReadCompanionConversation
             'hasOlder' => $hasOlder,
             'nextBeforeMessageId' => $hasOlder ? $oldestMessage?->getKey() : null,
             'state' => $conversation->automation_state->value,
-            'stateLabel' => $conversation->automation_state->value === 'human_handoff'
-                ? 'AI временно приостановлен'
-                : 'AI-помощник активен',
+            'stateLabel' => $modeLabel,
+            'mode' => $mode,
             'pending' => $pending,
             'canReinspectRecentImages' => $canReinspectRecentImages,
             'openEscalation' => $openEscalation === null ? null : [

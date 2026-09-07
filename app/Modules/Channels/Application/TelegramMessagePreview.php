@@ -56,9 +56,14 @@ final class TelegramMessagePreview
             }
         }
 
-        $actionButton = $message->actionButton === null
-            ? null
-            : ['text' => $message->actionButton->text, 'url' => $message->actionButton->url];
+        $actionButton = $message->actionButton !== null
+            ? ['text' => $message->actionButton->text, 'url' => $message->actionButton->url]
+            : ($message->webAppUrl === null
+                ? null
+                : [
+                    'text' => $message->webAppButtonText ?? ($message->locale === 'ru' ? 'Оценить визит' : 'Rate your visit'),
+                    'url' => $message->webAppUrl,
+                ]);
 
         return [
             'mode' => $message->mode->value,

@@ -452,6 +452,8 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'post-session-follow-up-48h:ru',
             'post-session-follow-up-72h:en',
             'post-session-follow-up-72h:ru',
+            'referral-invite:en',
+            'referral-invite:ru',
         ], NotificationTemplate::query()
             ->where('organization_id', $organization->id)
             ->where('template_key', 'not like', 'appointment-reminder-%')

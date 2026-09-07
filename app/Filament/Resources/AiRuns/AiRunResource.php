@@ -53,6 +53,7 @@ final class AiRunResource extends Resource
                 TextColumn::make('status')
                     ->label('Статус')
                     ->badge()
+                    ->wrap()
                     ->color(fn ($state): string => match ($state instanceof AiRunStatus ? $state->value : (string) $state) {
                         'succeeded' => 'success',
                         'running' => 'info',
@@ -65,6 +66,7 @@ final class AiRunResource extends Resource
                 TextColumn::make('human_review_status')
                     ->label('Проверка')
                     ->badge()
+                    ->wrap()
                     ->color(fn ($state): string => match ($state instanceof HumanReviewStatus ? $state->value : (string) $state) {
                         'accepted' => 'success',
                         'pending_review' => 'warning',

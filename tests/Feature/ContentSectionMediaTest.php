@@ -243,8 +243,9 @@ final class ContentSectionMediaTest extends TestCase
 
         self::assertSame(NotificationMessageMode::ImageWithCaption, $message->mode);
         self::assertSame('https://cdn.example.test/partner.jpg', $message->mediaUrl);
-        self::assertNotNull($message->actionButton);
-        self::assertSame('Открыть полностью', $message->actionButton?->text);
+        self::assertSame('Открыть полностью', $message->webAppButtonText);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/partner', $message->webAppUrl);
+        self::assertNull($message->actionButton);
         self::assertSame('image_caption', $preview['mode']);
         self::assertStringContainsString('<b>Партнёры</b>', $preview['bodyHtml']);
         self::assertStringContainsString('😀 ❤️', $preview['bodyHtml']);

@@ -119,6 +119,11 @@ class CasesRelationManager extends RelationManager
         return $table
             ->columns([
                 TextColumn::make('name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('is_synthetic')
+                    ->label('Тип данных')
+                    ->badge()
+                    ->formatStateUsing(fn (bool $state): string => $state ? 'Синтетические данные' : 'Обезличенные данные')
+                    ->color(fn (bool $state): string => $state ? 'info' : 'warning'),
                 TextColumn::make('is_active')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Активен' : 'Отключен'),
                 TextColumn::make('created_at')->label('Создан')->dateTime('d.m.Y H:i'),
             ])

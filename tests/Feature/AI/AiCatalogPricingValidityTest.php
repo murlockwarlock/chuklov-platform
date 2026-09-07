@@ -438,6 +438,39 @@ final class AiCatalogPricingValidityTest extends TestCase
         self::assertFalse(AiModelCatalog::pricingIsStale('gemini', 'gemini-3.7-flash', $gemini->pricing));
     }
 
+    public function test_deepseek_vision_catalog_has_bounded_optional_meter_rates(): void
+    {
+        $definition = AiModelCatalog::find('deepseek', 'deepseek-v4-flash-vision-exp');
+
+        self::assertNotNull($definition?->pricing);
+        self::assertSame(0, $definition->pricing->cacheWriteRatePerMillionUnits());
+        self::assertSame(0, $definition->pricing->reasoningRatePerMillionUnits());
+        self::assertGreaterThan(0, $definition->pricing->calculateCostMinorUnits(
+            promptTokens: 12_288,
+            completionTokens: 4_096,
+            cacheReadInputTokens: 16_384,
+            cacheWriteInputTokens: 16_384,
+            reasoningTokens: 4_096,
+            providerRequests: 1,
+        ));
+    }
+
+    public function test_deepseek_flash_catalog_has_a_bounded_reasoning_meter_rate(): void
+    {
+        $definition = AiModelCatalog::find('deepseek', 'deepseek-v4-flash');
+
+        self::assertNotNull($definition?->pricing);
+        self::assertSame(0, $definition->pricing->cacheWriteRatePerMillionUnits());
+        self::assertSame(0, $definition->pricing->reasoningRatePerMillionUnits());
+        self::assertGreaterThan(0, $definition->pricing->calculateCostMinorUnits(
+            promptTokens: 12_288,
+            completionTokens: 4_096,
+            cacheWriteInputTokens: 4_096,
+            reasoningTokens: 4_096,
+            providerRequests: 1,
+        ));
+    }
+
     public function test_gemini_flash_scheduled_price_change_resolves_at_the_effective_boundary(): void
     {
         config()->set('ai.model_catalog', $this->defaultCatalog());

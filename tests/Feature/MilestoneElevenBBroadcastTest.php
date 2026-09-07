@@ -151,6 +151,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
     {
         [$organization, $actor] = $this->fixture();
         $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $client->forceFill(['full_name' => 'Broadcast recipient'])->save();
         $data = $this->campaignData([]);
         $data['audience_type'] = 'selected';
         $data['selected_client_ids'] = [$client->getKey()];
@@ -176,6 +177,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
     {
         [$organization, $actor] = $this->fixture();
         $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $client->forceFill(['full_name' => 'Broadcast recipient'])->save();
         $data = $this->campaignData([]);
         $data['audience_type'] = 'selected';
         $data['selected_client_ids'] = [$client->getKey()];

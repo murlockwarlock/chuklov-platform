@@ -20,7 +20,9 @@ use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Services\Domain\Models\Service;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Log;
@@ -396,6 +398,49 @@ final class FinancePresentation
         return $summary === null
             ? null
             : FinancialObligationResource::getUrl('view', ['record' => $summary->obligation->getKey()]);
+    }
+
+    public function bookingPaymentReadiness(Booking $booking): ?string
+    {
+        if ($this->bookingSummary($booking) !== null) {
+            return null;
+        }
+
+        $booking->loadMissing('service');
+        $reasons = [];
+        $status = BookingStatus::tryFrom((string) $booking->getRawOriginal('status'));
+
+        if ($status !== BookingStatus::Completed) {
+            $reasons[] = 'Сначала завершите визит.';
+        }
+
+        $service = $booking->getRelationValue('service');
+
+        if (! $service instanceof Service || $service->price_minor === null || $service->price_minor <= 0) {
+            $reasons[] = 'Для услуги не настроена положительная цена.';
+        } else {
+            try {
+                $currency = $this->catalog->code((string) $service->price_currency);
+
+                if (! in_array($currency, $this->configuration->allowedCurrencies($this->context->id()), true)) {
+                    $reasons[] = 'В настройках финансов не разрешена валюта услуги.';
+                }
+            } catch (InvalidArgumentException) {
+                $reasons[] = 'В настройках финансов не настроена валюта услуги.';
+            }
+
+            try {
+                $this->configuration->configuration($this->context->id());
+            } catch (ModelNotFoundException) {
+                $reasons[] = 'Финансовые настройки организации не завершены.';
+            }
+        }
+
+        if ($reasons === []) {
+            $reasons[] = 'Финансовый расчёт ещё не создан.';
+        }
+
+        return implode(' ', $reasons).' После выполнения условий действие «Записать оплату» появится в действиях записи.';
     }
 
     public function clientFinanceUrl(Client $client): string

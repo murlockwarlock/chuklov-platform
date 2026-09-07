@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\RenderedNotification;
@@ -17,8 +18,16 @@ final class ScenarioTemplateRenderer implements NotificationTemplateRenderer
         $variables = array_values(array_filter(array_map('strval', $template->variables)));
         $body = $this->renderString($template->body, $variables, $context);
         $subject = $template->subject === null ? null : $this->renderString($template->subject, $variables, $context);
+        $mode = $template->delivery_mode ?? NotificationMessageMode::Text;
 
-        return new RenderedNotification($body, $subject, $locale);
+        return new RenderedNotification(
+            body: $body,
+            subject: $subject,
+            locale: $locale,
+            mode: $mode,
+            showCaptionAboveMedia: $template->caption_position === 'above',
+            media: $template->media,
+        );
     }
 
     /**
@@ -40,6 +49,10 @@ final class ScenarioTemplateRenderer implements NotificationTemplateRenderer
 
                 if (! is_scalar($value) && $value !== null) {
                     throw new InvalidArgumentException('The notification template variable value is invalid.');
+                }
+
+                if ($variable === 'referral_link' && (! is_string($value) || trim($value) === '')) {
+                    throw new InvalidArgumentException('The referral link is unavailable for this recipient.');
                 }
 
                 return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

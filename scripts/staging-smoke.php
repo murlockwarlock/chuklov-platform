@@ -13,6 +13,7 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Application;
@@ -416,6 +417,16 @@ function queueSnapshotCheck(): void
     printf("B2B_QUEUE_PROBE=%s\n", json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 }
 
+/** @param list<string> $markers */
+function assertHttpMarkers(string $label, string $body, array $markers): void
+{
+    foreach ($markers as $marker) {
+        if (! str_contains($body, $marker)) {
+            fail($label, 'human-facing marker is missing: '.$marker);
+        }
+    }
+}
+
 function httpCheck(string $check, int $userId, int $clientId): void
 {
     [$app, $kernel] = bootstrapApplication(true);
@@ -425,33 +436,56 @@ function httpCheck(string $check, int $userId, int $clientId): void
     $session->start();
     $session->put('_token', bin2hex(random_bytes(20)));
     $paths = [
-        'crm-home' => ['CRM HOME', '/admin'],
-        'clients' => ['CLIENTS', '/admin/clients'],
-        'client-card' => ['CLIENT CARD', '/admin/clients/'.$client->getKey()],
-        'sessions' => ['SESSIONS', '/admin/clients/'.$client->getKey().'/sessions'],
-        'survey-definitions' => ['SURVEY DEFINITIONS', '/admin/survey-definitions'],
-        'survey-attempts' => ['SURVEY ATTEMPTS', '/admin/survey-attempts'],
-        'knowledge-sources' => ['KNOWLEDGE SOURCES', '/admin/knowledge-sources'],
-        'knowledge-inspector' => ['KNOWLEDGE INSPECTOR', '/admin/knowledge-retrieval-inspector'],
-        'portal' => ['PORTAL', '/'],
+        'crm-home' => ['CRM HOME', '/admin', []],
+        'clients' => ['CLIENTS', '/admin/clients', []],
+        'client-card' => ['CLIENT CARD', '/admin/clients/'.$client->getKey(), ['Клинический AI']],
+        'partner-profiles' => ['PARTNERS', '/admin/referral-partner-profiles', ['Партнёры']],
+        'referral-payout-requests' => ['REFERRAL PAYOUT REQUESTS', '/admin/referral-payout-requests', ['Запросы выплат']],
+        'financial-obligations' => ['FINANCIAL OBLIGATIONS', '/admin/financial-obligations', ['Оплаты']],
+        'finance-configuration' => ['FINANCE CONFIGURATION', '/admin/finance-configuration', ['Настройки валют']],
+        'partner-client-actions' => ['PARTNER CLIENT ACTIONS', null, []],
+        'sessions' => ['SESSIONS', '/admin/clients/'.$client->getKey().'/sessions', []],
+        'survey-definitions' => ['SURVEY DEFINITIONS', '/admin/survey-definitions', []],
+        'survey-attempts' => ['SURVEY ATTEMPTS', '/admin/survey-attempts', []],
+        'knowledge-sources' => ['KNOWLEDGE SOURCES', '/admin/knowledge-sources', []],
+        'knowledge-inspector' => ['KNOWLEDGE INSPECTOR', '/admin/knowledge-retrieval-inspector', []],
+        'portal' => ['PORTAL', '/', []],
     ];
     if (! isset($paths[$check])) {
         fail('HTTP CHECK', 'unknown check');
     }
-    [$label, $path] = $paths[$check];
+    [$label, $path, $markers] = $paths[$check];
+    if ($check === 'partner-client-actions') {
+        $partnerProfile = ReferralPartnerProfile::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('status', 'active')
+            ->first();
+        if ($partnerProfile instanceof ReferralPartnerProfile) {
+            $path = '/admin/clients/'.$partnerProfile->client_id;
+            $markers = ['Открыть партнёрский кабинет', 'Указать, кто пригласил'];
+        } else {
+            $path = '/admin/clients/'.$client->getKey();
+            $markers = ['Сделать партнёром', 'Указать, кто пригласил'];
+        }
+    }
     if ($check === 'portal') {
         $session->put('client_portal.client_id', $client->getKey());
     } else {
         Auth::login($actor);
     }
+    if (! is_string($path)) {
+        fail($label, 'route path is not configured');
+    }
     $request = Request::create('https://crm.psysoldatov.ru'.$path, 'GET');
     $request->setLaravelSession($session);
     $response = $kernel->handle($request);
     $status = $response->getStatusCode();
+    $body = (string) $response->getContent();
     $kernel->terminate($request, $response);
     if ($status !== 200) {
         fail($label, 'HTTP status '.$status);
     }
+    assertHttpMarkers($label, $body, $markers);
     ok($label);
 }
 

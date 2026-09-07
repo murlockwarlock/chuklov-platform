@@ -5,6 +5,7 @@ namespace App\Modules\AI\Application\Actions;
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiEvaluationCaseResult;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Evaluations\ControlledPostureFixtureRepository;
 use App\Modules\AI\Application\Services\AiEvaluationRunMetricsAggregator;
 use App\Modules\AI\Application\Services\AiEvaluationSnapshotHasher;
 use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
@@ -14,6 +15,7 @@ use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiEvaluationCaseStatus;
 use App\Modules\AI\Domain\Enums\AiEvaluationCheckCategory;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiEvalCase;
@@ -33,6 +35,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
+use Closure;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -47,6 +50,7 @@ final class RunEvaluationSuite
         private readonly AiEvaluationRunMetricsAggregator $metricsAggregator,
         private readonly AiEvaluationSnapshotHasher $snapshotHasher,
         private readonly RecordAuditEvent $audit,
+        private readonly ControlledPostureFixtureRepository $postureFixtures,
     ) {}
 
     public function handle(
@@ -54,6 +58,7 @@ final class RunEvaluationSuite
         int $evalSuiteId,
         int $promptVersionId,
         ?int $modelReleaseId = null,
+        ?Closure $progress = null,
     ): AiEvalRun {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiPrompts);
@@ -153,26 +158,44 @@ final class RunEvaluationSuite
             $this->privacyValidator->validate((array) $case->expected_assertions);
             $assertionsByCase[$case->getKey()] = $this->assertionRegistry->normalize((array) $case->expected_assertions);
             if ($case->expected_output_schema !== null) {
-                $this->privacyValidator->validate((array) $case->expected_output_schema);
+                $this->privacyValidator->validateOutputSchema((array) $case->expected_output_schema);
                 $this->assertionRegistry->validateSchema((array) $case->expected_output_schema);
             }
         }
 
-        if ($suite->capability === AiCapability::PostureAnalysis) {
-            throw new InvalidArgumentException('PostureAnalysis evaluation requires a controlled three-photo fixture.');
-        }
-
         $executions = [];
+        $controlledFixturesByCase = [];
         foreach ($cases as $case) {
+            $inputReferences = [];
+            $clientId = null;
+            $requiredModalities = [];
+            if ($suite->capability === AiCapability::PostureAnalysis) {
+                $fixture = $this->postureFixtures->ensure(
+                    organization: $organization,
+                    actor: $actor,
+                    key: "ai-eval:{$suite->getKey()}:{$case->getKey()}",
+                );
+                $controlledFixturesByCase[$case->getKey()] = [
+                    'key' => $fixture['key'],
+                    'roles' => $fixture['roles'],
+                ];
+                $inputReferences = $fixture['references'];
+                $clientId = $fixture['client_id'];
+                $requiredModalities = [AiModelModality::ImageInput];
+            }
+
             $result = $this->workflowEngine->run($organization->getKey(), new AiRunRequest(
                 capability: $suite->capability,
                 workflowKey: "eval_suite_{$suite->key}_case_{$case->id}",
                 origin: AiRunOrigin::Evaluation,
                 executionMode: AiExecutionMode::Evaluation,
                 initiatedByUserId: $actor->getKey(),
+                clientId: $clientId,
                 promptVersionId: $promptVersion->id,
                 modelReleaseId: $release->id,
                 inputVariables: $case->test_inputs ?? [],
+                inputReferences: $inputReferences,
+                requiredModalities: $requiredModalities,
                 actor: $actor,
             ));
             $executions[] = [
@@ -319,7 +342,13 @@ final class RunEvaluationSuite
                 modelReleaseId: $actualRun?->model_release_id,
                 actualProvider: $actualRun?->actual_provider,
                 actualModel: $actualRun?->actual_model,
+                testInputs: (array) $case->test_inputs,
+                expectedAssertions: $execution['assertions'],
+                actualOutput: $status->isPassed() ? null : mb_substr((string) $result->outputText, 0, 4000),
             );
+            if ($progress !== null) {
+                $progress($caseResults[count($caseResults) - 1], count($caseResults), count($executions));
+            }
         }
 
         $totalCases = count($caseResults);
@@ -328,7 +357,15 @@ final class RunEvaluationSuite
         $metrics = $this->metricsAggregator->aggregate($organization->getKey(), $actualRuns, $caseResults);
         $columns = $this->metricsAggregator->columns($metrics);
         $executedAt = Carbon::now()->toIso8601String();
-        $provenanceSnapshot = $this->provenanceSnapshot($suite, $cases, $promptVersion, $release, $assertionsByCase, $executedAt);
+        $provenanceSnapshot = $this->provenanceSnapshot(
+            suite: $suite,
+            cases: $cases,
+            promptVersion: $promptVersion,
+            release: $release,
+            assertionsByCase: $assertionsByCase,
+            executedAt: $executedAt,
+            controlledFixturesByCase: $controlledFixturesByCase,
+        );
 
         $evalRun = new AiEvalRun([
             'organization_id' => $organization->getKey(),
@@ -452,6 +489,7 @@ final class RunEvaluationSuite
     /**
      * @param  Collection<int, AiEvalCase>  $cases
      * @param  array<int, list<array<string, mixed>>>  $assertionsByCase
+     * @param  array<int, array<string, mixed>>  $controlledFixturesByCase
      * @return array<string, mixed>
      */
     private function provenanceSnapshot(
@@ -461,6 +499,7 @@ final class RunEvaluationSuite
         AiModelRelease $release,
         array $assertionsByCase,
         string $executedAt,
+        array $controlledFixturesByCase = [],
     ): array {
         return [
             'schema_version' => 2,
@@ -470,13 +509,21 @@ final class RunEvaluationSuite
                 'name' => $suite->name,
                 'capability' => $suite->capability->value,
             ],
-            'cases' => $cases->map(fn (AiEvalCase $case): array => [
-                'id' => (int) $case->getKey(),
-                'name' => $case->name,
-                'assertions' => $assertionsByCase[$case->getKey()] ?? [],
-                'expected_output_schema' => $case->expected_output_schema,
-                'test_inputs_digest' => $this->snapshotHasher->testInputsDigest((array) $case->test_inputs),
-            ])->values()->all(),
+            'cases' => $cases->map(function (AiEvalCase $case) use ($assertionsByCase, $controlledFixturesByCase): array {
+                $snapshot = [
+                    'id' => (int) $case->getKey(),
+                    'name' => $case->name,
+                    'assertions' => $assertionsByCase[$case->getKey()] ?? [],
+                    'expected_output_schema' => $case->expected_output_schema,
+                    'test_inputs_digest' => $this->snapshotHasher->testInputsDigest((array) $case->test_inputs),
+                ];
+
+                if (isset($controlledFixturesByCase[$case->getKey()])) {
+                    $snapshot['controlled_fixture'] = $controlledFixturesByCase[$case->getKey()];
+                }
+
+                return $snapshot;
+            })->values()->all(),
             'prompt_version' => [
                 'id' => (int) $promptVersion->getKey(),
                 'prompt_id' => (int) $promptVersion->prompt_id,

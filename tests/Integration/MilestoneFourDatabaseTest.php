@@ -3,14 +3,21 @@
 namespace Tests\Integration;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
@@ -29,6 +36,82 @@ class MilestoneFourDatabaseTest extends TestCase
             "SELECT data_type FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'starts_at'"
         )->data_type);
         self::assertNotNull(DB::selectOne("SELECT installed_version FROM pg_available_extensions WHERE name = 'btree_gist'")->installed_version);
+    }
+
+    public function test_postgresql_client_reschedule_with_an_office_location_completes_the_full_lifecycle(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 60,
+            'buffer_minutes' => 0,
+            'formats' => [VisitFormat::Office->value],
+        ]);
+        $location = WorkingLocation::factory()->forOrganization($organization)->defaultOffice()->create(['timezone' => 'UTC']);
+        SpecialistServiceAssignment::factory()->forSpecialist($specialist)->forService($service)->create();
+        foreach ([1, 2] as $weekday) {
+            SpecialistWorkingHour::factory()->forSpecialist($specialist)->create([
+                'weekday' => $weekday,
+                'start_time' => '09:00',
+                'end_time' => '12:00',
+            ]);
+        }
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+
+        $booking = app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2027, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'UTC',
+            workingLocationId: $location->getKey(),
+            idempotencyKey: 'postgres-office-reschedule',
+        );
+
+        $rescheduled = app(RescheduleBooking::class)->handle(
+            actor: $client,
+            booking: $booking,
+            newStartsAt: CarbonImmutable::create(2027, 4, 5, 9, 0, 0, 'UTC'),
+            clientTimezone: 'UTC',
+            expectedEventVersion: $booking->event_version,
+            workingLocationId: $location->getKey(),
+        );
+
+        self::assertSame('2027-04-05T09:00:00+00:00', $rescheduled->startsAtUtc()->toIso8601String());
+        self::assertSame(2, $rescheduled->event_version);
+        self::assertSame(1, BookingEvent::query()->where('booking_id', $booking->getKey())->where('event_type', 'rescheduled')->count());
+
+        $routeBooking = app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2027, 4, 13, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'UTC',
+            workingLocationId: $location->getKey(),
+            idempotencyKey: 'postgres-office-route-reschedule',
+        );
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.reschedule', $routeBooking->getKey()), [
+                'starts_at' => '2027-04-12T09:00:00+00:00',
+                'client_timezone' => 'UTC',
+                'expected_event_version' => $routeBooking->event_version,
+                'location_area' => 'ignored-for-office',
+            ])
+            ->assertRedirect(route('portal.bookings.show', $routeBooking->getKey()));
+
+        self::assertSame('2027-04-12T09:00:00+00:00', $routeBooking->fresh()->startsAtUtc()->toIso8601String());
+        self::assertNull($routeBooking->fresh()->location_area);
     }
 
     public function test_postgresql_booking_provider_state_persists_non_secret_affinity_without_backfill(): void

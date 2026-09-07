@@ -828,6 +828,7 @@ final class AiSelfServiceUxRemediationTest extends TestCase
             'gemini-3.1-flash-lite',
             'deepseek-v4-pro',
             'deepseek-v4-flash',
+            'deepseek-v4-flash-vision-exp',
             'mistral-medium-3-5',
             'mistral-large-2512',
             'mistral-small-2603',
@@ -844,7 +845,10 @@ final class AiSelfServiceUxRemediationTest extends TestCase
 
         foreach ($definitions as $definition) {
             self::assertSame(
-                $definition->modelName === 'gemini-3.1-flash-lite' ? 'deprecated' : 'active',
+                match ($definition->modelName) {
+                    'gemini-3.1-flash-lite' => 'deprecated',
+                    default => 'active',
+                },
                 $definition->lifecycleStatus->value,
             );
             self::assertNotNull($definition->pricing);
@@ -860,6 +864,15 @@ final class AiSelfServiceUxRemediationTest extends TestCase
         self::assertArrayNotHasKey('gpt-4o', AiModelCatalog::optionsForProvider('openai'));
         self::assertArrayNotHasKey('claude-3-5-sonnet', AiModelCatalog::optionsForProvider('anthropic'));
         self::assertArrayNotHasKey('gemini-2.0-flash', AiModelCatalog::optionsForProvider('gemini'));
+
+        $deepseekFlash = AiModelCatalog::find('deepseek', 'deepseek-v4-flash');
+        $deepseekVision = AiModelCatalog::find('deepseek', 'deepseek-v4-flash-vision-exp');
+
+        self::assertNotNull($deepseekFlash);
+        self::assertSame([], $deepseekFlash->modalities);
+        self::assertNotNull($deepseekVision);
+        self::assertSame([AiModelModality::ImageInput], $deepseekVision->modalities);
+        self::assertSame('active', $deepseekVision->lifecycleStatus->value);
     }
 
     public function test_switching_between_known_and_custom_models_clears_catalog_metadata_but_preserves_user_fields(): void

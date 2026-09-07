@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiPrompts\RelationManagers;
 
+use App\Filament\Support\AiPromptTextSections;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\CreatePromptDraft;
@@ -13,11 +14,13 @@ use App\Modules\AI\Domain\ValueObjects\AiParameterConfig;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -28,7 +31,7 @@ class PromptVersionsRelationManager extends RelationManager
 {
     protected static string $relationship = 'versions';
 
-    protected static ?string $title = 'Версии промпта';
+    protected static ?string $title = 'История версий';
 
     protected static string|BackedEnum|null $icon = Heroicon::OutlinedDocumentDuplicate;
 
@@ -42,11 +45,27 @@ class PromptVersionsRelationManager extends RelationManager
         return $schema
             ->components([
                 Textarea::make('system_prompt')
-                    ->label('Системные инструкции / поведение AI')
-                    ->helperText('Опишите, как AI должен рассуждать, что учитывать и каких ошибок избегать.')
+                    ->label('Полный исходный prompt')
+                    ->helperText('Редактируется весь исходный текст версии, включая блоки [SOURCE TEXT] и [PLATFORM SAFETY GUARDRAIL].')
                     ->default($latestVersion?->system_prompt)
                     ->required()
-                    ->rows(6)
+                    ->live(debounce: 500)
+                    ->rows(18)
+                    ->columnSpanFull(),
+                Section::make('Границы инструкции')
+                    ->description('Проверяйте исходные рабочие инструкции и обязательные safety guardrails отдельно. Текст выше остаётся полным и редактируемым.')
+                    ->schema([
+                        Placeholder::make('source_text_preview')
+                            ->label('SOURCE TEXT')
+                            ->content(fn (Get $get): string => AiPromptTextSections::source((string) $get('system_prompt'))),
+                        Placeholder::make('guardrails_preview')
+                            ->label('Safety guardrails платформы')
+                            ->content(fn (Get $get): string => AiPromptTextSections::guardrails((string) $get('system_prompt'))),
+                        Placeholder::make('runtime_contract_preview')
+                            ->label('Runtime-контракт')
+                            ->content(fn (Get $get): string => AiPromptTextSections::runtimeContract((string) $get('system_prompt'))),
+                    ])
+                    ->columns(3)
                     ->columnSpanFull(),
                 Textarea::make('user_prompt_template')
                     ->label('Шаблон запроса')
@@ -64,16 +83,14 @@ class PromptVersionsRelationManager extends RelationManager
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(2)
-                            ->default($parameters->temperature)
-                            ->required(),
+                            ->default($parameters->temperature),
                         TextInput::make('max_tokens')
                             ->label('Максимальная длина ответа')
                             ->helperText('Внутренний предел длины ответа AI.')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(8192)
-                            ->default($parameters->maxTokens)
-                            ->required(),
+                            ->default($parameters->maxTokens),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -83,32 +100,29 @@ class PromptVersionsRelationManager extends RelationManager
                     ->schema([
                         TextInput::make('top_p')
                             ->label('Top P — точная настройка')
+                            ->helperText('Необязательный параметр. Учитывается только при поддержке выбранной моделью.')
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(1)
-                            ->default($parameters->topP)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('frequency_penalty')
                             ->label('Штраф за повторение')
                             ->numeric()
                             ->minValue(-2)
                             ->maxValue(2)
-                            ->default($parameters->frequencyPenalty)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('presence_penalty')
                             ->label('Штраф за однообразие')
                             ->numeric()
                             ->minValue(-2)
                             ->maxValue(2)
-                            ->default($parameters->presencePenalty)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('timeout_seconds')
                             ->label('Время ожидания ответа, секунд')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(120)
-                            ->default($parameters->timeoutSeconds)
-                            ->required(),
+                            ->default($parameters->timeoutSeconds),
                         TextInput::make('change_notes')
                             ->label('Что изменилось')
                             ->columnSpanFull(),
@@ -121,6 +135,7 @@ class PromptVersionsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('version')->label('Версия')->sortable(),
                 TextColumn::make('status')
@@ -134,15 +149,7 @@ class PromptVersionsRelationManager extends RelationManager
                     })
                     ->formatStateUsing(fn ($state) => $state instanceof PromptVersionStatus ? $state->label() : (string) $state),
                 TextColumn::make('change_notes')->label('Что изменилось')->placeholder('—'),
-                TextColumn::make('parameter_config')
-                    ->label('Ответ')
-                    ->formatStateUsing(function ($state): string {
-                        $parameters = AiParameterConfig::fromArray((array) $state);
-
-                        return 'Креативность '.$parameters->temperature.' · до '.$parameters->maxTokens.' токенов';
-                    }),
-                TextColumn::make('activated_at')->label('Активирована')->dateTime('d.m.Y H:i')->placeholder('—'),
-                TextColumn::make('created_at')->label('Создана')->dateTime('d.m.Y H:i'),
+                TextColumn::make('created_at')->label('Дата')->dateTime('d.m.Y H:i'),
             ])
             ->emptyStateHeading('Версий пока нет')
             ->emptyStateDescription('Создайте первую версию, чтобы задать инструкции AI и настройки ответа.')

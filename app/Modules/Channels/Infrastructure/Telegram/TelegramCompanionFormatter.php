@@ -226,7 +226,7 @@ final class TelegramCompanionFormatter
 
     private function formatBlockquotes(string $text): string
     {
-        $lines = preg_split('/\R/', $text) ?: [];
+        $lines = preg_split('/\R/u', $text) ?: [];
         $result = [];
         $quote = [];
         foreach ($lines as $line) {

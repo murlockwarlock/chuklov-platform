@@ -8,6 +8,7 @@ use App\Modules\AI\Application\Actions\CreateEvalCase;
 use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Application\Actions\UpdateEvalCase;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiEvalCase;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
@@ -86,13 +87,17 @@ class AiEvaluationSuiteTest extends TestCase
 
         $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
 
+        $capabilities = [$capability->value];
+        if ($capability === AiCapability::PostureAnalysis) {
+            $capabilities[] = AiModelModality::ImageInput->value;
+        }
         $model = AiModelConfiguration::create([
             'organization_id' => $this->organization->id,
             'provider_config_id' => $provider->id,
             'model_name' => $modelName,
             'display_name' => strtoupper($modelName),
             'is_enabled' => true,
-            'capabilities' => [$capability->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'failover_priority' => 1,
         ]);
@@ -104,7 +109,7 @@ class AiEvaluationSuiteTest extends TestCase
             'status' => 'active',
             'provider_name' => $providerName,
             'model_name' => $modelName,
-            'capabilities' => [$capability->value],
+            'capabilities' => $capabilities,
             'pricing_snapshot' => $pricing->toArray(),
             'activated_at' => Carbon::now(),
         ]);
@@ -113,7 +118,7 @@ class AiEvaluationSuiteTest extends TestCase
         return $model;
     }
 
-    public function test_posture_evaluation_suite_requires_a_controlled_three_photo_fixture(): void
+    public function test_posture_evaluation_suite_uses_a_controlled_three_photo_fixture(): void
     {
         $providerCalls = 0;
 
@@ -171,20 +176,24 @@ class AiEvaluationSuiteTest extends TestCase
             return '{"posture_type":"normal"}';
         });
 
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('controlled three-photo fixture');
+        $evaluationRun = app(RunEvaluationSuite::class)->handle(
+            actor: $this->user,
+            evalSuiteId: $suite->id,
+            promptVersionId: $version->id,
+            modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
+        );
 
-        try {
-            app(RunEvaluationSuite::class)->handle(
-                actor: $this->user,
-                evalSuiteId: $suite->id,
-                promptVersionId: $version->id,
-                modelReleaseId: AiModelRelease::query()->where('organization_id', $this->organization->id)->value('id'),
-            );
-        } finally {
-            self::assertSame(0, $providerCalls);
-            self::assertSame(0, AiRun::query()->where('organization_id', $this->organization->id)->count());
-        }
+        self::assertSame(2, $providerCalls);
+        self::assertSame(2, AiRun::query()->where('organization_id', $this->organization->id)->count());
+        self::assertSame(2, $evaluationRun->total_cases);
+        self::assertSame(3, count((array) AiRun::query()->firstOrFail()->input_references));
+        self::assertSame(
+            ['front', 'side', 'back'],
+            array_map(
+                static fn (array $reference): string => (string) ($reference['role'] ?? ''),
+                (array) AiRun::query()->firstOrFail()->input_references,
+            ),
+        );
     }
 
     public function test_oversized_evaluation_suite_is_rejected_before_provider_execution(): void

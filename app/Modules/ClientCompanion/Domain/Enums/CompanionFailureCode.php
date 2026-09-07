@@ -5,6 +5,7 @@ namespace App\Modules\ClientCompanion\Domain\Enums;
 enum CompanionFailureCode: string
 {
     case NotConfigured = 'not_configured';
+    case ProviderDisabled = 'provider_disabled';
     case BudgetUnavailable = 'budget_unavailable';
     case ProviderUnavailable = 'provider_unavailable';
     case InvalidOutput = 'invalid_output';
@@ -13,6 +14,7 @@ enum CompanionFailureCode: string
     case DeliveryFailure = 'delivery_failure';
     case RateLimited = 'rate_limited';
     case ImageUnavailable = 'image_unavailable';
+    case DocumentUnavailable = 'document_unavailable';
     case InputLimitExceeded = 'input_limit_exceeded';
     case MediaGroupIncomplete = 'media_group_incomplete';
     case ExecutionDeadlineExceeded = 'execution_deadline_exceeded';

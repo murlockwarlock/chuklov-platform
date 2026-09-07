@@ -10,12 +10,14 @@ use App\Modules\Scenarios\Domain\ValueObjects\NotificationTemplateConfiguration;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 final class CreateNotificationTemplate
 {
     public function __construct(
         private readonly ScenarioAuthorization $authorization,
         private readonly RecordAuditEvent $audit,
+        private readonly NotificationTemplateMedia $media,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -23,48 +25,68 @@ final class CreateNotificationTemplate
     {
         $organization = $this->authorization->authorizeManage($actor);
         $data['template_key'] ??= 'template-'.Str::uuid()->toString();
-        $configuration = NotificationTemplateConfiguration::from($data);
+        $storedPaths = [];
 
-        return DB::transaction(function () use ($actor, $configuration, $organization): NotificationTemplate {
-            $template = new NotificationTemplate;
-            $template->forceFill([
-                'organization_id' => $organization->getKey(),
-                'template_key' => $configuration->templateKey,
-                'name' => $configuration->name,
-                'locale' => $configuration->locale,
-                'purpose' => $configuration->purpose->value,
-                'is_active' => $configuration->isActive,
-            ]);
-            $template->save();
-
-            $version = new NotificationTemplateVersion;
-            $version->forceFill([
-                'organization_id' => $organization->getKey(),
-                'template_id' => $template->getKey(),
-                'version' => 1,
-                'status' => NotificationTemplateStatus::Published,
-                'subject' => $configuration->subject,
-                'body' => $configuration->body,
-                'variables' => $configuration->variables,
-                'created_by_user_id' => $actor->getKey(),
-                'published_at' => now(),
-            ]);
-            $version->save();
-
-            $this->audit->handle(
-                organization: $organization,
-                actor: $actor,
-                action: 'scenario.template.created',
-                targetType: NotificationTemplate::class,
-                targetId: (string) $template->getKey(),
-                metadata: [
-                    'template_key' => $configuration->templateKey,
-                    'locale' => $configuration->locale,
-                    'version' => 1,
-                ],
+        try {
+            $data['media'] = $this->media->prepare(
+                organizationId: $organization->getKey(),
+                uploads: $data['media_image'] ?? null,
+                url: $data['media_url'] ?? null,
+                existing: null,
+                storedPaths: $storedPaths,
             );
+            $configuration = NotificationTemplateConfiguration::from($data);
 
-            return $template->refresh();
-        });
+            return DB::transaction(function () use ($actor, $configuration, $organization): NotificationTemplate {
+                $template = new NotificationTemplate;
+                $template->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'template_key' => $configuration->templateKey,
+                    'name' => $configuration->name,
+                    'locale' => $configuration->locale,
+                    'purpose' => $configuration->purpose->value,
+                    'is_active' => $configuration->isActive,
+                ]);
+                $template->save();
+
+                $version = new NotificationTemplateVersion;
+                $version->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'template_id' => $template->getKey(),
+                    'version' => 1,
+                    'status' => NotificationTemplateStatus::Published,
+                    'subject' => $configuration->subject,
+                    'body' => $configuration->body,
+                    'variables' => $configuration->variables,
+                    'delivery_mode' => $configuration->deliveryMode,
+                    'caption_position' => $configuration->captionPosition,
+                    'media' => $configuration->media,
+                    'created_by_user_id' => $actor->getKey(),
+                    'published_at' => now(),
+                ]);
+                $version->save();
+
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'scenario.template.created',
+                    targetType: NotificationTemplate::class,
+                    targetId: (string) $template->getKey(),
+                    metadata: [
+                        'template_key' => $configuration->templateKey,
+                        'locale' => $configuration->locale,
+                        'version' => 1,
+                    ],
+                );
+
+                return $template->refresh();
+            });
+        } catch (Throwable $exception) {
+            foreach ($storedPaths as $storedPath) {
+                $this->media->discard($organization->getKey(), $storedPath);
+            }
+
+            throw $exception;
+        }
     }
 }

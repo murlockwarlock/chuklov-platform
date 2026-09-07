@@ -111,7 +111,7 @@ final class AiProviderCatalog
             'label' => 'DeepSeek',
             'text_generation' => true,
             'structured_output' => true,
-            'modalities' => [],
+            'modalities' => ['image_input'],
             'embeddings' => false,
             'reranking' => false,
             'transcription' => false,

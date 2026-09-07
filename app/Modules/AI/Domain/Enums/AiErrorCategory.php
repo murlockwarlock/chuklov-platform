@@ -4,6 +4,8 @@ namespace App\Modules\AI\Domain\Enums;
 
 enum AiErrorCategory: string
 {
+    case ConfigurationMissing = 'configuration_missing';
+    case ProviderDisabled = 'provider_disabled';
     case ProviderUnavailable = 'provider_unavailable';
     case RateLimited = 'rate_limited';
     case BudgetExceeded = 'budget_exceeded';
@@ -19,6 +21,8 @@ enum AiErrorCategory: string
     public function label(): string
     {
         return match ($this) {
+            self::ConfigurationMissing => 'AI-провайдер или модель не настроены',
+            self::ProviderDisabled => 'AI-провайдер отключён',
             self::ProviderUnavailable => 'Провайдер недоступен',
             self::RateLimited => 'Превышен лимит частоты запросов (Rate Limit)',
             self::BudgetExceeded => 'Превышен дневной бюджет организации',

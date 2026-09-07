@@ -85,7 +85,8 @@ final class AiModelDiscoveryTest extends TestCase
 
         $options = AiModelCatalog::optionsForProvider('openrouter', null, null, $models);
         self::assertArrayHasKey('acme/vision-production', $options);
-        self::assertStringContainsString('Изображения и сканы', $options['acme/vision-production']);
+        self::assertStringContainsString('Изображения: есть', $options['acme/vision-production']);
+        self::assertStringContainsString('PDF/документы: есть', $options['acme/vision-production']);
         self::assertStringContainsString('$0.25', $options['acme/vision-production']);
         self::assertArrayNotHasKey('acme/preview-model', $options);
         self::assertArrayNotHasKey('acme/retired-model', $options);

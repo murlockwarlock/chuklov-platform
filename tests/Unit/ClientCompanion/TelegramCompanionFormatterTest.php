@@ -3,10 +3,14 @@
 namespace Tests\Unit\ClientCompanion;
 
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Domain\ValueObjects\CompanionActionButton;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramCompanionFormatter;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramMessagingChannel;
 use GuzzleHttp\Psr7\Response;
+use JsonException;
+use ReflectionClass;
+use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
 
@@ -78,6 +82,104 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('Привет, hello 👋 & < >', $formatter->plainText($html));
     }
 
+    public function test_cyrillic_ha_is_not_treated_as_a_newline(): void
+    {
+        $formatter = new TelegramCompanionFormatter;
+        $text = 'Похоже, новые сообщения сохранены.';
+        $html = $formatter->markdownToHtml($text);
+
+        self::assertTrue(mb_check_encoding($html, 'UTF-8'));
+        self::assertStringNotContainsString("\n", $html);
+        self::assertSame($text, $formatter->plainText($html));
+    }
+
+    public function test_malformed_utf8_in_semantic_text_is_repaired_before_send(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk('telegram-chat', "Привет\xB1", 0, 1, 'ru'));
+
+        self::assertSame('Привет?', $body['text']);
+    }
+
+    public function test_malformed_utf8_in_recipient_is_repaired_before_send(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk("telegram-chat\xB1", 'Ответ', 0, 1, 'ru'));
+
+        self::assertSame('telegram-chat?', $body['chat_id']);
+    }
+
+    public function test_malformed_utf8_in_button_text_is_repaired_before_send(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: 'Ответ',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+            buttons: [$this->button("Кнопка\xB1", callbackData: 'cc:human:1')],
+        ));
+
+        self::assertSame('Кнопка?', $body['reply_markup']['inline_keyboard'][0][0]['text']);
+    }
+
+    public function test_malformed_utf8_in_button_url_is_repaired_before_send(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: 'Ответ',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+            buttons: [$this->button('Открыть', url: "https://example.com/path/\xB1")],
+        ));
+
+        self::assertSame('https://example.com/path/?', $body['reply_markup']['inline_keyboard'][0][0]['url']);
+    }
+
+    public function test_malformed_utf8_in_button_callback_is_repaired_before_send(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: 'Ответ',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+            buttons: [$this->button('Открыть', callbackData: "cc:human:\xB1")],
+        ));
+
+        self::assertSame('cc:human:?', $body['reply_markup']['inline_keyboard'][0][0]['callback_data']);
+    }
+
+    public function test_valid_unicode_and_emoji_are_sent_without_boundary_changes(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: 'Привет 👋',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+            buttons: [new CompanionActionButton('Открыть 👋', callbackData: 'cc:human:1')],
+        ));
+
+        self::assertSame('Привет 👋', $body['text']);
+        self::assertSame('Открыть 👋', $body['reply_markup']['inline_keyboard'][0][0]['text']);
+        self::assertSame('cc:human:1', $body['reply_markup']['inline_keyboard'][0][0]['callback_data']);
+    }
+
+    public function test_json_utf8_failure_is_recorded_as_a_local_payload_failure(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = $this->createMock(Nutgram::class);
+        $bot->expects(self::once())
+            ->method('sendMessage')
+            ->willThrowException(new JsonException('Malformed UTF-8 characters, possibly incorrectly encoded', JSON_ERROR_UTF8));
+        $channel = new TelegramMessagingChannel($bot);
+
+        $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', 'Ответ', 0, 1, 'ru'));
+
+        self::assertSame(NotificationDeliveryOutcome::PermanentFailure, $result->outcome);
+        self::assertSame('telegram_payload_invalid_utf8', $result->errorCode);
+    }
+
     public function test_telegram_parse_failure_retries_repaired_html_for_the_same_chunk(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
@@ -91,6 +193,7 @@ final class TelegramCompanionFormatterTest extends TestCase
         $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', '**Ответ**', 0, 1, 'ru'));
 
         self::assertSame(NotificationDeliveryOutcome::Delivered, $result->outcome);
+        self::assertSame('901', $result->providerReference);
         self::assertCount(2, $bot->getRequestHistory());
     }
 
@@ -115,7 +218,7 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('Ответ', $lastBody['text']);
     }
 
-    public function test_transport_failure_is_unknown_instead_of_automatically_retryable(): void
+    public function test_provider_server_failure_is_retryable(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         $bot = FakeNutgram::instance(null, [
@@ -125,8 +228,8 @@ final class TelegramCompanionFormatterTest extends TestCase
 
         $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', 'Ответ', 0, 1, 'ru'));
 
-        self::assertSame(NotificationDeliveryOutcome::Unknown, $result->outcome);
-        self::assertSame('telegram_api_error', $result->errorCode);
+        self::assertSame(NotificationDeliveryOutcome::Retryable, $result->outcome);
+        self::assertSame('telegram_server_error', $result->errorCode);
     }
 
     public function test_provider_rate_limit_is_a_confirmed_bounded_retryable_rejection(): void
@@ -141,5 +244,40 @@ final class TelegramCompanionFormatterTest extends TestCase
 
         self::assertSame(NotificationDeliveryOutcome::Retryable, $result->outcome);
         self::assertSame('telegram_rate_limited', $result->errorCode);
+    }
+
+    private function sendAndReadRequest(CompanionOutboundChunk $chunk): array
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $success = json_encode([
+            'ok' => true,
+            'result' => [
+                'message_id' => 901,
+                'date' => 1703892479,
+                'chat' => ['id' => 1, 'type' => 'private'],
+                'text' => 'Ответ',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $bot = FakeNutgram::instance(null, [new Response(200, [], $success)]);
+        $channel = new TelegramMessagingChannel($bot);
+
+        $result = $channel->sendCompanionChunk($chunk);
+        self::assertSame(NotificationDeliveryOutcome::Delivered, $result->outcome);
+        self::assertSame('901', $result->providerReference);
+
+        $request = array_values($bot->getRequestHistory())[0];
+
+        return json_decode((string) array_values($request)[0]->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function button(string $text, ?string $callbackData = null, ?string $url = null): CompanionActionButton
+    {
+        $reflection = new ReflectionClass(CompanionActionButton::class);
+        $button = $reflection->newInstanceWithoutConstructor();
+        $reflection->getProperty('text')->setValue($button, $text);
+        $reflection->getProperty('callbackData')->setValue($button, $callbackData);
+        $reflection->getProperty('url')->setValue($button, $url);
+
+        return $button;
     }
 }

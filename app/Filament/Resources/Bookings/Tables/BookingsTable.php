@@ -18,6 +18,7 @@ use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -29,7 +30,11 @@ class BookingsTable
     {
         $canManageScheduling = BookingResource::canCreate();
         $columns = [
-            TextColumn::make('specialist.display_name')->label('Специалист')->sortable()->wrap(),
+            TextColumn::make('specialist.display_name')
+                ->label('Специалист')
+                ->sortable()
+                ->wrap()
+                ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
             TextColumn::make('starts_at')
                 ->label(fn (): string => 'Дата и время ('.self::viewerTimezone().')')
@@ -43,7 +48,7 @@ class BookingsTable
                 ->label('Место')
                 ->state(fn (Booking $record): string => self::locationLabel($record))
                 ->wrap()
-                ->toggleable(),
+                ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('status')
                 ->label('Статус')
                 ->badge()
@@ -128,6 +133,7 @@ class BookingsTable
 
         return $table
             ->stackedOnMobile()
+            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
             ->defaultSort(fn (Builder $query): Builder => $query
                 ->orderByDesc('created_at')
                 ->orderByDesc('id'))

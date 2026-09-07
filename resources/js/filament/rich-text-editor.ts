@@ -14,6 +14,9 @@ type EditorSelection = {
 };
 
 type EditorLike = {
+    view?: {
+        dom?: HTMLElement;
+    };
     state: {
         selection: EditorSelection;
         doc: {
@@ -52,6 +55,31 @@ type ActivePicker = {
 };
 
 let activePicker: ActivePicker | null = null;
+const rememberedSelections = new WeakMap<EditorLike, EditorSelection>();
+const selectionMemoryBoundEditors = new WeakSet<EditorLike>();
+
+function rememberSelection(editor: EditorLike): void {
+    const selection = editor.state.selection;
+    rememberedSelections.set(editor, {
+        from: selection.from,
+        to: selection.to,
+        empty: selection.empty,
+    });
+}
+
+function bindSelectionMemory(editor: EditorLike): void {
+    if (selectionMemoryBoundEditors.has(editor)) {
+        return;
+    }
+
+    const editorElement = editor.view?.dom;
+    if (!(editorElement instanceof HTMLElement)) {
+        return;
+    }
+
+    editorElement.addEventListener('blur', () => rememberSelection(editor));
+    selectionMemoryBoundEditors.add(editor);
+}
 
 function hasMarks(node: EditorNode | null): boolean {
     return node?.isText === true && (node.marks?.length ?? 0) > 0;
@@ -183,7 +211,8 @@ function toggleEmojiPicker(event: MouseEvent, editor: EditorLike | null | undefi
         }
     }
 
-    const selection = editor.state.selection;
+    bindSelectionMemory(editor);
+    const selection = rememberedSelections.get(editor) ?? editor.state.selection;
     const picker = new Picker({
         dataSource: emojiDataUrl,
         locale: 'ru',
@@ -209,7 +238,12 @@ function toggleEmojiPicker(event: MouseEvent, editor: EditorLike | null | undefi
 }
 
 function handleKeydown(event: KeyboardEvent, editor: EditorLike | null | undefined): void {
-    if (editor === null || editor === undefined || event.key !== ' ' || event.defaultPrevented) {
+    if (editor === null || editor === undefined) {
+        return;
+    }
+
+    bindSelectionMemory(editor);
+    if (event.key !== ' ' || event.defaultPrevented) {
         return;
     }
 

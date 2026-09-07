@@ -76,6 +76,34 @@ final class AiModelModalityCapabilityTest extends TestCase
         ));
     }
 
+    public function test_deepseek_text_only_release_rejects_image_input(): void
+    {
+        $release = $this->release(
+            modelName: 'deepseek-v4-flash',
+            capabilities: [AiCapability::PostureAnalysis->value],
+        );
+
+        self::assertFalse(AiProviderFactory::supportsAttachments(
+            providerName: 'deepseek',
+            release: $release,
+            requiredModalities: [AiModelModality::ImageInput],
+        ));
+    }
+
+    public function test_deepseek_vision_release_accepts_image_input(): void
+    {
+        $release = $this->release(
+            modelName: 'deepseek-v4-flash-vision-exp',
+            capabilities: [AiCapability::PostureAnalysis->value, AiModelModality::ImageInput->value],
+        );
+
+        self::assertTrue(AiProviderFactory::supportsAttachments(
+            providerName: 'deepseek',
+            release: $release,
+            requiredModalities: [AiModelModality::ImageInput],
+        ));
+    }
+
     public function test_text_only_candidate_behavior_remains_unchanged(): void
     {
         $release = $this->release(

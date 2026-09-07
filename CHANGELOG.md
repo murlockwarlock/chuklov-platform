@@ -1,5 +1,69 @@
 # Changelog
 
+## 2026-09-06 — Owner acceptance remediation: partners, payouts, and messaging
+
+- Consolidated the Partner CRM and partner cabinet around primary results, reward provenance, campaign links, balances, payout controls, and secondary history while keeping destructive CRM actions in a secondary group.
+- Made common versus individual reward terms explicit, routed common-term editing to the existing organization configuration, and added visible payout success, validation, and notification workflows.
+- Added the reusable media-capable Message Composer to broadcasts and notification templates, including Telegram limits, previews, variables, rich text, emoji, links, and media persistence.
+- Added rendered browser geometry coverage for primary controls at the required acceptance widths. Persistent floating CRM popup/toast notifications are intentionally excluded by owner decision.
+
+## 2026-09-07 — Full source-backed AI prompts and evaluation packs
+
+- Replaced the abbreviated Agent 1–4 prompt drafts with full source-backed product instructions from Appendix 2, keeping platform safety guardrails and the current runtime contract as separate editable sections in CRM.
+- Removed hidden runtime safety-policy prose from prompt assembly; the active `AiPromptVersion.system_prompt` is now the sole model instruction source while deterministic controls remain in application code.
+- Expanded the existing organization-scoped synthetic evaluation manifest to 44 practical cases covering source fidelity, missing data, posture validation, clinical fact/hypothesis separation, ordinary Companion conversation, B2B recognition, safety escalation, and no fabricated progress; existing materialization now refreshes previously imported cases idempotently.
+- Narrowed direct Companion handoff matching to explicit human requests and urgent safety phrases, so ordinary mentions of a specialist no longer stop useful AI conversation while accepted human-handoff authority remains unchanged.
+
+## 2026-09-06 — Owner acceptance remediation: AI Companion and source-backed evaluations
+
+- Added idempotent CRM materialization of the existing source-backed Agent 1–4 evaluation suites and their full prompt bundles, with explicit «Демонстрационный тест» and «Синтетические данные» labels.
+- Made full source prompts editable with separate source and platform-safety views, and let Playground/evaluation runs choose an organization-scoped staging model release.
+- Made the Companion page chat-first and mobile-safe with bottom-aware follow mode, a «Новые сообщения ↓» recovery action, and an accessible animated «печатает…» indicator. The staging failure diagnosis is recorded through safe configuration/run identifiers without protected content.
+
+## 2026-09-06 — Partner acceptance hardening and AI Companion readiness
+
+- Clarified CRM referral terminology and current-referrer provenance, added partner-specific versioned reward terms, audited manual partner credits through the existing ledger, and kept partner/bookings tables focused on primary actions at normal widths.
+- Restored ordinary-client «Пригласить друга» alongside partner enrollment, added the recipient-aware `{{ referral_link }}` variable to the shared message composer and delivery contexts, and kept the editable invite template on the existing versioned notification-template path.
+- Hardened partner payout authorization at the Application boundary, corrected tracked campaign conversion and legacy referral provenance, and made all current reward presentation use net accrued balances including reversals without changing the append-only ledger.
+- Made the Partner Home CTA state-aware and bounded refreshes update Portal and CRM partner/payout views after asynchronous changes.
+- Routed personal and campaign referral links through the Telegram bot with a namespaced `ref_` payload, preserved legacy `/r/{token}` compatibility, campaign provenance, first-touch protection, and idempotent campaign visits; Communities «Открыть полностью» now uses Telegram's Mini App button instead of a browser URL.
+- Refined the CRM partner workspace so named campaign links, channels, per-link metrics, referred-client provenance, rewards, and payouts render as separate readable entries instead of one combined summary.
+- Added an actionable AI Companion readiness state to the CRM: missing active prompt/model configuration, provider outages, and disabled capabilities are distinguished with links to the existing setup surfaces where appropriate; provider failure categories returned by an AI run are preserved for safe handling.
+- Preserved an explicitly disabled provider as a distinct AI diagnosis and run/failure category instead of reporting it as missing configuration.
+- Confirmed the staging DeepSeek credential itself is healthy and retained safe readiness diagnostics for missing prompt/model configuration, provider outages, and human handoff.
+
+## 2026-09-05 — Phase 1 partner cabinet and campaign links
+
+- Added organization-scoped Partner enrollment for existing Clients, direct CRM activation/deactivation, a first-class «Партнёры» workspace, and an obvious «Назначить партнёра» client action that preserves the authoritative first-touch relationship.
+- Added multiple named campaign links for Telegram, Instagram, YouTube, WhatsApp, Сайт, and Другое, with safe transition evidence, preserved link/channel provenance, per-link registrations and authoritative paid-client metrics, and responsive Portal partner-cabinet controls for copy/share/deactivation.
+- Added overall and per-currency partner statistics, reward/payout projections from the existing ledger, dynamic Telegram Mini App partner entry, and human Finance readiness explanations when «Записать оплату» is not yet available. Approved promotional copy/banner assets remain deferred.
+
+## 2026-09-05 — Configurable referral rewards and manual partner payouts
+
+- Added an organization-scoped referral reward program with a disabled-by-default, versioned configuration for first/every authoritative settled payment and fixed/percentage rewards using the existing integer Money and rounding rules.
+- Added an append-only reward ledger with earned/reversed provenance, derived per-currency balances, idempotent qualification, tenant-safe manual reversals, and PostgreSQL constraints/locking for concurrent settlement retries.
+- Added partner payout requests with immediate per-currency reservation, auditable requested/approved/paid/rejected/cancelled transitions, and CRM confirmation of an external manual payment without a payment-provider integration.
+- Added Portal reward and payout history plus CRM configuration and payout-request actions in human-readable Russian; no redemption, automated payout, or cross-currency aggregation is introduced.
+- Fixed booking-created notification projections so Online renders «Онлайн» once while Office and HomeVisit retain their physical location details.
+
+## 2026-09-06 — PR #34 Agents 1–3 practitioner workflow
+
+- Added explicit CRM actions for private medical-document extraction, exactly three role-bound posture photos, and clinical synthesis through the existing `AiRun`/`AiRunPayload`, attachment resolver, prompt/model release, and human-review authorities. Results retain protected provenance and reruns create new history.
+- Added a Client Clinical AI relation in the existing client cockpit with business-language statuses, source availability, result/history views, review actions, explicit reruns, failure-safe notifications, and targeted bounded polling.
+- Added reviewed upstream-run references and encrypted Agent 3 input snapshots, a synthetic-only controlled posture fixture repository for the existing evaluation framework, evaluation isolation from production attachments, a PostgreSQL concurrent-review regression, and browser coverage gated for explicitly configured synthetic-data real-provider runs.
+- Updated the stale DeepSeek provider catalog for the official experimental `deepseek-v4-flash-vision-exp` model. The installed `laravel/ai` v0.10.3 Chat Completions adapter already transports image attachments, while text-only DeepSeek releases remain fail-closed for image workflows; the exact Vision model is non-recommended and requires an explicit organization model release rather than becoming a production default.
+- Added explicit zero-rate entries for DeepSeek meters that the installed adapter does not report, so the existing bounded billing guard can reserve a safe worst-case before a real provider call.
+- The schema-bound application candidate is `ca82e29a54f68a13c64fe4a4c3031c7d6ca9c86c`; exact-SHA hosted CI run `34023642465` is green, including PostgreSQL/concurrency, quality, privacy, and runtime jobs. The exact candidate is deployed to staging and `./scripts/staging-smoke.sh` passes.
+- Staging uses the explicitly activated, non-recommended experimental DeepSeek `deepseek-v4-flash-vision-exp` release with `image_input`; source-backed prompt versions for Agents 1–3 are active only in staging. Synthetic real-provider runs for document extraction, three-photo posture analysis, and clinical synthesis all succeeded with valid structured output, pinned prompt/model provenance, and existing human review accepted. The same Vision model handled the synthetic image-based report and posture inputs; this is staging evidence, not permanent production model approval.
+- The real browser workflow remains `BLOCKED/NOT RUN`: no connected authenticated staging browser session was available, and the existing browser scenario remains explicitly gated for a configured synthetic-data provider. No direct controller/API call is counted as browser evidence. Production is not deployed, no merge was performed, and owner acceptance remains pending.
+
+## 2026-09-06 — Recovered AI source appendices reconciliation
+
+- Added the durable source pack for recovered Appendix 1 onboarding requirements and Appendix 2 Agent 1–4 specifications, including provenance, normalized requirements, traceability, and the current Appendix 1 acceptance matrix.
+- Added non-active source-backed prompt bundles for the existing clinical document extraction, posture analysis, clinical synthesizer, and Client Companion capabilities. The bundles preserve source intent while recording platform safety guardrails and do not select or activate a provider/model.
+- Replaced generic clinical capability contracts with source-backed structured output schemas, including nullable unknown medical measurements, source/fact/hypothesis separation, and posture sections without inventing the undefined vector-shift schema. Added synthetic evaluation baselines and preserved the existing controlled-three-photo posture evaluation boundary.
+- Appendix 1 and Appendix 2 are `FOUND`; the complete 9 systems/MSQ source remains missing and OQ-015 remains open. The follow-up runtime candidate is documented above; staging activation, production deployment, merge, and owner acceptance remain unclaimed.
+
 ## 2026-09-05 — PR #30 RichEditor link persistence
 
 - ContentSection RichEditor state now synchronizes through Filament actions and save, while the preview accepts the live TipTap document state and converts it through the existing canonical safe rich-text pipeline. Owner-created links therefore survive edit/reload and the existing Portal and Telegram delivery paths without changing plain-text content or delivery-mode semantics.

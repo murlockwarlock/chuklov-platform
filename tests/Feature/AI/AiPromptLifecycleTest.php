@@ -8,6 +8,7 @@ use App\Modules\AI\Application\Actions\CreatePromptDraft;
 use App\Modules\AI\Application\Actions\ExportPromptBundle;
 use App\Modules\AI\Application\Actions\ImportPromptBundle;
 use App\Modules\AI\Application\Actions\RollbackPromptVersion;
+use App\Modules\AI\Application\Data\PromptBundle;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -140,5 +141,28 @@ class AiPromptLifecycleTest extends TestCase
         $importedPrompt = AiPrompt::where('organization_id', $otherOrg->id)->where('key', 'qa_prompt')->first();
         $this->assertNotNull($importedPrompt);
         $this->assertSame('Вопрос-ответ', $importedPrompt->name);
+    }
+
+    public function test_source_backed_prompt_bundles_import_as_drafts_without_activation(): void
+    {
+        /** @var ImportPromptBundle $import */
+        $import = app(ImportPromptBundle::class);
+        $files = glob(base_path('docs/product/source-pack/ai-prompt-bundles/*.json'));
+
+        self::assertIsArray($files);
+        self::assertCount(4, $files);
+
+        foreach ($files as $file) {
+            $bundle = PromptBundle::fromArray(json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR));
+            $version = $import->handle($this->user, $bundle);
+            $prompt = $version->prompt;
+
+            self::assertSame(PromptVersionStatus::Draft, $version->status);
+            self::assertNotNull($prompt);
+            self::assertNull($prompt->active_version_id);
+        }
+
+        self::assertSame(4, AiPrompt::query()->where('organization_id', $this->organization->id)->count());
+        self::assertSame(4, AiPromptVersion::query()->where('organization_id', $this->organization->id)->where('status', PromptVersionStatus::Draft->value)->count());
     }
 }
