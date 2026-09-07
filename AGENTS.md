@@ -4,6 +4,49 @@
 
 Current phase: Phase 1. Current milestone: see `PROJECT_STATUS.md`.
 
+## DEFAULT DELIVERY MODE — FAST_PATH
+
+FAST_PATH is the default mode for this repository. Optimize for working user behavior first, focused verification second, and no ceremony that does not reduce the actual risk.
+
+For bounded fixes and normal product work:
+
+reproduce the exact owner scenario → inspect only affected code → implement → run focused checks only → deploy to authorized staging → verify the exact user-visible scenario → owner recheck → run one final hosted CI candidate before merge if code changed.
+
+Do not make these prerequisites for every staging iteration:
+
+- full hosted CI
+- full Playwright
+- full PHPUnit
+- broad static analysis
+- full frontend build matrix
+- documentation cleanup
+- PR-report cleanup
+- full AI evaluation packs
+- repeated review cycles
+- unrelated regression repair
+
+If the owner says the user-visible behavior is still broken, the task is failed regardless of green internal checks. Never spend hours fixing unrelated tests before verifying the requested behavior itself.
+
+FAST_PATH normally covers CRM layout and action fixes, visibility, labels, copy, forms, prompt management UX and content, bounded AI or Telegram behavior, ordinary Portal regressions, frontend rendering, non-destructive evaluation materialization/UI fixes, and small application logic regressions with known scope. FAST_PATH still requires checks relevant to the changed behavior.
+
+## FULL_RISK
+
+Use FULL_RISK only when the change genuinely involves destructive or complex migrations, schema or constraint semantics, money/ledger/payouts, concurrency/locking/idempotency, tenant isolation, authorization, security, protected/Class C data, irreversible operations, timezone persistence or conversion semantics, queue or external API lifecycle with duplicate-delivery risk, or data-loss risk.
+
+FULL_RISK preserves strong PostgreSQL, concurrency, security, integration, and recovery gates. Do not promote a task to FULL_RISK only because a file is large, many tests exist, a CI workflow exists, a PR is old, Playwright exists, or the feature touches both frontend and backend.
+
+## OWNER ACCEPTANCE FIRST
+
+When the owner provides an exact broken scenario, that scenario is the primary acceptance test. A green test that does not exercise it does not close the task.
+
+Examples:
+
+- If `Привет, ты кто?` causes human handoff, acceptance is that it produces a normal AI reply.
+- If a button gives no reaction, acceptance is click button → visible result or human-readable error.
+- If a prompt is hidden, acceptance is open prompt → immediately see the active prompt and primary actions.
+
+Do not spend time on unrelated Playwright selectors, baseline CI failures, documentation, cosmetic review findings, or unrelated test failures while the exact owner scenario is still broken.
+
 Load context progressively:
 
 1. Read this file and `PROJECT_STATUS.md`.
@@ -114,36 +157,66 @@ Consult `docs/architecture/modules.md` before adding a module dependency.
 
 ### Local Development Feedback
 
-Agents must not run heavy verification locally by default. Do not locally run `make ci`, `make test-integration`, `npm run test:e2e`, full Playwright suites, `npx playwright install`, Docker image builds, `docker compose up` for the complete stack, or Docker runtime health suites unless the user explicitly requests local execution.
+Focused verification is the default. Do not locally run `make ci`, `make test-integration`, `npm run test:e2e`, full Playwright suites, `npx playwright install`, Docker image builds, `docker compose up` for the complete stack, or Docker runtime health suites for FAST_PATH unless the user explicitly requests it or the changed risk requires it.
 
-Allowed local checks: targeted unit or feature test files/filters, lint/static analysis on changed files, formatting on changed files (`vendor/bin/pint --dirty`), and other low-resource checks that do not start Docker, browser, or container infrastructure. Stop any check that begins consuming significant CPU/memory and move verification to hosted CI.
+Allowed local checks: targeted unit or feature test files/filters, directly affected lint/static analysis, focused frontend checks, formatting on changed files (`vendor/bin/pint --dirty`), and other low-resource checks that do not start Docker, browser, or container infrastructure. Stop any check that begins consuming significant CPU/memory and move only the necessary verification to hosted CI.
 
-### Hosted CI Is Authoritative
+### Verification Matrix
 
-Heavy hosted CI is a manually triggered candidate gate. Agents may make multiple local commits without hosted CI while building a coherent vertical slice; CI is not a save button or per-fix feedback loop.
+| Change risk | Minimum useful evidence |
+| --- | --- |
+| FAST_PATH UI/copy | Focused feature/unit check if useful; exact staging user path; no full Playwright unless directly relevant. |
+| FAST_PATH AI | Focused deterministic regression; small representative real-provider or staging scenario; no full eval pack by default. |
+| FAST_PATH Telegram/Portal | Focused handler, delivery, or feature check; exact real staging path when available; no broad channel suite unless needed. |
+| DB-sensitive | PostgreSQL verification for the affected schema, query, transaction, or session semantics. |
+| Concurrency, money, security, tenant isolation, protected data | FULL_RISK verification, including the relevant PostgreSQL, security, and integration gates. |
 
-For candidate application code:
+### Hosted CI Is the Final Candidate Gate
 
-1. Finish the coherent candidate with focused local feedback and understood documentation/status.
-2. Push the candidate SHA or branch.
-3. Manually dispatch the blocking CI workflow for that candidate ref.
-4. Inspect the exact-SHA hosted CI result.
-5. If it finds a real defect, batch the related remediation and dispatch one new candidate.
-6. Another candidate run is justified when high-risk tenant, security, encryption, migration, or concurrency behavior changes.
+Hosted CI is the final candidate gate before merge, not a save button before every staging iteration. Agents may iterate on authorized staging with focused checks before hosted CI when the change is FAST_PATH.
 
-Do not claim full verification from local checks alone. Report the exact candidate SHA, hosted CI run ID, job statuses, and staging SHA if deployment was performed.
+For FAST_PATH application code:
+
+1. Finish the coherent candidate with focused local feedback; update documentation/status only when materially required.
+2. Deploy the bounded candidate to authorized staging.
+3. Verify the exact owner-visible scenario and iterate until it works.
+4. Push the final candidate SHA or branch.
+5. Manually dispatch hosted CI once for that final candidate before merge if code changed.
+6. Inspect the exact-SHA result and fix only failures caused by the candidate.
+
+Run hosted CI again only if code changed after the previous run, or if the changed risk genuinely requires a new candidate. Staging data/configuration changes alone do not justify rerunning CI. For FULL_RISK, CI/PostgreSQL/security/concurrency gates may be required before staging where the change could damage shared data or invalidate staging.
 
 The manually dispatched candidate workflow runs PHPUnit unit/feature/integration, Pint, Larastan, ESLint, `vue-tsc`, Vite build, Composer audit, npm audit, Docker build/runtime health, and privacy/secret scan.
 
-The full Playwright suite runs through the separate scheduled/manual E2E workflow until it is stable enough to return as a blocking smoke gate. Scheduled E2E failures are investigated separately and do not automatically block unrelated feature work.
+The full Playwright suite is a separate scheduled/manual E2E gate; it blocks only when the touched feature or an explicitly requested release path requires it. Scheduled E2E failures are investigated separately and do not automatically block unrelated feature work.
 
-Never claim a check passed unless it was executed. Record exact results and skips in `PROJECT_STATUS.md`. Use `PASS` only for an executed passing check; use `EXISTS — NOT RUN LOCALLY` for an unexecuted PostgreSQL/integration check.
+Never claim a check passed unless it was executed. Report only commands actually run. Do not update `PROJECT_STATUS.md` solely to document a small FAST_PATH iteration; record exact candidate SHA, hosted CI run ID, job statuses, and relevant skips when a release/status record is otherwise required. Use `PASS` only for an executed passing check; use `EXISTS — NOT RUN LOCALLY` for an unexecuted PostgreSQL/integration check.
 
-### Staging Is Not CI
+### Staging Is Primary Product Acceptance
 
-Never use persistent staging as a replacement for isolated CI. Do not run destructive or full automated test suites against staging. Deploy to staging only after the exact candidate SHA has passed all required hosted CI jobs. Staging may then be used for guarded deployment verification, synthetic smoke tests, real browser performance measurements, and environment-specific checks that cannot be meaningfully reproduced in GitHub Actions.
+Staging is the primary product acceptance environment. For FAST_PATH, authorized staging may be used before full hosted CI. Do not run destructive or full automated suites against staging. Verify the smallest real path that proves the task:
 
-After a staging deployment, run `./scripts/staging-smoke.sh`. Use `./scripts/staging-smoke.sh --deep` when the milestone requires reversible domain verification. Extend this repository-owned harness when a new staging check is needed; do not create ad-hoc staging smoke scripts while the harness can own the check. The app container root filesystem is read-only, so smoke PHP is streamed through stdin and must not rely on `docker cp` or container-local temporary files.
+- button fix: click the actual button and observe the result
+- prompt UX: open the prompt and verify the active prompt and primary actions are visible
+- Companion: send the exact message that previously failed
+- Telegram: send a real staging message and verify the reply
+- async UI: trigger the action and verify state refreshes automatically
+
+Never use persistent staging as a replacement for isolated CI, and never use CI as a substitute for the exact owner scenario. A green internal test that does not exercise the broken owner behavior does not close the task. Use `./scripts/staging-smoke.sh` when the deployment milestone or changed infrastructure risk requires it; use `--deep` only when the milestone requires reversible domain verification. Extend this repository-owned harness when a new staging check is needed; do not create ad-hoc staging smoke scripts while the harness can own the check. The app container root filesystem is read-only, so smoke PHP is streamed through stdin and must not rely on `docker cp` or container-local temporary files.
+
+### Playwright Scope
+
+Full Playwright runs only when explicitly requested, scheduled, or required for browser-level confidence in the touched feature. A focused browser scenario is enough for one small UI fix when browser tooling is available. Fix Playwright failures only when caused by the current change or when they block the exact owner scenario. If browser tooling is unavailable, do not block a bounded staging recheck.
+
+### Verification Loop and CI Failure Classification
+
+Do not rerun the same heavy verification when the relevant code has not changed. If hosted CI is green on SHA X and only staging data changed, do not rerun it. If PostgreSQL semantics, a concurrency fix, or another high-risk boundary was already verified and remains untouched, do not rerun that verification for ceremony.
+
+Classify CI failures as `CAUSED BY CURRENT CHANGE`, `PRE-EXISTING / BASELINE`, or `INFRASTRUCTURE`. Only failures caused by the current change automatically block bounded delivery. Security, tenant-isolation, protected-data, and data-loss failures remain blocking regardless of classification.
+
+## Reporting
+
+For bounded work, keep the final report short and factual: what was broken, root cause, what changed, exact staging scenario result, focused checks, PostgreSQL status if relevant, final SHA, and whether owner recheck is needed. Do not produce a release-style report for a small fix or spend implementation time polishing it before user-visible behavior works.
 
 ### Performance & Runtime Quality Gate
 
@@ -162,7 +235,9 @@ After a staging deployment, run `./scripts/staging-smoke.sh`. Use `./scripts/sta
 
 ## Documentation Policy
 
-After meaningful work update only the relevant documents:
+For small bounded fixes, do not update `CHANGELOG.md`, `PROJECT_STATUS.md`, `ROADMAP.md`, or architecture documents unless the change materially alters product behavior, a requirement, architecture, milestone state, or an operational contract. Do not update documentation just because a button moved or a small bug was fixed. PR body and report cleanup is not part of the inner debugging loop; do it once when the candidate is ready.
+
+When documentation is materially required, update only the relevant document:
 
 - implementation/product change → `CHANGELOG.md`;
 - requirement/scope change → `docs/product/requirements-changelog.md` and affected REQ rows;
@@ -176,18 +251,19 @@ Do not copy the master plan or source requirements into derived documentation. R
 
 Make reversible implementation assumptions only when they do not alter business scope; record them in `docs/product/assumptions.md`. Questions affecting money, scope, UX, legal/medical behavior, security, or architecture go to `docs/product/open-questions.md` and block only the dependent work.
 
-A task is complete only when relevant REQs, boundaries, organization isolation, security, tests, static/lint/build checks, migrations, and documentation are all accurate and no temporary residue remains.
+A task is complete when the requested user-visible behavior works, relevant architecture and security boundaries are preserved, checks appropriate to the actual risk are green, PostgreSQL is verified where the change is DB-sensitive, owner-visible staging acceptance is successful for user-facing work, and no blocking real defect remains. More green tests are not a substitute for broken staging behavior.
 
 ## Superpowers integration
 
-Superpowers is available as an engineering skill set. Use it when it materially
-improves correctness, debugging, review quality, or delivery reliability. The
-Chuklov instructions override generic Superpowers methodology. Superpowers is a
-risk amplifier, not a default amount of ceremony.
+Superpowers is optional and risk-based, not default ceremony. The Chuklov instructions override generic Superpowers methodology. Superpowers must never force ceremony onto an obvious bounded fix.
 
-### Risk-based use
+### FAST_PATH
 
-Use Superpowers aggressively for work involving:
+Do not activate Superpowers unless a concrete benefit is identified for the current bounded task. Focused reproduction, implementation, checks, staging acceptance, and owner recheck remain sufficient by default.
+
+### FULL_RISK
+
+Use relevant Superpowers skills more aggressively when the change involves:
 
 - PostgreSQL migrations, schema, or constraints
 - concurrency, idempotency, finance, rewards, or ledger behavior
