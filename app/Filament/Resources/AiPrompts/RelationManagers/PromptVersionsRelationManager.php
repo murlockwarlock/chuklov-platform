@@ -61,8 +61,11 @@ class PromptVersionsRelationManager extends RelationManager
                         Placeholder::make('guardrails_preview')
                             ->label('Safety guardrails платформы')
                             ->content(fn (Get $get): string => AiPromptTextSections::guardrails((string) $get('system_prompt'))),
+                        Placeholder::make('runtime_contract_preview')
+                            ->label('Runtime-контракт')
+                            ->content(fn (Get $get): string => AiPromptTextSections::runtimeContract((string) $get('system_prompt'))),
                     ])
-                    ->columns(2)
+                    ->columns(3)
                     ->columnSpanFull(),
                 Textarea::make('user_prompt_template')
                     ->label('Шаблон запроса')
