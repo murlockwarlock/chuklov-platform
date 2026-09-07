@@ -6,6 +6,7 @@ use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionCallback;
+use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionDocument;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionText;
 use App\Modules\Identity\Application\CompleteTelegramWebAuthentication;
@@ -226,6 +227,10 @@ $bot->onText('^(?!/).+', function (Nutgram $bot, HandleTelegramCompanionText $ha
 });
 
 $bot->onPhoto(function (Nutgram $bot, HandleTelegramCompanionPhoto $handler): void {
+    $handler->handle($bot);
+});
+
+$bot->onDocument(function (Nutgram $bot, HandleTelegramCompanionDocument $handler): void {
     $handler->handle($bot);
 });
 

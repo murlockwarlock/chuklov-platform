@@ -104,9 +104,12 @@ final class AiInputReferenceValidator
         $attachment = MedicalAttachment::query()
             ->where('organization_id', $organizationId)
             ->whereKey($id)
-            ->where('attachment_type', AttachmentType::CompanionImage->value)
+            ->whereIn('attachment_type', [
+                AttachmentType::CompanionImage->value,
+                AttachmentType::CompanionDocument->value,
+            ])
             ->first()
-            ?? throw new InvalidArgumentException('AI Companion image reference was not found in the current organization.');
+            ?? throw new InvalidArgumentException('AI Companion attachment reference was not found in the current organization.');
 
         return $attachment;
     }

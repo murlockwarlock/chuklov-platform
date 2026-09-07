@@ -14,6 +14,7 @@ enum CompanionFailureCode: string
     case DeliveryFailure = 'delivery_failure';
     case RateLimited = 'rate_limited';
     case ImageUnavailable = 'image_unavailable';
+    case DocumentUnavailable = 'document_unavailable';
     case InputLimitExceeded = 'input_limit_exceeded';
     case MediaGroupIncomplete = 'media_group_incomplete';
     case ExecutionDeadlineExceeded = 'execution_deadline_exceeded';

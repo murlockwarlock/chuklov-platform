@@ -88,6 +88,7 @@ final class CompanionTurnProcessor
             if ($inputFailure instanceof CompanionFailureCode
                 && in_array($inputFailure, [
                     CompanionFailureCode::ImageUnavailable,
+                    CompanionFailureCode::DocumentUnavailable,
                     CompanionFailureCode::InputLimitExceeded,
                     CompanionFailureCode::MediaGroupIncomplete,
                 ], true)) {
@@ -558,6 +559,7 @@ final class CompanionTurnProcessor
             $message = CompanionClientMessage::from($locale);
             $failureMessage = match ($failureCode) {
                 CompanionFailureCode::ImageUnavailable => $message->imageFailure(),
+                CompanionFailureCode::DocumentUnavailable => $message->documentFailure(),
                 CompanionFailureCode::InputLimitExceeded => $message->imageLimitFailure(),
                 CompanionFailureCode::MediaGroupIncomplete => $message->albumIncomplete(),
                 default => $message->failure,

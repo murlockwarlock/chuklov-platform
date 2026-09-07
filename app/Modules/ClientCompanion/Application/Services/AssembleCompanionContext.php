@@ -3,6 +3,8 @@
 namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Modules\AI\Domain\Enums\AiModelModality;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
@@ -28,7 +30,7 @@ final class AssembleCompanionContext
         $currentEntries = CompanionTurnMessage::query()
             ->where('organization_id', $organizationId)
             ->where('turn_id', $turn->getKey())
-            ->with('conversationMessage.companionAttachments')
+            ->with('conversationMessage.companionAttachments.medicalAttachment')
             ->orderBy('sequence')
             ->limit(max(1, (int) config('ai.companion.maximum_burst_messages', 4)))
             ->get();
@@ -78,11 +80,7 @@ final class AssembleCompanionContext
         }
 
         $attachmentIds = $this->boundedAttachmentIds($organizationId, $conversation, $turn, $recentTurns);
-
-        $requiredModalities = [];
-        if ($attachmentIds !== []) {
-            $requiredModalities[] = AiModelModality::ImageInput;
-        }
+        $requiredModalities = $this->requiredModalities($organizationId, $attachmentIds);
 
         return [
             'current_message' => $currentMessage,
@@ -106,7 +104,7 @@ final class AssembleCompanionContext
             ->where('sequence', '<', $current->sequence)
             ->whereNotNull('outbound_message_id')
             ->whereIn('status', ['completed', 'failed', 'escalated'])
-            ->with(['messages.conversationMessage.companionAttachments', 'outboundMessage', 'attachments.medicalAttachment'])
+            ->with(['messages.conversationMessage.companionAttachments.medicalAttachment', 'outboundMessage', 'attachments.medicalAttachment'])
             ->when($recent, fn ($query) => $query->orderByDesc('sequence'), fn ($query) => $query->orderBy('sequence'))
             ->limit(min(20, $limit))
             ->get()
@@ -154,16 +152,18 @@ final class AssembleCompanionContext
                     ->where('conversation_message_id', $message->getKey())
                     ->orderBy('source_ordinal')
                     ->orderBy('item_index')
+                    ->with('medicalAttachment')
                     ->get();
             if ($messageAttachments->isNotEmpty()) {
-                if ($text === '[Изображение]' || $text === '') {
+                $attachmentLabel = $this->attachmentLabel($messageAttachments);
+                if (in_array($text, ['[Изображение]', '[Документ]', '[Вложения]'], true) || $text === '') {
                     $text = '';
                 } elseif (isset($captionHashes[hash('sha256', $text)])) {
                     $text = '';
                 } else {
                     $captionHashes[hash('sha256', $text)] = true;
                 }
-                $text .= ($text === '' ? '' : "\n").'[Изображение: '.$messageAttachments->count().']';
+                $text .= ($text === '' ? '' : "\n").'['.$attachmentLabel.': '.$messageAttachments->count().']';
             }
             if ($text !== '') {
                 $parts[] = $text;
@@ -171,6 +171,47 @@ final class AssembleCompanionContext
         }
 
         return implode("\n", $parts);
+    }
+
+    /**
+     * @param  list<int>  $attachmentIds
+     * @return list<AiModelModality>
+     */
+    private function requiredModalities(int $organizationId, array $attachmentIds): array
+    {
+        if ($attachmentIds === []) {
+            return [];
+        }
+
+        $modalities = [];
+        foreach (MedicalAttachment::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $attachmentIds)
+            ->get() as $attachment) {
+            $modality = $attachment->attachment_type === AttachmentType::CompanionImage
+                ? AiModelModality::ImageInput
+                : AiModelModality::DocumentInput;
+            $modalities[$modality->value] = $modality;
+        }
+
+        return array_values($modalities);
+    }
+
+    /** @param Collection<int, CompanionMessageAttachment> $attachments */
+    private function attachmentLabel(Collection $attachments): string
+    {
+        $hasImage = $attachments->contains(
+            static fn (CompanionMessageAttachment $attachment): bool => $attachment->medicalAttachment?->attachment_type === AttachmentType::CompanionImage,
+        );
+        $hasDocument = $attachments->contains(
+            static fn (CompanionMessageAttachment $attachment): bool => $attachment->medicalAttachment?->attachment_type === AttachmentType::CompanionDocument,
+        );
+
+        return match (true) {
+            $hasImage && $hasDocument => 'Вложения',
+            $hasDocument => 'Документ',
+            default => 'Изображение',
+        };
     }
 
     /**

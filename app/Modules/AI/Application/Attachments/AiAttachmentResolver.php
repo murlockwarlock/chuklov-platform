@@ -116,8 +116,8 @@ final class AiAttachmentResolver
                 if ($capability !== AiCapability::ClientCompanion
                     || $clientId === null
                     || (int) $attachment->client_id !== $clientId
-                    || $attachment->attachment_type !== AttachmentType::CompanionImage) {
-                    throw new InvalidArgumentException('AI Companion image input is outside the current client context.');
+                    || ! in_array($attachment->attachment_type, [AttachmentType::CompanionImage, AttachmentType::CompanionDocument], true)) {
+                    throw new InvalidArgumentException('AI Companion attachment input is outside the current client context.');
                 }
             } elseif (! $actor instanceof User) {
                 throw new InvalidArgumentException('An explicit authorized actor is required for protected medical attachments.');
@@ -127,7 +127,10 @@ final class AiAttachmentResolver
 
             $this->assertCompatible($capability, $attachment, count($ids), $reference->type);
             $provenance[] = $this->safeProvenance($attachment, $reference->type, $postureRoles[$index] ?? null);
-            $files[] = $this->toSdkFile($attachment, $reference->type === 'companion_attachment');
+            $files[] = $this->toSdkFile(
+                $attachment,
+                $reference->type === 'companion_attachment' && $attachment->attachment_type === AttachmentType::CompanionImage,
+            );
         }
 
         return ['files' => $files, 'provenance' => $provenance];
@@ -220,9 +223,15 @@ final class AiAttachmentResolver
             return;
         }
 
-        if ($referenceType === 'companion_attachment'
-            && ($capability !== AiCapability::ClientCompanion || $type !== AttachmentType::CompanionImage || ! in_array($mime, self::IMAGE_MIMES, true))) {
-            throw new InvalidArgumentException('AI Companion accepts image input only.');
+        if ($referenceType === 'companion_attachment') {
+            $validType = match ($type) {
+                AttachmentType::CompanionImage => in_array($mime, self::IMAGE_MIMES, true),
+                AttachmentType::CompanionDocument => in_array($mime, self::DOCUMENT_MIMES, true),
+                default => false,
+            };
+            if ($capability !== AiCapability::ClientCompanion || ! $validType) {
+                throw new InvalidArgumentException('AI Companion attachment input is not supported.');
+            }
         }
 
         if ($capability === AiCapability::ClinicalDocumentExtraction && $type !== AttachmentType::MedicalReport) {
