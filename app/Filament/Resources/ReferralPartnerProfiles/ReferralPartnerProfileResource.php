@@ -29,7 +29,7 @@ final class ReferralPartnerProfileResource extends Resource
 
     protected static ?string $navigationLabel = 'Партнёры';
 
-    protected static string|\UnitEnum|null $navigationGroup = 'Клиенты';
+    protected static string|\UnitEnum|null $navigationGroup = 'Партнёры';
 
     protected static ?int $navigationSort = 2;
 

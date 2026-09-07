@@ -40,7 +40,7 @@ final class ReferralRewardConfiguration extends Page
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedGift;
 
-    protected static string|UnitEnum|null $navigationGroup = 'Клиенты';
+    protected static string|UnitEnum|null $navigationGroup = 'Партнёры';
 
     protected static ?int $navigationSort = 4;
 

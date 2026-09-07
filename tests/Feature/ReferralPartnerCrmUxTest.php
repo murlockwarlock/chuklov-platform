@@ -35,6 +35,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test(ListReferralPartnerProfiles::class)
             ->assertSuccessful()
+            ->assertActionExists('openReferralSettings')
             ->assertTableColumnExists('client.full_name')
             ->assertTableColumnExists('visits_count')
             ->assertTableColumnExists('registrations_count')
