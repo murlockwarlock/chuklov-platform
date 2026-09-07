@@ -7,6 +7,7 @@ use App\Filament\Resources\AiPrompts\Pages\EditAiPrompt;
 use App\Filament\Resources\AiPrompts\Pages\ListAiPrompts;
 use App\Filament\Resources\AiPrompts\RelationManagers\PromptVersionsRelationManager;
 use App\Filament\Resources\AiPrompts\Schemas\AiPromptForm;
+use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Support\AiPlaygroundResultPresentation;
 use App\Modules\AI\Application\Actions\ExecutePlaygroundRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
@@ -122,11 +123,20 @@ final class AiPromptResource extends Resource
                             );
 
                             if ($result->isSuccess()) {
-                                Notification::make()
+                                $notification = Notification::make()
                                     ->title('Проверка успешна')
                                     ->body(AiPlaygroundResultPresentation::body($result))
-                                    ->success()
-                                    ->send();
+                                    ->success();
+                                if ($result->runId > 0) {
+                                    $notification->actions([
+                                        Action::make('technicalData')
+                                            ->label('Технические данные')
+                                            ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
+                                            ->button()
+                                            ->openUrlInNewTab(),
+                                    ]);
+                                }
+                                $notification->send();
                             } else {
                                 Notification::make()
                                     ->title('Ошибка выполнения в песочнице')
