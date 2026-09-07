@@ -15,7 +15,7 @@ final class RichTextEditor
     {
         $toolbarButtons = [
             ['bold', 'italic', 'underline', 'strike', 'link', 'emoji'],
-            ['blockquote', 'code', 'codeBlock'],
+            ['blockquote', 'code', 'codeBlock', 'bulletList', 'orderedList'],
         ];
 
         if ($mergeTags !== null) {

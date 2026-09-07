@@ -17,6 +17,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -133,5 +134,36 @@ class AiHumanReviewTest extends TestCase
 
         $this->assertDatabaseCount('ai_run_human_reviews', 0);
         $this->assertDatabaseCount('audit_events', 0);
+    }
+
+    public function test_a_second_contradictory_review_is_rejected_without_persisting_another_decision(): void
+    {
+        $run = AiRun::create([
+            'organization_id' => $this->organization->id,
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => 'single_review_decision_test',
+            'origin' => AiRunOrigin::User,
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::PendingReview,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+
+        app(ReviewAiRun::class)->handle(
+            actor: $this->specialistUser,
+            runId: $run->getKey(),
+            decision: HumanReviewDecision::Accepted,
+        );
+
+        $this->expectException(ValidationException::class);
+        app(ReviewAiRun::class)->handle(
+            actor: $this->specialistUser,
+            runId: $run->getKey(),
+            decision: HumanReviewDecision::Rejected,
+            safeReasonCode: 'specialist_rejected',
+        );
+
+        $this->assertDatabaseCount('ai_run_human_reviews', 1);
     }
 }

@@ -17,6 +17,7 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class ReviewAiRun
@@ -66,6 +67,16 @@ class ReviewAiRun
 
             if ($lockedRun === null) {
                 throw new InvalidArgumentException('AI Run not found.');
+            }
+
+            if (in_array($lockedRun->human_review_status, [
+                HumanReviewStatus::Accepted,
+                HumanReviewStatus::Rejected,
+                HumanReviewStatus::EditedAndAccepted,
+            ], true)) {
+                throw ValidationException::withMessages([
+                    'review' => 'Этот результат AI уже оценён специалистом.',
+                ]);
             }
 
             $latestStep = AiRunHumanReview::query()

@@ -4,10 +4,14 @@ namespace Tests\Feature\ClientCompanion;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
+use App\Modules\ClientCompanion\Application\Services\ListCompanionCommunicationAttachments;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
@@ -15,6 +19,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -32,7 +37,11 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class ClientCompanionCrmTest extends TestCase
@@ -186,6 +195,84 @@ final class ClientCompanionCrmTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(CompanionExportService::class)->history($this->admin, $foreignClient, 'txt', 'pseudonymized');
+    }
+
+    public function test_protected_attachments_are_not_available_to_the_outbound_companion_picker(): void
+    {
+        $this->seedHandoffHistory();
+        $protected = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/protected.pdf',
+            'original_filename' => 'protected.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'protected'),
+        ]);
+        $allowed = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::CompanionDocument,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/outbound.pdf',
+            'original_filename' => 'outbound.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'outbound'),
+        ]);
+
+        $options = app(ListCompanionCommunicationAttachments::class)->options($this->admin, $this->client);
+        self::assertArrayNotHasKey($protected->getKey(), $options);
+        self::assertArrayHasKey($allowed->getKey(), $options);
+
+        $this->expectException(ValidationException::class);
+        app(ReplyToCompanion::class)->handle($this->admin, $this->client, 'Попытка отправки', [$protected->getKey()]);
+    }
+
+    public function test_allowed_communication_attachment_is_stored_and_linked_to_the_staff_message(): void
+    {
+        $this->seedHandoffHistory();
+        Storage::fake('private');
+
+        $attachment = app(UploadCompanionCommunicationAttachment::class)->handle(
+            $this->admin,
+            $this->client,
+            UploadedFile::fake()->createWithContent('instructions.txt', 'Безопасная инструкция'),
+        );
+        app(ReplyToCompanion::class)->handle(
+            $this->admin,
+            $this->client,
+            '<p>Инструкция во вложении</p>',
+            [$attachment->getKey()],
+        );
+
+        $link = CompanionMessageAttachment::query()
+            ->where('medical_attachment_id', $attachment->getKey())
+            ->sole();
+        self::assertSame($this->client->getKey(), $link->client_id);
+        self::assertSame(AttachmentType::CompanionDocument, $attachment->fresh()->attachment_type);
+        Storage::disk('private')->assertExists($attachment->storage_path);
+    }
+
+    public function test_closing_handoff_and_resuming_ai_is_one_authoritative_action(): void
+    {
+        [$conversation] = $this->seedHandoffHistory();
+        $escalation = CompanionEscalation::query()->where('conversation_id', $conversation->getKey())->where('status', CompanionEscalationStatus::Open)->sole();
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.clients.companion.resolve-and-resume', ['client' => $this->client]))
+            ->assertRedirect()
+            ->assertSessionHas('companion_status', 'Обращение закрыто, AI снова отвечает.');
+
+        self::assertSame(ConversationAutomationState::AiActive, $conversation->fresh()->automation_state);
+        self::assertSame(CompanionEscalationStatus::Resolved, $escalation->fresh()->status);
+        self::assertSame($this->admin->getKey(), $escalation->fresh()->resolved_by_user_id);
     }
 
     /** @return array{0: Conversation, 1: CompanionTurn, 2: ConversationMessage} */

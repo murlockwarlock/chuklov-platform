@@ -2,6 +2,8 @@
 
 namespace App\Modules\Channels\Infrastructure\Telegram;
 
+use App\Support\RichText\RichTextDocument;
+
 final class TelegramCompanionFormatter
 {
     public const int SAFE_MESSAGE_LENGTH = 4090;
@@ -12,6 +14,12 @@ final class TelegramCompanionFormatter
         $html = $this->markdownToHtml($semanticText);
 
         return $this->splitHtmlText($html);
+    }
+
+    /** @return list<string> */
+    public function richTextChunks(string $content): array
+    {
+        return $this->splitHtmlText(RichTextDocument::telegramHtml($content));
     }
 
     public function markdownToHtml(string $text): string

@@ -165,6 +165,33 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('cc:human:1', $body['reply_markup']['inline_keyboard'][0][0]['callback_data']);
     }
 
+    public function test_rich_text_chunks_keep_formatting_and_safe_links(): void
+    {
+        $chunks = (new TelegramCompanionFormatter)->richTextChunks(
+            '<p><strong>Привет</strong> <em>мир</em> 😊 <a href="https://example.test">ссылка</a></p><ul><li>пункт</li></ul>',
+        );
+
+        self::assertCount(1, $chunks);
+        self::assertStringContainsString('<b>Привет</b>', $chunks[0]);
+        self::assertStringContainsString('<i>мир</i>', $chunks[0]);
+        self::assertStringContainsString('<a href="https://example.test">ссылка</a>', $chunks[0]);
+        self::assertStringContainsString('• пункт', $chunks[0]);
+    }
+
+    public function test_rich_text_semantic_payload_is_sent_as_formatted_telegram_html(): void
+    {
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: '<p><strong>Привет</strong> <em>мир</em></p>',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+        ));
+
+        self::assertSame('<b>Привет</b> <i>мир</i>', $body['text']);
+        self::assertSame('HTML', $body['parse_mode']);
+    }
+
     public function test_json_utf8_failure_is_recorded_as_a_local_payload_failure(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);

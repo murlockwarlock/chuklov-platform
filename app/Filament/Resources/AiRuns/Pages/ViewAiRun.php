@@ -61,7 +61,7 @@ class ViewAiRun extends ViewRecord
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->requiresConfirmation()
                 ->modalHeading('Подтвердить результат AI')
-                ->modalDescription('Это отметка специалиста о результате AI, а не команда для отправки клиенту.')
+                ->modalDescription('Это оценка результата AI специалистом. Она не отправляет сообщение клиенту.')
                 ->action(function (AiRun $record, ReviewAiRun $reviewAction) {
                     $user = Auth::user();
                     if ($user) {
@@ -72,7 +72,7 @@ class ViewAiRun extends ViewRecord
                             safeReasonCode: 'specialist_confirmed',
                         );
                         Notification::make()->title('Результат AI отмечен как корректный')->success()->send();
-                        $this->refreshFormData(['human_review_status']);
+                        $this->refreshReviewState($record);
                     }
                 }),
 
@@ -100,7 +100,7 @@ class ViewAiRun extends ViewRecord
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                         );
                         Notification::make()->title('Результат AI отмечен как неверный')->danger()->send();
-                        $this->refreshFormData(['human_review_status']);
+                        $this->refreshReviewState($record);
                     }
                 }),
 
@@ -108,6 +108,7 @@ class ViewAiRun extends ViewRecord
                 ->label('Исправить ответ')
                 ->color('info')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
+                ->modalDescription('Исправление сохраняется только как результат проверки. Чтобы отправить текст клиенту, используйте чат.')
                 ->form([
                     Textarea::make('edited_output')
                         ->label('Скорректированный текст (будет зашифрован)')
@@ -129,7 +130,7 @@ class ViewAiRun extends ViewRecord
                             editedOutput: (string) ($data['edited_output'] ?? ''),
                         );
                         Notification::make()->title('Исправленный ответ сохранён')->success()->send();
-                        $this->refreshFormData(['human_review_status']);
+                        $this->refreshReviewState($record);
                     }
                 }),
         ];
@@ -147,6 +148,12 @@ class ViewAiRun extends ViewRecord
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ViewAiTrace,
         );
+    }
+
+    private function refreshReviewState(AiRun $record): void
+    {
+        $record->refresh();
+        $this->refreshFormData(['human_review_status']);
     }
 
     private function exportUrl(AiRun $record, string $format, string $identity): string

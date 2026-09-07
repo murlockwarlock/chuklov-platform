@@ -3,9 +3,12 @@
 namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramCompanionFormatter;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
@@ -17,9 +20,11 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Support\RichText\RichTextDocument;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
 final class ReplyToCompanion
@@ -31,7 +36,8 @@ final class ReplyToCompanion
         private readonly TelegramCompanionFormatter $formatter,
     ) {}
 
-    public function handle(User $actor, Client $client, string $body): void
+    /** @param list<int> $attachmentIds */
+    public function handle(User $actor, Client $client, string $body, array $attachmentIds = []): void
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageCompanionHandoff);
@@ -44,9 +50,11 @@ final class ReplyToCompanion
         }
         RateLimiter::hit($rateKey, 60);
 
+        $body = RichTextDocument::canonicalHtml($body);
         $recordMessage = $this->recordMessage;
         $formatter = $this->formatter;
-        $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter): array {
+        $attachmentIds = array_values(array_unique(array_map('intval', $attachmentIds)));
+        $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds): array {
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
@@ -72,11 +80,40 @@ final class ReplyToCompanion
                 metadata: ['message_type' => 'staff_reply', 'locale' => $client->language ?? 'en', 'transport' => $channel],
             );
 
+            if ($attachmentIds !== []) {
+                if ($turn === null || count($attachmentIds) > 1) {
+                    throw ValidationException::withMessages(['attachments' => 'Выберите не более одного файла для сообщения.']);
+                }
+
+                $attachments = MedicalAttachment::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('client_id', $client->getKey())
+                    ->whereIn('attachment_type', [AttachmentType::CompanionImage, AttachmentType::CompanionDocument])
+                    ->whereIn('id', $attachmentIds)
+                    ->get();
+                if ($attachments->count() !== count($attachmentIds)) {
+                    throw ValidationException::withMessages(['attachments' => 'Файл нельзя отправить клиенту.']);
+                }
+
+                foreach ($attachments as $index => $attachment) {
+                    CompanionMessageAttachment::query()->create([
+                        'organization_id' => $organization->getKey(),
+                        'client_id' => $client->getKey(),
+                        'conversation_id' => $conversation->getKey(),
+                        'turn_id' => $turn->getKey(),
+                        'conversation_message_id' => $message->getKey(),
+                        'medical_attachment_id' => $attachment->getKey(),
+                        'source_ordinal' => 1,
+                        'item_index' => $index + 1,
+                    ]);
+                }
+            }
+
             if ($channel !== 'telegram' || $turn?->transport_chat_id === null) {
                 return [];
             }
 
-            $chunks = $formatter->chunks($body);
+            $chunks = $formatter->richTextChunks($body);
             $ids = [];
             foreach ($chunks as $index => $chunk) {
                 $delivery = CompanionDelivery::query()->create([

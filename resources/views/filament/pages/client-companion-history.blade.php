@@ -59,11 +59,7 @@
 
         @if ($canManage)
             <x-filament::section heading="Написать сообщение" description="Сообщение уйдёт в тот же канал, что и последнее сообщение клиента. Специалист может написать вручную, даже когда AI отвечает.">
-                <form method="post" action="{{ $urls['reply'] }}">
-                    @csrf
-                    <textarea id="companion-staff-reply" name="body" class="fi-input min-h-28 w-full max-w-3xl" maxlength="10000" required></textarea>
-                    <x-filament::button class="mt-3" type="submit" color="primary">Отправить сообщение</x-filament::button>
-                </form>
+                {{ $this->composer }}
             </x-filament::section>
         @endif
 
@@ -91,7 +87,7 @@
                                     <span class="font-normal opacity-70">Оценка: {{ $message['feedback'] === 'helpful' ? 'полезно' : 'не помогло' }}</span>
                                 @endif
                             </div>
-                            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{{ $message['content'] }}</p>
+                            <div class="mt-2 break-words text-sm leading-6">{!! \App\Filament\Support\RichTextPresentation::html($message['content']) !!}</div>
                             @if ($message['attachmentCount'] > 0)
                                 <p class="mt-2 text-xs opacity-70">{{ $message['attachmentCount'] === 1 ? 'Изображение' : $message['attachmentCount'].' изображений' }}</p>
                             @endif

@@ -2,11 +2,14 @@
 
 namespace App\Modules\ClientCompanion\Infrastructure\Jobs;
 
+use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\CompanionActionButton;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionSafeAction;
@@ -38,8 +41,11 @@ final class DeliverCompanionMessage implements ShouldQueue
         $this->onQueue('ai-companion-delivery');
     }
 
-    public function handle(MessagingChannel $channel, CompanionMessageBodyReader $bodyReader): void
-    {
+    public function handle(
+        MessagingChannel $channel,
+        CompanionMessageBodyReader $bodyReader,
+        ?AttachmentStorageInterface $attachmentStorage = null,
+    ): void {
         $token = (string) Str::uuid();
         $delivery = $this->claim($token);
         if ($this->reconcileOnly) {
@@ -60,6 +66,7 @@ final class DeliverCompanionMessage implements ShouldQueue
             $body = $bodyReader->read($this->organizationId, $delivery->conversationMessage);
             $metadata = $delivery->conversationMessage->metadata ?? [];
             $buttons = $this->buttons($delivery, $metadata);
+            $mediaItems = $attachmentStorage === null ? [] : $this->mediaItems($delivery, $attachmentStorage);
         } catch (Throwable) {
             [$retry, $nextDeliveryId] = $this->finalize($token, NotificationDeliveryResult::retryable('protected_message_unavailable'));
             $this->dispatchFollowUp($retry, $nextDeliveryId);
@@ -75,6 +82,7 @@ final class DeliverCompanionMessage implements ShouldQueue
                 chunkCount: (int) $delivery->chunk_count,
                 locale: (string) ($metadata['locale'] ?? 'en'),
                 buttons: $buttons,
+                mediaItems: $mediaItems,
             ));
         } catch (Throwable) {
             $result = NotificationDeliveryResult::unknown('delivery_send_exception_unknown');
@@ -82,6 +90,32 @@ final class DeliverCompanionMessage implements ShouldQueue
 
         [$retry, $nextDeliveryId] = $this->finalize($token, $result);
         $this->dispatchFollowUp($retry, $nextDeliveryId);
+    }
+
+    /** @return list<NotificationMedia> */
+    private function mediaItems(CompanionDelivery $delivery, AttachmentStorageInterface $storage): array
+    {
+        if ((int) $delivery->chunk_index !== 0) {
+            return [];
+        }
+
+        $attachments = $delivery->conversationMessage?->companionAttachments
+            ?? collect();
+        $media = [];
+        foreach ($attachments as $link) {
+            $attachment = $link->medicalAttachment;
+            if ($attachment === null || ! in_array($attachment->attachment_type, [AttachmentType::CompanionImage, AttachmentType::CompanionDocument], true)) {
+                continue;
+            }
+            $stream = $storage->readStream($attachment->storage_path);
+            $media[] = new NotificationMedia(
+                type: $attachment->attachment_type === AttachmentType::CompanionImage ? 'photo' : 'document',
+                stream: $stream,
+                fileName: $attachment->original_filename,
+            );
+        }
+
+        return array_slice($media, 0, 1);
     }
 
     /**
@@ -188,7 +222,7 @@ final class DeliverCompanionMessage implements ShouldQueue
                 'next_attempt_at' => null,
             ]);
 
-            return $delivery->fresh(['conversationMessage', 'turn']);
+            return $delivery->fresh(['conversationMessage.companionAttachments.medicalAttachment', 'turn']);
         });
     }
 

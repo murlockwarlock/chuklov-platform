@@ -25,27 +25,28 @@
                     <p class="mt-2 font-medium text-warning-800 dark:text-warning-200">{{ count($failedCases) }} {{ count($failedCases) === 1 ? 'проверка не пройдена' : 'проверок не пройдено' }}</p>
                 @endif
             </div>
-            @if ($failedCases !== [])
-                <x-filament::section heading="Проверки, требующие внимания">
-                    <div class="space-y-4">
-                        @foreach ($failedCases as $case)
-                            <article class="rounded-xl border border-danger-200 p-4 dark:border-danger-900">
-                                <h3 class="font-semibold">{{ $case['case_name'] ?? 'Проверка без названия' }}</h3>
-                                <p class="mt-2 text-sm text-danger-700 dark:text-danger-300">{{ $case['failure_explanation'] ?? 'Проверка не пройдена.' }}</p>
-                                <dl class="mt-3 space-y-3 text-sm">
-                                    <div><dt class="font-medium">Ввод</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['test_inputs'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd></div>
-                                    <div><dt class="font-medium">Ожидаемое поведение</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['expected_assertions'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd></div>
-                                    <div><dt class="font-medium">Фактический ответ</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ $case['actual_output'] ?? 'Ответ не получен.' }}</dd></div>
-                                </dl>
-                            </article>
-                        @endforeach
-                    </div>
-                </x-filament::section>
-            @endif
         @else
             <div class="rounded-xl border border-warning-200 bg-warning-50 p-5 text-sm text-warning-800 dark:border-warning-900 dark:bg-warning-950/30 dark:text-warning-200">
                 {{ $progress['message'] ?? 'Проверка недоступна.' }}
             </div>
+        @endif
+
+        @if ($failedCases !== [])
+            <x-filament::section heading="Проверки, требующие внимания">
+                <div class="space-y-4">
+                    @foreach ($failedCases as $case)
+                        <article class="rounded-xl border border-danger-200 p-4 dark:border-danger-900">
+                            <h3 class="font-semibold">{{ $case['case_name'] ?? 'Проверка без названия' }}</h3>
+                            <p class="mt-2 text-sm text-danger-700 dark:text-danger-300">{{ $case['failure_explanation'] ?? 'Проверка не пройдена.' }}</p>
+                            <dl class="mt-3 space-y-3 text-sm">
+                                <div><dt class="font-medium">Ввод</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['test_inputs'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd></div>
+                                <div><dt class="font-medium">Ожидаемое поведение</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['expected_assertions'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd></div>
+                                <div><dt class="font-medium">Фактический ответ</dt><dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ $case['actual_output'] ?? 'Ответ не получен.' }}</dd></div>
+                            </dl>
+                        </article>
+                    @endforeach
+                </div>
+            </x-filament::section>
         @endif
     </div>
 </x-filament-panels::page>

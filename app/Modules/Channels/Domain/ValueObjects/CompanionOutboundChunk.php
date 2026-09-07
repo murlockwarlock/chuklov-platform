@@ -12,5 +12,7 @@ final readonly class CompanionOutboundChunk
         public string $locale,
         /** @var list<CompanionActionButton> */
         public array $buttons = [],
+        /** @var list<NotificationMedia> */
+        public array $mediaItems = [],
     ) {}
 }
