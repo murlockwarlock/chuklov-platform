@@ -267,7 +267,7 @@ final class ExecuteScenarioAction
             $companionUrl = $action->render_context['companion']['crm_url'] ?? null;
             if (is_string($companionUrl) && trim($companionUrl) !== '') {
                 return new NotificationActionButton(
-                    text: $this->isRussian($locale) ? 'Открыть обращение' : 'Open conversation',
+                    text: $this->isRussian($locale) ? 'Открыть диалог' : 'Open conversation',
                     url: $companionUrl,
                 );
             }

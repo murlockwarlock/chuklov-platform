@@ -5,6 +5,7 @@ namespace Tests\Feature\Knowledge;
 use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
 use App\Filament\Resources\KnowledgeSources\Pages\EditKnowledgeSource;
+use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
@@ -29,6 +30,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -482,6 +484,52 @@ final class KnowledgeSourceProductizationTest extends TestCase
         self::assertSame(1, $source->revisions()->count());
         self::assertSame('ready', $revision->fresh()->status->value);
         self::assertSame(1, AuditEvent::query()->where('action', 'knowledge.ingestion.reprocess_requested')->count());
+    }
+
+    public function test_reactivation_stays_on_the_page_refreshes_state_and_explains_missing_search_configuration(): void
+    {
+        [, $actor] = $this->fixture();
+        config()->set('rag.embedding.pricing.zero_cost_local', false);
+        config()->set('rag.embedding.pricing.input_cost_per_million_minor_units', null);
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'ready', 'ready_at' => now()]);
+        $source->update(['active_revision_id' => $revision->getKey()]);
+        app(RetireKnowledgeSource::class)->handle($actor, $source->fresh());
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(EditKnowledgeSource::class, ['record' => $source->getKey()])
+            ->assertActionVisible('reactivate')
+            ->callAction('reactivate')
+            ->assertNotified(Notification::make()
+                ->title('Материал снова используется')
+                ->body('Материал включён, но поиск по нему пока недоступен: не настроена модель индексации.')
+                ->success())
+            ->assertSee('Используется')
+            ->assertSee('Индексация недоступна');
+
+        self::assertSame('active', $source->fresh()->status->value);
+        self::assertSame('ready', $revision->fresh()->status->value);
+    }
+
+    public function test_knowledge_list_explains_unconfigured_embedding_search_without_exposing_secrets(): void
+    {
+        [, $actor] = $this->fixture();
+        config()->set('ai.providers.openai.key', null);
+        config()->set('rag.embedding.pricing.input_rate_per_million_units', null);
+        config()->set('rag.embedding.pricing.input_price_per_million', null);
+        config()->set('rag.embedding.pricing.input_cost_per_million_minor_units', null);
+        config()->set('rag.embedding.pricing.zero_cost_local', false);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(ListKnowledgeSources::class)
+            ->assertSuccessful()
+            ->assertSee('Семантический поиск: Не настроен')
+            ->assertSee('OpenAI · text-embedding-3-small')
+            ->assertSee('OPENAI_API_KEY')
+            ->assertDontSee('sk-');
     }
 
     public function test_search_reprocessing_fails_closed_for_permission_tenant_lifecycle_and_active_revision_guards(): void

@@ -25,6 +25,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 final class PrepareAiRun
 {
@@ -343,7 +344,20 @@ final class PrepareAiRun
             ];
         }
 
-        $snapshot = EmbeddingExecutionSnapshot::active();
+        try {
+            $snapshot = EmbeddingExecutionSnapshot::active();
+        } catch (InvalidArgumentException $exception) {
+            if (! $contextPolicy->allowRagDegradation || $contextPolicy->requireGroundedRag) {
+                throw $exception;
+            }
+
+            return [
+                'query_count' => 0,
+                'maximum_cost_minor_units' => 0,
+                'configuration_snapshot' => [],
+                'pricing_snapshot' => [],
+            ];
+        }
 
         return [
             'query_count' => $queryCount,

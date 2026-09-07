@@ -55,6 +55,7 @@ final class CompanionTurnProcessor
         private readonly AssembleCompanionContext $contextAssembler,
         private readonly CompanionResponseContract $responseContract,
         private readonly CompanionSafetyClassifier $safetyClassifier,
+        private readonly CompanionMessageBodyReader $bodyReader,
         private readonly RecordCompanionMessage $recordMessage,
         private readonly MessagingChannel $channel,
         private readonly TelegramCompanionFormatter $formatter,
@@ -188,6 +189,15 @@ final class CompanionTurnProcessor
                 return;
             }
             if ($response['decision'] === 'handoff_required') {
+                if ($this->safetyClassifier->isHandoffForbidden($context['current_message'])) {
+                    if ($response['reply'] !== '') {
+                        $this->complete($organizationId, $turn->getKey(), $leaseToken, $response['reply'], $locale, $response['suggested_safe_actions']);
+
+                        return;
+                    }
+
+                    throw new InvalidArgumentException('The Companion model cannot infer an explicit human request.');
+                }
                 $reason = $this->reasonFromModel($response['handoff_reason']);
                 if ($reason === CompanionEscalationReason::HumanRequested) {
                     if ($response['reply'] !== '') {
@@ -546,7 +556,7 @@ final class CompanionTurnProcessor
             ->where('status', CompanionTurnStatus::Failed)
             ->where('failure_code', $failureCode->value)
             ->where('created_at', '>=', now()->subDay())
-            ->exists();
+            ->exists() && ! $this->handoffIsForbidden($organizationId, $currentTurn);
         if ($shouldHandoff) {
             $this->handoff($organizationId, $turnId, $leaseToken, CompanionEscalationReason::RepeatedExecutionFailure, null, $locale);
 
@@ -754,6 +764,10 @@ final class CompanionTurnProcessor
 
         $message = mb_strtolower($exception->getMessage());
 
+        if ($result === null && $exception instanceof InvalidArgumentException) {
+            return CompanionFailureCode::NotConfigured;
+        }
+
         return match (true) {
             $exception instanceof AiProviderUnavailableException
                 && $exception->providerDisabled => CompanionFailureCode::ProviderDisabled,
@@ -771,6 +785,18 @@ final class CompanionTurnProcessor
             str_contains($message, 'active prompt'), str_contains($message, 'prompt version') => CompanionFailureCode::NotConfigured,
             default => CompanionFailureCode::ProviderUnavailable,
         };
+    }
+
+    private function handoffIsForbidden(int $organizationId, CompanionTurn $turn): bool
+    {
+        try {
+            $message = $turn->inboundMessage()->first();
+
+            return $message instanceof ConversationMessage
+                && $this->safetyClassifier->isHandoffForbidden($this->bodyReader->read($organizationId, $message));
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function failureCodeFromResult(AiRunResult $result): CompanionFailureCode

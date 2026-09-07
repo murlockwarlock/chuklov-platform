@@ -162,12 +162,12 @@ final class RevisionsRelationManager extends RelationManager
                         Notification::make()->title('Обработка запущена')->success()->send();
                     }),
                 Action::make('reprocessForSearch')
-                    ->label('Переобработать для поиска')
+                    ->label('Подготовить материал к поиску')
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canReprocessForSearch($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(ReprocessKnowledgeForSearch::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title('Подготовка для поиска запущена')->success()->send();
+                        Notification::make()->title('Индексация материала запущена')->success()->send();
                     }),
             ])
             ->defaultSort(

@@ -20,10 +20,11 @@ use Illuminate\Http\UploadedFile;
 final class MessageComposer
 {
     /**
-     * @param  array<string, string>|Closure(Get): array<string, string>  $variables
+     * @param  array<string, string>|Closure(Get): array<string, string>|null  $variables
      * @param  Closure(Get, ?Model): mixed  $preview
      * @param  Closure(): array<int, mixed>|null  $savedTemplateSchema
      * @param  array<int, mixed>  $additionalMediaComponents
+     * @param  array<int, string>|null  $mediaAcceptedFileTypes
      * @return array<int, Section>
      */
     public static function make(
@@ -31,7 +32,7 @@ final class MessageComposer
         string $deliveryModeField,
         string $mediaField,
         string $mediaUrlField,
-        array|Closure $variables,
+        array|Closure|null $variables,
         Closure $preview,
         bool $allowSavedTemplates = false,
         ?Closure $savedTemplateSchema = null,
@@ -39,18 +40,34 @@ final class MessageComposer
         string $bodyLabel = 'Текст сообщения',
         string $bodyHelper = 'Используйте форматирование, ссылки, эмодзи и данные из списка доступных переменных.',
         bool $requireMedia = false,
+        bool $showDeliveryMode = true,
+        bool $includeMediaUrl = true,
+        ?array $mediaAcceptedFileTypes = null,
+        ?int $mediaMaxKilobytes = null,
+        bool $mediaMultiple = true,
+        string $mediaSectionTitle = 'Медиа',
+        ?string $mediaSectionDescription = null,
+        string $mediaUploadLabel = 'Загрузить медиа',
+        ?string $mediaHelperText = null,
     ): array {
         $messageModeField = 'message_mode';
 
-        $messageComponents = [
-            Radio::make($deliveryModeField)
+        $messageComponents = [];
+        if ($showDeliveryMode) {
+            $messageComponents[] = Radio::make($deliveryModeField)
                 ->label('Формат отправки')
                 ->options(self::deliveryOptions())
                 ->default(NotificationMessageMode::Text->value)
                 ->live()
                 ->required()
                 ->columns(1)
-                ->columnSpanFull(),
+                ->columnSpanFull();
+        } else {
+            $messageComponents[] = Hidden::make($deliveryModeField)
+                ->default(NotificationMessageMode::Text->value);
+        }
+
+        $messageComponents[] =
             Radio::make('caption_position')
                 ->label('Положение подписи')
                 ->options(['above' => 'Над медиа', 'below' => 'Под медиа'])
@@ -58,8 +75,7 @@ final class MessageComposer
                 ->inline()
                 ->columnSpanFull()
                 ->visible(fn (Get $get): bool => self::usesCaption($get, $deliveryModeField))
-                ->required(fn (Get $get): bool => self::usesCaption($get, $deliveryModeField)),
-        ];
+                ->required(fn (Get $get): bool => self::usesCaption($get, $deliveryModeField));
 
         if ($allowSavedTemplates) {
             $messageComponents[] = Radio::make($messageModeField)
@@ -108,53 +124,62 @@ final class MessageComposer
             TelegramPreviewAction::make($preview),
         ])->columnSpanFull();
 
+        $fileUpload = FileUpload::make($mediaField)
+            ->label($mediaUploadLabel)
+            ->multiple($mediaMultiple)
+            ->maxFiles($mediaMultiple ? 10 : 1)
+            ->reorderable()
+            ->appendFiles()
+            ->openable()
+            ->previewable()
+            ->deletable()
+            ->maxSize($mediaMaxKilobytes ?? self::mediaUploadKilobytes())
+            ->storeFiles(false)
+            ->live()
+            ->required(fn (Get $get): bool => $requireMedia
+                && self::usesMedia($get, $deliveryModeField)
+                && ! self::hasUploads($get, $mediaField)
+                && blank($get($mediaUrlField)))
+            ->afterStateUpdated(function (Set $set): void {
+                $set('remove_media', false);
+            })
+            ->helperText($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.')
+            ->columnSpanFull();
+        if ($mediaAcceptedFileTypes !== null) {
+            $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
+        }
+
         $mediaComponents = [
-            FileUpload::make($mediaField)
-                ->label('Загрузить медиа')
-                ->multiple()
-                ->maxFiles(10)
-                ->reorderable()
-                ->appendFiles()
-                ->openable()
-                ->previewable()
-                ->deletable()
-                ->maxSize(self::mediaUploadKilobytes())
-                ->storeFiles(false)
-                ->live()
-                ->required(fn (Get $get): bool => $requireMedia
-                    && self::usesMedia($get, $deliveryModeField)
-                    && ! self::hasUploads($get, $mediaField)
-                    && blank($get($mediaUrlField)))
-                ->afterStateUpdated(function (Set $set): void {
-                    $set('remove_media', false);
-                })
-                ->helperText('Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.')
-                ->columnSpanFull(),
-            TextInput::make($mediaUrlField)
-                ->label('HTTPS-ссылка на медиа (одно)')
-                ->url()
-                ->maxLength(2000)
-                ->live()
-                ->required(fn (Get $get): bool => $requireMedia
-                    && self::usesMedia($get, $deliveryModeField)
-                    && ! self::hasUploads($get, $mediaField))
-                ->afterStateUpdated(function (Set $set): void {
-                    $set('remove_media', false);
-                })
-                ->dehydrated(fn (mixed $state): bool => filled($state))
-                ->helperText('Ссылка должна вести непосредственно на файл и начинаться с HTTPS.')
-                ->columnSpanFull(),
+            $fileUpload,
             ...$additionalMediaComponents,
             Hidden::make('remove_media')->default(false),
         ];
+        if ($includeMediaUrl) {
+            array_splice($mediaComponents, 1, 0, [
+                TextInput::make($mediaUrlField)
+                    ->label('HTTPS-ссылка на медиа (одно)')
+                    ->url()
+                    ->maxLength(2000)
+                    ->live()
+                    ->required(fn (Get $get): bool => $requireMedia
+                        && self::usesMedia($get, $deliveryModeField)
+                        && ! self::hasUploads($get, $mediaField))
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('remove_media', false);
+                    })
+                    ->dehydrated(fn (mixed $state): bool => filled($state))
+                    ->helperText('Ссылка должна вести непосредственно на файл и начинаться с HTTPS.')
+                    ->columnSpanFull(),
+            ]);
+        }
 
         return [
             Section::make('Сообщение')
                 ->schema($messageComponents)
                 ->columns(1)
                 ->columnSpanFull(),
-            Section::make('Медиа')
-                ->description('Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.')
+            Section::make($mediaSectionTitle)
+                ->description($mediaSectionDescription ?? 'Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.')
                 ->schema($mediaComponents)
                 ->columnSpanFull(),
         ];

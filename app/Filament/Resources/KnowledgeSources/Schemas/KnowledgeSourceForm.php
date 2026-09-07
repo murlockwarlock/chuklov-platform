@@ -2,8 +2,11 @@
 
 namespace App\Filament\Resources\KnowledgeSources\Schemas;
 
+use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
+use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -30,6 +33,20 @@ final class KnowledgeSourceForm
                         ->label('Можно использовать в ответах клиентского AI-помощника')
                         ->helperText('Включайте только материалы, которые безопасно показывать клиентам.')
                         ->default(false),
+                    Placeholder::make('material_status')
+                        ->label('Материал')
+                        ->content(fn (?KnowledgeSource $record): string => $record instanceof KnowledgeSource
+                            ? app(KnowledgeSourcePresentation::class)->materialStatus($record)
+                            : 'Будет использоваться после сохранения'),
+                    Placeholder::make('search_status')
+                        ->label('Состояние поиска')
+                        ->content(fn (?KnowledgeSource $record): string => $record instanceof KnowledgeSource
+                            ? app(KnowledgeSourcePresentation::class)->searchAvailability($record)
+                            : 'Появится после обработки материала'),
+                    Placeholder::make('semantic_search_status')
+                        ->label('Семантический поиск')
+                        ->content(fn (): string => app(KnowledgeSourcePresentation::class)->semanticSearchSummary())
+                        ->columnSpanFull(),
                 ])->columns(2)->columnSpanFull(),
             Section::make('Материал')->schema([
                 Textarea::make('content')->label('Текст')->rows(18)->maxLength(500000)->required(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->visible(fn (Get $get): bool => $get('type') === KnowledgeSourceType::AuthoredText->value)->columnSpanFull(),

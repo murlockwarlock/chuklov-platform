@@ -9,7 +9,7 @@ final class ListReferralRelationships extends ListRecords
 {
     protected static string $resource = ReferralRelationshipResource::class;
 
-    protected static ?string $title = 'Рекомендации';
+    protected static ?string $title = 'Приглашения клиентов';
 
     public function getBreadcrumbs(): array
     {

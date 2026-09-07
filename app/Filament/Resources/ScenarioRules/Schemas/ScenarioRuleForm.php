@@ -3,17 +3,25 @@
 namespace App\Filament\Resources\ScenarioRules\Schemas;
 
 use App\Filament\Pages\SchedulingConfiguration;
-use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Resources\NotificationTemplates\Schemas\NotificationTemplateForm;
+use App\Filament\Support\MessageComposer;
 use App\Filament\Support\RichTextPresentation;
+use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scenarios\Application\CreateNotificationTemplate;
+use App\Modules\Scenarios\Application\UpdateNotificationTemplate;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -22,12 +30,17 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class ScenarioRuleForm
 {
@@ -131,7 +144,7 @@ final class ScenarioRuleForm
                     ->columnSpanFull(),
 
                 Section::make('3. Что отправить?')
-                    ->description('Выберите опубликованное сообщение. Если подходящего текста нет, его можно создать отдельным действием.')
+                    ->description('Авто-сообщение определяет, когда, кому и куда отправлять. Текст хранится отдельно и версионируется.')
                     ->schema([
                         Select::make('template_version_id')
                             ->label('Сообщение')
@@ -140,16 +153,54 @@ final class ScenarioRuleForm
                             ->placeholder('Нет опубликованных сообщений')
                             ->required()
                             ->helperText('Уже отправленные сообщения сохраняют свой текст.'),
+                        Placeholder::make('template_preview')
+                            ->label('Текст сообщения')
+                            ->content(fn (Get $get): string => self::selectedTemplatePreview($get))
+                            ->columnSpanFull(),
                         Placeholder::make('template_empty')
                             ->label('Готовые сообщения')
                             ->content('Нет готовых шаблонов для этого типа сообщения.')
                             ->visible(fn (Get $get): bool => self::templateOptions((string) ($get('purpose') ?: ScenarioRulePurpose::Service->value)) === []),
                         Actions::make([
                             Action::make('createMessage')
-                                ->label('Создать сообщение')
+                                ->label('Создать текст сообщения')
                                 ->icon('heroicon-o-plus')
-                                ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
-                        ]),
+                                ->slideOver()
+                                ->modalHeading('Создать текст сообщения')
+                                ->modalSubmitActionLabel('Сохранить текст')
+                                ->schema(self::templateComposerSchema())
+                                ->fillForm(fn (?ScenarioRule $record): array => self::newTemplateFormData($record))
+                                ->action(function (array $data, Set $set): void {
+                                    $actor = auth()->user();
+                                    abort_unless($actor instanceof User, 403);
+                                    $data['variables'] = self::templateVariables($data);
+                                    $template = app(CreateNotificationTemplate::class)->handle($actor, $data);
+                                    $set('template_version_id', $template->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
+                                    Notification::make()->title('Текст сообщения создан')->success()->send();
+                                }),
+                            Action::make('editMessage')
+                                ->label('Изменить текст сообщения')
+                                ->icon('heroicon-o-pencil-square')
+                                ->visible(fn (Get $get): bool => filled($get('template_version_id')))
+                                ->slideOver()
+                                ->modalHeading('Изменить текст сообщения')
+                                ->modalSubmitActionLabel('Сохранить новую версию')
+                                ->schema(self::templateComposerSchema())
+                                ->fillForm(fn (?ScenarioRule $record, Get $get): array => self::existingTemplateFormData($record, (int) $get('template_version_id')))
+                                ->action(function (array $data, Set $set): void {
+                                    $actor = auth()->user();
+                                    abort_unless($actor instanceof User, 403);
+                                    $version = self::templateVersion((int) ($data['template_version_id'] ?? 0));
+                                    $template = $version?->template;
+                                    abort_unless($template !== null, 404);
+                                    $data['template_key'] = $template->template_key;
+                                    $data['locale'] = $template->locale;
+                                    $data['variables'] = self::templateVariables($data);
+                                    $updated = app(UpdateNotificationTemplate::class)->handle($actor, $template, $data);
+                                    $set('template_version_id', $updated->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
+                                    Notification::make()->title('Новая версия текста сохранена')->success()->send();
+                                }),
+                        ])->key('template_actions')->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -389,5 +440,114 @@ final class ScenarioRuleForm
             'en' => 'Английский',
             default => 'Другой язык',
         };
+    }
+
+    private static function selectedTemplatePreview(Get $get): string
+    {
+        $version = self::templateVersion((int) $get('template_version_id'));
+
+        return $version === null
+            ? 'Выберите опубликованный текст или создайте новый.'
+            : Str::limit(RichTextPresentation::text($version->body), 500);
+    }
+
+    /** @return array<string, mixed> */
+    private static function newTemplateFormData(?ScenarioRule $record): array
+    {
+        return [
+            'purpose' => $record?->purpose->value ?? ScenarioRulePurpose::Service->value,
+            'locale' => 'ru',
+            'is_active' => true,
+            'delivery_mode' => NotificationMessageMode::Text->value,
+            'caption_position' => 'below',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private static function existingTemplateFormData(?ScenarioRule $record, ?int $selectedVersionId = null): array
+    {
+        $version = self::templateVersion($selectedVersionId ?? (int) $record?->template_version_id)
+            ?? $record?->templateVersion;
+        $template = $version?->template;
+
+        if ($version === null || $template === null) {
+            return self::newTemplateFormData($record);
+        }
+
+        return [
+            'template_version_id' => $version->getKey(),
+            'name' => $template->name,
+            'locale' => $template->locale,
+            'purpose' => $template->purpose,
+            'is_active' => $template->is_active,
+            'subject' => $version->subject,
+            'body' => $version->body,
+            'delivery_mode' => ($version->delivery_mode ?? NotificationMessageMode::Text)->value,
+            'caption_position' => $version->caption_position ?: 'below',
+        ];
+    }
+
+    /** @return array<int, mixed> */
+    private static function templateComposerSchema(): array
+    {
+        return [
+            Hidden::make('template_version_id'),
+            Hidden::make('locale')->default('ru'),
+            Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
+            TextInput::make('name')
+                ->label('Название текста')
+                ->required()
+                ->maxLength(160),
+            Toggle::make('is_active')
+                ->label('Текст включён')
+                ->default(true)
+                ->required(),
+            TextInput::make('subject')
+                ->label('Тема')
+                ->maxLength(255)
+                ->helperText('Необязательно для Telegram.'),
+            ...MessageComposer::make(
+                bodyField: 'body',
+                deliveryModeField: 'delivery_mode',
+                mediaField: 'media_image',
+                mediaUrlField: 'media_url',
+                variables: fn (Get $get): array => ScenarioTemplateVariableCatalog::labelsForPurpose($get('purpose')),
+                preview: fn (Get $get, ?Model $record): NotificationMessage => NotificationTemplateForm::previewMessage($get, $record),
+                bodyLabel: 'Текст сообщения',
+                bodyHelper: 'Используйте форматирование, ссылки, эмодзи и доступные данные.',
+                requireMedia: false,
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private static function templateVariables(array $data): array
+    {
+        try {
+            return ScenarioTemplateVariableCatalog::used(
+                (string) ($data['body'] ?? ''),
+                (string) ($data['subject'] ?? ''),
+            );
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                'body' => 'Текст содержит неподдерживаемые данные. Используйте список доступных данных.',
+            ]);
+        }
+    }
+
+    private static function templateVersion(int $id): ?NotificationTemplateVersion
+    {
+        if ($id < 1) {
+            return null;
+        }
+
+        return NotificationTemplateVersion::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereKey($id)
+            ->with('template')
+            ->first();
     }
 }

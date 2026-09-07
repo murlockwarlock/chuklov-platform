@@ -47,10 +47,34 @@ final class ScenarioActionResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('event.event_name')
-                    ->label('Когда')
-                    ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
-                TextEntry::make('event.occurred_at')->label('Событие произошло')->dateTime('d.m.Y H:i'),
+                Section::make('Контекст события')
+                    ->schema([
+                        TextEntry::make('business_client')
+                            ->label('Клиент')
+                            ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
+                            ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
+                        TextEntry::make('business_event')
+                            ->label('Событие')
+                            ->state(fn (ScenarioAction $record): string => self::eventLabel($record->event?->event_name)),
+                        TextEntry::make('business_reason')
+                            ->label('Причина')
+                            ->state(fn (ScenarioAction $record): string => self::eventReason($record)),
+                        TextEntry::make('business_channel')
+                            ->label('Канал')
+                            ->state(fn (ScenarioAction $record): string => self::channelSummary($record->channel_priority)),
+                        TextEntry::make('business_recipient')
+                            ->label('Получатель')
+                            ->state(fn (ScenarioAction $record): string => self::businessRecipient($record)),
+                        TextEntry::make('business_delivery')
+                            ->label('Доставка')
+                            ->state(fn (ScenarioAction $record): string => self::deliverySummary($record)),
+                        TextEntry::make('business_occurred_at')
+                            ->label('Событие произошло')
+                            ->state(fn (ScenarioAction $record): mixed => $record->event?->occurred_at)
+                            ->dateTime('d.m.Y H:i'),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
                 TextEntry::make('rule.name')->label('Правило'),
                 TextEntry::make('sequence_summary')
                     ->label('Сообщение в серии')
@@ -210,7 +234,7 @@ final class ScenarioActionResource extends Resource
             'booking.completed' => 'После завершения визита',
             'onboarding.started' => 'После начала оформления',
             'finance.obligation.created' => 'После появления задолженности',
-            'companion.requested_specialist' => 'Когда клиент просит специалиста',
+            'companion.requested_specialist' => 'Клиент запросил специалиста',
             'companion.fallback_failed' => 'Когда AI не смог ответить',
             'broadcast.delivery_failed' => 'При сбое операционной рассылки',
             'feedback.submitted' => 'После обратной связи клиента',
@@ -302,6 +326,44 @@ final class ScenarioActionResource extends Resource
             null => '—',
             default => 'Не удалось отправить',
         };
+    }
+
+    private static function eventReason(ScenarioAction $record): string
+    {
+        $reason = $record->render_context['companion']['reason']
+            ?? $record->event?->payload['reason']
+            ?? $record->terminal_reason;
+
+        return match ((string) $reason) {
+            'human_requested' => 'Клиент явно попросил специалиста',
+            'urgent_safety_concern' => 'Обнаружена срочная ситуация, требующая специалиста',
+            'out_of_scope' => 'Вопрос не входит в безопасный сценарий AI',
+            'repeated_execution_failure' => 'AI не смог ответить после повторной ошибки',
+            'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => 'Для получателя нет доступного канала',
+            '' => '—',
+            default => self::reasonLabel(is_string($reason) ? $reason : null),
+        };
+    }
+
+    private static function businessRecipient(ScenarioAction $record): string
+    {
+        if ($record->recipient_type === 'client') {
+            return $record->client?->full_name ?: 'Клиент недоступен';
+        }
+
+        return $record->recipientUser?->name ?: 'Сотрудник недоступен';
+    }
+
+    private static function deliverySummary(ScenarioAction $record): string
+    {
+        if ($record->deliveries->isEmpty()) {
+            return self::statusLabel($record->status).' — доставка ещё не создана';
+        }
+
+        return $record->deliveries
+            ->sortBy('priority')
+            ->map(fn (ScenarioDelivery $delivery): string => self::channelLabel($delivery->channel).' — '.self::deliveryLabel($delivery->status))
+            ->implode('; ');
     }
 
     private static function errorCodes(ScenarioAction $record): string

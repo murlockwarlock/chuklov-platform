@@ -245,7 +245,12 @@ class AiContextAssembler implements AiContextAssemblerInterface
                 } catch (AuthorizationException $e) {
                     throw new AiRagRetrievalException('Knowledge scope is not authorized.', reason: 'scope', previous: $e);
                 } catch (InvalidArgumentException $e) {
-                    throw new AiRagRetrievalException('Knowledge retrieval configuration is invalid.', reason: 'configuration', previous: $e);
+                    if ($policy->requireGroundedRag || ! $policy->allowRagDegradation) {
+                        throw new AiRagRetrievalException('Knowledge retrieval configuration is invalid.', reason: 'configuration', previous: $e);
+                    }
+
+                    $provenanceSummary['rag_degraded'] = true;
+                    $variables['rag_context'] = '';
                 } catch (\Throwable $e) {
                     $ragFailure = new AiRagRetrievalException(
                         'Knowledge retrieval infrastructure is unavailable.',

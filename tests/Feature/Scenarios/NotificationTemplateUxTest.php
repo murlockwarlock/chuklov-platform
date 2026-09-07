@@ -7,6 +7,7 @@ use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Resources\NotificationTemplates\Pages\CreateNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\EditNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
+use App\Filament\Resources\ScenarioRules\Pages\EditScenarioRule;
 use App\Filament\Resources\ScenarioRules\Pages\ViewScenarioRule;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
@@ -18,8 +19,10 @@ use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use Filament\Facades\Filament;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -223,6 +226,95 @@ final class NotificationTemplateUxTest extends TestCase
         Livewire::test(ViewContentSection::class, ['record' => $section->getKey()])
             ->assertSuccessful()
             ->assertActionExists('edit');
+    }
+
+    public function test_scenario_rule_can_create_message_in_modal_with_shared_composer_and_keep_rule_state(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $template = NotificationTemplate::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'template_key' => 'tpl_existing',
+            'locale' => 'ru',
+            'name' => 'Существующее сообщение',
+            'purpose' => ScenarioRulePurpose::Service,
+            'is_active' => true,
+        ]);
+        $version = NotificationTemplateVersion::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'template_id' => $template->getKey(),
+            'version' => 1,
+            'body' => 'Старый текст',
+            'variables' => [],
+            'status' => NotificationTemplateStatus::Published,
+        ]);
+        $rule = ScenarioRule::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'rule_key' => 'rule_modal_message',
+            'name' => 'Правило с сообщением',
+            'trigger_event' => 'booking.completed',
+            'delay_value' => 0,
+            'delay_unit' => 'minutes',
+            'max_occurrences' => 1,
+            'purpose' => ScenarioRulePurpose::Service,
+            'template_version_id' => $version->getKey(),
+            'conditions' => [],
+            'recipient_strategy' => ['type' => 'client'],
+            'channel_priority' => ['telegram'],
+            'is_enabled' => true,
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditScenarioRule::class, ['record' => $rule->getKey()])
+            ->fillForm([
+                'name' => 'Несохранённое название правила',
+                'template_version_id' => $version->getKey(),
+            ])
+            ->assertFormComponentActionExists('template_actions', 'createMessage')
+            ->assertFormComponentActionHasLabel('template_actions', 'createMessage', 'Создать текст сообщения');
+
+        $component
+            ->callFormComponentAction('template_actions', 'createMessage', [
+                'name' => 'Новое сообщение из правила',
+                'locale' => 'ru',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'delivery_mode' => NotificationMessageMode::Text->value,
+                'caption_position' => 'below',
+                'body' => 'Здравствуйте, {{ client.full_name }}!',
+            ])
+            ->assertHasNoFormComponentActionErrors()
+            ->assertNotified('Текст сообщения создан')
+            ->assertSet('data.name', 'Несохранённое название правила');
+
+        $newVersion = NotificationTemplateVersion::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereHas('template', fn (Builder $query): Builder => $query->where('name', 'Новое сообщение из правила'))
+            ->sole();
+
+        self::assertStringContainsString('Здравствуйте', $newVersion->body);
+        $component->assertSet('data.template_version_id', $newVersion->getKey());
+
+        $component
+            ->callFormComponentAction('template_actions', 'editMessage', [
+                'template_version_id' => $newVersion->getKey(),
+                'name' => 'Изменённое сообщение из правила',
+                'locale' => 'ru',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'delivery_mode' => NotificationMessageMode::Text->value,
+                'caption_position' => 'below',
+                'body' => 'Обновлённый текст, {{ client.full_name }}!',
+            ])
+            ->assertHasNoFormComponentActionErrors()
+            ->assertNotified('Новая версия текста сохранена')
+            ->assertSet('data.name', 'Несохранённое название правила');
+
+        $createdTemplate = $newVersion->template;
+        self::assertNotNull($createdTemplate);
+        self::assertSame(2, $createdTemplate->versions()->count());
+        self::assertStringContainsString('Обновлённый текст', $createdTemplate->latestVersion()->firstOrFail()->body);
     }
 
     /** @return array{0: Organization, 1: User} */

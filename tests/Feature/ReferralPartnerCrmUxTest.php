@@ -47,7 +47,7 @@ final class ReferralPartnerCrmUxTest extends TestCase
             ->assertSee('Алина Партнёр');
 
         self::assertSame(
-            RecordActionsPosition::BeforeColumns,
+            RecordActionsPosition::AfterColumns,
             $component->instance()->getTable()->getRecordActionsPosition(),
         );
     }

@@ -28,15 +28,15 @@ final class ReferralRelationshipResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShare;
 
-    protected static ?string $navigationLabel = 'Рекомендации';
+    protected static ?string $navigationLabel = 'Приглашения клиентов';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Клиенты';
 
     protected static ?int $navigationSort = 3;
 
-    protected static ?string $modelLabel = 'рекомендация';
+    protected static ?string $modelLabel = 'приглашение клиента';
 
-    protected static ?string $pluralModelLabel = 'рекомендации';
+    protected static ?string $pluralModelLabel = 'приглашения клиентов';
 
     public static function canAccess(): bool
     {
@@ -63,15 +63,16 @@ final class ReferralRelationshipResource extends Resource
     {
         return $table
             ->stackedOnMobile()
+            ->description('Кто пригласил клиента и как была зафиксирована рекомендация.')
             ->columns([
                 TextColumn::make('referrer.full_name')->label('Кто пригласил')->searchable()->wrap(),
                 TextColumn::make('referred.full_name')
-                    ->label('Приглашённый клиент')
+                    ->label('Кого пригласил')
                     ->searchable()
                     ->wrap()
                     ->description(fn (ReferralRelationship $record): string => self::establishmentMethodLabel($record->establishment_method)),
                 TextColumn::make('establishment_method')
-                    ->label('Способ установления')
+                    ->label('Как зафиксировано')
                     ->formatStateUsing(fn (ReferralEstablishmentMethod|string $state): string => self::establishmentMethodLabel($state))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -83,7 +84,7 @@ final class ReferralRelationshipResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('registered_at')->label('Регистрация')->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('commercial_evidence_count')
-                    ->label('Финансовый статус')
+                    ->label('Финансовый результат')
                     ->state(fn (ReferralRelationship $record): string => (int) ($record->commercial_evidence_count ?? 0) > 0 ? 'Оплата зафиксирована' : 'Пока нет')
                     ->badge()
                     ->color(fn (string $state): string => $state === 'Оплата зафиксирована' ? 'success' : 'gray'),
@@ -113,14 +114,14 @@ final class ReferralRelationshipResource extends Resource
     public static function getRecordTitle(?Model $record): string
     {
         if (! $record instanceof ReferralRelationship) {
-            return 'Рекомендация';
+            return 'Приглашение клиента';
         }
 
         $referred = $record->getRelation('referred');
 
         return $referred instanceof Client
-            ? trim((string) ($referred->full_name ?? '')) ?: 'Рекомендация'
-            : 'Рекомендация';
+            ? trim((string) ($referred->full_name ?? '')) ?: 'Приглашение клиента'
+            : 'Приглашение клиента';
     }
 
     private static function establishmentMethodLabel(ReferralEstablishmentMethod|string $state): string

@@ -57,10 +57,12 @@ final class KnowledgeSourceResource extends Resource
 
         return $table
             ->stackedOnMobile()
+            ->description($presentation->semanticSearchSummary())
             ->columns([
                 TextColumn::make('title')->label('Название')->searchable()->sortable()->wrap(),
                 TextColumn::make('type')->label('Тип')->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
-                TextColumn::make('search_availability')->label('Доступность')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record)),
+                TextColumn::make('material_status')->label('Материал')->state(fn (KnowledgeSource $record): string => $presentation->materialStatus($record)),
+                TextColumn::make('search_availability')->label('Состояние поиска')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record))->wrap(),
                 TextColumn::make('latest_processing')->label('Обработка')->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record))->wrap(),
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
             ])

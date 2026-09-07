@@ -3,6 +3,7 @@
 namespace Tests\Feature\ClientCompanion;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Pages\ClientCompanionHistory;
 use App\Models\User;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
@@ -35,6 +36,9 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\RichEditor;
+use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -42,6 +46,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class ClientCompanionCrmTest extends TestCase
@@ -162,6 +167,10 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertStringContainsString('Specialist:', $txt);
         self::assertStringNotContainsString('<b>', $txt);
 
+        $pseudonymizedTxt = $export->history($this->admin, $this->client, 'txt', 'pseudonymized');
+        self::assertStringContainsString('Идентификатор экспорта: client_1', $pseudonymizedTxt);
+        self::assertStringNotContainsString($this->client->full_name, $pseudonymizedTxt);
+
         $identified = json_decode($export->history($this->admin, $this->client, 'json', 'identified'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_companion_history_v1', $identified['schema_version']);
         self::assertSame('client_'.$this->client->getKey(), $identified['identity']['label']);
@@ -186,6 +195,48 @@ final class ClientCompanionCrmTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         $export->metadata($this->staff, $this->client);
+    }
+
+    public function test_companion_page_uses_shared_composer_and_modal_actions_for_exports_and_metadata(): void
+    {
+        $this->seedHandoffHistory();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->assertSuccessful()
+            ->assertActionExists('export')
+            ->assertActionExists('technicalMetadata')
+            ->assertSee('Скачать историю')
+            ->assertSee('Расширенные технические метаданные')
+            ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]))
+            ->assertDontSee(route('admin.clients.companion.metadata-export', ['client' => $this->client]));
+
+        $editor = $component->instance()->getSchemaComponent('form.body');
+        self::assertInstanceOf(RichEditor::class, $editor);
+        self::assertContains('emoji', array_merge(...$editor->getToolbarButtons()));
+        self::assertContains('bulletList', array_merge(...$editor->getToolbarButtons()));
+        self::assertContains('orderedList', array_merge(...$editor->getToolbarButtons()));
+
+        $exportAction = $component->instance()->getAction('export');
+        self::assertNotNull($exportAction);
+        $exportSchema = $exportAction->getSchema(Schema::make($component->instance()));
+        self::assertNotNull($exportSchema);
+        self::assertSame(['format', 'identity'], array_values(array_map(
+            static fn (mixed $field): string => $field->getName(),
+            $exportSchema->getFlatComponents(withHidden: true),
+        )));
+
+        $metadataAction = $component->instance()->getAction('technicalMetadata');
+        self::assertNotNull($metadataAction);
+        self::assertTrue($metadataAction->isModalSlideOver());
+        self::assertNotNull($metadataAction->getModalContent());
+
+        $expected = app(CompanionExportService::class)->history($this->admin, $this->client, 'json', 'pseudonymized');
+        $component
+            ->callAction('export', ['format' => 'json', 'identity' => 'pseudonymized'])
+            ->assertFileDownloaded('client-companion.json', $expected, 'application/json; charset=UTF-8')
+            ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]));
     }
 
     public function test_foreign_client_history_export_is_rejected(): void

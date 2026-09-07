@@ -3,8 +3,10 @@
 namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
-use App\Filament\Support\RichTextEditor;
+use App\Filament\Support\MessageComposer;
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
@@ -16,14 +18,16 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -47,15 +51,40 @@ final class ClientCompanionHistory extends ViewRecord
         $actor = Auth::user();
         $client = $this->getRecord();
 
-        return $schema
-            ->components([
-                RichTextEditor::make('body')
-                    ->label('Сообщение')
-                    ->helperText('Можно использовать жирный, курсив, ссылки, списки и эмодзи.')
-                    ->required()
-                    ->columnSpanFull(),
+        return $schema->components(MessageComposer::make(
+            bodyField: 'body',
+            deliveryModeField: 'delivery_mode',
+            mediaField: 'new_attachment',
+            mediaUrlField: 'media_url',
+            variables: null,
+            preview: fn (Get $get, ?Model $record): NotificationMessage => new NotificationMessage(
+                recipientExternalId: 'preview',
+                body: RichTextDocument::canonicalHtmlFromState($get('body')),
+                subject: null,
+                locale: 'ru',
+                idempotencyKey: 'companion-preview',
+                mode: NotificationMessageMode::Text,
+            ),
+            bodyLabel: 'Сообщение',
+            bodyHelper: 'Можно использовать жирный, курсив, ссылки, списки и эмодзи.',
+            showDeliveryMode: false,
+            includeMediaUrl: false,
+            mediaAcceptedFileTypes: [
+                'application/pdf',
+                'text/plain',
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+            ],
+            mediaMaxKilobytes: (int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024),
+            mediaMultiple: false,
+            mediaSectionTitle: 'Вложение',
+            mediaSectionDescription: 'Можно добавить один безопасный файл. Защищённые медицинские файлы здесь не показываются.',
+            mediaUploadLabel: 'Загрузить файл для сообщения',
+            mediaHelperText: 'Только PDF, TXT, JPG, PNG или WebP. Один файл до 20 МБ.',
+            additionalMediaComponents: [
                 Select::make('existing_attachment_id')
-                    ->label('Файл из разрешённых для отправки')
+                    ->label('Или выбрать уже разрешённый файл')
                     ->options(fn (): array => $actor instanceof User && $client instanceof Client
                         ? app(ListCompanionCommunicationAttachments::class)->options($actor, $client)
                         : [])
@@ -63,20 +92,8 @@ final class ClientCompanionHistory extends ViewRecord
                     ->native(false)
                     ->searchable()
                     ->helperText('Защищённые медицинские файлы здесь не показываются.'),
-                FileUpload::make('new_attachment')
-                    ->label('Загрузить файл для сообщения')
-                    ->acceptedFileTypes([
-                        'application/pdf',
-                        'text/plain',
-                        'image/jpeg',
-                        'image/png',
-                        'image/webp',
-                    ])
-                    ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
-                    ->storeFiles(false)
-                    ->helperText('Только PDF, TXT, JPG, PNG или WebP. Один файл до 20 МБ.'),
-            ])
-            ->statePath('data');
+            ],
+        ))->statePath('data');
     }
 
     public function composer(Schema $schema): Schema
@@ -154,6 +171,29 @@ final class ClientCompanionHistory extends ViewRecord
                         ['Content-Type' => $format === 'txt' ? 'text/plain; charset=UTF-8' : 'application/json; charset=UTF-8'],
                     );
                 }),
+            Action::make('technicalMetadata')
+                ->label('Расширенные технические метаданные')
+                ->color('gray')
+                ->visible(fn (): bool => $this->canExportMetadata())
+                ->modalHeading('Расширенные технические метаданные')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Закрыть')
+                ->slideOver()
+                ->modalContent(function (): View {
+                    $actor = Auth::user();
+                    $client = $this->getRecord();
+                    abort_unless($actor instanceof User && $client instanceof Client, 403);
+                    $metadata = json_decode(
+                        app(CompanionExportService::class)->metadata($actor, $client),
+                        true,
+                        512,
+                        JSON_THROW_ON_ERROR,
+                    );
+
+                    return view('filament.pages.client-companion-metadata', [
+                        'metadata' => is_array($metadata) ? $metadata : [],
+                    ]);
+                }),
         ];
     }
 
@@ -165,6 +205,17 @@ final class ClientCompanionHistory extends ViewRecord
             $actor,
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ExportCompanionHistory,
+        );
+    }
+
+    private function canExportMetadata(): bool
+    {
+        $actor = Auth::user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ExportCompanionMetadata,
         );
     }
 
@@ -200,8 +251,6 @@ final class ClientCompanionHistory extends ViewRecord
                 'resume' => route('admin.clients.companion.resume', ['client' => $client]),
                 'reset' => route('admin.clients.companion.reset', ['client' => $client]),
                 'history' => ClientResource::getUrl('companion', ['record' => $client]),
-                'export' => route('admin.clients.companion.export', ['client' => $client]),
-                'metadataExport' => route('admin.clients.companion.metadata-export', ['client' => $client]),
             ],
         ];
     }
