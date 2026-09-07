@@ -52,10 +52,7 @@ final class AiModelCatalog
             if ($definition->recommended) {
                 $label .= ' · Рекомендуется';
             }
-            $inputs = self::humanSupportedInputs($definition);
-            if ($inputs !== []) {
-                $label .= ' · '.implode(', ', $inputs);
-            }
+            $label .= ' · Вход: '.self::humanInputSupportSummary($definition);
             if ($definition->pricing !== null) {
                 $label .= ' · $'.AiMoney::displayDecimalFromRateUnits($definition->pricing->inputRatePerMillionUnits())
                     .' / $'.AiMoney::displayDecimalFromRateUnits($definition->pricing->outputRatePerMillionUnits()).' за 1 млн токенов';
@@ -217,5 +214,19 @@ final class AiModelCatalog
         }
 
         return array_values(array_unique($inputs));
+    }
+
+    public static function humanInputSupportSummary(AiModelDefinition $definition): string
+    {
+        $modalities = array_map(
+            static fn (AiModelModality $modality): string => $modality->value,
+            $definition->modalities,
+        );
+
+        return implode(' · ', [
+            'Текст: '.(in_array('text_generation', $definition->supportedCapabilities, true) ? 'есть' : 'нет'),
+            'Изображения: '.(in_array(AiModelModality::ImageInput->value, $modalities, true) ? 'есть' : 'нет'),
+            'PDF/документы: '.(in_array(AiModelModality::DocumentInput->value, $modalities, true) ? 'есть' : 'нет'),
+        ]);
     }
 }
