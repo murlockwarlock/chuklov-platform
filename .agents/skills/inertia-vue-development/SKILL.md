@@ -11,6 +11,6 @@ description: "Use for Inertia v3 Vue client work: pages, layouts, forms, navigat
 4. Use Inertia navigation and form primitives rather than introducing a parallel request/navigation stack. Keep server authorization and organization scope authoritative.
 5. Provide explicit loading/empty/error states. Deferred or visibility-loaded props require a skeleton or equivalent stable fallback.
 6. Keep Telegram Mini App detection in the runtime adapter; desktop, mobile web, and Mini App share the same Application/domain behavior.
-7. Verify changed behavior with focused frontend/feature coverage, then run ESLint, `vue-tsc`, Vite build, and Playwright when user-visible behavior changes.
+7. Verify changed behavior with focused frontend/feature coverage and only the lint, type, build, or browser checks affected by the change. For a bounded UI fix, verify the exact staging user path first; full Playwright or broad frontend checks require an explicit request, scheduled gate, or risk-based need and must not block unrelated FAST_PATH work.
 
 Useful Boost query groups include `form component validation reset`, `useForm`, `useHttp`, `navigation link prefetch`, `deferred props skeleton`, `optimistic updates`, `polling`, `infinite scroll`, `layout props`, and `testing Inertia response`.
