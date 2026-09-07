@@ -128,18 +128,21 @@ final class SourceBackedAgentContractTest extends TestCase
                 $bundle->outputSchema,
             );
             self::assertStringContainsString('[SOURCE TEXT]', $bundle->systemPrompt);
-            self::assertStringContainsString('[PLATFORM SAFETY GUARDRAIL]', $bundle->systemPrompt);
-            self::assertStringContainsString('Draft', $bundle->changeNotes ?? '');
+            self::assertStringContainsString('[CURRENT PLATFORM SAFETY GUARDRAILS]', $bundle->systemPrompt);
+            self::assertStringContainsString('[CURRENT RUNTIME CONTRACT]', $bundle->systemPrompt);
+            self::assertGreaterThan(1500, mb_strlen($bundle->systemPrompt));
             self::assertArrayNotHasKey('model', $data);
             self::assertArrayNotHasKey('provider', $data);
 
-            $sourceFragments = [
-                AiCapability::ClientCompanion->value => 'официальный ИИ-ассистент',
-                AiCapability::ClinicalDocumentExtraction->value => 'узкоспециализированный медицинский эксперт',
-                AiCapability::ClinicalSynthesizer->value => 'персональный AI-ассистент остеопата',
-                AiCapability::PostureAnalysis->value => 'биомеханик и остеопатический аналитик',
-            ];
-            self::assertStringContainsString($sourceFragments[$bundle->capability->value], $bundle->systemPrompt);
+            $sourceFragment = match ($bundle->capability) {
+                AiCapability::ClientCompanion => 'официальный ИИ-ассистент',
+                AiCapability::ClinicalDocumentExtraction => 'узкоспециализированный медицинский эксперт',
+                AiCapability::ClinicalSynthesizer => 'персональный AI-ассистент остеопата',
+                AiCapability::PostureAnalysis => 'биомеханик и остеопатический аналитик',
+                default => null,
+            };
+            self::assertIsString($sourceFragment);
+            self::assertStringContainsString($sourceFragment, $bundle->systemPrompt);
         }
     }
 
@@ -182,6 +185,15 @@ final class SourceBackedAgentContractTest extends TestCase
         self::assertIsArray($postureSuite);
         self::assertSame('implemented_with_controlled_synthetic_fixture', $postureSuite['execution_status']);
         self::assertSame(['front', 'side', 'back'], $postureSuite['required_attachment_roles']);
+
+        $caseCounts = [];
+        foreach ($manifest['suites'] as $suite) {
+            $caseCounts[(string) $suite['capability']] = count($suite['cases']);
+        }
+        self::assertGreaterThanOrEqual(8, $caseCounts[AiCapability::ClinicalDocumentExtraction->value] ?? 0);
+        self::assertGreaterThanOrEqual(9, $caseCounts[AiCapability::PostureAnalysis->value] ?? 0);
+        self::assertGreaterThanOrEqual(9, $caseCounts[AiCapability::ClinicalSynthesizer->value] ?? 0);
+        self::assertGreaterThanOrEqual(16, $caseCounts[AiCapability::ClientCompanion->value] ?? 0);
     }
 
     public function test_output_schema_privacy_allows_safe_summary_field_but_rejects_production_reference(): void

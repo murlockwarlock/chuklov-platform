@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-07 — Full source-backed AI prompts and evaluation packs
+
+- Replaced the abbreviated Agent 1–4 prompt drafts with full source-backed product instructions from Appendix 2, keeping platform safety guardrails and the current runtime contract as separate editable sections in CRM.
+- Expanded the existing organization-scoped synthetic evaluation manifest to 44 practical cases covering source fidelity, missing data, posture validation, clinical fact/hypothesis separation, ordinary Companion conversation, B2B recognition, safety escalation, and no fabricated progress; existing materialization now refreshes previously imported cases idempotently.
+- Narrowed direct Companion handoff matching to explicit human requests and urgent safety phrases, so ordinary mentions of a specialist no longer stop useful AI conversation while accepted human-handoff authority remains unchanged.
+
 ## 2026-09-06 — Owner acceptance remediation: AI Companion and source-backed evaluations
 
 - Added idempotent CRM materialization of the existing source-backed Agent 1–4 evaluation suites and their full prompt bundles, with explicit «Демонстрационный тест» and «Синтетические данные» labels.

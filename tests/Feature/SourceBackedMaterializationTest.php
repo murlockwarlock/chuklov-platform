@@ -30,18 +30,27 @@ final class SourceBackedMaterializationTest extends TestCase
             'prompt_versions_created' => 4,
             'prompts_activated' => 0,
             'suites_created' => 4,
-            'cases_created' => 8,
+            'cases_created' => 44,
         ], $first);
         self::assertSame(4, AiPrompt::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(4, AiPromptVersion::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(4, AiEvalSuite::query()->where('organization_id', $organization->getKey())->count());
-        self::assertSame(8, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(44, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(
-            'Демонстрационный тест · Синтетические данные. Source-backed baseline из Appendix 2.',
+            'Демонстрационные тесты Чуклова · Синтетические данные',
             AiEvalSuite::query()->where('organization_id', $organization->getKey())->value('description'),
         );
         self::assertSame(
-            ['absent_measurement_remains_unknown', 'preserves_explicit_measurement'],
+            [
+                'absent_measurement_remains_unknown',
+                'contradictory_phrases_are_not_resolved_by_guess',
+                'does_not_invent_root_involvement',
+                'extracts_multiple_findings',
+                'noisy_report_preserves_uncertainty',
+                'ordinary_finding_not_exaggerated',
+                'preserves_explicit_measurement',
+                'retains_critical_source_flag',
+            ],
             AiEvalCase::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('eval_suite_id', AiEvalSuite::query()->where('key', 'source_agent_1_document_extraction')->value('id'))
@@ -50,7 +59,7 @@ final class SourceBackedMaterializationTest extends TestCase
                 ->all(),
         );
         self::assertStringContainsString(
-            '[PLATFORM SAFETY GUARDRAIL]',
+            '[CURRENT PLATFORM SAFETY GUARDRAILS]',
             (string) AiPromptVersion::query()->where('organization_id', $organization->getKey())->value('system_prompt'),
         );
 
@@ -64,7 +73,7 @@ final class SourceBackedMaterializationTest extends TestCase
             'cases_created' => 0,
         ], $second);
         self::assertSame(4, AiPromptVersion::query()->where('organization_id', $organization->getKey())->count());
-        self::assertSame(8, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(44, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
     }
 
     public function test_source_backed_prompt_activation_is_explicit_and_tenant_scoped(): void
