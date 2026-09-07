@@ -2,6 +2,7 @@
 
 namespace App\Filament\Support;
 
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
@@ -43,6 +44,16 @@ final class KnowledgeSourcePresentation
         $latestRevision = $source->latestRevision;
         if (! $latestRevision instanceof KnowledgeRevision) {
             return 'Материал не добавлен';
+        }
+
+        if ($latestRevision->extraction_status === KnowledgeExtractionStatus::TextNotFound->value) {
+            return 'Текст не найден. Можно запустить AI-разбор.';
+        }
+        if ($latestRevision->extraction_status === KnowledgeExtractionStatus::Suspicious->value) {
+            return 'Извлечение заблокировано: требуется проверка владельца';
+        }
+        if ($latestRevision->extraction_status === KnowledgeExtractionStatus::AiParseRequested->value) {
+            return 'AI-разбор запрошен владельцем';
         }
 
         $hasActiveDifferentRevision = $source->active_revision_id !== null
@@ -91,6 +102,10 @@ final class KnowledgeSourcePresentation
             'invalid_source_content' => 'Файл повреждён или изменён',
             'source_text_too_large' => 'Слишком большой объём текста',
             'empty_source_content' => 'В документе нет текста',
+            'extraction_not_ready' => 'Извлечение не подтверждено владельцем',
+            'parser_failed' => 'Не удалось безопасно извлечь данные',
+            'text_not_found' => 'Текст не найден. Можно запустить AI-разбор.',
+            'table_text_not_found' => 'Таблица не содержит данных',
             'embedding_or_persistence_failed' => 'Обработка не завершена',
             default => 'Обработка не завершена. Попробуйте повторить обработку.',
         };
@@ -113,6 +128,11 @@ final class KnowledgeSourcePresentation
     {
         return $source->status === KnowledgeSourceStatus::Active
             && (int) $source->latestRevision?->getKey() === (int) $revision->getKey()
+            && ! in_array($revision->extraction_status, [
+                KnowledgeExtractionStatus::TextNotFound->value,
+                KnowledgeExtractionStatus::Suspicious->value,
+                KnowledgeExtractionStatus::AiParseRequested->value,
+            ], true)
             && $revision->status === KnowledgeRevisionStatus::Failed;
     }
 
@@ -120,6 +140,7 @@ final class KnowledgeSourcePresentation
     {
         return $source->status === KnowledgeSourceStatus::Active
             && (int) $source->latestRevision?->getKey() === (int) $revision->getKey()
+            && ($revision->extraction_status === null || $revision->extraction_status === KnowledgeExtractionStatus::Ready->value)
             && $revision->status === KnowledgeRevisionStatus::Pending;
     }
 

@@ -16,6 +16,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Tables\Contracts\HasTable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -126,6 +127,53 @@ final class KnowledgeRevisionsFilamentPostgresTest extends TestCase
             [$foreignRevision->getKey()],
             $this->tableRecords($foreignRevisions->instance())->pluck('id')->all(),
         );
+    }
+
+    public function test_postgresql_persists_extraction_provenance_and_rejects_unknown_statuses(): void
+    {
+        $this->requirePostgres('Knowledge extraction provenance requires PostgreSQL.');
+
+        $organization = Organization::factory()->create();
+        $source = KnowledgeSource::query()->create([
+            'organization_id' => $organization->getKey(),
+            'type' => 'uploaded_text',
+            'title' => 'PDF provenance',
+            'status' => 'active',
+        ]);
+        $checksum = hash('sha256', 'private-pdf');
+        $revision = KnowledgeRevision::query()->create([
+            'organization_id' => $organization->getKey(),
+            'knowledge_source_id' => $source->getKey(),
+            'version' => 1,
+            'status' => 'failed',
+            'original_filename' => 'scan.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 10,
+            'content_checksum' => hash('sha256', ''),
+            'original_checksum' => $checksum,
+            'parser_type' => 'pdf_text',
+            'parser_version' => 'prinsfrank/pdfparser-3.3.0',
+            'extraction_status' => 'text_not_found',
+            'extraction_diagnostics' => ['code' => 'text_not_found'],
+            'extracted_at' => now(),
+        ]);
+
+        $freshRevision = $revision->fresh();
+        self::assertSame($checksum, $freshRevision?->original_checksum);
+        self::assertSame('pdf_text', $freshRevision?->parser_type);
+        self::assertSame('text_not_found', $freshRevision?->extraction_status);
+        self::assertSame(['code' => 'text_not_found'], $freshRevision?->extraction_diagnostics);
+
+        $constraint = DB::table('pg_constraint')
+            ->where('conname', 'knowledge_revisions_extraction_status_check')
+            ->value(DB::raw('pg_get_constraintdef(oid)'));
+        self::assertIsString($constraint);
+        self::assertStringContainsString("'ai_parse_requested'", $constraint);
+
+        $this->expectException(QueryException::class);
+        DB::table('knowledge_revisions')
+            ->whereKey($revision->getKey())
+            ->update(['extraction_status' => 'unknown']);
     }
 
     /**

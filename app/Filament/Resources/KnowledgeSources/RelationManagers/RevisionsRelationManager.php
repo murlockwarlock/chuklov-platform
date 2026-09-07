@@ -6,8 +6,10 @@ use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
 use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
+use App\Modules\Knowledge\Application\RequestKnowledgeAiParsing;
 use App\Modules\Knowledge\Application\RetryKnowledgeIngestion;
 use App\Modules\Knowledge\Application\StartPendingKnowledgeIngestion;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
@@ -51,6 +53,17 @@ final class RevisionsRelationManager extends RelationManager
                 TextColumn::make('status')
                     ->label('Состояние')
                     ->formatStateUsing(fn (KnowledgeRevisionStatus|string $state): string => $presentation->revisionStatus($state)),
+                TextColumn::make('extraction_status')
+                    ->label('Извлечение')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        KnowledgeExtractionStatus::Ready->value => 'Текст извлечён',
+                        KnowledgeExtractionStatus::TextNotFound->value => 'Текст не найден',
+                        KnowledgeExtractionStatus::Suspicious->value => 'Нужна проверка',
+                        KnowledgeExtractionStatus::Failed->value => 'Ошибка извлечения',
+                        KnowledgeExtractionStatus::AiParseRequested->value => 'AI-разбор запрошен',
+                        default => 'Неизвестно',
+                    })
+                    ->wrap(),
                 TextColumn::make('processing_result')
                     ->label('Результат обработки')
                     ->state(fn (KnowledgeRevision $record): string => $presentation->errorMessage($record->latestIngestionRun?->error_code)),
@@ -71,6 +84,8 @@ final class RevisionsRelationManager extends RelationManager
                         "{$revisionTable}.knowledge_source_id",
                         "{$revisionTable}.version",
                         "{$revisionTable}.status",
+                        "{$revisionTable}.extraction_status",
+                        "{$revisionTable}.extraction_diagnostics",
                         "{$revisionTable}.original_filename",
                         "{$revisionTable}.storage_disk",
                         "{$revisionTable}.storage_path",
@@ -118,6 +133,17 @@ final class RevisionsRelationManager extends RelationManager
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canDownload($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): mixed {
                         return redirect()->to(app(GetTemporaryKnowledgeRevisionUrl::class)->handle($actor, $source, $record));
+                    }),
+                Action::make('requestAiParsing')
+                    ->label('Запустить AI-разбор')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Запустить AI-разбор PDF?')
+                    ->modalDescription('Это явный запрос владельца. Автоматический разбор не запускается скрыто и требует отдельной настроенной версии AI.')
+                    ->visible(fn (KnowledgeRevision $record): bool => $record->extraction_status === KnowledgeExtractionStatus::TextNotFound->value)
+                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
+                        app(RequestKnowledgeAiParsing::class)->handle($actor, $source, $record->getKey());
+                        Notification::make()->title('Запрос на AI-разбор сохранён')->success()->send();
                     }),
                 Action::make('retry')
                     ->label('Повторить обработку')

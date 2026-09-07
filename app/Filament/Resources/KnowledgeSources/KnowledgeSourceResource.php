@@ -65,7 +65,7 @@ final class KnowledgeSourceResource extends Resource
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->emptyStateHeading('В базе знаний пока нет материалов')
-            ->emptyStateDescription('Добавьте текст или загрузите файл Markdown/TXT, чтобы использовать его в ответах клиентам.')
+            ->emptyStateDescription('Добавьте текст или загрузите TXT, Markdown, PDF или таблицу, чтобы использовать материал в ответах клиентам.')
             ->recordActions([
                 EditAction::make()
                     ->label('Открыть')
@@ -131,6 +131,7 @@ final class KnowledgeSourceResource extends Resource
                             'knowledge_revisions.knowledge_source_id',
                             'knowledge_revisions.version',
                             'knowledge_revisions.status',
+                            'knowledge_revisions.extraction_status',
                             'knowledge_revisions.original_filename',
                             'knowledge_revisions.created_at',
                         ])
