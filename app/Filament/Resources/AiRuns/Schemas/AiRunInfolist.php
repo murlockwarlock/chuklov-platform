@@ -56,9 +56,10 @@ class AiRunInfolist
                             ->label('Статус проверки')
                             ->badge()
                             ->wrap()
+                            ->columnSpanFull()
                             ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? $state->label() : (string) $state),
                     ])
-                    ->columns(3),
+                    ->columns(2),
 
                 Section::make('Технические данные')
                     ->collapsed()
@@ -77,7 +78,8 @@ class AiRunInfolist
                             ->columnSpanFull()
                             ->wrap(),
                     ])
-                    ->columns(3),
+                    ->columns(3)
+                    ->columnSpanFull(),
 
                 Section::make('Ошибки и попытки выполнения')
                     ->schema([

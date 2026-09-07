@@ -20,7 +20,7 @@ final class ClientCompanionHistory extends ViewRecord
 
     public function getTitle(): string
     {
-        return 'AI-компаньон / История общения';
+        return 'Общение с клиентом';
     }
 
     /** @return array<string, mixed> */
@@ -51,6 +51,7 @@ final class ClientCompanionHistory extends ViewRecord
             'urls' => [
                 'reply' => route('admin.clients.companion.reply', ['client' => $client]),
                 'resolve' => route('admin.clients.companion.resolve', ['client' => $client]),
+                'resolveAndResume' => route('admin.clients.companion.resolve-and-resume', ['client' => $client]),
                 'resume' => route('admin.clients.companion.resume', ['client' => $client]),
                 'reset' => route('admin.clients.companion.reset', ['client' => $client]),
                 'history' => ClientResource::getUrl('companion', ['record' => $client]),

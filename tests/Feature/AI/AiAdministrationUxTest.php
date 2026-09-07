@@ -641,10 +641,10 @@ final class AiAdministrationUxTest extends TestCase
             ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
             ->assertSee('Agent 4 — AI-компаньон')
             ->assertSee('Активная версия: v2')
-            ->assertSee('Этот текст сейчас используется AI')
+            ->assertSee('Этот промпт сейчас используется AI')
             ->assertSee('Мудрый и заботливый друг.')
             ->assertSeeInOrder([
-                'Этот текст сейчас используется AI',
+                'Этот промпт сейчас используется AI',
                 'Изменить промпт',
                 'Проверить',
                 'Запустить тесты',

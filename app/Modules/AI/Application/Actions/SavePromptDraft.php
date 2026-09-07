@@ -45,14 +45,14 @@ final class SavePromptDraft
 
             $parameterConfig = [
                 ...(array) $version->parameter_config,
-                ...array_intersect_key($data, array_flip([
+                ...array_filter(array_intersect_key($data, array_flip([
                     'temperature',
                     'top_p',
                     'max_tokens',
                     'frequency_penalty',
                     'presence_penalty',
                     'timeout_seconds',
-                ])),
+                ])), static fn (mixed $value): bool => $value !== null && $value !== ''),
             ];
 
             $version->update([

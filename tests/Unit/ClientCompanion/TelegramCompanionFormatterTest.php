@@ -115,7 +115,7 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('Ответ', $lastBody['text']);
     }
 
-    public function test_transport_failure_is_unknown_instead_of_automatically_retryable(): void
+    public function test_provider_server_failure_is_retryable(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         $bot = FakeNutgram::instance(null, [
@@ -125,8 +125,8 @@ final class TelegramCompanionFormatterTest extends TestCase
 
         $result = $channel->sendCompanionChunk(new CompanionOutboundChunk('telegram-chat', 'Ответ', 0, 1, 'ru'));
 
-        self::assertSame(NotificationDeliveryOutcome::Unknown, $result->outcome);
-        self::assertSame('telegram_api_error', $result->errorCode);
+        self::assertSame(NotificationDeliveryOutcome::Retryable, $result->outcome);
+        self::assertSame('telegram_server_error', $result->errorCode);
     }
 
     public function test_provider_rate_limit_is_a_confirmed_bounded_retryable_rejection(): void

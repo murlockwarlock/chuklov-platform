@@ -29,6 +29,7 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\CompanionTypingHeartbeatJob;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
+use App\Modules\ClientCompanion\Infrastructure\Jobs\NotifyCompanionEscalationJob;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\ProcessCompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -444,10 +445,10 @@ final class CompanionTurnProcessor
 
     private function handoff(int $organizationId, int $turnId, string $leaseToken, CompanionEscalationReason $reason, ?int $aiRunId, string $locale): void
     {
-        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $reason, $aiRunId, $locale): array {
+        $handoff = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $reason, $aiRunId, $locale): array {
             $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
             if ($aggregate === null) {
-                return [];
+                return ['deliveryIds' => [], 'escalationId' => null];
             }
             $turn = $aggregate['turn'];
             $conversation = $aggregate['conversation'];
@@ -458,7 +459,7 @@ final class CompanionTurnProcessor
                     $this->cancelOwnedTurn($turn, $conversation->automation_state === ConversationAutomationState::HumanHandoff);
                 }
 
-                return [];
+                return ['deliveryIds' => [], 'escalationId' => null];
             }
             $client = Client::query()->where('organization_id', $organizationId)->whereKey($turn->client_id)->firstOrFail();
             $message = CompanionClientMessage::from($locale);
@@ -487,7 +488,7 @@ final class CompanionTurnProcessor
                 'escalated_at' => now(),
             ]);
             $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
-            CompanionEscalation::query()->create([
+            $escalation = CompanionEscalation::query()->create([
                 'organization_id' => $organizationId,
                 'client_id' => $turn->client_id,
                 'conversation_id' => $conversation->getKey(),
@@ -499,10 +500,16 @@ final class CompanionTurnProcessor
                 'opened_at' => now(),
             ]);
 
-            return $deliveryIds;
+            return [
+                'deliveryIds' => $deliveryIds,
+                'escalationId' => (int) $escalation->getKey(),
+            ];
         });
 
-        $this->dispatchDeliveries($organizationId, $deliveryIds);
+        $this->dispatchDeliveries($organizationId, $handoff['deliveryIds']);
+        if ($handoff['escalationId'] !== null) {
+            NotifyCompanionEscalationJob::dispatch($organizationId, $handoff['escalationId'])->afterCommit();
+        }
     }
 
     private function failSafely(int $organizationId, int $turnId, string $leaseToken, CompanionFailureCode $failureCode, string $locale): void

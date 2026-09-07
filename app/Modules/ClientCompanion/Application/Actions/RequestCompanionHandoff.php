@@ -7,6 +7,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Infrastructure\Jobs\NotifyCompanionEscalationJob;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -27,7 +28,7 @@ final class RequestCompanionHandoff
             throw new AuthorizationException('The Companion action is outside the organization.');
         }
 
-        DB::transaction(function () use ($organizationId, $client, $messageId): void {
+        $escalationId = DB::transaction(function () use ($organizationId, $client, $messageId): ?int {
             $message = ConversationMessage::query()
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $client->getKey())
@@ -57,7 +58,7 @@ final class RequestCompanionHandoff
                 ->lockForUpdate()
                 ->firstOrFail();
             if ($conversation->automation_state === ConversationAutomationState::HumanHandoff) {
-                return;
+                return null;
             }
 
             $open = CompanionEscalation::query()
@@ -66,7 +67,7 @@ final class RequestCompanionHandoff
                 ->where('status', CompanionEscalationStatus::Open)
                 ->exists();
             if ($open) {
-                return;
+                return null;
             }
 
             if (in_array($turn->status, [CompanionTurnStatus::Assembling, CompanionTurnStatus::Pending, CompanionTurnStatus::Processing], true)) {
@@ -81,7 +82,7 @@ final class RequestCompanionHandoff
                 ]);
             }
             $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
-            CompanionEscalation::query()->create([
+            $escalation = CompanionEscalation::query()->create([
                 'organization_id' => $organizationId,
                 'client_id' => $client->getKey(),
                 'conversation_id' => $conversation->getKey(),
@@ -92,6 +93,12 @@ final class RequestCompanionHandoff
                 'safe_metadata' => ['source' => 'telegram_button'],
                 'opened_at' => now(),
             ]);
+
+            return (int) $escalation->getKey();
         });
+
+        if ($escalationId !== null) {
+            NotifyCompanionEscalationJob::dispatch($organizationId, $escalationId)->afterCommit();
+        }
     }
 }

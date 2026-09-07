@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiEvaluations;
 
+use App\Filament\Pages\AiEvaluationProgress;
 use App\Filament\Resources\AiEvaluations\Pages\CreateAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\EditAiEvaluation;
 use App\Filament\Resources\AiEvaluations\Pages\ListAiEvaluations;
@@ -9,13 +10,13 @@ use App\Filament\Resources\AiEvaluations\RelationManagers\CasesRelationManager;
 use App\Filament\Resources\AiEvaluations\RelationManagers\RunsRelationManager;
 use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
 use App\Models\User;
-use App\Modules\AI\Application\Actions\RunEvaluationSuite;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiModelRelease;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
+use App\Modules\AI\Infrastructure\Jobs\RunEvaluationSuiteJob;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -23,7 +24,6 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -33,6 +33,9 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
+use Livewire\Component;
 
 final class AiEvaluationResource extends Resource
 {
@@ -144,23 +147,32 @@ final class AiEvaluationResource extends Resource
                             ->native(false)
                             ->required(),
                     ])
-                    ->action(function (AiEvalSuite $record, array $data, RunEvaluationSuite $runner) {
+                    ->action(function (AiEvalSuite $record, array $data, Component $livewire): void {
                         $user = Auth::user();
-                        if (! $user) {
+                        if (! $user instanceof User) {
                             return;
                         }
 
-                        $evalRun = $runner->handle(
-                            actor: $user,
-                            evalSuiteId: $record->id,
+                        $progressKey = (string) Str::uuid();
+                        $total = (int) $record->cases()->where('is_active', true)->count();
+                        Cache::put('ai-evaluation-progress:'.$progressKey, [
+                            'organization_id' => app(OrganizationContext::class)->id(),
+                            'status' => 'queued',
+                            'processed' => 0,
+                            'total' => $total,
+                            'passed' => 0,
+                            'failed' => 0,
+                            'failed_cases' => [],
+                        ], now()->addHours(4));
+                        RunEvaluationSuiteJob::dispatch(
+                            organizationId: app(OrganizationContext::class)->id(),
+                            actorId: $user->getKey(),
+                            evalSuiteId: $record->getKey(),
                             promptVersionId: (int) $data['prompt_version_id'],
                             modelReleaseId: (int) $data['model_release_id'],
+                            progressKey: $progressKey,
                         );
-
-                        Notification::make()
-                            ->title("Тестирование завершено: {$evalRun->passed_cases} из {$evalRun->total_cases} пройдено")
-                            ->color($evalRun->failed_cases > 0 ? 'warning' : 'success')
-                            ->send();
+                        $livewire->redirect(AiEvaluationProgress::getUrl(['progressKey' => $progressKey]));
                     }),
             ])
             ->filters([

@@ -128,7 +128,7 @@ class CreatePromptDraft
             'presence_penalty',
             'timeout_seconds',
         ] as $key) {
-            if (array_key_exists($key, $data)) {
+            if (array_key_exists($key, $data) && $data[$key] !== null && $data[$key] !== '') {
                 $parameterConfig[$key] = $data[$key];
             }
         }

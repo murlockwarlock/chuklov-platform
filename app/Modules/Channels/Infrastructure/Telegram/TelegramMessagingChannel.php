@@ -6,6 +6,7 @@ use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use Illuminate\Support\Facades\Log;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Properties\ChatAction;
 use SergiX44\Nutgram\Telegram\Properties\ParseMode;
@@ -52,7 +53,7 @@ final class TelegramMessagingChannel implements MessagingChannel
             $keyboard = $this->keyboard($chunk);
             $sent = $this->bot->sendMessage($html, $chunk->recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $keyboard);
 
-            return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
+            return $this->resultForSentMessage($sent);
         } catch (Throwable $exception) {
             if (! $this->isEntityParseFailure($exception)) {
                 return $this->providerFailure($exception, 'telegram_api_error');
@@ -62,7 +63,7 @@ final class TelegramMessagingChannel implements MessagingChannel
                 $fixed = $formatter->repairHtml($html);
                 $sent = $this->bot->sendMessage($fixed, $chunk->recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $this->keyboard($chunk));
 
-                return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
+                return $this->resultForSentMessage($sent);
             } catch (Throwable $fixedException) {
                 if (! $this->isEntityParseFailure($fixedException)) {
                     return $this->providerFailure($fixedException, 'telegram_repaired_html_error');
@@ -71,7 +72,7 @@ final class TelegramMessagingChannel implements MessagingChannel
                 try {
                     $sent = $this->bot->sendMessage($formatter->plainText($html), $chunk->recipientExternalId, reply_markup: $this->keyboard($chunk));
 
-                    return NotificationDeliveryResult::delivered($sent?->message_id === null ? null : (string) $sent->message_id);
+                    return $this->resultForSentMessage($sent);
                 } catch (Throwable $plainException) {
                     if (! $this->isEntityParseFailure($plainException)) {
                         return $this->providerFailure($plainException, 'telegram_plain_text_error');
@@ -106,13 +107,58 @@ final class TelegramMessagingChannel implements MessagingChannel
     {
         $code = (int) $exception->getCode();
         if ($code === 429) {
-            return NotificationDeliveryResult::retryable('telegram_rate_limited');
+            $result = NotificationDeliveryResult::retryable('telegram_rate_limited');
+            $this->logFailure($exception, $result);
+
+            return $result;
         }
         if (in_array($code, [400, 401, 403, 404, 409], true)) {
-            return NotificationDeliveryResult::permanentFailure('telegram_provider_rejected');
+            $result = NotificationDeliveryResult::permanentFailure('telegram_provider_rejected');
+            $this->logFailure($exception, $result);
+
+            return $result;
+        }
+        if ($code >= 500 && $code < 600) {
+            $result = NotificationDeliveryResult::retryable('telegram_server_error');
+            $this->logFailure($exception, $result);
+
+            return $result;
         }
 
-        return NotificationDeliveryResult::unknown($fallbackCode);
+        $result = NotificationDeliveryResult::unknown($fallbackCode);
+        $this->logFailure($exception, $result);
+
+        return $result;
+    }
+
+    private function logFailure(Throwable $exception, NotificationDeliveryResult $result): void
+    {
+        Log::warning('companion_telegram_delivery_result', [
+            'outcome' => $result->outcome->value,
+            'error_code' => $result->errorCode,
+            'provider_status' => (int) $exception->getCode(),
+            'exception' => $exception::class,
+            'exception_message' => mb_substr(trim($exception->getMessage()), 0, 240),
+        ]);
+    }
+
+    private function resultForSentMessage(mixed $sent): NotificationDeliveryResult
+    {
+        $messageId = $sent?->message_id;
+        if ($messageId === null) {
+            $result = NotificationDeliveryResult::unknown('telegram_delivery_reference_missing');
+            Log::warning('companion_telegram_delivery_result', [
+                'outcome' => $result->outcome->value,
+                'error_code' => $result->errorCode,
+                'provider_status' => 200,
+                'exception' => null,
+                'exception_message' => 'Telegram returned no message identifier.',
+            ]);
+
+            return $result;
+        }
+
+        return NotificationDeliveryResult::delivered((string) $messageId);
     }
 
     private function keyboard(CompanionOutboundChunk $chunk): ?InlineKeyboardMarkup

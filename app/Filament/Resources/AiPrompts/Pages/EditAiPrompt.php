@@ -5,6 +5,8 @@ namespace App\Filament\Resources\AiPrompts\Pages;
 use App\Filament\Resources\AiEvaluations\AiEvaluationResource;
 use App\Filament\Resources\AiPrompts\AiPromptResource;
 use App\Filament\Resources\AiPrompts\Schemas\PromptVersionForm;
+use App\Filament\Resources\AiRuns\AiRunResource;
+use App\Filament\Support\AiPlaygroundResultPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\CreatePromptDraft;
@@ -216,6 +218,11 @@ class EditAiPrompt extends EditRecord
         return $this->prompt()->activeVersion;
     }
 
+    public function hasDraft(): bool
+    {
+        return $this->draftVersion() instanceof AiPromptVersion;
+    }
+
     private function draftVersion(): ?AiPromptVersion
     {
         return $this->prompt()->versions()
@@ -232,7 +239,20 @@ class EditAiPrompt extends EditRecord
     private function notifyPlaygroundResult(AiRunResult $result): void
     {
         if ($result->isSuccess()) {
-            Notification::make()->title('Успешный запуск в песочнице')->body($result->outputText ?: 'Ответ получен')->success()->send();
+            $notification = Notification::make()
+                ->title('Проверка успешна')
+                ->body(AiPlaygroundResultPresentation::body($result))
+                ->success();
+            if ($result->runId > 0) {
+                $notification->actions([
+                    Action::make('technicalData')
+                        ->label('Технические данные')
+                        ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
+                        ->button()
+                        ->openUrlInNewTab(),
+                ]);
+            }
+            $notification->send();
 
             return;
         }

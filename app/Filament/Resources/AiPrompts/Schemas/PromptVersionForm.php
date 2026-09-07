@@ -48,14 +48,15 @@ final class PromptVersionForm
                 ->rows(4)
                 ->columnSpanFull(),
             Section::make('Настройки ответа')
+                ->description('Оставьте значения по умолчанию, если не нужно менять поведение модели.')
                 ->collapsed()
                 ->schema([
-                    TextInput::make('temperature')->label('Креативность')->numeric()->minValue(0)->maxValue(2)->default($parameters->temperature)->required(),
-                    TextInput::make('max_tokens')->label('Максимальная длина ответа')->numeric()->minValue(1)->maxValue(8192)->default($parameters->maxTokens)->required(),
-                    TextInput::make('top_p')->label('Top P')->numeric()->minValue(0)->maxValue(1)->default($parameters->topP)->required(),
-                    TextInput::make('frequency_penalty')->label('Штраф за повторение')->numeric()->minValue(-2)->maxValue(2)->default($parameters->frequencyPenalty)->required(),
-                    TextInput::make('presence_penalty')->label('Штраф за однообразие')->numeric()->minValue(-2)->maxValue(2)->default($parameters->presencePenalty)->required(),
-                    TextInput::make('timeout_seconds')->label('Время ожидания, секунд')->numeric()->minValue(1)->maxValue(120)->default($parameters->timeoutSeconds)->required(),
+                    TextInput::make('temperature')->label('Креативность')->helperText('Необязательный параметр. Используется только при поддержке выбранной моделью.')->numeric()->minValue(0)->maxValue(2)->default($parameters->temperature),
+                    TextInput::make('max_tokens')->label('Максимальная длина ответа')->helperText('Безопасный общий предел длины ответа.')->numeric()->minValue(1)->maxValue(8192)->default($parameters->maxTokens),
+                    TextInput::make('top_p')->label('Top P')->helperText('Необязательный параметр модели.')->numeric()->minValue(0)->maxValue(1),
+                    TextInput::make('frequency_penalty')->label('Штраф за повторение')->helperText('Необязательный параметр модели.')->numeric()->minValue(-2)->maxValue(2),
+                    TextInput::make('presence_penalty')->label('Штраф за однообразие')->helperText('Необязательный параметр модели.')->numeric()->minValue(-2)->maxValue(2),
+                    TextInput::make('timeout_seconds')->label('Время ожидания, секунд')->helperText('Необязательный предел ожидания.')->numeric()->minValue(1)->maxValue(120)->default($parameters->timeoutSeconds),
                     TextInput::make('change_notes')->label('Что изменилось')->default($source?->status->value === 'draft' ? $source->change_notes : null)->columnSpanFull(),
                 ])
                 ->columns(2)

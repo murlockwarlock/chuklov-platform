@@ -77,7 +77,7 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertSame(['client', 'client', 'ai', 'staff'], array_column($messages, 'role'));
         self::assertSame(['Портал', 'Telegram', 'Telegram', 'Telegram'], array_column($messages, 'transportLabel'));
         self::assertSame('helpful', $messages[2]['feedback']);
-        self::assertSame('AI временно приостановлен', $history['stateLabel']);
+        self::assertSame('Специалист отвечает', $history['stateLabel']);
         self::assertNotNull($history['openEscalation']);
         self::assertTrue(collect($history['messages'])->contains(fn (array $item): bool => $item['type'] === 'handoff'));
         self::assertSame($conversation->getKey(), $turn->conversation_id);
@@ -86,10 +86,10 @@ final class ClientCompanionCrmTest extends TestCase
         $this->actingAs($this->admin)
             ->get(ClientResource::getUrl('companion', ['record' => $this->client]))
             ->assertOk()
-            ->assertSee('AI-компаньон / История общения')
+            ->assertSee('Общение с клиентом')
             ->assertSee('Портал')
             ->assertSee('Telegram')
-            ->assertSee('Ответ специалиста');
+            ->assertSee('Написать сообщение');
     }
 
     public function test_staff_history_is_bounded_and_id_access_is_tenant_and_permission_scoped(): void

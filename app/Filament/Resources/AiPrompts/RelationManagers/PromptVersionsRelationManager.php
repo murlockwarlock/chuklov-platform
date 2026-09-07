@@ -83,16 +83,14 @@ class PromptVersionsRelationManager extends RelationManager
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(2)
-                            ->default($parameters->temperature)
-                            ->required(),
+                            ->default($parameters->temperature),
                         TextInput::make('max_tokens')
                             ->label('Максимальная длина ответа')
                             ->helperText('Внутренний предел длины ответа AI.')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(8192)
-                            ->default($parameters->maxTokens)
-                            ->required(),
+                            ->default($parameters->maxTokens),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -102,32 +100,29 @@ class PromptVersionsRelationManager extends RelationManager
                     ->schema([
                         TextInput::make('top_p')
                             ->label('Top P — точная настройка')
+                            ->helperText('Необязательный параметр. Учитывается только при поддержке выбранной моделью.')
                             ->numeric()
                             ->minValue(0)
                             ->maxValue(1)
-                            ->default($parameters->topP)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('frequency_penalty')
                             ->label('Штраф за повторение')
                             ->numeric()
                             ->minValue(-2)
                             ->maxValue(2)
-                            ->default($parameters->frequencyPenalty)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('presence_penalty')
                             ->label('Штраф за однообразие')
                             ->numeric()
                             ->minValue(-2)
                             ->maxValue(2)
-                            ->default($parameters->presencePenalty)
-                            ->required(),
+                            ->default(null),
                         TextInput::make('timeout_seconds')
                             ->label('Время ожидания ответа, секунд')
                             ->numeric()
                             ->minValue(1)
                             ->maxValue(120)
-                            ->default($parameters->timeoutSeconds)
-                            ->required(),
+                            ->default($parameters->timeoutSeconds),
                         TextInput::make('change_notes')
                             ->label('Что изменилось')
                             ->columnSpanFull(),

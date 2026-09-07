@@ -35,6 +35,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use Carbon\Carbon;
+use Closure;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -57,6 +58,7 @@ final class RunEvaluationSuite
         int $evalSuiteId,
         int $promptVersionId,
         ?int $modelReleaseId = null,
+        ?Closure $progress = null,
     ): AiEvalRun {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageAiPrompts);
@@ -340,7 +342,13 @@ final class RunEvaluationSuite
                 modelReleaseId: $actualRun?->model_release_id,
                 actualProvider: $actualRun?->actual_provider,
                 actualModel: $actualRun?->actual_model,
+                testInputs: (array) $case->test_inputs,
+                expectedAssertions: $execution['assertions'],
+                actualOutput: $status->isPassed() ? null : mb_substr((string) $result->outputText, 0, 4000),
             );
+            if ($progress !== null) {
+                $progress($caseResults[count($caseResults) - 1], count($caseResults), count($executions));
+            }
         }
 
         $totalCases = count($caseResults);

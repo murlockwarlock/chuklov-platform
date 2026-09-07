@@ -7,6 +7,7 @@ use App\Filament\Resources\AiPrompts\Pages\EditAiPrompt;
 use App\Filament\Resources\AiPrompts\Pages\ListAiPrompts;
 use App\Filament\Resources\AiPrompts\RelationManagers\PromptVersionsRelationManager;
 use App\Filament\Resources\AiPrompts\Schemas\AiPromptForm;
+use App\Filament\Support\AiPlaygroundResultPresentation;
 use App\Modules\AI\Application\Actions\ExecutePlaygroundRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -122,8 +123,8 @@ final class AiPromptResource extends Resource
 
                             if ($result->isSuccess()) {
                                 Notification::make()
-                                    ->title('Успешный запуск в песочнице')
-                                    ->body("Ответ ({$result->latencyMs}мс): ".($result->outputText ?: 'OK'))
+                                    ->title('Проверка успешна')
+                                    ->body(AiPlaygroundResultPresentation::body($result))
                                     ->success()
                                     ->send();
                             } else {

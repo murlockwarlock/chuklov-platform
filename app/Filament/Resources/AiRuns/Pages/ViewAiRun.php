@@ -56,12 +56,12 @@ class ViewAiRun extends ViewRecord
                 ->icon('heroicon-o-arrow-down-tray')
                 ->visible(fn (): bool => $this->canViewTrace()),
             Action::make('accept_review')
-                ->label('Принять предложение')
+                ->label('Ответ AI корректный')
                 ->color('success')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->requiresConfirmation()
-                ->modalHeading('Подтверждение принятия предложения AI')
-                ->modalDescription('Вы подтверждаете, что проверили сгенерированный результат.')
+                ->modalHeading('Подтвердить результат AI')
+                ->modalDescription('Это отметка специалиста о результате AI, а не команда для отправки клиенту.')
                 ->action(function (AiRun $record, ReviewAiRun $reviewAction) {
                     $user = Auth::user();
                     if ($user) {
@@ -71,13 +71,13 @@ class ViewAiRun extends ViewRecord
                             decision: HumanReviewDecision::Accepted,
                             safeReasonCode: 'specialist_confirmed',
                         );
-                        Notification::make()->title('Предложение принято')->success()->send();
+                        Notification::make()->title('Результат AI отмечен как корректный')->success()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),
 
             Action::make('reject_review')
-                ->label('Отклонить')
+                ->label('Ответ AI неверный')
                 ->color('danger')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
@@ -99,13 +99,13 @@ class ViewAiRun extends ViewRecord
                             safeReasonCode: (string) ($data['reason_code'] ?? 'specialist_rejected'),
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                         );
-                        Notification::make()->title('Предложение отклонено')->danger()->send();
+                        Notification::make()->title('Результат AI отмечен как неверный')->danger()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),
 
             Action::make('edit_and_accept_review')
-                ->label('Отредактировать и принять')
+                ->label('Исправить ответ')
                 ->color('info')
                 ->visible(fn (AiRun $record) => $record->human_review_status === HumanReviewStatus::PendingReview)
                 ->form([
@@ -128,7 +128,7 @@ class ViewAiRun extends ViewRecord
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                             editedOutput: (string) ($data['edited_output'] ?? ''),
                         );
-                        Notification::make()->title('Отредактировано и принято')->success()->send();
+                        Notification::make()->title('Исправленный ответ сохранён')->success()->send();
                         $this->refreshFormData(['human_review_status']);
                     }
                 }),

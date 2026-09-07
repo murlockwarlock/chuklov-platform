@@ -21,7 +21,7 @@
                     <x-filament::badge color="warning">Нет активной версии</x-filament::badge>
                 @endif
             </div>
-            <p class="mt-1 text-sm font-medium text-success-700 dark:text-success-400">Этот текст сейчас используется AI</p>
+            <p class="mt-1 text-sm font-medium text-success-700 dark:text-success-400">Этот промпт сейчас используется AI</p>
         </div>
 
         <div class="flex max-w-full flex-wrap gap-2" data-testid="prompt-primary-actions">
@@ -79,7 +79,9 @@
         </div>
     @endif
 
-    <div class="flex flex-wrap gap-2">
-        {{ $page->activateDraftAction }}
-    </div>
+    @if ($page->hasDraft())
+        <div class="flex flex-wrap gap-2">
+            {{ $page->activateDraftAction }}
+        </div>
+    @endif
 </div>

@@ -104,6 +104,27 @@
                         <div class="mt-1 text-xs text-gray-500">
                             Категория: {{ $categoryLabels[$case['failure_category'] ?? ''] ?? 'проверка' }}
                         </div>
+                        @php
+                            $actualOutput = $case['actual_output'] ?? null;
+                            $decodedOutput = is_string($actualOutput) ? json_decode($actualOutput, true) : null;
+                            $actualDisplay = is_array($decodedOutput)
+                                ? json_encode($decodedOutput, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)
+                                : ($actualOutput ?: 'Ответ не получен.');
+                        @endphp
+                        <dl class="mt-3 space-y-3 text-sm">
+                            <div>
+                                <dt class="font-medium">Ввод</dt>
+                                <dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['test_inputs'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium">Ожидаемое поведение</dt>
+                                <dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ json_encode($case['expected_assertions'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) }}</dd>
+                            </div>
+                            <div>
+                                <dt class="font-medium">Фактический ответ</dt>
+                                <dd class="mt-1 whitespace-pre-wrap break-words text-gray-600 dark:text-gray-300">{{ $actualDisplay }}</dd>
+                            </div>
+                        </dl>
                     @endif
                 </div>
             @empty
@@ -137,5 +158,5 @@
         {{ $metrics['judge']['label'] ?? 'не настроена' }}.
     </div>
 
-    <p class="text-xs text-gray-500">Текст запросов и ответов здесь не показывается. Защищённый след AI доступен только через отдельное разрешение.</p>
+    <p class="text-xs text-gray-500">Подробности примеров показаны выше. Защищённый технический след AI доступен только через отдельное разрешение.</p>
 </div>

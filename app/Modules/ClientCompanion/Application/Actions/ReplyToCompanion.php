@@ -10,7 +10,6 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
-use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -54,10 +53,6 @@ final class ReplyToCompanion
                 ->where('conversation_type', ConversationType::ClientCompanion)
                 ->lockForUpdate()
                 ->firstOrFail();
-            if ($conversation->automation_state !== ConversationAutomationState::HumanHandoff) {
-                throw new AuthorizationException('Staff replies are available during an active handoff.');
-            }
-
             $turn = CompanionTurn::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('conversation_id', $conversation->getKey())

@@ -61,6 +61,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reply');
     Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve');
+    Route::post('/admin/clients/{client}/companion/resolve-and-resume', [AdminCompanionController::class, 'resolveAndResume'])
+        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
     Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
         ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
