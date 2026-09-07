@@ -7,6 +7,7 @@ use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use Illuminate\Support\Facades\Log;
+use JsonException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Properties\ChatAction;
 use SergiX44\Nutgram\Telegram\Properties\ParseMode;
@@ -43,37 +44,51 @@ final class TelegramMessagingChannel implements MessagingChannel
         }
 
         $formatter = $this->formatter ?? new TelegramCompanionFormatter;
-        $chunks = $formatter->chunks($chunk->semanticText);
+        $recipientExternalId = $this->ensureUtf8($chunk->recipientExternalId, 'recipient_external_id');
+        $semanticText = $this->ensureUtf8($chunk->semanticText, 'semantic_text');
+        $chunks = $formatter->chunks($semanticText);
         $html = $chunks[$chunk->chunkIndex] ?? null;
         if ($html === null || count($chunks) !== $chunk->chunkCount) {
             return NotificationDeliveryResult::permanentFailure('formatting_contract_mismatch');
         }
+        $html = $this->ensureUtf8($html, 'formatted_text');
 
         try {
             $keyboard = $this->keyboard($chunk);
-            $sent = $this->bot->sendMessage($html, $chunk->recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $keyboard);
+            $sent = $this->bot->sendMessage($html, $recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $keyboard);
 
             return $this->resultForSentMessage($sent);
         } catch (Throwable $exception) {
+            if ($this->isLocalPayloadEncodingFailure($exception)) {
+                return $this->localPayloadFailure($exception);
+            }
             if (! $this->isEntityParseFailure($exception)) {
                 return $this->providerFailure($exception, 'telegram_api_error');
             }
 
             try {
                 $fixed = $formatter->repairHtml($html);
-                $sent = $this->bot->sendMessage($fixed, $chunk->recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $this->keyboard($chunk));
+                $fixed = $this->ensureUtf8($fixed, 'repaired_formatted_text');
+                $sent = $this->bot->sendMessage($fixed, $recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $this->keyboard($chunk));
 
                 return $this->resultForSentMessage($sent);
             } catch (Throwable $fixedException) {
+                if ($this->isLocalPayloadEncodingFailure($fixedException)) {
+                    return $this->localPayloadFailure($fixedException);
+                }
                 if (! $this->isEntityParseFailure($fixedException)) {
                     return $this->providerFailure($fixedException, 'telegram_repaired_html_error');
                 }
 
                 try {
-                    $sent = $this->bot->sendMessage($formatter->plainText($html), $chunk->recipientExternalId, reply_markup: $this->keyboard($chunk));
+                    $plainText = $this->ensureUtf8($formatter->plainText($html), 'plain_text');
+                    $sent = $this->bot->sendMessage($plainText, $recipientExternalId, reply_markup: $this->keyboard($chunk));
 
                     return $this->resultForSentMessage($sent);
                 } catch (Throwable $plainException) {
+                    if ($this->isLocalPayloadEncodingFailure($plainException)) {
+                        return $this->localPayloadFailure($plainException);
+                    }
                     if (! $this->isEntityParseFailure($plainException)) {
                         return $this->providerFailure($plainException, 'telegram_plain_text_error');
                     }
@@ -168,14 +183,53 @@ final class TelegramMessagingChannel implements MessagingChannel
         }
 
         $keyboard = InlineKeyboardMarkup::make();
-        foreach ($chunk->buttons as $button) {
+        foreach ($chunk->buttons as $index => $button) {
             $keyboard->addRow(InlineKeyboardButton::make(
-                text: $button->text,
-                url: $button->url,
-                callback_data: $button->callbackData,
+                text: $this->ensureUtf8($button->text, "button.{$index}.text"),
+                url: $button->url === null ? null : $this->ensureUtf8($button->url, "button.{$index}.url"),
+                callback_data: $button->callbackData === null ? null : $this->ensureUtf8($button->callbackData, "button.{$index}.callback_data"),
             ));
         }
 
         return $keyboard;
+    }
+
+    private function ensureUtf8(string $value, string $field): string
+    {
+        if (mb_check_encoding($value, 'UTF-8')) {
+            return $value;
+        }
+
+        $sanitized = mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+        Log::warning('telegram_payload_utf8_repaired', [
+            'field' => $field,
+            'valid_utf8' => false,
+            'byte_length' => strlen($value),
+            'digest' => hash('sha256', $value),
+            'sanitized_byte_length' => strlen($sanitized),
+        ]);
+
+        return $sanitized;
+    }
+
+    private function isLocalPayloadEncodingFailure(Throwable $exception): bool
+    {
+        return $exception instanceof JsonException && $exception->getCode() === JSON_ERROR_UTF8;
+    }
+
+    private function localPayloadFailure(JsonException $exception): NotificationDeliveryResult
+    {
+        $result = NotificationDeliveryResult::permanentFailure('telegram_payload_invalid_utf8');
+        Log::warning('companion_telegram_delivery_result', [
+            'outcome' => $result->outcome->value,
+            'error_code' => $result->errorCode,
+            'provider_status' => null,
+            'failure_phase' => 'local_payload_serialization',
+            'exception' => $exception::class,
+            'exception_code' => $exception->getCode(),
+            'exception_message' => mb_substr(trim($exception->getMessage()), 0, 240),
+        ]);
+
+        return $result;
     }
 }
