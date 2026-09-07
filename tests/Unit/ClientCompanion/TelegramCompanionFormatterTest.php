@@ -82,6 +82,17 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('Привет, hello 👋 & < >', $formatter->plainText($html));
     }
 
+    public function test_cyrillic_ha_is_not_treated_as_a_newline(): void
+    {
+        $formatter = new TelegramCompanionFormatter;
+        $text = 'Похоже, новые сообщения сохранены.';
+        $html = $formatter->markdownToHtml($text);
+
+        self::assertTrue(mb_check_encoding($html, 'UTF-8'));
+        self::assertStringNotContainsString("\n", $html);
+        self::assertSame($text, $formatter->plainText($html));
+    }
+
     public function test_malformed_utf8_in_semantic_text_is_repaired_before_send(): void
     {
         $body = $this->sendAndReadRequest(new CompanionOutboundChunk('telegram-chat', "Привет\xB1", 0, 1, 'ru'));
