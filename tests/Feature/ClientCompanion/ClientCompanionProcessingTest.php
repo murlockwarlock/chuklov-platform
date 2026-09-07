@@ -213,6 +213,30 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertFalse($turn->typing_active);
     }
 
+    public function test_model_cannot_infer_human_requested_when_the_client_did_not_explicitly_request_it(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'handoff_required',
+                'reply' => '',
+                'handoff_reason' => 'human_requested',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Привет, ты кто?');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('invalid_output', $turn->fresh()->failure_code);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+    }
+
     public function test_long_reply_delivers_ordered_chunks_with_actions_only_on_the_final_chunk_and_retry_is_idempotent(): void
     {
         $channel = new RecordingCompanionChannel;

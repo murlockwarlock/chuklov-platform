@@ -31,7 +31,7 @@ class PromptVersionsRelationManager extends RelationManager
 {
     protected static string $relationship = 'versions';
 
-    protected static ?string $title = 'Версии промпта';
+    protected static ?string $title = 'История версий';
 
     protected static string|BackedEnum|null $icon = Heroicon::OutlinedDocumentDuplicate;
 
@@ -140,6 +140,7 @@ class PromptVersionsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('version')->label('Версия')->sortable(),
                 TextColumn::make('status')
@@ -153,15 +154,7 @@ class PromptVersionsRelationManager extends RelationManager
                     })
                     ->formatStateUsing(fn ($state) => $state instanceof PromptVersionStatus ? $state->label() : (string) $state),
                 TextColumn::make('change_notes')->label('Что изменилось')->placeholder('—'),
-                TextColumn::make('parameter_config')
-                    ->label('Ответ')
-                    ->formatStateUsing(function ($state): string {
-                        $parameters = AiParameterConfig::fromArray((array) $state);
-
-                        return 'Креативность '.$parameters->temperature.' · до '.$parameters->maxTokens.' токенов';
-                    }),
-                TextColumn::make('activated_at')->label('Активирована')->dateTime('d.m.Y H:i')->placeholder('—'),
-                TextColumn::make('created_at')->label('Создана')->dateTime('d.m.Y H:i'),
+                TextColumn::make('created_at')->label('Дата')->dateTime('d.m.Y H:i'),
             ])
             ->emptyStateHeading('Версий пока нет')
             ->emptyStateDescription('Создайте первую версию, чтобы задать инструкции AI и настройки ответа.')

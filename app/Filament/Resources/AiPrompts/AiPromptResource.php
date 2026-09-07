@@ -169,7 +169,7 @@ final class AiPromptResource extends Resource
     }
 
     /** @return array<int|string, string> */
-    private static function modelReleaseOptions(AiPrompt $prompt, string $search = ''): array
+    public static function modelReleaseOptions(AiPrompt $prompt, string $search = ''): array
     {
         $query = AiModelRelease::query()
             ->where('organization_id', app(OrganizationContext::class)->id())

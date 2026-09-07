@@ -8,17 +8,17 @@ use PHPUnit\Framework\TestCase;
 
 final class CompanionSafetyClassifierTest extends TestCase
 {
-    public function test_normal_specialist_question_is_not_automatically_handed_off(): void
+    public function test_only_explicit_requests_to_speak_with_a_human_are_handed_off(): void
     {
-        self::assertNull((new CompanionSafetyClassifier)->classify('Какой специалист может помочь подобрать массаж?'));
-    }
+        $classifier = new CompanionSafetyClassifier;
 
-    public function test_explicit_request_to_speak_with_evgeniy_is_handed_off(): void
-    {
-        self::assertSame(
-            CompanionEscalationReason::HumanRequested,
-            (new CompanionSafetyClassifier)->classify('Хочу поговорить с Евгением лично.'),
-        );
+        foreach (['Привет, ты кто?', 'Кто такой Евгений?', 'Расскажи про специалиста', 'Я массажист'] as $message) {
+            self::assertNull($classifier->classify($message), $message);
+        }
+
+        foreach (['Мне нужен специалист', 'Хочу поговорить с Евгением'] as $message) {
+            self::assertSame(CompanionEscalationReason::HumanRequested, $classifier->classify($message), $message);
+        }
     }
 
     public function test_urgent_safety_message_is_handed_off(): void

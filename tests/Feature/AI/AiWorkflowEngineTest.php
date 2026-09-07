@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ExecuteAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
@@ -342,6 +343,55 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($attempt);
         $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
         $this->assertNotNull($attempt->settled_estimated_cost_minor_units);
+    }
+
+    public function test_active_prompt_version_is_the_only_model_instruction_source(): void
+    {
+        DynamicWorkflowAgent::fake([
+            ['decision' => 'reply', 'reply' => 'Первый ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+            ['decision' => 'reply', 'reply' => 'Второй ответ', 'handoff_reason' => '', 'suggested_safe_actions' => []],
+        ])->preventStrayPrompts();
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $firstVersion = $prompt->activeVersion()->sole();
+        $firstVersion->update(['system_prompt' => 'Первая CRM-инструкция: {{query}}']);
+
+        $engine = app(AiWorkflowEngine::class);
+        $firstResult = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'sole_prompt_source_first',
+            inputVariables: ['query' => 'первый запуск'],
+        ));
+
+        $secondVersion = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 2,
+            'status' => 'draft',
+            'system_prompt' => 'Вторая CRM-инструкция: {{query}}',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => false],
+            'allowed_tools' => [],
+        ]);
+        app(ActivatePromptVersion::class)->handle($this->user, $secondVersion->id);
+        $secondResult = $engine->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'sole_prompt_source_second',
+            inputVariables: ['query' => 'второй запуск'],
+        ));
+
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $firstPayload = AiRunPayload::query()->where('ai_run_id', $firstResult->runId)->sole();
+        $secondPayload = AiRunPayload::query()->where('ai_run_id', $secondResult->runId)->sole();
+        $firstInstructions = $encryptor->decryptField($this->organization->id, $firstPayload->encrypted_system_prompt, $firstPayload->encryption_key_version);
+        $secondInstructions = $encryptor->decryptField($this->organization->id, $secondPayload->encrypted_system_prompt, $secondPayload->encryption_key_version);
+
+        self::assertSame('Первая CRM-инструкция: первый запуск', $firstInstructions);
+        self::assertSame('Вторая CRM-инструкция: второй запуск', $secondInstructions);
+        self::assertStringNotContainsString('SYSTEM-OWNED SAFETY POLICY', $firstInstructions);
+        self::assertStringNotContainsString('SYSTEM-OWNED SAFETY POLICY', $secondInstructions);
+        self::assertSame($firstVersion->id, AiRun::query()->findOrFail($firstResult->runId)->prompt_version_id);
+        self::assertSame($secondVersion->id, AiRun::query()->findOrFail($secondResult->runId)->prompt_version_id);
     }
 
     public function test_provider_reported_usage_and_immutable_pricing_drive_persisted_provenance(): void

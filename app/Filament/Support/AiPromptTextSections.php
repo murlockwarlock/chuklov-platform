@@ -39,7 +39,6 @@ final class AiPromptTextSections
         foreach ([
             "\n\n[PLATFORM SAFETY GUARDRAIL]\n",
             "\n\n[CURRENT PLATFORM SAFETY GUARDRAILS]\n",
-            "\n\n[SYSTEM-OWNED SAFETY POLICY]\n",
         ] as $marker) {
             if (! str_contains($source, $marker)) {
                 continue;

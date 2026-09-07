@@ -196,12 +196,6 @@ final class GetAiRunProtectedTrace
             $guardrails[] = trim($platformGuardrails);
         }
 
-        $systemMarker = "\n\n[SYSTEM-OWNED SAFETY POLICY]\n";
-        if (str_contains($source, $systemMarker)) {
-            [$source, $systemGuardrails] = explode($systemMarker, $source, 2);
-            $guardrails[] = trim($systemGuardrails);
-        }
-
         return [trim($source), $guardrails === [] ? null : implode("\n\n", array_filter($guardrails))];
     }
 }
