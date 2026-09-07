@@ -94,7 +94,7 @@ class UpdateSpecialist
             ]);
             $lockedSpecialist->save();
 
-            if ($notificationSettings !== null) {
+            if ($notificationSettings?->telegramId !== null) {
                 $this->telegramIdentity->handle(
                     actor: $actor,
                     organization: $organization,

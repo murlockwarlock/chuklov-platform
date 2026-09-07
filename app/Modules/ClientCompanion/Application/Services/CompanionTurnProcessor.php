@@ -29,7 +29,6 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\CompanionTypingHeartbeatJob;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
-use App\Modules\ClientCompanion\Infrastructure\Jobs\NotifyCompanionEscalationJob;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\ProcessCompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -38,6 +37,11 @@ use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -54,6 +58,8 @@ final class CompanionTurnProcessor
         private readonly RecordCompanionMessage $recordMessage,
         private readonly MessagingChannel $channel,
         private readonly TelegramCompanionFormatter $formatter,
+        private readonly EnsureOperationalNotificationDefaults $notificationDefaults,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(int $organizationId, int $turnId): void
@@ -446,10 +452,16 @@ final class CompanionTurnProcessor
 
     private function handoff(int $organizationId, int $turnId, string $leaseToken, CompanionEscalationReason $reason, ?int $aiRunId, string $locale): void
     {
+        $organization = Organization::query()->find($organizationId);
+        if (! $organization instanceof Organization) {
+            return;
+        }
+        $this->notificationDefaults->handle($organization);
+
         $handoff = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $reason, $aiRunId, $locale): array {
             $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
             if ($aggregate === null) {
-                return ['deliveryIds' => [], 'escalationId' => null];
+                return ['deliveryIds' => [], 'scenarioEventId' => null];
             }
             $turn = $aggregate['turn'];
             $conversation = $aggregate['conversation'];
@@ -460,7 +472,7 @@ final class CompanionTurnProcessor
                     $this->cancelOwnedTurn($turn, $conversation->automation_state === ConversationAutomationState::HumanHandoff);
                 }
 
-                return ['deliveryIds' => [], 'escalationId' => null];
+                return ['deliveryIds' => [], 'scenarioEventId' => null];
             }
             $client = Client::query()->where('organization_id', $organizationId)->whereKey($turn->client_id)->firstOrFail();
             $message = CompanionClientMessage::from($locale);
@@ -501,15 +513,17 @@ final class CompanionTurnProcessor
                 'opened_at' => now(),
             ]);
 
+            $scenarioEvent = $this->scenarioEvents->companionRequestedSpecialist($escalation, CarbonImmutable::now());
+
             return [
                 'deliveryIds' => $deliveryIds,
-                'escalationId' => (int) $escalation->getKey(),
+                'scenarioEventId' => (int) $scenarioEvent->getKey(),
             ];
         });
 
         $this->dispatchDeliveries($organizationId, $handoff['deliveryIds']);
-        if ($handoff['escalationId'] !== null) {
-            NotifyCompanionEscalationJob::dispatch($organizationId, $handoff['escalationId'])->afterCommit();
+        if ($handoff['scenarioEventId'] !== null) {
+            ProcessScenarioEvent::dispatch((int) $handoff['scenarioEventId'])->afterCommit();
         }
     }
 
@@ -539,7 +553,8 @@ final class CompanionTurnProcessor
             return;
         }
 
-        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $failureCode, $locale): array {
+        $scenarioEventId = null;
+        $deliveryIds = DB::transaction(function () use ($organizationId, $turnId, $leaseToken, $failureCode, $locale, &$scenarioEventId): array {
             $aggregate = $this->lockTurnAggregate($organizationId, $turnId);
             if ($aggregate === null) {
                 return [];
@@ -594,10 +609,23 @@ final class CompanionTurnProcessor
                     : $turn->album_recovery_message_id,
             ]);
 
+            if (in_array($failureCode, [
+                CompanionFailureCode::ProviderUnavailable,
+                CompanionFailureCode::InvalidOutput,
+                CompanionFailureCode::RetrievalFailure,
+                CompanionFailureCode::QueueFailure,
+            ], true)) {
+                $scenarioEvent = $this->scenarioEvents->companionFallbackFailed($turn, $failureCode, CarbonImmutable::now());
+                $scenarioEventId = (int) $scenarioEvent->getKey();
+            }
+
             return $deliveryIds;
         });
 
         $this->dispatchDeliveries($organizationId, $deliveryIds);
+        if ($scenarioEventId !== null) {
+            ProcessScenarioEvent::dispatch($scenarioEventId)->afterCommit();
+        }
     }
 
     /** @return list<int> */

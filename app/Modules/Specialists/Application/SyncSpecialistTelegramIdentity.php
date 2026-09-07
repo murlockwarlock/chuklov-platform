@@ -3,7 +3,6 @@
 namespace App\Modules\Specialists\Application;
 
 use App\Models\User;
-use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -28,6 +27,12 @@ final class SyncSpecialistTelegramIdentity
         Specialist $specialist,
         ?string $telegramId,
     ): void {
+        if ($telegramId !== null) {
+            throw ValidationException::withMessages([
+                'telegram_id' => 'Telegram подключается только через подтверждённую ссылку из CRM.',
+            ]);
+        }
+
         if ((int) $specialist->organization_id !== (int) $organization->getKey()) {
             throw new AuthorizationException('The specialist is outside the current organization.');
         }
@@ -36,12 +41,6 @@ final class SyncSpecialistTelegramIdentity
 
         DB::transaction(function () use ($actor, $organization, $specialist, $telegramId): void {
             $staffUserId = $specialist->staff_user_id;
-
-            if ($telegramId !== null && $staffUserId === null) {
-                throw ValidationException::withMessages([
-                    'telegram_id' => 'Сначала привяжите сотрудника CRM к специалисту.',
-                ]);
-            }
 
             if ($staffUserId === null) {
                 return;
@@ -80,52 +79,6 @@ final class SyncSpecialistTelegramIdentity
                 return;
             }
 
-            $occupiedIdentity = OrganizationChannelIdentity::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('channel', 'telegram')
-                ->where('external_id', $telegramId)
-                ->lockForUpdate()
-                ->first();
-
-            if ($occupiedIdentity !== null && (int) $occupiedIdentity->user_id !== (int) $staffUserId) {
-                throw ValidationException::withMessages([
-                    'telegram_id' => 'Этот Telegram ID уже привязан к другому сотруднику организации.',
-                ]);
-            }
-
-            $wasConfigured = $identity !== null
-                && $identity->external_id === $telegramId
-                && $identity->verification_status === ChannelIdentityStatus::Verified;
-
-            if ($identity === null) {
-                $identity = new OrganizationChannelIdentity;
-                $identity->forceFill([
-                    'organization_id' => $organization->getKey(),
-                    'user_id' => $staffUserId,
-                    'channel' => 'telegram',
-                ]);
-            }
-
-            $identity->forceFill([
-                'external_id' => $telegramId,
-                'verification_status' => ChannelIdentityStatus::Verified,
-                'verification_method' => 'crm_admin_configuration',
-                'verified_at' => now(),
-            ])->save();
-
-            if (! $wasConfigured) {
-                $this->audit->handle(
-                    organization: $organization,
-                    actor: $actor,
-                    action: 'specialist.telegram_identity.configured',
-                    targetType: Specialist::class,
-                    targetId: (string) $specialist->getKey(),
-                    metadata: [
-                        'channel' => 'telegram',
-                        'verification_method' => 'crm_admin_configuration',
-                    ],
-                );
-            }
         });
     }
 }

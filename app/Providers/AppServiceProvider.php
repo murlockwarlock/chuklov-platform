@@ -36,6 +36,7 @@ use App\Modules\Broadcasts\Domain\Contracts\BroadcastMediaStorageInterface;
 use App\Modules\Broadcasts\Infrastructure\Storage\FilesystemBroadcastMediaStorage;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
+use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramMessagingChannel;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
@@ -161,6 +162,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             NotificationChannelRegistry::class,
             fn (Application $app): NotificationChannelRegistry => new NotificationChannelRegistry([
+                $app->make(DatabaseNotificationChannel::class),
                 $app->make(TelegramNotificationChannel::class),
             ]),
         );

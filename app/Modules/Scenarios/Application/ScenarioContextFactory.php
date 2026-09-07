@@ -10,11 +10,15 @@ use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
+use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Referrals\Application\BuildClientReferralLink;
+use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -45,12 +49,17 @@ final class ScenarioContextFactory
             ScenarioEventType::BookingConfirmed => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingRescheduled => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCancelled => $this->bookingContext($event, $evaluationEndsAt),
+            ScenarioEventType::BookingRejected => $this->bookingContext($event, $evaluationEndsAt),
+            ScenarioEventType::HomeVisitChanged => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
             ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bLeadSubmitted => $this->b2bLeadContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bSalesCallReady => $this->b2bSalesCallContext($event, $evaluationEndsAt),
+            ScenarioEventType::CompanionRequestedSpecialist => $this->companionContext($event, $evaluationEndsAt),
+            ScenarioEventType::CompanionFallbackFailed => $this->companionContext($event, $evaluationEndsAt),
+            default => $this->genericClientContext($event, $evaluationEndsAt),
         };
     }
 
@@ -60,28 +69,71 @@ final class ScenarioContextFactory
         ScenarioRecipient $recipient,
         bool $includeFeedbackUrl = false,
     ): array {
-        if ($context->client === null) {
+        if ($context->client === null && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Client::class);
         }
 
         $renderContext = [
             'client' => [
-                'full_name' => $this->clientDisplayName($context->client),
-                'language' => strtolower((string) ($context->client->language ?? 'en')),
+                'full_name' => $context->client === null ? '' : $this->clientDisplayName($context->client),
+                'language' => strtolower((string) ($context->client?->language ?? 'en')),
             ],
             'recipient_locale' => $recipient->locale,
         ];
 
-        if ($recipient->type === 'client') {
+        if ($recipient->type === 'client' && $context->client !== null) {
             try {
                 $renderContext['referral_link'] = $this->referralLinks->handle($context->client);
             } catch (LogicException) {
             }
         }
 
-        if ($recipient->type === 'internal') {
+        if ($recipient->type === 'internal' && $context->client !== null) {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
             $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
+        }
+
+        if (in_array($context->event->event_name, [ScenarioEventType::CompanionRequestedSpecialist, ScenarioEventType::CompanionFallbackFailed], true)) {
+            $renderContext['companion'] = [
+                'escalation_id' => (int) ($context->event->payload['escalation_id'] ?? 0),
+                'crm_url' => url('/admin/clients/'.$context->client->getKey().'/companion'),
+                'reason' => (string) ($context->event->payload['reason'] ?? ''),
+            ];
+        }
+
+        if (in_array($context->event->event_name, [ScenarioEventType::PayoutRequested, ScenarioEventType::PayoutStatusChanged], true)) {
+            $requestId = $this->payloadId($context->event, 'payout_request_id');
+            $request = ReferralPayoutRequest::query()
+                ->where('organization_id', $context->event->organization_id)
+                ->whereKey($requestId)
+                ->with('beneficiary')
+                ->first();
+            if (! $request instanceof ReferralPayoutRequest) {
+                throw (new ModelNotFoundException)->setModel(ReferralPayoutRequest::class);
+            }
+            $currency = CurrencyCode::tryFrom((string) $request->getRawOriginal('currency'));
+            $amount = $currency === null
+                ? '—'
+                : Money::ofMinor((int) $request->amount_minor, $currency)->toDecimalString().' '.$currency->value;
+            $processedAt = match ($request->status) {
+                ReferralPayoutRequestStatus::Approved => $request->approved_at,
+                ReferralPayoutRequestStatus::Rejected => $request->rejected_at,
+                ReferralPayoutRequestStatus::Cancelled => $request->cancelled_at,
+                ReferralPayoutRequestStatus::Paid => $request->paid_at,
+                default => null,
+            };
+            $renderContext['payout'] = [
+                'id' => (int) $request->getKey(),
+                'amount' => $amount,
+                'currency' => $currency?->value ?? '',
+                'status' => $request->status->value,
+                'status_label' => $request->status->label(),
+                'requested_at' => $request->requested_at->toIso8601String(),
+                'processed_at' => $processedAt?->toIso8601String(),
+                'reason' => $request->rejection_reason,
+                'crm_url' => url('/admin/referral-payout-requests/'.$request->getKey()),
+                'portal_url' => url('/portal/referrals'),
+            ];
         }
 
         if ($context->booking !== null) {
@@ -172,7 +224,7 @@ final class ScenarioContextFactory
             }
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call'])) {
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -290,6 +342,47 @@ final class ScenarioContextFactory
             b2bLead: $call?->lead,
             b2bSalesCall: $call,
         );
+    }
+
+    private function companionContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $client = Client::query()
+            ->where('organization_id', $event->organization_id)
+            ->whereKey($this->payloadId($event, 'client_id'))
+            ->first();
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $client,
+            evaluationEndsAt: $evaluationEndsAt,
+        );
+    }
+
+    private function genericClientContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $clientId = $event->payload['client_id'] ?? null;
+        $client = is_int($clientId) || (is_string($clientId) && ctype_digit($clientId))
+            ? Client::query()->where('organization_id', $event->organization_id)->whereKey((int) $clientId)->first()
+            : null;
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $client,
+            evaluationEndsAt: $evaluationEndsAt,
+        );
+    }
+
+    private function allowsClientlessOperationalEvent(ScenarioEventType $eventType): bool
+    {
+        return in_array($eventType, [
+            ScenarioEventType::BroadcastDeliveryFailed,
+            ScenarioEventType::ClientFeedbackSubmitted,
+            ScenarioEventType::AiEvaluationFailed,
+            ScenarioEventType::ReferralLinkVisited,
+            ScenarioEventType::PaymentProviderEventPrepared,
+        ], true);
     }
 
     public function financeDebtIsCurrent(ScenarioEvaluationContext $context): bool

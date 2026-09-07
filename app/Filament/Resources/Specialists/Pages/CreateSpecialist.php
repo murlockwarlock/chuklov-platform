@@ -27,10 +27,7 @@ class CreateSpecialist extends CreateRecord
             isActive: (bool) $data['is_active'],
             timezone: $data['timezone'] ?? null,
             staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
-            notificationSettings: SpecialistNotificationSettings::from(
-                telegramId: $data['telegram_id'] ?? null,
-                enabled: (bool) ($data['notifications_enabled'] ?? true),
-            ),
+            notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
         );
 
         if (array_key_exists('viewer_timezone', $data)) {

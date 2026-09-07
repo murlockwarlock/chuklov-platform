@@ -9,6 +9,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioChannelIdentity;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Illuminate\Database\Eloquent\Builder;
 
 final class ScenarioChannelIdentityResolver
 {
@@ -22,22 +23,30 @@ final class ScenarioChannelIdentityResolver
                 ->where('verification_status', ChannelIdentityStatus::Verified->value)
                 ->first();
         } elseif ($action->recipient_type === 'internal' && $action->recipient_user_id !== null) {
-            $isActiveMember = OrganizationMembership::query()
+            $membership = OrganizationMembership::query()
                 ->where('organization_id', $action->organization_id)
                 ->where('user_id', $action->recipient_user_id)
                 ->active()
-                ->exists();
+                ->first();
 
-            if (! $isActiveMember) {
+            if ($membership === null || ! $membership->notifications_enabled) {
                 return null;
             }
 
             if (Specialist::query()
                 ->where('organization_id', $action->organization_id)
                 ->where('staff_user_id', $action->recipient_user_id)
-                ->where('notifications_enabled', false)
+                ->where(function (Builder $query): void {
+                    $query
+                        ->where('is_active', false)
+                        ->orWhere('notifications_enabled', false);
+                })
                 ->exists()) {
                 return null;
+            }
+
+            if ($channel === 'database') {
+                return new ScenarioChannelIdentity($channel, (string) $action->recipient_user_id);
             }
 
             $identity = OrganizationChannelIdentity::query()

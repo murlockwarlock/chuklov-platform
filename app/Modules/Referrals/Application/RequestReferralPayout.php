@@ -10,9 +10,12 @@ use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -23,7 +26,8 @@ final class RequestReferralPayout
         private readonly CurrencyCatalog $catalog,
         private readonly ReferralRewardBalanceProjection $balances,
         private readonly RecordAuditEvent $audit,
-        private readonly NotifyReferralPayoutRequest $notifier,
+        private readonly EnsureOperationalNotificationDefaults $notificationDefaults,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(Client $client, string $amount, string $currency, string $idempotencyKey): ReferralPayoutRequest
@@ -44,9 +48,11 @@ final class RequestReferralPayout
 
         $money = $this->money($amount, $currency);
         $requestHash = $this->requestHash($client, $money);
+        $this->notificationDefaults->handle($this->context->organization());
 
         $created = false;
-        $request = DB::transaction(function () use ($client, $money, $idempotencyKey, $requestHash, &$created): ReferralPayoutRequest {
+        $scenarioEventId = null;
+        $request = DB::transaction(function () use ($client, $money, $idempotencyKey, $requestHash, &$created, &$scenarioEventId): ReferralPayoutRequest {
             $beneficiary = Client::query()
                 ->where('organization_id', $this->context->id())
                 ->whereKey($client->getKey())
@@ -118,6 +124,8 @@ final class RequestReferralPayout
 
             $created = true;
             $this->recordEvent($request, null, ReferralPayoutRequestStatus::Requested, 'client', null, null, null, null, $idempotencyKey, $requestHash);
+            $scenarioEvent = $this->scenarioEvents->payoutRequested($request, CarbonImmutable::now());
+            $scenarioEventId = (int) $scenarioEvent->getKey();
             $this->audit->handle(
                 organization: $organization,
                 actor: null,
@@ -136,15 +144,8 @@ final class RequestReferralPayout
             return $request->refresh();
         });
 
-        if ($created) {
-            try {
-                $this->notifier->handle($request);
-            } catch (\Throwable) {
-                Log::warning('referral_payout_notification_failed', [
-                    'organization_id' => $request->organization_id,
-                    'payout_request_id' => $request->getKey(),
-                ]);
-            }
+        if ($created && $scenarioEventId !== null) {
+            ProcessScenarioEvent::dispatch($scenarioEventId)->afterCommit();
         }
 
         return $request;

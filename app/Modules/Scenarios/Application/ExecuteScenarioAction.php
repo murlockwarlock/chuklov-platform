@@ -264,6 +264,22 @@ final class ExecuteScenarioAction
         }
 
         if ($action->recipient_type === 'internal') {
+            $companionUrl = $action->render_context['companion']['crm_url'] ?? null;
+            if (is_string($companionUrl) && trim($companionUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть обращение' : 'Open conversation',
+                    url: $companionUrl,
+                );
+            }
+
+            $payoutUrl = $action->render_context['payout']['crm_url'] ?? null;
+            if (is_string($payoutUrl) && trim($payoutUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть выплату' : 'Open payout',
+                    url: $payoutUrl,
+                );
+            }
+
             $url = $action->render_context['client']['telegram_profile_url'] ?? null;
             if (! is_string($url) || trim($url) === '') {
                 return null;
@@ -283,6 +299,7 @@ final class ExecuteScenarioAction
             'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
             'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
             'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
+            'referral.payout.status_changed' => $action->render_context['payout']['portal_url'] ?? null,
             default => null,
         };
 

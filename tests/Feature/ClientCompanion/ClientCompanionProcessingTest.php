@@ -11,6 +11,9 @@ use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
@@ -24,6 +27,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurnMessage;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
@@ -33,11 +37,13 @@ use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Mockery;
 use Tests\TestCase;
@@ -163,6 +169,8 @@ final class ClientCompanionProcessingTest extends TestCase
 
         self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
         self::assertSame('provider_unavailable', $turn->fresh()->failure_code);
+        self::assertSame('companion.fallback_failed', ScenarioEvent::query()->sole()->event_name->value);
+        self::assertSame($turn->getKey(), ScenarioEvent::query()->sole()->payload['turn_id']);
     }
 
     public function test_missing_active_companion_prompt_is_logged_as_configuration_failure_without_protected_data(): void
@@ -273,6 +281,50 @@ final class ClientCompanionProcessingTest extends TestCase
                 ->handle($channel, app(CompanionMessageBodyReader::class));
         }
         self::assertCount($deliveries->count(), $channel->chunks);
+    }
+
+    public function test_companion_attachment_is_delivered_once_before_text_chunks_continue(): void
+    {
+        $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
+        self::assertGreaterThan(1, $deliveries->count());
+        $first = $deliveries->firstOrFail();
+        $message = ConversationMessage::query()->findOrFail($first->conversation_message_id);
+        $attachment = MedicalAttachment::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'attachment_type' => AttachmentType::CompanionDocument,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$this->organization->getKey().'/communication.txt',
+            'original_filename' => 'communication.txt',
+            'mime_type' => 'text/plain',
+            'size_bytes' => 20,
+            'sha256_checksum' => hash('sha256', 'communication'),
+        ]);
+        CompanionMessageAttachment::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $message->conversation_id,
+            'turn_id' => $first->turn_id,
+            'conversation_message_id' => $message->getKey(),
+            'medical_attachment_id' => $attachment->getKey(),
+            'source_ordinal' => 1,
+            'item_index' => 1,
+        ]);
+        $stream = fopen('php://memory', 'rb');
+        self::assertIsResource($stream);
+        $storage = Mockery::mock(AttachmentStorageInterface::class);
+        $storage->shouldReceive('readStream')->once()->andReturn($stream);
+        $channel = new RecordingCompanionChannel;
+
+        foreach ($deliveries as $delivery) {
+            (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+                ->handle($channel, app(CompanionMessageBodyReader::class), $storage);
+        }
+
+        self::assertCount($deliveries->count(), $channel->chunks);
+        self::assertCount(1, $channel->chunks[0]->mediaItems);
+        self::assertSame([], $channel->chunks[1]->mediaItems);
     }
 
     public function test_stale_completion_cannot_publish_after_a_new_worker_reclaims_the_turn(): void

@@ -12,8 +12,11 @@ use App\Modules\Content\Application\CreateContentSection;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
+use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
+use App\Modules\Identity\Application\InitiateTelegramOrganizationLink;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Application\UpdateClientProfileFromCrm;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -268,15 +271,16 @@ class MilestoneThreeCrmTest extends TestCase
             actor: $admin,
             displayName: 'Telegram Specialist',
             staffUserId: $staff->id,
-            notificationSettings: SpecialistNotificationSettings::from('987654321', true),
+            notificationSettings: SpecialistNotificationSettings::from(null, true),
         );
+        $this->connectStaffTelegram($admin, $staff, '987654321');
 
         self::assertTrue($specialist->notifications_enabled);
         $identity = OrganizationChannelIdentity::query()->where('organization_id', $organization->id)->sole();
         self::assertSame($staff->id, $identity->user_id);
         self::assertSame('987654321', $identity->external_id);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
-        self::assertSame('crm_admin_configuration', $identity->verification_method);
+        self::assertSame('telegram_crm_link', $identity->verification_method);
 
         $updated = app(UpdateSpecialist::class)->handle(
             actor: $admin,
@@ -284,7 +288,7 @@ class MilestoneThreeCrmTest extends TestCase
             displayName: $specialist->display_name,
             isActive: true,
             staffUserId: $staff->id,
-            notificationSettings: SpecialistNotificationSettings::from('987654321', false),
+            notificationSettings: SpecialistNotificationSettings::from(null, false),
         );
 
         self::assertFalse($updated->notifications_enabled);
@@ -306,26 +310,25 @@ class MilestoneThreeCrmTest extends TestCase
             actor: $admin,
             displayName: 'First Telegram Specialist',
             staffUserId: $firstStaff->id,
-            notificationSettings: SpecialistNotificationSettings::from('123456789', true),
+            notificationSettings: SpecialistNotificationSettings::from(null, true),
         );
+        $this->connectStaffTelegram($admin, $firstStaff, '123456789');
         $second = app(CreateSpecialist::class)->handle(
             actor: $admin,
             displayName: 'Second Telegram Specialist',
             staffUserId: $secondStaff->id,
         );
 
-        $this->expectException(ValidationException::class);
-        app(UpdateSpecialist::class)->handle(
-            actor: $admin,
-            specialist: $second,
-            displayName: $second->display_name,
-            isActive: true,
-            staffUserId: $secondStaff->id,
-            notificationSettings: SpecialistNotificationSettings::from('123456789', true),
-        );
-
         self::assertSame($firstStaff->id, OrganizationChannelIdentity::query()->sole()->user_id);
         self::assertNull($second->fresh()->telegramNotificationIdentity);
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $url = app(InitiateTelegramOrganizationLink::class)->handle($admin, $secondStaff->id);
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        $this->expectException(AuthorizationException::class);
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            substr((string) $query['start'], strlen('staff_')),
+            new VerifiedChannelIdentity('telegram', '123456789', 'Повторный сотрудник', 'ru'),
+        );
     }
 
     public function test_specialist_edit_form_loads_and_saves_telegram_notification_settings(): void
@@ -338,8 +341,9 @@ class MilestoneThreeCrmTest extends TestCase
             actor: $admin,
             displayName: 'Form Telegram Specialist',
             staffUserId: $staff->id,
-            notificationSettings: SpecialistNotificationSettings::from('777000111', true),
+            notificationSettings: SpecialistNotificationSettings::from(null, true),
         );
+        $this->connectStaffTelegram($admin, $staff, '777000111');
         $this->actingAs($admin);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
@@ -685,6 +689,17 @@ class MilestoneThreeCrmTest extends TestCase
             'feature_key' => $feature->value,
             'enabled' => true,
         ]);
+    }
+
+    private function connectStaffTelegram(User $admin, User $staff, string $externalId): void
+    {
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $url = app(InitiateTelegramOrganizationLink::class)->handle($admin, $staff->getKey());
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            substr((string) $query['start'], strlen('staff_')),
+            new VerifiedChannelIdentity('telegram', $externalId, $staff->name, 'ru'),
+        );
     }
 
     private function setOrganization(Organization $organization): void
