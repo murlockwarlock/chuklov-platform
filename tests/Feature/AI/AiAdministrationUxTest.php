@@ -563,6 +563,65 @@ final class AiAdministrationUxTest extends TestCase
             ->model_name);
     }
 
+    public function test_model_relation_manager_accepts_each_openai_catalog_selection_after_live_updates(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $this->resolveFilamentContext($organization, $admin);
+
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+
+        foreach (['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'] as $priority => $modelName) {
+            Livewire::actingAs($admin)
+                ->test(ModelsRelationManager::class, [
+                    'ownerRecord' => $provider,
+                    'pageClass' => EditAiProvider::class,
+                ])
+                ->mountTableAction('create')
+                ->setTableActionData(['model_selection' => $modelName])
+                ->setTableActionData([
+                    'display_name' => $modelName,
+                    'failover_priority' => $priority + 1,
+                    'capabilities' => array_map(
+                        static fn (AiCapability $capability): string => $capability->value,
+                        AiCapability::cases(),
+                    ),
+                ])
+                ->callMountedTableAction()
+                ->assertHasNoErrors();
+        }
+    }
+
+    public function test_editing_a_catalog_model_does_not_validate_automatic_modalities_as_tasks(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+        $model = app(CreateModelConfiguration::class)->handle($admin, $provider, [
+            'model_selection' => 'gpt-5.6-terra',
+            'display_name' => 'GPT-5.6 Terra',
+            'capabilities' => [AiCapability::GeneralAssistant->value],
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(ModelsRelationManager::class, [
+                'ownerRecord' => $provider,
+                'pageClass' => EditAiProvider::class,
+            ])
+            ->mountTableAction('edit', $model)
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+    }
+
     public function test_model_relation_manager_accepts_a_custom_openai_model_selection(): void
     {
         [$organization, $admin] = $this->organizationFixture();

@@ -127,6 +127,10 @@ class ModelsRelationManager extends RelationManager
                 CheckboxList::make('capabilities')
                     ->label('Задачи Chuklov')
                     ->options(self::capabilityOptions())
+                    ->formatStateUsing(fn (mixed $state): array => array_values(array_intersect(
+                        (array) $state,
+                        array_keys(self::capabilityOptions()),
+                    )))
                     ->helperText('Выберите рабочие сценарии для маршрутизации запросов. Это не список форматов файлов и не подтверждение поддержки PDF.')
                     ->validationMessages([
                         'in' => 'Выберите задачи из списка.',
