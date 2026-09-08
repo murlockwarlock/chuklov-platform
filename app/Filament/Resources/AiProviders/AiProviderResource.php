@@ -105,8 +105,8 @@ final class AiProviderResource extends Resource
                                     ->send();
                             } else {
                                 Notification::make()
-                                    ->title('Проблема при проверке связи')
-                                    ->body('Провайдер требует внимания. Проверьте API-ключ и состояние подключения.')
+                                    ->title('Связь не проверена')
+                                    ->body($result['message'])
                                     ->danger()
                                     ->send();
                             }

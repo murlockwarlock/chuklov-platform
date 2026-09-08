@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
+use App\Filament\Resources\AiProviders\Pages\ListAiProviders;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
@@ -34,10 +35,12 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Filament\Resources\Events\RecordSaved;
 use Filament\Resources\Events\RecordUpdated;
 use GuzzleHttp\Psr7\Uri;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -336,6 +339,24 @@ class AiProviderCredentialTest extends TestCase
         $this->assertNull($provider->last_health_error);
         $this->assertSame($credential->revision_id, $provider->tested_credential_revision);
         $this->assertSame(AiProviderExecutionConfiguration::digest('openai'), $provider->tested_configuration_digest);
+    }
+
+    public function test_provider_connection_test_explains_missing_api_key_without_sending_a_request(): void
+    {
+        Http::fake();
+
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Empty Health Test', '');
+        $provider = $this->createProviderConfiguration($credential);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(
+            'API-ключ не подключён, неактивен или не привязан к этому провайдеру.',
+            $result['message'],
+        );
+        $this->assertSame(ProviderHealthStatus::Unavailable, $provider->refresh()->health_status);
+        Http::assertNothingSent();
     }
 
     public function test_credential_rotation_invalidates_provider_health_until_the_new_revision_is_probed(): void
@@ -892,11 +913,57 @@ class AiProviderCredentialTest extends TestCase
         $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
 
         $this->assertFalse($result['success']);
+        $expectedMessage = 'API-ключ отклонён провайдером. Проверьте ключ и его права (HTTP 401).';
+        $this->assertSame($expectedMessage, $result['message']);
         $provider->refresh();
         $this->assertSame(ProviderHealthStatus::Degraded, $provider->health_status);
-        $this->assertSame('An internal error occurred during AI execution.', $provider->last_health_error);
+        $this->assertSame($expectedMessage, $provider->last_health_error);
         $this->assertStringNotContainsString('sk-secret-health', (string) $provider->last_health_error);
         $this->assertStringNotContainsString('secret provider response', (string) $provider->last_health_error);
+    }
+
+    public function test_provider_probe_explains_network_failures(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/models' => static function (): never {
+                throw new ConnectionException('cURL error 7: Failed to connect to host');
+            },
+        ]);
+
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Network Test', 'sk-network-health');
+        $provider = $this->createProviderConfiguration($credential);
+
+        $result = app(TestProviderConnection::class)->handle($this->userA, $provider->id);
+
+        $this->assertFalse($result['success']);
+        $this->assertSame(
+            'Не удалось подключиться к провайдеру. Проверьте доступность сети и endpoint.',
+            $result['message'],
+        );
+        $this->assertSame($result['message'], $provider->refresh()->last_health_error);
+        $this->assertStringNotContainsString('sk-network-health', (string) $provider->last_health_error);
+    }
+
+    public function test_filament_provider_connection_action_shows_probe_reason(): void
+    {
+        Http::fake([
+            'https://api.openai.com/v1/models' => Http::response(['error' => 'secret provider response'], 401),
+        ]);
+
+        $credential = $this->createOrganizationCredential('openai', 'OpenAI Filament Health Test', 'sk-filament-health');
+        $provider = $this->createProviderConfiguration($credential);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($this->userA);
+
+        Livewire::test(ListAiProviders::class)
+            ->callTableAction('test_connection', $provider)
+            ->assertNotified(
+                Notification::make()
+                    ->title('Связь не проверена')
+                    ->body('API-ключ отклонён провайдером. Проверьте ключ и его права (HTTP 401).')
+                    ->danger(),
+            );
     }
 
     private function createOrganizationCredential(string $provider, string $name, string $apiKey): OrganizationCredential
