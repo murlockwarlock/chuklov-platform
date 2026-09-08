@@ -409,6 +409,35 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertCount($deliveries->count(), $channel->chunks);
     }
 
+    public function test_failed_later_chunk_does_not_replay_already_delivered_chunks(): void
+    {
+        $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
+        self::assertGreaterThan(1, $deliveries->count());
+        $first = $deliveries->firstOrFail();
+        $second = $deliveries->get(1);
+        $channel = new FailOnceOnSecondChunkCompanionChannel;
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $first->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+        (new DeliverCompanionMessage($this->organization->getKey(), $second->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Delivered, $first->fresh()->status);
+        self::assertSame(CompanionDeliveryStatus::Failed, $second->fresh()->status);
+        self::assertSame([0, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $first->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+        self::assertSame([0, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+
+        $second->update(['next_attempt_at' => now()->subSecond()]);
+        (new DeliverCompanionMessage($this->organization->getKey(), $second->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Delivered, $second->fresh()->status);
+        self::assertSame([0, 1, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+    }
+
     public function test_companion_attachment_is_delivered_once_before_text_chunks_continue(): void
     {
         $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
@@ -1243,6 +1272,23 @@ final class RetryableCompanionChannel extends RecordingCompanionChannel
         $this->chunks[] = $chunk;
 
         return NotificationDeliveryResult::retryable('provider_rejected_before_acceptance');
+    }
+}
+
+final class FailOnceOnSecondChunkCompanionChannel extends RecordingCompanionChannel
+{
+    private bool $failed = false;
+
+    public function sendCompanionChunk(CompanionOutboundChunk $chunk): NotificationDeliveryResult
+    {
+        $this->chunks[] = $chunk;
+        if ($chunk->chunkIndex === 1 && ! $this->failed) {
+            $this->failed = true;
+
+            return NotificationDeliveryResult::retryable('temporary_second_chunk_failure');
+        }
+
+        return NotificationDeliveryResult::delivered('fake-message-'.$chunk->chunkIndex);
     }
 }
 

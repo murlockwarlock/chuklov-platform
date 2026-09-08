@@ -123,7 +123,7 @@ class SearchKnowledgeBaseSdkTool implements Tool
             $latencyMs = (int) round((hrtime(true) - $startTime) / 1e6);
 
             $encoded = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            if (! is_string($encoded) || AiRuntimeLimits::upperBoundTokenCount($encoded) > AiRuntimeLimits::PLATFORM_MAX_TOOL_RESULT_TOKENS) {
+            if (! is_string($encoded) || AiRuntimeLimits::estimateTokens($encoded) > AiRuntimeLimits::PLATFORM_MAX_TOOL_RESULT_TOKENS) {
                 throw new AiRagRetrievalException(
                     'Knowledge tool result exceeds the bounded tool context limit.',
                     reason: 'context_limit',

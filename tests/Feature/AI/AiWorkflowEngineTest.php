@@ -1762,7 +1762,7 @@ class AiWorkflowEngineTest extends TestCase
             ));
             $this->fail('Expected an oversized rendered prompt to be rejected.');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('bounded input limit', $e->getMessage());
+            $this->assertStringContainsString('bounded input-context budget', $e->getMessage());
         }
 
         $run = AiRun::query()->where('organization_id', $this->organization->id)->sole();
@@ -1809,10 +1809,12 @@ class AiWorkflowEngineTest extends TestCase
         self::assertStringContainsString('Текущее сообщение:', (string) $renderedUserPrompt);
         self::assertStringContainsString('привет', (string) $renderedUserPrompt);
         self::assertStringNotContainsString('[Client] Старое сообщение 1\n', (string) $renderedUserPrompt);
-        self::assertLessThanOrEqual(
-            AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS,
-            AiRuntimeLimits::upperBoundTokenCount((string) $renderedSystemPrompt."\n".$renderedUserPrompt),
+        $budget = AiRuntimeLimits::inputContextBudget(
+            (string) $renderedSystemPrompt,
+            (string) $renderedUserPrompt,
+            AiCapabilityRegistry::get(AiCapability::ClientCompanion),
         );
+        self::assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
     }
 
     public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void

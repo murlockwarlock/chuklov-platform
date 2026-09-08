@@ -37,6 +37,20 @@ final class TelegramCompanionFormatterTest extends TestCase
         }
     }
 
+    public function test_long_text_prefers_paragraph_boundaries(): void
+    {
+        $formatter = new TelegramCompanionFormatter;
+        $chunks = $formatter->chunks(
+            str_repeat('первый ', 550)."\n\n".str_repeat('второй ', 550),
+        );
+
+        self::assertCount(2, $chunks);
+        self::assertStringContainsString('первый', $formatter->plainText($chunks[0]));
+        self::assertStringNotContainsString('второй', $formatter->plainText($chunks[0]));
+        self::assertStringNotContainsString('первый', $formatter->plainText($chunks[1]));
+        self::assertStringContainsString('второй', $formatter->plainText($chunks[1]));
+    }
+
     public function test_formatting_is_reopened_across_chunk_boundaries(): void
     {
         $formatter = new TelegramCompanionFormatter;

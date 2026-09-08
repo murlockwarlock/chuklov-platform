@@ -76,8 +76,10 @@ final readonly class BoundedAiPromptContext
         ];
     }
 
-    /** @param array<string, mixed> $variables */
-    /** @return array{0: array<string, mixed>, 1: string, 2: string} */
+    /**
+     * @param  array<string, mixed>  $variables
+     * @return array{0: array<string, mixed>, 1: string, 2: string}
+     */
     private function fitHistory(
         string $systemTemplate,
         string $userTemplate,
@@ -98,8 +100,10 @@ final readonly class BoundedAiPromptContext
         }
     }
 
-    /** @param array<string, mixed> $variables */
-    /** @return array{0: string, 1: string} */
+    /**
+     * @param  array<string, mixed>  $variables
+     * @return array{0: string, 1: string}
+     */
     private function prompts(string $systemTemplate, string $userTemplate, array $variables): array
     {
         return [
@@ -110,8 +114,6 @@ final readonly class BoundedAiPromptContext
 
     private function fits(string $systemPrompt, string $userPrompt, AiCapabilityDefinition $capability): bool
     {
-        $maxInputTokens = min($capability->maxInputTokens, AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS);
-
-        return AiRuntimeLimits::upperBoundTokenCount($systemPrompt."\n".$userPrompt) <= $maxInputTokens;
+        return AiRuntimeLimits::inputContextBudget($systemPrompt, $userPrompt, $capability)->fits();
     }
 }

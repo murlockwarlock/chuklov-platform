@@ -217,7 +217,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
                     }
 
                     $ragContext = implode("\n\n", $ragContexts);
-                    if (AiRuntimeLimits::upperBoundTokenCount($ragContext) > AiRuntimeLimits::PLATFORM_MAX_RAG_CONTEXT_TOKENS) {
+                    if (AiRuntimeLimits::estimateTokens($ragContext) > AiRuntimeLimits::PLATFORM_MAX_RAG_CONTEXT_TOKENS) {
                         throw new AiRagRetrievalException(
                             'RAG context exceeds the bounded context limit.',
                             reason: 'context_limit',
