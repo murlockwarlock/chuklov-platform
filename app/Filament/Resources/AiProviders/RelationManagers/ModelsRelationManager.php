@@ -92,6 +92,10 @@ class ModelsRelationManager extends RelationManager
                     ->native(false)
                     ->searchable()
                     ->optionsLimit(250)
+                    ->placeholder('Выберите модель или ручной вариант')
+                    ->validationMessages([
+                        'in' => 'Выберите модель из списка. Если её нет в каталоге, выберите «Другая модель / Указать вручную».',
+                    ])
                     ->required(fn (Get $get): bool => blank($get('model_name'))),
                 TextInput::make('model_name')
                     ->label('Название модели в API')
@@ -111,6 +115,9 @@ class ModelsRelationManager extends RelationManager
                     ->helperText('Первая модель используется обычно, следующие подключаются при сбое.')
                     ->default(1)
                     ->native(false)
+                    ->validationMessages([
+                        'in' => 'Выберите порядок использования от 1 до 10.',
+                    ])
                     ->required(),
                 Placeholder::make('supported_inputs')
                     ->label('Что модель принимает')
@@ -121,6 +128,9 @@ class ModelsRelationManager extends RelationManager
                     ->label('Задачи Chuklov')
                     ->options(self::capabilityOptions())
                     ->helperText('Выберите рабочие сценарии для маршрутизации запросов. Это не список форматов файлов и не подтверждение поддержки PDF.')
+                    ->validationMessages([
+                        'in' => 'Выберите задачи из списка.',
+                    ])
                     ->columns(2)
                     ->columnSpanFull(),
                 Placeholder::make('capability_compatibility')
@@ -217,6 +227,9 @@ class ModelsRelationManager extends RelationManager
                                 )))
                             ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                             ->helperText('Для модели из каталога эти возможности определяются автоматически. Для ручной модели сначала проверьте документацию провайдера.')
+                            ->validationMessages([
+                                'in' => 'Выберите тип входных данных из списка.',
+                            ])
                             ->columnSpanFull(),
                     ])
                     ->columns(2)

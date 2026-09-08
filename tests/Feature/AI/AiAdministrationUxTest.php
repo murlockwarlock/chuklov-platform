@@ -529,6 +529,103 @@ final class AiAdministrationUxTest extends TestCase
             ]);
     }
 
+    public function test_model_relation_manager_accepts_an_openai_catalog_selection(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(ModelsRelationManager::class, [
+                'ownerRecord' => $provider,
+                'pageClass' => EditAiProvider::class,
+            ])
+            ->mountTableAction('create')
+            ->setTableActionData([
+                'model_selection' => 'gpt-5.6-terra',
+                'display_name' => 'GPT-5.6 Terra',
+                'capabilities' => array_map(
+                    static fn (AiCapability $capability): string => $capability->value,
+                    AiCapability::cases(),
+                ),
+            ])
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+
+        self::assertSame('gpt-5.6-terra', AiModelConfiguration::query()
+            ->where('provider_config_id', $provider->getKey())
+            ->sole()
+            ->model_name);
+    }
+
+    public function test_model_relation_manager_accepts_a_custom_openai_model_selection(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(ModelsRelationManager::class, [
+                'ownerRecord' => $provider,
+                'pageClass' => EditAiProvider::class,
+            ])
+            ->mountTableAction('create')
+            ->setTableActionData([
+                'model_selection' => '__custom__',
+                'model_name' => 'gpt-4o',
+                'display_name' => 'GPT-4o',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ])
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+
+        self::assertSame('gpt-4o', AiModelConfiguration::query()
+            ->where('provider_config_id', $provider->getKey())
+            ->sole()
+            ->model_name);
+    }
+
+    public function test_model_relation_manager_explains_how_to_add_an_openai_model_outside_the_catalog(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'openai',
+            'display_name' => 'OpenAI',
+            'health_status' => ProviderHealthStatus::Healthy,
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ModelsRelationManager::class, [
+                'ownerRecord' => $provider,
+                'pageClass' => EditAiProvider::class,
+            ])
+            ->mountTableAction('create')
+            ->setTableActionData([
+                'model_selection' => 'gpt-4o',
+                'model_name' => 'gpt-4o',
+                'display_name' => 'GPT-4o',
+                'capabilities' => [AiCapability::GeneralAssistant->value],
+            ])
+            ->callMountedTableAction();
+
+        self::assertSame(
+            ['Выберите модель из списка. Если её нет в каталоге, выберите «Другая модель / Указать вручную».'],
+            $component->errors()->get('mountedActions.0.data.model_selection'),
+        );
+    }
+
     public function test_prompt_key_is_locked_and_new_version_preserves_advanced_metadata_and_generation_settings(): void
     {
         [$organization, $admin] = $this->organizationFixture();
