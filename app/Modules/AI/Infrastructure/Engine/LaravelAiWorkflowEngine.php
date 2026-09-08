@@ -8,11 +8,11 @@ use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
+use App\Modules\AI\Application\Services\BoundedAiPromptContext;
 use App\Modules\AI\Application\Validation\AiInputReferenceValidator;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiOutputValidatorInterface;
 use App\Modules\AI\Domain\Contracts\AiPricingCalculatorInterface;
-use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
@@ -72,7 +72,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 {
     public function __construct(
         private readonly AiContextAssemblerInterface $contextAssembler,
-        private readonly AiPromptRendererInterface $promptRenderer,
+        private readonly BoundedAiPromptContext $boundedPromptContext,
         private readonly AiOutputValidatorInterface $outputValidator,
         private readonly AiPricingCalculatorInterface $pricingCalculator,
         private readonly AiSafetyBudgetManagerInterface $budgetManager,
@@ -265,9 +265,16 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 embeddingSnapshot: $embeddingSnapshot,
                 capability: $request->capability,
             );
-            $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
-            $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
-            AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
+            $boundedPrompt = $this->boundedPromptContext->render(
+                systemTemplate: $promptVersion->system_prompt,
+                userTemplate: $promptVersion->user_prompt_template,
+                contextAssembly: $contextAssembly,
+                capability: $capabilityDef,
+                contextPolicy: $contextPolicy,
+            );
+            $contextAssembly = $boundedPrompt['contextAssembly'];
+            $renderedSystemPrompt = $boundedPrompt['systemPrompt'];
+            $renderedUserPrompt = $boundedPrompt['userPrompt'];
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
             if (! $this->prepareAiRun->complete(
                 run: $run,

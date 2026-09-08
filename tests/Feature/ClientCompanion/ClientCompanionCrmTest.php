@@ -213,12 +213,20 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]))
             ->assertDontSee(route('admin.clients.companion.metadata-export', ['client' => $this->client]));
 
+        $component
+            ->set('data', ['body' => '<p>Привет</p>'])
+            ->assertSee('6 / 4096')
+            ->assertSee('Привет');
+
         $editor = $component->instance()->getSchemaComponent('form.body');
         self::assertInstanceOf(RichEditor::class, $editor);
         self::assertContains('emoji', array_merge(...$editor->getToolbarButtons()));
         self::assertContains('bulletList', array_merge(...$editor->getToolbarButtons()));
         self::assertContains('orderedList', array_merge(...$editor->getToolbarButtons()));
         self::assertFalse($editor->isDisabled());
+        self::assertTrue($editor->isLiveDebounced());
+        self::assertFalse($editor->isLiveOnBlur());
+        self::assertSame(300, $editor->getNormalizedLiveDebounce());
 
         $upload = $component->instance()->getSchemaComponent('form.new_attachment');
         self::assertInstanceOf(FileUpload::class, $upload);
@@ -252,6 +260,33 @@ final class ClientCompanionCrmTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(CompanionExportService::class)->history($this->admin, $foreignClient, 'txt', 'pseudonymized');
+    }
+
+    public function test_companion_composer_uses_the_caption_limit_for_an_allowed_attachment(): void
+    {
+        $this->seedHandoffHistory();
+        $attachment = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::CompanionImage,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/preview.jpg',
+            'original_filename' => 'preview.jpg',
+            'mime_type' => 'image/jpeg',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'preview'),
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->set('data', [
+                'body' => '<p>Привет</p>',
+                'existing_attachment_id' => $attachment->getKey(),
+            ])
+            ->assertSee('6 / 1024');
     }
 
     public function test_protected_attachments_are_not_available_to_the_outbound_companion_picker(): void
@@ -315,6 +350,27 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertSame($this->client->getKey(), $link->client_id);
         self::assertSame(AttachmentType::CompanionDocument, $attachment->fresh()->attachment_type);
         Storage::disk('private')->assertExists($attachment->storage_path);
+    }
+
+    public function test_companion_attachment_caption_cannot_exceed_telegram_limit(): void
+    {
+        $this->seedHandoffHistory();
+        Storage::fake('private');
+        $attachment = app(UploadCompanionCommunicationAttachment::class)->handle(
+            $this->admin,
+            $this->client,
+            UploadedFile::fake()->createWithContent('instructions.txt', 'Безопасная инструкция'),
+        );
+
+        $this->expectException(ValidationException::class);
+        app(ReplyToCompanion::class)->handle(
+            $this->admin,
+            $this->client,
+            str_repeat('а', 1025),
+            [$attachment->getKey()],
+        );
+
+        self::assertSame(0, ConversationMessage::query()->where('author_type', ConversationAuthorType::Staff->value)->count());
     }
 
     public function test_closing_handoff_and_resuming_ai_is_one_authoritative_action(): void

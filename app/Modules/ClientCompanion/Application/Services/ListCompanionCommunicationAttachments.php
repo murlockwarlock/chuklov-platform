@@ -37,6 +37,8 @@ final readonly class ListCompanionCommunicationAttachments
             ])
             ->select([
                 'id',
+                'uuid',
+                'organization_id',
                 'attachment_type',
                 'original_filename',
                 'mime_type',

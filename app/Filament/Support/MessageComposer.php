@@ -49,6 +49,8 @@ final class MessageComposer
         ?string $mediaSectionDescription = null,
         string $mediaUploadLabel = 'Загрузить медиа',
         ?string $mediaHelperText = null,
+        ?string $mediaSelectionField = null,
+        bool $mediaUsesCaptionLimit = false,
     ): array {
         $messageModeField = 'message_mode';
 
@@ -96,19 +98,27 @@ final class MessageComposer
         $messageComponents[] = RichTextEditor::make($bodyField, $variables)
             ->label($bodyLabel)
             ->maxLength(100000)
-            ->live(onBlur: true)
+            ->live(debounce: 300)
             ->helperText($bodyHelper)
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
             ->required(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
         $messageComponents[] = Placeholder::make('message_counter')
             ->label('Лимит Telegram')
-            ->content(fn (Get $get): string => self::messageCounter($get, $bodyField, $deliveryModeField))
+            ->content(fn (Get $get): string => self::messageCounter(
+                $get,
+                $bodyField,
+                $deliveryModeField,
+                $mediaField,
+                $mediaUrlField,
+                $mediaSelectionField,
+                $mediaUsesCaptionLimit,
+            ))
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
         $messageComponents[] = Placeholder::make('message_preview')
             ->label('Предпросмотр')
-            ->content(fn (Get $get): string => RichTextPresentation::html((string) $get($bodyField)) ?: 'Текст появится здесь.')
+            ->content(fn (Get $get): string => self::messagePreview($get, $bodyField))
             ->prose()
             ->html()
             ->columnSpanFull()
@@ -229,22 +239,44 @@ final class MessageComposer
         return ! $allowSavedTemplates || $get($messageModeField) !== 'saved_template';
     }
 
-    private static function messageCounter(Get $get, string $bodyField, string $deliveryModeField): string
-    {
+    private static function messageCounter(
+        Get $get,
+        string $bodyField,
+        string $deliveryModeField,
+        string $mediaField,
+        string $mediaUrlField,
+        ?string $mediaSelectionField,
+        bool $mediaUsesCaptionLimit,
+    ): string {
         $mode = NotificationMessageMode::tryFrom((string) $get($deliveryModeField));
-        $limit = $mode?->usesCaption() === true
+        $hasMedia = $mediaUsesCaptionLimit && (
+            self::hasUploads($get, $mediaField)
+            || filled($get($mediaUrlField))
+            || ($mediaSelectionField !== null && filled($get($mediaSelectionField)))
+        );
+        $limit = $mode?->usesCaption() === true || $hasMedia
             ? RichTextDocument::TELEGRAM_CAPTION_LIMIT
             : RichTextDocument::TELEGRAM_TEXT_LIMIT;
-        $body = $get($bodyField);
-
-        if (! is_string($body) || trim($body) === '') {
-            return '0 / '.$limit;
-        }
 
         try {
+            $body = RichTextDocument::canonicalHtmlFromState($get($bodyField));
+            if ($body === '') {
+                return '0 / '.$limit;
+            }
+
             return RichTextDocument::telegramLength($body).' / '.$limit;
         } catch (\InvalidArgumentException) {
             return 'Проверьте формат текста · лимит '.$limit;
+        }
+    }
+
+    private static function messagePreview(Get $get, string $bodyField): string
+    {
+        try {
+            return RichTextPresentation::html(RichTextDocument::canonicalHtmlFromState($get($bodyField)))
+                ?: 'Текст появится здесь.';
+        } catch (\InvalidArgumentException) {
+            return 'Проверьте формат текста.';
         }
     }
 

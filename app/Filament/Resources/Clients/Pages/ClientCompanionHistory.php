@@ -5,7 +5,11 @@ namespace App\Filament\Resources\Clients\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\MessageComposer;
 use App\Models\User;
+use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
@@ -64,16 +68,9 @@ final class ClientCompanionHistory extends ViewRecord
             mediaField: 'new_attachment',
             mediaUrlField: 'media_url',
             variables: null,
-            preview: fn (Get $get, ?Model $record): NotificationMessage => new NotificationMessage(
-                recipientExternalId: 'preview',
-                body: RichTextDocument::canonicalHtmlFromState($get('body')),
-                subject: null,
-                locale: 'ru',
-                idempotencyKey: 'companion-preview',
-                mode: NotificationMessageMode::Text,
-            ),
+            preview: fn (Get $get, ?Model $record): NotificationMessage => $this->companionPreview($get, $actor, $client),
             bodyLabel: 'Сообщение',
-            bodyHelper: 'Можно использовать жирный, курсив, ссылки, списки и эмодзи.',
+            bodyHelper: 'Можно использовать жирный, курсив, ссылки, списки и эмодзи. Без вложения — до 4096 символов; с фото или файлом — подпись до 1024.',
             showDeliveryMode: false,
             includeMediaUrl: false,
             mediaAcceptedFileTypes: [
@@ -85,6 +82,8 @@ final class ClientCompanionHistory extends ViewRecord
             ],
             mediaMaxKilobytes: (int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024),
             mediaMultiple: false,
+            mediaSelectionField: 'existing_attachment_id',
+            mediaUsesCaptionLimit: true,
             mediaSectionTitle: 'Вложение',
             mediaSectionDescription: 'Можно добавить один безопасный файл. Защищённые медицинские файлы здесь не показываются.',
             mediaUploadLabel: 'Загрузить файл для сообщения',
@@ -202,6 +201,73 @@ final class ClientCompanionHistory extends ViewRecord
                     ]);
                 }),
         ];
+    }
+
+    private function companionPreview(Get $get, ?User $actor, ?Client $client): NotificationMessage
+    {
+        $body = RichTextDocument::canonicalHtmlFromState($get('body'));
+        $mediaItems = $this->previewMedia($get, $actor, $client);
+        $mode = $mediaItems === []
+            ? NotificationMessageMode::Text
+            : ($body === '' ? NotificationMessageMode::Image : NotificationMessageMode::ImageWithCaption);
+
+        return new NotificationMessage(
+            recipientExternalId: 'preview',
+            body: $mode->includesText() ? $body : '',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'companion-preview',
+            mode: $mode,
+            mediaItems: $mediaItems,
+        );
+    }
+
+    /** @return list<NotificationMedia> */
+    private function previewMedia(Get $get, ?User $actor, ?Client $client): array
+    {
+        $upload = $get('new_attachment');
+        if ($upload instanceof UploadedFile) {
+            $type = $this->mediaType($upload->getMimeType());
+            $url = null;
+            if (method_exists($upload, 'temporaryUrl')) {
+                try {
+                    $temporaryUrl = $upload->temporaryUrl();
+                    $url = is_string($temporaryUrl) && trim($temporaryUrl) !== '' ? trim($temporaryUrl) : null;
+                } catch (\Throwable) {
+                    $url = null;
+                }
+            }
+
+            return [new NotificationMedia(
+                type: $type,
+                url: $url,
+                fileName: $upload->getClientOriginalName() ?: null,
+            )];
+        }
+
+        $attachmentId = $get('existing_attachment_id');
+        if (! $actor instanceof User || ! $client instanceof Client || ! filled($attachmentId)) {
+            return [];
+        }
+
+        $attachment = app(ListCompanionCommunicationAttachments::class)
+            ->query($actor, $client)
+            ->whereKey((int) $attachmentId)
+            ->first();
+        if (! $attachment instanceof MedicalAttachment) {
+            return [];
+        }
+
+        return [new NotificationMedia(
+            type: $attachment->attachment_type === AttachmentType::CompanionImage ? 'photo' : 'document',
+            url: app(GetTemporaryAttachmentUrl::class)->handle($actor, $attachment),
+            fileName: $attachment->original_filename,
+        )];
+    }
+
+    private function mediaType(?string $mimeType): string
+    {
+        return str_starts_with(strtolower((string) $mimeType), 'image/') ? 'photo' : 'document';
     }
 
     private function canExport(): bool

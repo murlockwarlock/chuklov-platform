@@ -1769,6 +1769,52 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertSame(AiRunStatus::Failed, $run->status);
     }
 
+    public function test_companion_prompt_keeps_the_current_message_when_old_history_exceeds_the_prompt_budget(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        DynamicWorkflowAgent::fake(['A normal greeting response.']);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $version = $prompt->activeVersion()->sole();
+        $version->update([
+            'system_prompt' => str_repeat('Безопасная инструкция. ', 170),
+            'user_prompt_template' => "История:\n{{conversation_history}}\n\nТекущее сообщение:\n{{current_message}}",
+            'context_policy' => ['include_rag' => false],
+        ]);
+        $history = collect(range(1, 12))
+            ->map(fn (int $index): string => "[Client] Старое сообщение {$index}\n[AI] Старый ответ {$index}")
+            ->implode("\n\n");
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'bounded_companion_prompt_test',
+            inputVariables: [
+                'conversation_history' => $history,
+                'current_message' => 'привет',
+            ],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $payload = AiRunPayload::query()->where('ai_run_id', $result->runId)->sole();
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $renderedSystemPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_system_prompt,
+            $payload->encryption_key_version,
+        );
+        $renderedUserPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        self::assertStringContainsString('Текущее сообщение:', (string) $renderedUserPrompt);
+        self::assertStringContainsString('привет', (string) $renderedUserPrompt);
+        self::assertStringNotContainsString('[Client] Старое сообщение 1\n', (string) $renderedUserPrompt);
+        self::assertLessThanOrEqual(
+            AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS,
+            AiRuntimeLimits::upperBoundTokenCount((string) $renderedSystemPrompt."\n".$renderedUserPrompt),
+        );
+    }
+
     public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void
     {
         $this->setupConfiguredModel(AiCapability::ClientCompanion);

@@ -54,6 +54,11 @@ final class ReplyToCompanion
         $recordMessage = $this->recordMessage;
         $formatter = $this->formatter;
         $attachmentIds = array_values(array_unique(array_map('intval', $attachmentIds)));
+        if ($attachmentIds !== [] && RichTextDocument::exceedsTelegramLimit($body, caption: true)) {
+            throw ValidationException::withMessages([
+                'body' => 'С вложением подпись Telegram не может быть длиннее 1024 символов.',
+            ]);
+        }
         $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds): array {
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
