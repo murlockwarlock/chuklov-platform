@@ -46,6 +46,13 @@ final class ClientCompanionHistory extends ViewRecord
         return 'Общение с клиентом';
     }
 
+    public function defaultForm(Schema $schema): Schema
+    {
+        return $schema
+            ->columns(1)
+            ->statePath('data');
+    }
+
     public function form(Schema $schema): Schema
     {
         $actor = Auth::user();

@@ -10,6 +10,11 @@ final class AiRuntimeLimitsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_rag_query_alias_is_recognized_for_companion_context(): void
+    {
+        $this->assertSame('привет', AiRuntimeLimits::ragQuery(['rag_query' => 'привет']));
+    }
+
     public function test_whole_run_deadline_and_queue_timeout_ordering_are_consistent(): void
     {
         $this->assertSame(

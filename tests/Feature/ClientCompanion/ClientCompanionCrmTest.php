@@ -37,6 +37,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\RichEditor;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -217,6 +218,11 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertContains('emoji', array_merge(...$editor->getToolbarButtons()));
         self::assertContains('bulletList', array_merge(...$editor->getToolbarButtons()));
         self::assertContains('orderedList', array_merge(...$editor->getToolbarButtons()));
+        self::assertFalse($editor->isDisabled());
+
+        $upload = $component->instance()->getSchemaComponent('form.new_attachment');
+        self::assertInstanceOf(FileUpload::class, $upload);
+        self::assertFalse($upload->isDisabled());
 
         $exportAction = $component->instance()->getAction('export');
         self::assertNotNull($exportAction);

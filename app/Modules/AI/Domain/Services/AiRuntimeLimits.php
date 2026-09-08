@@ -178,7 +178,7 @@ final class AiRuntimeLimits
     /** @param array<string, mixed> $inputVariables */
     public static function ragQuery(array $inputVariables): string
     {
-        return trim((string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? ''));
+        return trim((string) ($inputVariables['rag_query'] ?? $inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? ''));
     }
 
     public static function providerSteps(int $maxToolCalls): int
