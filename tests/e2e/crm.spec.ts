@@ -640,6 +640,28 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
+test('staff sees the Telegram limit and preview while writing to a client', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Общение', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/companion$`));
+    await expect(page.getByRole('heading', { name: 'Общение с клиентом', exact: true })).toBeVisible();
+
+    const message = 'фывфывфывфыв';
+    await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
+
+    await expect(page.getByText('12 / 4096', { exact: true })).toBeVisible();
+    await expect(page.locator('.fi-in-text-item').filter({ hasText: message })).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
+    const telegramPreview = page.locator('.fi-modal-window:visible').filter({ hasText: 'TELEGRAM' }).last();
+    await expect(telegramPreview).toBeVisible();
+    await expect(telegramPreview).toContainText(message);
+});
+
 test('staff can activate a partner, create a campaign link, and assign a referrer from a client page', async ({ page }) => {
     const fixture = createCrmFixture();
 

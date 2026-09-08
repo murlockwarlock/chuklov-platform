@@ -42,8 +42,15 @@ final class ClientCompanionHistory extends ViewRecord
 
     protected string $view = 'filament.pages.client-companion-history';
 
-    /** @var array<string, mixed>|null */
-    public ?array $data = null;
+    /** @var array<string, mixed> */
+    public ?array $data = [
+        'body' => null,
+        'delivery_mode' => NotificationMessageMode::Text->value,
+        'caption_position' => 'below',
+        'existing_attachment_id' => null,
+        'new_attachment' => null,
+        'remove_media' => false,
+    ];
 
     public function getTitle(): string
     {
