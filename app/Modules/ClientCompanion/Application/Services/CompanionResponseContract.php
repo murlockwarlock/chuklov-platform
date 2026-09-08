@@ -22,7 +22,7 @@ final class CompanionResponseContract
         $actions = $result->outputPayload['suggested_safe_actions'] ?? [];
         if (! is_string($decision) || ! in_array($decision, ['reply', 'handoff_required'], true)
             || ! is_string($reply) || mb_strlen($reply) > 40000
-            || ($reason !== null && ! is_string($reason)) || ! is_array($actions) || count($actions) > 3) {
+            || ($reason !== null && ! is_string($reason)) || ! is_array($actions) || count($actions) > 4) {
             throw new InvalidArgumentException('The Companion response did not satisfy the structured response contract.');
         }
         $safeActions = [];

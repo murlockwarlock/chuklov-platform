@@ -461,6 +461,36 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertSame('provider_reported', $run->getTokenUsage()->usageSource);
     }
 
+    public function test_companion_accepts_a_long_reply_with_all_supported_safe_actions(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $reply = collect(range(1, 15))
+            ->map(static fn (int $paragraph): string => "Абзац {$paragraph}: подробный план восстановления учитывает текущую нагрузку и постепенное возвращение к активности.")
+            ->implode("\n\n");
+        DynamicWorkflowAgent::fake([[
+            'decision' => 'reply',
+            'reply' => $reply,
+            'handoff_reason' => '',
+            'suggested_safe_actions' => [
+                'open_portal',
+                'request_human',
+                'feedback_helpful',
+                'feedback_not_helpful',
+            ],
+        ]]);
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'long_companion_reply',
+            origin: AiRunOrigin::ClientCompanion,
+            inputVariables: ['query' => 'Подробно распиши план восстановления на 15–20 абзацев'],
+        ));
+
+        self::assertTrue($result->isSuccess(), (string) $result->errorMessageSanitized);
+        self::assertSame($reply, $result->outputPayload['reply']);
+        self::assertCount(4, $result->outputPayload['suggested_safe_actions']);
+    }
+
     public function test_multi_step_tool_loop_settles_each_actual_provider_request_fixed_cost(): void
     {
         $retriever = new class implements KnowledgeRetriever

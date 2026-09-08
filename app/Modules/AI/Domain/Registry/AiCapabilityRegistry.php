@@ -195,7 +195,7 @@ class AiCapabilityRegistry
                             'handoff_reason' => ['type' => 'string'],
                             'suggested_safe_actions' => [
                                 'type' => 'array',
-                                'maxItems' => 3,
+                                'maxItems' => 4,
                                 'items' => [
                                     'type' => 'string',
                                     'enum' => ['request_human', 'open_portal', 'feedback_helpful', 'feedback_not_helpful'],
