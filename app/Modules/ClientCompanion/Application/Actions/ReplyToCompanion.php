@@ -34,6 +34,7 @@ final class ReplyToCompanion
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordCompanionMessage $recordMessage,
         private readonly TelegramCompanionFormatter $formatter,
+        private readonly GetOrCreateClientCompanionConversation $conversationResolver,
     ) {}
 
     /** @param list<int> $attachmentIds */
@@ -51,6 +52,9 @@ final class ReplyToCompanion
         RateLimiter::hit($rateKey, 60);
 
         $body = RichTextDocument::canonicalHtml($body);
+        if ($body === '') {
+            throw ValidationException::withMessages(['body' => 'Введите сообщение.']);
+        }
         $recordMessage = $this->recordMessage;
         $formatter = $this->formatter;
         $attachmentIds = array_values(array_unique(array_map('intval', $attachmentIds)));
@@ -59,13 +63,22 @@ final class ReplyToCompanion
                 'body' => 'С вложением подпись Telegram не может быть длиннее 1024 символов.',
             ]);
         }
-        $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds): array {
+
+        $conversationResolver = $this->conversationResolver;
+        $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds, $conversationResolver): array {
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
                 ->where('conversation_type', ConversationType::ClientCompanion)
                 ->lockForUpdate()
-                ->firstOrFail();
+                ->first();
+            if (! $conversation instanceof Conversation) {
+                $conversation = $conversationResolver->handle(
+                    $client,
+                    'portal',
+                    'client:'.$client->getKey(),
+                );
+            }
             $turn = CompanionTurn::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('conversation_id', $conversation->getKey())

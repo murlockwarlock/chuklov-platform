@@ -12,6 +12,7 @@ use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
+use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
 use App\Modules\ClientCompanion\Application\Services\ListCompanionCommunicationAttachments;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
@@ -251,6 +252,34 @@ final class ClientCompanionCrmTest extends TestCase
             ->callAction('export', ['format' => 'json', 'identity' => 'pseudonymized'])
             ->assertFileDownloaded('client-companion.json', $expected, 'application/json; charset=UTF-8')
             ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]));
+    }
+
+    public function test_staff_can_send_the_first_message_to_a_client_without_companion_history(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->set('data', ['body' => '<p>Первое сообщение</p>'])
+            ->call('sendReply')
+            ->assertNotified('Сообщение отправлено');
+
+        $conversation = Conversation::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('client_id', $this->client->getKey())
+            ->where('conversation_type', 'client_companion')
+            ->sole();
+
+        $message = ConversationMessage::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('conversation_id', $conversation->getKey())
+            ->where('author_type', ConversationAuthorType::Staff)
+            ->sole();
+
+        self::assertSame('portal', $message->channel);
+        self::assertSame('Первое сообщение', strip_tags(
+            app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $message),
+        ));
     }
 
     public function test_foreign_client_history_export_is_rejected(): void
