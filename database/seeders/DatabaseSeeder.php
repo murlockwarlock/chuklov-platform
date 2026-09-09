@@ -33,6 +33,22 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
+        foreach ([
+            OrganizationSettingKey::TrackerFreeMode => false,
+            OrganizationSettingKey::TrackerEnabled => true,
+        ] as $key => $value) {
+            OrganizationSetting::query()->firstOrCreate(
+                [
+                    'organization_id' => $organization->getKey(),
+                    'setting_key' => $key->value,
+                ],
+                [
+                    'value_type' => $key->type(),
+                    'boolean_value' => $value,
+                ],
+            );
+        }
+
         $this->call([
             LegalDocumentSeeder::class,
             ScenarioNotificationSeeder::class,

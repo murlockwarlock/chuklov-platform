@@ -249,7 +249,7 @@ $bot->onDocument(function (Nutgram $bot, HandleTelegramCompanionDocument $handle
     $handler->handle($bot);
 });
 
-$bot->onCallbackQueryData('/^cc:(?:feedback:(?:helpful|not_helpful)|human):\d+$/', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
+$bot->onCallbackQueryData('cc:(?:feedback:(?:helpful|not_helpful)|human|reinspect):\d+', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
     $handler->handle($bot);
 });
 

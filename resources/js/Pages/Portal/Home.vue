@@ -117,6 +117,13 @@ const { locale, t } = usePortalLocale();
 
       <section class="portal-grid portal-grid--cards">
         <Link
+          :href="props.portal.urls.tracker"
+          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+        >
+          <strong class="portal-heading portal-heading--section">{{ t('tracker.title') }}</strong>
+          <span class="portal-card__summary">{{ t('tracker.homeDescription') }}</span>
+        </Link>
+        <Link
           :href="props.portal.urls.b2b"
           class="portal-card portal-card--interactive portal-stack portal-stack--tight"
         >

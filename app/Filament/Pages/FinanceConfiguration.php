@@ -347,6 +347,7 @@ final class FinanceConfiguration extends Page
 
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        $this->resetErrorBag();
         $data = $this->form->getState();
 
         if (filter_var($data['force_single_currency'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
@@ -362,7 +363,24 @@ final class FinanceConfiguration extends Page
         try {
             app(SaveCurrencyConfiguration::class)->handle($actor, $data);
         } catch (ValidationException $exception) {
-            throw $exception;
+            $firstMessage = null;
+
+            foreach ($exception->errors() as $field => $messages) {
+                $field = str_starts_with($field, 'data.') ? $field : "data.{$field}";
+
+                foreach ($messages as $message) {
+                    $this->addError($field, $message);
+                    $firstMessage ??= $message;
+                }
+            }
+
+            Notification::make()
+                ->danger()
+                ->title('Не удалось сохранить финансовые настройки')
+                ->body($firstMessage ?? 'Проверьте заполнение полей.')
+                ->send();
+
+            return;
         }
 
         Notification::make()->success()->title('Финансовые настройки сохранены')->send();

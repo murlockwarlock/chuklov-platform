@@ -15,6 +15,8 @@ use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
+use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -146,6 +148,16 @@ class Client extends Model
     public function surveyAttempts(): HasMany
     {
         return $this->hasMany(SurveyAttempt::class);
+    }
+
+    public function trackerEntitlements(): HasMany
+    {
+        return $this->hasMany(TrackerEntitlement::class);
+    }
+
+    public function trackerCheckIns(): HasMany
+    {
+        return $this->hasMany(TrackerCheckIn::class);
     }
 
     protected static function newFactory(): ClientFactory

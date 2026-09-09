@@ -33,6 +33,7 @@ use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
 use App\Http\Controllers\Portal\TelegramMiniAppLaunchController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
+use App\Http\Controllers\Portal\TrackerController;
 use App\Http\Middleware\CapturePortalAttribution;
 use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
@@ -126,6 +127,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/attribution', [AttributionController::class, 'update'])->name('portal.attribution.update');
             Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
+            Route::get('/portal/tracker', [TrackerController::class, 'index'])->name('portal.tracker');
+            Route::post('/portal/tracker/check-in', [TrackerController::class, 'checkIn'])->name('portal.tracker.check-in');
             Route::post('/portal/companion/messages', [CompanionController::class, 'send'])
                 ->middleware('throttle:portal-companion-send')
                 ->name('portal.companion.send');
