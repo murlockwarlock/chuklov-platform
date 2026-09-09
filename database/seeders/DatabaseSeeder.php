@@ -34,9 +34,9 @@ class DatabaseSeeder extends Seeder
         );
 
         foreach ([
-            OrganizationSettingKey::TrackerFreeMode => false,
-            OrganizationSettingKey::TrackerEnabled => true,
-        ] as $key => $value) {
+            [OrganizationSettingKey::TrackerFreeMode, false],
+            [OrganizationSettingKey::TrackerEnabled, true],
+        ] as [$key, $value]) {
             OrganizationSetting::query()->firstOrCreate(
                 [
                     'organization_id' => $organization->getKey(),
