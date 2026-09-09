@@ -76,7 +76,7 @@ final class SaveTrackerPlan
                 'is_visible' => $visible,
                 'archived_at' => $active ? null : ($locked->archived_at ?? CarbonImmutable::now('UTC')),
             ])->save();
-            $versionNumber = ((int) $locked->versions()->lockForUpdate()->max('version')) + 1;
+            $versionNumber = ((int) $locked->versions()->lockForUpdate()->value('version')) + 1;
             $version = new TrackerPlanVersion;
             $version->forceFill([
                 'organization_id' => $organization->getKey(),

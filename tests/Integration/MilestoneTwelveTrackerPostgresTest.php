@@ -10,15 +10,26 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
 use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
+use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
+use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 final class MilestoneTwelveTrackerPostgresTest extends TestCase
 {
     use DatabaseTruncation;
+
+    protected function tearDown(): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            $this->truncateTablesForAllConnections();
+        }
+
+        parent::tearDown();
+    }
 
     public function test_postgresql_enforces_plan_version_uniqueness_and_tenant_links(): void
     {
@@ -73,7 +84,9 @@ final class MilestoneTwelveTrackerPostgresTest extends TestCase
         $ends = $starts->addDays(30);
         app(GrantTrackerAccess::class)->handle($admin, $client, $plan, $starts, $ends, 'Проверка периода');
 
-        self::assertSame('2026-09-01 06:00:00+00', CarbonImmutable::parse((string) TrackerEntitlement::query()->firstOrFail()->getRawOriginal('starts_at'))->format('Y-m-d H:i:sP'));
+        $entitlement = TrackerEntitlement::query()->firstOrFail();
+        self::assertSame('2026-09-01 07:00:00+00:00', CarbonImmutable::parse((string) $entitlement->getRawOriginal('starts_at'))->format('Y-m-d H:i:sP'));
+        self::assertSame('2026-10-01 07:00:00+00:00', CarbonImmutable::parse((string) $entitlement->getRawOriginal('ends_at'))->format('Y-m-d H:i:sP'));
         $duplicateActiveError = null;
         try {
             DB::table('tracker_entitlements')->insert([
@@ -93,6 +106,31 @@ final class MilestoneTwelveTrackerPostgresTest extends TestCase
         self::assertNotNull($duplicateActiveError);
     }
 
+    public function test_postgresql_serializes_duplicate_grants_for_one_client(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $version = app(SaveTrackerPlan::class)->handle($admin, null, 'Старт', true, true, '10.00', 'USD', 30, null, true, 1);
+        $plan = $version->plan()->firstOrFail();
+        $starts = CarbonImmutable::parse('2026-09-01 12:00:00', 'Asia/Almaty');
+        $ends = $starts->addDays(30);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::grantInProcess($organization->getKey(), $admin->getKey(), $client->getKey(), $plan->getKey(), $starts->toIso8601String(), $ends->toIso8601String(), 'Гонка A'),
+            static fn (): string => self::grantInProcess($organization->getKey(), $admin->getKey(), $client->getKey(), $plan->getKey(), $starts->toIso8601String(), $ends->toIso8601String(), 'Гонка B'),
+        ]);
+
+        self::assertNotContains('error', array_map(
+            static fn (string $result): string => str_starts_with($result, 'error:') ? 'error' : $result,
+            $results,
+        ), implode(', ', $results));
+        self::assertCount(2, array_filter($results, static fn (string $result): bool => str_starts_with($result, 'granted:')));
+        self::assertCount(1, array_unique($results));
+        self::assertSame(1, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->where('active', true)->count());
+        self::assertSame(1, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function fixture(): array
     {
@@ -107,6 +145,43 @@ final class MilestoneTwelveTrackerPostgresTest extends TestCase
     {
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped('PostgreSQL is required for tracker persistence verification.');
+        }
+    }
+
+    private static function grantInProcess(
+        int $organizationId,
+        int $adminId,
+        int $clientId,
+        int $planId,
+        string $startsAt,
+        string $endsAt,
+        string $reason,
+    ): string {
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+
+        try {
+            $entitlement = DB::transaction(function () use ($organizationId, $adminId, $clientId, $planId, $startsAt, $endsAt, $reason): TrackerEntitlement {
+                Client::query()
+                    ->where('organization_id', $organizationId)
+                    ->whereKey($clientId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                DB::select('SELECT pg_sleep(1)');
+
+                return app(GrantTrackerAccess::class)->handle(
+                    actor: User::query()->findOrFail($adminId),
+                    client: Client::query()->findOrFail($clientId),
+                    plan: TrackerPlan::query()->findOrFail($planId),
+                    startsAt: CarbonImmutable::parse($startsAt),
+                    endsAt: CarbonImmutable::parse($endsAt),
+                    reason: $reason,
+                );
+            });
+
+            return 'granted:'.$entitlement->getKey();
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.(string) $exception->getCode().':'.$exception->getMessage();
         }
     }
 }
