@@ -228,7 +228,7 @@ final class B2bLeadFunnelTest extends TestCase
         $menu = app(GetTelegramMenu::class)->handle('ru');
         $b2b = collect($menu)->firstWhere('key', 'b2b');
 
-        self::assertSame('🚀 Хочешь себе такого бота? / Развить бизнес', $b2b['label']);
+        self::assertSame('Развить бизнес', $b2b['label']);
         self::assertSame(
             rtrim((string) config('portal.telegram.portal_url'), '/').'/portal/telegram/launch/b2b',
             $b2b['url'],

@@ -1057,6 +1057,7 @@ final class FinanceCrmUxTest extends TestCase
     ): array {
         $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create(['full_name' => 'Иван Петров']);
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create([

@@ -19,18 +19,6 @@ class EnsurePrivilegedSessionIsCurrent
             return $next($request);
         }
 
-        $organizationId = config('tenancy.default_organization_id');
-        $isOrganizationIdConfigured = is_int($organizationId)
-            || (is_string($organizationId) && ctype_digit($organizationId));
-
-        if ($isOrganizationIdConfigured && ! $user->memberships()
-            ->active()
-            ->where('organization_id', (int) $organizationId)
-            ->exists()) {
-            $this->invalidateSession($request);
-            abort(403);
-        }
-
         $currentVersion = User::query()
             ->whereKey($user->getAuthIdentifier())
             ->value('privileged_session_version');
