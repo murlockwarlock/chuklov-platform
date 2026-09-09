@@ -509,6 +509,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString("fail 'TELEGRAM API' 'Bot API getMe is unreachable'", $shell);
         self::assertStringContainsString('B2B_QUEUE_PHYSICAL_FINGERPRINT=', $shell);
         self::assertStringContainsString('application and Horizon resolve different physical queue targets', $shell);
+        self::assertStringContainsString('getAppAuthenticationSecret', $php);
+        self::assertStringContainsString('must enroll privileged MFA before authenticated CRM checks', $php);
         self::assertStringContainsString('Queue::connection', $php);
         self::assertStringContainsString('Redis::connection($target[\'connection\'])', $php);
         self::assertStringContainsString('ConfigurationUrlParser', $php);
