@@ -18,17 +18,23 @@ const props = withDefaults(defineProps<{
 
 const navigation = [
     { key: 'home', label: 'shell.home' },
-    { key: 'services', label: 'shell.services' },
-    { key: 'bookings', label: 'shell.bookings' },
-    { key: 'finance', label: 'shell.finance' },
-    { key: 'surveys', label: 'shell.surveys' },
+    { key: 'bookings', label: 'shell.book' },
+    { key: 'health', label: 'shell.health' },
     { key: 'companion', label: 'shell.companion' },
-    { key: 'tracker', label: 'shell.tracker' },
-    { key: 'referrals', label: 'shell.referrals' },
-    { key: 'feedback', label: 'shell.feedback' },
-    { key: 'profile', label: 'shell.profile' },
-    { key: 'b2b', label: 'shell.b2b' },
+    { key: 'more', label: 'shell.more' },
 ] as const;
+
+function navigationHref(key: Exclude<PortalNavKey, null>): string {
+    if (key === 'bookings') {
+        return props.portal.urls.services;
+    }
+
+    if (key === 'health') {
+        return props.portal.urls.tracker;
+    }
+
+    return props.portal.urls[key];
+}
 
 const brandLogo = computed(() => props.portal.locale === 'en'
     ? '/brand/chuklov-designer-logo-en.jpg'
@@ -61,7 +67,7 @@ const brandLogo = computed(() => props.portal.locale === 'en'
           <Link
             v-for="item in navigation"
             :key="item.key"
-            :href="portal.urls[item.key]"
+            :href="navigationHref(item.key)"
             class="portal-header__link"
             :class="{ 'portal-header__link--active': props.active === item.key }"
           >

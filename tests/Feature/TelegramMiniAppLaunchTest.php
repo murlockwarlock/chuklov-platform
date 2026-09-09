@@ -238,13 +238,13 @@ final class TelegramMiniAppLaunchTest extends TestCase
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
 
         $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
-        self::assertSame('🤝 Стать партнёром', $menu->firstWhere('key', 'partner_cabinet')['label']);
+        self::assertSame('Стать партнёром', $menu->firstWhere('key', 'partner_cabinet')['label']);
 
         app(ActivateReferralPartner::class)->handle($client, 'portal');
         $client->load('referralPartnerProfile');
         $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
 
-        self::assertSame('🤝 Партнёрский кабинет', $menu->firstWhere('key', 'partner_cabinet')['label']);
+        self::assertSame('Партнёрский кабинет', $menu->firstWhere('key', 'partner_cabinet')['label']);
         self::assertSame(
             'https://mini.example.test'.route('portal.telegram.launch', ['entry' => 'partner_cabinet'], false),
             $menu->firstWhere('key', 'partner_cabinet')['url'],

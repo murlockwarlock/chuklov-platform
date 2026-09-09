@@ -46,9 +46,11 @@ const bookingLink = computed(() => {
 </script>
 
 <template>
-  <article
+  <a
     class="portal-service-card"
     :class="{ 'portal-service-card--with-image': service.imageUrl }"
+    :href="bookingLink"
+    :aria-label="service.name"
   >
     <div
       v-if="service.imageUrl"
@@ -65,23 +67,17 @@ const bookingLink = computed(() => {
       <h3 class="portal-heading portal-heading--card">
         {{ service.name }}
       </h3>
-      <p
-        v-if="service.summary"
-        class="portal-card__summary"
-      >
-        {{ service.summary }}
-      </p>
       <div class="portal-service-card__meta">
         <span v-if="duration">{{ duration }}</span>
         <span>{{ price }}</span>
       </div>
     </div>
-    <a
-      :href="bookingLink"
+    <span
       class="portal-link portal-service-card__link"
+      aria-hidden="true"
     >
       {{ portalText(locale, 'services.book') }}
-      <span aria-hidden="true">→</span>
-    </a>
-  </article>
+      <span>→</span>
+    </span>
+  </a>
 </template>

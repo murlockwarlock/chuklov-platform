@@ -73,15 +73,18 @@ final class M11AAttributionFeedbackTest extends TestCase
             'accepted_at' => now(),
         ]);
         $this->withSession(['client_portal.client_id' => $automaticClient->id]);
+        $this->get(route('portal.attribution'))
+            ->assertRedirect(route('portal.home'));
         $this->get(route('portal.home'))
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-                ->where('attribution.needsManualSource', false));
+                ->component('Portal/Home'));
 
         $manualClient = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
         $this->withSession(['client_portal.client_id' => $manualClient->id]);
-        $this->get(route('portal.home'))
+        $this->get(route('portal.attribution'))
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-                ->where('attribution.needsManualSource', true));
+                ->component('Portal/Attribution')
+                ->where('needsManualSource', true));
         $this->post(route('portal.attribution.update'), ['source' => 'social'])
             ->assertRedirect(route('portal.home'));
 

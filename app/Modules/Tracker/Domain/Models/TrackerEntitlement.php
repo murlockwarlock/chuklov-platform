@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** @property CarbonImmutable $starts_at @property CarbonImmutable $ends_at @property CarbonImmutable|null $ended_at @property int|null $applied_price_minor @property int|null $applied_duration_days @property string|null $applied_plan_name @property CurrencyCode|string|null $applied_currency */
-#[Fillable(['active', 'starts_at', 'ends_at', 'source', 'reason', 'applied_price_minor', 'applied_currency', 'applied_duration_days', 'created_by_user_id', 'ended_at'])]
+/** @property CarbonImmutable $starts_at @property CarbonImmutable $ends_at @property CarbonImmutable|null $ended_at @property int|null $applied_price_minor @property int|null $applied_duration_days @property string|null $applied_plan_name @property string|null $applied_monthly_practice @property CurrencyCode|string|null $applied_currency */
+#[Fillable(['active', 'starts_at', 'ends_at', 'source', 'reason', 'applied_price_minor', 'applied_currency', 'applied_duration_days', 'applied_monthly_practice', 'created_by_user_id', 'ended_at'])]
 class TrackerEntitlement extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -56,6 +56,7 @@ class TrackerEntitlement extends Model
             'source' => TrackerEntitlementSource::class,
             'applied_price_minor' => 'integer',
             'applied_duration_days' => 'integer',
+            'applied_monthly_practice' => 'encrypted',
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ];

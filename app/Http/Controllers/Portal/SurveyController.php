@@ -20,10 +20,15 @@ use Inertia\Response;
 
 final class SurveyController extends Controller
 {
-    public function index(ClientPortalContext $context, ListClientSurveys $surveys): Response
+    public function index(ClientPortalContext $context, ListClientSurveys $surveys): Response|RedirectResponse
     {
+        $data = $surveys->handle($context->client());
+        if ($data['definitions'] === [] && $data['attempts'] === []) {
+            return redirect()->route('portal.health');
+        }
+
         return Inertia::render('Portal/Surveys', [
-            ...$surveys->handle($context->client()),
+            ...$data,
             'urls' => ['start' => route('portal.surveys.start', ['definitionId' => '__id__'])],
         ]);
     }

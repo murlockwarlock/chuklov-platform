@@ -33,19 +33,19 @@ class MilestoneTwoTelegramBotTest extends TestCase
             'portal' => 'Открыть портал',
             'author' => 'Об авторе',
             'method' => 'Метод',
-            'b2b' => '🚀 Хочешь себе такого бота? / Развить бизнес',
+            'b2b' => 'Развить бизнес',
             'partner' => 'Партнёры',
-            'invite_friend' => '🎁 Пригласить друга',
-            'partner_cabinet' => '🤝 Стать партнёром',
+            'invite_friend' => 'Пригласить друга',
+            'partner_cabinet' => 'Стать партнёром',
         ]);
         $this->assertLocalizedMenu('en', [
             'portal' => 'Open client portal',
             'author' => 'Author',
             'method' => 'Method',
-            'b2b' => '🚀 Want a bot like this? / Grow your business',
+            'b2b' => 'Grow your business',
             'partner' => 'Partners',
-            'invite_friend' => '🎁 Invite a friend',
-            'partner_cabinet' => '🤝 Become a partner',
+            'invite_friend' => 'Invite a friend',
+            'partner_cabinet' => 'Become a partner',
         ]);
     }
 

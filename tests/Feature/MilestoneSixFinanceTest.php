@@ -92,6 +92,7 @@ final class MilestoneSixFinanceTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $this->setOrganization($organization);
 
         try {
@@ -542,6 +543,7 @@ final class MilestoneSixFinanceTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create([

@@ -3,15 +3,21 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\TrackerSettings;
+use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\LocationDays\LocationDayResource;
 use App\Filament\Resources\TrackerPlans\Pages\CreateTrackerPlan;
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
 use App\Models\User;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -44,7 +50,7 @@ final class TrackerPlanCrmTest extends TestCase
             $sections,
         ));
         self::assertSame(
-            ['name', 'price', 'currency', 'duration_days', 'description'],
+            ['name', 'price', 'currency', 'duration_days', 'description', 'monthly_practice'],
             array_map(static fn ($component): string => $component->getName(), $sections[0]->getChildComponents()),
         );
         self::assertSame(
@@ -57,6 +63,34 @@ final class TrackerPlanCrmTest extends TestCase
                 self::assertFalse($component->isInline());
             }
         }
+    }
+
+    public function test_client_workspace_can_assign_a_generic_tracker_task(): void
+    {
+        $admin = $this->trackerAdmin();
+        $organization = Organization::query()->findOrFail((int) config('tenancy.default_organization_id'));
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertActionVisible('assignTrackerTask')
+            ->callAction('assignTrackerTask', [
+                'title' => 'Вечерняя практика',
+                'task_type' => TrackerTaskType::Practice->value,
+                'frequency' => 'daily',
+                'starts_on' => today()->toDateString(),
+                'display_order' => 0,
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('tracker_tasks', [
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'title' => 'Вечерняя практика',
+            'task_type' => TrackerTaskType::Practice->value,
+            'frequency' => 'daily',
+        ]);
     }
 
     public function test_tracker_plan_currency_options_follow_finance_configuration(): void
@@ -90,6 +124,10 @@ final class TrackerPlanCrmTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
 

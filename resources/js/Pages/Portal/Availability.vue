@@ -49,7 +49,7 @@ function formatDate(date: string): string {
   <AppShell
     :title="t('booking.chooseTime')"
     :portal="props.portal"
-    active="services"
+    active="bookings"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-masthead">

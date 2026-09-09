@@ -63,24 +63,18 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
   <AppShell
     :title="t('finance.title')"
     :portal="props.portal"
-    active="finance"
+    active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ t('finance.title') }}
           </h1>
-          <p class="portal-copy">
-            {{ t('finance.description') }}
-          </p>
         </div>
         <Link
           :href="props.urls.bookings"
-          class="portal-button portal-button--secondary"
+          class="portal-link"
         >
           {{ t('finance.backBookings') }}
         </Link>
@@ -88,30 +82,33 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
       <div
         v-if="props.hasUnavailableObligations"
-        class="portal-panel border border-[var(--portal-color-warning)] bg-[var(--portal-color-surface-muted)]"
+        class="portal-notice"
         role="status"
       >
-        <p class="portal-copy">
-          {{ t('finance.partialUnavailable') }}
-        </p>
+        {{ t('finance.partialUnavailable') }}
       </div>
 
       <section
         v-if="props.totals.length"
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+        class="portal-content-section portal-stack portal-stack--tight"
+        aria-labelledby="finance-total-heading"
       >
-        <article
-          v-for="total in props.totals"
-          :key="total.currency"
-          class="portal-panel portal-stack portal-stack--tight"
+        <h2
+          id="finance-total-heading"
+          class="portal-heading portal-heading--card"
         >
-          <p class="portal-eyebrow">
-            {{ t('finance.totalOutstanding') }}
-          </p>
-          <strong class="text-2xl tracking-tight text-[var(--portal-color-ink)] sm:text-3xl">
-            {{ formatMoney(total.amountMinor, total.currency) }}
-          </strong>
-        </article>
+          {{ t('finance.totalOutstanding') }}
+        </h2>
+        <dl class="portal-finance-rows">
+          <div
+            v-for="total in props.totals"
+            :key="total.currency"
+            class="portal-finance-row"
+          >
+            <dt>{{ total.currency }}</dt>
+            <dd>{{ formatMoney(total.amountMinor, total.currency) }}</dd>
+          </div>
+        </dl>
       </section>
 
       <EmptyState
@@ -130,7 +127,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
       <section
         v-for="obligation in props.obligations"
         :key="obligation.bookingUrl ?? obligation.serviceName + obligation.completedAt"
-        class="portal-panel portal-stack"
+        class="portal-content-section portal-stack portal-stack--tight"
       >
         <header class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0">
@@ -153,43 +150,29 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
         <div
           v-if="!obligation.available"
-          class="portal-panel border border-[var(--portal-color-warning)] bg-[var(--portal-color-surface-muted)]"
+          class="portal-notice"
           role="status"
         >
-          <p class="portal-copy">
-            {{ t('finance.obligationUnavailable') }}
-          </p>
+          {{ t('finance.obligationUnavailable') }}
         </div>
 
-        <div
+        <dl
           v-else
-          class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3"
+          class="portal-finance-rows"
         >
-          <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
-            <p class="portal-copy portal-copy--small">
-              {{ t('finance.obligation') }}
-            </p>
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatNullableMoney(obligation.obligationMinor, obligation.displayCurrency) }}
-            </strong>
+          <div class="portal-finance-row">
+            <dt>{{ t('finance.obligation') }}</dt>
+            <dd>{{ formatNullableMoney(obligation.obligationMinor, obligation.displayCurrency) }}</dd>
           </div>
-          <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
-            <p class="portal-copy portal-copy--small">
-              {{ t('finance.paid') }}
-            </p>
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatNullableMoney(obligation.paidMinor, obligation.displayCurrency) }}
-            </strong>
+          <div class="portal-finance-row">
+            <dt>{{ t('finance.paid') }}</dt>
+            <dd>{{ formatNullableMoney(obligation.paidMinor, obligation.displayCurrency) }}</dd>
           </div>
-          <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4">
-            <p class="portal-copy portal-copy--small">
-              {{ t('finance.remaining') }}
-            </p>
-            <strong class="break-words text-lg text-[var(--portal-color-ink)]">
-              {{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}
-            </strong>
+          <div class="portal-finance-row">
+            <dt>{{ t('finance.remaining') }}</dt>
+            <dd>{{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}</dd>
           </div>
-        </div>
+        </dl>
 
         <div
           v-if="obligation.history.length"

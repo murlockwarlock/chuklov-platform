@@ -103,7 +103,7 @@ type Props = {
     bookingResult: BookingResult;
     legalDocuments: LegalDocument[];
     attribution: { needsManualSource: boolean; url: string; sources: string[] };
-    urls: { create: string; store: string; services: string; bookings: string; referrals: string };
+    urls: { create: string; store: string; services: string; bookings: string };
 };
 
 type ProgressStep = {
@@ -330,14 +330,10 @@ const currentStepKey = computed(() => {
 
     return bookingStep.value === 'confirmation' ? 'confirmation' : 'time';
 });
+const progressStepKey = computed(() => currentStepKey.value === 'specialist' ? 'format' : currentStepKey.value);
 const progressSteps = computed<ProgressStep[]>(() => [
     { key: 'service', label: t('booking.stepService') },
-    ...(hasSpecialistChoice.value
-        ? [{ key: 'specialist', label: t('booking.stepSpecialist') }]
-        : []),
-    ...(formatOptions.value.length > 1
-        ? [{ key: 'format', label: t('booking.stepFormat') }]
-        : []),
+    { key: 'format', label: t('booking.stepFormat') },
     { key: 'time', label: t('booking.stepTime') },
     { key: 'confirmation', label: t('booking.stepConfirm') },
 ]);
@@ -369,6 +365,12 @@ function setConsent(id: number, granted: boolean): void {
     if (requiredConsentsAccepted.value) {
         requiredConsentAttempted.value = false;
     }
+}
+
+function setRequiredConsent(granted: boolean): void {
+    props.legalDocuments
+        .filter((document) => document.isRequired)
+        .forEach((document) => setConsent(document.id, granted));
 }
 
 function setMarketingConsent(granted: boolean): void {
@@ -615,8 +617,7 @@ function submitBooking(): void {
   <AppShell
     :title="t('booking.title')"
     :portal="props.portal"
-    active="services"
-    :bottom-navigation="props.bookingResult !== null"
+    active="bookings"
   >
     <section
       class="portal-container portal-container--booking portal-stack portal-stack--loose"
@@ -636,9 +637,6 @@ function submitBooking(): void {
           class="portal-booking-flow__header"
         >
           <div class="portal-booking-flow__title-wrap">
-            <p class="portal-eyebrow">
-              CHUKLOV
-            </p>
             <h1 class="portal-heading portal-booking-flow__title">
               {{ t('booking.title') }}
             </h1>
@@ -657,10 +655,10 @@ function submitBooking(): void {
             <span
               class="portal-booking-progress__step"
               :class="{
-                'portal-booking-progress__step--active': currentStepKey === step.key,
-                'portal-booking-progress__step--complete': progressSteps.findIndex((item) => item.key === currentStepKey) > index,
+                'portal-booking-progress__step--active': progressStepKey === step.key,
+                'portal-booking-progress__step--complete': progressSteps.findIndex((item) => item.key === progressStepKey) > index,
               }"
-              :aria-current="currentStepKey === step.key ? 'step' : undefined"
+              :aria-current="progressStepKey === step.key ? 'step' : undefined"
             >
               <span
                 class="portal-booking-progress__number"
@@ -682,7 +680,7 @@ function submitBooking(): void {
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format-label="formatLabel(props.query.format)"
-          :urls="{ bookings: props.urls.bookings, services: props.urls.services, referrals: props.urls.referrals }"
+          :urls="{ bookings: props.urls.bookings, services: props.urls.services }"
         />
 
         <BookingChoiceList
@@ -998,6 +996,7 @@ function submitBooking(): void {
           @update:party-size="bookingForm.party_size = $event"
           @update:location="bookingForm.location = $event"
           @update:consent="setConsent"
+          @update:required-consent="setRequiredConsent"
           @update:marketing-consent="setMarketingConsent"
           @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
           @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"

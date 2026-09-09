@@ -5,17 +5,26 @@ namespace Tests\Integration;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
+use App\Modules\Tracker\Application\RecordTrackerTaskEntry;
 use App\Modules\Tracker\Application\SaveTrackerPlan;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskEntryStatus;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
+use App\Modules\Tracker\Domain\Models\TrackerTaskEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 final class MilestoneTwelveTrackerPostgresTest extends TestCase
@@ -129,6 +138,61 @@ final class MilestoneTwelveTrackerPostgresTest extends TestCase
         self::assertCount(1, array_unique($results));
         self::assertSame(1, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->where('active', true)->count());
         self::assertSame(1, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
+    }
+
+    public function test_postgresql_enforces_tracker_task_tenant_links_and_period_uniqueness(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::TrackerFreeMode, true);
+        Queue::fake();
+
+        $task = app(AssignTrackerTask::class)->handle(
+            actor: $admin,
+            client: $client,
+            title: 'Задача недели',
+            type: TrackerTaskType::Other,
+            frequency: TrackerTaskFrequency::Weekly,
+            startsOn: CarbonImmutable::today('Asia/Almaty'),
+            weekDay: CarbonImmutable::today('Asia/Almaty')->dayOfWeekIso,
+        );
+        $entry = app(RecordTrackerTaskEntry::class)->handle(
+            client: $client,
+            taskId: (int) $task->getKey(),
+            status: TrackerTaskEntryStatus::Completed,
+            comment: 'Отмечено',
+        );
+        $updated = app(RecordTrackerTaskEntry::class)->handle(
+            client: $client,
+            taskId: (int) $task->getKey(),
+            status: TrackerTaskEntryStatus::NotCompleted,
+        );
+
+        self::assertSame($entry->getKey(), $updated->getKey());
+        self::assertSame(1, TrackerTaskEntry::query()->where('organization_id', $organization->getKey())->count());
+
+        $otherOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($otherOrganization)->create();
+        $foreignLinkError = null;
+        try {
+            DB::table('tracker_tasks')->insert([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $foreignClient->getKey(),
+                'title' => 'Чужая задача',
+                'task_type' => TrackerTaskType::Other->value,
+                'frequency' => TrackerTaskFrequency::Daily->value,
+                'starts_on' => CarbonImmutable::today('UTC')->toDateString(),
+                'active' => true,
+                'display_order' => 0,
+                'created_at' => now('UTC'),
+                'updated_at' => now('UTC'),
+            ]);
+        } catch (QueryException $exception) {
+            $foreignLinkError = $exception->getMessage();
+        }
+
+        self::assertNotNull($foreignLinkError);
     }
 
     /** @return array{0: Organization, 1: User} */

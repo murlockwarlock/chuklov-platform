@@ -18,8 +18,10 @@ use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\FeedbackController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
+use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
+use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
@@ -35,6 +37,7 @@ use App\Http\Controllers\Portal\TelegramMiniAppLaunchController;
 use App\Http\Controllers\Portal\TelegramWebAuthenticationController;
 use App\Http\Controllers\Portal\TrackerController;
 use App\Http\Middleware\CapturePortalAttribution;
+use App\Http\Middleware\EnsurePrivilegedSessionIsCurrent;
 use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
@@ -44,38 +47,38 @@ use Illuminate\Support\Facades\Route;
 Route::get('/health', HealthController::class)->name('health');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/finance/receipts/{receiptId}', AdminFinanceReceiptController::class)
-        ->middleware('auth')
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber('receiptId')
         ->name('admin.finance.receipt');
     Route::get('/admin/attachments/{uuid}', AdminMedicalAttachmentController::class)
-        ->middleware(Authenticate::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->name('admin.attachments.download');
     Route::get('/admin/broadcasts/{campaignId}/media/{mediaIndex}', AdminBroadcastMediaController::class)
-        ->middleware(Authenticate::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber(['campaignId', 'mediaIndex'])
         ->name('admin.broadcasts.media');
     Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
-        ->middleware(Authenticate::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber(['knowledgeSourceId', 'knowledgeRevisionId'])
         ->name('admin.knowledge.revision.download');
     Route::post('/admin/clients/{client}/companion/reply', [AdminCompanionController::class, 'reply'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reply');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reply');
     Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve');
     Route::post('/admin/clients/{client}/companion/resolve-and-resume', [AdminCompanionController::class, 'resolveAndResume'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
     Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.resume');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.reset');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reset');
     Route::get('/admin/b2b-sales-calls/{salesCallId}/host-launch', AdminB2bSalesCallHostLaunchController::class)
-        ->middleware('auth')->whereNumber('salesCallId')->name('admin.b2b.sales-call.host-launch');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('salesCallId')->name('admin.b2b.sales-call.host-launch');
     Route::get('/admin/clients/{client}/companion/export', [CompanionExportController::class, 'history'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.export');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.export');
     Route::get('/admin/clients/{client}/companion/metadata-export', [CompanionExportController::class, 'metadata'])
-        ->middleware('auth')->whereNumber('client')->name('admin.clients.companion.metadata-export');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.metadata-export');
     Route::get('/admin/ai-runs/{runId}/export', AiRunExportController::class)
-        ->middleware('auth')->whereNumber('runId')->name('admin.ai-runs.export');
+        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('runId')->name('admin.ai-runs.export');
     Route::post('/portal/telegram/auth', TelegramAuthenticationController::class)
         ->middleware('throttle:portal-telegram-auth')
         ->name('portal.telegram.auth');
@@ -110,6 +113,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
+            Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
+            Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
             Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
@@ -129,6 +134,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
             Route::get('/portal/tracker', [TrackerController::class, 'index'])->name('portal.tracker');
             Route::post('/portal/tracker/check-in', [TrackerController::class, 'checkIn'])->name('portal.tracker.check-in');
+            Route::post('/portal/tracker/tasks/{taskId}/entry', [TrackerController::class, 'taskEntry'])
+                ->whereNumber('taskId')
+                ->name('portal.tracker.task-entry');
             Route::post('/portal/companion/messages', [CompanionController::class, 'send'])
                 ->middleware('throttle:portal-companion-send')
                 ->name('portal.companion.send');

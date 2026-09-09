@@ -126,8 +126,8 @@ final class GetTelegramMenu
     {
         if ($key === 'partner_cabinet') {
             return $client?->referralPartnerProfile?->isActive() === true
-                ? ($locale === 'ru' ? '🤝 Партнёрский кабинет' : '🤝 Partner cabinet')
-                : ($locale === 'ru' ? '🤝 Стать партнёром' : '🤝 Become a partner');
+                ? ($locale === 'ru' ? 'Партнёрский кабинет' : 'Partner cabinet')
+                : ($locale === 'ru' ? 'Стать партнёром' : 'Become a partner');
         }
 
         return (string) ($entry['label'] ?? $key);

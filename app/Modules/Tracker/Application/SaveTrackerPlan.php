@@ -39,6 +39,7 @@ final class SaveTrackerPlan
         ?string $description,
         bool $includedAccess,
         int $displayOrder,
+        ?string $monthlyPractice = null,
     ): TrackerPlanVersion {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
@@ -61,7 +62,7 @@ final class SaveTrackerPlan
             throw ValidationException::withMessages(['price' => 'Укажите цену и допустимую валюту.']);
         }
 
-        return DB::transaction(function () use ($actor, $organization, $plan, $name, $active, $visible, $money, $code, $durationDays, $description, $includedAccess, $displayOrder): TrackerPlanVersion {
+        return DB::transaction(function () use ($actor, $organization, $plan, $name, $active, $visible, $money, $code, $durationDays, $description, $includedAccess, $displayOrder, $monthlyPractice): TrackerPlanVersion {
             $locked = $plan instanceof TrackerPlan
                 ? TrackerPlan::query()->where('organization_id', $organization->getKey())->whereKey($plan->getKey())->lockForUpdate()->first()
                 : null;
@@ -86,6 +87,7 @@ final class SaveTrackerPlan
                 'currency' => $code->value,
                 'duration_days' => $durationDays,
                 'description' => $description === null ? null : trim($description),
+                'monthly_practice' => $monthlyPractice === null ? null : trim($monthlyPractice),
                 'included_access' => $includedAccess,
                 'display_order' => $displayOrder,
                 'created_by_user_id' => $actor->getKey(),

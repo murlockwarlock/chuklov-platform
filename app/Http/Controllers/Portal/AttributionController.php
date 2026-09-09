@@ -14,7 +14,7 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class AttributionController extends Controller
 {
-    public function show(ClientPortalContext $context, GetClientAttribution $get): Response
+    public function show(ClientPortalContext $context, GetClientAttribution $get): Response|RedirectResponse
     {
         try {
             $client = $context->client();
@@ -22,8 +22,12 @@ class AttributionController extends Controller
             abort(401);
         }
 
+        if ($get->handle($client) !== null) {
+            return to_route('portal.home');
+        }
+
         return Inertia::render('Portal/Attribution', [
-            'needsManualSource' => $get->handle($client) === null,
+            'needsManualSource' => true,
             'sources' => config('attribution.manual_sources', []),
         ]);
     }

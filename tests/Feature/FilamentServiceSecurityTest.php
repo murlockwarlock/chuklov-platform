@@ -26,6 +26,7 @@ class FilamentServiceSecurityTest extends TestCase
         $organization = Organization::factory()->create();
         $otherOrganization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $this->setServerOrganization($organization);
         $this->enableServiceCatalog($organization);
         $ownService = Service::factory()->forOrganization($organization)->create();
@@ -45,6 +46,8 @@ class FilamentServiceSecurityTest extends TestCase
         $organization = Organization::factory()->create();
         $nonAdmin = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
         $organizationlessAdmin = User::factory()->create();
+        $nonAdmin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
+        $organizationlessAdmin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $this->setServerOrganization($organization);
 
         $this->actingAs($nonAdmin)->get('/admin')->assertForbidden();

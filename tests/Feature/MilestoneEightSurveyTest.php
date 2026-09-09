@@ -241,6 +241,12 @@ final class MilestoneEightSurveyTest extends TestCase
                 ->component('Portal/Surveys')
                 ->has('definitions', 1));
         $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.health'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Health')
+                ->has('surveys.definitions', 1));
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.surveys.start', $definition->getKey()))
             ->assertRedirect();
         $attempt = SurveyAttempt::query()->where('client_id', $client->getKey())->sole();
@@ -335,6 +341,7 @@ final class MilestoneEightSurveyTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $actor = User::factory()->forOrganization($organization)->create();
+        $actor->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);

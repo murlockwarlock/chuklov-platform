@@ -18,6 +18,18 @@ final readonly class TrackerAccessState
         return $this->enabled && ($this->freeMode || $this->entitlement instanceof TrackerEntitlement);
     }
 
+    public function monthlyPractice(): ?string
+    {
+        $entitlement = $this->entitlement;
+        if (! $entitlement instanceof TrackerEntitlement) {
+            return null;
+        }
+
+        $value = $entitlement->getRawOriginal('applied_monthly_practice');
+
+        return is_string($value) && trim($value) !== '' ? $entitlement->applied_monthly_practice : null;
+    }
+
     public function statusLabel(): string
     {
         if (! $this->enabled) {
@@ -44,6 +56,18 @@ final readonly class TrackerAccessState
             'enabled' => $this->enabled,
             'freeMode' => $this->freeMode,
             'statusLabel' => $this->statusLabel(),
+            'planName' => $this->entitlement?->applied_plan_name,
+            'startsAt' => $this->instant('starts_at'),
+            'endsAt' => $this->instant('ends_at'),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function toClientArray(): array
+    {
+        return [
+            'allowed' => $this->allowed(),
+            'enabled' => $this->enabled,
             'planName' => $this->entitlement?->applied_plan_name,
             'startsAt' => $this->instant('starts_at'),
             'endsAt' => $this->instant('ends_at'),

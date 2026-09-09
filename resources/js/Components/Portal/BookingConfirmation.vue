@@ -57,6 +57,7 @@ const emit = defineEmits<{
     'update:partySize': [value: number];
     'update:location': [value: string | null];
     'update:consent': [id: number, granted: boolean];
+    'update:required-consent': [granted: boolean];
     'update:marketingConsent': [granted: boolean];
     'update:attributionSource': [source: string | null];
     'update:attributionSourceDetail': [detail: string];
@@ -260,6 +261,7 @@ const location = computed({
         group-required-acceptance
         :required-acceptance-error="props.requiredAcceptanceError"
         @change="(id, granted) => emit('update:consent', id, granted)"
+        @required-change="(granted) => emit('update:required-consent', granted)"
         @update:marketing-value="(granted) => emit('update:marketingConsent', granted)"
       />
     </section>

@@ -2,8 +2,12 @@
 
 namespace App\Providers\Filament;
 
+use App\Http\Controllers\RevokePrivilegedSessionsController;
+use App\Http\Middleware\EnsurePrivilegedSessionIsCurrent;
 use App\Http\Middleware\ResolveOrganization;
 use App\Http\Middleware\SetAdminLocale;
+use App\Modules\Security\Infrastructure\Filament\AuditedAppAuthentication;
+use Filament\Actions\Action;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -12,12 +16,14 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Js;
 use Filament\Support\Colors\Color;
+use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\AccountWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
@@ -30,6 +36,15 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            ->profile()
+            ->multiFactorAuthentication([AuditedAppAuthentication::make()->recoverable()], isRequired: true)
+            ->userMenuItems([
+                'revoke-privileged-sessions' => Action::make('revokePrivilegedSessions')
+                    ->label('Завершить все сеансы')
+                    ->icon(Heroicon::ArrowLeftEndOnRectangle)
+                    ->url(fn (): string => route('filament.admin.security.revoke-sessions'))
+                    ->postToUrl(),
+            ])
             ->favicon(asset('brand/chuklov-designer-logo-en.jpg'))
             ->colors([
                 'primary' => Color::Amber,
@@ -52,6 +67,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
+            ->authenticatedRoutes(function (): void {
+                Route::post('/security/revoke-sessions', RevokePrivilegedSessionsController::class)
+                    ->name('security.revoke-sessions');
+            })
             ->pages([])
             ->navigationGroups([
                 'Клиенты',
@@ -81,10 +100,12 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->authMiddleware([
+                EnsurePrivilegedSessionIsCurrent::class,
                 Authenticate::class,
                 ResolveOrganization::class,
             ])
             ->persistentMiddleware([
+                EnsurePrivilegedSessionIsCurrent::class,
                 ResolveOrganization::class,
             ]);
     }

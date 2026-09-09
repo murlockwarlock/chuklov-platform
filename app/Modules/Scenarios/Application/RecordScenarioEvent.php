@@ -18,11 +18,37 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEventData;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class RecordScenarioEvent
 {
+    public function trackerTaskAssigned(TrackerTask $task, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $eventType = $task->frequency === TrackerTaskFrequency::Daily
+            ? ScenarioEventType::TrackerDailyTaskAssigned
+            : ScenarioEventType::TrackerWeeklyTaskAssigned;
+        $data = new ScenarioEventData(
+            eventType: $eventType,
+            aggregateType: TrackerTask::class,
+            aggregateId: (string) $task->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'task_id' => (int) $task->getKey(),
+                'client_id' => (int) $task->client_id,
+                'frequency' => $task->frequency->value,
+                'task_type' => $task->task_type->value,
+            ],
+            idempotencyKey: $eventType->value.':'.$task->organization_id.':'.$task->getKey(),
+            correlationId: 'tracker:task:'.$task->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $task->organization_id, $data);
+    }
+
     public function companionRequestedSpecialist(CompanionEscalation $escalation, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $data = new ScenarioEventData(

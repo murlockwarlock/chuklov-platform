@@ -72,6 +72,7 @@ final class ClientCompanionCrmTest extends TestCase
             'enabled' => true,
         ]);
         $this->admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+        $this->admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $this->staff = User::factory()->forOrganization($this->organization, OrganizationRole::Staff)->create();
         $this->client = Client::factory()->forOrganization($this->organization)->create([
             'full_name' => 'Мария Компаньон',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -86,6 +86,8 @@ type PortalPageProps = {
     };
 };
 
+type PartnerSection = 'links' | 'payouts' | 'history';
+
 const props = defineProps<{
     portal: PortalShell;
     referrals: {
@@ -113,6 +115,7 @@ const page = usePage<PortalPageProps>();
 const copiedUrl = ref<string | null>(null);
 const sharedUrl = ref<string | null>(null);
 const payoutFeedback = ref<PayoutFeedback | null>(null);
+const activeSection = ref<PartnerSection>('links');
 const activationForm = useForm<Record<string, never>>({});
 const linkForm = useForm<{ name: string; channel: string }>({ name: '', channel: 'telegram' });
 const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: string }>({
@@ -223,16 +226,16 @@ function formatMoneyList(items: MoneyAmount[]): string {
     return items.length === 0 ? '—' : items.map((item) => formatMoney(item.amountMinor, item.currency)).join(' · ');
 }
 
+function channelLabel(channel: string): string {
+    return channelOptions.value.find((option) => option.value === channel)?.label ?? channel;
+}
+
 function formatDate(value: string | null): string {
     if (value === null) {
         return '—';
     }
 
     return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-}
-
-function formatRate(value: number | null): string {
-    return value === null ? '—' : `${value}%`;
 }
 
 async function copyUrl(url: string): Promise<void> {
@@ -358,72 +361,28 @@ function cancelPayout(payout: Payout): void {
   <AppShell
     :title="props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.becomeTitle')"
     :portal="props.portal"
-    active="referrals"
+    active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.becomeTitle') }}
           </h1>
-          <p class="portal-copy">
+          <p
+            v-if="!props.referrals.isPartner"
+            class="portal-copy"
+          >
             {{ props.referrals.isPartner ? t('referrals.partnerDescription') : t('referrals.becomeDescription') }}
           </p>
         </div>
-        <Link
-          :href="props.portal.urls.home"
-          class="portal-button portal-button--secondary"
-        >
-          {{ t('common.back') }}
-        </Link>
       </header>
-
-      <section
-        v-if="!props.referrals.isPartner"
-        class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
-        data-testid="invite-friend"
-      >
-        <h2 class="portal-heading portal-heading--card">
-          {{ t('referrals.inviteTitle') }}
-        </h2>
-        <p class="portal-copy portal-copy--small">
-          {{ t('referrals.inviteDescription') }}
-        </p>
-        <code class="block max-w-full break-all rounded-lg bg-[var(--portal-color-surface-muted)] p-3 text-sm text-[var(--portal-color-ink)]">{{ props.referrals.link }}</code>
-        <div class="flex min-w-0 flex-wrap gap-2">
-          <button
-            type="button"
-            class="portal-button portal-button--secondary"
-            data-testid="invite-friend-copy"
-            @click="copyUrl(props.referrals.link)"
-          >
-            {{ copiedUrl === props.referrals.link ? t('referrals.copied') : t('referrals.copy') }}
-          </button>
-          <button
-            type="button"
-            class="portal-button portal-button--secondary"
-            data-testid="invite-friend-share"
-            @click="sharePersonalLink"
-          >
-            {{ sharedUrl === props.referrals.link ? t('referrals.shared') : t('referrals.sharePersonal') }}
-          </button>
-        </div>
-      </section>
 
       <section
         v-if="!props.referrals.isPartner"
         class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
         data-testid="partner-enrollment"
       >
-        <h2 class="portal-heading portal-heading--card">
-          {{ t('referrals.activateTitle') }}
-        </h2>
-        <p class="portal-copy portal-copy--small">
-          {{ t('referrals.activateDescription') }}
-        </p>
         <button
           type="button"
           class="portal-button portal-button--primary self-start"
@@ -437,25 +396,50 @@ function cancelPayout(payout: Payout): void {
 
       <template v-else>
         <section
+          class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
+          data-testid="partner-referral-link"
+        >
+          <h2 class="portal-heading portal-heading--card">
+            {{ t('referrals.linkLabel') }}
+          </h2>
+          <code class="block max-w-full break-all rounded-lg bg-[var(--portal-color-surface-muted)] p-3 text-sm text-[var(--portal-color-ink)]">{{ props.referrals.link }}</code>
+          <div class="flex min-w-0 flex-wrap gap-2">
+            <button
+              type="button"
+              class="portal-button portal-button--primary"
+              data-testid="partner-personal-share"
+              @click="sharePersonalLink"
+            >
+              {{ sharedUrl === props.referrals.link ? t('referrals.shared') : t('referrals.sharePersonal') }}
+            </button>
+            <button
+              type="button"
+              class="portal-button portal-button--secondary"
+              data-testid="partner-personal-copy"
+              @click="copyUrl(props.referrals.link)"
+            >
+              {{ copiedUrl === props.referrals.link ? t('referrals.copied') : t('referrals.copy') }}
+            </button>
+          </div>
+        </section>
+
+        <section
           class="portal-panel portal-stack portal-stack--tight"
           data-testid="partner-summary"
         >
-          <div class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3">
-            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-              <strong class="portal-referral-metric__value">{{ props.referrals.stats.visits }}</strong>
-              <span class="portal-referral-metric__label">{{ t('referrals.visits') }}</span>
-              <span class="portal-referral-metric__context">{{ t('referrals.conversionVisitRegistration') }}: {{ formatRate(props.referrals.stats.visitToRegistrationRate) }}</span>
-            </article>
-            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-              <strong class="portal-referral-metric__value">{{ props.referrals.stats.registrations }}</strong>
-              <span class="portal-referral-metric__label">{{ t('referrals.registrations') }}</span>
-              <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
-            </article>
-            <article class="portal-panel portal-panel--compact portal-referral-metric min-w-0">
-              <strong class="portal-referral-metric__value">{{ props.referrals.stats.paidClients }}</strong>
-              <span class="portal-referral-metric__label">{{ t('referrals.paidClients') }}</span>
-              <span class="portal-referral-metric__context">{{ t('referrals.conversionRegistrationPaid') }}: {{ formatRate(props.referrals.stats.registrationToPaidClientRate) }}</span>
-            </article>
+          <div class="portal-referral-results">
+            <div class="portal-referral-result">
+              <strong>{{ props.referrals.stats.visits }}</strong>
+              <span>{{ t('referrals.visits') }}</span>
+            </div>
+            <div class="portal-referral-result">
+              <strong>{{ props.referrals.stats.registrations }}</strong>
+              <span>{{ t('referrals.registrations') }}</span>
+            </div>
+            <div class="portal-referral-result">
+              <strong>{{ props.referrals.stats.paidClients }}</strong>
+              <span>{{ t('referrals.paidClients') }}</span>
+            </div>
           </div>
           <div class="portal-stack portal-stack--tight">
             <div class="portal-section-heading">
@@ -466,41 +450,21 @@ function cancelPayout(payout: Payout): void {
             </div>
             <div
               v-if="props.referrals.rewards.balances.length"
-              class="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2"
+              class="portal-reward-list"
             >
               <article
                 v-for="balance in props.referrals.rewards.balances"
                 :key="balance.currency"
-                class="portal-panel portal-panel--compact portal-stack portal-stack--tight min-w-0"
+                class="portal-reward"
                 :data-testid="`partner-balance-${balance.currency}`"
               >
-                <strong class="text-xl text-[var(--portal-color-ink)]">{{ balance.currency }}</strong>
-                <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
-                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">
-                      {{ t('referrals.earned') }}
-                    </p>
-                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.accruedMinor, balance.currency) }}</strong>
-                  </div>
-                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">
-                      {{ t('referrals.available') }}
-                    </p>
-                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.availableMinor, balance.currency) }}</strong>
-                  </div>
-                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">
-                      {{ t('referrals.pendingPayout') }}
-                    </p>
-                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.pendingPayoutMinor, balance.currency) }}</strong>
-                  </div>
-                  <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                    <p class="portal-copy portal-copy--small">
-                      {{ t('referrals.paidOut') }}
-                    </p>
-                    <strong class="break-words text-[var(--portal-color-ink)]">{{ formatMoney(balance.paidOutMinor, balance.currency) }}</strong>
-                  </div>
-                </div>
+                <strong>{{ balance.currency }}</strong>
+                <dl class="portal-reward__rows">
+                  <div><dt>{{ t('referrals.earned') }}</dt><dd>{{ formatMoney(balance.accruedMinor, balance.currency) }}</dd></div>
+                  <div><dt>{{ t('referrals.available') }}</dt><dd>{{ formatMoney(balance.availableMinor, balance.currency) }}</dd></div>
+                  <div><dt>{{ t('referrals.pendingPayout') }}</dt><dd>{{ formatMoney(balance.pendingPayoutMinor, balance.currency) }}</dd></div>
+                  <div><dt>{{ t('referrals.paidOut') }}</dt><dd>{{ formatMoney(balance.paidOutMinor, balance.currency) }}</dd></div>
+                </dl>
               </article>
             </div>
             <p
@@ -512,16 +476,42 @@ function cancelPayout(payout: Payout): void {
           </div>
         </section>
 
+        <nav
+          class="portal-segmented"
+          :aria-label="t('referrals.partnerTitle')"
+          data-testid="partner-sections"
+        >
+          <button
+            type="button"
+            class="portal-segmented__button"
+            :class="{ 'portal-segmented__button--active': activeSection === 'links' }"
+            @click="activeSection = 'links'"
+          >
+            {{ t('referrals.linksTitle') }}
+          </button>
+          <button
+            type="button"
+            class="portal-segmented__button"
+            :class="{ 'portal-segmented__button--active': activeSection === 'payouts' }"
+            @click="activeSection = 'payouts'"
+          >
+            {{ t('referrals.payoutsTitle') }}
+          </button>
+          <button
+            type="button"
+            class="portal-segmented__button"
+            :class="{ 'portal-segmented__button--active': activeSection === 'history' }"
+            @click="activeSection = 'history'"
+          >
+            {{ t('referrals.history') }}
+          </button>
+        </nav>
+
         <section
+          v-if="activeSection === 'links'"
           class="portal-stack"
           data-testid="partner-links"
         >
-          <header class="portal-section-heading">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.linksTitle') }}
-            </h2>
-          </header>
-
           <form
             class="portal-panel portal-grid portal-grid--form"
             data-testid="partner-create-link-form"
@@ -588,28 +578,28 @@ function cancelPayout(payout: Payout): void {
                     {{ link.name }}
                   </h3>
                   <p class="portal-copy portal-copy--small">
-                    {{ link.channel }} · {{ link.isActive ? t('referrals.activeLink') : t('referrals.disabledLink') }}
+                    {{ channelLabel(link.channel) }} · {{ link.isActive ? t('referrals.activeLink') : t('referrals.disabledLink') }}
                   </p>
                 </div>
                 <span class="portal-copy portal-copy--small shrink-0">{{ formatDate(link.createdAt) }}</span>
               </div>
               <code class="block max-w-full break-all rounded-lg bg-[var(--portal-color-surface-muted)] p-3 text-sm text-[var(--portal-color-ink)]">{{ link.shareUrl }}</code>
-              <div class="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4">
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <span class="portal-copy portal-copy--small">{{ t('referrals.visits') }}</span>
-                  <strong class="block break-words text-[var(--portal-color-ink)]">{{ link.visits }}</strong>
+              <div class="portal-referral-results">
+                <div class="portal-referral-result">
+                  <strong>{{ link.visits }}</strong>
+                  <span>{{ t('referrals.visits') }}</span>
                 </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <span class="portal-copy portal-copy--small">{{ t('referrals.registrations') }}</span>
-                  <strong class="block break-words text-[var(--portal-color-ink)]">{{ link.registrations }}</strong>
+                <div class="portal-referral-result">
+                  <strong>{{ link.registrations }}</strong>
+                  <span>{{ t('referrals.registrations') }}</span>
                 </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <span class="portal-copy portal-copy--small">{{ t('referrals.paidClients') }}</span>
-                  <strong class="block break-words text-[var(--portal-color-ink)]">{{ link.paidClients }}</strong>
+                <div class="portal-referral-result">
+                  <strong>{{ link.paidClients }}</strong>
+                  <span>{{ t('referrals.paidClients') }}</span>
                 </div>
-                <div class="min-w-0 rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3">
-                  <span class="portal-copy portal-copy--small">{{ t('referrals.earned') }}</span>
-                  <strong class="block break-words text-[var(--portal-color-ink)]">{{ formatMoneyList(link.rewards) }}</strong>
+                <div class="portal-referral-result">
+                  <strong>{{ formatMoneyList(link.rewards) }}</strong>
+                  <span>{{ t('referrals.earned') }}</span>
                 </div>
               </div>
               <div class="flex min-w-0 flex-wrap gap-2">
@@ -669,96 +659,103 @@ function cancelPayout(payout: Payout): void {
         </p>
 
         <section
-          v-if="requestableBalances.length"
-          class="portal-panel portal-stack"
+          v-if="activeSection === 'payouts'"
+          class="portal-stack"
         >
-          <div class="portal-stack portal-stack--tight">
-            <h2 class="portal-heading portal-heading--section">
+          <div class="portal-panel portal-stack portal-stack--tight">
+            <h2 class="portal-heading portal-heading--card">
               {{ t('referrals.requestPayout') }}
             </h2>
-            <p class="portal-copy portal-copy--small">
-              {{ t('referrals.requestPayoutHint') }}
+            <p
+              v-if="!requestableBalances.length"
+              class="portal-copy"
+            >
+              {{ t('referrals.noAvailablePayout') }}
             </p>
-          </div>
-          <label class="portal-field">
-            <span class="portal-label">{{ t('referrals.currency') }}</span>
-            <select
-              v-model="payoutForm.currency"
-              class="portal-input"
-            >
-              <option
-                v-for="balance in requestableBalances"
-                :key="balance.currency"
-                :value="balance.currency"
+            <template v-else>
+              <p class="portal-copy portal-copy--small">
+                {{ t('referrals.requestPayoutHint') }}
+              </p>
+              <label class="portal-field">
+                <span class="portal-label">{{ t('referrals.currency') }}</span>
+                <select
+                  v-model="payoutForm.currency"
+                  class="portal-input"
+                >
+                  <option
+                    v-for="balance in requestableBalances"
+                    :key="balance.currency"
+                    :value="balance.currency"
+                  >
+                    {{ balance.currency }} — {{ formatMoney(balance.availableMinor, balance.currency) }}
+                  </option>
+                </select>
+                <span
+                  v-if="payoutForm.errors.currency"
+                  class="portal-copy text-[var(--portal-color-danger)]"
+                >{{ payoutForm.errors.currency }}</span>
+              </label>
+              <label class="portal-field">
+                <span class="portal-label">{{ t('referrals.amount') }}</span>
+                <input
+                  v-model="payoutForm.amount"
+                  type="text"
+                  inputmode="decimal"
+                  autocomplete="off"
+                  class="portal-input"
+                  :placeholder="t('referrals.amountPlaceholder')"
+                >
+                <span
+                  v-if="payoutForm.errors.amount"
+                  class="portal-copy text-[var(--portal-color-danger)]"
+                >{{ payoutForm.errors.amount }}</span>
+              </label>
+              <button
+                type="button"
+                class="portal-button portal-button--primary self-start"
+                data-testid="payout-submit"
+                :disabled="payoutForm.processing"
+                :aria-busy="payoutForm.processing"
+                @click="submitPayout"
               >
-                {{ balance.currency }} — {{ formatMoney(balance.availableMinor, balance.currency) }}
-              </option>
-            </select>
-            <span
-              v-if="payoutForm.errors.currency"
-              class="portal-copy text-[var(--portal-color-danger)]"
-            >{{ payoutForm.errors.currency }}</span>
-          </label>
-          <label class="portal-field">
-            <span class="portal-label">{{ t('referrals.amount') }}</span>
-            <input
-              v-model="payoutForm.amount"
-              type="text"
-              inputmode="decimal"
-              autocomplete="off"
-              class="portal-input"
-              :placeholder="t('referrals.amountPlaceholder')"
-            >
-            <span
-              v-if="payoutForm.errors.amount"
-              class="portal-copy text-[var(--portal-color-danger)]"
-            >{{ payoutForm.errors.amount }}</span>
-          </label>
-          <button
-            type="button"
-            class="portal-button portal-button--primary self-start"
-            data-testid="payout-submit"
-            :disabled="payoutForm.processing"
-            :aria-busy="payoutForm.processing"
-            @click="submitPayout"
-          >
-            {{ payoutForm.processing ? t('referrals.sendingPayout') : t('referrals.requestPayout') }}
-          </button>
+                {{ payoutForm.processing ? t('referrals.sendingPayout') : t('referrals.requestPayout') }}
+              </button>
+            </template>
+          </div>
         </section>
 
-        <details
-          open
+        <section
+          v-if="activeSection === 'history'"
           class="portal-stack"
           data-testid="partner-history"
         >
-          <summary class="portal-section-heading cursor-pointer list-none">
-            <h2 class="portal-heading portal-heading--section">
-              {{ t('referrals.history') }}
-            </h2>
-          </summary>
           <div class="portal-stack">
             <section class="portal-stack">
-              <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+              <div class="portal-section-heading portal-section-heading--compact">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.registrations') }}
                 </h2>
-                <span class="portal-copy portal-copy--small">{{ props.referrals.referredClientsCount }}</span>
+                <span class="portal-count">
+                  {{ props.referrals.referredClientsCount }} {{ t('referrals.registrations') }}
+                </span>
               </div>
-              <div
+              <ul
                 v-if="props.referrals.registrations.length"
-                class="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2"
+                class="portal-list"
               >
-                <article
+                <li
                   v-for="(registration, index) in props.referrals.registrations"
                   :key="registration.name + (registration.registeredAt ?? '') + index"
-                  class="portal-card portal-stack portal-stack--tight min-w-0"
+                  class="portal-list__row portal-referral-registration-row"
                 >
-                  <strong class="break-words text-[var(--portal-color-ink)]">{{ registration.name }}</strong>
-                  <span class="portal-card__summary">{{ registration.linkName }} · {{ registration.channel }}</span>
-                  <span class="portal-card__summary">{{ formatDate(registration.registeredAt) }}</span>
-                  <span class="portal-card__summary">{{ registration.paidClient ? t('referrals.paidClient') : t('referrals.financeEvidenceMissing') }}</span>
-                </article>
-              </div>
+                  <span>
+                    <strong class="portal-list__title">{{ registration.name }}</strong>
+                    <span class="portal-list__summary">{{ registration.linkName }} · {{ channelLabel(registration.channel) }}</span>
+                    <span class="portal-list__summary">{{ formatDate(registration.registeredAt) }}</span>
+                  </span>
+                  <span class="portal-copy portal-copy--small">{{ registration.paidClient ? t('referrals.paidClient') : t('referrals.financeEvidenceMissing') }}</span>
+                </li>
+              </ul>
               <p
                 v-else
                 class="portal-copy"
@@ -769,7 +766,7 @@ function cancelPayout(payout: Payout): void {
 
             <section class="portal-stack">
               <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.payoutHistory') }}
                 </h2>
               </div>
@@ -822,7 +819,7 @@ function cancelPayout(payout: Payout): void {
               class="portal-stack"
             >
               <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.rewardHistory') }}
                 </h2>
               </div>
@@ -853,7 +850,7 @@ function cancelPayout(payout: Payout): void {
               </ul>
             </section>
           </div>
-        </details>
+        </section>
       </template>
     </section>
   </AppShell>

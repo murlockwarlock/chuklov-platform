@@ -18,7 +18,7 @@ const { t } = usePortalLocale();
   <AppShell
     :title="t('survey.reportTitle')"
     :portal="props.portal"
-    active="surveys"
+    active="health"
   >
     <section class="portal-container portal-stack portal-stack--loose">
       <Link
@@ -29,9 +29,6 @@ const { t } = usePortalLocale();
       </Link>
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ t('survey.reportTitle') }}
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ props.report.title }}
           </h1>
@@ -41,16 +38,16 @@ const { t } = usePortalLocale();
         <h2 class="portal-heading portal-heading--section">
           {{ t('survey.metrics') }}
         </h2>
-        <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <dl class="portal-report-metrics">
           <div
             v-for="(metric, key) in props.report.metrics"
             :key="key"
-            class="rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4"
+            class="portal-report-metric"
           >
-            <dt class="portal-copy portal-copy--small">
+            <dt>
               {{ metric.label }}
             </dt>
-            <dd class="text-2xl font-semibold text-[var(--portal-color-ink)]">
+            <dd>
               {{ metric.value }}
             </dd>
           </div>
@@ -68,12 +65,12 @@ const { t } = usePortalLocale();
         </p>
         <ul
           v-else
-          class="grid gap-2"
+          class="portal-list"
         >
           <li
             v-for="threshold in props.report.thresholds"
             :key="`${threshold.metric_key}-${threshold.tag}`"
-            class="rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-4 text-[var(--portal-color-ink)]"
+            class="portal-list__row"
           >
             {{ threshold.label }}
           </li>

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import ServiceCard from '../../Components/Portal/ServiceCard.vue';
@@ -33,28 +32,13 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
   <AppShell
     :title="t('services.title')"
     :portal="props.portal"
-    :active="props.portal.authenticated ? 'services' : null"
+    active="bookings"
   >
-    <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('services.title') }}
-          </h1>
-          <p class="portal-lede">
-            {{ t('services.description') }}
-          </p>
-        </div>
-        <Link
-          v-if="props.portal.authenticated"
-          :href="props.urls.booking"
-          class="portal-button portal-button--primary"
-        >
-          {{ t('services.book') }}
-        </Link>
+    <section class="portal-container portal-container--wide portal-stack portal-stack--tight">
+      <header class="portal-stack portal-stack--tight">
+        <h1 class="portal-heading portal-heading--section">
+          {{ t('services.title') }}
+        </h1>
       </header>
 
       <div

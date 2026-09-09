@@ -143,6 +143,11 @@ final class SourceBackedAgentContractTest extends TestCase
             };
             self::assertIsString($sourceFragment);
             self::assertStringContainsString($sourceFragment, $bundle->systemPrompt);
+
+            if ($bundle->capability === AiCapability::ClientCompanion) {
+                self::assertStringNotContainsString('платная подписка и tracker пока не считаются доступными', $bundle->systemPrompt);
+                self::assertStringContainsString('подтверждённом доступе', $bundle->systemPrompt);
+            }
         }
     }
 
@@ -174,6 +179,19 @@ final class SourceBackedAgentContractTest extends TestCase
                 }
             }
         }
+
+        $companionSuite = null;
+        foreach ($manifest['suites'] as $suite) {
+            if (($suite['capability'] ?? null) === AiCapability::ClientCompanion->value) {
+                $companionSuite = $suite;
+                break;
+            }
+        }
+        self::assertIsArray($companionSuite);
+        self::assertSame(
+            AiCapabilityRegistry::get(AiCapability::ClientCompanion)->defaultOutputSchema,
+            $companionSuite['expected_output_schema'],
+        );
 
         $postureSuite = null;
         foreach ($manifest['suites'] as $suite) {

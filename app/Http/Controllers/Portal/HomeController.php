@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
-use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
-use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Application\ListClientBookings;
-use App\Modules\Services\Application\ListPublishedServices;
+use App\Modules\Surveys\Application\ListClientSurveys;
+use App\Modules\Tracker\Application\ListClientTrackerOverview;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -20,10 +19,9 @@ class HomeController extends Controller
     public function __invoke(
         Request $request,
         ClientPortalContext $clientContext,
-        ListPublishedServices $services,
         ListClientBookings $bookings,
-        ProjectPortalService $serviceProjection,
-        GetClientAttribution $getAttribution,
+        ListClientTrackerOverview $tracker,
+        ListClientSurveys $surveys,
         ResolveTelegramMiniAppEntry $telegramEntries,
     ): Response {
         try {
@@ -48,20 +46,49 @@ class HomeController extends Controller
             ]);
         }
 
-        $client->loadMissing('referralPartnerProfile');
         $upcoming = $bookings->handle(app()->getLocale())['upcoming'];
+        $trackerData = $tracker->handle();
+        $surveyData = $surveys->handle($client);
+        $healthAction = $this->healthAction($trackerData, $surveyData);
 
         return Inertia::render('Portal/Home', [
             'upcomingBooking' => $upcoming[0] ?? null,
-            'services' => $services->handle()
-                ->map(fn ($service): array => $serviceProjection->handle($service, app()->getLocale()))
-                ->values()
-                ->all(),
-            'attribution' => [
-                'needsManualSource' => $getAttribution->handle($client) === null,
-            ],
-            'isPartner' => $client->referralPartnerProfile?->isActive() === true,
+            'healthAction' => $healthAction,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $tracker
+     * @param  array<string, mixed>  $surveys
+     * @return array<string, string>|null
+     */
+    private function healthAction(array $tracker, array $surveys): ?array
+    {
+        $today = $tracker['today'][0] ?? null;
+        if (is_array($today)) {
+            return [
+                'title' => 'Сегодня',
+                'summary' => (string) ($today['title'] ?? ''),
+                'url' => route('portal.tracker'),
+            ];
+        }
+        $definition = $surveys['definitions'][0] ?? null;
+        if (is_array($definition)) {
+            return [
+                'title' => (string) ($definition['title'] ?? 'Тест'),
+                'summary' => 'Доступен новый тест',
+                'url' => route('portal.health'),
+            ];
+        }
+        if (is_string($tracker['monthlyPractice'] ?? null) && trim($tracker['monthlyPractice']) !== '') {
+            return [
+                'title' => 'Моя программа',
+                'summary' => 'Есть материал для этого месяца',
+                'url' => route('portal.tracker'),
+            ];
+        }
+
+        return null;
     }
 
     private function launchEntry(mixed $entry, ResolveTelegramMiniAppEntry $telegramEntries): ?string

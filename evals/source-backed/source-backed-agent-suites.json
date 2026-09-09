@@ -372,7 +372,7 @@
           "decision": {"type": "string", "enum": ["reply", "handoff_required"]},
           "reply": {"type": "string"},
           "handoff_reason": {"type": "string"},
-          "suggested_safe_actions": {"type": "array", "maxItems": 3, "items": {"type": "string", "enum": ["request_human", "open_portal", "feedback_helpful", "feedback_not_helpful"]}}
+          "suggested_safe_actions": {"type": "array", "maxItems": 4, "items": {"type": "string", "enum": ["request_human", "open_portal", "feedback_helpful", "feedback_not_helpful"]}}
         },
         "required": ["decision", "reply", "handoff_reason"]
       },

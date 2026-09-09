@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
-import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
 type Definition = { id: number; title: string; description: string | null; version: number };
-type Attempt = { id: number; title: string; version: number; status: 'in_progress' | 'completed'; completedAt: string | null; reportId: number | null };
+type Attempt = { id: number; title: string; status: 'in_progress' | 'completed'; completedAt: string | null; reportId: number | null };
 
 const props = defineProps<{
     portal: PortalShell;
@@ -23,59 +22,48 @@ const formatDate = (value: string | null): string => value ? new Intl.DateTimeFo
   <AppShell
     :title="t('surveys.title')"
     :portal="props.portal"
-    active="surveys"
+    active="health"
   >
-    <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('surveys.title') }}
-          </h1>
-          <p class="portal-copy">
-            {{ t('surveys.description') }}
-          </p>
-        </div>
+    <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
+      <header class="portal-stack portal-stack--tight">
+        <p class="portal-eyebrow">
+          {{ t('health.title') }}
+        </p>
+        <h1 class="portal-heading portal-heading--section">
+          {{ t('surveys.title') }}
+        </h1>
+        <p class="portal-copy">
+          {{ t('surveys.description') }}
+        </p>
       </header>
 
-      <section class="portal-stack">
-        <h2 class="portal-heading portal-heading--section">
+      <section
+        v-if="props.definitions.length"
+        class="portal-stack"
+      >
+        <h2 class="portal-heading portal-heading--card">
           {{ t('surveys.available') }}
         </h2>
-        <EmptyState
-          v-if="!props.definitions.length"
-          :title="t('surveys.empty')"
-        />
-        <div
-          v-else
-          class="grid grid-cols-1 gap-4 md:grid-cols-2"
-        >
+        <div class="portal-stack portal-stack--tight">
           <article
             v-for="definition in props.definitions"
             :key="definition.id"
-            class="portal-panel portal-stack portal-stack--tight"
+            class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
           >
-            <div>
-              <h3 class="portal-heading portal-heading--section">
-                {{ definition.title }}
-              </h3>
-              <p
-                v-if="definition.description"
-                class="portal-copy portal-copy--small"
-              >
-                {{ definition.description }}
-              </p>
-            </div>
-            <p class="portal-copy portal-copy--small">
-              {{ t('surveys.version', { value: definition.version }) }}
+            <h3 class="portal-heading portal-heading--card">
+              {{ definition.title }}
+            </h3>
+            <p
+              v-if="definition.description"
+              class="portal-copy portal-copy--small"
+            >
+              {{ definition.description }}
             </p>
             <Link
               :href="startUrl(definition.id)"
               method="post"
               as="button"
-              class="portal-button portal-button--primary"
+              class="portal-button portal-button--primary self-start"
             >
               {{ t('surveys.start') }}
             </Link>
@@ -83,32 +71,25 @@ const formatDate = (value: string | null): string => value ? new Intl.DateTimeFo
         </div>
       </section>
 
-      <section class="portal-stack">
-        <h2 class="portal-heading portal-heading--section">
+      <section
+        v-if="props.attempts.length"
+        class="portal-stack"
+      >
+        <h2 class="portal-heading portal-heading--card">
           {{ t('surveys.history') }}
         </h2>
-        <EmptyState
-          v-if="!props.attempts.length"
-          :title="t('surveys.noHistory')"
-        />
-        <div
-          v-else
-          class="portal-panel divide-y divide-[var(--portal-color-border)]"
-        >
+        <div class="portal-list">
           <article
             v-for="attempt in props.attempts"
             :key="attempt.id"
-            class="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+            class="portal-list__row"
           >
-            <div>
-              <h3 class="font-semibold text-[var(--portal-color-ink)]">
-                {{ attempt.title }}
-              </h3>
-              <p class="portal-copy portal-copy--small">
-                {{ attempt.status === 'completed' ? t('surveys.completed') : t('surveys.inProgress') }}
-                <span v-if="attempt.completedAt"> · {{ formatDate(attempt.completedAt) }}</span>
-              </p>
-            </div>
+            <span>
+              <strong class="portal-list__title">{{ attempt.title }}</strong>
+              <span class="portal-list__summary">
+                {{ attempt.status === 'completed' ? t('surveys.completed') : t('surveys.inProgress') }}<span v-if="attempt.completedAt"> · {{ formatDate(attempt.completedAt) }}</span>
+              </span>
+            </span>
             <Link
               :href="attempt.reportId ? `/portal/survey-reports/${attempt.reportId}` : `/portal/survey-attempts/${attempt.id}`"
               class="portal-button portal-button--secondary"

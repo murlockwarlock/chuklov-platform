@@ -31,20 +31,14 @@ function submit(): void {
   <AppShell
     :title="t('attribution.title')"
     :portal="props.portal"
-    active="attribution"
+    active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ t('attribution.title') }}
           </h1>
-          <p class="portal-copy">
-            {{ t('attribution.description') }}
-          </p>
         </div>
         <Link
           :href="props.portal.urls.home"
@@ -112,12 +106,6 @@ function submit(): void {
           </button>
         </form>
       </section>
-      <p
-        v-else
-        class="portal-copy"
-      >
-        {{ t('attribution.accepted') }}
-      </p>
     </section>
   </AppShell>
 </template>
