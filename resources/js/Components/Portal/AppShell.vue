@@ -18,16 +18,10 @@ const props = withDefaults(defineProps<{
 
 const navigation = [
     { key: 'home', label: 'shell.home' },
-    { key: 'services', label: 'shell.services' },
     { key: 'bookings', label: 'shell.bookings' },
-    { key: 'finance', label: 'shell.finance' },
-    { key: 'surveys', label: 'shell.surveys' },
+    { key: 'health', label: 'shell.health' },
     { key: 'companion', label: 'shell.companion' },
-    { key: 'tracker', label: 'shell.tracker' },
-    { key: 'referrals', label: 'shell.referrals' },
-    { key: 'feedback', label: 'shell.feedback' },
-    { key: 'profile', label: 'shell.profile' },
-    { key: 'b2b', label: 'shell.b2b' },
+    { key: 'more', label: 'shell.more' },
 ] as const;
 
 const brandLogo = computed(() => props.portal.locale === 'en'

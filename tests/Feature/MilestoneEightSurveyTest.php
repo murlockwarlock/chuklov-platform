@@ -241,6 +241,12 @@ final class MilestoneEightSurveyTest extends TestCase
                 ->component('Portal/Surveys')
                 ->has('definitions', 1));
         $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.health'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Health')
+                ->has('surveys.definitions', 1));
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->post(route('portal.surveys.start', $definition->getKey()))
             ->assertRedirect();
         $attempt = SurveyAttempt::query()->where('client_id', $client->getKey())->sole();

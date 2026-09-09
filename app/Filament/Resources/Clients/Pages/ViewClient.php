@@ -24,22 +24,27 @@ use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
 use App\Modules\Referrals\Application\SearchActivePartnersForReferralAssignment;
+use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\EndTrackerAccess;
 use App\Modules\Tracker\Application\ExtendTrackerAccess;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Validation\ValidationException;
@@ -139,6 +144,7 @@ class ViewClient extends ViewRecord
             $this->deactivatePartnerAction(),
             $this->assignPartnerAction(),
             ActionGroup::make([
+                $this->assignTrackerTaskAction(),
                 $this->grantTrackerAccessAction(),
                 $this->extendTrackerAccessAction(),
                 $this->endTrackerAccessAction(),
@@ -492,6 +498,88 @@ class ViewClient extends ViewRecord
                 $plan = filled($data['plan_id'] ?? null) ? TrackerPlan::query()->where('organization_id', app(OrganizationContext::class)->id())->findOrFail((int) $data['plan_id']) : null;
                 app(GrantTrackerAccess::class)->handle($this->actor(), $this->clientRecord(), $plan, CarbonImmutable::parse((string) $data['starts_at'], app(OrganizationContext::class)->defaultTimezone()), CarbonImmutable::parse((string) $data['ends_at'], app(OrganizationContext::class)->defaultTimezone()), (string) $data['reason']);
                 Notification::make()->title('Доступ к трекеру выдан')->success()->send();
+            });
+    }
+
+    private function assignTrackerTaskAction(): Action
+    {
+        return Action::make('assignTrackerTask')
+            ->label('Назначить задачу')
+            ->icon('heroicon-o-clipboard-document-check')
+            ->schema([
+                TextInput::make('title')
+                    ->label('Название задачи')
+                    ->required()
+                    ->maxLength(160),
+                Select::make('task_type')
+                    ->label('Тип')
+                    ->options([
+                        TrackerTaskType::Exercise->value => 'Задача',
+                        TrackerTaskType::Hydration->value => 'Гидратация',
+                        TrackerTaskType::Practice->value => 'Практика',
+                        TrackerTaskType::Other->value => 'Другое',
+                    ])
+                    ->default(TrackerTaskType::Other->value)
+                    ->native(false)
+                    ->required(),
+                Select::make('frequency')
+                    ->label('Повторение')
+                    ->options([
+                        TrackerTaskFrequency::Daily->value => 'Каждый день',
+                        TrackerTaskFrequency::Weekly->value => 'Раз в неделю',
+                    ])
+                    ->default(TrackerTaskFrequency::Daily->value)
+                    ->native(false)
+                    ->live()
+                    ->required(),
+                Select::make('week_day')
+                    ->label('День недели')
+                    ->options([
+                        1 => 'Понедельник',
+                        2 => 'Вторник',
+                        3 => 'Среда',
+                        4 => 'Четверг',
+                        5 => 'Пятница',
+                        6 => 'Суббота',
+                        7 => 'Воскресенье',
+                    ])
+                    ->native(false)
+                    ->visible(fn (Get $get): bool => $get('frequency') === TrackerTaskFrequency::Weekly->value)
+                    ->required(fn (Get $get): bool => $get('frequency') === TrackerTaskFrequency::Weekly->value),
+                DatePicker::make('starts_on')
+                    ->label('Начало')
+                    ->default(today())
+                    ->native(false)
+                    ->required(),
+                DatePicker::make('ends_on')
+                    ->label('Окончание')
+                    ->native(false)
+                    ->nullable()
+                    ->afterOrEqual('starts_on'),
+                TextInput::make('display_order')
+                    ->label('Порядок')
+                    ->integer()
+                    ->minValue(0)
+                    ->default(0)
+                    ->required(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients())
+            ->action(function (array $data): void {
+                $timezone = app(OrganizationContext::class)->defaultTimezone();
+                app(AssignTrackerTask::class)->handle(
+                    actor: $this->actor(),
+                    client: $this->clientRecord(),
+                    title: (string) $data['title'],
+                    type: TrackerTaskType::from((string) $data['task_type']),
+                    frequency: TrackerTaskFrequency::from((string) $data['frequency']),
+                    startsOn: CarbonImmutable::parse((string) $data['starts_on'], $timezone)->startOfDay(),
+                    endsOn: filled($data['ends_on'] ?? null)
+                        ? CarbonImmutable::parse((string) $data['ends_on'], $timezone)->startOfDay()
+                        : null,
+                    weekDay: filled($data['week_day'] ?? null) ? (int) $data['week_day'] : null,
+                    displayOrder: (int) $data['display_order'],
+                );
+                Notification::make()->title('Задача назначена')->success()->send();
             });
     }
 

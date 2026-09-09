@@ -26,4 +26,6 @@ enum ScenarioEventType: string
     case AiEvaluationFailed = 'ai.evaluation.failed';
     case ReferralLinkVisited = 'referral.link.visited';
     case PaymentProviderEventPrepared = 'payment.provider.event.prepared';
+    case TrackerDailyTaskAssigned = 'tracker.task.daily_assigned';
+    case TrackerWeeklyTaskAssigned = 'tracker.task.weekly_assigned';
 }

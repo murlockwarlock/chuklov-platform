@@ -2,8 +2,6 @@
 import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCard from '../../Components/Portal/BookingCard.vue';
-import EmptyState from '../../Components/Portal/EmptyState.vue';
-import ServiceCard from '../../Components/Portal/ServiceCard.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -22,22 +20,12 @@ type Booking = {
     canReschedule: boolean;
 };
 
-type Service = {
-    id: number;
-    name: string;
-    summary: string | null;
-    imageUrl: string | null;
-    durationMinutes: number | null;
-    priceMajor: string | null;
-    priceCurrency: string | null;
-};
+type HealthAction = { title: string; summary: string; url: string };
 
 const props = defineProps<{
     portal: PortalShell;
     upcomingBooking: Booking | null;
-    services: Service[];
-    attribution: { needsManualSource: boolean };
-    isPartner: boolean;
+    healthAction: HealthAction | null;
 }>();
 
 const { locale, t } = usePortalLocale();
@@ -49,25 +37,16 @@ const { locale, t } = usePortalLocale();
     :portal="props.portal"
     active="home"
   >
-    <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
-          <h1 class="portal-heading portal-heading--section">
-            {{ props.portal.clientName
-              ? t('home.greetingWithName', { name: props.portal.clientName })
-              : t('home.greeting') }}
-          </h1>
-        </div>
-        <Link
-          :href="props.portal.urls.booking"
-          class="portal-button portal-button--primary"
-          data-testid="home-booking-cta"
-        >
-          {{ t('home.book') }}
-        </Link>
+    <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
+      <header class="portal-stack portal-stack--tight">
+        <p class="portal-eyebrow">
+          CHUKLOV
+        </p>
+        <h1 class="portal-heading portal-heading--section">
+          {{ props.portal.clientName
+            ? t('home.greetingWithName', { name: props.portal.clientName })
+            : t('home.greeting') }}
+        </h1>
       </header>
 
       <BookingCard
@@ -76,100 +55,39 @@ const { locale, t } = usePortalLocale();
         :locale="locale"
         :details-url="props.portal.urls.bookings + '/' + props.upcomingBooking.id"
       />
-      <EmptyState
+      <section
         v-else
-        :title="t('home.noUpcoming')"
-        :description="t('home.noUpcomingDescription')"
-      />
-
-      <section class="portal-stack">
-        <header class="portal-section-heading">
-          <h2 class="portal-heading portal-heading--section">
-            {{ t('home.services') }}
-          </h2>
-          <Link
-            :href="props.portal.urls.services"
-            class="portal-link"
-          >
-            {{ t('home.allServices') }}
-          </Link>
-        </header>
-
-        <div
-          v-if="props.services.length"
-          class="portal-service-grid"
-        >
-          <ServiceCard
-            v-for="service in props.services.slice(0, 3)"
-            :key="service.id"
-            :service="service"
-            :locale="locale"
-            :booking-url="props.portal.urls.booking"
-          />
-        </div>
-        <p
-          v-else
-          class="portal-copy"
-        >
-          {{ t('home.noServices') }}
-        </p>
-      </section>
-
-      <section class="portal-grid portal-grid--cards">
+        class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
+      >
+        <h2 class="portal-heading portal-heading--card">
+          {{ t('home.book') }}
+        </h2>
         <Link
-          :href="props.portal.urls.tracker"
-          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+          :href="props.portal.urls.booking"
+          class="portal-button portal-button--primary self-start"
+          data-testid="home-booking-cta"
         >
-          <strong class="portal-heading portal-heading--section">{{ t('tracker.title') }}</strong>
-          <span class="portal-card__summary">{{ t('tracker.homeDescription') }}</span>
-        </Link>
-        <Link
-          :href="props.portal.urls.b2b"
-          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
-        >
-          <strong class="portal-heading portal-heading--section">
-            {{ t('b2b.cta') }}
-          </strong>
-          <span class="portal-card__summary">
-            {{ t('b2b.ctaDescription') }}
-          </span>
-        </Link>
-        <Link
-          :href="props.portal.urls.referrals"
-          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
-          data-testid="home-referrals-cta"
-        >
-          <strong class="portal-heading portal-heading--section">
-            {{ props.isPartner ? t('home.partnerCabinet') : t('home.referrals') }}
-          </strong>
-          <span class="portal-card__summary">
-            {{ t('home.referralsDescription') }}
-          </span>
-        </Link>
-        <Link
-          :href="props.portal.urls.referrals"
-          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
-          data-testid="home-invite-friend-cta"
-        >
-          <strong class="portal-heading portal-heading--section">
-            {{ t('home.inviteFriend') }}
-          </strong>
-          <span class="portal-card__summary">
-            {{ t('home.inviteFriendDescription') }}
-          </span>
-        </Link>
-        <Link
-          :href="props.portal.urls.feedback"
-          class="portal-card portal-card--interactive portal-stack portal-stack--tight"
-        >
-          <strong class="portal-heading portal-heading--section">
-            {{ t('home.feedback') }}
-          </strong>
-          <span class="portal-card__summary">
-            {{ t('home.feedbackDescription') }}
-          </span>
+          {{ t('home.book') }}
         </Link>
       </section>
+
+      <Link
+        v-if="props.healthAction"
+        :href="props.healthAction.url"
+        class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+      >
+        <span class="portal-kicker">{{ t('home.healthAction') }}</span>
+        <strong class="portal-heading portal-heading--card">{{ props.healthAction.title }}</strong>
+        <span class="portal-card__summary">{{ props.healthAction.summary }}</span>
+      </Link>
+
+      <Link
+        :href="props.portal.urls.companion"
+        class="portal-card portal-card--interactive portal-stack portal-stack--tight"
+      >
+        <strong class="portal-heading portal-heading--card">{{ t('home.ai') }}</strong>
+        <span class="portal-card__summary">{{ t('home.aiDescription') }}</span>
+      </Link>
     </section>
   </AppShell>
 </template>

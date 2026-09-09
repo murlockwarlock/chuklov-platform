@@ -39,6 +39,8 @@ class HandleInertiaRequests extends Middleware
                     'home' => route('portal.home'),
                     'services' => route('portal.services.index'),
                     'bookings' => route('portal.bookings.index'),
+                    'health' => route('portal.health'),
+                    'more' => route('portal.more'),
                     'finance' => route('portal.finance.index'),
                     'surveys' => route('portal.surveys.index'),
                     'companion' => route('portal.companion'),

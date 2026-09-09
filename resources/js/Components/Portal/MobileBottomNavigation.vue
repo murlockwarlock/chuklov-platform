@@ -12,10 +12,9 @@ const props = defineProps<{
 const items = [
     { key: 'home', label: 'shell.home', icon: 'home' },
     { key: 'bookings', label: 'shell.bookings', icon: 'calendar' },
-    { key: 'surveys', label: 'shell.surveys', icon: 'check' },
+    { key: 'health', label: 'shell.health', icon: 'health' },
     { key: 'companion', label: 'shell.companion', icon: 'sparkles' },
-    { key: 'finance', label: 'shell.finance', icon: 'wallet' },
-    { key: 'profile', label: 'shell.profile', icon: 'user' },
+    { key: 'more', label: 'shell.more', icon: 'more' },
 ] as const;
 </script>
 

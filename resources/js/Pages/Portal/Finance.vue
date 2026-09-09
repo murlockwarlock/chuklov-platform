@@ -63,7 +63,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
   <AppShell
     :title="t('finance.title')"
     :portal="props.portal"
-    active="finance"
+    active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-page-heading">

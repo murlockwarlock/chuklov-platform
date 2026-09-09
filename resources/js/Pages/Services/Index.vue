@@ -33,7 +33,7 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
   <AppShell
     :title="t('services.title')"
     :portal="props.portal"
-    :active="props.portal.authenticated ? 'services' : null"
+    :active="null"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-page-heading">

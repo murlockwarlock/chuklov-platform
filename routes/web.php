@@ -18,8 +18,10 @@ use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\FeedbackController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
+use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
+use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
@@ -111,6 +113,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
+            Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
+            Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
             Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
@@ -130,6 +134,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
             Route::get('/portal/tracker', [TrackerController::class, 'index'])->name('portal.tracker');
             Route::post('/portal/tracker/check-in', [TrackerController::class, 'checkIn'])->name('portal.tracker.check-in');
+            Route::post('/portal/tracker/tasks/{taskId}/entry', [TrackerController::class, 'taskEntry'])
+                ->whereNumber('taskId')
+                ->name('portal.tracker.task-entry');
             Route::post('/portal/companion/messages', [CompanionController::class, 'send'])
                 ->middleware('throttle:portal-companion-send')
                 ->name('portal.companion.send');

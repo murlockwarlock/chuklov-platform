@@ -57,7 +57,7 @@ function submit(): void {
   <AppShell
     :title="t('feedback.title')"
     :portal="props.portal"
-    active="feedback"
+    active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-page-heading">

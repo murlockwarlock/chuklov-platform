@@ -4,6 +4,8 @@ export type PortalUrls = {
     home: string;
     services: string;
     bookings: string;
+    health: string;
+    more: string;
     profile: string;
     finance: string;
     surveys: string;
@@ -24,4 +26,4 @@ export type PortalShell = {
     urls: PortalUrls;
 };
 
-export type PortalNavKey = 'home' | 'services' | 'bookings' | 'finance' | 'surveys' | 'companion' | 'tracker' | 'profile' | 'referrals' | 'feedback' | 'attribution' | 'b2b' | null;
+export type PortalNavKey = 'home' | 'bookings' | 'health' | 'companion' | 'more' | null;

@@ -40,9 +40,34 @@ class PortalProductUxTest extends TestCase
                 ->component('Portal/Home')
                 ->where('portal.authenticated', true)
                 ->where('portal.clientName', 'Portal Client')
-                ->where('isPartner', false)
+                ->where('healthAction', null)
+                ->where('portal.urls.health', route('portal.health'))
+                ->where('portal.urls.more', route('portal.more'))
                 ->missing('auth')
                 ->missing('onboardingUrl'));
+    }
+
+    public function test_health_omits_empty_tests_destination_and_secondary_functions_live_under_more(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.health'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Health')
+                ->has('surveys.definitions', 0)
+                ->has('surveys.attempts', 0));
+
+        $this->get(route('portal.surveys.index'))
+            ->assertRedirect(route('portal.health'));
+
+        $this->get(route('portal.more'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/More')
+                ->where('portal.urls.referrals', route('portal.referrals')));
     }
 
     public function test_authenticated_home_exposes_the_authorized_referrals_destination_and_personal_link(): void

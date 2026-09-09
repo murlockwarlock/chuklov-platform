@@ -17,6 +17,8 @@ use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
+use App\Modules\Tracker\Domain\Models\TrackerTaskEntry;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -150,14 +152,28 @@ class Client extends Model
         return $this->hasMany(SurveyAttempt::class);
     }
 
+    /** @return HasMany<TrackerEntitlement, $this> */
     public function trackerEntitlements(): HasMany
     {
         return $this->hasMany(TrackerEntitlement::class);
     }
 
+    /** @return HasMany<TrackerCheckIn, $this> */
     public function trackerCheckIns(): HasMany
     {
         return $this->hasMany(TrackerCheckIn::class);
+    }
+
+    /** @return HasMany<TrackerTask, $this> */
+    public function trackerTasks(): HasMany
+    {
+        return $this->hasMany(TrackerTask::class);
+    }
+
+    /** @return HasMany<TrackerTaskEntry, $this> */
+    public function trackerTaskEntries(): HasMany
+    {
+        return $this->hasMany(TrackerTaskEntry::class);
     }
 
     protected static function newFactory(): ClientFactory

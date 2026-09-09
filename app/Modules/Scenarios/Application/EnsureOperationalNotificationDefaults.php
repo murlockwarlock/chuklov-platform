@@ -39,6 +39,20 @@ final class EnsureOperationalNotificationDefaults
                     body: 'Статус вашей выплаты {{ payout.amount }}: {{ payout.status_label }}.',
                     variables: ['payout.amount', 'payout.status_label'],
                 ),
+                'tracker-task-daily' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'tracker-task-daily',
+                    name: 'Ежедневная задача трекера',
+                    body: 'Напоминание о задаче: {{ tracker.task_title }}.',
+                    variables: ['tracker.task_title'],
+                ),
+                'tracker-task-weekly' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'tracker-task-weekly',
+                    name: 'Еженедельная задача трекера',
+                    body: 'Напоминание о задаче: {{ tracker.task_title }}.',
+                    variables: ['tracker.task_title'],
+                ),
             ];
 
             foreach ([
@@ -79,6 +93,40 @@ final class EnsureOperationalNotificationDefaults
                     'enabled' => true,
                     'recipient' => ['type' => 'client'],
                 ],
+                [
+                    'key' => 'tracker-task-daily-client-telegram',
+                    'name' => 'Ежедневная задача трекера — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'tracker-task-daily',
+                    'roles' => [],
+                    'event' => ScenarioEventType::TrackerDailyTaskAssigned->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'tracker.access', 'operator' => 'equals', 'value' => true],
+                        ['type' => 'tracker.task_active', 'operator' => 'equals', 'value' => true],
+                    ],
+                    'max_occurrences' => 100,
+                    'repeat_interval_value' => 1,
+                    'repeat_interval_unit' => 'days',
+                ],
+                [
+                    'key' => 'tracker-task-weekly-client-telegram',
+                    'name' => 'Еженедельная задача трекера — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'tracker-task-weekly',
+                    'roles' => [],
+                    'event' => ScenarioEventType::TrackerWeeklyTaskAssigned->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'tracker.access', 'operator' => 'equals', 'value' => true],
+                        ['type' => 'tracker.task_active', 'operator' => 'equals', 'value' => true],
+                    ],
+                    'max_occurrences' => 53,
+                    'repeat_interval_value' => 7,
+                    'repeat_interval_unit' => 'days',
+                ],
             ] as $definition) {
                 if (ScenarioRule::query()
                     ->where('organization_id', $organization->getKey())
@@ -98,13 +146,13 @@ final class EnsureOperationalNotificationDefaults
                     'delay_value' => 0,
                     'delay_unit' => 'minutes',
                     'purpose' => ScenarioRulePurpose::Transactional->value,
-                    'conditions' => [],
+                    'conditions' => $definition['conditions'] ?? [],
                     'recipient_strategy' => $definition['recipient'] ?? ['type' => 'roles', 'roles' => $definition['roles']],
                     'channel_priority' => [$definition['channel']],
                     'template_version_id' => $templates[$definition['template']]->getKey(),
-                    'max_occurrences' => 1,
-                    'repeat_interval_value' => null,
-                    'repeat_interval_unit' => null,
+                    'max_occurrences' => $definition['max_occurrences'] ?? 1,
+                    'repeat_interval_value' => $definition['repeat_interval_value'] ?? null,
+                    'repeat_interval_unit' => $definition['repeat_interval_unit'] ?? null,
                     'version' => 1,
                 ])->save();
             }

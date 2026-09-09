@@ -61,7 +61,7 @@ function updateScalar(key: string, event: Event, numeric = false): void {
   <AppShell
     :title="t('surveys.title')"
     :portal="props.portal"
-    active="surveys"
+    active="health"
   >
     <section class="portal-container portal-stack portal-stack--loose">
       <Link

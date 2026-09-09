@@ -26,6 +26,7 @@ final class EditTrackerPlan extends EditRecord
             $data['currency'] = $version->currencyCode()->value;
             $data['duration_days'] = $version->duration_days;
             $data['description'] = $version->description;
+            $data['monthly_practice'] = $version->monthly_practice;
             $data['included_access'] = $version->included_access;
             $data['display_order'] = $version->display_order;
         }
@@ -38,7 +39,7 @@ final class EditTrackerPlan extends EditRecord
         abort_unless($record instanceof TrackerPlan, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], (int) $data['display_order']);
+        app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], (int) $data['display_order'], isset($data['monthly_practice']) ? (string) $data['monthly_practice'] : null);
 
         return $record->refresh();
     }

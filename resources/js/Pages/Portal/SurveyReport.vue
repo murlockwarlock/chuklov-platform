@@ -18,7 +18,7 @@ const { t } = usePortalLocale();
   <AppShell
     :title="t('survey.reportTitle')"
     :portal="props.portal"
-    active="surveys"
+    active="health"
   >
     <section class="portal-container portal-stack portal-stack--loose">
       <Link

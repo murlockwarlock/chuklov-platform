@@ -615,7 +615,7 @@ function submitBooking(): void {
   <AppShell
     :title="t('booking.title')"
     :portal="props.portal"
-    active="services"
+    active="bookings"
     :bottom-navigation="props.bookingResult !== null"
   >
     <section

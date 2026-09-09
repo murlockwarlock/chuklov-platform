@@ -10,8 +10,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
-/** @property int $price_minor @property CurrencyCode $currency @property int $duration_days @property bool $included_access @property int $display_order */
-#[Fillable(['version', 'price_minor', 'currency', 'duration_days', 'description', 'included_access', 'display_order', 'created_by_user_id'])]
+/** @property int $price_minor @property CurrencyCode $currency @property int $duration_days @property bool $included_access @property int $display_order @property string|null $monthly_practice */
+#[Fillable(['version', 'price_minor', 'currency', 'duration_days', 'description', 'monthly_practice', 'included_access', 'display_order', 'created_by_user_id'])]
 class TrackerPlanVersion extends Model
 {
     public $timestamps = false;

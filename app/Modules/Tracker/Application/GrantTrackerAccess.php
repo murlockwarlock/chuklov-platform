@@ -96,6 +96,7 @@ final class GrantTrackerAccess
                 'applied_price_minor' => $version?->price_minor,
                 'applied_currency' => $version?->currencyCode()->value,
                 'applied_duration_days' => $version?->duration_days,
+                'applied_monthly_practice' => $version?->monthly_practice,
                 'created_by_user_id' => $actor->getKey(),
             ])->save();
             $this->audit->handle($organization, $actor, 'tracker.access.granted', TrackerEntitlement::class, (string) $entitlement->getKey(), ['client_id' => $client->getKey(), 'plan_id' => $plan?->getKey()]);

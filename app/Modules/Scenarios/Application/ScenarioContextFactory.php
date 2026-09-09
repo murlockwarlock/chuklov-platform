@@ -28,6 +28,7 @@ use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -76,7 +77,7 @@ final class ScenarioContextFactory
         $renderContext = [
             'client' => [
                 'full_name' => $context->client === null ? '' : $this->clientDisplayName($context->client),
-                'language' => strtolower((string) ($context->client?->language ?? 'en')),
+                'language' => strtolower((string) ($context->client instanceof Client ? $context->client->language : 'en')),
             ],
             'recipient_locale' => $recipient->locale,
         ];
@@ -94,6 +95,9 @@ final class ScenarioContextFactory
         }
 
         if (in_array($context->event->event_name, [ScenarioEventType::CompanionRequestedSpecialist, ScenarioEventType::CompanionFallbackFailed], true)) {
+            if (! $context->client instanceof Client) {
+                throw (new ModelNotFoundException)->setModel(Client::class);
+            }
             $renderContext['companion'] = [
                 'escalation_id' => (int) ($context->event->payload['escalation_id'] ?? 0),
                 'crm_url' => url('/admin/clients/'.$context->client->getKey().'/companion'),
@@ -125,7 +129,7 @@ final class ScenarioContextFactory
             $renderContext['payout'] = [
                 'id' => (int) $request->getKey(),
                 'amount' => $amount,
-                'currency' => $currency?->value ?? '',
+                'currency' => $currency instanceof CurrencyCode ? $currency->value : '',
                 'status' => $request->status->value,
                 'status_label' => $request->status->label(),
                 'requested_at' => $request->requested_at->toIso8601String(),
@@ -133,6 +137,23 @@ final class ScenarioContextFactory
                 'reason' => $request->rejection_reason,
                 'crm_url' => url('/admin/referral-payout-requests/'.$request->getKey()),
                 'portal_url' => url('/portal/referrals'),
+            ];
+        }
+
+        if (in_array($context->event->event_name, [ScenarioEventType::TrackerDailyTaskAssigned, ScenarioEventType::TrackerWeeklyTaskAssigned], true)) {
+            $taskId = $this->payloadId($context->event, 'task_id');
+            $task = TrackerTask::query()
+                ->where('organization_id', $context->event->organization_id)
+                ->whereKey($taskId)
+                ->first();
+            if (! $task instanceof TrackerTask) {
+                throw (new ModelNotFoundException)->setModel(TrackerTask::class);
+            }
+            $renderContext['tracker'] = [
+                'task_title' => $task->title,
+                'task_type' => $task->task_type->value,
+                'frequency' => $task->frequency->value,
+                'portal_url' => route('portal.tracker'),
             ];
         }
 
@@ -224,7 +245,7 @@ final class ScenarioContextFactory
             }
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! isset($renderContext['tracker']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 

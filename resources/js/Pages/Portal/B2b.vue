@@ -199,7 +199,7 @@ function requestTime(value: string, timezone: string): string {
   <AppShell
     :title="t('b2b.title')"
     :portal="props.portal"
-    active="b2b"
+    active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-page-heading">

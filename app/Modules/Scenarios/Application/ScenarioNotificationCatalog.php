@@ -24,6 +24,8 @@ final class ScenarioNotificationCatalog
             ['event' => 'ai.evaluation.failed', 'label' => 'Сбой проверки AI', 'recipients' => 'Ответственные AI-сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => false, 'template' => 'Сбой проверки AI'],
             ['event' => 'referral.link.visited', 'label' => 'Переход по реферальной ссылке', 'recipients' => 'Никому по умолчанию', 'channels' => [], 'enabled' => false, 'template' => 'Не отправлять по умолчанию'],
             ['event' => 'payment.provider.event.prepared', 'label' => 'Событие платёжного провайдера (подготовлено)', 'recipients' => 'Не настроено', 'channels' => [], 'enabled' => false, 'template' => 'Платёжные потоки не реализованы'],
+            ['event' => 'tracker.task.daily_assigned', 'label' => 'Ежедневная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Ежедневная задача трекера'],
+            ['event' => 'tracker.task.weekly_assigned', 'label' => 'Еженедельная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Еженедельная задача трекера'],
         ];
     }
 }

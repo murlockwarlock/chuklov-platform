@@ -24,6 +24,7 @@ final class TrackerPlanForm
                     Select::make('currency')->label('Валюта')->options(fn (): array => self::currencyOptions())->required()->searchable(),
                     TextInput::make('duration_days')->label('Срок доступа (дни)')->integer()->minValue(1)->maxValue(3650)->required(),
                     Textarea::make('description')->label('Короткое описание для клиента')->maxLength(500)->rows(3)->columnSpanFull(),
+                    Textarea::make('monthly_practice')->label('Месячная практика или содержание')->maxLength(5000)->rows(4)->columnSpanFull(),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),
