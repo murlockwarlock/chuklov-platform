@@ -97,6 +97,7 @@ use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Tracker\Application\TrackerAccessConditionEvaluator;
 use App\Policies\AiEvalSuitePolicy;
 use App\Policies\AiModelConfigurationPolicy;
 use App\Policies\AiOrganizationSafetyControlPolicy;
@@ -176,6 +177,7 @@ class AppServiceProvider extends ServiceProvider
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,
                 new FinancialOutstandingDebtConditionEvaluator,
+                app(TrackerAccessConditionEvaluator::class),
             ]),
         );
         $this->app->bind(PaymentGateway::class, FakePaymentGateway::class);

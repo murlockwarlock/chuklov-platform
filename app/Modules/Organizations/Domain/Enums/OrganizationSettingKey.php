@@ -16,6 +16,8 @@ enum OrganizationSettingKey: string
     case OfficeLocation = 'office_location';
     case CompanionContextFirstExchanges = 'companion_context_first_exchanges';
     case CompanionContextRecentExchanges = 'companion_context_recent_exchanges';
+    case TrackerFreeMode = 'tracker_free_mode';
+    case TrackerEnabled = 'tracker_enabled';
 
     public function type(): OrganizationSettingType
     {
@@ -27,7 +29,9 @@ enum OrganizationSettingKey: string
             self::HomeVisitOccupiedBufferMinutes,
             self::CompanionContextFirstExchanges,
             self::CompanionContextRecentExchanges => OrganizationSettingType::Integer,
-            self::B2bZoomHostLicensed => OrganizationSettingType::Boolean,
+            self::B2bZoomHostLicensed,
+            self::TrackerFreeMode,
+            self::TrackerEnabled => OrganizationSettingType::Boolean,
             default => OrganizationSettingType::String,
         };
     }

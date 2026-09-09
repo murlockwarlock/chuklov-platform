@@ -5,6 +5,9 @@ namespace App\Modules\Organizations\Domain\Models;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
+use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
+use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -39,6 +42,21 @@ class Organization extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    public function trackerPlans(): HasMany
+    {
+        return $this->hasMany(TrackerPlan::class);
+    }
+
+    public function trackerEntitlements(): HasMany
+    {
+        return $this->hasMany(TrackerEntitlement::class);
+    }
+
+    public function trackerCheckIns(): HasMany
+    {
+        return $this->hasMany(TrackerCheckIn::class);
     }
 
     public function defaultTimezone(): string

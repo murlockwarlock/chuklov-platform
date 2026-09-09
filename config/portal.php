@@ -86,6 +86,12 @@ return [
                 'route' => 'portal.section',
                 'parameters' => ['section' => 'communities'],
             ],
+            'tracker' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.tracker',
+                'parameters' => [],
+            ],
         ],
         'greeting' => [
             'en' => 'Choose an entry point.',

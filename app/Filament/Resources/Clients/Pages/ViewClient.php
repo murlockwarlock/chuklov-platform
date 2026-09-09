@@ -24,10 +24,17 @@ use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
 use App\Modules\Referrals\Application\SearchActivePartnersForReferralAssignment;
+use App\Modules\Tracker\Application\EndTrackerAccess;
+use App\Modules\Tracker\Application\ExtendTrackerAccess;
+use App\Modules\Tracker\Application\GrantTrackerAccess;
+use App\Modules\Tracker\Application\ResolveTrackerAccess;
+use App\Modules\Tracker\Domain\Models\TrackerPlan;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -131,6 +138,16 @@ class ViewClient extends ViewRecord
             $this->openPartnerWorkspaceAction(),
             $this->deactivatePartnerAction(),
             $this->assignPartnerAction(),
+            ActionGroup::make([
+                $this->grantTrackerAccessAction(),
+                $this->extendTrackerAccessAction(),
+                $this->endTrackerAccessAction(),
+            ])
+                ->label('Доступ к трекеру')
+                ->icon('heroicon-o-sparkles')
+                ->button()
+                ->color('gray')
+                ->visible(fn (): bool => $this->canManageClients()),
             ActionGroup::make([
                 $this->marketingConsentActionGroup(),
                 Action::make('sourceDetail')
@@ -458,6 +475,55 @@ class ViewClient extends ViewRecord
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ViewClients,
         );
+    }
+
+    private function grantTrackerAccessAction(): Action
+    {
+        return Action::make('grantTrackerAccess')
+            ->label('Выдать доступ')
+            ->icon('heroicon-o-check-circle')
+            ->schema([
+                Select::make('plan_id')->label('Тариф')->options(fn (): array => TrackerPlan::query()->where('organization_id', app(OrganizationContext::class)->id())->where('is_active', true)->with('currentVersion')->get()->filter(fn (TrackerPlan $plan): bool => $plan->currentVersion !== null)->mapWithKeys(fn (TrackerPlan $plan): array => [$plan->getKey() => $plan->name])->all())->placeholder('Без тарифа'),
+                DateTimePicker::make('starts_at')->label('Начало доступа')->default(now())->seconds(false)->required()->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                DateTimePicker::make('ends_at')->label('Доступ до')->default(now()->addDays(30))->seconds(false)->required()->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                Textarea::make('reason')->label('Причина')->required()->maxLength(500),
+            ])
+            ->action(function (array $data): void {
+                $plan = filled($data['plan_id'] ?? null) ? TrackerPlan::query()->where('organization_id', app(OrganizationContext::class)->id())->findOrFail((int) $data['plan_id']) : null;
+                app(GrantTrackerAccess::class)->handle($this->actor(), $this->clientRecord(), $plan, CarbonImmutable::parse((string) $data['starts_at'], app(OrganizationContext::class)->defaultTimezone()), CarbonImmutable::parse((string) $data['ends_at'], app(OrganizationContext::class)->defaultTimezone()), (string) $data['reason']);
+                Notification::make()->title('Доступ к трекеру выдан')->success()->send();
+            });
+    }
+
+    private function extendTrackerAccessAction(): Action
+    {
+        return Action::make('extendTrackerAccess')
+            ->label('Продлить доступ')
+            ->icon('heroicon-o-arrow-path')
+            ->schema([
+                DateTimePicker::make('ends_at')->label('Новая дата окончания')->required()->seconds(false)->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
+                Textarea::make('reason')->label('Причина')->required()->maxLength(500),
+            ])
+            ->visible(fn (): bool => app(ResolveTrackerAccess::class)->handle($this->clientRecord())->entitlement !== null)
+            ->action(function (array $data): void {
+                app(ExtendTrackerAccess::class)->handle($this->actor(), $this->clientRecord(), CarbonImmutable::parse((string) $data['ends_at'], app(OrganizationContext::class)->defaultTimezone()), (string) $data['reason']);
+                Notification::make()->title('Доступ к трекеру продлён')->success()->send();
+            });
+    }
+
+    private function endTrackerAccessAction(): Action
+    {
+        return Action::make('endTrackerAccess')
+            ->label('Завершить доступ')
+            ->icon('heroicon-o-x-circle')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->schema([Textarea::make('reason')->label('Причина')->required()->maxLength(500)])
+            ->visible(fn (): bool => app(ResolveTrackerAccess::class)->handle($this->clientRecord())->entitlement !== null)
+            ->action(function (array $data): void {
+                app(EndTrackerAccess::class)->handle($this->actor(), $this->clientRecord(), (string) $data['reason']);
+                Notification::make()->title('Доступ к трекеру завершён')->success()->send();
+            });
     }
 
     private function canManageClients(): bool

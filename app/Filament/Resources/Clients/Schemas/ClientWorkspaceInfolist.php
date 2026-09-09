@@ -17,6 +17,9 @@ use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
+use App\Modules\Tracker\Application\ResolveTrackerAccess;
+use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
+use Carbon\CarbonImmutable;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -188,6 +191,24 @@ final class ClientWorkspaceInfolist
                             ->state('Открыть оплаты')
                             ->url(fn (Client $record): string => app(FinancePresentation::class)->clientFinanceUrl($record))
                             ->visible(fn (): bool => app(FinancePresentation::class)->canViewFinance()),
+                        TextEntry::make('tracker_access')
+                            ->label('Доступ к трекеру')
+                            ->state(fn (Client $record): string => app(ResolveTrackerAccess::class)->handle($record)->statusLabel())
+                            ->badge()
+                            ->color(fn (Client $record): string => app(ResolveTrackerAccess::class)->handle($record)->allowed() ? 'success' : 'gray'),
+                        TextEntry::make('tracker_history')
+                            ->label('История трекера')
+                            ->state(fn (Client $record): string => TrackerCheckIn::query()
+                                ->where('organization_id', $record->organization_id)
+                                ->where('client_id', $record->getKey())
+                                ->latest('occurred_at')
+                                ->limit(10)
+                                ->get()
+                                ->map(fn (TrackerCheckIn $entry): string => CarbonImmutable::parse((string) $entry->getRawOriginal('occurred_at'))->format('d.m.Y H:i').' — '.$entry->note)
+                                ->implode("\n"))
+                            ->placeholder('Отметок пока нет')
+                            ->columnSpanFull()
+                            ->wrap(),
                     ])
                     ->columns(2)
                     ->extraAttributes(['class' => 'h-fit']),

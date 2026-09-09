@@ -42,6 +42,7 @@ class HandleInertiaRequests extends Middleware
                     'finance' => route('portal.finance.index'),
                     'surveys' => route('portal.surveys.index'),
                     'companion' => route('portal.companion'),
+                    'tracker' => route('portal.tracker'),
                     'profile' => route('portal.profile'),
                     'referrals' => route('portal.referrals'),
                     'feedback' => route('portal.feedback'),
