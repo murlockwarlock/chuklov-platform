@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
@@ -55,6 +56,9 @@ final class StartPendingKnowledgeIngestion
             }
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Pending) {
                 throw ValidationException::withMessages(['revision' => 'Материал уже принят в обработку или завершён.']);
+            }
+            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+                throw ValidationException::withMessages(['revision' => 'Сначала подтвердите безопасное извлечение материала.']);
             }
 
             $this->audit->handle(

@@ -73,6 +73,16 @@ final class ScenarioRulesTable
             ScenarioEventType::TestStagnationDetected->value => 'Если показатели не снижаются',
             ScenarioEventType::B2bLeadSubmitted->value => 'После B2B-запроса',
             ScenarioEventType::B2bSalesCallReady->value => 'Когда B2B-разговор готов',
+            ScenarioEventType::CompanionRequestedSpecialist->value => 'Когда клиент просит специалиста',
+            ScenarioEventType::CompanionFallbackFailed->value => 'Когда AI не смог ответить',
+            ScenarioEventType::BroadcastDeliveryFailed->value => 'При сбое операционной рассылки',
+            ScenarioEventType::ClientFeedbackSubmitted->value => 'После обратной связи клиента',
+            ScenarioEventType::PayoutRequested->value => 'При запросе выплаты партнёра',
+            ScenarioEventType::PayoutStatusChanged->value => 'При изменении статуса выплаты',
+            ScenarioEventType::HomeVisitChanged->value => 'При изменении выездного визита',
+            ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
+            ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
+            ScenarioEventType::PaymentProviderEventPrepared->value => 'Событие платёжного провайдера (подготовлено)',
             default => 'Событие',
         };
     }

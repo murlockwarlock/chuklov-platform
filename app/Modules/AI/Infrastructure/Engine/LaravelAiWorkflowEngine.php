@@ -8,11 +8,11 @@ use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
+use App\Modules\AI\Application\Services\BoundedAiPromptContext;
 use App\Modules\AI\Application\Validation\AiInputReferenceValidator;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiOutputValidatorInterface;
 use App\Modules\AI\Domain\Contracts\AiPricingCalculatorInterface;
-use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
 use App\Modules\AI\Domain\Contracts\AiSafetyBudgetManagerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
@@ -64,6 +64,8 @@ use InvalidArgumentException;
 use Laravel\Ai\Files\Image;
 use Laravel\Ai\Files\StoredDocument;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\FinishReason;
+use Laravel\Ai\Responses\Data\Step;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\TextResponse;
 use Throwable;
@@ -72,7 +74,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
 {
     public function __construct(
         private readonly AiContextAssemblerInterface $contextAssembler,
-        private readonly AiPromptRendererInterface $promptRenderer,
+        private readonly BoundedAiPromptContext $boundedPromptContext,
         private readonly AiOutputValidatorInterface $outputValidator,
         private readonly AiPricingCalculatorInterface $pricingCalculator,
         private readonly AiSafetyBudgetManagerInterface $budgetManager,
@@ -265,9 +267,16 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 embeddingSnapshot: $embeddingSnapshot,
                 capability: $request->capability,
             );
-            $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
-            $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
-            AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
+            $boundedPrompt = $this->boundedPromptContext->render(
+                systemTemplate: $promptVersion->system_prompt,
+                userTemplate: $promptVersion->user_prompt_template,
+                contextAssembly: $contextAssembly,
+                capability: $capabilityDef,
+                contextPolicy: $contextPolicy,
+            );
+            $contextAssembly = $boundedPrompt['contextAssembly'];
+            $renderedSystemPrompt = $boundedPrompt['systemPrompt'];
+            $renderedUserPrompt = $boundedPrompt['userPrompt'];
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
             if (! $this->prepareAiRun->complete(
                 run: $run,
@@ -736,7 +745,10 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
         if ($resolvedSdkTools === []) {
             $maxToolCalls = 0;
         }
-        $maxProviderSteps = min($capabilityDef->maxProviderSteps, AiRuntimeLimits::providerSteps($maxToolCalls));
+        $maxProviderSteps = min(
+            $capabilityDef->maxProviderSteps,
+            AiRuntimeLimits::providerSteps($maxToolCalls, AiRuntimeLimits::PLATFORM_MAX_OUTPUT_CONTINUATIONS),
+        );
 
         $tokenCeiling = $executionPolicy->maxOutputTokens;
         $outputSchema = $promptVersion->output_schema
@@ -780,7 +792,7 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             }
 
             $worstCaseExposure = AiRuntimeLimits::worstCaseProviderExposure(
-                maxInputTokens: min(AiRuntimeLimits::PLATFORM_MAX_INPUT_TOKENS, $capabilityDef->maxInputTokens),
+                maxInputTokens: min(AiRuntimeLimits::PLATFORM_MAX_INPUT_CONTEXT_TOKENS, $capabilityDef->maxInputTokens),
                 maxOutputTokens: $tokenCeiling,
                 maxToolCalls: $maxToolCalls,
                 maxProviderSteps: $maxProviderSteps,
@@ -1014,7 +1026,8 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 );
 
                 $response = $textProvider->prompt($agentPrompt);
-                $outputText = (string) $response;
+                $this->assertResponseCanBeUsed($response);
+                $outputText = $this->responseText($response);
                 $actualProvider = $this->responseMetadataValue($response, 'provider', $candidate['provider'], 64);
                 $actualModel = $this->responseMetadataValue($response, 'model', $candidate['model'], 120);
 
@@ -1287,6 +1300,66 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
             providerRequests: $providerRequests,
             usageSource: 'estimated',
         );
+    }
+
+    private function responseText(mixed $response): string
+    {
+        if (! $response instanceof TextResponse
+            || $response->steps->count() < 2
+            || property_exists($response, 'structured')
+            || ! $response->steps->contains(static fn (Step $step): bool => $step->finishReason === FinishReason::Continue)) {
+            return (string) $response;
+        }
+
+        $text = '';
+        foreach ($response->steps as $step) {
+            if ($step->text === '') {
+                continue;
+            }
+
+            $text = $this->appendContinuationText($text, $step->text);
+        }
+
+        return $text === '' ? (string) $response : $text;
+    }
+
+    private function appendContinuationText(string $current, string $next): string
+    {
+        if ($current === '') {
+            return $next;
+        }
+        if ($next === '' || str_starts_with($next, $current) || str_ends_with($current, $next)) {
+            return str_starts_with($next, $current) ? $next : $current;
+        }
+
+        $maximumOverlap = min(512, mb_strlen($current), mb_strlen($next));
+        for ($overlap = $maximumOverlap; $overlap > 0; $overlap--) {
+            if (mb_substr($current, -$overlap) === mb_substr($next, 0, $overlap)) {
+                return $current.mb_substr($next, $overlap);
+            }
+        }
+
+        return $current.$next;
+    }
+
+    private function assertResponseCanBeUsed(mixed $response): void
+    {
+        if (! $response instanceof TextResponse || $response->steps->isEmpty()) {
+            return;
+        }
+
+        $continuationCount = $response->steps
+            ->filter(static fn (Step $step): bool => $step->finishReason === FinishReason::Continue)
+            ->count();
+
+        if ($continuationCount > AiRuntimeLimits::PLATFORM_MAX_OUTPUT_CONTINUATIONS) {
+            throw new InvalidArgumentException('AI output continuation limit was reached before a complete response was available.');
+        }
+
+        $lastStep = $response->steps->last();
+        if (in_array($lastStep->finishReason, [FinishReason::Continue, FinishReason::Length], true)) {
+            throw new InvalidArgumentException('AI output ended at its bounded model limit before a complete response was available.');
+        }
     }
 
     private function providerRequestCountForSettlement(mixed $response, int $reservedProviderRequests): int

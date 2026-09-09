@@ -27,3 +27,74 @@
     flex: 0 1 auto;
     flex-wrap: wrap;
 }
+
+.fi-fo-rich-editor {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-main,
+.fi-fo-rich-editor .fi-fo-rich-editor-content,
+.fi-fo-rich-editor .fi-fo-rich-editor-panels {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-toolbar {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-toolbar-group {
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-panels {
+    flex: 0 1 18rem;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-merge-tags-list,
+.fi-fo-rich-editor .fi-fo-rich-editor-custom-blocks-list {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.fi-fo-rich-editor .fi-fo-rich-editor-merge-tag-btn,
+.fi-fo-rich-editor .fi-fo-rich-editor-custom-block-btn {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.fi-fo-rich-editor .tiptap,
+.fi-fo-rich-editor .tiptap.ProseMirror {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+@media (max-width: 767px) {
+    .fi-fo-rich-editor .fi-fo-rich-editor-main {
+        flex-direction: column;
+    }
+
+    .fi-fo-rich-editor .fi-fo-rich-editor-panels {
+        width: 100%;
+        flex-basis: auto;
+    }
+}
+
+@media (min-width: 768px) {
+    .fi-fo-rich-editor .fi-fo-rich-editor-main {
+        flex-direction: row;
+    }
+
+    .fi-fo-rich-editor .fi-fo-rich-editor-panels {
+        width: min(18rem, 100%);
+    }
+}

@@ -16,20 +16,20 @@ final class KnowledgeSourcePresentationTest extends TestCase
         $presentation = new KnowledgeSourcePresentation;
 
         $firstPending = $this->source(KnowledgeRevisionStatus::Pending, null, false);
-        self::assertSame('Не в поиске', $presentation->searchAvailability($firstPending));
+        self::assertSame('Ожидает индексации', $presentation->searchAvailability($firstPending));
         self::assertSame('Ожидает обработки', $presentation->latestProcessing($firstPending));
         self::assertTrue($presentation->canStartPending($firstPending, $firstPending->latestRevision));
 
         $firstProcessing = $this->source(KnowledgeRevisionStatus::Processing, null, false);
-        self::assertSame('Не в поиске', $presentation->searchAvailability($firstProcessing));
+        self::assertSame('Ожидает индексации', $presentation->searchAvailability($firstProcessing));
         self::assertSame('Обрабатывается', $presentation->latestProcessing($firstProcessing));
 
         $firstFailed = $this->source(KnowledgeRevisionStatus::Failed, null, false);
-        self::assertSame('Не в поиске', $presentation->searchAvailability($firstFailed));
+        self::assertSame('Ожидает индексации', $presentation->searchAvailability($firstFailed));
         self::assertSame('Требуется повторная обработка', $presentation->latestProcessing($firstFailed));
 
         $ready = $this->source(KnowledgeRevisionStatus::Ready, 1, true);
-        self::assertSame('В поиске', $presentation->searchAvailability($ready));
+        self::assertSame('Индексация недоступна', $presentation->searchAvailability($ready));
         self::assertSame('Материал обработан', $presentation->latestProcessing($ready));
 
         foreach ([
@@ -38,24 +38,24 @@ final class KnowledgeSourcePresentationTest extends TestCase
             [KnowledgeRevisionStatus::Failed, 'Новая версия не обработана'],
         ] as [$status, $label]) {
             $source = $this->sourceWithActiveRevisionAndNewer($status);
-            self::assertSame('В поиске', $presentation->searchAvailability($source));
+            self::assertSame('Индексация недоступна', $presentation->searchAvailability($source));
             self::assertSame($label, $presentation->latestProcessing($source));
         }
 
         $incompatible = $this->source(KnowledgeRevisionStatus::Ready, 1, false);
-        self::assertSame('Требуется переобработка для поиска', $presentation->searchAvailability($incompatible));
-        self::assertSame('Требуется переобработка для поиска', $presentation->latestProcessing($incompatible));
+        self::assertSame('Индексация недоступна', $presentation->searchAvailability($incompatible));
+        self::assertSame('Индексация недоступна', $presentation->latestProcessing($incompatible));
         $activeRevision = $incompatible->activeRevision;
         self::assertInstanceOf(KnowledgeRevision::class, $activeRevision);
         self::assertTrue($presentation->canReprocessForSearch($incompatible, $activeRevision));
 
         $currentlyProcessing = $this->source(KnowledgeRevisionStatus::Ready, 1, false, KnowledgeSourceStatus::Active, true);
-        self::assertSame('Требуется переобработка для поиска', $presentation->searchAvailability($currentlyProcessing));
-        self::assertSame('Подготовка для поиска выполняется', $presentation->latestProcessing($currentlyProcessing));
+        self::assertSame('Индексация недоступна', $presentation->searchAvailability($currentlyProcessing));
+        self::assertSame('Индексируется', $presentation->latestProcessing($currentlyProcessing));
         self::assertFalse($presentation->canReprocessForSearch($currentlyProcessing, $currentlyProcessing->activeRevision));
 
         $retired = $this->source(KnowledgeRevisionStatus::Ready, 1, true, KnowledgeSourceStatus::Retired);
-        self::assertSame('Источник выключен', $presentation->searchAvailability($retired));
+        self::assertSame('Индексация недоступна', $presentation->searchAvailability($retired));
         self::assertSame('Источник выключен', $presentation->latestProcessing($retired));
     }
 

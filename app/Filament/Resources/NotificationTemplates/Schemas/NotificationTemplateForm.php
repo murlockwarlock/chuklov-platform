@@ -88,7 +88,7 @@ final class NotificationTemplateForm
             ]);
     }
 
-    private static function previewMessage(Get $get, ?Model $record): NotificationMessage
+    public static function previewMessage(Get $get, ?Model $record): NotificationMessage
     {
         $body = (string) $get('body');
         $subject = (string) $get('subject');

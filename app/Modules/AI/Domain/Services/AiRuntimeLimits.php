@@ -2,21 +2,29 @@
 
 namespace App\Modules\AI\Domain\Services;
 
+use App\Modules\AI\Domain\Contracts\AiTokenEstimatorInterface;
 use App\Modules\AI\Domain\Registry\AiCapabilityDefinition;
+use App\Modules\AI\Domain\ValueObjects\AiInputContextBudget;
 use Carbon\CarbonInterface;
 use InvalidArgumentException;
 
 final class AiRuntimeLimits
 {
-    public const int PLATFORM_MAX_INPUT_TOKENS = 8192;
+    public const int PLATFORM_MAX_INPUT_CONTEXT_TOKENS = 8192;
+
+    public const int PLATFORM_MAX_INPUT_TOKENS = self::PLATFORM_MAX_INPUT_CONTEXT_TOKENS;
 
     public const int PLATFORM_MAX_RAG_CONTEXT_TOKENS = 4096;
 
-    public const int PLATFORM_MAX_OUTPUT_TOKENS = 8192;
+    public const int PLATFORM_MAX_MODEL_OUTPUT_TOKENS = 8192;
+
+    public const int PLATFORM_MAX_OUTPUT_TOKENS = self::PLATFORM_MAX_MODEL_OUTPUT_TOKENS;
 
     public const int PLATFORM_MAX_TOOL_CALLS = 5;
 
     public const int PLATFORM_MAX_PROVIDER_STEPS = 6;
+
+    public const int PLATFORM_MAX_OUTPUT_CONTINUATIONS = 2;
 
     public const int PLATFORM_MAX_FAILOVER_ATTEMPTS = 3;
 
@@ -80,26 +88,33 @@ final class AiRuntimeLimits
             + (min(self::PLATFORM_MAX_TOOL_CALLS, max(0, $toolCalls)) * self::PLATFORM_MAX_TOOL_EXECUTION_SECONDS);
     }
 
-    public static function estimateTokens(string $value): int
+    public static function estimateTokens(string $value, ?AiTokenEstimatorInterface $estimator = null): int
     {
-        if ($value === '') {
-            return 0;
-        }
-
-        return (int) ceil(mb_strlen($value) / 4);
-    }
-
-    public static function upperBoundTokenCount(string $value): int
-    {
-        return strlen($value);
+        return ($estimator ?? new ConservativeUnicodeTokenEstimator)->estimate($value);
     }
 
     /** @param array<string, mixed> $value */
-    public static function estimateArrayTokens(array $value): int
+    public static function estimateArrayTokens(array $value, ?AiTokenEstimatorInterface $estimator = null): int
     {
         $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        return self::estimateTokens(is_string($encoded) ? $encoded : '');
+        return self::estimateTokens(is_string($encoded) ? $encoded : '', $estimator);
+    }
+
+    public static function inputContextBudget(
+        string $systemPrompt,
+        string $userPrompt,
+        AiCapabilityDefinition $capability,
+        ?AiTokenEstimatorInterface $estimator = null,
+    ): AiInputContextBudget {
+        $estimator ??= new ConservativeUnicodeTokenEstimator;
+
+        return new AiInputContextBudget(
+            systemPromptTokens: $estimator->estimate($systemPrompt),
+            userPromptTokens: $estimator->estimate($userPrompt),
+            maximumTokens: min($capability->maxInputTokens, self::PLATFORM_MAX_INPUT_CONTEXT_TOKENS),
+            estimator: $estimator->name(),
+        );
     }
 
     public static function assertRenderedPromptWithinLimit(
@@ -107,11 +122,12 @@ final class AiRuntimeLimits
         string $userPrompt,
         AiCapabilityDefinition $capability,
     ): void {
-        $inputTokens = self::upperBoundTokenCount($systemPrompt."\n".$userPrompt);
-        $maxInputTokens = min($capability->maxInputTokens, self::PLATFORM_MAX_INPUT_TOKENS);
+        $budget = self::inputContextBudget($systemPrompt, $userPrompt, $capability);
 
-        if ($inputTokens > $maxInputTokens) {
-            throw new InvalidArgumentException("Rendered prompt exceeds the bounded input limit of {$maxInputTokens} tokens.");
+        if (! $budget->fits()) {
+            throw new InvalidArgumentException(
+                "Rendered prompt exceeds the bounded input-context budget of {$budget->maximumTokens} estimated tokens using {$budget->estimator}.",
+            );
         }
     }
 
@@ -123,7 +139,7 @@ final class AiRuntimeLimits
         return max(1, min(
             $capability->defaultMaxTokens,
             $capability->maxOutputTokens,
-            self::PLATFORM_MAX_OUTPUT_TOKENS,
+            self::PLATFORM_MAX_MODEL_OUTPUT_TOKENS,
             $requestedMaxTokens ?? PHP_INT_MAX,
             $organizationMaxTokens ?? PHP_INT_MAX,
         ));
@@ -178,12 +194,15 @@ final class AiRuntimeLimits
     /** @param array<string, mixed> $inputVariables */
     public static function ragQuery(array $inputVariables): string
     {
-        return trim((string) ($inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? ''));
+        return trim((string) ($inputVariables['rag_query'] ?? $inputVariables['query'] ?? $inputVariables['question'] ?? $inputVariables['complaint'] ?? ''));
     }
 
-    public static function providerSteps(int $maxToolCalls): int
+    public static function providerSteps(int $maxToolCalls, int $maxOutputContinuations = 0): int
     {
-        return min(self::PLATFORM_MAX_PROVIDER_STEPS, max(1, $maxToolCalls + 1));
+        return min(
+            self::PLATFORM_MAX_PROVIDER_STEPS,
+            max(1, $maxToolCalls + 1 + max(0, $maxOutputContinuations)),
+        );
     }
 
     /**
@@ -197,9 +216,9 @@ final class AiRuntimeLimits
         int $maxRagContextTokens = self::PLATFORM_MAX_RAG_CONTEXT_TOKENS,
         ?int $toolSchemaTokens = null,
     ): array {
-        $boundedInputTokens = min(self::PLATFORM_MAX_INPUT_TOKENS, max(0, $maxInputTokens));
+        $boundedInputTokens = min(self::PLATFORM_MAX_INPUT_CONTEXT_TOKENS, max(0, $maxInputTokens));
         $boundedRagContextTokens = min(self::PLATFORM_MAX_RAG_CONTEXT_TOKENS, max(0, $maxRagContextTokens));
-        $boundedOutputTokens = min(self::PLATFORM_MAX_OUTPUT_TOKENS, max(0, $maxOutputTokens));
+        $boundedOutputTokens = min(self::PLATFORM_MAX_MODEL_OUTPUT_TOKENS, max(0, $maxOutputTokens));
         $boundedToolCalls = min(self::PLATFORM_MAX_TOOL_CALLS, max(0, $maxToolCalls));
         $steps = min(
             self::PLATFORM_MAX_PROVIDER_STEPS,
@@ -253,7 +272,7 @@ final class AiRuntimeLimits
     public static function validateOrganizationValues(array $values): void
     {
         $bounds = [
-            'max_tokens_per_run' => [1, self::PLATFORM_MAX_OUTPUT_TOKENS],
+            'max_tokens_per_run' => [1, self::PLATFORM_MAX_MODEL_OUTPUT_TOKENS],
             'max_runs_per_minute' => [1, self::PLATFORM_MAX_RUNS_PER_MINUTE],
             'max_tool_calls_per_run' => [0, self::PLATFORM_MAX_TOOL_CALLS],
             'default_timeout_seconds' => [1, self::PLATFORM_MAX_TIMEOUT_SECONDS],

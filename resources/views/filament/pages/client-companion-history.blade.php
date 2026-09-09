@@ -44,26 +44,11 @@
                 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">История не удаляется. AI начнёт следующий контекст без прежних сообщений.</p>
             @endif
 
-            <div class="mt-5 flex flex-wrap gap-2">
-                @if ($canExport)
-                    <x-filament::button tag="a" size="sm" color="gray" outlined href="{{ $urls['export'] }}?format=txt&identity=identified">TXT</x-filament::button>
-                    <x-filament::button tag="a" size="sm" color="gray" outlined href="{{ $urls['export'] }}?format=json&identity=identified">JSON</x-filament::button>
-                    <x-filament::button tag="a" size="sm" color="gray" outlined href="{{ $urls['export'] }}?format=txt&identity=pseudonymized">Без прямых идентификаторов</x-filament::button>
-                    <x-filament::button tag="a" size="sm" color="gray" outlined href="{{ $urls['export'] }}?format=json&identity=pseudonymized">JSON без прямых идентификаторов</x-filament::button>
-                @endif
-                @if ($canExportMetadata)
-                    <x-filament::button tag="a" size="sm" color="gray" outlined href="{{ $urls['metadataExport'] }}">Расширенные технические метаданные</x-filament::button>
-                @endif
-            </div>
         </x-filament::section>
 
         @if ($canManage)
             <x-filament::section heading="Написать сообщение" description="Сообщение уйдёт в тот же канал, что и последнее сообщение клиента. Специалист может написать вручную, даже когда AI отвечает.">
-                <form method="post" action="{{ $urls['reply'] }}">
-                    @csrf
-                    <textarea id="companion-staff-reply" name="body" class="fi-input min-h-28 w-full max-w-3xl" maxlength="10000" required></textarea>
-                    <x-filament::button class="mt-3" type="submit" color="primary">Отправить сообщение</x-filament::button>
-                </form>
+                {{ $this->composer }}
             </x-filament::section>
         @endif
 
@@ -91,7 +76,7 @@
                                     <span class="font-normal opacity-70">Оценка: {{ $message['feedback'] === 'helpful' ? 'полезно' : 'не помогло' }}</span>
                                 @endif
                             </div>
-                            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{{ $message['content'] }}</p>
+                            <div class="mt-2 break-words text-sm leading-6">{!! \App\Filament\Support\RichTextPresentation::html($message['content']) !!}</div>
                             @if ($message['attachmentCount'] > 0)
                                 <p class="mt-2 text-xs opacity-70">{{ $message['attachmentCount'] === 1 ? 'Изображение' : $message['attachmentCount'].' изображений' }}</p>
                             @endif

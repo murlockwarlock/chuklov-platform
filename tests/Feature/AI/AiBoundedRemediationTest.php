@@ -110,6 +110,82 @@ final class AiBoundedRemediationTest extends TestCase
         self::assertSame(0, $calls);
     }
 
+    public function test_missing_embedding_pricing_is_degraded_when_the_context_policy_allows_it(): void
+    {
+        config()->set('rag.embedding.pricing.input_cost_per_million_minor_units', null);
+        config()->set('rag.embedding.pricing.zero_cost_local', false);
+        $calls = 0;
+        $retriever = new class($calls) implements KnowledgeRetriever
+        {
+            public function __construct(private int &$calls) {}
+
+            public function retrieve(User $actor, RetrievalQuery $query): array
+            {
+                return [];
+            }
+
+            public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
+            {
+                $this->calls++;
+
+                return [];
+            }
+        };
+
+        $result = (new AiContextAssembler($retriever))->assemble(
+            organizationId: 1,
+            policy: new AiContextPolicy(includeRag: true, allowRagDegradation: true),
+            inputVariables: ['query' => 'degraded retrieval'],
+            inputReferences: [],
+            executionDeadlineAt: Carbon::now()->addSeconds(30),
+        );
+
+        self::assertTrue($result->provenanceSummary['rag_degraded']);
+        self::assertSame('', $result->variables['rag_context'] ?? '');
+        self::assertSame(0, $calls);
+    }
+
+    public function test_prepare_ai_run_skips_rag_reservation_when_degradation_is_allowed(): void
+    {
+        config()->set('rag.embedding.pricing.input_cost_per_million_minor_units', null);
+        config()->set('rag.embedding.pricing.zero_cost_local', false);
+        $organization = Organization::factory()->create();
+        $prompt = AiPrompt::query()->create([
+            'organization_id' => $organization->id,
+            'key' => 'degraded_reservation_prompt',
+            'name' => 'Degraded reservation prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $version = AiPromptVersion::query()->create([
+            'organization_id' => $organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Bounded instructions',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => true, 'allow_rag_degradation' => true],
+            'allowed_tools' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+
+        $claim = app(PrepareAiRun::class)->claim(
+            organizationId: $organization->id,
+            request: new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'degraded_reservation',
+                inputVariables: ['query' => 'greeting'],
+            ),
+            promptVersion: $version,
+            contextPolicy: new AiContextPolicy(includeRag: true, allowRagDegradation: true),
+            executionDeadlineAt: Carbon::now()->addSeconds(60),
+            maxToolCalls: 0,
+        );
+
+        self::assertSame(0, $claim['run']->retrieval_embedding_reserved_cost_minor_units);
+        self::assertSame('none', $claim['run']->retrieval_embedding_budget_status);
+        self::assertSame([], data_get($claim['run']->context_provenance, 'retrieval_embedding.configuration_snapshot'));
+    }
+
     public function test_immutable_billing_profile_prices_cache_reasoning_and_fixed_request_meters(): void
     {
         $pricing = new AiPricingSnapshot(

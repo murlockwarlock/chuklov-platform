@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
@@ -56,6 +57,9 @@ final class RetryKnowledgeIngestion
             }
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Failed) {
                 throw ValidationException::withMessages(['revision' => 'Повторная обработка доступна после ошибки.']);
+            }
+            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+                throw ValidationException::withMessages(['revision' => 'Сначала подтвердите безопасное извлечение материала.']);
             }
 
             $run = KnowledgeIngestionRun::query()

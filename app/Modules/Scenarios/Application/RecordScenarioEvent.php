@@ -4,8 +4,13 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
+use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -18,6 +23,88 @@ use Illuminate\Support\Facades\DB;
 
 final class RecordScenarioEvent
 {
+    public function companionRequestedSpecialist(CompanionEscalation $escalation, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::CompanionRequestedSpecialist,
+            aggregateType: CompanionEscalation::class,
+            aggregateId: (string) $escalation->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'escalation_id' => (int) $escalation->getKey(),
+                'client_id' => (int) $escalation->client_id,
+                'conversation_id' => (int) $escalation->conversation_id,
+                'turn_id' => (int) $escalation->turn_id,
+                'reason' => $escalation->reason->value,
+            ],
+            idempotencyKey: 'companion.requested_specialist:'.$escalation->organization_id.':'.$escalation->getKey(),
+            correlationId: 'companion:escalation:'.$escalation->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $escalation->organization_id, $data);
+    }
+
+    public function companionFallbackFailed(CompanionTurn $turn, CompanionFailureCode $failureCode, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::CompanionFallbackFailed,
+            aggregateType: CompanionTurn::class,
+            aggregateId: (string) $turn->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'turn_id' => (int) $turn->getKey(),
+                'client_id' => (int) $turn->client_id,
+                'conversation_id' => (int) $turn->conversation_id,
+                'failure_code' => $failureCode->value,
+            ],
+            idempotencyKey: 'companion.fallback_failed:'.$turn->organization_id.':'.$turn->getKey(),
+            correlationId: 'companion:turn:'.$turn->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $turn->organization_id, $data);
+    }
+
+    public function payoutRequested(ReferralPayoutRequest $request, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        return $this->payoutEvent($request, ReferralPayoutRequestStatus::Requested, null, $occurredAt);
+    }
+
+    public function payoutStatusChanged(
+        ReferralPayoutRequest $request,
+        ReferralPayoutRequestStatus $status,
+        ?ReferralPayoutRequestStatus $previousStatus,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        return $this->payoutEvent($request, $status, $previousStatus, $occurredAt);
+    }
+
+    private function payoutEvent(
+        ReferralPayoutRequest $request,
+        ReferralPayoutRequestStatus $status,
+        ?ReferralPayoutRequestStatus $previousStatus,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: $previousStatus === null ? ScenarioEventType::PayoutRequested : ScenarioEventType::PayoutStatusChanged,
+            aggregateType: ReferralPayoutRequest::class,
+            aggregateId: (string) $request->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'payout_request_id' => (int) $request->getKey(),
+                'client_id' => (int) $request->beneficiary_client_id,
+                'status' => $status->value,
+                'previous_status' => $previousStatus?->value,
+            ],
+            idempotencyKey: ($previousStatus === null ? 'referral.payout.requested:' : 'referral.payout.status_changed:').$request->organization_id.':'.$request->getKey().':'.$status->value,
+            correlationId: 'referral:payout:'.$request->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $request->organization_id, $data);
+    }
+
     public function b2bLeadSubmitted(B2bLead $lead, B2bSalesCall $salesCall, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $data = new ScenarioEventData(

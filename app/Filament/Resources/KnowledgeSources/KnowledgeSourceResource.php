@@ -57,15 +57,17 @@ final class KnowledgeSourceResource extends Resource
 
         return $table
             ->stackedOnMobile()
+            ->description($presentation->semanticSearchSummary())
             ->columns([
                 TextColumn::make('title')->label('Название')->searchable()->sortable()->wrap(),
                 TextColumn::make('type')->label('Тип')->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
-                TextColumn::make('search_availability')->label('Доступность')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record)),
+                TextColumn::make('material_status')->label('Материал')->state(fn (KnowledgeSource $record): string => $presentation->materialStatus($record)),
+                TextColumn::make('search_availability')->label('Состояние поиска')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record))->wrap(),
                 TextColumn::make('latest_processing')->label('Обработка')->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record))->wrap(),
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->emptyStateHeading('В базе знаний пока нет материалов')
-            ->emptyStateDescription('Добавьте текст или загрузите файл Markdown/TXT, чтобы использовать его в ответах клиентам.')
+            ->emptyStateDescription('Добавьте текст или загрузите TXT, Markdown, PDF или таблицу, чтобы использовать материал в ответах клиентам.')
             ->recordActions([
                 EditAction::make()
                     ->label('Открыть')
@@ -131,6 +133,7 @@ final class KnowledgeSourceResource extends Resource
                             'knowledge_revisions.knowledge_source_id',
                             'knowledge_revisions.version',
                             'knowledge_revisions.status',
+                            'knowledge_revisions.extraction_status',
                             'knowledge_revisions.original_filename',
                             'knowledge_revisions.created_at',
                         ])

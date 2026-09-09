@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\AI;
 
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -9,6 +11,26 @@ use Tests\TestCase;
 final class AiRuntimeLimitsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_rag_query_alias_is_recognized_for_companion_context(): void
+    {
+        $this->assertSame('привет', AiRuntimeLimits::ragQuery(['rag_query' => 'привет']));
+    }
+
+    public function test_input_context_budget_uses_unicode_estimates_and_does_not_limit_model_output(): void
+    {
+        $capability = AiCapabilityRegistry::get(AiCapability::ClientCompanion);
+        $currentMessage = str_repeat('привет ', 700);
+        $budget = AiRuntimeLimits::inputContextBudget('', $currentMessage, $capability);
+
+        $this->assertLessThan(strlen($currentMessage), $budget->estimatedTokens());
+        $this->assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
+        $this->assertTrue($budget->fits());
+        $this->assertSame(
+            $capability->defaultMaxTokens,
+            AiRuntimeLimits::effectiveMaxOutputTokens($capability, null, null),
+        );
+    }
 
     public function test_whole_run_deadline_and_queue_timeout_ordering_are_consistent(): void
     {
@@ -70,6 +92,18 @@ final class AiRuntimeLimitsTest extends TestCase
         $this->assertGreaterThan(
             100 + (50 * 3),
             $exposure['total_tokens'],
+        );
+    }
+
+    public function test_provider_steps_reserve_only_a_bounded_number_of_output_continuations(): void
+    {
+        $this->assertSame(
+            3,
+            AiRuntimeLimits::providerSteps(0, AiRuntimeLimits::PLATFORM_MAX_OUTPUT_CONTINUATIONS),
+        );
+        $this->assertSame(
+            AiRuntimeLimits::PLATFORM_MAX_PROVIDER_STEPS,
+            AiRuntimeLimits::providerSteps(AiRuntimeLimits::PLATFORM_MAX_TOOL_CALLS, AiRuntimeLimits::PLATFORM_MAX_OUTPUT_CONTINUATIONS),
         );
     }
 

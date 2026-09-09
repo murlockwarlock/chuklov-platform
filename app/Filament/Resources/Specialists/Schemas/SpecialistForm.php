@@ -5,14 +5,14 @@ namespace App\Filament\Resources\Specialists\Schemas;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
-use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 class SpecialistForm
@@ -58,26 +58,24 @@ class SpecialistForm
                         ->pluck('name', 'id')
                         ->all())
                     ->searchable()
-                    ->nullable()
-                    ->live()
-                    ->afterStateUpdated(function (Set $set, ?string $state): void {
-                        $set('telegram_id', $state === null
-                            ? null
-                            : OrganizationChannelIdentity::query()
-                                ->where('organization_id', app(OrganizationContext::class)->id())
-                                ->where('user_id', (int) $state)
-                                ->where('channel', 'telegram')
-                                ->value('external_id'));
-                    }),
+                    ->nullable(),
+                Placeholder::make('telegram_connection')
+                    ->label('Telegram сотрудника')
+                    ->content('Подключается сотрудником через «Коммуникации → Telegram сотрудников». Ввод Telegram ID вручную запрещён.')
+                    ->columnSpanFull(),
                 TextInput::make('telegram_id')
-                    ->label('Telegram ID специалиста')
-                    ->maxLength(20)
-                    ->nullable()
-                    ->regex('/^[0-9]{1,20}$/')
+                    ->label('Подтверждённый Telegram ID')
+                    ->disabled()
+                    ->dehydrated(false)
                     ->afterStateHydrated(function (TextInput $component, ?Specialist $record): void {
-                        $component->state($record?->telegramNotificationIdentity?->external_id);
+                        $identity = $record?->telegramNotificationIdentity;
+                        $component->state($identity?->verification_status === ChannelIdentityStatus::Verified
+                            ? $identity->external_id
+                            : null);
                     })
-                    ->helperText('Укажите числовой ID чата Telegram. Уведомления будут отправляться этому специалисту.'),
+                    ->placeholder('Не подключён')
+                    ->helperText('Только для просмотра. Подключение выполняется через подтверждённую ссылку в Telegram.')
+                    ->columnSpanFull(),
                 Toggle::make('is_active')
                     ->required()
                     ->default(true),

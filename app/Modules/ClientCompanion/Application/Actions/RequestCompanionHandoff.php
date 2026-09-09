@@ -7,19 +7,27 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
-use App\Modules\ClientCompanion\Infrastructure\Jobs\NotifyCompanionEscalationJob;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
 final class RequestCompanionHandoff
 {
-    public function __construct(private readonly OrganizationContext $context) {}
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly EnsureOperationalNotificationDefaults $notificationDefaults,
+        private readonly RecordScenarioEvent $scenarioEvents,
+    ) {}
 
     public function handle(Client $client, int $messageId): void
     {
@@ -28,7 +36,9 @@ final class RequestCompanionHandoff
             throw new AuthorizationException('The Companion action is outside the organization.');
         }
 
-        $escalationId = DB::transaction(function () use ($organizationId, $client, $messageId): ?int {
+        $this->notificationDefaults->handle($this->context->organization());
+
+        $scenarioEvent = DB::transaction(function () use ($organizationId, $client, $messageId): ?ScenarioEvent {
             $message = ConversationMessage::query()
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $client->getKey())
@@ -94,11 +104,11 @@ final class RequestCompanionHandoff
                 'opened_at' => now(),
             ]);
 
-            return (int) $escalation->getKey();
+            return $this->scenarioEvents->companionRequestedSpecialist($escalation, CarbonImmutable::now());
         });
 
-        if ($escalationId !== null) {
-            NotifyCompanionEscalationJob::dispatch($organizationId, $escalationId)->afterCommit();
+        if ($scenarioEvent instanceof ScenarioEvent) {
+            ProcessScenarioEvent::dispatch((int) $scenarioEvent->getKey())->afterCommit();
         }
     }
 }

@@ -12,11 +12,11 @@ final class CompanionSafetyClassifierTest extends TestCase
     {
         $classifier = new CompanionSafetyClassifier;
 
-        foreach (['Привет, ты кто?', 'Кто такой Евгений?', 'Расскажи про специалиста', 'Я массажист'] as $message) {
+        foreach (['Привет, ты кто?', 'Кто такой Евгений?', 'Расскажи про специалиста', 'Я массажист', 'привет', 'привет, не надо мне специалиста', 'мне не нужен специалист', 'не подключай человека'] as $message) {
             self::assertNull($classifier->classify($message), $message);
         }
 
-        foreach (['Мне нужен специалист', 'Хочу поговорить с Евгением'] as $message) {
+        foreach (['Мне нужен специалист', 'Хочу поговорить с Евгением', 'Соедини меня с человеком'] as $message) {
             self::assertSame(CompanionEscalationReason::HumanRequested, $classifier->classify($message), $message);
         }
     }

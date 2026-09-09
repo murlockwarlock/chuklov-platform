@@ -32,7 +32,9 @@ class KnowledgeRevision extends Model
     {
         return [
             'status' => KnowledgeRevisionStatus::class,
+            'extraction_diagnostics' => 'array',
             'ready_at' => 'immutable_datetime',
+            'extracted_at' => 'immutable_datetime',
             'retired_at' => 'immutable_datetime',
         ];
     }
@@ -64,7 +66,7 @@ class KnowledgeRevision extends Model
     protected static function booted(): void
     {
         static::updating(function (KnowledgeRevision $revision): void {
-            $immutable = ['organization_id', 'knowledge_source_id', 'version', 'content', 'storage_disk', 'storage_path', 'original_filename', 'mime_type', 'size_bytes', 'content_checksum', 'source_reference', 'created_by_user_id'];
+            $immutable = ['organization_id', 'knowledge_source_id', 'version', 'content', 'storage_disk', 'storage_path', 'original_filename', 'mime_type', 'size_bytes', 'content_checksum', 'original_checksum', 'parser_type', 'parser_version', 'extraction_diagnostics', 'ai_parser_capability', 'ai_prompt_version', 'ai_run_reference', 'extracted_at', 'source_reference', 'created_by_user_id'];
             if ($revision->isDirty($immutable)) {
                 throw new LogicException('Knowledge revisions are immutable.');
             }

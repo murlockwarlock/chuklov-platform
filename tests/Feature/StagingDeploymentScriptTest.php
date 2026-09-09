@@ -401,6 +401,21 @@ class StagingDeploymentScriptTest extends TestCase
     }
 
     #[Test]
+    public function fail2ban_empty_membership_normalizes_like_a_populated_membership(): void
+    {
+        $before = $this->normalizeNftables($this->fail2banRuleset(<<<'NFT'
+            elements = { 193.47.62.69 }
+            NFT));
+        $after = $this->normalizeNftables(str_replace(
+            "        \n",
+            '',
+            $this->fail2banRuleset(''),
+        ));
+
+        self::assertSame($before, $after);
+    }
+
+    #[Test]
     public function fail2ban_structure_remains_visible_to_the_guard(): void
     {
         $baseline = $this->normalizeNftables($this->fail2banRuleset(<<<'NFT'

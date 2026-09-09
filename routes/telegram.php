@@ -11,6 +11,7 @@ use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionPhoto
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionText;
 use App\Modules\Identity\Application\CompleteTelegramWebAuthentication;
 use App\Modules\Identity\Application\ConnectTelegramClientIdentity;
+use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
 use App\Modules\Identity\Application\InvalidTelegramLinkToken;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
 use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
@@ -117,6 +118,20 @@ $bot->onCommand('start ref_{token}', function (
         $bot->sendMessage($invalidMessage);
     }
 })->where('token', '[A-Za-z0-9_-]{16,128}')->description('Открыть реферальное приложение');
+
+$bot->onCommand('start staff_{token}', function (
+    Nutgram $bot,
+    string $token,
+    TelegramBotIdentityVerifier $identityVerifier,
+    ConnectTelegramOrganizationIdentity $connect,
+): void {
+    try {
+        $connect->handle($token, $identityVerifier->handle($bot));
+        $bot->sendMessage('Telegram подключён к уведомлениям CRM.');
+    } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
+        $bot->sendMessage('Ссылка недействительна или уже использована.');
+    }
+})->where('token', '[A-Za-z0-9_-]{32,128}')->description('Подключить уведомления CRM');
 
 $bot->onCommand('start {token}', function (
     Nutgram $bot,

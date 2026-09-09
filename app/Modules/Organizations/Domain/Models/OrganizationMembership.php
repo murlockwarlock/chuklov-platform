@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property OrganizationRole $role
  * @property bool $is_active
+ * @property bool $notifications_enabled
  */
 #[Fillable([])]
 class OrganizationMembership extends Model
@@ -52,6 +53,7 @@ class OrganizationMembership extends Model
         return [
             'role' => OrganizationRole::class,
             'is_active' => 'boolean',
+            'notifications_enabled' => 'boolean',
         ];
     }
 }

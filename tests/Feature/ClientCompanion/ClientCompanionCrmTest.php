@@ -3,11 +3,17 @@
 namespace Tests\Feature\ClientCompanion;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Pages\ClientCompanionHistory;
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
+use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
+use App\Modules\ClientCompanion\Application\Services\ListCompanionCommunicationAttachments;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
@@ -15,6 +21,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -30,9 +37,18 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
+use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\RichEditor;
+use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class ClientCompanionCrmTest extends TestCase
@@ -153,6 +169,10 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertStringContainsString('Specialist:', $txt);
         self::assertStringNotContainsString('<b>', $txt);
 
+        $pseudonymizedTxt = $export->history($this->admin, $this->client, 'txt', 'pseudonymized');
+        self::assertStringContainsString('Идентификатор экспорта: client_1', $pseudonymizedTxt);
+        self::assertStringNotContainsString($this->client->full_name, $pseudonymizedTxt);
+
         $identified = json_decode($export->history($this->admin, $this->client, 'json', 'identified'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_companion_history_v1', $identified['schema_version']);
         self::assertSame('client_'.$this->client->getKey(), $identified['identity']['label']);
@@ -179,6 +199,89 @@ final class ClientCompanionCrmTest extends TestCase
         $export->metadata($this->staff, $this->client);
     }
 
+    public function test_companion_page_uses_shared_composer_and_modal_actions_for_exports_and_metadata(): void
+    {
+        $this->seedHandoffHistory();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->assertSuccessful()
+            ->assertActionExists('export')
+            ->assertActionExists('technicalMetadata')
+            ->assertSee('Скачать историю')
+            ->assertSee('Расширенные технические метаданные')
+            ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]))
+            ->assertDontSee(route('admin.clients.companion.metadata-export', ['client' => $this->client]));
+
+        $component
+            ->set('data', ['body' => '<p>Привет</p>'])
+            ->assertSee('6 / 4096')
+            ->assertSee('Привет');
+
+        $editor = $component->instance()->getSchemaComponent('form.body');
+        self::assertInstanceOf(RichEditor::class, $editor);
+        self::assertContains('emoji', array_merge(...$editor->getToolbarButtons()));
+        self::assertContains('bulletList', array_merge(...$editor->getToolbarButtons()));
+        self::assertContains('orderedList', array_merge(...$editor->getToolbarButtons()));
+        self::assertFalse($editor->isDisabled());
+        self::assertTrue($editor->isLiveDebounced());
+        self::assertFalse($editor->isLiveOnBlur());
+        self::assertSame(300, $editor->getNormalizedLiveDebounce());
+
+        $upload = $component->instance()->getSchemaComponent('form.new_attachment');
+        self::assertInstanceOf(FileUpload::class, $upload);
+        self::assertFalse($upload->isDisabled());
+
+        $exportAction = $component->instance()->getAction('export');
+        self::assertNotNull($exportAction);
+        $exportSchema = $exportAction->getSchema(Schema::make($component->instance()));
+        self::assertNotNull($exportSchema);
+        self::assertSame(['format', 'identity'], array_values(array_map(
+            static fn (mixed $field): string => $field->getName(),
+            $exportSchema->getFlatComponents(withHidden: true),
+        )));
+
+        $metadataAction = $component->instance()->getAction('technicalMetadata');
+        self::assertNotNull($metadataAction);
+        self::assertTrue($metadataAction->isModalSlideOver());
+        self::assertNotNull($metadataAction->getModalContent());
+
+        $expected = app(CompanionExportService::class)->history($this->admin, $this->client, 'json', 'pseudonymized');
+        $component
+            ->callAction('export', ['format' => 'json', 'identity' => 'pseudonymized'])
+            ->assertFileDownloaded('client-companion.json', $expected, 'application/json; charset=UTF-8')
+            ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]));
+    }
+
+    public function test_staff_can_send_the_first_message_to_a_client_without_companion_history(): void
+    {
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->set('data', ['body' => '<p>Первое сообщение</p>'])
+            ->call('sendReply')
+            ->assertNotified('Сообщение отправлено');
+
+        $conversation = Conversation::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('client_id', $this->client->getKey())
+            ->where('conversation_type', 'client_companion')
+            ->sole();
+
+        $message = ConversationMessage::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('conversation_id', $conversation->getKey())
+            ->where('author_type', ConversationAuthorType::Staff)
+            ->sole();
+
+        self::assertSame('portal', $message->channel);
+        self::assertSame('Первое сообщение', strip_tags(
+            app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $message),
+        ));
+    }
+
     public function test_foreign_client_history_export_is_rejected(): void
     {
         $otherOrganization = Organization::factory()->create();
@@ -186,6 +289,132 @@ final class ClientCompanionCrmTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(CompanionExportService::class)->history($this->admin, $foreignClient, 'txt', 'pseudonymized');
+    }
+
+    public function test_companion_composer_uses_the_caption_limit_for_an_allowed_attachment(): void
+    {
+        $this->seedHandoffHistory();
+        $attachment = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::CompanionImage,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/preview.jpg',
+            'original_filename' => 'preview.jpg',
+            'mime_type' => 'image/jpeg',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'preview'),
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($this->admin)
+            ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->set('data', [
+                'body' => '<p>Привет</p>',
+                'existing_attachment_id' => $attachment->getKey(),
+            ])
+            ->assertSee('6 / 1024');
+    }
+
+    public function test_protected_attachments_are_not_available_to_the_outbound_companion_picker(): void
+    {
+        $this->seedHandoffHistory();
+        $protected = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/protected.pdf',
+            'original_filename' => 'protected.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'protected'),
+        ]);
+        $allowed = MedicalAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => AttachmentType::CompanionDocument,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/outbound.pdf',
+            'original_filename' => 'outbound.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 100,
+            'sha256_checksum' => hash('sha256', 'outbound'),
+        ]);
+
+        $options = app(ListCompanionCommunicationAttachments::class)->options($this->admin, $this->client);
+        self::assertArrayNotHasKey($protected->getKey(), $options);
+        self::assertArrayHasKey($allowed->getKey(), $options);
+
+        $this->expectException(ValidationException::class);
+        app(ReplyToCompanion::class)->handle($this->admin, $this->client, 'Попытка отправки', [$protected->getKey()]);
+    }
+
+    public function test_allowed_communication_attachment_is_stored_and_linked_to_the_staff_message(): void
+    {
+        $this->seedHandoffHistory();
+        Storage::fake('private');
+
+        $attachment = app(UploadCompanionCommunicationAttachment::class)->handle(
+            $this->admin,
+            $this->client,
+            UploadedFile::fake()->createWithContent('instructions.txt', 'Безопасная инструкция'),
+        );
+        app(ReplyToCompanion::class)->handle(
+            $this->admin,
+            $this->client,
+            '<p>Инструкция во вложении</p>',
+            [$attachment->getKey()],
+        );
+
+        $link = CompanionMessageAttachment::query()
+            ->where('medical_attachment_id', $attachment->getKey())
+            ->sole();
+        self::assertSame($this->client->getKey(), $link->client_id);
+        self::assertSame(AttachmentType::CompanionDocument, $attachment->fresh()->attachment_type);
+        Storage::disk('private')->assertExists($attachment->storage_path);
+    }
+
+    public function test_companion_attachment_caption_cannot_exceed_telegram_limit(): void
+    {
+        $this->seedHandoffHistory();
+        Storage::fake('private');
+        $attachment = app(UploadCompanionCommunicationAttachment::class)->handle(
+            $this->admin,
+            $this->client,
+            UploadedFile::fake()->createWithContent('instructions.txt', 'Безопасная инструкция'),
+        );
+
+        $this->expectException(ValidationException::class);
+        app(ReplyToCompanion::class)->handle(
+            $this->admin,
+            $this->client,
+            str_repeat('а', 1025),
+            [$attachment->getKey()],
+        );
+
+        self::assertSame(0, ConversationMessage::query()->where('author_type', ConversationAuthorType::Staff->value)->count());
+    }
+
+    public function test_closing_handoff_and_resuming_ai_is_one_authoritative_action(): void
+    {
+        [$conversation] = $this->seedHandoffHistory();
+        $escalation = CompanionEscalation::query()->where('conversation_id', $conversation->getKey())->where('status', CompanionEscalationStatus::Open)->sole();
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.clients.companion.resolve-and-resume', ['client' => $this->client]))
+            ->assertRedirect()
+            ->assertSessionHas('companion_status', 'Обращение закрыто, AI снова отвечает.');
+
+        self::assertSame(ConversationAutomationState::AiActive, $conversation->fresh()->automation_state);
+        self::assertSame(CompanionEscalationStatus::Resolved, $escalation->fresh()->status);
+        self::assertSame($this->admin->getKey(), $escalation->fresh()->resolved_by_user_id);
     }
 
     /** @return array{0: Conversation, 1: CompanionTurn, 2: ConversationMessage} */

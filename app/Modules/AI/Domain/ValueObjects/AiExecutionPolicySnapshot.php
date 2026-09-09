@@ -21,7 +21,7 @@ final readonly class AiExecutionPolicySnapshot
             throw new InvalidArgumentException('Execution policy failover limit is outside the platform safety bounds.');
         }
 
-        if ($this->maxOutputTokens < 1 || $this->maxOutputTokens > AiRuntimeLimits::PLATFORM_MAX_OUTPUT_TOKENS) {
+        if ($this->maxOutputTokens < 1 || $this->maxOutputTokens > AiRuntimeLimits::PLATFORM_MAX_MODEL_OUTPUT_TOKENS) {
             throw new InvalidArgumentException('Execution policy output token limit is outside the platform safety bounds.');
         }
 

@@ -4,6 +4,7 @@ namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
 use App\Modules\Knowledge\Domain\Enums\IngestionStatus;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
@@ -54,6 +55,9 @@ final class ReprocessKnowledgeForSearch
             }
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Ready) {
                 throw ValidationException::withMessages(['revision' => 'Подготовка для поиска доступна только для готового материала.']);
+            }
+            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+                throw ValidationException::withMessages(['revision' => 'Подготовка для поиска доступна только после безопасного извлечения.']);
             }
 
             $compatibleRuns = KnowledgeIngestionRun::query()

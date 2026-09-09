@@ -15,7 +15,8 @@ use App\Modules\Referrals\Application\SendReferralPayoutStatusNotification;
 use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
-use App\Modules\Referrals\Jobs\SendReferralPayoutStatusNotification as SendReferralPayoutStatusNotificationJob;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\RecordingNotificationChannel;
@@ -109,11 +110,11 @@ final class ReferralPayoutNotificationTest extends TestCase
             idempotencyKey: 'same-status-notification-test',
         );
 
-        Queue::assertPushed(SendReferralPayoutStatusNotificationJob::class, 1);
-        Queue::assertPushed(SendReferralPayoutStatusNotificationJob::class, function (SendReferralPayoutStatusNotificationJob $job) use ($organization, $request): bool {
-            return $job->organizationId === $organization->getKey()
-                && $job->payoutRequestId === $request->getKey()
-                && $job->status === ReferralPayoutRequestStatus::Approved->value;
+        Queue::assertPushed(ProcessScenarioEvent::class, 1);
+        $event = ScenarioEvent::query()->where('event_name', 'referral.payout.status_changed')->sole();
+
+        Queue::assertPushed(ProcessScenarioEvent::class, function (ProcessScenarioEvent $job) use ($event): bool {
+            return $job->scenarioEventId === $event->getKey();
         });
     }
 

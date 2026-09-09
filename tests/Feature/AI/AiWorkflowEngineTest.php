@@ -461,6 +461,36 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertSame('provider_reported', $run->getTokenUsage()->usageSource);
     }
 
+    public function test_companion_accepts_a_long_reply_with_all_supported_safe_actions(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        $reply = collect(range(1, 15))
+            ->map(static fn (int $paragraph): string => "Абзац {$paragraph}: подробный план восстановления учитывает текущую нагрузку и постепенное возвращение к активности.")
+            ->implode("\n\n");
+        DynamicWorkflowAgent::fake([[
+            'decision' => 'reply',
+            'reply' => $reply,
+            'handoff_reason' => '',
+            'suggested_safe_actions' => [
+                'open_portal',
+                'request_human',
+                'feedback_helpful',
+                'feedback_not_helpful',
+            ],
+        ]]);
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'long_companion_reply',
+            origin: AiRunOrigin::ClientCompanion,
+            inputVariables: ['query' => 'Подробно распиши план восстановления на 15–20 абзацев'],
+        ));
+
+        self::assertTrue($result->isSuccess(), (string) $result->errorMessageSanitized);
+        self::assertSame($reply, $result->outputPayload['reply']);
+        self::assertCount(4, $result->outputPayload['suggested_safe_actions']);
+    }
+
     public function test_multi_step_tool_loop_settles_each_actual_provider_request_fixed_cost(): void
     {
         $retriever = new class implements KnowledgeRetriever
@@ -1762,11 +1792,59 @@ class AiWorkflowEngineTest extends TestCase
             ));
             $this->fail('Expected an oversized rendered prompt to be rejected.');
         } catch (InvalidArgumentException $e) {
-            $this->assertStringContainsString('bounded input limit', $e->getMessage());
+            $this->assertStringContainsString('bounded input-context budget', $e->getMessage());
         }
 
         $run = AiRun::query()->where('organization_id', $this->organization->id)->sole();
         $this->assertSame(AiRunStatus::Failed, $run->status);
+    }
+
+    public function test_companion_prompt_keeps_the_current_message_when_old_history_exceeds_the_prompt_budget(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        DynamicWorkflowAgent::fake(['A normal greeting response.']);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $version = $prompt->activeVersion()->sole();
+        $version->update([
+            'system_prompt' => str_repeat('Безопасная инструкция. ', 170),
+            'user_prompt_template' => "История:\n{{conversation_history}}\n\nТекущее сообщение:\n{{current_message}}",
+            'context_policy' => ['include_rag' => false],
+        ]);
+        $history = collect(range(1, 12))
+            ->map(fn (int $index): string => "[Client] Старое сообщение {$index}\n[AI] Старый ответ {$index}")
+            ->implode("\n\n");
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'bounded_companion_prompt_test',
+            inputVariables: [
+                'conversation_history' => $history,
+                'current_message' => 'привет',
+            ],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $payload = AiRunPayload::query()->where('ai_run_id', $result->runId)->sole();
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $renderedSystemPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_system_prompt,
+            $payload->encryption_key_version,
+        );
+        $renderedUserPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        self::assertStringContainsString('Текущее сообщение:', (string) $renderedUserPrompt);
+        self::assertStringContainsString('привет', (string) $renderedUserPrompt);
+        self::assertStringNotContainsString('[Client] Старое сообщение 1\n', (string) $renderedUserPrompt);
+        $budget = AiRuntimeLimits::inputContextBudget(
+            (string) $renderedSystemPrompt,
+            (string) $renderedUserPrompt,
+            AiCapabilityRegistry::get(AiCapability::ClientCompanion),
+        );
+        self::assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
     }
 
     public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void

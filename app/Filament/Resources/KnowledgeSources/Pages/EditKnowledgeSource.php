@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Models\User;
 use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
@@ -60,7 +61,7 @@ final class EditKnowledgeSource extends EditRecord
                 Notification::make()->title('Источник скрыт из поиска')->success()->send();
                 $this->redirect(KnowledgeSourceResource::getUrl('index'));
             }),
-            Action::make('reactivate')->label('Вернуть в поиск')->visible(function (): bool {
+            Action::make('reactivate')->label('Снова использовать материал')->visible(function (): bool {
                 $record = $this->getRecord();
 
                 return $record instanceof KnowledgeSource && $record->status->value === 'retired';
@@ -68,9 +69,14 @@ final class EditKnowledgeSource extends EditRecord
                 $actor = auth()->user();
                 $record = $this->getRecord();
                 abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
-                app(ReactivateKnowledgeSource::class)->handle($actor, $record);
-                Notification::make()->title('Источник снова доступен в поиске')->success()->send();
-                $this->redirect(KnowledgeSourceResource::getUrl('edit', ['record' => $record]));
+                $reactivated = app(ReactivateKnowledgeSource::class)->handle($actor, $record);
+                $this->record = $reactivated;
+                $this->form->model($reactivated);
+                $this->fillForm();
+                $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === 'Готов'
+                    ? 'Материал снова используется. Состояние поиска обновлено.'
+                    : 'Материал включён, но поиск по нему пока недоступен: не настроена модель индексации.';
+                Notification::make()->title('Материал снова используется')->body($body)->success()->send();
             }),
             Action::make('delete')
                 ->label('Удалить материал')

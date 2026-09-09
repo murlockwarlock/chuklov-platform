@@ -6,11 +6,14 @@ use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
+use App\Support\RichText\RichTextDocument;
 use Illuminate\Support\Facades\Log;
 use JsonException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Properties\ChatAction;
 use SergiX44\Nutgram\Telegram\Properties\ParseMode;
+use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
 use Throwable;
@@ -46,7 +49,9 @@ final class TelegramMessagingChannel implements MessagingChannel
         $formatter = $this->formatter ?? new TelegramCompanionFormatter;
         $recipientExternalId = $this->ensureUtf8($chunk->recipientExternalId, 'recipient_external_id');
         $semanticText = $this->ensureUtf8($chunk->semanticText, 'semantic_text');
-        $chunks = $formatter->chunks($semanticText);
+        $chunks = RichTextDocument::isHtml($semanticText)
+            ? $formatter->richTextChunks($semanticText)
+            : $formatter->chunks($semanticText);
         $html = $chunks[$chunk->chunkIndex] ?? null;
         if ($html === null || count($chunks) !== $chunk->chunkCount) {
             return NotificationDeliveryResult::permanentFailure('formatting_contract_mismatch');
@@ -55,6 +60,9 @@ final class TelegramMessagingChannel implements MessagingChannel
 
         try {
             $keyboard = $this->keyboard($chunk);
+            if ($chunk->mediaItems !== []) {
+                return $this->sendMediaChunk($chunk, $html, $keyboard);
+            }
             $sent = $this->bot->sendMessage($html, $recipientExternalId, parse_mode: ParseMode::HTML, reply_markup: $keyboard);
 
             return $this->resultForSentMessage($sent);
@@ -96,6 +104,60 @@ final class TelegramMessagingChannel implements MessagingChannel
                     return NotificationDeliveryResult::permanentFailure('telegram_formatting_rejected');
                 }
             }
+        }
+    }
+
+    private function sendMediaChunk(CompanionOutboundChunk $chunk, string $html, mixed $keyboard): NotificationDeliveryResult
+    {
+        if (count($chunk->mediaItems) !== 1) {
+            return NotificationDeliveryResult::permanentFailure('companion_media_count_invalid');
+        }
+
+        $media = $chunk->mediaItems[0];
+        if (! $media instanceof NotificationMedia || $media->stream === null || ! is_resource($media->stream)) {
+            return NotificationDeliveryResult::permanentFailure('companion_media_unavailable');
+        }
+
+        if (mb_strlen($html) > 1024) {
+            return NotificationDeliveryResult::permanentFailure('companion_media_caption_too_long');
+        }
+
+        try {
+            $input = InputFile::make($media->stream, $media->fileName);
+            $sent = match ($media->type) {
+                'photo' => $this->bot->sendPhoto(
+                    $input,
+                    $chunk->recipientExternalId,
+                    caption: $html === '' ? null : $html,
+                    parse_mode: $html === '' ? null : ParseMode::HTML,
+                    reply_markup: $keyboard,
+                ),
+                'document' => $this->bot->sendDocument(
+                    $input,
+                    $chunk->recipientExternalId,
+                    caption: $html === '' ? null : $html,
+                    parse_mode: $html === '' ? null : ParseMode::HTML,
+                    reply_markup: $keyboard,
+                ),
+                default => throw new \InvalidArgumentException('Companion media type is unavailable.'),
+            };
+
+            $messageId = $sent?->message_id;
+
+            return $messageId === null
+                ? NotificationDeliveryResult::unknown('telegram_delivery_reference_missing')
+                : NotificationDeliveryResult::delivered((string) $messageId);
+        } catch (\InvalidArgumentException $exception) {
+            return NotificationDeliveryResult::permanentFailure('companion_media_unavailable');
+        } catch (Throwable $exception) {
+            $code = (int) $exception->getCode();
+            if ($code === 429 || $code >= 500) {
+                return NotificationDeliveryResult::retryable('telegram_media_delivery_failed');
+            }
+
+            return NotificationDeliveryResult::unknown('telegram_media_delivery_unknown');
+        } finally {
+            fclose($media->stream);
         }
     }
 

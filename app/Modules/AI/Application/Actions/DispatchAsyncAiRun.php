@@ -4,9 +4,9 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Services\BoundedAiPromptContext;
 use App\Modules\AI\Application\Validation\AiInputReferenceValidator;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
-use App\Modules\AI\Domain\Contracts\AiPromptRendererInterface;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -29,7 +29,7 @@ class DispatchAsyncAiRun
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly AiContextAssemblerInterface $contextAssembler,
-        private readonly AiPromptRendererInterface $promptRenderer,
+        private readonly BoundedAiPromptContext $boundedPromptContext,
         private readonly AiInputReferenceValidator $inputReferenceValidator,
         private readonly PrepareAiRun $prepareAiRun,
     ) {}
@@ -138,9 +138,16 @@ class DispatchAsyncAiRun
                 capability: $request->capability,
             );
 
-            $renderedSystemPrompt = $this->promptRenderer->render($promptVersion->system_prompt, $contextAssembly->variables);
-            $renderedUserPrompt = $this->promptRenderer->render($promptVersion->user_prompt_template, $contextAssembly->variables);
-            AiRuntimeLimits::assertRenderedPromptWithinLimit($renderedSystemPrompt, $renderedUserPrompt, $capabilityDef);
+            $boundedPrompt = $this->boundedPromptContext->render(
+                systemTemplate: $promptVersion->system_prompt,
+                userTemplate: $promptVersion->user_prompt_template,
+                contextAssembly: $contextAssembly,
+                capability: $capabilityDef,
+                contextPolicy: $contextPolicy,
+            );
+            $contextAssembly = $boundedPrompt['contextAssembly'];
+            $renderedSystemPrompt = $boundedPrompt['systemPrompt'];
+            $renderedUserPrompt = $boundedPrompt['userPrompt'];
             $renderedPromptDigest = hash('sha256', $renderedSystemPrompt."\n---\n".$renderedUserPrompt);
             $completed = $this->prepareAiRun->complete(
                 run: $run,

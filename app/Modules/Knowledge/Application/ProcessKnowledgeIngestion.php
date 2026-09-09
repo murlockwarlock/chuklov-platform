@@ -3,6 +3,7 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Modules\Knowledge\Domain\Contracts\EmbeddingGenerator;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeIngestionAttemptStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeChunk;
@@ -46,6 +47,9 @@ final class ProcessKnowledgeIngestion
                 ->where('knowledge_source_id', $sourceId)
                 ->whereKey($revisionId)
                 ->firstOrFail();
+            if ($revision->extraction_status !== null && $revision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+                throw new RuntimeException('extraction_not_ready');
+            }
             $text = $revision->content;
             if ($text === null && $revision->storage_disk !== null && $revision->storage_path !== null) {
                 $text = Storage::disk($revision->storage_disk)->get($revision->storage_path);
@@ -180,7 +184,7 @@ final class ProcessKnowledgeIngestion
     {
         $message = $exception->getMessage();
 
-        return in_array($message, ['invalid_source_content', 'source_text_too_large', 'empty_source_content'], true)
+        return in_array($message, ['invalid_source_content', 'source_text_too_large', 'empty_source_content', 'extraction_not_ready'], true)
             ? $message
             : 'embedding_or_persistence_failed';
     }

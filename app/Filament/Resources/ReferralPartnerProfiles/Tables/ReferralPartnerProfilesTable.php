@@ -22,7 +22,7 @@ final class ReferralPartnerProfilesTable
             ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPartnerProfiles
                 && $livewire->shouldPollMetrics() ? '5s' : null)
             ->stackedOnMobile()
-            ->recordActionsPosition(RecordActionsPosition::BeforeColumns)
+            ->recordActionsPosition(RecordActionsPosition::AfterColumns)
             ->columns([
                 TextColumn::make('client.full_name')
                     ->label('Партнёр')

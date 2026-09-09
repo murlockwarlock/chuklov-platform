@@ -14,7 +14,9 @@
         "laravel/horizon": "^5.48",
         "laravel/tinker": "^3.0",
         "nutgram/laravel": "^1.7",
-        "predis/predis": "^3.5"
+        "phpoffice/phpspreadsheet": "^5.9",
+        "predis/predis": "^3.5",
+        "prinsfrank/pdfparser": "^3.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

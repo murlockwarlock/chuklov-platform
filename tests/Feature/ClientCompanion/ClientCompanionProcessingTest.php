@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\ClientCompanion;
 
+use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
@@ -11,12 +12,16 @@ use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Application\Actions\ResolveCompanionHandoff;
 use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
 use App\Modules\ClientCompanion\Application\Services\CompanionTurnProcessor;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
@@ -24,6 +29,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurnMessage;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
@@ -32,12 +38,15 @@ use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Mockery;
 use Tests\TestCase;
@@ -130,6 +139,26 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, CompanionEscalation::query()->count());
     }
 
+    public function test_untyped_preparation_configuration_failure_is_not_reclassified_as_repeated_provider_failure_or_handoff(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new InvalidArgumentCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $first = $this->accept('Первый вопрос без настройки');
+        $first->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+
+        $second = $this->accept('Второй вопрос без настройки');
+        $second->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $second->getKey());
+
+        self::assertSame('not_configured', $first->fresh()->failure_code);
+        self::assertSame('not_configured', $second->fresh()->failure_code);
+        self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertSame(0, ScenarioEvent::query()->count());
+    }
+
     public function test_unavailable_ai_provider_keeps_provider_failure_semantics_and_hands_off_after_repeated_failures(): void
     {
         $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
@@ -148,6 +177,25 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(CompanionEscalationReason::RepeatedExecutionFailure, CompanionEscalation::query()->sole()->reason);
     }
 
+    public function test_repeated_provider_failure_for_a_negated_human_request_does_not_create_a_handoff(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $first = $this->accept('мне не нужен специалист');
+        $first->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $first->getKey());
+
+        $second = $this->accept('привет, не надо мне специалиста');
+        $second->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $second->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $second->fresh()->status);
+        self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertSame(0, ScenarioEvent::query()->where('event_name', 'companion.requested_specialist')->count());
+    }
+
     public function test_failed_ai_run_result_keeps_provider_failure_category(): void
     {
         $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
@@ -163,6 +211,8 @@ final class ClientCompanionProcessingTest extends TestCase
 
         self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
         self::assertSame('provider_unavailable', $turn->fresh()->failure_code);
+        self::assertSame('companion.fallback_failed', ScenarioEvent::query()->sole()->event_name->value);
+        self::assertSame($turn->getKey(), ScenarioEvent::query()->sole()->payload['turn_id']);
     }
 
     public function test_missing_active_companion_prompt_is_logged_as_configuration_failure_without_protected_data(): void
@@ -237,6 +287,90 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, CompanionEscalation::query()->count());
     }
 
+    public function test_explicit_negated_human_request_cannot_be_escalated_by_a_model_handoff_decision(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'handoff_required',
+                'reply' => 'Хорошо, я продолжу помогать сам.',
+                'handoff_reason' => 'out_of_scope',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('привет, не надо мне специалиста');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Completed, $turn->fresh()->status);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertSame(0, ScenarioEvent::query()->count());
+    }
+
+    public function test_routine_greeting_cannot_be_escalated_by_a_model_handoff_decision(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'handoff_required',
+                'reply' => 'Привет! Я помогу сориентироваться.',
+                'handoff_reason' => 'out_of_scope',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Привет, ты кто?');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Completed, $turn->fresh()->status);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertSame(0, ScenarioEvent::query()->count());
+    }
+
+    public function test_resolve_and_resume_then_normal_greeting_produces_an_ai_reply(): void
+    {
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Привет! Я снова на связи.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $handoff = $this->accept('Мне нужен специалист');
+        $handoff->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $handoff->getKey());
+
+        app(ResolveCompanionHandoff::class)->handleAndResume($admin, $this->client);
+
+        $greeting = $this->accept('привет');
+        $greeting->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $greeting->getKey());
+
+        $greeting->refresh();
+        self::assertSame(CompanionTurnStatus::Completed, $greeting->status);
+        self::assertSame(ConversationAutomationState::AiActive, $greeting->conversation()->firstOrFail()->automation_state);
+        self::assertSame('Привет! Я снова на связи.', app(CompanionMessageBodyReader::class)->read(
+            $this->organization->getKey(),
+            ConversationMessage::query()->findOrFail($greeting->outbound_message_id),
+        ));
+        self::assertSame(1, CompanionEscalation::query()->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'companion.requested_specialist')->count());
+    }
+
     public function test_long_reply_delivers_ordered_chunks_with_actions_only_on_the_final_chunk_and_retry_is_idempotent(): void
     {
         $channel = new RecordingCompanionChannel;
@@ -273,6 +407,79 @@ final class ClientCompanionProcessingTest extends TestCase
                 ->handle($channel, app(CompanionMessageBodyReader::class));
         }
         self::assertCount($deliveries->count(), $channel->chunks);
+    }
+
+    public function test_failed_later_chunk_does_not_replay_already_delivered_chunks(): void
+    {
+        $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
+        self::assertGreaterThan(1, $deliveries->count());
+        $first = $deliveries->firstOrFail();
+        $second = $deliveries->get(1);
+        $channel = new FailOnceOnSecondChunkCompanionChannel;
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $first->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+        (new DeliverCompanionMessage($this->organization->getKey(), $second->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Delivered, $first->fresh()->status);
+        self::assertSame(CompanionDeliveryStatus::Failed, $second->fresh()->status);
+        self::assertSame([0, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $first->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+        self::assertSame([0, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+
+        $second->update(['next_attempt_at' => now()->subSecond()]);
+        (new DeliverCompanionMessage($this->organization->getKey(), $second->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(CompanionDeliveryStatus::Delivered, $second->fresh()->status);
+        self::assertSame([0, 1, 1], array_map(static fn (CompanionOutboundChunk $chunk): int => $chunk->chunkIndex, $channel->chunks));
+    }
+
+    public function test_companion_attachment_is_delivered_once_before_text_chunks_continue(): void
+    {
+        $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
+        self::assertGreaterThan(1, $deliveries->count());
+        $first = $deliveries->firstOrFail();
+        $message = ConversationMessage::query()->findOrFail($first->conversation_message_id);
+        $attachment = MedicalAttachment::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'attachment_type' => AttachmentType::CompanionDocument,
+            'disk' => 'private',
+            'storage_path' => 'medical/attachments/'.$this->organization->getKey().'/communication.txt',
+            'original_filename' => 'communication.txt',
+            'mime_type' => 'text/plain',
+            'size_bytes' => 20,
+            'sha256_checksum' => hash('sha256', 'communication'),
+        ]);
+        CompanionMessageAttachment::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $message->conversation_id,
+            'turn_id' => $first->turn_id,
+            'conversation_message_id' => $message->getKey(),
+            'medical_attachment_id' => $attachment->getKey(),
+            'source_ordinal' => 1,
+            'item_index' => 1,
+        ]);
+        $stream = fopen('php://memory', 'rb');
+        self::assertIsResource($stream);
+        $storage = Mockery::mock(AttachmentStorageInterface::class);
+        $storage->shouldReceive('readStream')->once()->andReturn($stream);
+        $channel = new RecordingCompanionChannel;
+
+        foreach ($deliveries as $delivery) {
+            (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+                ->handle($channel, app(CompanionMessageBodyReader::class), $storage);
+        }
+
+        self::assertCount($deliveries->count(), $channel->chunks);
+        self::assertCount(1, $channel->chunks[0]->mediaItems);
+        self::assertSame([], $channel->chunks[1]->mediaItems);
     }
 
     public function test_stale_completion_cannot_publish_after_a_new_worker_reclaims_the_turn(): void
@@ -999,6 +1206,19 @@ final class NotConfiguredCompanionEngine implements AiWorkflowEngine
     }
 }
 
+final class InvalidArgumentCompanionEngine implements AiWorkflowEngine
+{
+    public function run(int $organizationId, AiRunRequest $request): AiRunResult
+    {
+        throw new InvalidArgumentException('Embedding pricing policy is unavailable for the active configuration.');
+    }
+
+    public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+    {
+        throw new InvalidArgumentException('Embedding pricing policy is unavailable for the active configuration.');
+    }
+}
+
 final class ProviderUnavailableCompanionEngine implements AiWorkflowEngine
 {
     public function run(int $organizationId, AiRunRequest $request): AiRunResult
@@ -1052,6 +1272,23 @@ final class RetryableCompanionChannel extends RecordingCompanionChannel
         $this->chunks[] = $chunk;
 
         return NotificationDeliveryResult::retryable('provider_rejected_before_acceptance');
+    }
+}
+
+final class FailOnceOnSecondChunkCompanionChannel extends RecordingCompanionChannel
+{
+    private bool $failed = false;
+
+    public function sendCompanionChunk(CompanionOutboundChunk $chunk): NotificationDeliveryResult
+    {
+        $this->chunks[] = $chunk;
+        if ($chunk->chunkIndex === 1 && ! $this->failed) {
+            $this->failed = true;
+
+            return NotificationDeliveryResult::retryable('temporary_second_chunk_failure');
+        }
+
+        return NotificationDeliveryResult::delivered('fake-message-'.$chunk->chunkIndex);
     }
 }
 

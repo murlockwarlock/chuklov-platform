@@ -3,9 +3,11 @@
 namespace App\Modules\Knowledge\Application;
 
 use App\Models\User;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeExtractionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\Knowledge\Infrastructure\Parsing\KnowledgeDocumentParser;
 use App\Modules\Knowledge\Jobs\IngestKnowledgeRevision;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -21,6 +23,7 @@ final class CreateKnowledgeSource
         private readonly OrganizationContext $context,
         private readonly KnowledgeAuthorization $authorization,
         private readonly RecordAuditEvent $audit,
+        private readonly KnowledgeDocumentParser $parser,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -44,6 +47,14 @@ final class CreateKnowledgeSource
         $filename = null;
         $mime = 'text/markdown';
         $size = 0;
+        $originalChecksum = null;
+        $parserType = 'authored_text';
+        $parserVersion = 'manual-v1';
+        $extractionStatus = KnowledgeExtractionStatus::Ready;
+        $extractionDiagnostics = ['character_count' => 0];
+        $extractedAt = now();
+        $revisionContent = null;
+        $dispatchIngestion = true;
 
         if ($type === KnowledgeSourceType::AuthoredText) {
             $content = (string) ($data['content'] ?? '');
@@ -55,12 +66,14 @@ final class CreateKnowledgeSource
             if (mb_strlen($content) > (int) config('rag.uploads.maximum_extracted_characters')) {
                 throw ValidationException::withMessages(['content' => 'Текст превышает допустимый размер.']);
             }
+            $revisionContent = $content;
+            $originalChecksum = hash('sha256', $content);
+            $extractionDiagnostics = ['character_count' => mb_strlen($content)];
         } elseif (($data['file'] ?? null) instanceof UploadedFile) {
             $file = $data['file'];
-            $mime = (string) $file->getMimeType();
             $extension = strtolower($file->getClientOriginalExtension());
-            if (! in_array($mime, config('rag.uploads.allowed_mime_types', []), true) || ! in_array($extension, config('rag.uploads.allowed_extensions', []), true) || $file->getSize() > ((int) config('rag.uploads.maximum_kilobytes') * 1024)) {
-                throw ValidationException::withMessages(['file' => 'Поддерживаются только небольшие текстовые документы Markdown или TXT.']);
+            if (! in_array($extension, config('rag.uploads.allowed_extensions', []), true) || $file->getSize() > ((int) config('rag.uploads.maximum_kilobytes') * 1024)) {
+                throw ValidationException::withMessages(['file' => 'Поддерживаются небольшие TXT, Markdown, PDF, CSV, XLSX, XLS и ODS.']);
             }
             $disk = (string) config('rag.uploads.disk');
             $storedPath = $file->store('knowledge/sources/'.$organization->getKey(), $disk);
@@ -70,22 +83,35 @@ final class CreateKnowledgeSource
             $path = $storedPath;
             $filename = $file->getClientOriginalName();
             $size = (int) $file->getSize();
-            $content = Storage::disk($disk)->get($path);
-            if (! is_string($content)) {
+            try {
+                $parsed = $this->parser->parse(Storage::disk($disk)->path($path), $filename);
+            } catch (Throwable $exception) {
+                Storage::disk($disk)->delete($path);
+                throw $exception;
+            }
+            $mime = $parsed->mimeType;
+            $originalChecksum = $parsed->originalChecksum;
+            $parserType = $parsed->parserType;
+            $parserVersion = $parsed->parserVersion;
+            $extractionStatus = $parsed->status;
+            $extractionDiagnostics = $parsed->diagnostics;
+            $extractedAt = now();
+            $content = $parsed->content;
+            $revisionContent = $parsed->isReady() && ! in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['txt', 'md', 'markdown'], true)
+                ? $parsed->content
+                : null;
+            $dispatchIngestion = $parsed->isReady();
+            if ($parsed->isReady() && ! is_string($content)) {
                 Storage::disk($disk)->delete($path);
                 throw ValidationException::withMessages(['file' => 'Не удалось прочитать документ.']);
             }
-            if (mb_strlen($content) > (int) config('rag.uploads.maximum_extracted_characters')) {
-                Storage::disk($disk)->delete($path);
-                throw ValidationException::withMessages(['file' => 'Документ превышает допустимый размер текста.']);
-            }
         } else {
-            throw ValidationException::withMessages(['file' => 'Загрузите текстовый документ.']);
+            throw ValidationException::withMessages(['file' => 'Загрузите TXT, Markdown, PDF или таблицу.']);
         }
 
-        $checksum = hash('sha256', (string) $content);
+        $checksum = hash('sha256', (string) ($content ?? ''));
         try {
-            $source = DB::transaction(function () use ($actor, $organization, $type, $title, $category, $sourceReference, $content, $disk, $path, $filename, $mime, $size, $checksum, $clientCompanionEnabled): KnowledgeSource {
+            $source = DB::transaction(function () use ($actor, $organization, $type, $title, $category, $sourceReference, $revisionContent, $disk, $path, $filename, $mime, $size, $checksum, $originalChecksum, $parserType, $parserVersion, $extractionStatus, $extractionDiagnostics, $extractedAt, $dispatchIngestion, $clientCompanionEnabled): KnowledgeSource {
                 $source = KnowledgeSource::query()->create([
                     'organization_id' => $organization->getKey(),
                     'type' => $type,
@@ -94,18 +120,24 @@ final class CreateKnowledgeSource
                     'status' => 'active',
                     'client_companion_enabled' => $clientCompanionEnabled,
                 ]);
-                KnowledgeRevision::query()->create([
+                $revision = KnowledgeRevision::query()->create([
                     'organization_id' => $organization->getKey(),
                     'knowledge_source_id' => $source->getKey(),
                     'version' => 1,
-                    'status' => 'pending',
-                    'content' => $type === KnowledgeSourceType::AuthoredText ? $content : null,
+                    'status' => $dispatchIngestion ? 'pending' : 'failed',
+                    'content' => $revisionContent,
                     'storage_disk' => $disk,
                     'storage_path' => $path,
                     'original_filename' => $filename,
                     'mime_type' => $mime,
                     'size_bytes' => $size,
                     'content_checksum' => $checksum,
+                    'original_checksum' => $originalChecksum,
+                    'parser_type' => $parserType,
+                    'parser_version' => $parserVersion,
+                    'extraction_status' => $extractionStatus->value,
+                    'extraction_diagnostics' => $extractionDiagnostics,
+                    'extracted_at' => $extractedAt,
                     'source_reference' => $sourceReference,
                     'created_by_user_id' => $actor->getKey(),
                 ]);
@@ -113,6 +145,20 @@ final class CreateKnowledgeSource
                     'source_type' => $type->value,
                     'client_companion_enabled' => $clientCompanionEnabled,
                 ]);
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'knowledge.revision.extracted',
+                    targetType: KnowledgeRevision::class,
+                    targetId: (string) $revision->getKey(),
+                    metadata: [
+                        'source_id' => $source->getKey(),
+                        'revision_id' => $revision->getKey(),
+                        'parser_type' => $parserType,
+                        'parser_version' => $parserVersion,
+                        'extraction_status' => $extractionStatus->value,
+                    ],
+                );
 
                 return $source->refresh();
             });
@@ -124,26 +170,28 @@ final class CreateKnowledgeSource
             throw $exception;
         }
 
-        $revision = $source->revisions()->sole();
-        try {
-            $dispatch = IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
-            unset($dispatch);
-        } catch (Throwable) {
+        if ($dispatchIngestion) {
+            $revision = $source->revisions()->sole();
             try {
-                $this->audit->handle(
-                    organization: $organization,
-                    actor: $actor,
-                    action: 'knowledge.ingestion.dispatch_failed',
-                    targetType: KnowledgeRevision::class,
-                    targetId: (string) $revision->getKey(),
-                    metadata: [
-                        'source_id' => $source->getKey(),
-                        'revision_id' => $revision->getKey(),
-                        'operation' => 'create',
-                    ],
-                );
-            } catch (Throwable $auditException) {
-                report($auditException);
+                $dispatch = IngestKnowledgeRevision::dispatch($organization->getKey(), $source->getKey(), $revision->getKey());
+                unset($dispatch);
+            } catch (Throwable) {
+                try {
+                    $this->audit->handle(
+                        organization: $organization,
+                        actor: $actor,
+                        action: 'knowledge.ingestion.dispatch_failed',
+                        targetType: KnowledgeRevision::class,
+                        targetId: (string) $revision->getKey(),
+                        metadata: [
+                            'source_id' => $source->getKey(),
+                            'revision_id' => $revision->getKey(),
+                            'operation' => 'create',
+                        ],
+                    );
+                } catch (Throwable $auditException) {
+                    report($auditException);
+                }
             }
         }
 

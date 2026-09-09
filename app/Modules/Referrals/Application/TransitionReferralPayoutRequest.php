@@ -10,8 +10,11 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
-use App\Modules\Referrals\Jobs\SendReferralPayoutStatusNotification;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +25,8 @@ final class TransitionReferralPayoutRequest
         private readonly OrganizationContext $context,
         private readonly FinanceAuthorization $authorization,
         private readonly RecordAuditEvent $audit,
+        private readonly EnsureOperationalNotificationDefaults $notificationDefaults,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(
@@ -66,8 +71,10 @@ final class TransitionReferralPayoutRequest
             $this->authorization->authorizeManage($user);
         }
 
+        $this->notificationDefaults->handle($this->context->organization());
         $changed = false;
-        $result = DB::transaction(function () use ($requestId, $target, $actor, $user, $actorType, $idempotencyKey, $reason, $paymentNote, $paymentReference, &$changed): ReferralPayoutRequest {
+        $scenarioEventId = null;
+        $result = DB::transaction(function () use ($requestId, $target, $actor, $user, $actorType, $idempotencyKey, $reason, $paymentNote, $paymentReference, &$changed, &$scenarioEventId): ReferralPayoutRequest {
             $candidate = ReferralPayoutRequest::query()
                 ->where('organization_id', $this->context->id())
                 ->whereKey($requestId)
@@ -128,6 +135,8 @@ final class TransitionReferralPayoutRequest
             $locked->save();
             $changed = true;
             $this->recordEvent($locked, $current, $target, $actorType, $user?->getKey(), $reason, $paymentNote, $paymentReference, $idempotencyKey, $requestHash);
+            $scenarioEvent = $this->scenarioEvents->payoutStatusChanged($locked, $target, $current, CarbonImmutable::now());
+            $scenarioEventId = (int) $scenarioEvent->getKey();
             $organization = $this->context->organization();
             $this->audit->handle(
                 organization: $organization,
@@ -151,16 +160,8 @@ final class TransitionReferralPayoutRequest
             return $locked->refresh();
         });
 
-        if ($changed && in_array($target, [
-            ReferralPayoutRequestStatus::Approved,
-            ReferralPayoutRequestStatus::Rejected,
-            ReferralPayoutRequestStatus::Paid,
-        ], true)) {
-            SendReferralPayoutStatusNotification::dispatch(
-                $this->context->id(),
-                (int) $result->getKey(),
-                $target->value,
-            );
+        if ($changed && $scenarioEventId !== null) {
+            ProcessScenarioEvent::dispatch($scenarioEventId)->afterCommit();
         }
 
         return $result;

@@ -45,6 +45,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class AiEvaluationQualityTest extends TestCase
@@ -286,7 +287,7 @@ final class AiEvaluationQualityTest extends TestCase
         self::assertStringContainsString('нет полного снимка', $comparison->message);
     }
 
-    public function test_human_review_metrics_follow_later_and_latest_review_decisions(): void
+    public function test_human_review_metrics_keep_the_first_review_decision(): void
     {
         $fixture = $this->evaluationFixture('human_review_lifecycle');
         $aiRun = $this->observedRun($fixture, 1, null);
@@ -307,15 +308,20 @@ final class AiEvaluationQualityTest extends TestCase
         self::assertSame(1, $accepted['reviewed_cases']);
         self::assertSame(1, $accepted['accepted_count']);
 
-        app(ReviewAiRun::class)->handle(
-            actor: $fixture['user'],
-            runId: $aiRun->getKey(),
-            decision: HumanReviewDecision::Rejected,
-        );
+        try {
+            app(ReviewAiRun::class)->handle(
+                actor: $fixture['user'],
+                runId: $aiRun->getKey(),
+                decision: HumanReviewDecision::Rejected,
+            );
+            self::fail('A second review decision must be rejected.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
         $latest = $reader->forRun($evaluationRun)['human_review'];
         self::assertSame(1, $latest['reviewed_cases']);
-        self::assertSame(0, $latest['accepted_count']);
-        self::assertSame(1, $latest['rejected_count']);
+        self::assertSame(1, $latest['accepted_count']);
+        self::assertSame(0, $latest['rejected_count']);
 
         $comparisonRun = $this->evaluationRunRecord($fixture, 90.0, 'comparison');
         $comparison = app(CompareAiEvaluationRuns::class)->handle(
@@ -323,7 +329,7 @@ final class AiEvaluationQualityTest extends TestCase
             [$evaluationRun->getKey(), $comparisonRun->getKey()],
         );
         self::assertTrue($comparison->compatible);
-        self::assertSame(1, $comparison->runs[0]['human_review']['rejected_count']);
+        self::assertSame(1, $comparison->runs[0]['human_review']['accepted_count']);
 
         DB::flushQueryLog();
         DB::enableQueryLog();
