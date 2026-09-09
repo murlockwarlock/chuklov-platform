@@ -11,11 +11,23 @@ const props = defineProps<{
 
 const items = [
     { key: 'home', label: 'shell.home', icon: 'home' },
-    { key: 'bookings', label: 'shell.bookings', icon: 'calendar' },
+    { key: 'bookings', label: 'shell.book', icon: 'calendar' },
     { key: 'health', label: 'shell.health', icon: 'health' },
     { key: 'companion', label: 'shell.companion', icon: 'sparkles' },
     { key: 'more', label: 'shell.more', icon: 'more' },
 ] as const;
+
+function navigationHref(key: Exclude<PortalNavKey, null>): string {
+    if (key === 'bookings') {
+        return props.portal.urls.services;
+    }
+
+    if (key === 'health') {
+        return props.portal.urls.tracker;
+    }
+
+    return props.portal.urls[key];
+}
 </script>
 
 <template>
@@ -26,7 +38,7 @@ const items = [
     <Link
       v-for="item in items"
       :key="item.key"
-      :href="portal.urls[item.key]"
+      :href="navigationHref(item.key)"
       class="portal-bottom-nav__link"
       :class="{ 'portal-bottom-nav__link--active': props.active === item.key }"
     >

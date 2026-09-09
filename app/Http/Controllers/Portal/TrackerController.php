@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Surveys\Application\ListClientSurveys;
 use App\Modules\Tracker\Application\ListClientTrackerOverview;
 use App\Modules\Tracker\Application\RecordTrackerTaskEntry;
 use App\Modules\Tracker\Application\SubmitTrackerCheckIn;
@@ -19,7 +20,7 @@ use Inertia\Response;
 
 final class TrackerController extends Controller
 {
-    public function index(ClientPortalContext $context, ListClientTrackerOverview $overview): Response
+    public function index(ClientPortalContext $context, ListClientTrackerOverview $overview, ListClientSurveys $surveys): Response
     {
         $client = $context->client();
         /** @var list<array{name: string, price: string|null, description: string|null, durationDays: int}> $plans */
@@ -45,10 +46,12 @@ final class TrackerController extends Controller
 
         return Inertia::render('Portal/Tracker', [
             'tracker' => $tracker,
+            'surveys' => $surveys->handle($client),
             'urls' => [
                 'checkIn' => route('portal.tracker.check-in'),
                 'taskEntry' => route('portal.tracker.task-entry', ['taskId' => '__id__']),
                 'specialist' => route('portal.bookings.create', ['format' => VisitFormat::Online->value]),
+                'surveys' => route('portal.surveys.index'),
             ],
         ]);
     }

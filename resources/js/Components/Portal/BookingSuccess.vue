@@ -12,7 +12,7 @@ const props = defineProps<{
     timezone: string;
     locale: PortalLocale;
     formatLabel: string;
-    urls: { bookings: string; services: string; referrals: string };
+    urls: { bookings: string; services: string };
 }>();
 
 const { t } = usePortalLocale();
@@ -24,9 +24,6 @@ const { t } = usePortalLocale();
     aria-labelledby="booking-success-heading"
   >
     <header class="portal-booking-success__header portal-stack portal-stack--tight">
-      <p class="portal-eyebrow">
-        CHUKLOV
-      </p>
       <h2
         id="booking-success-heading"
         aria-live="polite"
@@ -81,13 +78,6 @@ const { t } = usePortalLocale();
         class="portal-button portal-button--secondary"
       >
         {{ t('booking.bookAgain') }}
-      </Link>
-      <Link
-        :href="props.urls.referrals"
-        class="portal-button portal-button--secondary"
-        data-testid="booking-referrals-cta"
-      >
-        {{ t('home.referrals') }}
       </Link>
     </div>
   </section>

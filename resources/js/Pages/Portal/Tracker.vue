@@ -35,7 +35,11 @@ type HistoryEntry = {
     recordedAt: string;
 };
 type CheckIn = { occurredAt: string; note: string };
-type View = 'today' | 'program' | 'history' | 'discuss';
+type View = 'today' | 'program' | 'history';
+type Surveys = {
+    definitions: Array<{ id: number; title: string; description: string | null }>;
+    attempts: Array<{ id: number; title: string; status: string; reportId: number | null }>;
+};
 
 const props = defineProps<{
     portal: PortalShell;
@@ -48,13 +52,15 @@ const props = defineProps<{
         monthlyPractice: string | null;
         plans: Plan[];
     };
-    urls: { checkIn: string; specialist: string; taskEntry: string };
+    surveys: Surveys;
+    urls: { checkIn: string; specialist: string; taskEntry: string; surveys: string };
 }>();
 
 const { t, locale } = usePortalLocale();
 const activeView = ref<View>('today');
 const checkInForm = useForm<{ note: string }>({ note: '' });
 const taskForms = reactive<Record<number, ReturnType<typeof useForm<{ status: string; comment: string }>>>>({});
+const hasTests = props.surveys.definitions.length > 0 || props.surveys.attempts.length > 0;
 const formatDate = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 const formatDay = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(new Date(value));
 
@@ -89,26 +95,15 @@ function saveCheckIn(): void {
     active="health"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ t('health.title') }}
-          </p>
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('tracker.title') }}
-          </h1>
-        </div>
-        <Link
-          :href="props.urls.specialist"
-          class="portal-button portal-button--secondary"
-        >
-          {{ t('tracker.discuss') }}
-        </Link>
+      <header class="portal-stack portal-stack--tight">
+        <h1 class="portal-heading portal-heading--section">
+          {{ t('tracker.title') }}
+        </h1>
       </header>
 
       <template v-if="props.tracker.access.allowed">
         <nav
-          class="portal-tabs"
+          class="portal-tabs portal-tabs--three"
           :aria-label="t('tracker.title')"
         >
           <button
@@ -135,15 +130,20 @@ function saveCheckIn(): void {
           >
             {{ t('tracker.history') }}
           </button>
-          <button
-            type="button"
-            class="portal-tab"
-            :class="{ 'portal-tab--active': activeView === 'discuss' }"
-            @click="activeView = 'discuss'"
-          >
-            {{ t('tracker.discuss') }}
-          </button>
         </nav>
+
+        <Link
+          v-if="hasTests"
+          :href="props.urls.surveys"
+          class="portal-list__row portal-list__row--standalone"
+          data-testid="tracker-tests-link"
+        >
+          <span>
+            <strong class="portal-list__title">{{ t('health.tests') }}</strong>
+            <span class="portal-list__summary">{{ t('health.testsDescription') }}</span>
+          </span>
+          <span aria-hidden="true">→</span>
+        </Link>
 
         <section
           v-if="activeView === 'today'"
@@ -215,12 +215,18 @@ function saveCheckIn(): void {
             :title="t('tracker.tasksEmpty')"
           />
 
-          <details class="portal-panel portal-details">
-            <summary class="portal-heading portal-heading--card">
+          <section
+            class="portal-tracker-check-in portal-stack portal-stack--tight"
+            aria-labelledby="tracker-check-in-heading"
+          >
+            <h2
+              id="tracker-check-in-heading"
+              class="portal-heading portal-heading--card"
+            >
               {{ t('tracker.checkInTitle') }}
-            </summary>
+            </h2>
             <form
-              class="portal-stack portal-stack--tight pt-4"
+              class="portal-stack portal-stack--tight"
               @submit.prevent="saveCheckIn"
             >
               <textarea
@@ -238,7 +244,7 @@ function saveCheckIn(): void {
                 {{ checkInForm.processing ? t('tracker.saving') : t('tracker.save') }}
               </button>
             </form>
-          </details>
+          </section>
         </section>
 
         <section
@@ -272,7 +278,7 @@ function saveCheckIn(): void {
         </section>
 
         <section
-          v-else-if="activeView === 'history'"
+          v-else
           class="portal-stack"
         >
           <div
@@ -300,9 +306,9 @@ function saveCheckIn(): void {
             v-else
             :title="t('tracker.emptyHistory')"
           />
-          <div
+          <section
             v-if="props.tracker.checkIns.length"
-            class="portal-panel portal-stack portal-stack--tight"
+            class="portal-tracker-history-notes portal-stack portal-stack--tight"
           >
             <h2 class="portal-heading portal-heading--card">
               {{ t('tracker.checkInTitle') }}
@@ -310,72 +316,54 @@ function saveCheckIn(): void {
             <article
               v-for="entry in props.tracker.checkIns"
               :key="entry.occurredAt"
-              class="portal-stack portal-stack--tight border-t border-[var(--portal-color-border)] pt-3 first:border-t-0 first:pt-0"
+              class="portal-tracker-history-note portal-stack portal-stack--tight"
             >
               <time class="portal-copy portal-copy--small">{{ formatDate(entry.occurredAt) }}</time>
               <p class="portal-copy whitespace-pre-wrap">
                 {{ entry.note }}
               </p>
             </article>
-          </div>
+          </section>
         </section>
 
-        <section
-          v-else
-          class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
+        <Link
+          :href="props.urls.specialist"
+          class="portal-link portal-tracker-specialist-link"
+          data-testid="tracker-specialist-cta"
         >
-          <h2 class="portal-heading portal-heading--card">
-            {{ t('tracker.discuss') }}
-          </h2>
-          <p class="portal-copy">
-            {{ t('tracker.discussDescription') }}
-          </p>
-          <Link
-            :href="props.urls.specialist"
-            class="portal-button portal-button--primary self-start"
-          >
-            {{ t('tracker.discuss') }}
-          </Link>
-        </section>
+          {{ t('tracker.discuss') }}
+        </Link>
       </template>
 
       <section
         v-else
-        class="portal-stack"
+        class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
       >
+        <h2 class="portal-heading portal-heading--card">
+          {{ t('tracker.title') }}
+        </h2>
         <p class="portal-copy">
-          {{ t('tracker.notConnected') }}
+          {{ t('tracker.unavailable') }}
         </p>
         <div
           v-if="props.tracker.plans.length"
-          class="portal-grid portal-grid--cards"
+          class="portal-list"
         >
-          <article
+          <div
             v-for="plan in props.tracker.plans"
             :key="plan.name"
-            class="portal-panel portal-stack portal-stack--tight"
+            class="portal-list__row"
           >
-            <h2 class="portal-heading portal-heading--card">
-              {{ plan.name }}
-            </h2>
-            <p
-              v-if="plan.description"
-              class="portal-copy"
-            >
-              {{ plan.description }}
-            </p>
-            <strong class="portal-copy">{{ plan.price }} · {{ plan.durationDays }} {{ t('tracker.days') }}</strong>
-            <p class="portal-copy portal-copy--small">
-              {{ t('tracker.paymentUnavailable') }}
-            </p>
-          </article>
+            <span>
+              <strong class="portal-list__title">{{ plan.name }}</strong>
+              <span
+                v-if="plan.description"
+                class="portal-list__summary"
+              >{{ plan.description }}</span>
+            </span>
+            <span class="portal-copy portal-copy--small">{{ plan.price }} · {{ plan.durationDays }} {{ t('tracker.days') }}</span>
+          </div>
         </div>
-        <p
-          v-else
-          class="portal-copy"
-        >
-          {{ t('tracker.noPlans') }}
-        </p>
       </section>
     </section>
   </AppShell>

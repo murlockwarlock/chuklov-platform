@@ -17,9 +17,6 @@ const { t } = usePortalLocale();
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-stack portal-stack--tight">
-        <p class="portal-eyebrow">
-          CHUKLOV
-        </p>
         <h1 class="portal-heading portal-heading--section">
           {{ t('more.title') }}
         </h1>
@@ -29,6 +26,16 @@ const { t } = usePortalLocale();
         class="portal-list"
         :aria-label="t('more.title')"
       >
+        <Link
+          :href="props.portal.urls.bookings"
+          class="portal-list__row"
+        >
+          <strong class="portal-list__title">{{ t('bookings.title') }}</strong>
+          <PortalIcon
+            name="arrow"
+            class="portal-list__chevron"
+          />
+        </Link>
         <Link
           :href="props.portal.urls.profile"
           class="portal-list__row"
@@ -71,30 +78,10 @@ const { t } = usePortalLocale();
           />
         </Link>
         <Link
-          :href="props.portal.urls.services"
-          class="portal-list__row"
-        >
-          <strong class="portal-list__title">{{ t('more.services') }}</strong>
-          <PortalIcon
-            name="arrow"
-            class="portal-list__chevron"
-          />
-        </Link>
-        <Link
           :href="props.portal.urls.b2b"
           class="portal-list__row"
         >
           <strong class="portal-list__title">{{ t('more.business') }}</strong>
-          <PortalIcon
-            name="arrow"
-            class="portal-list__chevron"
-          />
-        </Link>
-        <Link
-          :href="props.portal.urls.attribution"
-          class="portal-list__row"
-        >
-          <strong class="portal-list__title">{{ t('more.attribution') }}</strong>
           <PortalIcon
             name="arrow"
             class="portal-list__chevron"

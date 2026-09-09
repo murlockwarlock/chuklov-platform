@@ -25,6 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     change: [id: number, granted: boolean];
+    'required-change': [granted: boolean];
     'update:marketingValue': [granted: boolean];
 }>();
 
@@ -63,55 +64,89 @@ function closeDocument(): void {
       role="list"
       :aria-label="t('profile.legal')"
     >
-      <article
-        v-for="document in requiredDocuments"
-        :key="document.id"
-        class="portal-legal-document-row"
-        role="listitem"
-      >
-        <label class="portal-confirm">
+      <template v-if="props.groupRequiredAcceptance && requiredDocuments.length > 0">
+        <p
+          class="portal-legal-document-links"
+          role="listitem"
+        >
+          <template
+            v-for="(document, index) in requiredDocuments"
+            :key="document.id"
+          >
+            <button
+              type="button"
+              class="portal-link portal-link--button"
+              @click.prevent.stop="openDocumentLink(document)"
+            >
+              {{ document.title }}
+            </button><span v-if="index < requiredDocuments.length - 1"> · </span>
+          </template>
+        </p>
+        <label
+          class="portal-confirm"
+          role="listitem"
+        >
           <input
             type="checkbox"
             class="portal-checkbox"
-            :checked="props.values[document.id] === true"
+            :checked="requiredDocuments.every((document) => props.values[document.id] === true)"
             :aria-invalid="props.requiredAcceptanceError ? 'true' : undefined"
-            @change="emit('change', document.id, ($event.target as HTMLInputElement).checked)"
+            @change="emit('required-change', ($event.target as HTMLInputElement).checked)"
           >
-          <span>
-            <template v-if="document.documentType === 'privacy'">
-              {{ t('legal.acceptPrivacyPrefix') }}
-              <button
-                type="button"
-                class="portal-link portal-link--button"
-                @click.prevent.stop="openDocumentLink(document)"
-              >
-                {{ t('legal.acceptPrivacyLink') }}
-              </button>
-            </template>
-            <template v-else>
-              {{ t('legal.acceptDocumentPrefix') }}
-              <button
-                type="button"
-                class="portal-link portal-link--button"
-                @click.prevent.stop="openDocumentLink(document)"
-              >
-                {{ document.title }}
-              </button>
-            </template>
-          </span>
+          <span>{{ t('legal.requiredAcceptance') }}</span>
         </label>
-        <div
-          v-if="!props.groupRequiredAcceptance && openDocumentId === document.id"
-          class="portal-legal-content portal-legal-document-row__content"
-          role="region"
-          :aria-label="document.title"
+      </template>
+      <template v-else>
+        <article
+          v-for="document in requiredDocuments"
+          :key="document.id"
+          class="portal-legal-document-row"
+          role="listitem"
         >
-          <SafeRichText
-            :content="document.content"
-            :content-html="document.contentHtml"
-          />
-        </div>
-      </article>
+          <label class="portal-confirm">
+            <input
+              type="checkbox"
+              class="portal-checkbox"
+              :checked="props.values[document.id] === true"
+              :aria-invalid="props.requiredAcceptanceError ? 'true' : undefined"
+              @change="emit('change', document.id, ($event.target as HTMLInputElement).checked)"
+            >
+            <span>
+              <template v-if="document.documentType === 'privacy'">
+                {{ t('legal.acceptPrivacyPrefix') }}
+                <button
+                  type="button"
+                  class="portal-link portal-link--button"
+                  @click.prevent.stop="openDocumentLink(document)"
+                >
+                  {{ t('legal.acceptPrivacyLink') }}
+                </button>
+              </template>
+              <template v-else>
+                {{ t('legal.acceptDocumentPrefix') }}
+                <button
+                  type="button"
+                  class="portal-link portal-link--button"
+                  @click.prevent.stop="openDocumentLink(document)"
+                >
+                  {{ document.title }}
+                </button>
+              </template>
+            </span>
+          </label>
+          <div
+            v-if="openDocumentId === document.id"
+            class="portal-legal-content portal-legal-document-row__content"
+            role="region"
+            :aria-label="document.title"
+          >
+            <SafeRichText
+              :content="document.content"
+              :content-html="document.contentHtml"
+            />
+          </div>
+        </article>
+      </template>
     </div>
 
     <p
@@ -127,14 +162,9 @@ function closeDocument(): void {
       class="portal-legal-marketing"
     >
       <div class="portal-section-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h3 class="portal-heading portal-heading--card">
-            {{ t('legal.marketing') }}
-          </h3>
-          <p class="portal-copy portal-copy--small">
-            {{ t('legal.marketingDescription') }}
-          </p>
-        </div>
+        <h3 class="portal-heading portal-heading--card">
+          {{ t('legal.marketing') }}
+        </h3>
         <span class="portal-copy portal-copy--small">{{ t('legal.optional') }}</span>
       </div>
       <label class="portal-confirm">

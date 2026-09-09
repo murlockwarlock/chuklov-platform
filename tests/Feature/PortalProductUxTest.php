@@ -54,11 +54,7 @@ class PortalProductUxTest extends TestCase
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
 
         $this->get(route('portal.health'))
-            ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
-                ->component('Portal/Health')
-                ->has('surveys.definitions', 0)
-                ->has('surveys.attempts', 0));
+            ->assertRedirect(route('portal.tracker'));
 
         $this->get(route('portal.surveys.index'))
             ->assertRedirect(route('portal.health'));
@@ -68,6 +64,84 @@ class PortalProductUxTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('Portal/More')
                 ->where('portal.urls.referrals', route('portal.referrals')));
+    }
+
+    public function test_authenticated_booking_catalog_keeps_the_primary_shell_and_client_actions_are_not_duplicated(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.services.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Services/Index')
+                ->where('portal.authenticated', true)
+                ->where('portal.urls.services', route('portal.services.index')));
+
+        $servicesPage = (string) file_get_contents(resource_path('js/Pages/Services/Index.vue'));
+        $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
+        $success = (string) file_get_contents(resource_path('js/Components/Portal/BookingSuccess.vue'));
+        $health = (string) file_get_contents(resource_path('js/Pages/Portal/Health.vue'));
+        $tracker = (string) file_get_contents(resource_path('js/Pages/Portal/Tracker.vue'));
+        $partner = (string) file_get_contents(resource_path('js/Pages/Portal/Referrals.vue'));
+        $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
+        $confirmation = (string) file_get_contents(resource_path('js/Components/Portal/BookingConfirmation.vue'));
+        $legal = (string) file_get_contents(resource_path('js/Components/Portal/LegalConsentChecklist.vue'));
+        $surveyReport = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyReport.vue'));
+        $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
+
+        self::assertStringContainsString('active="bookings"', $servicesPage);
+        self::assertStringContainsString('return props.portal.urls.services;', $shell);
+        self::assertStringNotContainsString('home.referrals', $success);
+        self::assertStringNotContainsString(':href="props.urls.tracker"', $health);
+        self::assertStringNotContainsString('<details', $tracker.$partner);
+        self::assertStringContainsString('portal-tabs--three', $tracker);
+        self::assertStringContainsString('portal-segmented', $partner);
+        self::assertStringContainsString('group-required-acceptance', $confirmation);
+        self::assertStringContainsString('@update:required-consent', $booking);
+        self::assertStringContainsString('@required-change', $confirmation);
+        self::assertStringContainsString('legal.requiredAcceptance', $legal);
+        self::assertStringContainsString('document.title', $legal);
+        self::assertStringContainsString('update:marketingValue', $legal);
+        self::assertStringContainsString('portal-report-metrics', $surveyReport);
+        self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
+        self::assertStringContainsString('active="more"', $section);
+    }
+
+    public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void
+    {
+        $files = array_merge(
+            glob(resource_path('js/Pages/Portal/*.vue')) ?: [],
+            glob(resource_path('js/Pages/Services/*.vue')) ?: [],
+            glob(resource_path('js/Components/Portal/*.vue')) ?: [],
+        );
+        $localeSource = (string) file_get_contents(resource_path('js/locales/portal.ts'));
+        $knownRawKeys = ['home.referrals'];
+
+        foreach ($files as $file) {
+            $source = (string) file_get_contents($file);
+
+            foreach ($knownRawKeys as $key) {
+                self::assertStringNotContainsString($key, $source, basename($file));
+            }
+
+            preg_match_all("/\\bt\\(\\s*['\"]([^'\"]+)['\"]/", $source, $translationMatches);
+            preg_match_all("/\\bportalText\\([^,]+,\\s*['\"]([^'\"]+)['\"]/", $source, $portalTextMatches);
+            $keys = array_unique(array_merge($translationMatches[1] ?? [], $portalTextMatches[1] ?? []));
+
+            foreach ($keys as $key) {
+                if ($key === '' || str_ends_with($key, '.')) {
+                    continue;
+                }
+
+                self::assertMatchesRegularExpression(
+                    '/[\'\"]'.preg_quote($key, '/').'[\'\"]\\s*:/',
+                    $localeSource,
+                    basename($file).' references missing '.$key,
+                );
+            }
+        }
     }
 
     public function test_authenticated_home_exposes_the_authorized_referrals_destination_and_personal_link(): void

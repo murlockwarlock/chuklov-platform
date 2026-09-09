@@ -98,3 +98,67 @@
         width: min(18rem, 100%);
     }
 }
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) {
+    width: min(calc(100% - 2rem), 34rem);
+    max-width: 34rem;
+    margin-inline: 1rem;
+    border-radius: 1.25rem;
+    padding: clamp(1.5rem, 5vw, 2.75rem);
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-simple-page-content {
+    gap: 1.75rem;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-simple-header {
+    gap: 0.85rem;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-simple-header-heading {
+    max-width: 100%;
+    font-size: clamp(1.75rem, 5vw, 2.35rem);
+    line-height: 1.12;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-simple-header-subheading {
+    max-width: 31rem;
+    font-size: 1rem;
+    line-height: 1.55;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-sc-form {
+    gap: 1.25rem;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-one-time-code-input-ctn {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: clamp(0.35rem, 1.8vw, 0.7rem);
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-one-time-code-input-digit {
+    width: 100%;
+    min-width: 0;
+    height: clamp(3rem, 10vw, 3.6rem);
+    font-size: 1.35rem;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-sc-form-actions,
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-sc-form-actions > *,
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-sc-form-actions .fi-btn {
+    width: 100%;
+}
+
+.fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-sc-form-actions .fi-btn {
+    min-height: 3.25rem;
+}
+
+@media (max-width: 360px) {
+    .fi-simple-main:has(.fi-one-time-code-input-ctn) {
+        width: calc(100% - 1rem);
+        margin-inline: 0.5rem;
+        padding-inline: 1rem;
+    }
+}

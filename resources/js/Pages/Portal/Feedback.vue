@@ -62,9 +62,6 @@ function submit(): void {
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ t('feedback.title') }}
           </h1>

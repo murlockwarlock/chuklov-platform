@@ -106,6 +106,12 @@ function setConsent(id: number, granted: boolean): void {
     }
 }
 
+function setRequiredConsent(granted: boolean): void {
+    props.legalDocuments
+        .filter((document) => document.isRequired)
+        .forEach((document) => setConsent(document.id, granted));
+}
+
 function setMarketingConsent(granted: boolean): void {
     consentForm.marketing_consent = granted;
 }
@@ -135,16 +141,13 @@ function saveB2bAnswer(): void {
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ t('profile.title') }}
           </h1>
         </div>
       </header>
 
-      <section class="portal-panel portal-stack">
+      <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <span class="portal-label">{{ t('profile.language') }}</span>
           <span class="portal-copy portal-copy--small">
@@ -263,7 +266,7 @@ function saveB2bAnswer(): void {
         </form>
       </section>
 
-      <section class="portal-panel portal-stack">
+      <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <div class="portal-stack portal-stack--tight">
             <h2 class="portal-heading portal-heading--card">
@@ -327,7 +330,7 @@ function saveB2bAnswer(): void {
         </form>
       </section>
 
-      <section class="portal-panel portal-stack">
+      <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <div class="portal-stack portal-stack--tight">
             <h2 class="portal-heading portal-heading--card">
@@ -372,14 +375,11 @@ function saveB2bAnswer(): void {
         </p>
       </section>
 
-      <section class="portal-panel portal-stack">
+      <section class="portal-content-section portal-stack">
         <div class="portal-stack portal-stack--tight">
           <h2 class="portal-heading portal-heading--card">
             {{ t('profile.legal') }}
           </h2>
-          <p class="portal-copy portal-copy--small">
-            {{ t('profile.legalDescription') }}
-          </p>
         </div>
 
         <p
@@ -406,7 +406,9 @@ function saveB2bAnswer(): void {
             :values="consentValues"
             :marketing-value="consentForm.marketing_consent"
             :show-marketing="props.marketingConsent !== null"
+            group-required-acceptance
             @change="setConsent"
+            @required-change="setRequiredConsent"
             @update:marketing-value="setMarketingConsent"
           />
           <button

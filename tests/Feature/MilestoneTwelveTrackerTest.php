@@ -164,6 +164,7 @@ final class MilestoneTwelveTrackerTest extends TestCase
                 ->where('tracker.access.allowed', true)
                 ->missing('tracker.access.freeMode')
                 ->missing('tracker.access.statusLabel')
+                ->where('urls.specialist', route('portal.bookings.create', ['format' => VisitFormat::Online->value]))
                 ->where('tracker.today.0.id', $task->getKey())
                 ->where('tracker.today.0.title', 'Моя задача')
                 ->where('tracker.today.0.status', 'pending'));

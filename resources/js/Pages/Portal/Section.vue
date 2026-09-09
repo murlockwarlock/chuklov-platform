@@ -39,7 +39,7 @@ const pageTitle = computed(() => props.title);
   <AppShell
     :title="pageTitle"
     :portal="props.portal"
-    :bottom-navigation="false"
+    active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <article

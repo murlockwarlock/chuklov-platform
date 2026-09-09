@@ -35,9 +35,6 @@ const { locale, t } = usePortalLocale();
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            CHUKLOV
-          </p>
           <h1 class="portal-heading portal-heading--section">
             {{ t('bookings.title') }}
           </h1>
