@@ -60,13 +60,6 @@ const { locale, t } = usePortalLocale();
         >
           {{ t('home.book') }}
         </Link>
-        <Link
-          v-if="props.upcomingBooking"
-          :href="props.portal.urls.bookings"
-          class="portal-link"
-        >
-          {{ t('bookings.title') }}
-        </Link>
       </div>
 
       <Link

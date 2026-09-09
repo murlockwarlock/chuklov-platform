@@ -731,11 +731,13 @@ function cancelPayout(payout: Payout): void {
         >
           <div class="portal-stack">
             <section class="portal-stack">
-              <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+              <div class="portal-section-heading portal-section-heading--compact">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.registrations') }}
                 </h2>
-                <span class="portal-copy portal-copy--small">{{ props.referrals.referredClientsCount }}</span>
+                <span class="portal-count">
+                  {{ props.referrals.referredClientsCount }} {{ t('referrals.registrations') }}
+                </span>
               </div>
               <ul
                 v-if="props.referrals.registrations.length"
@@ -744,7 +746,7 @@ function cancelPayout(payout: Payout): void {
                 <li
                   v-for="(registration, index) in props.referrals.registrations"
                   :key="registration.name + (registration.registeredAt ?? '') + index"
-                  class="portal-list__row"
+                  class="portal-list__row portal-referral-registration-row"
                 >
                   <span>
                     <strong class="portal-list__title">{{ registration.name }}</strong>
@@ -764,7 +766,7 @@ function cancelPayout(payout: Payout): void {
 
             <section class="portal-stack">
               <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.payoutHistory') }}
                 </h2>
               </div>
@@ -817,7 +819,7 @@ function cancelPayout(payout: Payout): void {
               class="portal-stack"
             >
               <div class="portal-section-heading">
-                <h2 class="portal-heading portal-heading--section">
+                <h2 class="portal-heading portal-heading--card">
                   {{ t('referrals.rewardHistory') }}
                 </h2>
               </div>

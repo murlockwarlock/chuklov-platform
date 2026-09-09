@@ -103,7 +103,7 @@ function saveCheckIn(): void {
 
       <template v-if="props.tracker.access.allowed">
         <nav
-          class="portal-tabs portal-tabs--three"
+          class="portal-tabs portal-tabs--three portal-tabs--segmented"
           :aria-label="t('tracker.title')"
         >
           <button
@@ -328,7 +328,7 @@ function saveCheckIn(): void {
 
         <Link
           :href="props.urls.specialist"
-          class="portal-link portal-tracker-specialist-link"
+          class="portal-button portal-button--secondary portal-tracker-specialist-link"
           data-testid="tracker-specialist-cta"
         >
           {{ t('tracker.discuss') }}

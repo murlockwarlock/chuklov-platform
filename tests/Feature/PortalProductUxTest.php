@@ -81,6 +81,8 @@ class PortalProductUxTest extends TestCase
 
         $servicesPage = (string) file_get_contents(resource_path('js/Pages/Services/Index.vue'));
         $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
+        $home = (string) file_get_contents(resource_path('js/Pages/Portal/Home.vue'));
+        $companion = (string) file_get_contents(resource_path('js/Pages/Portal/Companion.vue'));
         $success = (string) file_get_contents(resource_path('js/Components/Portal/BookingSuccess.vue'));
         $health = (string) file_get_contents(resource_path('js/Pages/Portal/Health.vue'));
         $tracker = (string) file_get_contents(resource_path('js/Pages/Portal/Tracker.vue'));
@@ -93,11 +95,17 @@ class PortalProductUxTest extends TestCase
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
         self::assertStringContainsString('return props.portal.urls.services;', $shell);
+        self::assertStringNotContainsString("t('bookings.title')", $home);
         self::assertStringNotContainsString('home.referrals', $success);
         self::assertStringNotContainsString(':href="props.urls.tracker"', $health);
         self::assertStringNotContainsString('<details', $tracker.$partner);
         self::assertStringContainsString('portal-tabs--three', $tracker);
+        self::assertStringContainsString('portal-tabs--segmented', $tracker);
+        self::assertStringContainsString('portal-button portal-button--secondary portal-tracker-specialist-link', $tracker);
         self::assertStringContainsString('portal-segmented', $partner);
+        self::assertStringContainsString('portal-count', $partner);
+        self::assertStringContainsString('portal-referral-registration-row', $partner);
+        self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);
