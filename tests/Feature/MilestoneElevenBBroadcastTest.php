@@ -932,6 +932,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         $other = Organization::factory()->create();
         $otherOwner = User::factory()->forOrganization($other)->create();
+        $otherOwner->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         config()->set('tenancy.default_organization_id', $other->getKey());
         app(OrganizationContext::class)->set($other);
         $this->actingAs($otherOwner);
@@ -1322,6 +1323,7 @@ final class MilestoneElevenBBroadcastTest extends TestCase
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $actor = User::factory()->forOrganization($organization)->create();
+        $actor->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $actor];

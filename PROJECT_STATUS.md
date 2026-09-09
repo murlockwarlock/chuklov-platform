@@ -1,5 +1,12 @@
 # Project Status
 
+## 2026-09-09 — M15 Production Hardening / Release Candidate
+
+- M15 is `IN_PROGRESS` from starting main SHA `d88bd56fbbc3287a9a4cfe936f95f665332f2a94` on branch `codex/m15-production-hardening`. This candidate is limited to production hardening, concrete release-blocking fixes, critical-journey verification, security and recovery evidence, and one Draft PR; no new product scope is planned.
+- M12 core — tracker plans, entitlements, and free mode — is `OWNER ACCEPTED / MERGED` at the starting SHA. Recurring billing and real payment adapters remain deferred; M13 is `BLOCKED` pending payment-provider selection.
+- M8 remains `BLOCKED` by the missing source-backed 9-systems/MSQ definitions. M14 optional MAX/Instagram channels are out of the current release scope.
+- No M15 hardening, PostgreSQL release evidence, backup/restore drill, staging deployment, owner acceptance, production deployment, or merge is claimed yet. Production remains `NOT DEPLOYED`.
+
 ## 2026-09-06 — PR #33 audit remediation candidate
 
 - Previous application SHA: `5a4c41877cec24191761601857b5c80111b50f4e`. Final application SHA: `4773b903e7fc5c76f5a40c062f73c4ab3f85675b` on `codex/configurable-referral-rewards`; the final PR head may include only this status update. The remediation enforces partner-only payout authorization at the application boundary, keeps payout idempotency and cross-organization isolation, uses tracked campaign populations for conversion, preserves legacy referral provenance, presents net accrued rewards after reversals, makes the Portal Home CTA state-aware, and adds bounded targeted refresh for Portal/CRM partner and payout views.

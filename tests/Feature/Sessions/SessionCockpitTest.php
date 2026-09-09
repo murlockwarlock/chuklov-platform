@@ -760,6 +760,7 @@ final class SessionCockpitTest extends TestCase
             'enabled' => true,
         ]);
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
         app(OrganizationContext::class)->set($organization);

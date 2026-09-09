@@ -598,6 +598,7 @@ final class ClientWorkspaceUxATest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,

@@ -335,6 +335,7 @@ final class MilestoneEightSurveyTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $actor = User::factory()->forOrganization($organization)->create();
+        $actor->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);

@@ -1082,7 +1082,9 @@ final class MilestoneFiveScenarioTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $staff->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $this->setFilamentContext($admin, $organization);
 
         $this->actingAs($admin)->get(route('filament.admin.resources.scenario-rules.index'))->assertOk();
@@ -1147,6 +1149,7 @@ final class MilestoneFiveScenarioTest extends TestCase
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($organization)->create(['language' => 'en', 'timezone' => 'UTC']);
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
         $service = Service::factory()->forOrganization($organization)->create();

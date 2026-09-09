@@ -668,6 +668,7 @@ class MilestoneThreeCrmTest extends TestCase
         $organization = Organization::factory()->create();
         $otherOrganization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $client = Client::factory()->forOrganization($otherOrganization)->create();
         $specialist = Specialist::factory()->forOrganization($otherOrganization)->create();
         $this->setOrganization($organization);

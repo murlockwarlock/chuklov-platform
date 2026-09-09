@@ -608,6 +608,7 @@ final class RagTest extends TestCase
     {
         $organization = $this->organization();
         $actor = User::factory()->forOrganization($organization)->create();
+        $actor->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
 

@@ -1057,6 +1057,7 @@ class MilestoneFourSchedulingTest extends TestCase
     {
         $organization = Organization::factory()->create(['timezone' => $timezone]);
         $admin = User::factory()->forOrganization($organization)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => null]);
         $service = Service::factory()->forOrganization($organization)->create([
             'duration_minutes' => 60,

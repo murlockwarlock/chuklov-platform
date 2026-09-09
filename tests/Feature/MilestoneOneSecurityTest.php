@@ -41,6 +41,7 @@ class MilestoneOneSecurityTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $nonMember = User::factory()->create();
+        $nonMember->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         config()->set('tenancy.default_organization_id', $organization->id);
 
         $this->actingAs($nonMember)->get('/')->assertForbidden();
@@ -371,6 +372,7 @@ class MilestoneOneSecurityTest extends TestCase
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin];
