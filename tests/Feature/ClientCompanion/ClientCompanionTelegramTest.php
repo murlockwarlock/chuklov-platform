@@ -93,6 +93,21 @@ final class ClientCompanionTelegramTest extends TestCase
         self::assertSame(0, CompanionTurn::query()->count());
     }
 
+    public function test_companion_callbacks_are_registered_for_all_safe_actions(): void
+    {
+        $bot = $this->fakeBot(810005, ChatType::PRIVATE, 910005);
+
+        foreach ([
+            'cc:feedback:helpful:1',
+            'cc:feedback:not_helpful:1',
+            'cc:human:1',
+            'cc:reinspect:1',
+        ] as $callbackData) {
+            $bot->hearCallbackQueryData($callbackData)->reply();
+            $bot->assertCalled('answerCallbackQuery');
+        }
+    }
+
     private function verifyTelegram(string $externalId): void
     {
         ClientChannelIdentity::factory()->forClient($this->client)->create([

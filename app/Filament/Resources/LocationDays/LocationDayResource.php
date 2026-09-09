@@ -30,7 +30,7 @@ class LocationDayResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Настройки';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 4;
 
     protected static ?string $modelLabel = 'день выезда';
 

@@ -17,16 +17,21 @@ final class TrackerPlanForm
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Тариф')
+            Section::make('Основное')
                 ->schema([
                     TextInput::make('name')->label('Название')->required()->maxLength(160),
-                    Toggle::make('is_active')->label('Тариф активен')->default(true)->inline(),
-                    Toggle::make('is_visible')->label('Показывать клиентам')->default(true)->inline(),
                     TextInput::make('price')->label('Цена')->required()->inputMode('decimal')->maxLength(32)->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/'),
                     Select::make('currency')->label('Валюта')->options(fn (): array => self::currencyOptions())->required()->searchable(),
                     TextInput::make('duration_days')->label('Срок доступа (дни)')->integer()->minValue(1)->maxValue(3650)->required(),
-                    Textarea::make('description')->label('Короткое описание для клиента')->maxLength(500)->rows(3),
-                    Toggle::make('included_access')->label('Включает доступ к трекеру')->default(true)->inline(),
+                    Textarea::make('description')->label('Короткое описание для клиента')->maxLength(500)->rows(3)->columnSpanFull(),
+                ])
+                ->columns(2)
+                ->columnSpanFull(),
+            Section::make('Публикация и доступ')
+                ->schema([
+                    Toggle::make('is_active')->label('Тариф активен')->default(true)->inline(false),
+                    Toggle::make('is_visible')->label('Показывать клиентам')->default(true)->inline(false),
+                    Toggle::make('included_access')->label('Включает доступ к трекеру')->default(true)->inline(false),
                     TextInput::make('display_order')->label('Порядок отображения')->integer()->minValue(0)->default(0)->required(),
                 ])
                 ->columns(2)
