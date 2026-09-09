@@ -626,6 +626,33 @@ final class FinanceCrmUxTest extends TestCase
             ->assertSee('Сохранить финансовые настройки');
     }
 
+    public function test_currency_configuration_form_reports_missing_exchange_rate(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(FinanceConfiguration::class)
+            ->fillForm([
+                'base_currency' => 'EUR',
+                'display_currency' => 'EUR',
+                'allowed_currencies' => ['CNY', 'EUR', 'JPY'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_up',
+                'rates' => [],
+            ])
+            ->call('save')
+            ->assertHasFormErrors([
+                'rates' => 'Укажите курс CNY → EUR для сохранения настроек.',
+            ])
+            ->assertNotified('Не удалось сохранить финансовые настройки');
+
+        self::assertDatabaseMissing('organization_currency_configurations', [
+            'organization_id' => $organization->getKey(),
+        ]);
+    }
+
     public function test_initial_currency_configuration_form_is_seeded_from_the_local_service_currency(): void
     {
         $organization = Organization::factory()->create(['timezone' => 'Asia/Almaty']);
