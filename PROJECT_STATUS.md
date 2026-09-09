@@ -5,7 +5,7 @@
 - M15 is `IN_PROGRESS` from starting main SHA `d88bd56fbbc3287a9a4cfe936f95f665332f2a94` on branch `codex/m15-production-hardening`. This candidate is limited to production hardening, concrete release-blocking fixes, critical-journey verification, security and recovery evidence, and one Draft PR; no new product scope is planned.
 - M12 core — tracker plans, entitlements, and free mode — is `OWNER ACCEPTED / MERGED` at the starting SHA. Recurring billing and real payment adapters remain deferred; M13 is `BLOCKED` pending payment-provider selection.
 - M8 remains `BLOCKED` by the missing source-backed 9-systems/MSQ definitions. M14 optional MAX/Instagram channels are out of the current release scope.
-- No M15 hardening, PostgreSQL release evidence, backup/restore drill, staging deployment, owner acceptance, production deployment, or merge is claimed yet. Production remains `NOT DEPLOYED`.
+- M15 hardening, PostgreSQL, backup/restore, and staging evidence is being recorded in this candidate. Owner acceptance and merge remain unclaimed, and production remains `NOT DEPLOYED`.
 
 ## 2026-09-06 — PR #33 audit remediation candidate
 
