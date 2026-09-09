@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-09-09 — REQ-SEC-007 privileged access hardening
+
+- Implemented the minimum production boundary for privileged staff/admin access: required Filament app-based MFA with recoverable codes, encrypted and audited MFA lifecycle changes, current-session invalidation, explicit logout-all-sessions, and active organization-membership enforcement.
+- Kept ordinary client passwordless authentication separate. `REQ-SEC-007` is `CANDIDATE` pending the cumulative staging/browser owner-acceptance cycle; production remains closed.
+
 ## 2026-09-05 — REQ-REFERRAL-003 partner enrollment, campaign links, and partner cabinet
 
 - Recorded the latest owner-confirmed Phase 1 partner operating model: a Partner is an existing organization-scoped Client with an auditable active/inactive enrollment, direct CRM activation, direct client self-enrollment, and a first-class CRM Partners workspace.
