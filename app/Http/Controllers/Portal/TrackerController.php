@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Application\SubmitTrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
@@ -60,7 +61,7 @@ final class TrackerController extends Controller
             ],
             'urls' => [
                 'checkIn' => route('portal.tracker.check-in'),
-                'specialist' => route('portal.b2b'),
+                'specialist' => route('portal.bookings.create', ['format' => VisitFormat::Online->value]),
             ],
         ]);
     }

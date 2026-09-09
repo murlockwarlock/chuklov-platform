@@ -2,6 +2,8 @@
 
 ## 2026-09-09 — M15 Production Hardening / Release Candidate
 
+- Chuklov v2.2 expects Tracker daily/weekly follow-up over Road Map items and monthly practice content. M12 currently supports entitlement, free mode, check-ins, and Scenario access; the full source-backed Road Map/9-systems/MSQ methodology is unavailable. This candidate preserves the Scenario Engine extension point and does not invent exercises, hydration targets, scores, percentages, or clinical recommendations; generic CRM-configurable daily/weekly tasks remain an owner decision.
+
 - M15 is `IN_PROGRESS` from starting main SHA `d88bd56fbbc3287a9a4cfe936f95f665332f2a94` on branch `codex/m15-production-hardening`. This candidate is limited to production hardening, concrete release-blocking fixes, critical-journey verification, security and recovery evidence, and one Draft PR; no new product scope is planned.
 - M12 core — tracker plans, entitlements, and free mode — is `OWNER ACCEPTED / MERGED` at the starting SHA. Recurring billing and real payment adapters remain deferred; M13 is `BLOCKED` pending payment-provider selection.
 - M8 remains `BLOCKED` by the missing source-backed 9-systems/MSQ definitions. M14 optional MAX/Instagram channels are out of the current release scope.

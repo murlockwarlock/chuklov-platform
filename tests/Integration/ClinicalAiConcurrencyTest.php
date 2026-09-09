@@ -16,6 +16,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class ClinicalAiConcurrencyTest extends TestCase
@@ -31,7 +32,7 @@ final class ClinicalAiConcurrencyTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_concurrent_clinical_review_actions_create_ordered_auditable_steps(): void
+    public function test_concurrent_clinical_review_actions_serialize_and_reject_duplicate_terminal_decisions(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped('Clinical review concurrency requires PostgreSQL row locks.');
@@ -55,9 +56,20 @@ final class ClinicalAiConcurrencyTest extends TestCase
             fn (): array => self::review($organization->getKey(), $reviewer->getKey(), $run->getKey()),
         ]);
 
-        self::assertSame([], array_values(array_filter($results, static fn (array $result): bool => isset($result['error']))));
+        $successfulReviews = array_values(array_filter(
+            $results,
+            static fn (array $result): bool => isset($result['review_step']),
+        ));
+        $rejectedReviews = array_values(array_filter(
+            $results,
+            static fn (array $result): bool => isset($result['error']),
+        ));
+        self::assertCount(1, $successfulReviews);
+        self::assertSame(1, $successfulReviews[0]['review_step']);
+        self::assertCount(1, $rejectedReviews);
+        self::assertSame(ValidationException::class, $rejectedReviews[0]['error']);
         $persistedRun = AiRun::query()->whereKey($run->getKey())->firstOrFail();
-        self::assertSame([1, 2], $persistedRun
+        self::assertSame([1], $persistedRun
             ->humanReviews()
             ->orderBy('review_step')
             ->pluck('review_step')

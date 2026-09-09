@@ -14,6 +14,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioCondition;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
+use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Tracker\Application\EndTrackerAccess;
 use App\Modules\Tracker\Application\ExtendTrackerAccess;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
@@ -88,6 +89,30 @@ final class MilestoneTwelveTrackerTest extends TestCase
                 ->has('tracker.plans', 1)
                 ->where('tracker.plans.0.name', 'Видимый тариф'));
         self::assertSame('Видимый тариф', $visible->plan()->firstOrFail()->name);
+    }
+
+    public function test_tracker_specialist_cta_uses_b2c_online_booking_without_entering_the_b2b_funnel(): void
+    {
+        [$organization] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialistUrl = route('portal.bookings.create', ['format' => VisitFormat::Online->value]);
+        self::assertNotSame(route('portal.b2b'), $specialistUrl);
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->get(route('portal.tracker'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Tracker')
+                ->where('urls.specialist', $specialistUrl));
+
+        $this->withSession(['client_portal.client_id' => $client->id])
+            ->get(route('portal.bookings.create', ['format' => VisitFormat::Online->value]))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/BookingCreate')
+                ->where('query.format', VisitFormat::Online->value));
+
+        self::assertSame(0, DB::table('b2b_leads')->count());
     }
 
     public function test_tracker_check_in_requires_access_and_is_tenant_scoped(): void
