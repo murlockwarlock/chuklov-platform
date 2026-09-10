@@ -154,6 +154,7 @@ final class PlatformHealthExperienceTest extends TestCase
         self::assertNotEmpty($report->report_snapshot['safe_steps']);
         self::assertNotEmpty($report->report_snapshot['specialist_questions']);
         self::assertNotEmpty($report->report_snapshot['road_map']['items']);
+        self::assertSame('Открыть чат', $report->report_snapshot['ctas']['companion']['ru']);
         self::assertSame('improved', $comparison->status);
         self::assertSame('normalized_score', $comparison->comparison_snapshot['metrics']['digestive']['basis']);
         self::assertSame($firstCompleted->survey_version_id, $secondCompleted->survey_version_id);

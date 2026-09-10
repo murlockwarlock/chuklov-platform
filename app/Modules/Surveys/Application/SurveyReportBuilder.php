@@ -117,7 +117,7 @@ final class SurveyReportBuilder
             'disclaimer' => ['ru' => 'Опрос и результат носят информационный характер и не заменяют консультацию специалиста.', 'en' => 'This questionnaire and result are informational and do not replace professional advice.'],
             'ctas' => [
                 'road_map' => ['ru' => 'Открыть Road Map', 'en' => 'Open Road Map'],
-                'companion' => ['ru' => 'Обсудить с Companion', 'en' => 'Discuss with Companion'],
+                'companion' => ['ru' => 'Открыть чат', 'en' => 'Open chat'],
                 'repeat' => ['ru' => 'Пройти позже ещё раз', 'en' => 'Take it again later'],
             ],
         ];

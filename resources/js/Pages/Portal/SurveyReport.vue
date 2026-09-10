@@ -44,7 +44,6 @@ const safeSteps = computed(() => props.report.safe_steps ?? []);
 const specialistQuestions = computed(() => props.report.specialist_questions ?? []);
 const roadMapItems = computed(() => props.report.road_map?.items ?? []);
 const metrics = computed(() => props.report.metrics ?? {});
-const thresholds = computed(() => props.report.thresholds ?? []);
 
 const scoreLabel = (score: number): string => t('survey.score', { value: score });
 const changeLabel = (change: number): string => change > 0 ? `+${change}` : String(change);
@@ -80,6 +79,38 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
           </p>
         </div>
       </header>
+
+      <section
+        class="portal-panel portal-stack portal-stack--tight"
+        :aria-label="t('survey.nextSteps')"
+        data-testid="portal-report-actions"
+      >
+        <p class="portal-copy portal-copy--small">
+          {{ t('survey.nextSteps') }}
+        </p>
+        <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <a
+            href="#road-map"
+            class="portal-button portal-button--primary"
+          >
+            {{ props.report.ctas?.road_map ?? t('survey.openRoadMap') }}
+          </a>
+          <Link
+            :href="props.urls.companion"
+            class="portal-button portal-button--secondary"
+          >
+            {{ t('survey.discussCompanion') }}
+          </Link>
+          <Link
+            :href="props.urls.repeat"
+            method="post"
+            as="button"
+            class="portal-button portal-button--secondary"
+          >
+            {{ props.report.ctas?.repeat ?? t('survey.repeat') }}
+          </Link>
+        </div>
+      </section>
 
       <section
         class="portal-panel portal-stack"
@@ -272,29 +303,6 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
         {{ t('survey.noComparison') }}
       </p>
 
-      <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <a
-          href="#road-map"
-          class="portal-button portal-button--primary"
-        >
-          {{ props.report.ctas?.road_map ?? t('survey.openRoadMap') }}
-        </a>
-        <Link
-          :href="props.urls.companion"
-          class="portal-button portal-button--secondary"
-        >
-          {{ props.report.ctas?.companion ?? t('survey.discussCompanion') }}
-        </Link>
-        <Link
-          :href="props.urls.repeat"
-          method="post"
-          as="button"
-          class="portal-button portal-button--secondary"
-        >
-          {{ props.report.ctas?.repeat ?? t('survey.repeat') }}
-        </Link>
-      </div>
-
       <p
         v-if="props.report.disclaimer"
         class="portal-copy portal-copy--small"
@@ -303,7 +311,7 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
       </p>
 
       <details
-        v-if="Object.keys(metrics).length || thresholds.length || domains.length"
+        v-if="Object.keys(metrics).length || domains.length"
         class="portal-panel portal-stack portal-stack--tight"
         data-testid="portal-report-metrics"
       >
@@ -314,24 +322,17 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
           <div
             v-for="metric in domains"
             :key="metric.label"
-            class="portal-report-metric"
+            class="grid min-w-0 gap-2 border-t border-[var(--portal-color-border)] py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4"
           >
-            <dt>{{ metric.label }}</dt>
-            <dd>{{ scoreLabel(metric.score) }}</dd>
+            <dt class="min-w-0">
+              <span class="block break-words text-[var(--portal-color-ink)]">{{ metric.label }}</span>
+              <span class="mt-1 block break-words text-sm font-medium text-[var(--portal-color-ink-soft)]">{{ t('survey.burdenLevel') }}: {{ metric.status }}</span>
+            </dt>
+            <dd class="m-0 break-words text-left text-base font-semibold text-[var(--portal-color-ink)] sm:text-right">
+              {{ scoreLabel(metric.score) }}
+            </dd>
           </div>
         </dl>
-        <ul
-          v-if="thresholds.length"
-          class="portal-list"
-        >
-          <li
-            v-for="threshold in thresholds"
-            :key="threshold.label"
-            class="portal-list__row"
-          >
-            <span class="break-words">{{ threshold.label }}</span>
-          </li>
-        </ul>
       </details>
     </section>
   </AppShell>

@@ -91,6 +91,7 @@ class PortalProductUxTest extends TestCase
         $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
         $confirmation = (string) file_get_contents(resource_path('js/Components/Portal/BookingConfirmation.vue'));
         $legal = (string) file_get_contents(resource_path('js/Components/Portal/LegalConsentChecklist.vue'));
+        $surveyTake = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyTake.vue'));
         $surveyReport = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyReport.vue'));
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
         $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
@@ -117,6 +118,11 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('legal.requiredAcceptance', $legal);
         self::assertStringContainsString('document.title', $legal);
         self::assertStringContainsString('update:marketingValue', $legal);
+        self::assertStringContainsString('role="radiogroup"', $surveyTake);
+        self::assertStringContainsString('scrollIntoView', $surveyTake);
+        self::assertStringContainsString('preserveScroll: false', $surveyTake);
+        self::assertStringNotContainsString('<select', $surveyTake);
+        self::assertStringContainsString('portal-report-actions', $surveyReport);
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
         self::assertStringContainsString('active="more"', $section);
@@ -128,7 +134,9 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString("t('more.feedback')", $more);
         self::assertStringNotContainsString("t('more.business')", $more);
         self::assertStringContainsString("'shell.more': 'Кабинет'", $portalLocale);
+        self::assertStringContainsString("'shell.companion': 'Чат'", $portalLocale);
         self::assertStringContainsString("'more.title': 'Кабинет'", $portalLocale);
+        self::assertStringContainsString("'survey.technicalDetails': 'Все показатели'", $portalLocale);
     }
 
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void
