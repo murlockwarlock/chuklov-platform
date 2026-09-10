@@ -64,7 +64,11 @@ final class PgvectorKnowledgeRetriever implements KnowledgeRetriever
         $embeddingSnapshot?->assertCurrent();
         $embeddingSnapshot?->pricing->assertCompatible($configuration);
 
-        $vector = $this->embeddings->generate([$query->text], $embeddingConfiguration)[0] ?? [];
+        $vector = $this->embeddings->generate(
+            $orgId,
+            [$query->text],
+            $embeddingConfiguration,
+        )[0] ?? [];
         $this->assertDeadlineRemaining($query->executionDeadlineAt);
         if (count($vector) !== $configuration->dimensions) {
             throw new RuntimeException('Active embedding configuration is incompatible.');

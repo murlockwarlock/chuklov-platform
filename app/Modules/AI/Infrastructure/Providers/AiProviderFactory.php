@@ -10,6 +10,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use InvalidArgumentException;
 use Laravel\Ai\AiManager;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Gateway\Anthropic\AnthropicGateway;
 use Laravel\Ai\Gateway\Gemini\GeminiGateway;
@@ -24,6 +25,7 @@ use Laravel\Ai\Providers\OllamaProvider;
 use Laravel\Ai\Providers\OpenAiCompatibleProvider;
 use Laravel\Ai\Providers\OpenAiProvider;
 use Laravel\Ai\Providers\OpenRouterProvider;
+use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Providers\XaiProvider;
 
 class AiProviderFactory
@@ -71,6 +73,46 @@ class AiProviderFactory
         ?Agent $agent = null,
         array $extraConfig = [],
     ): TextProvider {
+        $provider = $this->createProvider($providerName, $credential, $extraConfig);
+        if (! $provider instanceof TextProvider) {
+            throw new InvalidArgumentException("Provider [{$providerName}] does not support text generation.");
+        }
+
+        // If testing fakes are active for the agent, attach the fake gateway
+        $aiManager = app(AiManager::class);
+        if ($agent !== null && $aiManager->hasFakeGatewayFor($agent)) {
+            return $provider->useTextGateway($aiManager->fakeGatewayFor($agent));
+        }
+
+        return $provider;
+    }
+
+    /**
+     * Create an isolated, request-scoped EmbeddingProvider instance using the exact OrganizationCredential.
+     *
+     * @param  array<string, mixed>  $extraConfig
+     */
+    public function createEmbeddingProvider(
+        string $providerName,
+        ?OrganizationCredential $credential,
+        array $extraConfig = [],
+    ): EmbeddingProvider {
+        $provider = $this->createProvider($providerName, $credential, $extraConfig);
+        if (! $provider instanceof EmbeddingProvider) {
+            throw new InvalidArgumentException("Provider [{$providerName}] does not support embeddings.");
+        }
+
+        return $provider;
+    }
+
+    /**
+     * @param  array<string, mixed>  $extraConfig
+     */
+    private function createProvider(
+        string $providerName,
+        ?OrganizationCredential $credential,
+        array $extraConfig,
+    ): Provider {
         $secret = $this->resolveSecret($credential);
         $driver = AiProviderCatalog::normalize($providerName);
 
@@ -90,7 +132,7 @@ class AiProviderFactory
             $config['store'] = false;
         }
 
-        $provider = match ($driver) {
+        return match ($driver) {
             'openai' => new OpenAiProvider(
                 new OpenAiGateway($this->events),
                 $config,
@@ -115,16 +157,8 @@ class AiProviderFactory
             'azure' => new AzureOpenAiProvider($config, $this->events),
             'bedrock' => new BoundedBedrockProvider($config, $this->events),
             'openai_compatible' => new OpenAiCompatibleProvider($config, $this->events),
-            default => throw new InvalidArgumentException("AI Provider [{$providerName}] is not supported for text generation."),
+            default => throw new InvalidArgumentException("AI Provider [{$providerName}] is not supported."),
         };
-
-        // If testing fakes are active for the agent, attach the fake gateway
-        $aiManager = app(AiManager::class);
-        if ($agent !== null && $aiManager->hasFakeGatewayFor($agent)) {
-            return $provider->useTextGateway($aiManager->fakeGatewayFor($agent));
-        }
-
-        return $provider;
     }
 
     /**
