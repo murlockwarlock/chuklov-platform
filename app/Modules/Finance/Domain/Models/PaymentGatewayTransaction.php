@@ -23,8 +23,10 @@ use Illuminate\Support\Carbon;
  * @property CurrencyCode $settlement_currency
  * @property PaymentGatewayStatus $status
  * @property int|null $ledger_entry_id
+ * @property int|null $refund_ledger_entry_id
  * @property Carbon $initiated_at
  * @property Carbon|null $settled_at
+ * @property Carbon|null $refunded_at
  */
 #[Fillable([])]
 class PaymentGatewayTransaction extends Model
@@ -53,6 +55,12 @@ class PaymentGatewayTransaction extends Model
         return $this->belongsTo(FinancialLedgerEntry::class, 'ledger_entry_id');
     }
 
+    /** @return BelongsTo<FinancialLedgerEntry, $this> */
+    public function refundLedgerEntry(): BelongsTo
+    {
+        return $this->belongsTo(FinancialLedgerEntry::class, 'refund_ledger_entry_id');
+    }
+
     /** @return HasMany<PaymentGatewayEvent, $this> */
     public function events(): HasMany
     {
@@ -69,6 +77,7 @@ class PaymentGatewayTransaction extends Model
             'settlement_amount_minor' => 'integer',
             'initiated_at' => 'datetime',
             'settled_at' => 'datetime',
+            'refunded_at' => 'datetime',
         ];
     }
 }

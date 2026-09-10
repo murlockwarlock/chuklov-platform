@@ -19,13 +19,25 @@ final class SurveyScorer
 
         $metrics = [];
         foreach ($scoring['metrics'] ?? [] as $metric) {
-            $metrics[$metric['key']] = ['label' => $metric['label'], 'value' => 0.0];
+            $metrics[$metric['key']] = [
+                'label' => $metric['label'],
+                'value' => 0.0,
+                'normalized_score' => null,
+                'max_value' => is_numeric($metric['max_value'] ?? null) ? (float) $metric['max_value'] : null,
+            ];
         }
         foreach ($scoring['rules'] ?? [] as $rule) {
             if (! array_key_exists($rule['question_key'], $validatedAnswers)) {
                 continue;
             }
             $metrics[$rule['metric_key']]['value'] += $this->points($rule, $validatedAnswers[$rule['question_key']]);
+        }
+
+        foreach ($metrics as $metricKey => $metric) {
+            $maxValue = $metric['max_value'] ?? null;
+            $metrics[$metricKey]['normalized_score'] = is_numeric($maxValue) && (float) $maxValue > 0
+                ? max(0, min(100, (int) round(((float) $metric['value'] / (float) $maxValue) * 100)))
+                : null;
         }
 
         $thresholds = [];

@@ -335,6 +335,30 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, ScenarioEvent::query()->count());
     }
 
+    public function test_serious_diagnosis_cannot_be_escalated_by_a_model_without_a_human_request(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'handoff_required',
+                'reply' => '',
+                'handoff_reason' => 'out_of_scope',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('у меня анапластическая эпендимома и на уровне Th12-L1 у меня его вырезали grade 3 WHO');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('invalid_output', $turn->fresh()->failure_code);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+    }
+
     public function test_resolve_and_resume_then_normal_greeting_produces_an_ai_reply(): void
     {
         $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();

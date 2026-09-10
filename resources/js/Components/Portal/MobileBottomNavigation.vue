@@ -23,7 +23,7 @@ function navigationHref(key: Exclude<PortalNavKey, null>): string {
     }
 
     if (key === 'health') {
-        return props.portal.urls.tracker;
+        return props.portal.urls.health;
     }
 
     return props.portal.urls[key];

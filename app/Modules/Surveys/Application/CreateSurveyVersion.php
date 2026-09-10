@@ -44,6 +44,9 @@ final readonly class CreateSurveyVersion
                 'scoring' => $data['scoring'],
                 'metric_schema_key' => $data['metric_schema_key'] ?? null,
                 'source_reference' => $data['source_reference'] ?? null,
+                'source' => $data['source'] ?? 'platform_default',
+                'approval_status' => $data['approval_status'] ?? 'draft',
+                'methodology' => $data['methodology'] ?? null,
                 'created_by_user_id' => $actor->getKey(),
             ]);
         });

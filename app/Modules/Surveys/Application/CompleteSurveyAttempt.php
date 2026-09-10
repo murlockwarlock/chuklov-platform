@@ -7,6 +7,7 @@ use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyComparison;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Services\SurveyScorer;
 use Carbon\CarbonImmutable;
@@ -20,6 +21,7 @@ final readonly class CompleteSurveyAttempt
         private RecordScenarioEvent $events,
         private RecordAuditEvent $audit,
         private CompareSurveyAttempts $compare,
+        private SurveyReportBuilder $reportBuilder,
     ) {}
 
     /** @param array<string, mixed> $answers */
@@ -30,7 +32,8 @@ final readonly class CompleteSurveyAttempt
         $completed = DB::transaction(function () use ($client, $attempt, $answers): SurveyAttempt {
             $locked = SurveyAttempt::query()->where('organization_id', $client->organization_id)->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
             if ($locked->status === SurveyAttemptStatus::Completed) {
-                $this->compare->handle($locked);
+                $comparison = $this->compare->handle($locked);
+                $this->refreshReport($locked, $comparison);
 
                 return $locked;
             }
@@ -64,6 +67,8 @@ final readonly class CompleteSurveyAttempt
                         'metrics' => $result['metrics'],
                         'thresholds' => $result['thresholds'],
                         'tags' => $result['tags'],
+                        'source' => $version->source,
+                        'approval_status' => $version->approval_status,
                     ],
                     'materialized_at' => $completedAt,
                 ],
@@ -82,11 +87,34 @@ final readonly class CompleteSurveyAttempt
                     'metric_count' => count($result['metrics']),
                 ],
             );
-            $this->compare->handle($locked);
+            $comparison = $this->compare->handle($locked);
+            $report->forceFill([
+                'report_snapshot' => $this->reportBuilder->handle($definition, $version, $locked, $result, $comparison),
+                'materialized_at' => $completedAt,
+            ])->save();
 
             return $locked->refresh();
         });
 
         return $completed->refresh();
+    }
+
+    private function refreshReport(SurveyAttempt $attempt, ?SurveyComparison $comparison): void
+    {
+        $report = $attempt->report()->first();
+        if ($report === null) {
+            return;
+        }
+
+        $definition = $attempt->surveyDefinition()->first();
+        $version = $attempt->surveyVersion()->first();
+        if ($definition === null || $version === null || $attempt->result_snapshot === null) {
+            return;
+        }
+
+        $report->forceFill([
+            'report_snapshot' => $this->reportBuilder->handle($definition, $version, $attempt, $attempt->result_snapshot, $comparison),
+            'materialized_at' => now(),
+        ])->save();
     }
 }

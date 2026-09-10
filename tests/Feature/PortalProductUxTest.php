@@ -80,6 +80,7 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.urls.services', route('portal.services.index')));
 
         $servicesPage = (string) file_get_contents(resource_path('js/Pages/Services/Index.vue'));
+        $appShell = (string) file_get_contents(resource_path('js/Components/Portal/AppShell.vue'));
         $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
         $home = (string) file_get_contents(resource_path('js/Pages/Portal/Home.vue'));
         $companion = (string) file_get_contents(resource_path('js/Pages/Portal/Companion.vue'));
@@ -92,9 +93,13 @@ class PortalProductUxTest extends TestCase
         $legal = (string) file_get_contents(resource_path('js/Components/Portal/LegalConsentChecklist.vue'));
         $surveyReport = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyReport.vue'));
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
+        $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
+        $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
         self::assertStringContainsString('return props.portal.urls.services;', $shell);
+        self::assertStringContainsString('return props.portal.urls.health;', $appShell);
+        self::assertStringContainsString('return props.portal.urls.health;', $shell);
         self::assertStringNotContainsString("t('bookings.title')", $home);
         self::assertStringNotContainsString('home.referrals', $success);
         self::assertStringNotContainsString(':href="props.urls.tracker"', $health);
@@ -115,6 +120,15 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
         self::assertStringContainsString('active="more"', $section);
+        self::assertSame(5, substr_count($more, 'class="portal-list__row"'));
+        self::assertStringContainsString("t('more.title')", $more);
+        self::assertStringContainsString("t('more.profile')", $more);
+        self::assertStringContainsString("t('more.finance')", $more);
+        self::assertStringContainsString("t('more.partnership')", $more);
+        self::assertStringContainsString("t('more.feedback')", $more);
+        self::assertStringNotContainsString("t('more.business')", $more);
+        self::assertStringContainsString("'shell.more': 'Кабинет'", $portalLocale);
+        self::assertStringContainsString("'more.title': 'Кабинет'", $portalLocale);
     }
 
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void

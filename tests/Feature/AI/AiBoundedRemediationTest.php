@@ -110,6 +110,19 @@ final class AiBoundedRemediationTest extends TestCase
         self::assertSame(0, $calls);
     }
 
+    public function test_health_context_requires_explicit_context_policy_allowance(): void
+    {
+        $assembler = new AiContextAssembler(knowledgeRetriever: app(KnowledgeRetriever::class));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $assembler->assemble(
+            organizationId: 1,
+            policy: new AiContextPolicy(allowedContextTypes: ['client_profile']),
+            inputVariables: ['health_context' => 'bounded result'],
+            inputReferences: [],
+        );
+    }
+
     public function test_missing_embedding_pricing_is_degraded_when_the_context_policy_allows_it(): void
     {
         config()->set('rag.embedding.pricing.input_cost_per_million_minor_units', null);

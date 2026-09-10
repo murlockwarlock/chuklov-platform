@@ -25,7 +25,15 @@ final class ListClientFinance
         $obligations = FinancialObligation::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
-            ->with(['booking.service', 'ledgerEntries.receipt'])
+            ->with([
+                'booking.service',
+                'ledgerEntries.receipt',
+                'gatewayTransactions' => function ($query): void {
+                    $query
+                        ->where('gateway', 'fake')
+                        ->orderByDesc('id');
+                },
+            ])
             ->orderByDesc('created_at')
             ->get();
         $projections = $obligations
@@ -100,6 +108,7 @@ final class ListClientFinance
             'status' => $reconciliation->status->value,
             'statusLabel' => $this->statusLabel($reconciliation->status->value, $locale),
             'history' => $entries->map(fn (FinancialLedgerEntry $entry): array => $this->historyEntry($entry, $timezone, $locale))->all(),
+            'demoPayment' => $this->demoPayment($obligation, $reconciliation->outstanding->minorUnits() > 0, $locale),
         ];
     }
 
@@ -124,6 +133,38 @@ final class ListClientFinance
                 ->sortBy('id')
                 ->values()
                 ->map(fn (FinancialLedgerEntry $entry): array => $this->historyEntry($entry, $timezone, $locale))->all(),
+            'demoPayment' => null,
+        ];
+    }
+
+    /** @return array{stateLabel: string, canStart: bool, canSucceed: bool, canFail: bool, canRefund: bool, startUrl: string, successUrl: ?string, failUrl: ?string, refundUrl: ?string}|null */
+    private function demoPayment(FinancialObligation $obligation, bool $hasOutstanding, ?string $locale): ?array
+    {
+        if (app()->environment('production') || ! config('payments.fake_enabled', false)) {
+            return null;
+        }
+
+        $transaction = $obligation->gatewayTransactions->first();
+        if (! $hasOutstanding && $transaction === null) {
+            return null;
+        }
+
+        $status = $transaction?->status->value;
+        $canStart = $hasOutstanding && ($transaction === null || in_array($status, ['failed', 'refunded'], true));
+        $canSucceed = $status === 'pending';
+        $canFail = $status === 'pending';
+        $canRefund = $status === 'settled';
+
+        return [
+            'stateLabel' => $this->demoStateLabel($status, $locale),
+            'canStart' => $canStart,
+            'canSucceed' => $canSucceed,
+            'canFail' => $canFail,
+            'canRefund' => $canRefund,
+            'startUrl' => route('portal.finance.fake.start', $obligation->getKey()),
+            'successUrl' => $transaction === null ? null : route('portal.finance.fake.simulate', ['transactionId' => $transaction->getKey(), 'outcome' => 'success']),
+            'failUrl' => $transaction === null ? null : route('portal.finance.fake.simulate', ['transactionId' => $transaction->getKey(), 'outcome' => 'fail']),
+            'refundUrl' => $transaction === null ? null : route('portal.finance.fake.simulate', ['transactionId' => $transaction->getKey(), 'outcome' => 'refund']),
         ];
     }
 
@@ -207,6 +248,27 @@ final class ListClientFinance
     private function unavailableLabel(?string $locale): string
     {
         return $locale === 'en' ? 'Calculation unavailable' : 'Расчёт недоступен';
+    }
+
+    private function demoStateLabel(?string $status, ?string $locale): string
+    {
+        if ($locale === 'en') {
+            return match ($status) {
+                'pending' => 'Demo payment is waiting for a result',
+                'failed' => 'Demo payment failed',
+                'settled' => 'Demo payment completed',
+                'refunded' => 'Demo payment refunded',
+                default => 'Demo payment is ready',
+            };
+        }
+
+        return match ($status) {
+            'pending' => 'Демо-оплата ожидает результата',
+            'failed' => 'Демо-оплата не прошла',
+            'settled' => 'Демо-оплата завершена',
+            'refunded' => 'Демо-оплата возвращена',
+            default => 'Демо-оплата готова к запуску',
+        };
     }
 
     /** @return array{0: string, 1: bool} */

@@ -4,7 +4,7 @@ import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
-type Definition = { id: number; title: string; description: string | null; version: number };
+type Definition = { id: number; title: string; description: string | null; version: number; questionCount: number };
 type Attempt = { id: number; title: string; status: 'in_progress' | 'completed'; completedAt: string | null; reportId: number | null };
 
 const props = defineProps<{
@@ -58,6 +58,9 @@ const formatDate = (value: string | null): string => value ? new Intl.DateTimeFo
               class="portal-copy portal-copy--small"
             >
               {{ definition.description }}
+            </p>
+            <p class="portal-copy portal-copy--small">
+              {{ t('surveys.questionCount', { value: definition.questionCount }) }}
             </p>
             <Link
               :href="startUrl(definition.id)"

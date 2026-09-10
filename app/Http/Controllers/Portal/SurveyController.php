@@ -88,6 +88,7 @@ final class SurveyController extends Controller
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
             ->findOrFail($reportId);
+        $attempt = $report->attempt()->firstOrFail();
 
         $snapshot = $content->report($report->report_snapshot, app()->getLocale());
 
@@ -97,7 +98,11 @@ final class SurveyController extends Controller
                 'materializedAt' => $report->materialized_at->toIso8601String(),
                 ...$snapshot,
             ],
-            'urls' => ['index' => route('portal.surveys.index')],
+            'urls' => [
+                'index' => route('portal.surveys.index'),
+                'companion' => route('portal.companion'),
+                'repeat' => route('portal.surveys.start', ['definitionId' => $attempt->survey_definition_id]),
+            ],
         ]);
     }
 }

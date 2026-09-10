@@ -132,6 +132,7 @@ final class CompanionTurnProcessor
                 inputVariables: [
                     'current_message' => $context['current_message'],
                     'conversation_history' => $context['conversation_history'],
+                    'health_context' => $context['health_context'],
                     'rag_query' => $context['current_message'],
                 ],
                 inputReferences: array_merge(
@@ -207,6 +208,15 @@ final class CompanionTurnProcessor
                     }
 
                     throw new InvalidArgumentException('The Companion model cannot infer an explicit human request.');
+                }
+                if (! $this->safetyClassifier->isAuthorizedModelHandoff($context['current_message'], $reason)) {
+                    if ($response['reply'] !== '') {
+                        $this->complete($organizationId, $turn->getKey(), $leaseToken, $response['reply'], $locale, $response['suggested_safe_actions']);
+
+                        return;
+                    }
+
+                    throw new InvalidArgumentException('The Companion model cannot infer an authorized handoff.');
                 }
                 $this->handoff($organizationId, $turn->getKey(), $leaseToken, $reason, $result->runId, $locale);
 
@@ -779,7 +789,8 @@ final class CompanionTurnProcessor
                 || str_contains($message, 'draft prompt versions')
             ) => CompanionFailureCode::NotConfigured,
             str_contains($message, 'budget') => CompanionFailureCode::BudgetUnavailable,
-            str_contains($message, 'cannot infer an explicit human request') => CompanionFailureCode::InvalidOutput,
+            str_contains($message, 'cannot infer an explicit human request'),
+            str_contains($message, 'cannot infer an authorized handoff') => CompanionFailureCode::InvalidOutput,
             str_contains($message, 'retrieval'), str_contains($message, 'knowledge') => CompanionFailureCode::RetrievalFailure,
             str_contains($message, 'response contract'), str_contains($message, 'empty') => CompanionFailureCode::InvalidOutput,
             str_contains($message, 'active prompt'), str_contains($message, 'prompt version') => CompanionFailureCode::NotConfigured,

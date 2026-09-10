@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Domain\Models;
 
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
+use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Enums\ProviderVerificationStatus;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int $gateway_transaction_id
  * @property string $provider_event_id
  * @property string $provider_reference
+ * @property PaymentGatewayEventType $event_type
  * @property ProviderVerificationStatus $verification_status
  * @property int $amount_minor
  * @property CurrencyCode $currency
@@ -41,6 +43,7 @@ class PaymentGatewayEvent extends Model
     {
         return [
             'verification_status' => ProviderVerificationStatus::class,
+            'event_type' => PaymentGatewayEventType::class,
             'currency' => CurrencyCode::class,
             'amount_minor' => 'integer',
             'processed_at' => 'datetime',

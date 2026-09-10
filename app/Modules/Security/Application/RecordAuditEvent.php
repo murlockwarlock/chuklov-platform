@@ -124,6 +124,8 @@ class RecordAuditEvent
         'finance.payment.corrected' => ['source', 'correction_of', 'reason_present'],
         'finance.gateway.initiated' => ['gateway', 'currency', 'source'],
         'finance.gateway.settled' => ['gateway', 'source', 'currency'],
+        'finance.gateway.failed' => ['gateway', 'source', 'currency'],
+        'finance.gateway.refunded' => ['gateway', 'source', 'currency'],
         'finance.gateway.reconciled' => ['gateway', 'status', 'consistent'],
         'feedback.configuration.updated' => ['enabled', 'positive_threshold', 'low_score_feedback_required', 'review_url_ru_set', 'review_url_en_set', 'review_destinations_count'],
         'feedback.submitted' => ['score', 'band', 'source', 'has_internal_feedback'],

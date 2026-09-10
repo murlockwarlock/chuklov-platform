@@ -177,6 +177,10 @@ final class AiEvaluationAssertionRegistry
                 'type' => $type,
                 'value' => $this->text($definition['value'] ?? null),
             ],
+            'text_length_between' => [
+                'type' => $type,
+                ...$this->numberRange($definition),
+            ],
             'output_present' => [
                 'type' => $type,
             ],
@@ -459,6 +463,7 @@ final class AiEvaluationAssertionRegistry
     {
         $allowedKeys = match ($type) {
             'required_text', 'forbidden_text' => ['type', 'value'],
+            'text_length_between' => ['type', 'minimum', 'maximum'],
             'output_present' => ['type'],
             'required_field' => ['type', 'path'],
             'json_schema' => ['type', 'schema'],
@@ -608,6 +613,12 @@ final class AiEvaluationAssertionRegistry
                 trim($output) === '',
                 'output_empty',
                 'AI вернул пустой ответ.',
+            ),
+            'text_length_between' => $this->textResult(
+                $type,
+                mb_strlen($output) < (int) $assertion['minimum'] || mb_strlen($output) > (int) $assertion['maximum'],
+                'text_length_out_of_range',
+                'Объём ответа не соответствует ожидаемому диапазону.',
             ),
             'required_field' => $this->fieldResult($assertion, $structuredOutput),
             'field_value' => $this->valueResult($assertion, $structuredOutput),

@@ -29,6 +29,10 @@ return Application::configure(basePath: dirname(__DIR__))
             fn (Request $request) => $request->is('api/*'),
         );
         $exceptions->report(function (Throwable $exception): void {
+            if (! app()->bound('request')) {
+                return;
+            }
+
             $request = request();
             if (! $request->routeIs('portal.bookings.reschedule')) {
                 return;

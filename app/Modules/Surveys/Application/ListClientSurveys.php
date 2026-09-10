@@ -18,7 +18,7 @@ final readonly class ListClientSurveys
             ->where('organization_id', $client->organization_id)
             ->where('is_available', true)
             ->whereNotNull('active_version_id')
-            ->with('activeVersion:id,organization_id,version,status,title,title_en,description,description_en')
+            ->with('activeVersion:id,organization_id,version,status,title,title_en,description,description_en,definition')
             ->orderBy('title')
             ->get(['id', 'organization_id', 'active_version_id', 'title', 'title_en', 'description', 'description_en']);
         $attempts = SurveyAttempt::query()
@@ -35,6 +35,7 @@ final readonly class ListClientSurveys
                 'title' => $this->localized($definition->activeVersion?->title, $definition->activeVersion?->title_en, $client->language),
                 'description' => $this->localized($definition->activeVersion?->description, $definition->activeVersion?->description_en, $client->language),
                 'version' => $definition->activeVersion?->version,
+                'questionCount' => $this->questionCount($definition->activeVersion?->definition),
             ])->all(),
             'attempts' => $attempts->map(fn (SurveyAttempt $attempt): array => [
                 'id' => $attempt->getKey(),
@@ -46,6 +47,28 @@ final readonly class ListClientSurveys
                 'reportId' => $attempt->report?->getKey(),
             ])->all(),
         ];
+    }
+
+    /** @param array<string, mixed>|null $definition */
+    private function questionCount(?array $definition): int
+    {
+        if ($definition === null) {
+            return 0;
+        }
+
+        $sections = $definition['sections'] ?? [];
+        if (! is_array($sections)) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($sections as $section) {
+            if (is_array($section) && is_array($section['questions'] ?? null)) {
+                $count += count($section['questions']);
+            }
+        }
+
+        return $count;
     }
 
     private function localized(?string $ru, ?string $en, ?string $locale): ?string

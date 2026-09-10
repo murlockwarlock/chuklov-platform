@@ -29,8 +29,7 @@ final class ReconcileFakeGatewayTransaction
             throw new \UnexpectedValueException('Fake gateway reconciliation detected an amount mismatch.');
         }
         $expected = $transaction->status->value;
-        $matches = ($expected === 'settled' && $result->status === 'settled')
-            || ($expected !== 'settled' && $result->status === 'pending');
+        $matches = $expected === $result->status;
 
         if (! $matches) {
             throw new \UnexpectedValueException('Fake gateway reconciliation detected inconsistent state.');
