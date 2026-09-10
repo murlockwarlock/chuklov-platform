@@ -4,6 +4,7 @@ namespace App\Modules\ClientCompanion\Infrastructure\Jobs;
 
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\CompanionActionButton;
@@ -45,6 +46,7 @@ final class DeliverCompanionMessage implements ShouldQueue
         MessagingChannel $channel,
         CompanionMessageBodyReader $bodyReader,
         ?AttachmentStorageInterface $attachmentStorage = null,
+        ?ResolveTelegramMiniAppEntry $miniAppEntries = null,
     ): void {
         $token = (string) Str::uuid();
         $delivery = $this->claim($token);
@@ -65,7 +67,7 @@ final class DeliverCompanionMessage implements ShouldQueue
         try {
             $body = $bodyReader->read($this->organizationId, $delivery->conversationMessage);
             $metadata = $delivery->conversationMessage->metadata ?? [];
-            $buttons = $this->buttons($delivery, $metadata);
+            $buttons = $this->buttons($delivery, $metadata, $miniAppEntries);
             $mediaItems = $attachmentStorage === null ? [] : $this->mediaItems($delivery, $attachmentStorage);
         } catch (Throwable) {
             [$retry, $nextDeliveryId] = $this->finalize($token, NotificationDeliveryResult::retryable('protected_message_unavailable'));
@@ -122,8 +124,11 @@ final class DeliverCompanionMessage implements ShouldQueue
      * @param  array<string, mixed>  $metadata
      * @return list<CompanionActionButton>
      */
-    private function buttons(CompanionDelivery $delivery, array $metadata): array
-    {
+    private function buttons(
+        CompanionDelivery $delivery,
+        array $metadata,
+        ?ResolveTelegramMiniAppEntry $miniAppEntries = null,
+    ): array {
         if ((int) $delivery->chunk_index !== (int) $delivery->chunk_count - 1) {
             return [];
         }
@@ -143,9 +148,16 @@ final class DeliverCompanionMessage implements ShouldQueue
                 CompanionSafeAction::OpenPortal => null,
             };
             if ($action === CompanionSafeAction::OpenPortal) {
-                $portalUrl = (string) config('app.url');
-                if (preg_match('/^https:\/\//i', $portalUrl) === 1) {
-                    $buttons[] = new CompanionActionButton($action->label((string) ($metadata['locale'] ?? 'en')), url: rtrim($portalUrl, '/'));
+                try {
+                    $portalUrl = ($miniAppEntries ?? app(ResolveTelegramMiniAppEntry::class))->launchUrl('portal');
+                } catch (Throwable) {
+                    $portalUrl = null;
+                }
+                if ($portalUrl !== null) {
+                    $buttons[] = new CompanionActionButton(
+                        $action->label((string) ($metadata['locale'] ?? 'en')),
+                        webAppUrl: $portalUrl,
+                    );
                 }
             } elseif ($callback !== null) {
                 $buttons[] = new CompanionActionButton($action->label((string) ($metadata['locale'] ?? 'en')), callbackData: $callback);

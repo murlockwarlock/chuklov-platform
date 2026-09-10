@@ -433,6 +433,38 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertCount($deliveries->count(), $channel->chunks);
     }
 
+    public function test_open_portal_action_targets_the_authenticated_telegram_mini_app(): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $channel = new RecordingCompanionChannel;
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Откройте кабинет.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => ['open_portal'],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, $channel);
+
+        $turn = $this->accept('Откройте мой кабинет');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $delivery = CompanionDelivery::query()->where('turn_id', $turn->getKey())->sole();
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        $button = $channel->chunks[0]->buttons[0];
+        self::assertSame(
+            'https://mini.example.test'.route('portal.telegram.launch', ['entry' => 'portal'], false),
+            $button->webAppUrl,
+        );
+        self::assertNull($button->url);
+    }
+
     public function test_failed_later_chunk_does_not_replay_already_delivered_chunks(): void
     {
         $deliveries = $this->createDeliveries(str_repeat('Длинный ответ. ', 2500));
