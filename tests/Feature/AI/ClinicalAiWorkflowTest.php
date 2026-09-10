@@ -316,6 +316,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
 
         self::assertTrue($budget->fits());
+        self::assertStringContainsString('Попытка #', $prompt);
         self::assertStringContainsString('L4-L5', $prompt);
         self::assertStringContainsString('5.4', $prompt);
         self::assertStringContainsString('Shoulder asymmetry', $prompt);

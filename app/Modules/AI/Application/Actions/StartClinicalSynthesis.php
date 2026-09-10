@@ -148,10 +148,7 @@ final readonly class StartClinicalSynthesis
     private function surveyBundle(User $actor, Client $client): array
     {
         if (! $this->surveyAuthorization->allowsView($actor, $client)) {
-            return [[
-                'status' => 'missing',
-                'reason' => 'Результаты опросов недоступны для текущего специалиста.',
-            ], []];
+            return ['Статус: отсутствует. Результаты опросов недоступны для текущего специалиста.', []];
         }
 
         $attempts = SurveyAttempt::query()
@@ -165,30 +162,19 @@ final readonly class StartClinicalSynthesis
             ->get();
 
         if ($attempts->isEmpty()) {
-            return [[
-                'status' => 'missing',
-                'reason' => 'Совместимый завершённый результат опроса отсутствует. Источник 9 систем/MSQ не предоставлен.',
-            ], []];
+            return ['Статус: отсутствует. Совместимый завершённый результат опроса отсутствует. Источник 9 систем/MSQ не предоставлен.', []];
         }
 
         $references = [];
-        $results = [];
+        $lines = ['Статус: доступен.'];
         foreach ($attempts as $index => $attempt) {
             $references[] = new AiInputReference('survey_attempt', (int) $attempt->getKey());
-            $results[] = [
-                'attempt_id' => (int) $attempt->getKey(),
-                'completed_at' => $attempt->completed_at?->toIso8601String(),
-                'result' => $this->surveyContext($attempt->result_snapshot, $index === 0),
-            ];
+            $lines[] = 'Попытка #'.(int) $attempt->getKey().'; дата: '.$this->boundedText($attempt->completed_at?->toIso8601String() ?? '', 40);
+            $lines[] = $this->surveyContext($attempt->result_snapshot, $index === 0);
         }
+        $lines[] = 'Ограничение: источник 9 систем/MSQ и его оценивание не предоставлен в авторитетных материалах.';
 
-        return [[
-            'status' => 'available',
-            'attempts' => $results,
-            'missing_authoritative_sources' => [
-                'Источник 9 систем/MSQ и его оценивание не предоставлен в авторитетных материалах.',
-            ],
-        ], $references];
+        return [$this->boundedText(implode("\n", $lines), 2600), $references];
     }
 
     /** @param array<string, mixed>|null $result */
