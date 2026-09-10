@@ -74,10 +74,7 @@ final readonly class StartClinicalSynthesis
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
             'anamnesis' => $this->boundedText($profile->anamnesis ?? '', 400),
             'complaints_goals' => $this->boundedText($profile->complaintsGoals ?? '', 700),
-            'recent_sessions' => array_map(
-                fn (array $session): array => $this->sessionContext($session),
-                $sessionHistory,
-            ),
+            'recent_sessions' => $this->sessionsContext($sessionHistory),
             'agent_one_result' => $this->documentContext($documentResult?->outputPayload),
             'agent_two_result' => $this->postureContext($postureResult?->outputPayload),
             'survey_results' => $surveyResults,
@@ -147,7 +144,7 @@ final readonly class StartClinicalSynthesis
         return $failedRun === null ? $baseKey : $baseKey.':retry:'.$failedRun->getKey();
     }
 
-    /** @return array{0: array<string, mixed>, 1: list<AiInputReference>} */
+    /** @return array{0: string, 1: list<AiInputReference>} */
     private function surveyBundle(User $actor, Client $client): array
     {
         if (! $this->surveyAuthorization->allowsView($actor, $client)) {
@@ -195,13 +192,10 @@ final readonly class StartClinicalSynthesis
     }
 
     /** @param array<string, mixed>|null $result */
-    private function documentContext(?array $result): array
+    private function documentContext(?array $result): string
     {
         if ($result === null) {
-            return [
-                'status' => 'missing',
-                'reason' => 'Проверенный анализ медицинского документа отсутствует.',
-            ];
+            return 'Статус: отсутствует. Проверенный анализ медицинского документа отсутствует.';
         }
 
         $findings = [];
@@ -214,25 +208,40 @@ final readonly class StartClinicalSynthesis
             ];
         }
 
-        return [
-            'status' => 'available',
-            'exam_type' => $this->boundedText($result['exam_type'] ?? '', 120),
-            'anatomical_region' => $this->boundedText($result['anatomical_region'] ?? '', 120),
-            'key_findings' => $findings,
-            'structural_deformations' => $this->textList($result['structural_deformations'] ?? [], 2, 100),
-            'critical_flags' => $this->textList($result['critical_flags'] ?? [], 2, 100),
-            'plain_summary' => $this->boundedText($result['plain_summary'] ?? '', 260),
+        $lines = [
+            'Статус: доступен.',
+            'Исследование: '.$this->boundedText($result['exam_type'] ?? '', 100),
+            'Область: '.$this->boundedText($result['anatomical_region'] ?? '', 100),
         ];
+        foreach ($findings as $finding) {
+            $lines[] = implode('; ', array_filter([
+                $finding['location'],
+                $finding['pathology'],
+                $finding['size_mm'] === null ? null : 'размер: '.$finding['size_mm'].' мм',
+                $finding['impact'],
+            ], static fn (?string $value): bool => $value !== null && $value !== ''));
+        }
+        $structural = $this->textList($result['structural_deformations'] ?? [], 2, 100);
+        if ($structural !== []) {
+            $lines[] = 'Структурные особенности: '.implode('; ', $structural);
+        }
+        $critical = $this->textList($result['critical_flags'] ?? [], 2, 100);
+        if ($critical !== []) {
+            $lines[] = 'Критические флаги: '.implode('; ', $critical);
+        }
+        $summary = $this->boundedText($result['plain_summary'] ?? '', 260);
+        if ($summary !== '') {
+            $lines[] = 'Резюме: '.$summary;
+        }
+
+        return $this->boundedText(implode("\n", $lines), 1200);
     }
 
     /** @param array<string, mixed>|null $result */
-    private function postureContext(?array $result): array
+    private function postureContext(?array $result): string
     {
         if ($result === null) {
-            return [
-                'status' => 'missing',
-                'reason' => 'Проверенный анализ осанки отсутствует.',
-            ];
+            return 'Статус: отсутствует. Проверенный анализ осанки отсутствует.';
         }
 
         $findings = [];
@@ -243,32 +252,63 @@ final readonly class StartClinicalSynthesis
             ];
         }
 
-        return [
-            'status' => 'available',
-            'visual_findings' => $findings,
-            'leading_compensatory_patterns' => $this->textList($result['leading_compensatory_patterns'] ?? [], 2, 110),
-            'practitioner_focus' => $this->textList($result['practitioner_focus'] ?? [], 2, 110),
-            'limitations' => $this->textList($result['limitations'] ?? [], 2, 110),
-        ];
+        $lines = ['Статус: доступен.'];
+        foreach ($findings as $finding) {
+            $lines[] = $finding['plane'].': '.implode('; ', $finding['observations']);
+        }
+        $patterns = $this->textList($result['leading_compensatory_patterns'] ?? [], 2, 110);
+        if ($patterns !== []) {
+            $lines[] = 'Паттерны: '.implode('; ', $patterns);
+        }
+        $focus = $this->textList($result['practitioner_focus'] ?? [], 2, 110);
+        if ($focus !== []) {
+            $lines[] = 'Фокус специалиста: '.implode('; ', $focus);
+        }
+        $limitations = $this->textList($result['limitations'] ?? [], 2, 110);
+        if ($limitations !== []) {
+            $lines[] = 'Ограничения: '.implode('; ', $limitations);
+        }
+
+        return $this->boundedText(implode("\n", $lines), 1200);
     }
 
     /** @param array<string, mixed> $session */
-    private function sessionContext(array $session): array
+    private function sessionContext(array $session): string
     {
-        return [
-            'id' => (int) ($session['id'] ?? 0),
-            'occurred_at' => $this->boundedText($session['occurred_at'] ?? '', 40),
-            'pain' => $this->boundedText($session['pain'] ?? '', 90),
-            'tests' => $this->boundedText($session['tests'] ?? '', 70),
-            'observations' => $this->boundedText($session['observations'] ?? '', 100),
-            'root_cause_hypothesis' => $this->boundedText($session['root_cause_hypothesis'] ?? '', 80),
-            'protocol' => $this->boundedText($session['protocol'] ?? '', 80),
-            'result' => $this->boundedText($session['result'] ?? '', 100),
+        $parts = [
+            'Сессия #'.(int) ($session['id'] ?? 0),
+            $this->boundedText($session['occurred_at'] ?? '', 40),
         ];
+        foreach ([
+            'pain' => 'жалобы',
+            'tests' => 'тесты',
+            'observations' => 'наблюдения',
+            'root_cause_hypothesis' => 'гипотеза',
+            'protocol' => 'протокол',
+            'result' => 'результат',
+        ] as $field => $label) {
+            $value = $this->boundedText($session[$field] ?? '', 80);
+            if ($value !== '') {
+                $parts[] = $label.': '.$value;
+            }
+        }
+
+        return implode('; ', array_filter($parts, static fn (string $value): bool => $value !== ''));
+    }
+
+    /** @param list<array<string, mixed>> $sessions */
+    private function sessionsContext(array $sessions): string
+    {
+        $lines = [];
+        foreach ($sessions as $session) {
+            $lines[] = $this->sessionContext($session);
+        }
+
+        return $this->boundedText(implode("\n", $lines), 1200);
     }
 
     /** @param array<string, mixed> $result */
-    private function surveyContext(array $result, bool $includeAttentionAreas): array
+    private function surveyContext(array $result, bool $includeAttentionAreas): string
     {
         $metrics = [];
         foreach ((array) ($result['metrics'] ?? []) as $key => $metric) {
@@ -309,17 +349,33 @@ final readonly class StartClinicalSynthesis
             ];
         }
 
-        return [
-            'survey' => [
-                'definition_key' => $this->boundedText(data_get($result, 'survey.definition_key', ''), 80),
-                'version' => is_numeric(data_get($result, 'survey.version')) ? (int) data_get($result, 'survey.version') : null,
-                'methodology' => $this->boundedText(data_get($result, 'survey.methodology', ''), 100),
-            ],
-            'completed_at' => $this->boundedText($result['completed_at'] ?? '', 40),
-            'attention_areas' => $attentionAreas,
-            'metrics' => $metrics,
-            'comparison' => $comparison,
+        $metricLines = [];
+        foreach ($metrics as $key => $metric) {
+            $metricLines[] = $key.'='.$metric['score'].'/'.($metric['raw_score'] ?? '');
+        }
+        $lines = [
+            'Тест: '.$this->boundedText(data_get($result, 'survey.definition_key', ''), 80),
+            'Версия: '.(is_numeric(data_get($result, 'survey.version')) ? (int) data_get($result, 'survey.version') : ''),
+            'Методика: '.$this->boundedText(data_get($result, 'survey.methodology', ''), 100),
+            'Дата: '.$this->boundedText($result['completed_at'] ?? '', 40),
+            'Показатели: '.implode(', ', $metricLines),
         ];
+        foreach ($attentionAreas as $area) {
+            $lines[] = 'Зона внимания: '.implode('; ', array_filter([
+                $area['label'],
+                $area['score'] === null ? null : (string) $area['score'].'/100',
+                $area['status'],
+                $area['reason'],
+            ], static fn (?string $value): bool => $value !== null && $value !== ''));
+        }
+        if ($comparison !== null) {
+            $lines[] = 'Сравнение: '.$comparison['message'];
+            foreach ($comparison['items'] as $item) {
+                $lines[] = 'Динамика '.$item['label'].': '.$item['before'].' -> '.$item['after'].' ('.$item['change'].')';
+            }
+        }
+
+        return $this->boundedText(implode("\n", $lines), $includeAttentionAreas ? 1500 : 700);
     }
 
     private function textList(mixed $values, int $limit, int $itemLength): array
