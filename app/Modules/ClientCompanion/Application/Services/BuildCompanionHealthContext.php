@@ -50,6 +50,14 @@ final class BuildCompanionHealthContext
             $parts[] = ($english ? 'Summary: ' : 'Резюме: ').$summary;
         }
 
+        $comparison = $report['comparison'] ?? null;
+        if (is_array($comparison)) {
+            $message = trim((string) ($comparison['message'] ?? ''));
+            if ($message !== '') {
+                $parts[] = ($english ? 'Trend: ' : 'Динамика: ').$message;
+            }
+        }
+
         $areas = [];
         foreach ((array) ($report['attention_areas'] ?? []) as $area) {
             if (! is_array($area)) {
@@ -102,14 +110,6 @@ final class BuildCompanionHealthContext
         }
         if ($roadMap !== []) {
             $parts[] = "Road Map:\n".implode("\n", array_slice($roadMap, 0, 4));
-        }
-
-        $comparison = $report['comparison'] ?? null;
-        if (is_array($comparison)) {
-            $message = trim((string) ($comparison['message'] ?? ''));
-            if ($message !== '') {
-                $parts[] = ($english ? 'Trend: ' : 'Динамика: ').$message;
-            }
         }
 
         return implode("\n", $parts);

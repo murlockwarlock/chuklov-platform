@@ -112,6 +112,8 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-count', $partner);
         self::assertStringContainsString('portal-referral-registration-row', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
+        self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
+        self::assertStringContainsString('event.shiftKey', $companion);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);
@@ -120,7 +122,11 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('update:marketingValue', $legal);
         self::assertStringContainsString('role="radiogroup"', $surveyTake);
         self::assertStringContainsString('scrollIntoView', $surveyTake);
+        self::assertStringContainsString('scrollToCompletionActions', $surveyTake);
         self::assertStringContainsString('preserveScroll: false', $surveyTake);
+        self::assertStringContainsString('survey.sectionsCompleted', $surveyTake);
+        self::assertStringContainsString('surveys.questionCount', $surveyTake);
+        self::assertStringContainsString('survey.saved', $surveyTake);
         self::assertStringNotContainsString('<select', $surveyTake);
         self::assertStringContainsString('portal-report-actions', $surveyReport);
         self::assertStringContainsString('portal-report-metrics', $surveyReport);

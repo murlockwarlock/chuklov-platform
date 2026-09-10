@@ -1847,6 +1847,54 @@ class AiWorkflowEngineTest extends TestCase
         self::assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
     }
 
+    public function test_companion_health_context_is_bounded_without_dropping_the_current_message(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        DynamicWorkflowAgent::fake(['Результат разобран.']);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $version = $prompt->activeVersion()->sole();
+        $version->update([
+            'system_prompt' => str_repeat('Безопасная инструкция. ', 170),
+            'user_prompt_template' => "Контекст здоровья:\n{{health_context}}\n\nТекущее сообщение:\n{{current_message}}",
+            'context_policy' => ['include_rag' => false, 'allowed_context_types' => ['health_context']],
+        ]);
+        $healthContext = str_repeat("Результат теста: зона внимания — сон и восстановление.\n", 120);
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'bounded_companion_health_context_test',
+            inputVariables: [
+                'health_context' => $healthContext,
+                'current_message' => 'Что показал мой тест?',
+            ],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertTrue((bool) data_get($run->context_provenance, 'health_context_degraded'));
+        $payload = AiRunPayload::query()->where('ai_run_id', $result->runId)->sole();
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $renderedUserPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Результат теста:', (string) $renderedUserPrompt);
+        self::assertStringContainsString('Что показал мой тест?', (string) $renderedUserPrompt);
+        self::assertLessThan(mb_strlen($healthContext), mb_strlen((string) $renderedUserPrompt));
+        $budget = AiRuntimeLimits::inputContextBudget(
+            (string) $encryptor->decryptField(
+                $this->organization->id,
+                $payload->encrypted_system_prompt,
+                $payload->encryption_key_version,
+            ),
+            (string) $renderedUserPrompt,
+            AiCapabilityRegistry::get(AiCapability::ClientCompanion),
+        );
+        self::assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
+    }
+
     public function test_workflow_rejects_rag_context_that_exceeds_the_bounded_context_limit(): void
     {
         $this->setupConfiguredModel(AiCapability::ClientCompanion);

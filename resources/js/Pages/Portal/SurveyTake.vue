@@ -89,7 +89,10 @@ const completedSections = computed(() => sections.value.filter((section) => isSe
 const activeSectionIndex = ref(firstIncompleteSectionIndex.value);
 const editingSectionIndex = ref<number | null>(null);
 const activeSectionElement = ref<HTMLElement | null>(null);
+const completionActionsElement = ref<HTMLElement | null>(null);
+const saveNoticeVisible = ref(false);
 let advanceTimer: number | null = null;
+let saveNoticeTimer: number | null = null;
 
 const activeSection = computed(() => sections.value[activeSectionIndex.value] ?? null);
 const progress = computed(() => sections.value.length === 0
@@ -99,6 +102,12 @@ const progress = computed(() => sections.value.length === 0
 function scrollToActiveSection(): void {
     void nextTick(() => {
         activeSectionElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+}
+
+function scrollToCompletionActions(): void {
+    void nextTick(() => {
+        completionActionsElement.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 }
 
@@ -117,6 +126,8 @@ function scheduleNextSection(sectionIndex: number): void {
     }
 
     if (sectionIndex >= sections.value.length - 1) {
+        scrollToCompletionActions();
+
         return;
     }
 
@@ -213,14 +224,39 @@ function answerLabel(question: Question): string {
 }
 
 function save(): void {
-    form.post(props.urls.save, { preserveScroll: true });
+    if (form.processing) {
+        return;
+    }
+
+    form.post(props.urls.save, {
+        preserveScroll: true,
+        onSuccess: () => {
+            saveNoticeVisible.value = true;
+            if (saveNoticeTimer !== null) {
+                window.clearTimeout(saveNoticeTimer);
+            }
+            saveNoticeTimer = window.setTimeout(() => {
+                saveNoticeVisible.value = false;
+                saveNoticeTimer = null;
+            }, 3000);
+        },
+    });
 }
 
 function complete(): void {
+    if (form.processing || !allSectionsComplete.value) {
+        return;
+    }
+
     form.post(props.urls.complete, { preserveScroll: false, preserveState: false });
 }
 
-onBeforeUnmount(() => clearAdvanceTimer());
+onBeforeUnmount(() => {
+    clearAdvanceTimer();
+    if (saveNoticeTimer !== null) {
+        window.clearTimeout(saveNoticeTimer);
+    }
+});
 </script>
 
 <template>
@@ -251,8 +287,7 @@ onBeforeUnmount(() => clearAdvanceTimer());
         </div>
         <div class="portal-stack portal-stack--tight">
           <div class="flex min-w-0 items-center justify-between gap-3 text-sm font-semibold text-[var(--portal-color-ink-soft)]">
-            <span>{{ t('survey.progress') }}</span>
-            <span>{{ completedSections }}/{{ sections.length }}</span>
+            <span>{{ t('survey.sectionsCompleted', { completed: completedSections, total: sections.length }) }}</span>
           </div>
           <div
             class="h-2 overflow-hidden rounded-full bg-[var(--portal-color-surface-muted)]"
@@ -294,7 +329,7 @@ onBeforeUnmount(() => clearAdvanceTimer());
                 </h2>
               </div>
               <span class="shrink-0 rounded-full bg-[var(--portal-color-surface)] px-3 py-1 text-xs font-semibold text-[var(--portal-color-brand-strong)]">
-                {{ visibleQuestions(activeSection).length }}
+                {{ t('surveys.questionCount', { value: visibleQuestions(activeSection).length }) }}
               </span>
             </div>
             <p
@@ -436,6 +471,43 @@ onBeforeUnmount(() => clearAdvanceTimer());
           >
             {{ t('survey.sectionHint') }}
           </p>
+          <div
+            ref="completionActionsElement"
+            class="portal-panel portal-stack portal-stack--tight"
+          >
+            <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div class="portal-stack portal-stack--tight min-w-0">
+                <p class="portal-copy portal-copy--small">
+                  {{ allSectionsComplete ? t('survey.readyToComplete') : t('survey.completeHint') }}
+                </p>
+                <p
+                  v-if="saveNoticeVisible"
+                  class="text-sm font-semibold text-[var(--portal-color-brand-strong)]"
+                  role="status"
+                >
+                  {{ t('survey.saved') }}
+                </p>
+              </div>
+              <div class="flex min-w-0 flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  class="portal-button portal-button--secondary"
+                  :disabled="form.processing"
+                  @click="save"
+                >
+                  {{ t('survey.save') }}
+                </button>
+                <button
+                  v-if="allSectionsComplete"
+                  type="submit"
+                  class="portal-button portal-button--primary"
+                  :disabled="form.processing"
+                >
+                  {{ t('survey.complete') }}
+                </button>
+              </div>
+            </div>
+          </div>
           <button
             v-if="editingSectionIndex !== null"
             type="button"
@@ -497,31 +569,6 @@ onBeforeUnmount(() => clearAdvanceTimer());
             {{ t('survey.sectionInProgress') }}
           </p>
         </section>
-
-        <div class="portal-panel portal-stack portal-stack--tight">
-          <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p class="portal-copy portal-copy--small">
-              {{ allSectionsComplete ? t('survey.readyToComplete') : t('survey.completeHint') }}
-            </p>
-            <div class="flex min-w-0 flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                class="portal-button portal-button--secondary"
-                :disabled="form.processing"
-                @click="save"
-              >
-                {{ t('survey.save') }}
-              </button>
-              <button
-                type="submit"
-                class="portal-button portal-button--primary"
-                :disabled="form.processing || !allSectionsComplete"
-              >
-                {{ t('survey.complete') }}
-              </button>
-            </div>
-          </div>
-        </div>
       </form>
     </section>
   </AppShell>
