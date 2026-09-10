@@ -3,7 +3,10 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
-import type { PortalShell } from '../../types/portal';
+import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import type { PortalIconName, PortalShell } from '../../types/portal';
+
+type ReviewDestination = { label: string; url: string; icon: PortalIconName };
 
 const props = defineProps<{
     portal: PortalShell;
@@ -12,10 +15,10 @@ const props = defineProps<{
         positiveThreshold: number;
         lowScoreFeedbackRequired: boolean;
         reviewLinks: string[];
-        reviewDestinations: { label: string; url: string }[];
+        reviewDestinations: ReviewDestination[];
         submitUrl: string;
     };
-    result: { band: 'positive' | 'internal'; reviewLinks: string[]; reviewDestinations?: { label: string; url: string }[] } | null;
+    result: { band: 'positive' | 'internal'; reviewLinks: string[]; reviewDestinations?: ReviewDestination[] } | null;
 }>();
 
 const { t } = usePortalLocale();
@@ -38,6 +41,7 @@ const resultDestinations = computed(() => {
     return props.result.reviewDestinations ?? props.result.reviewLinks.map((url) => ({
         label: t('feedback.reviewLinks'),
         url,
+        icon: 'globe' as const,
     }));
 });
 
@@ -99,8 +103,14 @@ function submit(): void {
             :href="destination.url"
             target="_blank"
             rel="noopener noreferrer"
-            class="portal-link break-all"
-          >{{ destination.label }}</a>
+            class="portal-link flex min-w-0 items-center gap-3"
+          >
+            <PortalIcon
+              :name="destination.icon"
+              class="shrink-0"
+            />
+            <span class="min-w-0 break-words">{{ destination.label }}</span>
+          </a>
         </div>
       </section>
 

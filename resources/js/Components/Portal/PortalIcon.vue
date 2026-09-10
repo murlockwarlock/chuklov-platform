@@ -1,8 +1,8 @@
 <script setup lang="ts">
-type IconName = 'home' | 'calendar' | 'check' | 'sparkles' | 'wallet' | 'user' | 'paperclip' | 'info' | 'refresh' | 'health' | 'more' | 'arrow' | 'close';
+import type { PortalIconName } from '../../types/portal';
 
 defineProps<{
-    name: IconName;
+    name: PortalIconName;
 }>();
 </script>
 
@@ -108,5 +108,33 @@ defineProps<{
       v-if="name === 'close'"
       d="m6 6 12 12M18 6 6 18"
     />
+    <template v-if="name === 'map'">
+      <path d="m3.5 5.5 5.67-2 5.66 2 5.67-2v15l-5.67 2-5.66-2-5.67 2v-15Z" />
+      <path d="M9.17 3.5v15M14.83 5.5v15" />
+    </template>
+    <template v-if="name === 'pin'">
+      <path d="M19 10.25c0 5-7 10.25-7 10.25s-7-5.25-7-10.25a7 7 0 1 1 14 0Z" />
+      <circle
+        cx="12"
+        cy="10.25"
+        r="2.25"
+      />
+    </template>
+    <template v-if="name === 'compass'">
+      <circle
+        cx="12"
+        cy="12"
+        r="8.5"
+      />
+      <path d="m15.5 8.5-2.1 4.9-4.9 2.1 2.1-4.9 4.9-2.1Z" />
+    </template>
+    <template v-if="name === 'globe'">
+      <circle
+        cx="12"
+        cy="12"
+        r="8.5"
+      />
+      <path d="M3.8 12h16.4M12 3.5c2.1 2.3 3.2 5.1 3.2 8.5s-1.1 6.2-3.2 8.5c-2.1-2.3-3.2-5.1-3.2-8.5S9.9 5.8 12 3.5Z" />
+    </template>
   </svg>
 </template>
