@@ -220,6 +220,13 @@ final class SurveyReportBuilder
     /** @param array<string, mixed> $question */
     private function optionLabel(array $question, mixed $answer): mixed
     {
+        if (is_array($answer)) {
+            return array_values(array_map(
+                fn (mixed $selected): mixed => $this->optionLabel($question, $selected),
+                $answer,
+            ));
+        }
+
         foreach ($question['options'] ?? [] as $option) {
             if (is_array($option) && ($option['value'] ?? null) === $answer) {
                 return $option['label'] ?? $answer;
@@ -237,6 +244,15 @@ final class SurveyReportBuilder
         }
         foreach ($scoring['rules'] ?? [] as $rule) {
             if (is_array($rule) && ($rule['question_key'] ?? null) === $questionKey && is_array($rule['points'] ?? null)) {
+                if (is_array($answer)) {
+                    return (int) array_sum(array_map(
+                        static fn (mixed $selected): int => is_scalar($selected)
+                            ? (int) ($rule['points'][(string) $selected] ?? 0)
+                            : 0,
+                        $answer,
+                    ));
+                }
+
                 return (int) ($rule['points'][(string) $answer] ?? 0);
             }
         }
