@@ -732,14 +732,18 @@ select.portal-input[aria-invalid='true'] {
 
 .portal-finance-rows {
     display: grid;
+    min-width: 0;
+    max-width: 100%;
     margin: 0;
 }
 
 .portal-finance-row {
     display: flex;
     min-width: 0;
+    max-width: 100%;
     align-items: baseline;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: var(--portal-space-4);
     border-top: 1px solid var(--portal-color-border);
     padding: 0.75rem 0;
@@ -757,9 +761,27 @@ select.portal-input[aria-invalid='true'] {
 
 .portal-finance-row dd {
     margin: 0;
+    max-width: 100%;
     color: var(--portal-color-ink);
     font-weight: 750;
     text-align: right;
+}
+
+.portal-finance-page {
+    min-width: 0;
+    max-width: 100%;
+}
+
+@media (max-width: 40rem) {
+    .portal-finance-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--portal-space-1);
+    }
+
+    .portal-finance-row dd {
+        text-align: left;
+    }
 }
 
 .portal-report-metrics {

@@ -95,6 +95,7 @@ class PortalProductUxTest extends TestCase
         $surveyReport = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyReport.vue'));
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
         $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
+        $finance = (string) file_get_contents(resource_path('js/Pages/Portal/Finance.vue'));
         $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
@@ -128,6 +129,8 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('surveys.questionCount', $surveyTake);
         self::assertStringContainsString('survey.saved', $surveyTake);
         self::assertStringNotContainsString('<select', $surveyTake);
+        self::assertStringContainsString('portal-finance-page', $finance);
+        self::assertStringContainsString('min-w-0 max-w-full', $finance);
         self::assertStringContainsString('portal-report-actions', $surveyReport);
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
