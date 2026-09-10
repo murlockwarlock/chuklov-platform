@@ -361,7 +361,7 @@ final readonly class StartClinicalSynthesis
             }
         }
 
-        return $this->boundedText(implode("\n", $lines), $includeAttentionAreas ? 1500 : 700);
+        return $this->boundedText(implode("\n", $lines), $includeAttentionAreas ? 1500 : 500);
     }
 
     private function textList(mixed $values, int $limit, int $itemLength): array
