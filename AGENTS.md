@@ -161,6 +161,20 @@ Focused verification is the default. Do not locally run `make ci`, `make test-in
 
 Allowed local checks: targeted unit or feature test files/filters, directly affected lint/static analysis, focused frontend checks, formatting on changed files (`vendor/bin/pint --dirty`), and other low-resource checks that do not start Docker, browser, or container infrastructure. Stop any check that begins consuming significant CPU/memory and move only the necessary verification to hosted CI.
 
+### Local / CI / Staging workflow
+
+Staging is the primary production-equivalent integration and acceptance environment. It runs the production-like PostgreSQL, Redis, queues, scheduler, migrations, and application paths used for acceptance.
+
+Do not start or keep a heavy production-like stack on the local Mac by default: PostgreSQL, Redis, queue workers, scheduler, full Docker Compose, and other background services are out of the default local loop. Use the Mac for editing, Git, focused unit tests without external infrastructure, PHP syntax checks, `git diff --check`, fast linters/formatters, and other cheap feedback. Run heavy integration suites, PHPStan/Larastan, frontend typecheck/builds, long test suites, and isolated PostgreSQL tests on CI or a remote runner when the existing workflow supports it.
+
+A local heavy stack is allowed only when staging or CI is unavailable, the specific defect cannot reasonably be reproduced remotely, or the owner explicitly requests local verification.
+
+Use staging as the authoritative production-equivalent target for PostgreSQL migrations and schema, JSON/JSONB, indexes, foreign keys, unique and check constraints, timestamps/timezones, transactions, locks/concurrency, idempotency/upsert, payment and webhook/reconciliation flows, Redis/queues/workers, scheduler, Telegram, Zoom, production-like application paths, end-to-end checks, and manual acceptance. Do not duplicate a successful staging or remote verification locally only for ceremony.
+
+Never run destructive automated tests such as `migrate:fresh`, database wipes, or truncation against the staging acceptance database. Run those tests only against an isolated PostgreSQL test database/schema or in CI.
+
+The normal workflow is: `code → lightweight local checks → push → CI/remote checks → staging deploy → PostgreSQL/integration/acceptance → fixes`. Production remains outside this workflow and requires separate owner authorization for development or testing.
+
 ### Verification Matrix
 
 | Change risk | Minimum useful evidence |
