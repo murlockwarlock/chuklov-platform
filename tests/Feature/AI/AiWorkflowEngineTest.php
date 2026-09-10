@@ -38,6 +38,7 @@ use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
@@ -705,6 +706,42 @@ class AiWorkflowEngineTest extends TestCase
         $run = AiRun::query()->findOrFail($result->runId);
         self::assertSame('deepseek', $run->actual_provider);
         self::assertSame('valid-model-4', $run->actual_model);
+    }
+
+    public function test_incomplete_bounded_pricing_candidate_does_not_block_failover(): void
+    {
+        DynamicWorkflowAgent::fake(['Later candidate after pricing skip']);
+
+        $first = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'openai',
+            modelName: 'gpt-5.6-luna',
+            priority: 1,
+        );
+        $firstPricing = AiModelCatalog::find('openai', 'gpt-5.6-luna')?->pricing;
+        self::assertNotNull($firstPricing);
+        self::assertTrue($firstPricing->isComplete());
+        $first->activeRelease()->update(['pricing_snapshot' => $firstPricing->toArray()]);
+
+        $second = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'deepseek',
+            modelName: 'pricing-valid-second',
+            priority: 2,
+        );
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'pricing_profile_failover',
+            inputVariables: ['query' => 'bounded billing profile'],
+        ));
+
+        self::assertTrue($result->isSuccess(), (string) $result->errorMessageSanitized);
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertSame($second->activeRelease()->value('provider_name'), $run->actual_provider);
+        self::assertSame('pricing-valid-second', $run->actual_model);
+        self::assertCount(1, AiRunAttempt::query()->where('ai_run_id', $run->getKey())->get());
+        self::assertSame('deepseek', AiRunAttempt::query()->where('ai_run_id', $run->getKey())->value('provider'));
     }
 
     public function test_document_attachment_filters_candidates_before_sync_failover_attempt_limit(): void
