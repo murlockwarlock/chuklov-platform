@@ -44,6 +44,17 @@ final readonly class BoundedAiPromptContext
 
         $ragChunks = $contextAssembly->ragChunks;
         $provenanceSummary = $contextAssembly->provenanceSummary;
+        $originalHealthContext = $variables['health_context'] ?? null;
+        if (! $this->fits($systemPrompt, $userPrompt, $capability)
+            && is_string($variables['health_context'] ?? null)) {
+            [$variables, $systemPrompt, $userPrompt] = $this->fitHealthContext(
+                $systemTemplate,
+                $userTemplate,
+                $variables,
+                $capability,
+            );
+        }
+
         if (! $this->fits($systemPrompt, $userPrompt, $capability)
             && $contextPolicy->allowRagDegradation
             && ! $contextPolicy->requireGroundedRag
@@ -54,17 +65,6 @@ final readonly class BoundedAiPromptContext
             $provenanceSummary['rag_degraded'] = true;
             $provenanceSummary['rag_chunks_count'] = 0;
             [$variables, $systemPrompt, $userPrompt] = $this->fitHistory(
-                $systemTemplate,
-                $userTemplate,
-                $variables,
-                $capability,
-            );
-        }
-
-        $originalHealthContext = $variables['health_context'] ?? null;
-        if (! $this->fits($systemPrompt, $userPrompt, $capability)
-            && is_string($variables['health_context'] ?? null)) {
-            [$variables, $systemPrompt, $userPrompt] = $this->fitHealthContext(
                 $systemTemplate,
                 $userTemplate,
                 $variables,

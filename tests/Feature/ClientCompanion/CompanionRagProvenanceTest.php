@@ -38,6 +38,10 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Surveys\Domain\Models\SurveyReport;
+use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -72,6 +76,62 @@ final class CompanionRagProvenanceTest extends TestCase
     public function test_real_companion_path_persists_qualifying_rag_provenance_after_ingestion(): void
     {
         $this->createActivePrompt();
+        $prompt = AiPrompt::query()->where('organization_id', $this->organization->getKey())->where('capability', AiCapability::ClientCompanion)->sole();
+        $prompt->activeVersion()->sole()->update([
+            'system_prompt' => str_repeat('Безопасная инструкция. ', 170),
+            'user_prompt_template' => "Контекст здоровья:\n{{health_context}}\n\nБаза знаний:\n{{rag_context}}\n\nТекущее сообщение:\n{{current_message}}",
+            'context_policy' => [
+                'include_rag' => true,
+                'rag_max_chunks' => 3,
+                'rag_min_similarity' => 0.65,
+                'allow_rag_degradation' => true,
+                'allowed_context_types' => ['client_profile', 'health_context', 'rag'],
+            ],
+        ]);
+        $definition = SurveyDefinition::create([
+            'organization_id' => $this->organization->getKey(),
+            'definition_key' => 'r3_health_context',
+            'title' => 'R3 health context',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::create([
+            'organization_id' => $this->organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => 'published',
+            'title' => 'R3 health context',
+            'definition' => ['sections' => []],
+            'scoring' => [],
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+            'methodology' => 'test',
+            'published_at' => now(),
+        ]);
+        $attempt = SurveyAttempt::create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'survey_version_id' => $version->getKey(),
+            'status' => 'completed',
+            'definition_snapshot' => ['sections' => []],
+            'answers_snapshot' => [],
+            'scoring_snapshot' => [],
+            'result_snapshot' => [],
+            'started_at' => now()->subMinute(),
+            'completed_at' => now(),
+        ]);
+        SurveyReport::create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'survey_attempt_id' => $attempt->getKey(),
+            'survey_version_id' => $version->getKey(),
+            'title' => 'R3 health context',
+            'report_snapshot' => [
+                'survey' => ['title' => ['ru' => 'R3 health context']],
+                'summary' => ['short' => str_repeat('Результат теста: зона внимания — сон и восстановление. ', 140)],
+            ],
+            'materialized_at' => now(),
+        ]);
         $this->createConfiguredModel();
         $source = app(CreateKnowledgeSource::class)->handle($this->user, [
             'title' => 'R3 qualifying source',
