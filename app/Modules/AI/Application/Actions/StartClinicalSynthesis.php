@@ -290,7 +290,7 @@ final readonly class StartClinicalSynthesis
             $lines[] = $this->sessionContext($session);
         }
 
-        return $this->boundedText(implode("\n", $lines), 1200);
+        return $this->boundedText(implode("\n", $lines), 900);
     }
 
     /** @param array<string, mixed> $result */
