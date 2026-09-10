@@ -21,6 +21,7 @@ use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
@@ -33,6 +34,11 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
+use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -193,6 +199,135 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
         self::assertStringContainsString('Old document fact', (string) $originalPrompt);
         self::assertStringNotContainsString('New document fact', (string) $originalPrompt);
+    }
+
+    public function test_synthesis_bounds_large_reviewed_context_before_persisting_the_prompt(): void
+    {
+        Queue::fake();
+
+        $documentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            [
+                'exam_type' => 'Synthetic MRI',
+                'anatomical_region' => 'Lumbar spine',
+                'key_findings' => [
+                    [
+                        'location' => 'L4-L5',
+                        'pathology' => 'Dorsal paramedian extrusion',
+                        'size_mm' => 5.4,
+                        'impact' => str_repeat('document detail ', 500),
+                    ],
+                ],
+                'structural_deformations' => [str_repeat('structural detail ', 500)],
+                'critical_flags' => [str_repeat('critical detail ', 500)],
+                'plain_summary' => str_repeat('document summary ', 500),
+            ],
+        );
+        $postureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            [
+                'visual_findings' => [
+                    ['plane' => 'front', 'observations' => ['Shoulder asymmetry '.str_repeat('posture detail ', 500)]],
+                    ['plane' => 'side', 'observations' => ['Forward head position '.str_repeat('posture detail ', 500)]],
+                    ['plane' => 'back', 'observations' => ['Pelvic asymmetry '.str_repeat('posture detail ', 500)]],
+                ],
+                'leading_compensatory_patterns' => [str_repeat('pattern detail ', 500)],
+                'practitioner_focus' => [str_repeat('focus detail ', 500)],
+                'limitations' => [str_repeat('limitation detail ', 500)],
+            ],
+        );
+
+        $definition = SurveyDefinition::create([
+            'organization_id' => $this->organization->id,
+            'definition_key' => 'large-clinical-context',
+            'title' => 'Large clinical context',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::create([
+            'organization_id' => $this->organization->id,
+            'survey_definition_id' => $definition->id,
+            'version' => 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => 'Large clinical context',
+            'definition' => ['sections' => []],
+            'scoring' => [],
+            'published_at' => Carbon::now(),
+        ]);
+        $definition->update(['active_version_id' => $version->id]);
+
+        foreach (range(1, 5) as $index) {
+            SurveyAttempt::create([
+                'organization_id' => $this->organization->id,
+                'client_id' => $this->client->id,
+                'survey_definition_id' => $definition->id,
+                'survey_version_id' => $version->id,
+                'status' => SurveyAttemptStatus::Completed,
+                'definition_snapshot' => ['sections' => []],
+                'answers_snapshot' => [],
+                'scoring_snapshot' => [],
+                'result_snapshot' => [
+                    'survey' => [
+                        'definition_key' => 'large-clinical-context',
+                        'version' => 1,
+                        'title' => ['ru' => 'Большой контекст'],
+                        'methodology' => 'platform_default',
+                    ],
+                    'completed_at' => Carbon::now()->subMinutes($index)->toIso8601String(),
+                    'summary' => ['short' => ['ru' => 'Краткое резюме']],
+                    'attention_areas' => [[
+                        'label' => ['ru' => 'Сон'],
+                        'score' => 40,
+                        'status' => ['ru' => 'Стоит обратить внимание'],
+                        'reason' => ['ru' => 'На основании ответов'],
+                        'evidence' => [['question' => str_repeat('survey detail ', 500)]],
+                    ]],
+                    'domains' => [[
+                        'label' => ['ru' => 'Сон'],
+                        'score' => 40,
+                        'raw_score' => 8,
+                        'status' => ['ru' => 'Стоит обратить внимание'],
+                    ]],
+                    'comparison' => null,
+                ],
+                'metric_schema_key' => 'large-clinical-context-v1',
+                'started_at' => Carbon::now()->subMinutes($index + 1),
+                'completed_at' => Carbon::now()->subMinutes($index),
+            ]);
+        }
+
+        $synthesisRun = app(StartClinicalSynthesis::class)->handle($this->staff, $this->client);
+        $payload = AiRunPayload::query()->where('ai_run_id', $synthesisRun->id)->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        $systemPrompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_system_prompt,
+            $payload->encryption_key_version,
+        );
+        $budget = AiRuntimeLimits::inputContextBudget(
+            $systemPrompt,
+            $prompt,
+            AiCapabilityRegistry::get(AiCapability::ClinicalSynthesizer),
+        );
+
+        self::assertTrue($budget->fits());
+        self::assertStringContainsString('L4-L5', $prompt);
+        self::assertStringContainsString('5.4', $prompt);
+        self::assertStringContainsString('Shoulder asymmetry', $prompt);
+        self::assertStringNotContainsString(str_repeat('posture detail ', 500), $prompt);
+        self::assertStringNotContainsString(str_repeat('survey detail ', 500), $prompt);
+        self::assertEqualsCanonicalizing(
+            [$documentRun->id, $postureRun->id],
+            collect($synthesisRun->input_references)
+                ->filter(static fn (array $reference): bool => $reference['type'] === 'ai_run')
+                ->pluck('id')
+                ->all(),
+        );
     }
 
     public function test_production_posture_launch_cannot_select_controlled_evaluation_attachments(): void
