@@ -15,11 +15,14 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
+use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -66,9 +69,17 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
     }
 
-    public function test_reset_rejects_a_client_with_protected_history(): void
+    public function test_reset_removes_a_client_with_working_history(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $bookingEvent = BookingEvent::factory()->forBooking($booking)->create();
         ClientAttribution::forceCreate([
             'organization_id' => $organization->getKey(),
             'client_id' => $client->getKey(),
@@ -79,37 +90,12 @@ final class ResetStagingClientAccountTest extends TestCase
             'accepted_at' => now(),
         ]);
 
-        try {
-            app(ResetStagingClientAccount::class)->handle($admin, $client);
-            self::fail('The reset should be blocked for a client with protected history.');
-        } catch (ValidationException) {
-            self::assertDatabaseHas('clients', ['id' => $client->getKey()]);
-        }
-    }
+        app(ResetStagingClientAccount::class)->handle($admin, $client);
 
-    public function test_client_card_shows_a_human_error_when_reset_is_blocked(): void
-    {
-        [$organization, $admin, $client] = $this->fixture();
-        ClientAttribution::forceCreate([
-            'organization_id' => $organization->getKey(),
-            'client_id' => $client->getKey(),
-            'source_type' => 'manual',
-            'source' => 'CRM',
-            'capture_channel' => 'crm',
-            'captured_at' => now(),
-            'accepted_at' => now(),
-        ]);
-        Filament::setCurrentPanel(Filament::getPanel('admin'));
-
-        Livewire::actingAs($admin)
-            ->test(ViewClient::class, ['record' => $client->getKey()])
-            ->callAction('resetStagingAccount')
-            ->assertNotified('Аккаунт не сброшен');
-
-        self::assertDatabaseHas('clients', [
-            'organization_id' => $organization->getKey(),
-            'id' => $client->getKey(),
-        ]);
+        self::assertDatabaseMissing('clients', ['id' => $client->getKey()]);
+        self::assertDatabaseMissing('bookings', ['id' => $booking->getKey()]);
+        self::assertDatabaseMissing('booking_events', ['id' => $bookingEvent->getKey()]);
+        self::assertDatabaseMissing('client_attributions', ['client_id' => $client->getKey()]);
     }
 
     public function test_reset_rejects_a_client_from_another_organization(): void

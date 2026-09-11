@@ -636,7 +636,7 @@ class ViewClient extends ViewRecord
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Сбросить аккаунт для теста?')
-            ->modalDescription('Профиль и временные тестовые данные будут удалены. При следующем входе через Telegram будет создан новый аккаунт. Рабочие записи и медицинские данные кнопка не удаляет.')
+            ->modalDescription('Будут удалены профиль клиента и все связанные с ним данные, включая записи, историю сообщений, диагностику и финансовые операции. Следующий вход через Telegram создаст новый аккаунт. Это действие доступно только на staging и не отменяется в приложении.')
             ->modalSubmitActionLabel('Сбросить аккаунт')
             ->authorize(fn (): bool => $this->canResetStagingAccount())
             ->visible(fn (): bool => $this->canResetStagingAccount())
