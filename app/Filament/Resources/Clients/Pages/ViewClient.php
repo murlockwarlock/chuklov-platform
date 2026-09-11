@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Pages;
 
+use App\Filament\Pages\Messages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
@@ -10,6 +11,7 @@ use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\RecordClientConsent;
+use App\Modules\Identity\Application\ResetStagingClientAccount;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
@@ -100,10 +102,11 @@ class ViewClient extends ViewRecord
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
             Action::make('companionHistory')
-                ->label('Общение')
+                ->label('Сообщения')
                 ->icon('heroicon-o-chat-bubble-left-right')
                 ->color('primary')
-                ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
+                ->url(fn (): string => Messages::getUrl(['client' => $this->clientRecord()->getKey()])),
+            $this->resetStagingAccountAction(),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')
@@ -623,6 +626,38 @@ class ViewClient extends ViewRecord
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ManageClients,
         );
+    }
+
+    private function resetStagingAccountAction(): Action
+    {
+        return Action::make('resetStagingAccount')
+            ->label('Сбросить аккаунт для теста')
+            ->icon('heroicon-o-arrow-path')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Сбросить аккаунт для теста?')
+            ->modalDescription('Будут удалены профиль клиента и все связанные с ним данные, включая записи, историю сообщений, диагностику и финансовые операции. Следующий вход через Telegram создаст новый аккаунт. Это действие доступно только на staging и не отменяется в приложении.')
+            ->modalSubmitActionLabel('Сбросить аккаунт')
+            ->authorize(fn (): bool => $this->canResetStagingAccount())
+            ->visible(fn (): bool => $this->canResetStagingAccount())
+            ->action(function (): void {
+                try {
+                    app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
+                    Notification::make()->title('Аккаунт сброшен для повторного теста')->success()->send();
+                    $this->redirect(ClientResource::getUrl('index'));
+                } catch (ValidationException $exception) {
+                    Notification::make()
+                        ->title('Аккаунт не сброшен')
+                        ->body(collect($exception->errors())->flatten()->implode(' '))
+                        ->danger()
+                        ->send();
+                }
+            });
+    }
+
+    private function canResetStagingAccount(): bool
+    {
+        return app()->environment(['local', 'staging', 'testing']) && $this->canManageClients();
     }
 
     private function unblockSelfBookingAction(): Action

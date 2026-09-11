@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
@@ -27,7 +28,10 @@ class BookingInfolist
             ->components([
                 Section::make('Информация о приёме')
                     ->schema([
-                        TextEntry::make('client.full_name')->label('Клиент')->wrap(),
+                        TextEntry::make('client.full_name')
+                            ->label('Клиент')
+                            ->url(fn (Booking $record): string => ClientResource::getUrl('view', ['record' => $record->client]))
+                            ->wrap(),
                         TextEntry::make('specialist.display_name')->label('Специалист')->wrap(),
                         TextEntry::make('service.name')->label('Услуга')->wrap(),
                         TextEntry::make('visit_format')

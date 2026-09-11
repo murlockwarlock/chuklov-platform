@@ -4,6 +4,7 @@ namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
@@ -20,6 +21,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 final class ReadCompanionConversation
 {
@@ -80,6 +82,7 @@ final class ReadCompanionConversation
         $query = ConversationMessage::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
+            ->with('authorUser:id,name')
             ->orderByDesc('occurred_at')
             ->orderByDesc('id');
 
@@ -104,21 +107,24 @@ final class ReadCompanionConversation
         $hasOlder = $messages->count() > $pageSize;
         $messages = $messages->take($pageSize)->reverse()->values();
         $messageIds = $messages->pluck('id')->map(static fn (mixed $id): int => (int) $id)->values()->all();
-        $uncertainMessageIds = $staff && $messageIds !== []
+        $deliveryByMessage = $staff && $messageIds !== []
             ? CompanionDelivery::query()
                 ->where('organization_id', $organizationId)
                 ->whereIn('conversation_message_id', $messageIds)
-                ->where('status', CompanionDeliveryStatus::Uncertain->value)
-                ->pluck('conversation_message_id')
-                ->map(static fn (mixed $id): int => (int) $id)
-                ->flip()
+                ->get(['conversation_message_id', 'status'])
+                ->groupBy('conversation_message_id')
             : collect();
-        $attachmentCounts = $messageIds === [] ? collect() : CompanionMessageAttachment::query()
+        $attachmentsByMessage = $messageIds === [] ? collect() : CompanionMessageAttachment::query()
             ->where('organization_id', $organizationId)
             ->whereIn('conversation_message_id', $messageIds)
-            ->selectRaw('conversation_message_id, COUNT(*) as attachment_count')
-            ->groupBy('conversation_message_id')
-            ->pluck('attachment_count', 'conversation_message_id');
+            ->with(['medicalAttachment:id,organization_id,attachment_type,original_filename,mime_type'])
+            ->get()
+            ->filter(static fn (CompanionMessageAttachment $attachment): bool => in_array(
+                $attachment->medicalAttachment?->attachment_type,
+                [AttachmentType::CompanionImage, AttachmentType::CompanionDocument],
+                true,
+            ))
+            ->groupBy('conversation_message_id');
 
         $turns = CompanionTurn::query()
             ->where('organization_id', $organizationId)
@@ -163,16 +169,17 @@ final class ReadCompanionConversation
                 'id' => $message->getKey(),
                 'role' => $message->author_type->value,
                 'roleLabel' => $this->roleLabel($message->author_type),
+                'authorName' => $message->author_type === ConversationAuthorType::Staff
+                    ? $message->authorUser?->name
+                    : null,
                 'content' => $this->bodyReader->read($organizationId, $message),
                 'occurredAt' => $message->occurred_at?->toIso8601String() ?? $message->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'transport' => $message->channel === 'telegram' ? 'telegram' : 'portal',
                 'transportLabel' => $message->channel === 'telegram' ? 'Telegram' : 'Портал',
                 'feedback' => $feedbackForMessage?->value?->value,
-                'attachmentCount' => (int) ($attachmentCounts->get($message->getKey()) ?? 0),
-                'deliveryNotice' => $uncertainMessageIds->has($message->getKey()) ? [
-                    'title' => 'Доставка в Telegram не подтверждена',
-                    'body' => 'Telegram не подтвердил результат отправки. Сообщение могло быть доставлено, поэтому система не отправляет его повторно автоматически. Если ответа нет, свяжитесь с клиентом другим способом.',
-                ] : null,
+                'attachments' => $this->attachmentsFor($attachmentsByMessage->get($message->getKey(), collect())),
+                'attachmentCount' => $attachmentsByMessage->get($message->getKey(), collect())->count(),
+                'deliveryNotice' => $this->deliveryNotice($deliveryByMessage->get($message->getKey(), collect())),
                 'traceUrl' => $traceAllowed && $message->author_type === ConversationAuthorType::Ai && $turn?->ai_run_id !== null
                     ? AiRunResource::getUrl('view', ['record' => $turn->ai_run_id])
                     : null,
@@ -185,11 +192,13 @@ final class ReadCompanionConversation
                     'id' => 'handoff-'.$escalation->getKey(),
                     'role' => 'system',
                     'roleLabel' => 'Состояние общения',
+                    'authorName' => null,
                     'content' => $escalation->reasonLabel(),
                     'occurredAt' => $escalation->opened_at->toIso8601String(),
                     'transport' => null,
                     'transportLabel' => null,
                     'feedback' => null,
+                    'attachments' => [],
                     'attachmentCount' => 0,
                     'deliveryNotice' => null,
                     'traceUrl' => null,
@@ -256,6 +265,63 @@ final class ReadCompanionConversation
         }
 
         return $result;
+    }
+
+    /**
+     * @param  Collection<int, CompanionMessageAttachment>  $links
+     * @return list<array{name: string|null, type: string}>
+     */
+    private function attachmentsFor(Collection $links): array
+    {
+        $attachments = [];
+        foreach ($links as $link) {
+            $attachment = $link->medicalAttachment;
+            if ($attachment === null) {
+                continue;
+            }
+
+            $attachments[] = [
+                'name' => $attachment->original_filename,
+                'type' => $attachment->attachment_type === AttachmentType::CompanionImage ? 'Изображение' : 'Документ',
+            ];
+        }
+
+        return $attachments;
+    }
+
+    /**
+     * @param  Collection<int, CompanionDelivery>  $deliveries
+     * @return array{title: string, body: string}|null
+     */
+    private function deliveryNotice(Collection $deliveries): ?array
+    {
+        $statuses = $deliveries
+            ->map(static fn (CompanionDelivery $delivery): CompanionDeliveryStatus => $delivery->status)
+            ->values();
+
+        if ($statuses->contains(CompanionDeliveryStatus::Uncertain)) {
+            return [
+                'title' => 'Доставка в Telegram не подтверждена',
+                'body' => 'Telegram не подтвердил результат отправки. Сообщение могло быть доставлено, поэтому система не отправляет его повторно автоматически. Если ответа нет, свяжитесь с клиентом другим способом.',
+            ];
+        }
+
+        if ($statuses->contains(CompanionDeliveryStatus::Failed)) {
+            return [
+                'title' => 'Сообщение не доставлено',
+                'body' => 'Telegram не принял сообщение. Проверьте подключение канала или свяжитесь с клиентом другим способом.',
+            ];
+        }
+
+        if ($statuses->contains(CompanionDeliveryStatus::Pending)
+            || $statuses->contains(CompanionDeliveryStatus::Processing)) {
+            return [
+                'title' => 'Сообщение отправляется',
+                'body' => 'Доставка сообщения ещё выполняется.',
+            ];
+        }
+
+        return null;
     }
 
     private function assertClientOrganization(Client $client, int $organizationId): void

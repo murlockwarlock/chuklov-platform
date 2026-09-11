@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Pages\FinanceConfiguration;
 use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ContentSections\ContentSectionResource;
@@ -23,6 +24,7 @@ use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
 use Filament\Facades\Filament;
+use Filament\Support\Icons\Heroicon;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -44,11 +46,12 @@ class FilamentFoundationTest extends TestCase
         Filament::setCurrentPanel($panel);
 
         self::assertSame([
-            'Клиенты',
             'Записи',
+            'Клиенты',
+            'Коммуникации',
             'Настройки',
             'Команда и услуги',
-            'Коммуникации',
+            'Партнёры',
             'Контент и знания',
             'Искусственный интеллект',
             'Финансы',
@@ -60,6 +63,7 @@ class FilamentFoundationTest extends TestCase
             SurveyAttemptResource::class => 'Клиенты',
             BookingResource::class => 'Записи',
             SchedulingConfiguration::class => 'Записи',
+            WorkSchedule::class => 'Записи',
             UnavailablePeriodResource::class => 'Записи',
             ScheduleExceptionResource::class => 'Записи',
             WorkingLocationResource::class => 'Настройки',
@@ -88,5 +92,8 @@ class FilamentFoundationTest extends TestCase
         self::assertSame('Поиск по знаниям', KnowledgeRetrievalInspector::getNavigationLabel());
         self::assertSame('Оплаты', FinancialObligationResource::getNavigationLabel());
         self::assertSame('Настройки валют', FinanceConfiguration::getNavigationLabel());
+        self::assertSame(Heroicon::OutlinedCalendarDays, BookingResource::getNavigationIcon());
+        self::assertSame(Heroicon::OutlinedClock, WorkSchedule::getNavigationIcon());
+        self::assertSame(Heroicon::OutlinedUsers, ClientResource::getNavigationIcon());
     }
 }
