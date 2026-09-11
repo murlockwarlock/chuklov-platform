@@ -23,6 +23,7 @@ use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Url;
 use LogicException;
 use UnitEnum;
 
@@ -40,8 +41,10 @@ final class WorkSchedule extends Page
 
     protected string $view = 'filament.pages.work-schedule';
 
+    #[Url(as: 'specialist_id', history: true, nullable: true)]
     public ?int $specialistId = null;
 
+    #[Url(as: 'month', history: true)]
     public string $month = '';
 
     /** @var list<string> */
@@ -92,13 +95,16 @@ final class WorkSchedule extends Page
 
     public function mount(): void
     {
-        $this->specialistId = $this->currentViewerSpecialist()?->getKey()
+        $this->specialistId = $this->selectedSpecialist()?->getKey()
+            ?? $this->currentViewerSpecialist()?->getKey()
             ?? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('is_active', true)
                 ->orderBy('display_name')
                 ->value('id');
-        $this->month = CarbonImmutable::now($this->specialistScheduleTimezone())->format('Y-m');
+        $requestedMonth = $this->validMonth($this->month);
+        $this->month = $requestedMonth
+            ?? CarbonImmutable::now($this->specialistScheduleTimezone())->format('Y-m');
         $this->clearSelection();
     }
 
@@ -548,6 +554,23 @@ final class WorkSchedule extends Page
         }
 
         return $date;
+    }
+
+    private function validMonth(string $month): ?string
+    {
+        if (preg_match('/^\d{4}-\d{2}$/', $month) !== 1) {
+            return null;
+        }
+
+        $date = CarbonImmutable::createFromFormat(
+            '!Y-m-d',
+            $month.'-01',
+            $this->specialistScheduleTimezone(),
+        );
+
+        return $date instanceof CarbonImmutable && $date->format('Y-m') === $month
+            ? $month
+            : null;
     }
 
     private function isDateInCurrentMonth(string $date): bool

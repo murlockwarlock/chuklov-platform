@@ -199,6 +199,200 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertDatabaseCount('specialist_working_hours', 0);
     }
 
+    public function test_work_schedule_keeps_selected_specialist_and_month_in_query_state(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Второй специалист',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::withQueryParams([
+            'specialist_id' => $secondSpecialist->getKey(),
+            'month' => '2026-10',
+        ])->actingAs($admin)->test(WorkSchedule::class);
+
+        $component->assertSet('specialistId', $secondSpecialist->getKey())
+            ->assertSet('month', '2026-10');
+
+        $remounted = Livewire::withQueryParams([
+            'specialist_id' => $secondSpecialist->getKey(),
+            'month' => '2026-10',
+        ])->actingAs($admin)->test(WorkSchedule::class);
+
+        self::assertSame($secondSpecialist->getKey(), $remounted->instance()->specialistId);
+        self::assertSame('2026-10', $remounted->instance()->month);
+        self::assertNotSame($specialist->getKey(), $remounted->instance()->specialistId);
+    }
+
+    public function test_settings_update_refreshes_effective_calendar_without_overwriting_date_override(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $settings = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+
+        $settings->fillForm([
+            'specialist_id' => $specialist->getKey(),
+            'working_hours' => [[
+                'weekday' => 4,
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'starts_on' => null,
+                'ends_on' => null,
+            ]],
+            'clear_working_hours' => false,
+        ])->call('save')->assertHasNoErrors();
+
+        self::assertDatabaseHas('specialist_working_hours', [
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'weekday' => 4,
+            'start_time' => '09:00',
+            'end_time' => '15:00',
+        ]);
+        self::assertSame('09:00', app(GetScheduleCalendar::class)->forSpecialist(
+            specialist: $specialist,
+            dateFrom: '2026-10-08',
+            dateTo: '2026-10-08',
+            displayTimezone: 'UTC',
+        )['2026-10-08']['intervals'][0]['start']);
+
+        app(SetScheduleExceptionSet::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            definitionsByDate: [
+                '2026-10-08' => [[
+                    'exception_date' => '2026-10-08',
+                    'exception_type' => ScheduleExceptionType::CustomWindow->value,
+                    'start_time' => '12:00',
+                    'end_time' => '18:00',
+                ]],
+            ],
+        );
+
+        $settings->fillForm([
+            'working_hours' => [[
+                'weekday' => 4,
+                'start_time' => '10:00',
+                'end_time' => '16:00',
+                'starts_on' => null,
+                'ends_on' => null,
+            ]],
+            'clear_working_hours' => false,
+        ])->call('save')->assertHasNoErrors();
+
+        self::assertDatabaseMissing('specialist_working_hours', [
+            'specialist_id' => $specialist->getKey(),
+            'weekday' => 4,
+            'start_time' => '09:00',
+            'end_time' => '15:00',
+        ]);
+        self::assertDatabaseHas('specialist_working_hours', [
+            'specialist_id' => $specialist->getKey(),
+            'weekday' => 4,
+            'start_time' => '10:00',
+            'end_time' => '16:00',
+        ]);
+
+        $calendar = app(GetScheduleCalendar::class)->forSpecialist(
+            specialist: $specialist,
+            dateFrom: '2026-10-08',
+            dateTo: '2026-10-15',
+            displayTimezone: 'UTC',
+        );
+        self::assertSame('12:00', $calendar['2026-10-08']['intervals'][0]['start']);
+        self::assertSame('10:00', $calendar['2026-10-15']['intervals'][0]['start']);
+
+        app(SetScheduleExceptionSet::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            definitionsByDate: ['2026-10-08' => []],
+        );
+
+        self::assertSame('10:00', app(GetScheduleCalendar::class)->forSpecialist(
+            specialist: $specialist,
+            dateFrom: '2026-10-08',
+            dateTo: '2026-10-08',
+            displayTimezone: 'UTC',
+        )['2026-10-08']['intervals'][0]['start']);
+    }
+
+    public function test_work_schedule_ignores_foreign_specialist_query_state(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $foreignOrganization = Organization::factory()->create();
+        $foreignSpecialist = Specialist::factory()->forOrganization($foreignOrganization)->create();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::withQueryParams([
+            'specialist_id' => $foreignSpecialist->getKey(),
+            'month' => '2026-10',
+        ])->actingAs($admin)->test(WorkSchedule::class);
+
+        self::assertSame($specialist->getKey(), $component->instance()->specialistId);
+        self::assertNotSame($foreignSpecialist->getKey(), $component->instance()->specialistId);
+
+        $invalid = Livewire::withQueryParams([
+            'specialist_id' => 'not-a-specialist',
+            'month' => '2026-10',
+        ])->actingAs($admin)->test(WorkSchedule::class);
+
+        self::assertSame($specialist->getKey(), $invalid->instance()->specialistId);
+        self::assertSame('2026-10', $invalid->instance()->month);
+    }
+
+    public function test_work_schedule_distinguishes_today_from_selected_state_in_rendered_dom(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $component = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'month' => '2026-09',
+        ])->actingAs($admin)->test(WorkSchedule::class);
+
+        $today = $this->workScheduleDayButton($component->html(), '2026-09-01');
+        self::assertStringContainsString('data-today="true"', $today);
+        self::assertStringContainsString('aria-pressed="false"', $today);
+        self::assertStringContainsString('ring-1 ring-inset ring-gray-400', $today);
+        self::assertStringNotContainsString('ring-2 ring-inset ring-primary-600', $today);
+        self::assertStringContainsString('Сегодня', $today);
+
+        $component->call('toggleDate', '2026-09-01');
+        $selectedToday = $this->workScheduleDayButton($component->html(), '2026-09-01');
+        self::assertStringContainsString('data-today="true"', $selectedToday);
+        self::assertStringContainsString('aria-pressed="true"', $selectedToday);
+        self::assertStringContainsString('ring-2 ring-inset ring-primary-600', $selectedToday);
+
+        $component->call('toggleDate', '2026-09-01');
+        $unselectedToday = $this->workScheduleDayButton($component->html(), '2026-09-01');
+        self::assertStringContainsString('aria-pressed="false"', $unselectedToday);
+        self::assertStringContainsString('ring-1 ring-inset ring-gray-400', $unselectedToday);
+        self::assertStringNotContainsString('ring-2 ring-inset ring-primary-600', $unselectedToday);
+
+        $component->call('toggleDate', '2026-09-02');
+        $selectedDate = $this->workScheduleDayButton($component->html(), '2026-09-02');
+        self::assertStringContainsString('aria-pressed="true"', $selectedDate);
+        $component->call('toggleDate', '2026-09-02');
+        $unselectedDate = $this->workScheduleDayButton($component->html(), '2026-09-02');
+        self::assertStringContainsString('aria-pressed="false"', $unselectedDate);
+    }
+
+    public function test_free_journal_slot_create_route_renders_with_an_unnamed_client(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create(['full_name' => null]);
+        $this->resolveFilamentContext($admin, $organization);
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
+
+        $this->get(BookingResource::getUrl('create').'?'.http_build_query([
+            'starts_at' => '2026-10-05 10:00',
+            'specialist_id' => $specialist->getKey(),
+            'return_to_journal' => '1',
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ]))->assertOk();
+    }
+
     public function test_selected_dates_can_be_cleared_and_return_to_the_recurring_schedule(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
@@ -585,5 +779,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function workScheduleDayButton(string $html, string $date): string
+    {
+        $position = strpos($html, "toggleDate('{$date}')");
+        if ($position === false) {
+            self::fail('Work Schedule day button was not rendered.');
+        }
+
+        $start = strrpos(substr($html, 0, $position), '<button');
+        $end = strpos($html, '</button>', $position);
+        if ($start === false || $end === false) {
+            self::fail('Work Schedule day button boundaries were not rendered.');
+        }
+
+        return substr($html, $start, $end - $start + strlen('</button>'));
     }
 }

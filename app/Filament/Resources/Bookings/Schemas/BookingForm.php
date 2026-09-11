@@ -30,7 +30,11 @@ class BookingForm
                     ->options(fn (): array => Client::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('full_name')
-                        ->pluck('full_name', 'id')
+                        ->orderBy('id')
+                        ->get(['id', 'full_name'])
+                        ->mapWithKeys(static fn (Client $client): array => [
+                            $client->getKey() => trim((string) $client->full_name) ?: '#'.$client->getKey(),
+                        ])
                         ->all())
                     ->searchable()
                     ->required(),

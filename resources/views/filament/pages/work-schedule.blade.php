@@ -59,9 +59,16 @@
                             type="button"
                             wire:click="toggleDate('{{ $cell['date'] }}')"
                             aria-pressed="{{ $this->isSelectedDate($cell['date']) ? 'true' : 'false' }}"
-                            class="min-h-28 min-w-0 bg-white p-2 text-left transition hover:bg-primary-50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:bg-gray-900 dark:hover:bg-primary-950/30 {{ $this->isToday($cell['date']) ? 'ring-2 ring-inset ring-primary-500' : '' }} {{ $this->isSelectedDate($cell['date']) ? 'bg-primary-100 ring-2 ring-inset ring-primary-600 dark:bg-primary-950/60 dark:ring-primary-400' : '' }}"
+                            data-today="{{ $this->isToday($cell['date']) ? 'true' : 'false' }}"
+                            class="min-h-28 min-w-0 bg-white p-2 text-left transition hover:bg-primary-50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:bg-gray-900 dark:hover:bg-primary-950/30 {{ $this->isToday($cell['date']) && ! $this->isSelectedDate($cell['date']) ? 'ring-1 ring-inset ring-gray-400 dark:ring-gray-500' : '' }} {{ $this->isSelectedDate($cell['date']) ? 'bg-primary-100 ring-2 ring-inset ring-primary-600 dark:bg-primary-950/60 dark:ring-primary-400' : '' }}"
                         >
                             <span class="text-xs font-semibold text-gray-700 dark:text-gray-200">{{ (int) substr($cell['date'], -2) }}</span>
+                            @if ($this->isToday($cell['date']))
+                                <span class="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 dark:text-gray-400" aria-label="Сегодня">
+                                    <span class="size-1.5 rounded-full bg-gray-400 dark:bg-gray-500"></span>
+                                    Сегодня
+                                </span>
+                            @endif
                             @if ($cell['is_working'])
                                 <span class="mt-2 block text-[11px] font-medium text-emerald-700 dark:text-emerald-300">Работает</span>
                                 @foreach ($cell['intervals'] as $interval)
