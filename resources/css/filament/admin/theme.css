@@ -78,6 +78,11 @@
     min-height: 0;
 }
 
+.messages-page.fi-page {
+    max-height: 100dvh;
+    overflow: hidden;
+}
+
 .messages-page.fi-page .fi-page-header-main-ctn {
     overflow: hidden;
 }
@@ -93,6 +98,13 @@
     flex: 1 1 0%;
     flex-direction: column;
     overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+    .messages-page.fi-page {
+        height: calc(100dvh - 4rem);
+        max-height: calc(100dvh - 4rem);
+    }
 }
 
 .messages-composer .fi-sc-form {
