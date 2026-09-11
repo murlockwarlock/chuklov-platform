@@ -29,6 +29,8 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Textarea;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -59,6 +61,7 @@ final class MessagesWorkspaceTest extends TestCase
             'full_name' => 'Мария Сообщения',
             'email' => 'messages@example.com',
             'phone' => '+70000000009',
+            'language' => 'ru',
         ]);
         $this->resolveContext();
         Queue::fake();
@@ -105,7 +108,20 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertSee('Ответ специалиста')
             ->assertSee('Клиент')
             ->assertSee('AI-помощник')
-            ->assertSee('Специалист');
+            ->assertSee('Специалист')
+            ->assertSee('Напишите сообщение...')
+            ->assertSee('Язык: Русский')
+            ->assertDontSee('Язык: ru')
+            ->assertDontSee('Открыть карточку клиента');
+
+        $editor = $component->instance()->getSchemaComponent('form.body');
+        self::assertInstanceOf(Textarea::class, $editor);
+        self::assertSame('Напишите сообщение...', $editor->getPlaceholder());
+
+        $upload = $component->instance()->getSchemaComponent('form.new_attachment');
+        self::assertInstanceOf(FileUpload::class, $upload);
+        self::assertStringContainsString('messages-attachment-upload', (string) ($upload->getExtraAttributes()['class'] ?? ''));
+        self::assertStringContainsString('<svg', (string) $upload->getPlaceholder());
 
         $component
             ->set('search', 'Новый клиент без диалога')

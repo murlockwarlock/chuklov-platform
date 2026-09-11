@@ -255,6 +255,38 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]));
     }
 
+    public function test_companion_metadata_uses_human_readable_labels_for_runtime_states(): void
+    {
+        $html = view('filament.pages.client-companion-metadata', [
+            'metadata' => [
+                'schema_version' => 'client_companion_metadata_v1',
+                'identity' => ['label' => 'client_30'],
+                'conversation' => [
+                    'state' => 'ai_active',
+                    'context_epoch' => 1,
+                ],
+                'turns' => [
+                    [
+                        'sequence' => 1,
+                        'status' => 'failed',
+                        'origin_transport' => 'telegram',
+                        'handoff_reason' => null,
+                        'failure_code' => 'provider_unavailable',
+                        'delivery' => [['status' => 'delivered', 'chunk_count' => 1]],
+                    ],
+                ],
+            ],
+        ])->render();
+
+        self::assertStringContainsString('AI отвечает', $html);
+        self::assertStringContainsString('Не выполнен', $html);
+        self::assertStringContainsString('AI временно недоступен', $html);
+        self::assertStringContainsString('Доставлено', $html);
+        self::assertStringNotContainsString('ai_active', $html);
+        self::assertStringNotContainsString('provider_unavailable', $html);
+        self::assertStringNotContainsString('json_encode', $html);
+    }
+
     public function test_staff_can_send_the_first_message_to_a_client_without_companion_history(): void
     {
         Filament::setCurrentPanel(Filament::getPanel('admin'));

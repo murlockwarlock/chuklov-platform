@@ -70,6 +70,54 @@
     white-space: normal;
 }
 
+.messages-composer .fi-sc-form {
+    @apply flex-row items-end gap-2;
+}
+
+.messages-composer .fi-sc-form > .fi-sc:first-child {
+    @apply min-w-0 flex-1 gap-2;
+}
+
+.messages-composer .fi-sc-form > .fi-sc:last-child {
+    @apply w-auto shrink-0 gap-2;
+}
+
+.messages-composer .fi-sc-form > .fi-sc:last-child .fi-sc-actions {
+    @apply items-end;
+}
+
+.messages-composer-fields > .fi-growable {
+    @apply min-w-0;
+}
+
+.messages-composer-fields > :not(.fi-growable) {
+    @apply shrink-0;
+}
+
+.messages-attachment-upload {
+    @apply w-10 shrink-0;
+}
+
+.messages-attachment-upload .filepond--root {
+    @apply h-10! min-h-10! w-10! rounded-full;
+}
+
+.messages-attachment-upload .filepond--drop-label {
+    @apply h-10! p-0!;
+}
+
+.messages-attachment-upload .filepond--drop-label label {
+    @apply flex h-10 w-10 items-center justify-center p-0! text-[0px]!;
+}
+
+.messages-attachment-upload .filepond--drop-label label .fi-icon {
+    @apply size-5;
+}
+
+.messages-attachment-upload .filepond--label-action {
+    @apply hidden;
+}
+
 .fi-fo-rich-editor .tiptap,
 .fi-fo-rich-editor .tiptap.ProseMirror {
     min-width: 0;

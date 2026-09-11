@@ -1,7 +1,7 @@
-<x-filament-panels::page>
-    <div wire:poll.visible.10s="refreshWorkspace" class="relative min-w-0">
-        <div class="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_22rem]">
-            <aside class="{{ $mobileChatOpen ? 'hidden md:flex' : 'flex' }} min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+<x-filament-panels::page full-height>
+    <div wire:poll.visible.10s="refreshWorkspace" class="relative flex h-full min-h-0 min-w-0">
+        <div class="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_22rem]">
+            <aside class="{{ $mobileChatOpen ? 'hidden md:flex' : 'flex' }} h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="shrink-0 border-b border-gray-200 px-4 py-4 dark:border-white/10">
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="min-w-0 truncate text-lg font-semibold text-gray-950 dark:text-white">Сообщения</h2>
@@ -54,7 +54,7 @@
                 </div>
             </aside>
 
-            <main class="{{ $mobileChatOpen ? 'flex' : 'hidden md:flex' }} min-w-0 min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
+            <main class="{{ $mobileChatOpen ? 'flex' : 'hidden md:flex' }} h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
                 @if ($selectedClient && $selectedDialog)
                     <header class="flex min-w-0 shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-white/10 sm:px-5">
                         <button type="button" wire:click="backToDialogs" class="shrink-0 rounded-lg p-2 text-gray-500 hover:bg-gray-100 md:hidden dark:hover:bg-white/10" aria-label="К списку диалогов">
@@ -203,12 +203,19 @@
                     </div>
 
                     <div class="space-y-5 px-5 py-5">
+                        @php
+                            $languageLabel = match (strtolower((string) $clientSummary['language'])) {
+                                'ru' => 'Русский',
+                                'en' => 'Английский',
+                                default => 'Не указан',
+                            };
+                        @endphp
                         <div class="flex flex-wrap gap-2">
                             <span class="rounded-full px-2.5 py-1 text-xs font-medium {{ $clientSummary['telegramConnected'] ? 'bg-success-50 text-success-700 dark:bg-success-950/30 dark:text-success-200' : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300' }}">
                                 {{ $clientSummary['telegramConnected'] ? 'Telegram подключён' : 'Telegram не подключён' }}
                             </span>
                             @if ($clientSummary['language'])
-                                <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-white/10 dark:text-gray-300">Язык: {{ $clientSummary['language'] }}</span>
+                                <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-white/10 dark:text-gray-300">Язык: {{ $languageLabel }}</span>
                             @endif
                         </div>
 
@@ -231,10 +238,6 @@
                             @endif
                         </section>
 
-                        <section class="border-t border-gray-100 pt-5 dark:border-white/10">
-                            <h3 class="text-sm font-semibold text-gray-950 dark:text-white">Клиент</h3>
-                            <a href="{{ $clientSummary['urls']['client'] }}" class="mt-3 inline-flex text-sm font-medium text-primary-600 hover:text-primary-500 dark:text-primary-300">Открыть карточку клиента</a>
-                        </section>
                     </div>
                 </aside>
             @endif

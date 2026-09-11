@@ -9,13 +9,18 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+
+use function Filament\Support\generate_icon_html;
 
 final class MessageComposer
 {
@@ -98,11 +103,20 @@ final class MessageComposer
                 ->required(fn (Get $get): bool => self::includesText($get, $deliveryModeField));
         }
 
-        $messageComponents[] = RichTextEditor::make($bodyField, $variables)
-            ->label($bodyLabel)
+        $bodyEditor = $compact
+            ? Textarea::make($bodyField)
+                ->label($bodyLabel)
+                ->hiddenLabel()
+                ->placeholder('Напишите сообщение...')
+                ->rows(1)
+                ->autosize()
+            : RichTextEditor::make($bodyField, $variables)
+                ->label($bodyLabel);
+
+        $messageComponents[] = $bodyEditor
             ->maxLength(100000)
             ->live(debounce: 300)
-            ->helperText($bodyHelper)
+            ->helperText($compact ? null : $bodyHelper)
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
             ->required(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
@@ -166,6 +180,14 @@ final class MessageComposer
             $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
         }
 
+        if ($compact) {
+            $fileUpload
+                ->hiddenLabel()
+                ->placeholder(generate_icon_html(Heroicon::OutlinedPaperClip)?->toHtml() ?? '')
+                ->extraAttributes(['class' => 'messages-attachment-upload'])
+                ->extraInputAttributes(['aria-label' => 'Добавить вложение']);
+        }
+
         $mediaComponents = [
             $fileUpload,
             ...$additionalMediaComponents,
@@ -188,6 +210,31 @@ final class MessageComposer
                     ->helperText('Ссылка должна вести непосредственно на файл и начинаться с HTTPS.')
                     ->columnSpanFull(),
             ]);
+        }
+
+        if ($compact) {
+            $compactMessageComponents = array_values(array_filter(
+                $messageComponents,
+                static fn (mixed $component): bool => $component !== $bodyEditor,
+            ));
+            $compactMessageComponents[] = Flex::make([
+                $bodyEditor->grow(),
+                $fileUpload->grow(false),
+            ])
+                ->dense()
+                ->verticallyAlignCenter()
+                ->extraAttributes(['class' => 'messages-composer-fields']);
+
+            return [
+                Section::make()
+                    ->schema([
+                        ...$compactMessageComponents,
+                        ...array_slice($mediaComponents, 1),
+                    ])
+                    ->columns(1)
+                    ->compact()
+                    ->columnSpanFull(),
+            ];
         }
 
         return [

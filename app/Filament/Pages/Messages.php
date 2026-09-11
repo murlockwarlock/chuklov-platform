@@ -187,6 +187,8 @@ final class Messages extends Page
         return $schema->components([
             Form::make([EmbeddedSchema::make('form')])
                 ->id('messages-composer-form')
+                ->dense()
+                ->extraAttributes(['class' => 'messages-composer'])
                 ->livewireSubmitHandler('sendMessage')
                 ->footer([
                     Actions::make([
