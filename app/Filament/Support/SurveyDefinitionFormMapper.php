@@ -74,7 +74,7 @@ final class SurveyDefinitionFormMapper
             ? $data['legacy_scoring']
             : self::normalizeScoring($data);
 
-        return [
+        $normalized = [
             'title' => $data['title'] ?? null,
             'title_en' => $data['title_en'] ?? null,
             'description' => $data['description'] ?? null,
@@ -84,6 +84,14 @@ final class SurveyDefinitionFormMapper
             'scoring' => $scoring,
             'start_new_metric_scale' => (bool) ($data['start_new_metric_scale'] ?? false),
         ];
+
+        foreach (['source', 'approval_status', 'methodology'] as $metadataKey) {
+            if (array_key_exists($metadataKey, $data)) {
+                $normalized[$metadataKey] = $data[$metadataKey];
+            }
+        }
+
+        return $normalized;
     }
 
     /** @return array<string, mixed> */
@@ -235,6 +243,9 @@ final class SurveyDefinitionFormMapper
                 ? array_values($scoring['comparison']['metric_keys'])
                 : [],
             'start_new_metric_scale' => false,
+            'source' => $version->source,
+            'approval_status' => $version->approval_status,
+            'methodology' => $version->methodology,
         ];
 
         if (! SurveyDefinitionFormCompatibility::isHumanScoring($definition, $scoring)) {

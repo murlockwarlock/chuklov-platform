@@ -425,6 +425,7 @@ final class M11AAttributionFeedbackTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->where('feedback.reviewDestinations.0.label', '2GIS')
                 ->where('feedback.reviewDestinations.0.url', 'https://2gis.example.test/chuklov')
+                ->where('feedback.reviewDestinations.0.icon', 'globe')
                 ->has('feedback.reviewDestinations', 1));
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
@@ -440,6 +441,7 @@ final class M11AAttributionFeedbackTest extends TestCase
                 ->where('result.band', 'positive')
                 ->where('result.reviewDestinations.0.label', '2GIS')
                 ->where('result.reviewDestinations.0.url', 'https://2gis.example.test/chuklov')
+                ->where('result.reviewDestinations.0.icon', 'globe')
                 ->has('result.reviewDestinations', 1));
 
         self::assertSame(2, FeedbackReviewDestination::query()

@@ -35,7 +35,7 @@ final readonly class AiContextPolicy
             throw new InvalidArgumentException('RAG similarity threshold must be between zero and one.');
         }
 
-        $knownTypes = ['client_profile', 'medical_summary', 'recent_sessions', 'rag'];
+        $knownTypes = ['client_profile', 'medical_summary', 'recent_sessions', 'health_context', 'rag'];
         if (array_diff($this->allowedContextTypes, $knownTypes) !== []) {
             throw new InvalidArgumentException('Context policy contains an unsupported context type.');
         }

@@ -37,19 +37,34 @@ final class ProjectSurveyContent
      */
     public function report(array $report, string $locale): array
     {
-        $report['title'] = $this->text($report['survey']['title'] ?? '', $locale);
-        foreach ($report['metrics'] ?? [] as $key => $metric) {
-            if (is_array($metric)) {
-                $report['metrics'][$key]['label'] = $this->text($metric['label'] ?? $key, $locale);
-            }
+        $localizedReport = $this->localizedValue($report, $locale);
+        if (is_array($localizedReport)) {
+            $report = $localizedReport;
         }
-        foreach ($report['thresholds'] ?? [] as $key => $threshold) {
-            if (is_array($threshold)) {
-                $report['thresholds'][$key]['label'] = $this->text($threshold['label'] ?? $threshold['tag'] ?? '', $locale);
+        $report['title'] = is_array($report['survey'] ?? null)
+            ? ($report['survey']['title'] ?? '')
+            : '';
+
+        return $report;
+    }
+
+    private function localizedValue(mixed $value, string $locale): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (array_key_exists('ru', $value) || array_key_exists('en', $value)) {
+            $localized = $this->text($value, $locale);
+            if ($localized !== '') {
+                return $localized;
             }
         }
 
-        return $report;
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->localizedValue($item, $locale);
+        }
+
+        return $value;
     }
 
     private function text(mixed $value, string $locale): string

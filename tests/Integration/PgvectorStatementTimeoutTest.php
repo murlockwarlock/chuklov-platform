@@ -42,7 +42,7 @@ final class PgvectorStatementTimeoutTest extends TestCase
 
             public ?Carbon $startedAt = null;
 
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 if ($this->advanceClock && $this->startedAt !== null) {
                     Carbon::setTestNow($this->startedAt->copy()->addSeconds(5));
@@ -153,7 +153,7 @@ final class PgvectorStatementTimeoutTest extends TestCase
         ]);
         $embedding = new class implements EmbeddingGenerator
         {
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 return array_map(
                     static fn (): array => array_fill(0, $configuration->dimensions, 0.0),

@@ -17,6 +17,10 @@ use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Surveys\Application\CompleteSurveyAttempt;
+use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
+use App\Modules\Surveys\Application\StartSurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use InvalidArgumentException;
@@ -126,6 +130,56 @@ final class ClientCompanionContextTest extends TestCase
             OrganizationSettingKey::CompanionContextRecentExchanges,
             21,
         );
+    }
+
+    public function test_health_context_is_bounded_to_the_current_client_and_organization(): void
+    {
+        app(InstallPlatformSurveyCatalog::class)->handle($this->organization);
+        $definition = SurveyDefinition::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('definition_key', 'platform_health_9_systems')
+            ->firstOrFail();
+        $attempt = app(StartSurveyAttempt::class)->handle($this->client, $definition);
+        $answers = [];
+        foreach (collect($attempt->definition_snapshot['sections'])->flatMap(static fn (array $section): array => $section['questions']) as $question) {
+            $answers[$question['key']] = 'rarely';
+        }
+        app(CompleteSurveyAttempt::class)->handle($this->client, $attempt, $answers);
+
+        $foreignOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        app(InstallPlatformSurveyCatalog::class)->handle($foreignOrganization);
+        app(OrganizationContext::class)->set($foreignOrganization);
+        $foreignDefinition = SurveyDefinition::query()
+            ->where('organization_id', $foreignOrganization->getKey())
+            ->where('definition_key', 'platform_health_9_systems')
+            ->firstOrFail();
+        $foreignAttempt = app(StartSurveyAttempt::class)->handle($foreignClient, $foreignDefinition);
+        $foreignAnswers = [];
+        foreach (collect($foreignAttempt->definition_snapshot['sections'])->flatMap(static fn (array $section): array => $section['questions']) as $question) {
+            $foreignAnswers[$question['key']] = 'almost_always';
+        }
+        app(CompleteSurveyAttempt::class)->handle($foreignClient, $foreignAttempt, $foreignAnswers);
+        app(OrganizationContext::class)->set($this->organization);
+
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Что показал мой тест?',
+            idempotencyKey: 'health-context-current-0001',
+            originExternalId: 'portal:health-context-current',
+        );
+        $assembled = app(AssembleCompanionContext::class)->handle(
+            $this->organization->getKey(),
+            $turn->conversation()->firstOrFail(),
+            $turn->fresh(),
+        );
+
+        self::assertStringContainsString('Test result', $assembled['health_context']);
+        self::assertStringContainsString('The result helps', $assembled['health_context']);
+        self::assertStringContainsString('Rarely', $assembled['health_context']);
+        self::assertStringNotContainsString('Almost always', $assembled['health_context']);
+        self::assertLessThanOrEqual(7000, mb_strlen($assembled['health_context']));
     }
 
     private function setContextSettings(int $first, int $recent): void

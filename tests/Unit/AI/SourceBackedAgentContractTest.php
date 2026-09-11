@@ -7,6 +7,7 @@ use App\Modules\AI\Application\Validation\EvalInputPrivacyValidator;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
 use App\Modules\AI\Domain\Services\AiEvaluationAssertionRegistry;
+use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Infrastructure\Output\JsonSchemaOutputValidator;
 use Tests\TestCase;
 
@@ -133,6 +134,7 @@ final class SourceBackedAgentContractTest extends TestCase
             self::assertGreaterThan(1500, mb_strlen($bundle->systemPrompt));
             self::assertArrayNotHasKey('model', $data);
             self::assertArrayNotHasKey('provider', $data);
+            AiContextPolicy::fromArray($bundle->contextPolicy);
 
             $sourceFragment = match ($bundle->capability) {
                 AiCapability::ClientCompanion => 'официальный ИИ-ассистент',

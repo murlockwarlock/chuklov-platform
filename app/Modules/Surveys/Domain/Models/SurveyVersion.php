@@ -21,6 +21,9 @@ use LogicException;
  * @property array<string, mixed> $scoring
  * @property string|null $metric_schema_key
  * @property string|null $source_reference
+ * @property string $source
+ * @property string $approval_status
+ * @property string|null $methodology
  * @property-read SurveyDefinition $surveyDefinition
  */
 class SurveyVersion extends Model
@@ -37,7 +40,7 @@ class SurveyVersion extends Model
     {
         static::updating(function (SurveyVersion $version): void {
             $originalStatus = SurveyVersionStatus::tryFrom((string) $version->getRawOriginal('status'));
-            if ($originalStatus !== SurveyVersionStatus::Draft && $version->isDirty(['title', 'title_en', 'description', 'description_en', 'definition', 'scoring', 'metric_schema_key', 'source_reference'])) {
+            if ($originalStatus !== SurveyVersionStatus::Draft && $version->isDirty(['title', 'title_en', 'description', 'description_en', 'definition', 'scoring', 'metric_schema_key', 'source_reference', 'source', 'approval_status', 'methodology'])) {
                 throw new LogicException('Published survey versions are immutable.');
             }
         });

@@ -8,6 +8,7 @@ use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Feedback\Application\GetFeedbackConfiguration;
 use App\Modules\Feedback\Application\GetPortalFeedback;
 use App\Modules\Feedback\Application\RecordNpsSubmission;
+use App\Modules\Feedback\Application\ReviewDestinationIconResolver;
 use App\Modules\Feedback\Domain\Enums\NpsBand;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -39,6 +40,7 @@ class FeedbackController extends Controller
         ClientPortalContext $context,
         RecordNpsSubmission $record,
         GetFeedbackConfiguration $configuration,
+        ReviewDestinationIconResolver $icons,
     ): RedirectResponse {
         try {
             $client = $context->client();
@@ -57,15 +59,20 @@ class FeedbackController extends Controller
         $band = NpsBand::fromScore($submission->score, $settings['positiveThreshold']);
         $locale = app()->getLocale() === 'en' ? 'en' : 'ru';
         $reviewDestinations = array_values(array_map(
-            static fn (array $destination): array => [
+            fn (array $destination): array => [
                 'label' => $destination['label'],
                 'url' => $destination['url'],
+                'icon' => $icons->resolve($destination['url']),
             ],
             array_filter($settings['reviewDestinations'], static fn (array $destination): bool => $destination['isActive']),
         ));
         if ($settings['reviewDestinations'] === []) {
             $reviewDestinations = array_values(array_map(
-                static fn (string $link): array => ['label' => 'Оставить отзыв', 'url' => $link],
+                fn (string $link): array => [
+                    'label' => 'Оставить отзыв',
+                    'url' => $link,
+                    'icon' => $icons->resolve($link),
+                ],
                 array_filter([
                     $settings['reviewLinks'][$locale],
                     $settings['reviewLinks'][$locale === 'ru' ? 'en' : 'ru'],

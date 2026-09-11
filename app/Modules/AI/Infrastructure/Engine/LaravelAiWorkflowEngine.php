@@ -27,6 +27,7 @@ use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Exceptions\AiBudgetExceededException;
 use App\Modules\AI\Domain\Exceptions\AiKillSwitchException;
+use App\Modules\AI\Domain\Exceptions\AiPricingProfileIncompleteException;
 use App\Modules\AI\Domain\Exceptions\AiProviderUnavailableException;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -798,14 +799,21 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 maxProviderSteps: $maxProviderSteps,
                 maxRagContextTokens: $capabilityDef->maxRagContextTokens,
             );
-            $worstCaseEstimatedCost = $pricing->calculateCostMinorUnits(
-                promptTokens: $worstCaseExposure['input_tokens'],
-                completionTokens: $worstCaseExposure['output_tokens'],
-                cacheReadInputTokens: $worstCaseExposure['cache_read_input_tokens'],
-                cacheWriteInputTokens: $worstCaseExposure['cache_write_input_tokens'],
-                reasoningTokens: $worstCaseExposure['reasoning_tokens'],
-                providerRequests: $worstCaseExposure['provider_requests'],
-            );
+            try {
+                $worstCaseEstimatedCost = $pricing->calculateCostMinorUnits(
+                    promptTokens: $worstCaseExposure['input_tokens'],
+                    completionTokens: $worstCaseExposure['output_tokens'],
+                    cacheReadInputTokens: $worstCaseExposure['cache_read_input_tokens'],
+                    cacheWriteInputTokens: $worstCaseExposure['cache_write_input_tokens'],
+                    reasoningTokens: $worstCaseExposure['reasoning_tokens'],
+                    providerRequests: $worstCaseExposure['provider_requests'],
+                );
+            } catch (AiPricingProfileIncompleteException) {
+                $lastErrorCategory = AiErrorCategory::ConfigurationMissing;
+                $lastErrorMessage = 'AI candidate billing profile is incomplete.';
+
+                continue;
+            }
 
             /** @var AiRunAttempt|null $attempt */
             $attempt = null;

@@ -10,6 +10,7 @@ final class GetPortalFeedback
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly GetFeedbackConfiguration $configuration,
+        private readonly ReviewDestinationIconResolver $icons,
     ) {}
 
     /** @return array<string, mixed> */
@@ -23,15 +24,20 @@ final class GetPortalFeedback
             $config['reviewLinks'][$locale === 'ru' ? 'en' : 'ru'],
         ], static fn (?string $link): bool => $link !== null));
         $destinations = array_values(array_map(
-            static fn (array $destination): array => [
+            fn (array $destination): array => [
                 'label' => $destination['label'],
                 'url' => $destination['url'],
+                'icon' => $this->icons->resolve($destination['url']),
             ],
             array_filter($config['reviewDestinations'], static fn (array $destination): bool => $destination['isActive']),
         ));
         if ($config['reviewDestinations'] === []) {
             $destinations = array_map(
-                static fn (string $link): array => ['label' => 'Оставить отзыв', 'url' => $link],
+                fn (string $link): array => [
+                    'label' => 'Оставить отзыв',
+                    'url' => $link,
+                    'icon' => $this->icons->resolve($link),
+                ],
                 $links,
             );
         }

@@ -22,9 +22,10 @@ final class AssembleCompanionContext
     public function __construct(
         private readonly CompanionMessageBodyReader $bodyReader,
         private readonly GetCompanionContextSettings $settings,
+        private readonly BuildCompanionHealthContext $healthContext,
     ) {}
 
-    /** @return array{current_message: string, conversation_history: string, attachment_ids: list<int>, required_modalities: list<AiModelModality>} */
+    /** @return array{current_message: string, conversation_history: string, health_context: string, attachment_ids: list<int>, required_modalities: list<AiModelModality>} */
     public function handle(int $organizationId, Conversation $conversation, CompanionTurn $turn): array
     {
         $currentEntries = CompanionTurnMessage::query()
@@ -81,10 +82,12 @@ final class AssembleCompanionContext
 
         $attachmentIds = $this->boundedAttachmentIds($organizationId, $conversation, $turn, $recentTurns);
         $requiredModalities = $this->requiredModalities($organizationId, $attachmentIds);
+        $locale = (string) ($turn->inboundMessage()->first()?->metadata['locale'] ?? app()->getLocale());
 
         return [
             'current_message' => $currentMessage,
             'conversation_history' => implode("\n\n", $history),
+            'health_context' => $this->healthContext->handle($organizationId, (int) $turn->client_id, $locale),
             'attachment_ids' => $attachmentIds,
             'required_modalities' => $requiredModalities,
         ];

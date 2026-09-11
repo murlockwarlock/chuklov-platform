@@ -27,3 +27,22 @@ export type PortalShell = {
 };
 
 export type PortalNavKey = 'home' | 'bookings' | 'health' | 'companion' | 'more' | null;
+
+export type PortalIconName =
+    | 'home'
+    | 'calendar'
+    | 'check'
+    | 'sparkles'
+    | 'wallet'
+    | 'user'
+    | 'paperclip'
+    | 'info'
+    | 'refresh'
+    | 'health'
+    | 'more'
+    | 'arrow'
+    | 'close'
+    | 'map'
+    | 'pin'
+    | 'compass'
+    | 'globe';
