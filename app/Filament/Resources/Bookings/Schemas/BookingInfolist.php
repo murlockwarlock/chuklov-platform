@@ -46,7 +46,9 @@ class BookingInfolist
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
                         TextEntry::make('schedule_timezone')->label('Часовой пояс записи'),
-                        TextEntry::make('party_size')->label('Количество персон'),
+                        TextEntry::make('party_size')
+                            ->label('Участники выезда')
+                            ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
                         TextEntry::make('requested_at')
                             ->label('Заявка создана')
                             ->dateTime('d.m.Y H:i')

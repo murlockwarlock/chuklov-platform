@@ -27,6 +27,9 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -197,6 +200,72 @@ final class SchedulingJournalProductionPassTest extends TestCase
             json_encode($component->errors()->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
         );
         self::assertDatabaseCount('specialist_working_hours', 0);
+    }
+
+    public function test_crm_create_booking_starts_with_specialist_and_allows_inline_client_creation(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(CreateBooking::class);
+        $specialistField = $component->instance()->getSchemaComponent('form.specialist_id');
+        $serviceField = $component->instance()->getSchemaComponent('form.service_id');
+        $clientField = $component->instance()->getSchemaComponent('form.client_id');
+        $partySizeField = $component->instance()->getSchemaComponent('form.party_size', withHidden: true);
+
+        self::assertInstanceOf(Select::class, $specialistField);
+        self::assertSame($specialist->getKey(), (int) $component->instance()->data['specialist_id']);
+        self::assertSame($specialist->display_name, $specialistField->getOptionLabel());
+
+        self::assertInstanceOf(Select::class, $serviceField);
+        self::assertSame($service->name, $serviceField->getOptions()[$service->getKey()] ?? null);
+
+        self::assertInstanceOf(Select::class, $clientField);
+        self::assertTrue($clientField->hasCreateOptionActionFormSchema());
+        $createClient = $clientField->getCreateOptionUsing();
+        self::assertNotNull($createClient);
+        $createdClientId = $createClient([
+            'full_name' => 'Новый клиент',
+            'phone' => '+77001234567',
+        ]);
+        self::assertDatabaseHas('clients', [
+            'id' => $createdClientId,
+            'organization_id' => $organization->getKey(),
+            'full_name' => 'Новый клиент',
+        ]);
+
+        self::assertInstanceOf(TextInput::class, $partySizeField);
+        self::assertFalse($partySizeField->isVisible());
+        $component->fillForm(['visit_format' => VisitFormat::HomeVisit->value]);
+        self::assertTrue($component->instance()->getSchemaComponent('form.party_size', withHidden: true)->isVisible());
+    }
+
+    public function test_journal_create_prefill_keeps_clicked_time_in_the_crm_viewer_timezone(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture('UTC', 'Africa/Cairo');
+        $specialist->forceFill([
+            'staff_user_id' => $admin->getKey(),
+            'viewer_timezone' => 'Asia/Bangkok',
+        ])->save();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::withQueryParams([
+            'starts_at' => '2026-10-05 14:00',
+            'specialist_id' => $specialist->getKey(),
+            'return_to_journal' => '1',
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(CreateBooking::class);
+
+        $startsAt = $component->instance()->data['starts_at'];
+        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
+        $dateTimeField = $component->instance()->getSchemaComponent('form.starts_at');
+        self::assertInstanceOf(DateTimePicker::class, $dateTimeField);
+        self::assertSame('Asia/Bangkok', $dateTimeField->getTimezone());
     }
 
     public function test_work_schedule_keeps_selected_specialist_and_month_in_query_state(): void

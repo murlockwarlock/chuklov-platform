@@ -107,7 +107,9 @@ class SchedulingConfiguration extends Page
         $viewerSpecialist = $this->currentViewerSpecialist();
         $specialistId = $viewerSpecialist?->getKey() ?? Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('is_active', true)
             ->orderBy('display_name')
+            ->orderBy('id')
             ->value('id');
         $selectedSpecialist = $specialistId === null ? null : Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
@@ -528,6 +530,9 @@ class SchedulingConfiguration extends Page
         return Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->where('staff_user_id', $actor->getKey())
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->orderBy('id')
             ->first();
     }
 
@@ -558,7 +563,9 @@ class SchedulingConfiguration extends Page
     {
         return Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('is_active', true)
             ->orderBy('display_name')
+            ->orderBy('id')
             ->pluck('display_name', 'id')
             ->all();
     }

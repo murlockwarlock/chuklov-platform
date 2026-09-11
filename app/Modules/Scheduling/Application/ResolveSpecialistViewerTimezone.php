@@ -27,6 +27,9 @@ final readonly class ResolveSpecialistViewerTimezone
         $specialist = Specialist::query()
             ->where('organization_id', $this->context->id())
             ->where('staff_user_id', $user->getKey())
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->orderBy('id')
             ->first();
 
         return $specialist instanceof Specialist

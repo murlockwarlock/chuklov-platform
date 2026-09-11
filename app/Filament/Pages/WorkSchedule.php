@@ -101,6 +101,7 @@ final class WorkSchedule extends Page
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('is_active', true)
                 ->orderBy('display_name')
+                ->orderBy('id')
                 ->value('id');
         $requestedMonth = $this->validMonth($this->month);
         $this->month = $requestedMonth
@@ -115,6 +116,7 @@ final class WorkSchedule extends Page
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('is_active', true)
                 ->orderBy('display_name')
+                ->orderBy('id')
                 ->value('id');
         }
 
@@ -339,6 +341,7 @@ final class WorkSchedule extends Page
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->where('is_active', true)
             ->orderBy('display_name')
+            ->orderBy('id')
             ->pluck('display_name', 'id')
             ->all();
     }
@@ -537,6 +540,9 @@ final class WorkSchedule extends Page
             ? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('staff_user_id', $actor->getKey())
+                ->where('is_active', true)
+                ->orderBy('display_name')
+                ->orderBy('id')
                 ->first()
             : null;
     }

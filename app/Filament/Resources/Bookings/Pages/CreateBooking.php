@@ -43,15 +43,9 @@ class CreateBooking extends CreateRecord
         $organizationId = app(OrganizationContext::class)->id();
         $specialistId = request()->query('specialist_id');
 
-        if (is_numeric($specialistId)) {
-            $specialist = Specialist::query()
-                ->where('organization_id', $organizationId)
-                ->where('is_active', true)
-                ->whereKey((int) $specialistId)
-                ->first();
-            if ($specialist instanceof Specialist) {
-                $prefill['specialist_id'] = $specialist->getKey();
-            }
+        $specialist = $this->resolveSpecialist($specialistId, $organizationId);
+        if ($specialist instanceof Specialist) {
+            $prefill['specialist_id'] = $specialist->getKey();
         }
 
         $startsAt = request()->query('starts_at');
@@ -62,15 +56,52 @@ class CreateBooking extends CreateRecord
                 $this->formTimezone(),
             );
             if ($local instanceof CarbonImmutable) {
-                $prefill['starts_at'] = $local
-                    ->setTimezone($this->formTimezone())
-                    ->format('Y-m-d H:i');
+                $prefill['starts_at'] = $local;
             }
         }
 
         if ($prefill !== []) {
             $this->form->fillPartially($prefill, array_keys($prefill));
         }
+    }
+
+    private function resolveSpecialist(mixed $requestedId, int $organizationId): ?Specialist
+    {
+        $requestedSpecialistId = is_int($requestedId)
+            ? $requestedId
+            : (is_string($requestedId) && ctype_digit($requestedId) ? (int) $requestedId : null);
+
+        if ($requestedSpecialistId !== null) {
+            $requestedSpecialist = Specialist::query()
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->whereKey($requestedSpecialistId)
+                ->first();
+            if ($requestedSpecialist instanceof Specialist) {
+                return $requestedSpecialist;
+            }
+        }
+
+        $actor = auth()->user();
+        if ($actor instanceof User) {
+            $viewerSpecialist = Specialist::query()
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->where('staff_user_id', $actor->getKey())
+                ->orderBy('display_name')
+                ->orderBy('id')
+                ->first();
+            if ($viewerSpecialist instanceof Specialist) {
+                return $viewerSpecialist;
+            }
+        }
+
+        return Specialist::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->orderBy('id')
+            ->first();
     }
 
     protected function handleRecordCreation(array $data): Model
