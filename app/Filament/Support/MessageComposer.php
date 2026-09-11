@@ -5,6 +5,7 @@ namespace App\Filament\Support;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Support\RichText\RichTextDocument;
 use Closure;
+use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -218,8 +219,12 @@ final class MessageComposer
                 static fn (mixed $component): bool => $component !== $bodyEditor,
             ));
             $compactMessageComponents[] = Flex::make([
-                $bodyEditor->grow(),
                 $fileUpload->grow(false),
+                $bodyEditor->grow(),
+                Action::make('sendMessage')
+                    ->label('Отправить')
+                    ->submit('sendMessage')
+                    ->extraAttributes(['class' => 'messages-send-action']),
             ])
                 ->dense()
                 ->verticallyAlignCenter()

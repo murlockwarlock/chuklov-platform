@@ -28,7 +28,6 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Utilities\Get;
@@ -189,12 +188,7 @@ final class Messages extends Page
                 ->id('messages-composer-form')
                 ->dense()
                 ->extraAttributes(['class' => 'messages-composer'])
-                ->livewireSubmitHandler('sendMessage')
-                ->footer([
-                    Actions::make([
-                        Action::make('sendMessage')->label('Отправить')->submit('sendMessage'),
-                    ]),
-                ]),
+                ->livewireSubmitHandler('sendMessage'),
         ]);
     }
 

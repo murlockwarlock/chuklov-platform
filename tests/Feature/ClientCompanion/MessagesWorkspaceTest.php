@@ -114,6 +114,7 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertDontSee('Язык: ru')
             ->assertDontSee('PDF, TXT, JPG, PNG или WebP; до 20 МБ.')
             ->assertDontSee('Выбрать ранее загруженный файл')
+            ->assertSee('messages-send-action')
             ->assertDontSee('Открыть карточку клиента');
 
         $editor = $component->instance()->getSchemaComponent('form.body');

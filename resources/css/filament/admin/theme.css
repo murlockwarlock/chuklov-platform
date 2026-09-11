@@ -74,6 +74,7 @@
 .messages-page.fi-page .fi-page-header-main-ctn,
 .messages-page.fi-page .fi-page-main,
 .messages-page.fi-page .fi-page-content {
+    height: 100%;
     min-height: 0;
 }
 
@@ -83,38 +84,39 @@
 
 .messages-page.fi-page .fi-page-main {
     display: flex;
-    height: auto;
     flex: 1 1 0%;
     flex-direction: column;
 }
 
 .messages-page.fi-page .fi-page-content {
-    height: auto;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
     overflow: hidden;
 }
 
 .messages-composer .fi-sc-form {
-    @apply flex-row items-end gap-2;
+    @apply w-full;
 }
 
-.messages-composer .fi-sc-form > .fi-sc:first-child {
-    @apply min-w-0 flex-1 gap-2;
-}
-
-.messages-composer .fi-sc-form > .fi-sc:last-child {
-    @apply w-auto shrink-0 gap-2;
-}
-
-.messages-composer .fi-sc-form > .fi-sc:last-child .fi-sc-actions {
-    @apply items-end;
+.messages-composer-fields {
+    @apply w-full min-w-0 items-center gap-2;
 }
 
 .messages-composer-fields > .fi-growable {
-    @apply min-w-0;
+    @apply min-w-0 flex-1;
 }
 
 .messages-composer-fields > :not(.fi-growable) {
     @apply shrink-0;
+}
+
+.messages-send-action {
+    @apply shrink-0;
+}
+
+.messages-send-action .fi-btn {
+    @apply whitespace-nowrap;
 }
 
 .messages-attachment-upload {
@@ -126,7 +128,7 @@
 }
 
 .messages-attachment-upload .filepond--root {
-    @apply h-10! min-h-10! w-10! rounded-full;
+    @apply h-10! min-h-10! w-10! rounded-lg! bg-transparent! shadow-none! ring-0!;
 }
 
 .messages-attachment-upload .filepond--drop-label {
@@ -134,7 +136,7 @@
 }
 
 .messages-attachment-upload .filepond--drop-label label {
-    @apply flex h-10 w-10 items-center justify-center p-0! text-[0px]!;
+    @apply flex h-10 w-10 items-center justify-center rounded-lg p-0! text-[0px]! text-gray-500! transition hover:bg-gray-100! dark:text-gray-300! dark:hover:bg-white/10!;
 }
 
 .messages-attachment-upload .filepond--drop-label label .fi-icon {
