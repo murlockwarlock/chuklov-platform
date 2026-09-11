@@ -13,6 +13,7 @@ use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -157,6 +158,7 @@ final readonly class ReadCompanionWorkspace
             'name' => $client->full_name ?: 'Клиент',
             'initials' => $this->initials($client->full_name),
             'phone' => $client->phone,
+            'phoneLabel' => $this->phoneLabel($client->phone),
             'email' => $client->email,
             'language' => $client->language,
             'telegramConnected' => $telegramConnected,
@@ -271,6 +273,27 @@ final readonly class ReadCompanionWorkspace
         }
 
         return mb_strtoupper($initials);
+    }
+
+    private function phoneLabel(?string $phone): ?string
+    {
+        $value = trim((string) $phone);
+        if ($value === '') {
+            return null;
+        }
+
+        $phoneKey = ClientPhoneSearchKey::from($value);
+        if ($phoneKey === null || strlen($phoneKey->value) !== 11 || ! str_starts_with($phoneKey->value, '7')) {
+            return $value;
+        }
+
+        return sprintf(
+            '+7 %s %s-%s-%s',
+            substr($phoneKey->value, 1, 3),
+            substr($phoneKey->value, 4, 3),
+            substr($phoneKey->value, 7, 2),
+            substr($phoneKey->value, 9, 2),
+        );
     }
 
     /** @return array<string, mixed> */

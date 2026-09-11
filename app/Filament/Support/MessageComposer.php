@@ -182,7 +182,7 @@ final class MessageComposer
         if ($compact) {
             $attachmentTrigger = Html::make(
                 view('filament.forms.components.messages-attachment-trigger')->render(),
-            );
+            )->grow(false);
             $attachmentSummary = Html::make(
                 view('filament.forms.components.messages-attachment-summary')->render(),
             );

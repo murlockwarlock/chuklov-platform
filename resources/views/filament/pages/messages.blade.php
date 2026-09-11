@@ -25,7 +25,8 @@
                             type="button"
                             wire:key="dialog-{{ $dialog['clientId'] }}"
                             wire:click="selectClient({{ $dialog['clientId'] }})"
-                            class="flex w-full min-w-0 items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5 {{ $dialog['selected'] ? 'bg-primary-50/70 dark:bg-primary-950/30' : '' }}"
+                            aria-pressed="{{ $dialog['selected'] ? 'true' : 'false' }}"
+                            class="flex w-full min-w-0 items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:border-white/5 dark:hover:bg-white/5 {{ $dialog['selected'] ? 'bg-primary-50/70 ring-1 ring-inset ring-primary-200 dark:bg-primary-950/30 dark:ring-primary-800' : '' }}"
                         >
                             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-700 dark:bg-white/10 dark:text-gray-200">
                                 {{ $dialog['initials'] }}
@@ -148,9 +149,6 @@
                                                 <p class="mt-1 leading-5">{{ $message['deliveryNotice']['body'] }}</p>
                                             </div>
                                         @endif
-                                        @if ($message['traceUrl'] ?? false)
-                                            <a href="{{ $message['traceUrl'] }}" class="mt-3 inline-flex text-xs font-medium text-gray-600 underline underline-offset-2 dark:text-gray-300">Открыть технические данные AI</a>
-                                        @endif
                                     </article>
                                 </div>
                             @empty
@@ -166,7 +164,7 @@
                     </section>
 
                     @if ($canManage)
-                        <div class="shrink-0 border-t border-gray-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-gray-900 sm:px-5">
+                        <div class="shrink-0 border-t border-gray-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-gray-900 sm:px-5 sm:py-2.5">
                             {{ $this->composer }}
                         </div>
                     @endif
@@ -189,12 +187,12 @@
                     <div class="flex items-start gap-3 border-b border-gray-200 px-5 py-5 dark:border-white/10">
                         <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-800 dark:bg-primary-950/50 dark:text-primary-200">{{ $clientSummary['initials'] }}</span>
                         <div class="min-w-0 flex-1">
-                            <h2 class="break-words text-base font-semibold text-gray-950 dark:text-white">{{ $clientSummary['name'] }}</h2>
+                            <h2 class="min-w-0 truncate text-base font-semibold text-gray-950 dark:text-white">{{ $clientSummary['name'] }}</h2>
                             @if ($clientSummary['phone'])
-                                <p class="mt-1 break-words text-sm text-gray-600 dark:text-gray-300">{{ $clientSummary['phone'] }}</p>
+                                <p dir="ltr" class="mt-1 whitespace-nowrap text-left text-sm text-gray-600 dark:text-gray-300">{{ $clientSummary['phoneLabel'] ?? $clientSummary['phone'] }}</p>
                             @endif
                             @if ($clientSummary['email'])
-                                <p class="break-words text-sm text-gray-600 dark:text-gray-300">{{ $clientSummary['email'] }}</p>
+                                <p dir="ltr" title="{{ $clientSummary['email'] }}" class="min-w-0 truncate text-left text-sm text-gray-600 dark:text-gray-300">{{ $clientSummary['email'] }}</p>
                             @endif
                         </div>
                         <button type="button" wire:click="closeClientInfo" class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 xl:hidden dark:hover:bg-white/10" aria-label="Закрыть информацию о клиенте">

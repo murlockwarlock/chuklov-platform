@@ -108,19 +108,23 @@
 }
 
 .messages-composer .fi-sc-form {
-    @apply w-full;
+    @apply w-full gap-0;
 }
 
-.messages-composer-fields {
-    @apply w-full min-w-0 items-center gap-2;
+.messages-composer .fi-section.fi-compact > .fi-section-content-ctn > .fi-section-content {
+    @apply !p-2 sm:!p-2.5;
 }
 
-.messages-composer-fields > .fi-growable {
+.messages-composer-fields.fi-sc-flex {
+    @apply w-full min-w-0 items-center justify-start gap-2;
+}
+
+.messages-composer-fields.fi-sc-flex > .fi-growable {
     @apply min-w-0 flex-1;
 }
 
-.messages-composer-fields > :not(.fi-growable) {
-    @apply shrink-0;
+.messages-composer-fields.fi-sc-flex > :not(.fi-growable) {
+    @apply w-auto max-w-full shrink-0;
 }
 
 .messages-send-action {

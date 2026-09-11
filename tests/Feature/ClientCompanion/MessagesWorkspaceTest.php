@@ -60,7 +60,7 @@ final class MessagesWorkspaceTest extends TestCase
         $this->client = Client::factory()->forOrganization($this->organization)->create([
             'full_name' => 'Мария Сообщения',
             'email' => 'messages@example.com',
-            'phone' => '+70000000009',
+            'phone' => '87052865589',
             'language' => 'ru',
         ]);
         $this->resolveContext();
@@ -111,9 +111,13 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertSee('Специалист')
             ->assertSee('Напишите сообщение...')
             ->assertSee('Язык: Русский')
+            ->assertSee('+7 705 286-55-89')
+            ->assertDontSee('87052865589')
+            ->assertSee('title="messages@example.com"', false)
             ->assertDontSee('Язык: ru')
             ->assertDontSee('PDF, TXT, JPG, PNG или WebP; до 20 МБ.')
             ->assertDontSee('Выбрать ранее загруженный файл')
+            ->assertDontSee('Открыть технические данные AI')
             ->assertSee('messages-send-action')
             ->assertSee('messages-attachment-trigger')
             ->assertSee('messages-attachment-summary')
@@ -143,7 +147,7 @@ final class MessagesWorkspaceTest extends TestCase
         );
         self::assertSame(
             [$this->client->getKey()],
-            array_column(app(ReadCompanionWorkspace::class)->dialogs($this->admin, '+70000000009'), 'clientId'),
+            array_column(app(ReadCompanionWorkspace::class)->dialogs($this->admin, '87052865589'), 'clientId'),
         );
     }
 
