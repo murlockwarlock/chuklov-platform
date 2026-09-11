@@ -186,6 +186,7 @@ final class MessageComposer
                 ->hiddenLabel()
                 ->placeholder(generate_icon_html(Heroicon::OutlinedPaperClip)?->toHtml() ?? '')
                 ->extraAttributes(['class' => 'messages-attachment-upload'])
+                ->extraFieldWrapperAttributes(['class' => 'messages-attachment-field'])
                 ->extraInputAttributes(['aria-label' => 'Добавить вложение']);
         }
 

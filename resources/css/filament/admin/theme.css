@@ -135,6 +135,13 @@
     @apply h-10 w-10 shrink-0;
 }
 
+.messages-composer-fields > :has(.messages-attachment-field),
+.messages-attachment-field,
+.messages-attachment-field .fi-fo-field-content-col,
+.messages-attachment-field .fi-fo-field-content {
+    @apply h-10! min-h-10! w-10! min-w-10! max-w-10! shrink-0!;
+}
+
 .messages-attachment-upload .fi-fo-file-upload-input-ctn {
     @apply h-10 w-10;
 }
@@ -143,16 +150,8 @@
     @apply h-10! min-h-10! w-10! rounded-lg! bg-white! shadow-sm! ring-1! ring-gray-300! dark:bg-white/5! dark:ring-white/15!;
 }
 
-.messages-attachment-upload .filepond--root:focus-within {
-    @apply ring-2! ring-primary-500!;
-}
-
-.messages-attachment-upload .filepond--drop-label {
-    @apply h-10! p-0!;
-}
-
 .messages-attachment-upload .filepond--drop-label label {
-    @apply flex h-10 w-10 items-center justify-center rounded-lg p-0! text-[0px]! text-gray-500! transition hover:bg-gray-100! dark:text-gray-300! dark:hover:bg-white/10!;
+    @apply flex h-10! min-h-10! w-10! min-w-10! items-center justify-center rounded-lg p-0! text-[0px]! text-gray-500! transition hover:bg-gray-100! dark:text-gray-300! dark:hover:bg-white/10!;
 }
 
 .messages-attachment-upload .filepond--drop-label label .fi-icon {

@@ -124,6 +124,7 @@ final class MessagesWorkspaceTest extends TestCase
         $upload = $component->instance()->getSchemaComponent('form.new_attachment');
         self::assertInstanceOf(FileUpload::class, $upload);
         self::assertStringContainsString('messages-attachment-upload', (string) ($upload->getExtraAttributes()['class'] ?? ''));
+        self::assertStringContainsString('messages-attachment-field', (string) ($upload->getExtraFieldWrapperAttributes()['class'] ?? ''));
         self::assertStringContainsString('<svg', (string) $upload->getPlaceholder());
 
         $component
