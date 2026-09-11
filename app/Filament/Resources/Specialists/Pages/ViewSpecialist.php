@@ -39,13 +39,19 @@ class ViewSpecialist extends ViewRecord
     private function createTelegramLinkAction(): Action
     {
         return Action::make('createTelegramLink')
-            ->label('Создать ссылку Telegram')
+            ->label(fn (): string => $this->hasVerifiedTelegram()
+                ? 'Перепривязать Telegram'
+                : 'Создать ссылку Telegram')
             ->icon('heroicon-o-link')
             ->color('primary')
             ->authorize(fn (): bool => $this->canCreateTelegramLink())
-            ->visible(fn (): bool => $this->canCreateTelegramLink() && ! $this->hasVerifiedTelegram())
-            ->modalHeading('Привязать Telegram сотрудника')
-            ->modalDescription('Отправьте сотруднику ссылку ниже. Она одноразовая и действует ограниченное время. Уже привязанный другой Telegram-аккаунт автоматически заменён не будет.')
+            ->visible(fn (): bool => $this->canCreateTelegramLink())
+            ->modalHeading(fn (): string => $this->hasVerifiedTelegram()
+                ? 'Перепривязать Telegram сотрудника'
+                : 'Привязать Telegram сотрудника')
+            ->modalDescription(fn (): string => $this->hasVerifiedTelegram()
+                ? 'Отправьте сотруднику новую одноразовую ссылку. После подтверждения новый Telegram заменит текущий аккаунт и будет использоваться для уведомлений.'
+                : 'Отправьте сотруднику одноразовую ссылку ниже. Она действует ограниченное время.')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')
             ->schema([

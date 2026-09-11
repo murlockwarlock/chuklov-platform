@@ -114,7 +114,7 @@ class CreateSpecialist extends CreateRecord
             return Notification::make()
                 ->success()
                 ->title('Специалист создан')
-                ->body('Telegram выбранного сотрудника уже подключён. Новая привязка не выполнялась.');
+                ->body('Telegram выбранного сотрудника уже подключён. Для смены аккаунта откройте карточку специалиста и выберите «Перепривязать Telegram».');
         }
 
         if ($this->telegramLinkUnavailable) {

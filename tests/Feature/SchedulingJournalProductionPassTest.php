@@ -230,12 +230,20 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertNotNull($createClient);
         $createdClientId = $createClient([
             'full_name' => 'Новый клиент',
+            'email' => 'new-client@example.test',
             'phone' => '+77001234567',
+            'language' => 'ru',
+            'timezone' => 'Asia/Almaty',
+            'lead_source' => 'Telegram',
         ]);
         self::assertDatabaseHas('clients', [
             'id' => $createdClientId,
             'organization_id' => $organization->getKey(),
             'full_name' => 'Новый клиент',
+            'email' => 'new-client@example.test',
+            'language' => 'ru',
+            'timezone' => 'Asia/Almaty',
+            'lead_source' => 'Telegram',
         ]);
 
         self::assertInstanceOf(TextInput::class, $partySizeField);

@@ -41,10 +41,10 @@ final class WorkSchedule extends Page
 
     protected string $view = 'filament.pages.work-schedule';
 
-    #[Url(as: 'specialist_id', history: true, nullable: true)]
+    #[Url(as: 'specialist_id', history: true, keep: true, nullable: true)]
     public ?int $specialistId = null;
 
-    #[Url(as: 'month', history: true)]
+    #[Url(as: 'month', history: true, keep: true)]
     public string $month = '';
 
     /** @var list<string> */

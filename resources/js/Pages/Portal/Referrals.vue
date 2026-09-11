@@ -300,28 +300,6 @@ async function shareLink(link: CampaignLink): Promise<void> {
     await copyUrl(link.shareUrl);
 }
 
-async function sharePersonalLink(): Promise<void> {
-    if (navigator.share) {
-        try {
-            await navigator.share({ title: t('referrals.inviteTitle'), url: props.referrals.link });
-            sharedUrl.value = props.referrals.link;
-            window.setTimeout(() => {
-                if (sharedUrl.value === props.referrals.link) {
-                    sharedUrl.value = null;
-                }
-            }, 1800);
-
-            return;
-        } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-                return;
-            }
-        }
-    }
-
-    await copyUrl(props.referrals.link);
-}
-
 function activatePartner(): void {
     activationForm.post(props.referrals.activationUrl, { preserveScroll: true });
 }
@@ -395,34 +373,6 @@ function cancelPayout(payout: Payout): void {
       </section>
 
       <template v-else>
-        <section
-          class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
-          data-testid="partner-referral-link"
-        >
-          <h2 class="portal-heading portal-heading--card">
-            {{ t('referrals.linkLabel') }}
-          </h2>
-          <code class="block max-w-full break-all rounded-lg bg-[var(--portal-color-surface-muted)] p-3 text-sm text-[var(--portal-color-ink)]">{{ props.referrals.link }}</code>
-          <div class="flex min-w-0 flex-wrap gap-2">
-            <button
-              type="button"
-              class="portal-button portal-button--primary"
-              data-testid="partner-personal-share"
-              @click="sharePersonalLink"
-            >
-              {{ sharedUrl === props.referrals.link ? t('referrals.shared') : t('referrals.sharePersonal') }}
-            </button>
-            <button
-              type="button"
-              class="portal-button portal-button--secondary"
-              data-testid="partner-personal-copy"
-              @click="copyUrl(props.referrals.link)"
-            >
-              {{ copiedUrl === props.referrals.link ? t('referrals.copied') : t('referrals.copy') }}
-            </button>
-          </div>
-        </section>
-
         <section
           class="portal-panel portal-stack portal-stack--tight"
           data-testid="partner-summary"

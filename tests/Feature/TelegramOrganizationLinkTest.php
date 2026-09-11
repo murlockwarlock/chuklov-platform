@@ -198,6 +198,50 @@ final class TelegramOrganizationLinkTest extends TestCase
         self::assertSame($staff->getKey(), OrganizationChannelLinkToken::query()->latest('id')->sole()->user_id);
     }
 
+    public function test_specialist_card_can_rebind_a_staff_telegram_identity_after_new_link_confirmation(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Перепривязка Telegram',
+            staffUserId: $staff->getKey(),
+        );
+        $this->connectStaffTelegram($admin, $staff, 'old-telegram-id');
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $generatedLink = '';
+
+        Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertActionVisible('createTelegramLink')
+            ->mountAction('createTelegramLink')
+            ->assertActionDataSet(function (array $data) use (&$generatedLink): bool {
+                $generatedLink = (string) ($data['link'] ?? '');
+
+                return str_starts_with($generatedLink, 'https://t.me/chuklov_test_bot?start=staff_');
+            });
+
+        $token = OrganizationChannelLinkToken::query()->latest('id')->firstOrFail();
+        $newToken = $this->tokenFromUrl($generatedLink);
+
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $newToken,
+            new VerifiedChannelIdentity('telegram', 'new-telegram-id', $staff->name, 'ru'),
+        );
+
+        $identity = OrganizationChannelIdentity::query()->sole();
+        self::assertSame('new-telegram-id', $identity->external_id);
+        self::assertSame(1, OrganizationChannelIdentity::query()->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'organization.channel_identity.rebound')
+            ->count());
+        self::assertNotNull($token->fresh()->consumed_at);
+    }
+
     private function tokenFromUrl(string $url): string
     {
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);

@@ -37,7 +37,7 @@ class AdminPanelProvider extends PanelProvider
             ->path('admin')
             ->login()
             ->profile()
-            ->multiFactorAuthentication([AuditedAppAuthentication::make()->recoverable()], isRequired: true)
+            ->multiFactorAuthentication([AuditedAppAuthentication::make()->recoverable()], isRequired: false)
             ->userMenuItems([
                 'revoke-privileged-sessions' => Action::make('revokePrivilegedSessions')
                     ->label('Завершить все сеансы')

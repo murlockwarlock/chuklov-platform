@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Bookings\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
@@ -253,6 +254,13 @@ class ListBookings extends ListRecords
         return $actor instanceof User
             ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
             : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    public function journalTimezoneLabel(): string
+    {
+        $timezone = $this->journalTimezone();
+
+        return TimezoneOptions::label($timezone).' ('.$timezone.')';
     }
 
     public static function statusClass(BookingStatus|string $status): string

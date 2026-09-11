@@ -19,12 +19,12 @@ class PrivilegedAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_panel_requires_mfa_and_profile_management(): void
+    public function test_admin_panel_offers_optional_mfa_and_profile_management(): void
     {
         $panel = Filament::getPanel('admin');
 
         self::assertTrue($panel->hasMultiFactorAuthentication());
-        self::assertTrue($panel->isMultiFactorAuthenticationRequired());
+        self::assertFalse($panel->isMultiFactorAuthenticationRequired());
         self::assertTrue($panel->hasProfile());
     }
 
@@ -72,7 +72,7 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
-        $this->actingAs($admin)->get('/admin')->assertRedirect();
+        $this->actingAs($admin)->get('/admin')->assertOk();
         OrganizationMembership::query()->where('user_id', $admin->getKey())->update(['is_active' => false]);
 
         $this->get('/admin')->assertForbidden();
@@ -84,7 +84,7 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
-        $this->actingAs($admin)->get('/admin')->assertRedirect();
+        $this->actingAs($admin)->get('/admin')->assertOk();
         $admin->increment('privileged_session_version');
 
         $this->get('/admin')->assertRedirect(route('filament.admin.auth.login'));

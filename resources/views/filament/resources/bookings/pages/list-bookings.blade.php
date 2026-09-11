@@ -42,6 +42,7 @@
                 <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">Добавить запись</a>
             </div>
         </div>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Время журнала: <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->journalTimezoneLabel() }}</span></p>
 
         @if ($viewMode === 'list')
             <div class="min-w-0">

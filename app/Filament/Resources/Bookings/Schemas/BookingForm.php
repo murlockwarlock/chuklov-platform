@@ -89,17 +89,42 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
-                    ->helperText('Нажмите +, если клиента ещё нет в базе.')
+                    ->helperText('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.')
                     ->createOptionModalHeading('Добавить клиента')
                     ->createOptionForm([
                         TextInput::make('full_name')
                             ->label('Имя и фамилия')
                             ->required()
                             ->maxLength(160),
+                        TextInput::make('email')
+                            ->label('Email')
+                            ->email()
+                            ->maxLength(320),
                         TextInput::make('phone')
                             ->label('Телефон')
                             ->tel()
                             ->maxLength(32),
+                        Select::make('language')
+                            ->label('Язык')
+                            ->options([
+                                'ru' => 'Русский',
+                                'en' => 'Английский',
+                            ])
+                            ->default(fn (): string => (string) config('portal.default_locale', 'ru'))
+                            ->required(),
+                        Select::make('timezone')
+                            ->label('Часовой пояс')
+                            ->options(fn (Get $get): array => TimezoneOptions::options(
+                                current: $get('timezone'),
+                                organization: app(OrganizationContext::class)->defaultTimezone(),
+                            ))
+                            ->default(fn (): string => app(OrganizationContext::class)->defaultTimezone())
+                            ->searchable()
+                            ->required(),
+                        TextInput::make('lead_source')
+                            ->label('Источник клиента')
+                            ->placeholder('Например: Telegram, Instagram, рекомендация')
+                            ->maxLength(120),
                     ])
                     ->createOptionUsing(function (array $data): int {
                         $actor = auth()->user();
@@ -108,9 +133,11 @@ class BookingForm
                         $client = app(CreateClientAction::class)->handle(
                             actor: $actor,
                             fullName: (string) $data['full_name'],
+                            email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
                             phone: $phone === '' ? null : $phone,
-                            language: (string) config('portal.default_locale', 'ru'),
-                            timezone: app(OrganizationContext::class)->defaultTimezone(),
+                            language: (string) ($data['language'] ?? config('portal.default_locale', 'ru')),
+                            timezone: (string) ($data['timezone'] ?? app(OrganizationContext::class)->defaultTimezone()),
+                            leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
                         );
 
                         return (int) $client->getKey();
@@ -132,6 +159,8 @@ class BookingForm
                     ->required()
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
+
                         if ($state === VisitFormat::Office->value) {
                             $location = WorkingLocation::query()
                                 ->where('organization_id', app(OrganizationContext::class)->id())
@@ -180,10 +209,10 @@ class BookingForm
                 TextInput::make('party_size')
                     ->label('Количество участников выезда')
                     ->integer()
-                    ->default(1)
                     ->minValue(1)
                     ->maxValue(20)
-                    ->required()
+                    ->nullable()
+                    ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
                     ->helperText('Сколько человек будет на выезде. Для обычного приёма поле не нужно.')
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('location')
