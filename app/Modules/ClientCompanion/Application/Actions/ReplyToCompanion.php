@@ -16,7 +16,10 @@ use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
 use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
+use App\Modules\Conversations\Domain\Models\ConversationBinding;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -38,7 +41,7 @@ final class ReplyToCompanion
     ) {}
 
     /** @param list<int> $attachmentIds */
-    public function handle(User $actor, Client $client, string $body, array $attachmentIds = []): void
+    public function handle(User $actor, Client $client, string $body, array $attachmentIds = []): string
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageCompanionHandoff);
@@ -65,7 +68,14 @@ final class ReplyToCompanion
         }
 
         $conversationResolver = $this->conversationResolver;
-        $deliveryIds = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds, $conversationResolver): array {
+        $result = DB::transaction(function () use ($organization, $actor, $client, $body, $recordMessage, $formatter, $attachmentIds, $conversationResolver): array {
+            $telegramIdentity = ClientChannelIdentity::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->where('channel', 'telegram')
+                ->where('verification_status', ChannelIdentityStatus::Verified)
+                ->orderBy('id')
+                ->first();
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
@@ -75,8 +85,16 @@ final class ReplyToCompanion
             if (! $conversation instanceof Conversation) {
                 $conversation = $conversationResolver->handle(
                     $client,
-                    'portal',
-                    'client:'.$client->getKey(),
+                    $telegramIdentity instanceof ClientChannelIdentity ? 'telegram' : 'portal',
+                    $telegramIdentity instanceof ClientChannelIdentity
+                        ? (string) $telegramIdentity->external_id
+                        : 'client:'.$client->getKey(),
+                );
+            } elseif ($telegramIdentity instanceof ClientChannelIdentity) {
+                $conversation = $conversationResolver->handle(
+                    $client,
+                    'telegram',
+                    (string) $telegramIdentity->external_id,
                 );
             }
             $turn = CompanionTurn::query()
@@ -84,7 +102,23 @@ final class ReplyToCompanion
                 ->where('conversation_id', $conversation->getKey())
                 ->latest('sequence')
                 ->first();
-            $channel = $turn === null ? 'portal' : ($turn->origin_channel ?? 'portal');
+            $telegramBinding = ConversationBinding::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('conversation_id', $conversation->getKey())
+                ->where('client_id', $client->getKey())
+                ->where('channel', 'telegram')
+                ->orderBy('id')
+                ->first();
+            $telegramRecipient = $turn?->origin_channel === 'telegram' && filled($turn->transport_chat_id)
+                ? (string) $turn->transport_chat_id
+                : ($telegramIdentity instanceof ClientChannelIdentity
+                    ? $telegramIdentity->external_id
+                    : $telegramBinding?->external_key);
+            $channel = $telegramRecipient !== null
+                ? 'telegram'
+                : ($turn instanceof CompanionTurn && $turn->origin_channel === 'telegram'
+                    ? 'portal'
+                    : ($turn instanceof CompanionTurn ? $turn->origin_channel ?? 'portal' : 'portal'));
             $message = $recordMessage->handle(
                 organizationId: $organization->getKey(),
                 client: $client,
@@ -127,8 +161,8 @@ final class ReplyToCompanion
                 }
             }
 
-            if ($channel !== 'telegram' || $turn?->transport_chat_id === null) {
-                return [];
+            if ($channel !== 'telegram' || $telegramRecipient === null) {
+                return ['deliveryIds' => [], 'channel' => $channel];
             }
 
             $chunks = $formatter->richTextChunks($body);
@@ -139,7 +173,7 @@ final class ReplyToCompanion
                     'turn_id' => null,
                     'conversation_message_id' => $message->getKey(),
                     'channel' => 'telegram',
-                    'recipient_external_id' => $turn->transport_chat_id,
+                    'recipient_external_id' => $telegramRecipient,
                     'chunk_index' => $index,
                     'chunk_count' => count($chunks),
                     'status' => CompanionDeliveryStatus::Pending,
@@ -148,9 +182,10 @@ final class ReplyToCompanion
                 $ids[] = (int) $delivery->getKey();
             }
 
-            return $ids;
+            return ['deliveryIds' => $ids, 'channel' => $channel];
         });
 
+        $deliveryIds = $result['deliveryIds'];
         $firstDeliveryId = $deliveryIds[0] ?? null;
         if ($firstDeliveryId !== null) {
             DeliverCompanionMessage::dispatch(
@@ -158,5 +193,7 @@ final class ReplyToCompanion
                 $firstDeliveryId,
             )->afterCommit();
         }
+
+        return (string) $result['channel'];
     }
 }

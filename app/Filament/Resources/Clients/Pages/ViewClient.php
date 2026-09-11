@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Pages;
 
+use App\Filament\Pages\Messages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
@@ -100,10 +101,10 @@ class ViewClient extends ViewRecord
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
             Action::make('companionHistory')
-                ->label('Общение')
+                ->label('Сообщения')
                 ->icon('heroicon-o-chat-bubble-left-right')
                 ->color('primary')
-                ->url(fn (): string => ClientResource::getUrl('companion', ['record' => $this->clientRecord()])),
+                ->url(fn (): string => Messages::getUrl(['client' => $this->clientRecord()->getKey()])),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')
