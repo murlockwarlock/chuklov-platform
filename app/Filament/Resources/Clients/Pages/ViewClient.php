@@ -11,6 +11,7 @@ use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\RecordClientConsent;
+use App\Modules\Identity\Application\ResetStagingClientAccount;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
@@ -105,6 +106,7 @@ class ViewClient extends ViewRecord
                 ->icon('heroicon-o-chat-bubble-left-right')
                 ->color('primary')
                 ->url(fn (): string => Messages::getUrl(['client' => $this->clientRecord()->getKey()])),
+            $this->resetStagingAccountAction(),
             Action::make('editMedicalProfile')
                 ->label('Изменить медицинский профиль')
                 ->icon('heroicon-o-heart')
@@ -624,6 +626,30 @@ class ViewClient extends ViewRecord
             app(OrganizationContext::class)->organization(),
             OrganizationPermission::ManageClients,
         );
+    }
+
+    private function resetStagingAccountAction(): Action
+    {
+        return Action::make('resetStagingAccount')
+            ->label('Сбросить аккаунт для теста')
+            ->icon('heroicon-o-arrow-path')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Сбросить аккаунт для теста?')
+            ->modalDescription('Профиль и временные тестовые данные будут удалены. При следующем входе через Telegram будет создан новый аккаунт. Рабочие записи и медицинские данные кнопка не удаляет.')
+            ->modalSubmitActionLabel('Сбросить аккаунт')
+            ->authorize(fn (): bool => $this->canResetStagingAccount())
+            ->visible(fn (): bool => $this->canResetStagingAccount())
+            ->action(function (): void {
+                app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
+                Notification::make()->title('Аккаунт сброшен для повторного теста')->success()->send();
+                $this->redirect(ClientResource::getUrl('index'));
+            });
+    }
+
+    private function canResetStagingAccount(): bool
+    {
+        return app()->environment(['local', 'staging', 'testing']) && $this->canManageClients();
     }
 
     private function unblockSelfBookingAction(): Action
