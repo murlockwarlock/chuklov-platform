@@ -179,7 +179,7 @@ class AiProviderFactory
 
     private function resolveSecret(?OrganizationCredential $credential): string
     {
-        $credentials = $credential->credentials ?? [];
+        $credentials = $credential?->credentials ?? [];
 
         return (string) ($credentials['api_key'] ?? $credentials['key'] ?? $credentials['secret'] ?? '');
     }

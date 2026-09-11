@@ -69,4 +69,48 @@ final class LaravelEmbeddingGeneratorTest extends TestCase
         });
         self::assertSame(ProviderHealthStatus::Healthy, $provider->fresh()->health_status);
     }
+
+    public function test_credentialless_ollama_embeddings_do_not_require_a_secret(): void
+    {
+        $organization = Organization::factory()->create();
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $organization->getKey(),
+            'provider_name' => 'ollama',
+            'display_name' => 'Ollama',
+            'is_enabled' => true,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'options' => ['base_url' => 'http://127.0.0.1:11434'],
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest(
+                'ollama',
+                ['base_url' => 'http://127.0.0.1:11434'],
+            ),
+        ]);
+
+        Http::fake([
+            'http://127.0.0.1:11434/api/embed' => Http::response([
+                'embeddings' => [[0.1, 0.2, 0.3]],
+                'prompt_eval_count' => 2,
+            ], 200),
+        ]);
+
+        $embeddings = app(LaravelEmbeddingGenerator::class)->generate(
+            (int) $organization->getKey(),
+            ['sleep and recovery'],
+            new EmbeddingConfiguration(
+                provider: 'ollama',
+                model: 'nomic-embed-text',
+                dimensions: 3,
+                version: 'test-ollama',
+                timeoutSeconds: 5,
+            ),
+        );
+
+        self::assertSame([[0.1, 0.2, 0.3]], $embeddings);
+        self::assertNull($provider->fresh()->credential_id);
+        Http::assertSent(static function (Request $request): bool {
+            return $request->url() === 'http://127.0.0.1:11434/api/embed'
+                && ! $request->hasHeader('Authorization')
+                && $request->data()['model'] === 'nomic-embed-text';
+        });
+    }
 }
