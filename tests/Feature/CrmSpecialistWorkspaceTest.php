@@ -6,6 +6,7 @@ use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Clients\Pages\ListClients;
+use App\Filament\Resources\Specialists\Pages\EditSpecialist;
 use App\Models\User;
 use App\Modules\Analytics\Application\ClientSegmentQuery;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
@@ -520,6 +521,17 @@ final class CrmSpecialistWorkspaceTest extends TestCase
 
         self::assertSame($specialist->id, (int) $component->instance()->data['specialist_id']);
         self::assertSame('2026-09-09 14:30', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+    }
+
+    public function test_specialist_edit_form_uses_russian_active_label(): void
+    {
+        [$organization, $admin, $specialist] = $this->organizationWithAdminAndSpecialist();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditSpecialist::class, ['record' => $specialist->getKey()]);
+
+        self::assertSame('Активен', $component->instance()->getSchemaComponent('form.is_active')->getLabel());
     }
 
     private function fixture(string $timezone): array

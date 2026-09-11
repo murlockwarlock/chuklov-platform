@@ -77,6 +77,7 @@ class SpecialistForm
                     ->helperText('Только для просмотра. Подключение выполняется через подтверждённую ссылку в Telegram.')
                     ->columnSpanFull(),
                 Toggle::make('is_active')
+                    ->label('Активен')
                     ->required()
                     ->default(true),
                 Toggle::make('notifications_enabled')
