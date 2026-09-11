@@ -125,7 +125,7 @@ final class CrmSpecialistWorkspaceTest extends TestCase
             ->set('endTime', '14:00')
             ->call('saveSchedule');
 
-        self::assertSame('09:00', $specialist->workingHours()->where('weekday', 3)->value('start_time'));
+        self::assertSame('09:00', substr((string) $specialist->workingHours()->where('weekday', 3)->value('start_time'), 0, 5));
         self::assertNotEmpty($component->instance()->impactBookings);
 
         $component
@@ -360,6 +360,8 @@ final class CrmSpecialistWorkspaceTest extends TestCase
         Service $service,
         CarbonImmutable|Carbon $startsAt,
     ): Booking {
+        $startsAt = CarbonImmutable::instance($startsAt);
+
         return Booking::factory()
             ->forClient($client)
             ->forSpecialist($specialist)
