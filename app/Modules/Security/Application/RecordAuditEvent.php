@@ -34,6 +34,7 @@ class RecordAuditEvent
         'ai.evaluation_case.updated' => ['eval_suite_id', 'is_active'],
         'ai.evaluation_run.completed' => ['eval_suite_id', 'total_cases', 'passed_cases', 'failed_cases'],
         'client.created' => ['source'],
+        'client.staging_account.reset' => ['deleted_record_count'],
         'client.profile.updated' => ['source', 'fields'],
         'client.channel_identity.registered' => ['channel', 'verification_status'],
         'client.channel_identity.verified' => ['channel', 'verification_method'],

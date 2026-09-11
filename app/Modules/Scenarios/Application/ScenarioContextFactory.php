@@ -100,7 +100,7 @@ final class ScenarioContextFactory
             }
             $renderContext['companion'] = [
                 'escalation_id' => (int) ($context->event->payload['escalation_id'] ?? 0),
-                'crm_url' => url('/admin/clients/'.$context->client->getKey().'/companion'),
+                'crm_url' => url('/admin/messages?client='.$context->client->getKey()),
                 'reason' => (string) ($context->event->payload['reason'] ?? ''),
             ];
         }

@@ -2,7 +2,7 @@
 
 namespace App\Modules\ClientCompanion\Application\Notifications;
 
-use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Pages\Messages;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
@@ -44,7 +44,7 @@ final class NotifyCompanionEscalation
             ->actions([
                 Action::make('openCompanion')
                     ->label('Открыть диалог')
-                    ->url(ClientResource::getUrl('companion', ['record' => $client]))
+                    ->url(Messages::getUrl(['client' => $client->getKey()]))
                     ->button()
                     ->markAsRead(),
             ]);
