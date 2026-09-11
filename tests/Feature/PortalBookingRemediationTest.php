@@ -113,6 +113,34 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('availability.slots.16.startsAt', '2026-03-31T09:00:00+00:00'));
     }
 
+    public function test_booking_confirmation_survives_a_repeated_create_page_request(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $documents = $this->acceptedConsents($organization);
+
+        $response = $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-03-16T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'consents' => $documents,
+            ])
+            ->assertRedirect();
+
+        $location = (string) $response->headers->get('Location');
+
+        $this->get($location)
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->where('bookingResult.bookingId', Booking::query()->sole()->getKey()));
+
+        $this->get($location)
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/BookingCreate')
+                ->where('bookingResult.bookingId', Booking::query()->sole()->getKey()));
+    }
+
     public function test_booking_exposes_each_required_published_document_for_the_compact_consent_flow(): void
     {
         [, $client, $specialist, $service] = $this->portalFixture(language: 'en');

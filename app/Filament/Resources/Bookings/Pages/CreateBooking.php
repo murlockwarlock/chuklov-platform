@@ -15,12 +15,25 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Attributes\Url;
 
 class CreateBooking extends CreateRecord
 {
     protected static string $resource = BookingResource::class;
 
     protected static ?string $title = 'Создать запись на приём';
+
+    #[Url(as: 'return_to_journal', history: true)]
+    public bool $returnToJournal = false;
+
+    #[Url(as: 'specialist_id', history: true, nullable: true)]
+    public ?int $journalSpecialistId = null;
+
+    #[Url(as: 'week', history: true, nullable: true)]
+    public ?string $journalWeek = null;
+
+    #[Url(as: 'view', history: true, nullable: true)]
+    public ?string $journalView = null;
 
     public function mount(): void
     {
@@ -30,15 +43,9 @@ class CreateBooking extends CreateRecord
         $organizationId = app(OrganizationContext::class)->id();
         $specialistId = request()->query('specialist_id');
 
-        if (is_numeric($specialistId)) {
-            $specialist = Specialist::query()
-                ->where('organization_id', $organizationId)
-                ->where('is_active', true)
-                ->whereKey((int) $specialistId)
-                ->first();
-            if ($specialist instanceof Specialist) {
-                $prefill['specialist_id'] = $specialist->getKey();
-            }
+        $specialist = $this->resolveSpecialist($specialistId, $organizationId);
+        if ($specialist instanceof Specialist) {
+            $prefill['specialist_id'] = $specialist->getKey();
         }
 
         $startsAt = request()->query('starts_at');
@@ -46,18 +53,55 @@ class CreateBooking extends CreateRecord
             $local = CarbonImmutable::createFromFormat(
                 '!Y-m-d H:i',
                 $startsAt,
-                app(OrganizationContext::class)->defaultTimezone(),
+                $this->formTimezone(),
             );
             if ($local instanceof CarbonImmutable) {
-                $prefill['starts_at'] = $local
-                    ->setTimezone($this->formTimezone())
-                    ->format('Y-m-d H:i');
+                $prefill['starts_at'] = $local;
             }
         }
 
         if ($prefill !== []) {
             $this->form->fillPartially($prefill, array_keys($prefill));
         }
+    }
+
+    private function resolveSpecialist(mixed $requestedId, int $organizationId): ?Specialist
+    {
+        $requestedSpecialistId = is_int($requestedId)
+            ? $requestedId
+            : (is_string($requestedId) && ctype_digit($requestedId) ? (int) $requestedId : null);
+
+        if ($requestedSpecialistId !== null) {
+            $requestedSpecialist = Specialist::query()
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->whereKey($requestedSpecialistId)
+                ->first();
+            if ($requestedSpecialist instanceof Specialist) {
+                return $requestedSpecialist;
+            }
+        }
+
+        $actor = auth()->user();
+        if ($actor instanceof User) {
+            $viewerSpecialist = Specialist::query()
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->where('staff_user_id', $actor->getKey())
+                ->orderBy('display_name')
+                ->orderBy('id')
+                ->first();
+            if ($viewerSpecialist instanceof Specialist) {
+                return $viewerSpecialist;
+            }
+        }
+
+        return Specialist::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->orderBy('id')
+            ->first();
     }
 
     protected function handleRecordCreation(array $data): Model
@@ -71,10 +115,7 @@ class CreateBooking extends CreateRecord
         $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
         $startsAt = $data['starts_at'] instanceof DateTimeInterface
             ? $data['starts_at']
-            : CarbonImmutable::parse(
-                (string) $data['starts_at'],
-                app(ResolveSpecialistViewerTimezone::class)->forUser($actor),
-            );
+            : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
         return app(CreateBookingAction::class)->handle(
             actor: $actor,
@@ -97,11 +138,24 @@ class CreateBooking extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
-        if (request()->boolean('return_to_journal')) {
-            $week = request()->query('week');
-            $parameters = is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1
-                ? ['week' => $week]
-                : [];
+        if ($this->returnToJournal) {
+            $week = $this->journalWeek;
+            $parameters = [];
+            if (is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1) {
+                $parameters['week'] = $week;
+            }
+            if ($this->journalView === 'list') {
+                $parameters['view'] = 'list';
+            } else {
+                $parameters['view'] = 'week';
+            }
+            $specialistId = $this->journalSpecialistId;
+            if ($specialistId !== null && Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->whereKey($specialistId)
+                ->exists()) {
+                $parameters['specialist_id'] = $specialistId;
+            }
             $url = ListBookings::getUrl();
 
             return $parameters === [] ? $url : $url.'?'.http_build_query($parameters);

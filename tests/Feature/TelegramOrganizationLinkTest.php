@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Auth\EditProfile;
+use App\Filament\Resources\Specialists\Pages\CreateSpecialist as CreateSpecialistPage;
+use App\Filament\Resources\Specialists\Pages\ViewSpecialist;
 use App\Models\User;
 use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
 use App\Modules\Identity\Application\InitiateTelegramOrganizationLink;
@@ -13,17 +16,82 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelLinkToken;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Specialists\Application\CreateSpecialist;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class TelegramOrganizationLinkTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_employee_profile_without_specialist_can_connect_reconnect_telegram_and_save_notifications(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $profile = Livewire::actingAs($admin)->test(EditProfile::class)
+            ->assertActionVisible('telegramConnection')
+            ->assertSee('Не подключён');
+
+        $profile
+            ->fillForm([
+                'name' => $admin->name,
+                'email' => $admin->email,
+                'notifications_enabled' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertFalse(OrganizationMembership::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('user_id', $admin->getKey())
+            ->sole()
+            ->notifications_enabled);
+
+        $firstLink = '';
+        $profile
+            ->mountAction('telegramConnection')
+            ->assertActionDataSet(function (array $data) use (&$firstLink): bool {
+                $firstLink = (string) ($data['link'] ?? '');
+
+                return str_starts_with($firstLink, 'https://t.me/chuklov_test_bot?start=staff_');
+            });
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $this->tokenFromUrl($firstLink),
+            new VerifiedChannelIdentity('telegram', 'profile-first-id', $admin->name, 'ru'),
+        );
+        $profile->unmountAction()->call('$refresh')->assertSee('Подключён');
+
+        $secondLink = '';
+        $profile
+            ->mountAction('telegramConnection')
+            ->assertActionDataSet(function (array $data) use (&$secondLink): bool {
+                $secondLink = (string) ($data['link'] ?? '');
+
+                return str_starts_with($secondLink, 'https://t.me/chuklov_test_bot?start=staff_');
+            });
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $this->tokenFromUrl($secondLink),
+            new VerifiedChannelIdentity('telegram', 'profile-second-id', $admin->name, 'ru'),
+        );
+
+        self::assertSame('profile-second-id', OrganizationChannelIdentity::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('user_id', $admin->getKey())
+            ->sole()
+            ->external_id);
+    }
 
     public function test_staff_connection_requires_one_time_verified_link_and_rejects_reuse(): void
     {
@@ -108,11 +176,158 @@ final class TelegramOrganizationLinkTest extends TestCase
         );
     }
 
+    public function test_specialist_creation_generates_a_staff_connection_link_for_the_selected_employee(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateSpecialistPage::class)
+            ->fillForm([
+                'display_name' => 'Новый специалист',
+                'timezone' => 'UTC',
+                'viewer_timezone' => null,
+                'staff_user_id' => $staff->getKey(),
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $specialist = Specialist::query()->sole();
+        $linkToken = OrganizationChannelLinkToken::query()->sole();
+        $notifications = session('filament.notifications');
+
+        self::assertSame($staff->getKey(), $specialist->staff_user_id);
+        self::assertSame($staff->getKey(), $linkToken->user_id);
+        self::assertIsArray($notifications);
+        self::assertCount(1, $notifications);
+        self::assertStringContainsString('Ссылка для привязки Telegram', (string) ($notifications[0]['body'] ?? ''));
+        self::assertStringStartsWith('https://t.me/chuklov_test_bot?start=staff_', (string) ($notifications[0]['actions'][0]['url'] ?? ''));
+    }
+
+    public function test_specialist_creation_does_not_rebind_an_existing_staff_telegram_identity(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $this->connectStaffTelegram($admin, $staff, 'existing-telegram-id');
+        $tokenCount = OrganizationChannelLinkToken::query()->count();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateSpecialistPage::class)
+            ->fillForm([
+                'display_name' => 'Подключённый специалист',
+                'timezone' => 'UTC',
+                'viewer_timezone' => null,
+                'staff_user_id' => $staff->getKey(),
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        self::assertSame('existing-telegram-id', OrganizationChannelIdentity::query()->sole()->external_id);
+        self::assertSame($tokenCount, OrganizationChannelLinkToken::query()->count());
+        self::assertStringContainsString('уже подключён', (string) (session('filament.notifications.0.body')));
+    }
+
+    public function test_specialist_card_can_generate_a_copyable_connection_link_for_an_unconnected_employee(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Карточка специалиста',
+            staffUserId: $staff->getKey(),
+        );
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertActionVisible('createTelegramLink')
+            ->mountAction('createTelegramLink')
+            ->assertActionDataSet(fn (array $data): bool => str_starts_with((string) ($data['link'] ?? ''), 'https://t.me/chuklov_test_bot?start=staff_'));
+
+        self::assertSame($staff->getKey(), OrganizationChannelLinkToken::query()->latest('id')->sole()->user_id);
+    }
+
+    public function test_specialist_card_can_rebind_a_staff_telegram_identity_after_new_link_confirmation(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Перепривязка Telegram',
+            staffUserId: $staff->getKey(),
+        );
+        $this->connectStaffTelegram($admin, $staff, 'old-telegram-id');
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $generatedLink = '';
+
+        Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertActionVisible('createTelegramLink')
+            ->mountAction('createTelegramLink')
+            ->assertActionDataSet(function (array $data) use (&$generatedLink): bool {
+                $generatedLink = (string) ($data['link'] ?? '');
+
+                return str_starts_with($generatedLink, 'https://t.me/chuklov_test_bot?start=staff_');
+            });
+
+        $token = OrganizationChannelLinkToken::query()->latest('id')->firstOrFail();
+        $newToken = $this->tokenFromUrl($generatedLink);
+
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $newToken,
+            new VerifiedChannelIdentity('telegram', 'new-telegram-id', $staff->name, 'ru'),
+        );
+
+        $identity = OrganizationChannelIdentity::query()->sole();
+        self::assertSame('new-telegram-id', $identity->external_id);
+        self::assertSame(1, OrganizationChannelIdentity::query()->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'organization.channel_identity.rebound')
+            ->count());
+        self::assertNotNull($token->fresh()->consumed_at);
+    }
+
     private function tokenFromUrl(string $url): string
     {
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
         $start = (string) ($query['start'] ?? '');
 
         return substr($start, strlen('staff_'));
+    }
+
+    private function connectStaffTelegram(User $admin, User $staff, string $externalId): void
+    {
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        $url = app(InitiateTelegramOrganizationLink::class)->handle($admin, $staff->getKey());
+        $token = $this->tokenFromUrl($url);
+
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $token,
+            new VerifiedChannelIdentity('telegram', $externalId, $staff->name, 'ru'),
+        );
+    }
+
+    private function setOrganization(Organization $organization): void
+    {
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
     }
 }

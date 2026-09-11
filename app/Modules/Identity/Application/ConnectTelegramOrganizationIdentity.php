@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelLinkToken;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -53,17 +54,32 @@ final class ConnectTelegramOrganizationIdentity
                     throw new AuthorizationException('The staff member is no longer active in this organization.');
                 }
 
-                $identity = OrganizationChannelIdentity::query()
+                $identities = OrganizationChannelIdentity::query()
                     ->where('organization_id', $linkToken->organization_id)
                     ->where('channel', 'telegram')
-                    ->where('external_id', $verifiedIdentity->externalId)
+                    ->where(function (Builder $query) use ($linkToken, $verifiedIdentity): void {
+                        $query
+                            ->where('user_id', $linkToken->user_id)
+                            ->orWhere('external_id', $verifiedIdentity->externalId);
+                    })
+                    ->orderBy('id')
                     ->lockForUpdate()
-                    ->first();
+                    ->get();
 
-                if ($identity instanceof OrganizationChannelIdentity
-                    && (int) $identity->user_id !== (int) $linkToken->user_id) {
+                $identity = $identities->first(
+                    fn (OrganizationChannelIdentity $candidate): bool => (int) $candidate->user_id === (int) $linkToken->user_id,
+                );
+                $incomingIdentity = $identities->first(
+                    fn (OrganizationChannelIdentity $candidate): bool => (string) $candidate->external_id === $verifiedIdentity->externalId,
+                );
+
+                if ($incomingIdentity instanceof OrganizationChannelIdentity
+                    && (int) $incomingIdentity->user_id !== (int) $linkToken->user_id) {
                     throw new AuthorizationException('The Telegram identity is already linked to another staff member.');
                 }
+
+                $isRebinding = $identity instanceof OrganizationChannelIdentity
+                    && (string) $identity->external_id !== $verifiedIdentity->externalId;
 
                 if (! $identity instanceof OrganizationChannelIdentity) {
                     $identity = new OrganizationChannelIdentity;
@@ -75,11 +91,12 @@ final class ConnectTelegramOrganizationIdentity
                     ]);
                 }
 
-                if ($identity->verification_status === ChannelIdentityStatus::Revoked) {
+                if ($identity->verification_status === ChannelIdentityStatus::Revoked && ! $isRebinding) {
                     throw new AuthorizationException('The Telegram identity is revoked.');
                 }
 
                 $identity->forceFill([
+                    'external_id' => $verifiedIdentity->externalId,
                     'verification_status' => ChannelIdentityStatus::Verified,
                     'verification_method' => 'telegram_crm_link',
                     'verified_at' => now(),
@@ -89,7 +106,9 @@ final class ConnectTelegramOrganizationIdentity
                 $this->audit->handle(
                     organization: $organization,
                     actor: null,
-                    action: 'organization.channel_identity.verified',
+                    action: $isRebinding
+                        ? 'organization.channel_identity.rebound'
+                        : 'organization.channel_identity.verified',
                     targetType: OrganizationChannelIdentity::class,
                     targetId: (string) $identity->getKey(),
                     metadata: [

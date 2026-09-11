@@ -71,6 +71,7 @@ class RecordAuditEvent
         'specialist.telegram_identity.configured' => ['channel', 'verification_method'],
         'specialist.telegram_identity.removed' => ['channel'],
         'organization.channel_identity.verified' => ['channel', 'verification_method'],
+        'organization.channel_identity.rebound' => ['channel', 'verification_method'],
         'specialist.notifications.updated' => ['enabled'],
         'content.section.created' => ['section_key', 'locale', 'is_visible'],
         'content.section.updated' => ['section_key', 'locale', 'is_visible'],

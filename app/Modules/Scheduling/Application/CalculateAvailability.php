@@ -16,7 +16,6 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
@@ -45,6 +44,7 @@ class CalculateAvailability
         private readonly SpecialistServiceAssignmentEligibility $eligibility,
         private readonly BookingLocationResolver $locations,
         private readonly GetHomeVisitOccupiedBuffer $homeVisitBuffer,
+        private readonly ResolveSpecialistWorkingHours $workingHoursResolver,
     ) {}
 
     public function forStaff(
@@ -387,12 +387,7 @@ class CalculateAvailability
         $rangeStart = $this->localBoundary($dateFrom, $scheduleTimezone)->subDays(2);
         $rangeEnd = $this->localBoundary($dateEnd, $scheduleTimezone)->addDays(2);
 
-        $workingHours = SpecialistWorkingHour::query()
-            ->where('organization_id', $organizationId)
-            ->where('specialist_id', $specialist->getKey())
-            ->where('is_active', true)
-            ->get()
-            ->groupBy('weekday');
+        $workingHours = $this->workingHoursResolver->forRange($specialist, $dateFrom, $dateTo);
         $exceptions = ScheduleException::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
@@ -485,9 +480,7 @@ class CalculateAvailability
                 ->filter()
                 ->values()
                 ->all());
-            $workingIntervals = array_values($workingHours->get($dayDate->weekday(), collect())
-                ->map(fn (SpecialistWorkingHour $workingHour): WallClockInterval => $workingHour->wallClockInterval())
-                ->all());
+            $workingIntervals = $this->workingHoursResolver->intervalsForDate($workingHours, $dayDate);
 
             $slots = [
                 ...$slots,

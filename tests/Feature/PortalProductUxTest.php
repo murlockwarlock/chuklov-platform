@@ -112,6 +112,10 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-segmented', $partner);
         self::assertStringContainsString('portal-count', $partner);
         self::assertStringContainsString('portal-referral-registration-row', $partner);
+        self::assertStringNotContainsString('partner-referral-link', $partner);
+        self::assertStringNotContainsString('partner-personal-share', $partner);
+        self::assertStringNotContainsString('partner-personal-copy', $partner);
+        self::assertStringContainsString('partner-create-link-form', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
         self::assertStringContainsString('event.shiftKey', $companion);

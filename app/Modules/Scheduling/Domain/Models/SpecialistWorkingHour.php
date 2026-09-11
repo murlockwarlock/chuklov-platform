@@ -3,7 +3,9 @@
 namespace App\Modules\Scheduling\Domain\Models;
 
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
+use App\Modules\Scheduling\Domain\ValueObjects\WorkingHourInterval;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Database\Factories\SpecialistWorkingHourFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -15,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read Organization $organization
  * @property-read Specialist $specialist
  */
-#[Fillable(['weekday', 'start_time', 'end_time', 'is_active'])]
+#[Fillable(['weekday', 'start_time', 'end_time', 'starts_on', 'ends_on', 'is_active'])]
 class SpecialistWorkingHour extends Model
 {
     /** @use HasFactory<SpecialistWorkingHourFactory> */
@@ -38,6 +40,17 @@ class SpecialistWorkingHour extends Model
         return WallClockInterval::from($this->start_time, $this->end_time);
     }
 
+    public function appliesOn(LocalDate|string $date): bool
+    {
+        return WorkingHourInterval::from([
+            'weekday' => $this->weekday,
+            'start_time' => $this->start_time,
+            'end_time' => $this->end_time,
+            'starts_on' => $this->starts_on,
+            'ends_on' => $this->ends_on,
+        ])->appliesOn($date);
+    }
+
     protected static function newFactory(): SpecialistWorkingHourFactory
     {
         return SpecialistWorkingHourFactory::new();
@@ -47,6 +60,8 @@ class SpecialistWorkingHour extends Model
     {
         return [
             'weekday' => 'integer',
+            'starts_on' => 'immutable_date',
+            'ends_on' => 'immutable_date',
             'is_active' => 'boolean',
         ];
     }

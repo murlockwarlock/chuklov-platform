@@ -29,6 +29,7 @@ use App\Modules\Scheduling\Application\ListClientBookings;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Models\Service;
@@ -82,6 +83,21 @@ class BookingController extends Controller
         $displayTimezone = $this->displayTimezone($validated['display_timezone'] ?? null, $client->timezone);
         [$dateFrom, $dateTo] = $this->dateRange($validated, $displayTimezone);
         $format = $this->selectedFormat($validated['format'] ?? null, $selectedService);
+        $bookingResult = $request->session()->pull('portal_booking_result');
+        if (! is_array($bookingResult)) {
+            $bookingId = $this->nullableInteger($validated['booking_id'] ?? null);
+            if ($bookingId !== null) {
+                $booking = Booking::query()
+                    ->where('organization_id', $client->organization_id)
+                    ->where('client_id', $client->getKey())
+                    ->whereKey($bookingId)
+                    ->first();
+
+                if ($booking instanceof Booking) {
+                    $bookingResult = $this->bookingResult($booking);
+                }
+            }
+        }
         $workingLocationId = $this->nullableInteger($validated['working_location_id'] ?? null);
         $locationArea = isset($validated['location_area']) ? trim((string) $validated['location_area']) : null;
         $officeLocations = $locationResolver->activeOfficeLocations();
@@ -158,7 +174,7 @@ class BookingController extends Controller
                 'locationArea' => $locationArea,
             ],
             'timezoneOptions' => $clientProfile->timezoneOptions($displayTimezone),
-            'bookingResult' => $request->session()->pull('portal_booking_result'),
+            'bookingResult' => $bookingResult,
             'legalDocuments' => $legalDocuments->handle($client->language)->map(function ($document): array {
                 $subject = ConsentSubject::tryFrom($document->document_type);
 
@@ -237,6 +253,7 @@ class BookingController extends Controller
             ->route('portal.bookings.create', [
                 'service_id' => $booking->service_id,
                 'specialist_id' => $booking->specialist_id,
+                'booking_id' => $booking->getKey(),
                 'date_from' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'date_to' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'format' => $booking->visit_format->value,
@@ -244,13 +261,19 @@ class BookingController extends Controller
                 'working_location_id' => $booking->working_location_id,
                 'location_area' => $booking->location_area,
             ])
-            ->with('portal_booking_result', [
-                'message' => $booking->visit_format === VisitFormat::HomeVisit
-                    ? $this->bookingErrors->message('request_sent')
-                    : $this->bookingErrors->message('booking_created'),
-                'bookingId' => $booking->getKey(),
-                'startsAt' => $booking->startsAtUtc()->toIso8601String(),
-            ]);
+            ->with('portal_booking_result', $this->bookingResult($booking));
+    }
+
+    /** @return array{message: string, bookingId: int, startsAt: string} */
+    private function bookingResult(Booking $booking): array
+    {
+        return [
+            'message' => $booking->visit_format === VisitFormat::HomeVisit
+                ? $this->bookingErrors->message('request_sent')
+                : $this->bookingErrors->message('booking_created'),
+            'bookingId' => (int) $booking->getKey(),
+            'startsAt' => $booking->startsAtUtc()->toIso8601String(),
+        ];
     }
 
     public function index(ListClientBookings $bookings): Response

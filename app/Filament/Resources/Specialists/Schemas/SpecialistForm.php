@@ -60,8 +60,8 @@ class SpecialistForm
                     ->searchable()
                     ->nullable(),
                 Placeholder::make('telegram_connection')
-                    ->label('Telegram сотрудника')
-                    ->content('Подключается сотрудником через «Коммуникации → Telegram сотрудников». Ввод Telegram ID вручную запрещён.')
+                    ->label('Привязка Telegram сотрудника')
+                    ->content('После сохранения создайте одноразовую ссылку в карточке специалиста и отправьте её сотруднику. Если нужно сменить аккаунт, используйте действие «Перепривязать Telegram» в карточке специалиста.')
                     ->columnSpanFull(),
                 TextInput::make('telegram_id')
                     ->label('Подтверждённый Telegram ID')
@@ -77,6 +77,7 @@ class SpecialistForm
                     ->helperText('Только для просмотра. Подключение выполняется через подтверждённую ссылку в Telegram.')
                     ->columnSpanFull(),
                 Toggle::make('is_active')
+                    ->label('Активен')
                     ->required()
                     ->default(true),
                 Toggle::make('notifications_enabled')

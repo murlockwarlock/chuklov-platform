@@ -18,7 +18,7 @@ final readonly class WallClockInterval
         $normalizedEnd = self::normalize($end);
 
         if (self::minutes($normalizedStart) >= self::minutes($normalizedEnd)) {
-            throw new InvalidArgumentException('The schedule interval must have a start before its end.');
+            throw new InvalidArgumentException('Время начала должно быть раньше времени окончания.');
         }
 
         return new self($normalizedStart, $normalizedEnd);

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Bookings\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
@@ -16,6 +17,7 @@ use Carbon\CarbonImmutable;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Livewire\Attributes\Url;
 
 class ListBookings extends ListRecords
 {
@@ -25,28 +27,42 @@ class ListBookings extends ListRecords
 
     protected string $view = 'filament.resources.bookings.pages.list-bookings';
 
+    #[Url(as: 'view', history: true)]
     public string $viewMode = 'week';
 
+    #[Url(as: 'week', history: true)]
     public string $weekStart = '';
 
+    #[Url(as: 'specialist_id', history: true, nullable: true)]
     public ?int $selectedSpecialistId = null;
+
+    protected function getTableQuery(): Builder
+    {
+        return parent::getTableQuery()
+            ->when($this->selectedSpecialistId !== null, fn (Builder $query): Builder => $query->where(
+                'specialist_id',
+                $this->selectedSpecialistId,
+            ));
+    }
 
     public function mount(): void
     {
         parent::mount();
 
         $timezone = $this->journalTimezone();
-        $requestedWeek = request()->query('week');
-        $week = is_string($requestedWeek) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedWeek) === 1
-            ? CarbonImmutable::createFromFormat('!Y-m-d', $requestedWeek, $timezone)
-            : CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY);
-        $this->weekStart = ($week instanceof CarbonImmutable ? $week : CarbonImmutable::now($timezone))->toDateString();
-        $this->viewMode = request()->query('view') === 'list' ? 'list' : 'week';
-        $this->selectedSpecialistId = $this->selectedSpecialistFromRequest()?->getKey()
+        $week = $this->parseWeek($this->weekStart, $timezone)
+            ?? CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY);
+        $this->weekStart = $week->toDateString();
+        $this->viewMode = in_array($this->viewMode, ['week', 'list'], true) ? $this->viewMode : 'week';
+        $this->selectedSpecialistId = $this->selectedSpecialistFromUrl()?->getKey()
             ?? $this->currentViewerSpecialist()?->getKey()
             ?? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('is_active', true)
+                ->orderBy('display_name')
+                ->value('id')
+            ?? Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
                 ->orderBy('display_name')
                 ->value('id');
     }
@@ -69,6 +85,23 @@ class ListBookings extends ListRecords
     public function setViewMode(string $mode): void
     {
         $this->viewMode = in_array($mode, ['week', 'list'], true) ? $mode : 'week';
+    }
+
+    public function updatedSelectedSpecialistId(): void
+    {
+        if ($this->selectedSpecialist() instanceof Specialist) {
+            return;
+        }
+
+        $this->selectedSpecialistId = Specialist::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('is_active', true)
+            ->orderBy('display_name')
+            ->value('id')
+            ?? Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->orderBy('display_name')
+                ->value('id');
     }
 
     /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}> */
@@ -169,12 +202,34 @@ class ListBookings extends ListRecords
             'starts_at' => $date.' '.$time,
             'return_to_journal' => '1',
             'week' => $this->weekStart,
+            'view' => $this->viewMode,
         ];
         if ($this->selectedSpecialistId !== null) {
             $parameters['specialist_id'] = (string) $this->selectedSpecialistId;
         }
 
         return BookingResource::getUrl('create').'?'.http_build_query($parameters);
+    }
+
+    public function newBookingUrl(): string
+    {
+        $parameters = [
+            'return_to_journal' => '1',
+            'week' => $this->weekStart,
+            'view' => $this->viewMode,
+        ];
+        if ($this->selectedSpecialistId !== null) {
+            $parameters['specialist_id'] = (string) $this->selectedSpecialistId;
+        }
+
+        return BookingResource::getUrl('create').'?'.http_build_query($parameters);
+    }
+
+    public function canCreateBooking(): bool
+    {
+        $specialist = $this->selectedSpecialist();
+
+        return $specialist instanceof Specialist && $specialist->is_active;
     }
 
     /** @param array{start_minutes: int, end_minutes: int} $booking */
@@ -201,15 +256,28 @@ class ListBookings extends ListRecords
     {
         return Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('is_active', true)
             ->orderBy('display_name')
-            ->pluck('display_name', 'id')
+            ->get(['id', 'display_name', 'is_active'])
+            ->mapWithKeys(fn (Specialist $specialist): array => [
+                $specialist->getKey() => $specialist->display_name.($specialist->is_active ? '' : ' (неактивен)'),
+            ])
             ->all();
     }
 
     public function journalTimezone(): string
     {
-        return app(OrganizationContext::class)->defaultTimezone();
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    public function journalTimezoneLabel(): string
+    {
+        $timezone = $this->journalTimezone();
+
+        return TimezoneOptions::label($timezone).' ('.$timezone.')';
     }
 
     public static function statusClass(BookingStatus|string $status): string
@@ -305,13 +373,18 @@ class ListBookings extends ListRecords
             'is_online' => $format === VisitFormat::Online,
             'start_minutes' => $startMinutes,
             'end_minutes' => max($startMinutes + 30, $endMinutes),
-            'url' => BookingResource::getUrl('view', ['record' => $booking]),
+            'url' => BookingResource::getUrl('view', ['record' => $booking]).'?'.http_build_query([
+                'return_to_journal' => '1',
+                'specialist_id' => $this->selectedSpecialistId,
+                'week' => $this->weekStart,
+                'view' => $this->viewMode,
+            ]),
         ];
     }
 
     private function weekDate(): CarbonImmutable
     {
-        $date = CarbonImmutable::createFromFormat('!Y-m-d', $this->weekStart, $this->journalTimezone());
+        $date = $this->parseWeek($this->weekStart, $this->journalTimezone());
 
         return $date instanceof CarbonImmutable
             ? $date
@@ -336,20 +409,35 @@ class ListBookings extends ListRecords
             ? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('staff_user_id', $actor->getKey())
+                ->where('is_active', true)
+                ->orderBy('display_name')
+                ->orderBy('id')
                 ->first()
             : null;
     }
 
-    private function selectedSpecialistFromRequest(): ?Specialist
+    private function selectedSpecialistFromUrl(): ?Specialist
     {
-        $specialistId = request()->query('specialist_id');
+        $specialistId = $this->selectedSpecialistId;
 
-        return is_numeric($specialistId)
+        return $specialistId !== null
             ? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
-                ->whereKey((int) $specialistId)
-                ->where('is_active', true)
+                ->whereKey($specialistId)
                 ->first()
+            : null;
+    }
+
+    private function parseWeek(string $value, string $timezone): ?CarbonImmutable
+    {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) !== 1) {
+            return null;
+        }
+
+        $date = CarbonImmutable::createFromFormat('!Y-m-d', $value, $timezone);
+
+        return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value
+            ? $date
             : null;
     }
 }
