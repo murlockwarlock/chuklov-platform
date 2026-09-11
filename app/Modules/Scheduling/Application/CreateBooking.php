@@ -204,6 +204,12 @@ class CreateBooking
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            if (! $lockedSpecialist->is_active) {
+                throw ValidationException::withMessages([
+                    'specialist' => 'Нельзя создать запись для неактивного специалиста.',
+                ]);
+            }
+
             if ($actor instanceof Client && ClientBookingRestriction::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $lockedClient->getKey())

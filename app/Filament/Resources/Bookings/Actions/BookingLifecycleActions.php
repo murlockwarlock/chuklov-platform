@@ -186,10 +186,7 @@ final class BookingLifecycleActions
                     abort_unless($actor instanceof User, 403);
                     $startsAt = $data['starts_at'] instanceof DateTimeInterface
                         ? $data['starts_at']
-                        : CarbonImmutable::parse(
-                            (string) $data['starts_at'],
-                            self::viewerTimezone(),
-                        );
+                        : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
                     try {
                         app(RescheduleBooking::class)->handle(

@@ -39,7 +39,9 @@
                         @endforeach
                     </select>
                 @endif
-                <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">Добавить запись</a>
+                @if ($this->canCreateBooking())
+                    <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">Добавить запись</a>
+                @endif
             </div>
         </div>
         <p class="text-sm text-gray-500 dark:text-gray-400">Время журнала: <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->journalTimezoneLabel() }}</span></p>
@@ -73,7 +75,7 @@
                                 @php($open = $isOpen($day, $minute))
                                 @php($occupied = $isOccupied($day, $minute))
                                 @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                @if ($open && ! $occupied)
+                                @if ($open && ! $occupied && $this->canCreateBooking())
                                     <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="Добавить запись на {{ $slotTime }}"></a>
                                 @else
                                     <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true"></div>
@@ -129,7 +131,9 @@
                                     @for ($minute = $interval['start_minutes']; $minute < $interval['end_minutes']; $minute += 30)
                                         @if (! $isOccupied($day, $minute))
                                             @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                            <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="rounded-md border border-primary-200 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ $slotTime }}</a>
+                                            @if ($this->canCreateBooking())
+                                                <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="rounded-md border border-primary-200 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ $slotTime }}</a>
+                                            @endif
                                         @endif
                                     @endfor
                                 @endforeach

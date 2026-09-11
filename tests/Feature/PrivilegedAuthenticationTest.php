@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Auth\EditProfile;
+use App\Filament\Auth\Login as AdminLogin;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -11,8 +13,10 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Filament\AuditedAppAuthentication;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class PrivilegedAuthenticationTest extends TestCase
@@ -26,6 +30,43 @@ class PrivilegedAuthenticationTest extends TestCase
         self::assertTrue($panel->hasMultiFactorAuthentication());
         self::assertFalse($panel->isMultiFactorAuthenticationRequired());
         self::assertTrue($panel->hasProfile());
+        self::assertSame(AdminLogin::class, $panel->getLoginRouteAction());
+        self::assertSame(EditProfile::class, $panel->getProfilePage());
+    }
+
+    public function test_user_without_mfa_enters_crm_without_a_login_challenge(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->assertSet('userUndertakingMultiFactorAuthentication', null);
+
+        self::assertAuthenticatedAs($admin);
+    }
+
+    public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
+        Auth::logout();
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->assertSet('userUndertakingMultiFactorAuthentication', null);
+
+        self::assertAuthenticatedAs($admin);
     }
 
     public function test_mfa_secrets_are_encrypted_and_lifecycle_changes_are_audited(): void

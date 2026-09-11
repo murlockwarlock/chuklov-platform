@@ -115,10 +115,7 @@ class CreateBooking extends CreateRecord
         $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
         $startsAt = $data['starts_at'] instanceof DateTimeInterface
             ? $data['starts_at']
-            : CarbonImmutable::parse(
-                (string) $data['starts_at'],
-                app(ResolveSpecialistViewerTimezone::class)->forUser($actor),
-            );
+            : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
         return app(CreateBookingAction::class)->handle(
             actor: $actor,
@@ -155,7 +152,6 @@ class CreateBooking extends CreateRecord
             $specialistId = $this->journalSpecialistId;
             if ($specialistId !== null && Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
-                ->where('is_active', true)
                 ->whereKey($specialistId)
                 ->exists()) {
                 $parameters['specialist_id'] = $specialistId;

@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Auth\EditProfile;
+use App\Filament\Auth\Login;
 use App\Http\Controllers\RevokePrivilegedSessionsController;
 use App\Http\Middleware\EnsurePrivilegedSessionIsCurrent;
 use App\Http\Middleware\ResolveOrganization;
@@ -35,8 +37,8 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
-            ->profile()
+            ->login(Login::class)
+            ->profile(EditProfile::class)
             ->multiFactorAuthentication([AuditedAppAuthentication::make()->recoverable()], isRequired: false)
             ->userMenuItems([
                 'revoke-privileged-sessions' => Action::make('revokePrivilegedSessions')

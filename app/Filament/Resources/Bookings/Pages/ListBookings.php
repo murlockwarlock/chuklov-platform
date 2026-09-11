@@ -60,6 +60,10 @@ class ListBookings extends ListRecords
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->where('is_active', true)
                 ->orderBy('display_name')
+                ->value('id')
+            ?? Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->orderBy('display_name')
                 ->value('id');
     }
 
@@ -93,7 +97,11 @@ class ListBookings extends ListRecords
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->where('is_active', true)
             ->orderBy('display_name')
-            ->value('id');
+            ->value('id')
+            ?? Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->orderBy('display_name')
+                ->value('id');
     }
 
     /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}> */
@@ -217,6 +225,13 @@ class ListBookings extends ListRecords
         return BookingResource::getUrl('create').'?'.http_build_query($parameters);
     }
 
+    public function canCreateBooking(): bool
+    {
+        $specialist = $this->selectedSpecialist();
+
+        return $specialist instanceof Specialist && $specialist->is_active;
+    }
+
     /** @param array{start_minutes: int, end_minutes: int} $booking */
     public function bookingStyle(array $booking): string
     {
@@ -241,9 +256,11 @@ class ListBookings extends ListRecords
     {
         return Specialist::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('is_active', true)
             ->orderBy('display_name')
-            ->pluck('display_name', 'id')
+            ->get(['id', 'display_name', 'is_active'])
+            ->mapWithKeys(fn (Specialist $specialist): array => [
+                $specialist->getKey() => $specialist->display_name.($specialist->is_active ? '' : ' (неактивен)'),
+            ])
             ->all();
     }
 
@@ -380,7 +397,6 @@ class ListBookings extends ListRecords
             ? null
             : Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
-                ->where('is_active', true)
                 ->whereKey($this->selectedSpecialistId)
                 ->first();
     }
@@ -408,7 +424,6 @@ class ListBookings extends ListRecords
             ? Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->whereKey($specialistId)
-                ->where('is_active', true)
                 ->first()
             : null;
     }

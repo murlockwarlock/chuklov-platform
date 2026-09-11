@@ -15,6 +15,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
 use App\Modules\Scheduling\Application\SetScheduleExceptionSet;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
@@ -31,6 +32,7 @@ use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -702,7 +704,22 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'list',
         ])->actingAs($admin)->test(ViewBooking::class, ['record' => $booking->getKey()]);
 
-        $bookingPage->assertActionVisible('back_to_journal');
+        $bookingPage
+            ->assertActionVisible('back_to_journal')
+            ->assertSet('returnToJournal', true)
+            ->assertSet('journalSpecialistId', $specialist->getKey())
+            ->assertSet('journalWeek', '2026-10-05')
+            ->assertSet('journalView', 'list');
+        self::assertStringContainsString('specialist_id='.$specialist->getKey(), $bookingPage->html());
+
+        $bookingPage
+            ->call('$refresh')
+            ->assertActionVisible('back_to_journal')
+            ->assertSet('returnToJournal', true)
+            ->assertSet('journalSpecialistId', $specialist->getKey())
+            ->assertSet('journalWeek', '2026-10-05')
+            ->assertSet('journalView', 'list');
+        self::assertStringContainsString('specialist_id='.$specialist->getKey(), $bookingPage->html());
     }
 
     public function test_create_booking_from_journal_preserves_context_and_persists_clicked_instant(): void
@@ -776,7 +793,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create();
         $this->resolveFilamentContext($admin, $organization);
 
-        Livewire::withQueryParams([
+        $component = Livewire::withQueryParams([
             'starts_at' => '2026-10-04 19:00',
             'specialist_id' => $specialist->getKey(),
             'return_to_journal' => '1',
@@ -789,10 +806,11 @@ final class SchedulingJournalProductionPassTest extends TestCase
                 'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => CarbonImmutable::create(2026, 10, 4, 19, 0, 0, 'America/Los_Angeles'),
+                'starts_at' => '2026-10-04 19:00',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
-            ])
+            ]);
+        $component
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -817,6 +835,50 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame($specialist->getKey(), $journal->instance()->selectedSpecialistId);
         parse_str((string) parse_url($journal->instance()->newBookingUrl(), PHP_URL_QUERY), $newBookingQuery);
         self::assertNotSame((string) $foreignSpecialist->getKey(), (string) ($newBookingQuery['specialist_id'] ?? ''));
+    }
+
+    public function test_journal_keeps_inactive_specialist_history_but_denies_new_bookings(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['is_active' => false])->save();
+        $client = Client::factory()->forOrganization($organization)->create(['full_name' => 'История неактивного специалиста']);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+
+        $journal->assertSet('selectedSpecialistId', $specialist->getKey());
+        self::assertSame($booking->getKey(), $journal->instance()->journalDays['2026-10-05']['bookings'][0]['id']);
+        self::assertSame($specialist->display_name.' (неактивен)', $journal->instance()->specialistOptions[$specialist->getKey()]);
+
+        $remounted = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $remounted->assertSet('selectedSpecialistId', $specialist->getKey());
+
+        $this->expectException(ValidationException::class);
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 10, 12, 10, 0, 0, 'UTC'),
+            format: VisitFormat::Online,
+        );
     }
 
     /** @return array{Organization, User, Specialist, Service} */
