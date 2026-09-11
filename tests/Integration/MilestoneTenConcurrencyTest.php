@@ -70,7 +70,7 @@ final class CountingInitialRagEmbeddingGenerator implements EmbeddingGenerator
 {
     public function __construct(private readonly int $organizationId) {}
 
-    public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+    public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
     {
         DB::table('audit_events')->insert([
             'organization_id' => $this->organizationId,
@@ -100,7 +100,7 @@ final class CountingInitialRagRetriever implements KnowledgeRetriever
 
     public function retrieveForOrganization(int|string $organizationId, RetrievalQuery $query): array
     {
-        $this->embeddings->generate([$query->text], EmbeddingConfiguration::active());
+        $this->embeddings->generate((int) $organizationId, [$query->text], EmbeddingConfiguration::active());
 
         return [];
     }

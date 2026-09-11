@@ -38,6 +38,7 @@ use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\AI\Domain\Models\AiRunRagReference;
 use App\Modules\AI\Domain\Models\AiRunToolCall;
 use App\Modules\AI\Domain\Registry\AiCapabilityRegistry;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\AI\Domain\ValueObjects\AiContextPolicy;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
@@ -705,6 +706,42 @@ class AiWorkflowEngineTest extends TestCase
         $run = AiRun::query()->findOrFail($result->runId);
         self::assertSame('deepseek', $run->actual_provider);
         self::assertSame('valid-model-4', $run->actual_model);
+    }
+
+    public function test_incomplete_bounded_pricing_candidate_does_not_block_failover(): void
+    {
+        DynamicWorkflowAgent::fake(['Later candidate after pricing skip']);
+
+        $first = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'openai',
+            modelName: 'gpt-5.6-luna',
+            priority: 1,
+        );
+        $firstPricing = AiModelCatalog::find('openai', 'gpt-5.6-luna')?->pricing;
+        self::assertNotNull($firstPricing);
+        self::assertTrue($firstPricing->isComplete());
+        $first->activeRelease()->update(['pricing_snapshot' => $firstPricing->toArray()]);
+
+        $second = $this->setupConfiguredModel(
+            capability: AiCapability::ClientCompanion,
+            providerName: 'deepseek',
+            modelName: 'pricing-valid-second',
+            priority: 2,
+        );
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'pricing_profile_failover',
+            inputVariables: ['query' => 'bounded billing profile'],
+        ));
+
+        self::assertTrue($result->isSuccess(), (string) $result->errorMessageSanitized);
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertSame($second->activeRelease()->value('provider_name'), $run->actual_provider);
+        self::assertSame('pricing-valid-second', $run->actual_model);
+        self::assertCount(1, AiRunAttempt::query()->where('ai_run_id', $run->getKey())->get());
+        self::assertSame('deepseek', AiRunAttempt::query()->where('ai_run_id', $run->getKey())->value('provider'));
     }
 
     public function test_document_attachment_filters_candidates_before_sync_failover_attempt_limit(): void
@@ -1841,6 +1878,54 @@ class AiWorkflowEngineTest extends TestCase
         self::assertStringNotContainsString('[Client] Старое сообщение 1\n', (string) $renderedUserPrompt);
         $budget = AiRuntimeLimits::inputContextBudget(
             (string) $renderedSystemPrompt,
+            (string) $renderedUserPrompt,
+            AiCapabilityRegistry::get(AiCapability::ClientCompanion),
+        );
+        self::assertLessThanOrEqual($budget->maximumTokens, $budget->estimatedTokens());
+    }
+
+    public function test_companion_health_context_is_bounded_without_dropping_the_current_message(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        DynamicWorkflowAgent::fake(['Результат разобран.']);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $version = $prompt->activeVersion()->sole();
+        $version->update([
+            'system_prompt' => str_repeat('Безопасная инструкция. ', 170),
+            'user_prompt_template' => "Контекст здоровья:\n{{health_context}}\n\nТекущее сообщение:\n{{current_message}}",
+            'context_policy' => ['include_rag' => false, 'allowed_context_types' => ['health_context']],
+        ]);
+        $healthContext = str_repeat("Результат теста: зона внимания — сон и восстановление.\n", 120);
+
+        $result = app(AiWorkflowEngine::class)->run($this->organization->id, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'bounded_companion_health_context_test',
+            inputVariables: [
+                'health_context' => $healthContext,
+                'current_message' => 'Что показал мой тест?',
+            ],
+        ));
+
+        self::assertTrue($result->isSuccess());
+        $run = AiRun::query()->findOrFail($result->runId);
+        self::assertTrue((bool) data_get($run->context_provenance, 'health_context_degraded'));
+        $payload = AiRunPayload::query()->where('ai_run_id', $result->runId)->sole();
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $renderedUserPrompt = $encryptor->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Результат теста:', (string) $renderedUserPrompt);
+        self::assertStringContainsString('Что показал мой тест?', (string) $renderedUserPrompt);
+        self::assertLessThan(mb_strlen($healthContext), mb_strlen((string) $renderedUserPrompt));
+        $budget = AiRuntimeLimits::inputContextBudget(
+            (string) $encryptor->decryptField(
+                $this->organization->id,
+                $payload->encrypted_system_prompt,
+                $payload->encryption_key_version,
+            ),
             (string) $renderedUserPrompt,
             AiCapabilityRegistry::get(AiCapability::ClientCompanion),
         );

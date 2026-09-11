@@ -67,7 +67,11 @@ final class ProcessKnowledgeIngestion
             }
 
             foreach (array_chunk($chunks, 50) as $chunkBatch) {
-                $vectors = $this->embeddings->generate(array_map(static fn ($chunk): string => $chunk->content, $chunkBatch), $embeddingConfiguration);
+                $vectors = $this->embeddings->generate(
+                    $organizationId,
+                    array_map(static fn ($chunk): string => $chunk->content, $chunkBatch),
+                    $embeddingConfiguration,
+                );
                 if (! $this->persistChunkBatch($organizationId, $sourceId, $revisionId, $run->getKey(), $claimedAttempt, $chunkBatch, $vectors)) {
                     return;
                 }

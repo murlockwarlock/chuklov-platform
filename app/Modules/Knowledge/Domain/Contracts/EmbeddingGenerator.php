@@ -10,5 +10,5 @@ interface EmbeddingGenerator
      * @param  list<string>  $inputs
      * @return list<list<float>>
      */
-    public function generate(array $inputs, EmbeddingConfiguration $configuration): array;
+    public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array;
 }

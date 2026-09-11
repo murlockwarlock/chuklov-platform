@@ -27,6 +27,19 @@ type Obligation = {
     status: 'outstanding' | 'partially_paid' | 'settled' | 'unavailable';
     statusLabel: string;
     history: FinanceHistory[];
+    demoPayment: DemoPayment | null;
+};
+
+type DemoPayment = {
+    stateLabel: string;
+    canStart: boolean;
+    canSucceed: boolean;
+    canFail: boolean;
+    canRefund: boolean;
+    startUrl: string;
+    successUrl: string | null;
+    failUrl: string | null;
+    refundUrl: string | null;
 };
 
 type Total = { amountMinor: number; currency: string };
@@ -40,6 +53,14 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = usePortalLocale();
+
+function demoKey(): string {
+    const value = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+
+    return `portal-demo-${value}`;
+}
 
 function formatMoney(minor: number, currency: string): string {
     const digits = currency === 'JPY' ? 0 : 2;
@@ -65,9 +86,9 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
     :portal="props.portal"
     active="more"
   >
-    <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
+    <section class="portal-container portal-container--wide portal-stack portal-stack--loose portal-finance-page">
+      <header class="portal-page-heading min-w-0 w-full">
+        <div class="portal-stack portal-stack--tight min-w-0 w-full">
           <h1 class="portal-heading portal-heading--section">
             {{ t('finance.title') }}
           </h1>
@@ -82,15 +103,24 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
       <div
         v-if="props.hasUnavailableObligations"
-        class="portal-notice"
+        class="portal-notice min-w-0 max-w-full"
         role="status"
       >
         {{ t('finance.partialUnavailable') }}
       </div>
 
+      <div
+        v-if="props.obligations.some((obligation) => obligation.demoPayment !== null)"
+        class="portal-notice min-w-0 max-w-full"
+        role="status"
+      >
+        <strong class="block">{{ t('finance.demoTitle') }}</strong>
+        <span>{{ t('finance.demoDescription') }}</span>
+      </div>
+
       <section
         v-if="props.totals.length"
-        class="portal-content-section portal-stack portal-stack--tight"
+        class="portal-content-section portal-stack portal-stack--tight min-w-0 max-w-full"
         aria-labelledby="finance-total-heading"
       >
         <h2
@@ -99,7 +129,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
         >
           {{ t('finance.totalOutstanding') }}
         </h2>
-        <dl class="portal-finance-rows">
+        <dl class="portal-finance-rows min-w-0 max-w-full">
           <div
             v-for="total in props.totals"
             :key="total.currency"
@@ -127,14 +157,14 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
       <section
         v-for="obligation in props.obligations"
         :key="obligation.bookingUrl ?? obligation.serviceName + obligation.completedAt"
-        class="portal-content-section portal-stack portal-stack--tight"
+        class="portal-content-section portal-stack portal-stack--tight min-w-0 max-w-full"
       >
         <header class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0">
-            <h2 class="portal-heading portal-heading--section break-words">
+            <h2 class="portal-heading portal-heading--section max-w-full break-words">
               {{ obligation.serviceName }}
             </h2>
-            <p class="portal-copy portal-copy--small">
+            <p class="portal-copy portal-copy--small max-w-full break-words">
               {{ obligation.completedAt ?? t('finance.visitDateUnavailable') }}
               <span v-if="obligation.originalCurrency && obligation.displayCurrency && obligation.originalCurrency !== obligation.displayCurrency">
                 · {{ obligation.originalCurrency }}
@@ -142,7 +172,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
             </p>
           </div>
           <span
-            class="inline-flex max-w-full shrink-0 rounded-full bg-[var(--portal-color-surface-muted)] px-3 py-1 text-xs font-semibold text-[var(--portal-color-ink-soft)]"
+            class="inline-flex max-w-full shrink-0 break-words whitespace-normal rounded-full bg-[var(--portal-color-surface-muted)] px-3 py-1 text-left text-xs font-semibold text-[var(--portal-color-ink-soft)]"
           >
             {{ obligation.statusLabel }}
           </span>
@@ -150,7 +180,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
         <div
           v-if="!obligation.available"
-          class="portal-notice"
+          class="portal-notice min-w-0 max-w-full break-words"
           role="status"
         >
           {{ t('finance.obligationUnavailable') }}
@@ -158,7 +188,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
         <dl
           v-else
-          class="portal-finance-rows"
+          class="portal-finance-rows min-w-0 max-w-full"
         >
           <div class="portal-finance-row">
             <dt>{{ t('finance.obligation') }}</dt>
@@ -173,6 +203,60 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
             <dd>{{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}</dd>
           </div>
         </dl>
+
+        <section
+          v-if="obligation.demoPayment"
+          class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
+          :aria-label="t('finance.demoTitle')"
+        >
+          <div class="flex min-w-0 max-w-full flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+            <h3 class="min-w-0 break-words font-semibold text-[var(--portal-color-ink)]">
+              {{ t('finance.demoTitle') }}
+            </h3>
+            <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
+              {{ obligation.demoPayment.stateLabel }}
+            </span>
+          </div>
+          <div class="flex min-w-0 flex-wrap gap-2">
+            <Link
+              v-if="obligation.demoPayment.canStart"
+              :href="obligation.demoPayment.startUrl"
+              method="post"
+              as="button"
+              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
+              :data="{ idempotency_key: demoKey() }"
+            >
+              {{ t('finance.demoStart') }}
+            </Link>
+            <Link
+              v-if="obligation.demoPayment.canSucceed && obligation.demoPayment.successUrl"
+              :href="obligation.demoPayment.successUrl"
+              method="post"
+              as="button"
+              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
+            >
+              {{ t('finance.demoSuccess') }}
+            </Link>
+            <Link
+              v-if="obligation.demoPayment.canFail && obligation.demoPayment.failUrl"
+              :href="obligation.demoPayment.failUrl"
+              method="post"
+              as="button"
+              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
+            >
+              {{ t('finance.demoFail') }}
+            </Link>
+            <Link
+              v-if="obligation.demoPayment.canRefund && obligation.demoPayment.refundUrl"
+              :href="obligation.demoPayment.refundUrl"
+              method="post"
+              as="button"
+              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
+            >
+              {{ t('finance.demoRefund') }}
+            </Link>
+          </div>
+        </section>
 
         <div
           v-if="obligation.history.length"

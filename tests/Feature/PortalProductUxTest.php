@@ -80,6 +80,7 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.urls.services', route('portal.services.index')));
 
         $servicesPage = (string) file_get_contents(resource_path('js/Pages/Services/Index.vue'));
+        $appShell = (string) file_get_contents(resource_path('js/Components/Portal/AppShell.vue'));
         $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
         $home = (string) file_get_contents(resource_path('js/Pages/Portal/Home.vue'));
         $companion = (string) file_get_contents(resource_path('js/Pages/Portal/Companion.vue'));
@@ -90,11 +91,17 @@ class PortalProductUxTest extends TestCase
         $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
         $confirmation = (string) file_get_contents(resource_path('js/Components/Portal/BookingConfirmation.vue'));
         $legal = (string) file_get_contents(resource_path('js/Components/Portal/LegalConsentChecklist.vue'));
+        $surveyTake = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyTake.vue'));
         $surveyReport = (string) file_get_contents(resource_path('js/Pages/Portal/SurveyReport.vue'));
         $section = (string) file_get_contents(resource_path('js/Pages/Portal/Section.vue'));
+        $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
+        $finance = (string) file_get_contents(resource_path('js/Pages/Portal/Finance.vue'));
+        $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
         self::assertStringContainsString('return props.portal.urls.services;', $shell);
+        self::assertStringContainsString('return props.portal.urls.health;', $appShell);
+        self::assertStringContainsString('return props.portal.urls.health;', $shell);
         self::assertStringNotContainsString("t('bookings.title')", $home);
         self::assertStringNotContainsString('home.referrals', $success);
         self::assertStringNotContainsString(':href="props.urls.tracker"', $health);
@@ -106,15 +113,39 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-count', $partner);
         self::assertStringContainsString('portal-referral-registration-row', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
+        self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
+        self::assertStringContainsString('event.shiftKey', $companion);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);
         self::assertStringContainsString('legal.requiredAcceptance', $legal);
         self::assertStringContainsString('document.title', $legal);
         self::assertStringContainsString('update:marketingValue', $legal);
+        self::assertStringContainsString('role="radiogroup"', $surveyTake);
+        self::assertStringContainsString('scrollIntoView', $surveyTake);
+        self::assertStringContainsString('scrollToCompletionActions', $surveyTake);
+        self::assertStringContainsString('preserveScroll: false', $surveyTake);
+        self::assertStringContainsString('survey.sectionsCompleted', $surveyTake);
+        self::assertStringContainsString('surveys.questionCount', $surveyTake);
+        self::assertStringContainsString('survey.saved', $surveyTake);
+        self::assertStringNotContainsString('<select', $surveyTake);
+        self::assertStringContainsString('portal-finance-page', $finance);
+        self::assertStringContainsString('min-w-0 max-w-full', $finance);
+        self::assertStringContainsString('portal-report-actions', $surveyReport);
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
         self::assertStringContainsString('active="more"', $section);
+        self::assertSame(5, substr_count($more, 'class="portal-list__row"'));
+        self::assertStringContainsString("t('more.title')", $more);
+        self::assertStringContainsString("t('more.profile')", $more);
+        self::assertStringContainsString("t('more.finance')", $more);
+        self::assertStringContainsString("t('more.partnership')", $more);
+        self::assertStringContainsString("t('more.feedback')", $more);
+        self::assertStringNotContainsString("t('more.business')", $more);
+        self::assertStringContainsString("'shell.more': 'Кабинет'", $portalLocale);
+        self::assertStringContainsString("'shell.companion': 'Чат'", $portalLocale);
+        self::assertStringContainsString("'more.title': 'Кабинет'", $portalLocale);
+        self::assertStringContainsString("'survey.technicalDetails': 'Все показатели'", $portalLocale);
     }
 
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void

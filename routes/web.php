@@ -116,6 +116,13 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::post('/portal/finance/fake/{obligationId}/start', [FinanceController::class, 'startDemoPayment'])
+                ->whereNumber('obligationId')
+                ->name('portal.finance.fake.start');
+            Route::post('/portal/finance/fake/{transactionId}/{outcome}', [FinanceController::class, 'simulateDemoPayment'])
+                ->whereNumber('transactionId')
+                ->whereIn('outcome', ['success', 'fail', 'refund'])
+                ->name('portal.finance.fake.simulate');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
             Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
             Route::post('/portal/referrals/links', [ReferralPartnerController::class, 'store'])->name('portal.referrals.links.store');

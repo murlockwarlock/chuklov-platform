@@ -29,6 +29,21 @@ final class SurveyDefinitionForm
                 Toggle::make('is_available')->label('Доступен клиентам после публикации')->default(true),
                 Hidden::make('start_new_metric_scale')->default(false),
             ])->columns(2)->columnSpanFull(),
+            Section::make('Происхождение контента')->schema([
+                Hidden::make('source')->default('platform_default')->dehydrated(false),
+                Hidden::make('approval_status')->default('draft')->dehydrated(false),
+                Hidden::make('methodology')->dehydrated(false),
+                Placeholder::make('provenance')
+                    ->label('Статус материала')
+                    ->content(fn (Get $get): string => match (true) {
+                        $get('source') === 'chuklov_approved' && $get('approval_status') === 'approved' => 'Подтверждённый материал Чуклова',
+                        $get('source') === 'platform_default' && $get('approval_status') === 'draft' => 'Платформенный демонстрационный черновик',
+                        default => 'Материал требует проверки происхождения',
+                    }),
+                Placeholder::make('methodology_display')
+                    ->label('Методология')
+                    ->content(fn (Get $get): string => (string) ($get('methodology') ?: 'Не указана')),
+            ])->columns(2)->columnSpanFull(),
             Section::make('Вопросы')->schema([
                 Repeater::make('sections')
                     ->label('Разделы')

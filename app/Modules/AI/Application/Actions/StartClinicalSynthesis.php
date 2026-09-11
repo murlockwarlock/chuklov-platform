@@ -72,17 +72,11 @@ final readonly class StartClinicalSynthesis
         [$surveyResults, $surveyReferences] = $this->surveyBundle($actor, $client);
         $inputVariables = [
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
-            'anamnesis' => $profile->anamnesis ?? '',
-            'complaints_goals' => $profile->complaintsGoals ?? '',
-            'recent_sessions' => $sessionHistory,
-            'agent_one_result' => $documentResult->outputPayload ?? [
-                'status' => 'missing',
-                'reason' => 'Проверенный анализ медицинского документа отсутствует.',
-            ],
-            'agent_two_result' => $postureResult->outputPayload ?? [
-                'status' => 'missing',
-                'reason' => 'Проверенный анализ осанки отсутствует.',
-            ],
+            'anamnesis' => $this->boundedText($profile->anamnesis ?? '', 400),
+            'complaints_goals' => $this->boundedText($profile->complaintsGoals ?? '', 700),
+            'recent_sessions' => $this->sessionsContext($sessionHistory),
+            'agent_one_result' => $this->documentContext($documentResult?->outputPayload),
+            'agent_two_result' => $this->postureContext($postureResult?->outputPayload),
             'survey_results' => $surveyResults,
         ];
 
@@ -150,14 +144,11 @@ final readonly class StartClinicalSynthesis
         return $failedRun === null ? $baseKey : $baseKey.':retry:'.$failedRun->getKey();
     }
 
-    /** @return array{0: array<string, mixed>, 1: list<AiInputReference>} */
+    /** @return array{0: string, 1: list<AiInputReference>} */
     private function surveyBundle(User $actor, Client $client): array
     {
         if (! $this->surveyAuthorization->allowsView($actor, $client)) {
-            return [[
-                'status' => 'missing',
-                'reason' => 'Результаты опросов недоступны для текущего специалиста.',
-            ], []];
+            return ['Статус: отсутствует. Результаты опросов недоступны для текущего специалиста.', []];
         }
 
         $attempts = SurveyAttempt::query()
@@ -171,29 +162,234 @@ final readonly class StartClinicalSynthesis
             ->get();
 
         if ($attempts->isEmpty()) {
-            return [[
-                'status' => 'missing',
-                'reason' => 'Совместимый завершённый результат опроса отсутствует. Источник 9 систем/MSQ не предоставлен.',
-            ], []];
+            return ['Статус: отсутствует. Совместимый завершённый результат опроса отсутствует. Источник 9 систем/MSQ не предоставлен.', []];
         }
 
         $references = [];
-        $results = [];
-        foreach ($attempts as $attempt) {
+        $lines = ['Статус: доступен.'];
+        foreach ($attempts as $index => $attempt) {
             $references[] = new AiInputReference('survey_attempt', (int) $attempt->getKey());
-            $results[] = [
-                'attempt_id' => (int) $attempt->getKey(),
-                'completed_at' => $attempt->completed_at?->toIso8601String(),
-                'result' => $attempt->result_snapshot,
+            $lines[] = 'Попытка #'.(int) $attempt->getKey().'; дата: '.$this->boundedText($attempt->completed_at?->toIso8601String() ?? '', 40);
+            $lines[] = $this->surveyContext($attempt->result_snapshot, $index === 0);
+        }
+        $lines[] = 'Ограничение: источник 9 систем/MSQ и его оценивание не предоставлен в авторитетных материалах.';
+
+        return [$this->boundedText(implode("\n", $lines), 2600), $references];
+    }
+
+    /** @param array<string, mixed>|null $result */
+    private function documentContext(?array $result): string
+    {
+        if ($result === null) {
+            return 'Статус: отсутствует. Проверенный анализ медицинского документа отсутствует.';
+        }
+
+        $findings = [];
+        foreach (array_slice(array_values(array_filter($result['key_findings'] ?? [], 'is_array')), 0, 3) as $finding) {
+            $findings[] = [
+                'location' => $this->boundedText($finding['location'] ?? '', 80),
+                'pathology' => $this->boundedText($finding['pathology'] ?? '', 150),
+                'size_mm' => is_scalar($finding['size_mm'] ?? null) ? $finding['size_mm'] : null,
+                'impact' => $this->boundedText($finding['impact'] ?? '', 100),
             ];
         }
 
-        return [[
-            'status' => 'available',
-            'attempts' => $results,
-            'missing_authoritative_sources' => [
-                'Источник 9 систем/MSQ и его оценивание не предоставлен в авторитетных материалах.',
-            ],
-        ], $references];
+        $lines = [
+            'Статус: доступен.',
+            'Исследование: '.$this->boundedText($result['exam_type'] ?? '', 100),
+            'Область: '.$this->boundedText($result['anatomical_region'] ?? '', 100),
+        ];
+        foreach ($findings as $finding) {
+            $lines[] = implode('; ', array_filter([
+                $finding['location'],
+                $finding['pathology'],
+                $finding['size_mm'] === null ? null : 'размер: '.$finding['size_mm'].' мм',
+                $finding['impact'],
+            ], static fn (?string $value): bool => $value !== null && $value !== ''));
+        }
+        $structural = $this->textList($result['structural_deformations'] ?? [], 2, 100);
+        if ($structural !== []) {
+            $lines[] = 'Структурные особенности: '.implode('; ', $structural);
+        }
+        $critical = $this->textList($result['critical_flags'] ?? [], 2, 100);
+        if ($critical !== []) {
+            $lines[] = 'Критические флаги: '.implode('; ', $critical);
+        }
+        $summary = $this->boundedText($result['plain_summary'] ?? '', 260);
+        if ($summary !== '') {
+            $lines[] = 'Резюме: '.$summary;
+        }
+
+        return $this->boundedText(implode("\n", $lines), 1200);
+    }
+
+    /** @param array<string, mixed>|null $result */
+    private function postureContext(?array $result): string
+    {
+        if ($result === null) {
+            return 'Статус: отсутствует. Проверенный анализ осанки отсутствует.';
+        }
+
+        $findings = [];
+        foreach (array_slice(array_values(array_filter($result['visual_findings'] ?? [], 'is_array')), 0, 3) as $finding) {
+            $findings[] = [
+                'plane' => $this->boundedText($finding['plane'] ?? '', 30),
+                'observations' => $this->textList($finding['observations'] ?? [], 1, 110),
+            ];
+        }
+
+        $lines = ['Статус: доступен.'];
+        foreach ($findings as $finding) {
+            $lines[] = $finding['plane'].': '.implode('; ', $finding['observations']);
+        }
+        $patterns = $this->textList($result['leading_compensatory_patterns'] ?? [], 2, 110);
+        if ($patterns !== []) {
+            $lines[] = 'Паттерны: '.implode('; ', $patterns);
+        }
+        $focus = $this->textList($result['practitioner_focus'] ?? [], 2, 110);
+        if ($focus !== []) {
+            $lines[] = 'Фокус специалиста: '.implode('; ', $focus);
+        }
+        $limitations = $this->textList($result['limitations'] ?? [], 2, 110);
+        if ($limitations !== []) {
+            $lines[] = 'Ограничения: '.implode('; ', $limitations);
+        }
+
+        return $this->boundedText(implode("\n", $lines), 1200);
+    }
+
+    /** @param array<string, mixed> $session */
+    private function sessionContext(array $session): string
+    {
+        $parts = [
+            'Сессия #'.(int) ($session['id'] ?? 0),
+            $this->boundedText($session['occurred_at'] ?? '', 40),
+        ];
+        foreach ([
+            'pain' => 'жалобы',
+            'tests' => 'тесты',
+            'observations' => 'наблюдения',
+            'root_cause_hypothesis' => 'гипотеза',
+            'protocol' => 'протокол',
+            'result' => 'результат',
+        ] as $field => $label) {
+            $value = $this->boundedText($session[$field] ?? '', 80);
+            if ($value !== '') {
+                $parts[] = $label.': '.$value;
+            }
+        }
+
+        return implode('; ', array_filter($parts, static fn (string $value): bool => $value !== ''));
+    }
+
+    /** @param list<array<string, mixed>> $sessions */
+    private function sessionsContext(array $sessions): string
+    {
+        $lines = [];
+        foreach ($sessions as $session) {
+            $lines[] = $this->sessionContext($session);
+        }
+
+        return $this->boundedText(implode("\n", $lines), 900);
+    }
+
+    /** @param array<string, mixed> $result */
+    private function surveyContext(array $result, bool $includeAttentionAreas): string
+    {
+        $metrics = [];
+        foreach ((array) ($result['metrics'] ?? []) as $key => $metric) {
+            if (! is_array($metric)) {
+                continue;
+            }
+            $metrics[(string) $key] = [
+                'score' => is_numeric($metric['normalized_score'] ?? null) ? (int) $metric['normalized_score'] : null,
+                'raw_score' => is_numeric($metric['value'] ?? null) ? (float) $metric['value'] : null,
+            ];
+        }
+
+        $attentionAreas = [];
+        if ($includeAttentionAreas) {
+            foreach (array_slice(array_values(array_filter($result['attention_areas'] ?? [], 'is_array')), 0, 3) as $area) {
+                $attentionAreas[] = [
+                    'label' => $this->localizedText($area['label'] ?? '', 80),
+                    'score' => is_numeric($area['score'] ?? null) ? (int) $area['score'] : null,
+                    'status' => $this->localizedText($area['status'] ?? '', 70),
+                    'reason' => $this->localizedText($area['reason'] ?? '', 120),
+                ];
+            }
+        }
+
+        $comparison = null;
+        if (is_array($result['comparison'] ?? null)) {
+            $comparison = [
+                'message' => $this->localizedText($result['comparison']['message'] ?? '', 220),
+                'items' => array_map(
+                    fn (array $item): array => [
+                        'label' => $this->localizedText($item['label'] ?? '', 80),
+                        'before' => is_numeric($item['before'] ?? null) ? (int) $item['before'] : null,
+                        'after' => is_numeric($item['after'] ?? null) ? (int) $item['after'] : null,
+                        'change' => is_numeric($item['change'] ?? null) ? (int) $item['change'] : null,
+                    ],
+                    array_slice(array_values(array_filter($result['comparison']['items'] ?? [], 'is_array')), 0, 9),
+                ),
+            ];
+        }
+
+        $metricLines = [];
+        foreach ($metrics as $key => $metric) {
+            $metricLines[] = $key.'='.$metric['score'].'/'.($metric['raw_score'] ?? '');
+        }
+        $lines = [
+            'Тест: '.$this->boundedText(data_get($result, 'survey.definition_key', ''), 80),
+            'Версия: '.(is_numeric(data_get($result, 'survey.version')) ? (int) data_get($result, 'survey.version') : ''),
+            'Методика: '.$this->boundedText(data_get($result, 'survey.methodology', ''), 100),
+            'Дата: '.$this->boundedText($result['completed_at'] ?? '', 40),
+            'Показатели: '.implode(', ', $metricLines),
+        ];
+        foreach ($attentionAreas as $area) {
+            $lines[] = 'Зона внимания: '.implode('; ', array_filter([
+                $area['label'],
+                $area['score'] === null ? null : (string) $area['score'].'/100',
+                $area['status'],
+                $area['reason'],
+            ], static fn (?string $value): bool => $value !== null && $value !== ''));
+        }
+        if ($comparison !== null) {
+            $lines[] = 'Сравнение: '.$comparison['message'];
+            foreach ($comparison['items'] as $item) {
+                $lines[] = 'Динамика '.$item['label'].': '.$item['before'].' -> '.$item['after'].' ('.$item['change'].')';
+            }
+        }
+
+        return $this->boundedText(implode("\n", $lines), $includeAttentionAreas ? 1500 : 500);
+    }
+
+    private function textList(mixed $values, int $limit, int $itemLength): array
+    {
+        $result = [];
+        foreach (array_slice(array_values(array_filter(is_array($values) ? $values : [], 'is_scalar')), 0, $limit) as $value) {
+            $text = $this->boundedText($value, $itemLength);
+            if ($text !== '') {
+                $result[] = $text;
+            }
+        }
+
+        return $result;
+    }
+
+    private function localizedText(mixed $value, int $limit): string
+    {
+        if (is_array($value)) {
+            $value = $value['ru'] ?? $value['en'] ?? reset($value) ?: '';
+        }
+
+        return $this->boundedText($value, $limit);
+    }
+
+    private function boundedText(mixed $value, int $limit): string
+    {
+        $text = trim((string) $value);
+
+        return mb_strlen($text) > $limit ? mb_substr($text, 0, $limit - 1).'…' : $text;
     }
 }

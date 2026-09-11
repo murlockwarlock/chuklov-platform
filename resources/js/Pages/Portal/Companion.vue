@@ -115,6 +115,15 @@ function send(): void {
     });
 }
 
+function handleComposerKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing) {
+        return;
+    }
+
+    event.preventDefault();
+    send();
+}
+
 function selectImages(event: Event): void {
     const input = event.target as HTMLInputElement;
     sendForm.images = input.files ? Array.from(input.files).slice(0, 10) : [];
@@ -331,6 +340,7 @@ watch(messageSignature, async () => {
             :disabled="sendForm.processing"
             maxlength="8000"
             rows="2"
+            @keydown="handleComposerKeydown"
           />
           <div class="portal-companion__composer-toolbar">
             <div class="portal-companion__composer-meta">

@@ -52,6 +52,15 @@ final readonly class UpdateSurveyDefinitionDraft
             $sourceReference = array_key_exists('source_reference', $data)
                 ? $data['source_reference']
                 : $previousVersion?->source_reference;
+            $source = array_key_exists('source', $data)
+                ? $data['source']
+                : ($previousVersion->source ?? 'platform_default');
+            $approvalStatus = array_key_exists('approval_status', $data)
+                ? $data['approval_status']
+                : ($previousVersion->approval_status ?? 'draft');
+            $methodology = array_key_exists('methodology', $data)
+                ? $data['methodology']
+                : $previousVersion?->methodology;
             $draft->forceFill([
                 'title' => $data['title'],
                 'title_en' => $data['title_en'] ?? null,
@@ -61,6 +70,9 @@ final readonly class UpdateSurveyDefinitionDraft
                 'scoring' => $data['scoring'],
                 'metric_schema_key' => $metricSchemaKey,
                 'source_reference' => $sourceReference,
+                'source' => $source,
+                'approval_status' => $approvalStatus,
+                'methodology' => $methodology,
             ])->save();
             $locked->forceFill([
                 'title' => $data['title'],

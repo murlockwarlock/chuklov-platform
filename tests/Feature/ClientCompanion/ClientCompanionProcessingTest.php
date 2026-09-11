@@ -335,6 +335,30 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, ScenarioEvent::query()->count());
     }
 
+    public function test_serious_diagnosis_cannot_be_escalated_by_a_model_without_a_human_request(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'handoff_required',
+                'reply' => '',
+                'handoff_reason' => 'out_of_scope',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('у меня анапластическая эпендимома и на уровне Th12-L1 у меня его вырезали grade 3 WHO');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame('invalid_output', $turn->fresh()->failure_code);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+    }
+
     public function test_resolve_and_resume_then_normal_greeting_produces_an_ai_reply(): void
     {
         $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
@@ -407,6 +431,38 @@ final class ClientCompanionProcessingTest extends TestCase
                 ->handle($channel, app(CompanionMessageBodyReader::class));
         }
         self::assertCount($deliveries->count(), $channel->chunks);
+    }
+
+    public function test_open_portal_action_targets_the_authenticated_telegram_mini_app(): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $channel = new RecordingCompanionChannel;
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Откройте кабинет.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => ['open_portal'],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, $channel);
+
+        $turn = $this->accept('Откройте мой кабинет');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $delivery = CompanionDelivery::query()->where('turn_id', $turn->getKey())->sole();
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        $button = $channel->chunks[0]->buttons[0];
+        self::assertSame(
+            'https://mini.example.test'.route('portal.telegram.launch', ['entry' => 'portal'], false),
+            $button->webAppUrl,
+        );
+        self::assertNull($button->url);
     }
 
     public function test_failed_later_chunk_does_not_replay_already_delivered_chunks(): void

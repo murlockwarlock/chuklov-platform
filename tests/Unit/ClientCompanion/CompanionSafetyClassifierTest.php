@@ -28,4 +28,13 @@ final class CompanionSafetyClassifierTest extends TestCase
             (new CompanionSafetyClassifier)->classify('Сильная боль в груди, трудно дышать.'),
         );
     }
+
+    public function test_serious_named_condition_and_long_request_are_not_handed_off_without_a_human_request(): void
+    {
+        $classifier = new CompanionSafetyClassifier;
+
+        self::assertNull($classifier->classify('у меня анапластическая эпендимома и на уровне Th12-L1 у меня его вырезали grade 3 WHO'));
+        self::assertNull($classifier->classify('Подробно распиши план восстановления на 15–20 абзацев'));
+        self::assertSame(CompanionEscalationReason::HumanRequested, $classifier->classify('хочу поговорить со специалистом'));
+    }
 }

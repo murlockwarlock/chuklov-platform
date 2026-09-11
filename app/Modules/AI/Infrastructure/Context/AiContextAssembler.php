@@ -57,6 +57,10 @@ class AiContextAssembler implements AiContextAssemblerInterface
             ],
         ];
 
+        if (array_key_exists('health_context', $inputVariables) && ! $policy->allows('health_context')) {
+            throw new InvalidArgumentException('Health context is not allowed by the context policy.');
+        }
+
         $clientId = null;
         foreach ($inputReferences as $ref) {
             if ($ref->type === 'client') {

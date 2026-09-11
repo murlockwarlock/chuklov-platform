@@ -44,6 +44,17 @@ final readonly class BoundedAiPromptContext
 
         $ragChunks = $contextAssembly->ragChunks;
         $provenanceSummary = $contextAssembly->provenanceSummary;
+        $originalHealthContext = $variables['health_context'] ?? null;
+        if (! $this->fits($systemPrompt, $userPrompt, $capability)
+            && is_string($variables['health_context'] ?? null)) {
+            [$variables, $systemPrompt, $userPrompt] = $this->fitHealthContext(
+                $systemTemplate,
+                $userTemplate,
+                $variables,
+                $capability,
+            );
+        }
+
         if (! $this->fits($systemPrompt, $userPrompt, $capability)
             && $contextPolicy->allowRagDegradation
             && ! $contextPolicy->requireGroundedRag
@@ -64,7 +75,9 @@ final readonly class BoundedAiPromptContext
         $boundedAssembly = new ContextAssemblyResult(
             variables: $variables,
             ragChunks: $ragChunks,
-            provenanceSummary: $provenanceSummary,
+            provenanceSummary: $originalHealthContext !== ($variables['health_context'] ?? null)
+                ? [...$provenanceSummary, 'health_context_degraded' => true]
+                : $provenanceSummary,
             attachmentProvenance: $contextAssembly->attachmentProvenance,
         );
         AiRuntimeLimits::assertRenderedPromptWithinLimit($systemPrompt, $userPrompt, $capability);
@@ -98,6 +111,56 @@ final readonly class BoundedAiPromptContext
 
             array_shift($groups);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $variables
+     * @return array{0: array<string, mixed>, 1: string, 2: string}
+     */
+    private function fitHealthContext(
+        string $systemTemplate,
+        string $userTemplate,
+        array $variables,
+        AiCapabilityDefinition $capability,
+    ): array {
+        $healthContext = trim((string) $variables['health_context']);
+        $low = 0;
+        $high = mb_strlen($healthContext);
+        $best = '';
+
+        while ($low <= $high) {
+            $length = intdiv($low + $high, 2);
+            $candidate = $this->truncateAtLineBoundary($healthContext, $length);
+            $variables['health_context'] = $candidate;
+            [$systemPrompt, $userPrompt] = $this->prompts($systemTemplate, $userTemplate, $variables);
+
+            if ($this->fits($systemPrompt, $userPrompt, $capability)) {
+                $best = $candidate;
+                $low = $length + 1;
+            } else {
+                $high = $length - 1;
+            }
+        }
+
+        $variables['health_context'] = $best;
+        [$systemPrompt, $userPrompt] = $this->prompts($systemTemplate, $userTemplate, $variables);
+
+        return [$variables, $systemPrompt, $userPrompt];
+    }
+
+    private function truncateAtLineBoundary(string $value, int $maximumCharacters): string
+    {
+        if (mb_strlen($value) <= $maximumCharacters) {
+            return $value;
+        }
+
+        $candidate = mb_substr($value, 0, $maximumCharacters);
+        $lastNewline = mb_strrpos($candidate, "\n");
+        if ($lastNewline !== false && $lastNewline >= intdiv($maximumCharacters, 2)) {
+            $candidate = mb_substr($candidate, 0, $lastNewline);
+        }
+
+        return rtrim($candidate);
     }
 
     /**

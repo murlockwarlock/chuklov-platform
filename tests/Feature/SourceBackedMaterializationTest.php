@@ -30,12 +30,12 @@ final class SourceBackedMaterializationTest extends TestCase
             'prompt_versions_created' => 4,
             'prompts_activated' => 0,
             'suites_created' => 4,
-            'cases_created' => 44,
+            'cases_created' => 58,
         ], $first);
         self::assertSame(4, AiPrompt::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(4, AiPromptVersion::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(4, AiEvalSuite::query()->where('organization_id', $organization->getKey())->count());
-        self::assertSame(44, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(58, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(
             'Демонстрационные тесты Чуклова · Синтетические данные',
             AiEvalSuite::query()->where('organization_id', $organization->getKey())->value('description'),
@@ -73,7 +73,7 @@ final class SourceBackedMaterializationTest extends TestCase
             'cases_created' => 0,
         ], $second);
         self::assertSame(4, AiPromptVersion::query()->where('organization_id', $organization->getKey())->count());
-        self::assertSame(44, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(58, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
     }
 
     public function test_source_backed_prompt_activation_is_explicit_and_tenant_scoped(): void

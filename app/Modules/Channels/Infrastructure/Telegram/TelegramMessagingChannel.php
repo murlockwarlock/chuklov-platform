@@ -16,6 +16,7 @@ use SergiX44\Nutgram\Telegram\Properties\ParseMode;
 use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
+use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
 use Throwable;
 
 final class TelegramMessagingChannel implements MessagingChannel
@@ -248,8 +249,13 @@ final class TelegramMessagingChannel implements MessagingChannel
         foreach ($chunk->buttons as $index => $button) {
             $keyboard->addRow(InlineKeyboardButton::make(
                 text: $this->ensureUtf8($button->text, "button.{$index}.text"),
-                url: $button->url === null ? null : $this->ensureUtf8($button->url, "button.{$index}.url"),
+                url: $button->webAppUrl !== null || $button->url === null
+                    ? null
+                    : $this->ensureUtf8($button->url, "button.{$index}.url"),
                 callback_data: $button->callbackData === null ? null : $this->ensureUtf8($button->callbackData, "button.{$index}.callback_data"),
+                web_app: $button->webAppUrl === null
+                    ? null
+                    : WebAppInfo::make($this->ensureUtf8($button->webAppUrl, "button.{$index}.web_app_url")),
             ));
         }
 

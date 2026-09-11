@@ -159,7 +159,7 @@ final class RagTest extends TestCase
         $revision = $source->revisions()->sole();
         $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
         {
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 throw new RuntimeException('provider unavailable with source plaintext');
             }
@@ -197,7 +197,7 @@ final class RagTest extends TestCase
         {
             public function __construct(private \ArrayObject $observedTimeouts) {}
 
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 $this->observedTimeouts->append($configuration->timeoutSeconds);
 
@@ -316,14 +316,14 @@ final class RagTest extends TestCase
                 private readonly int $revisionId,
             ) {}
 
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 KnowledgeIngestionRun::query()
                     ->where('knowledge_revision_id', $this->revisionId)
                     ->update(['processing_started_at' => now()->subHour()]);
                 $this->container->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
                 {
-                    public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+                    public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
                     {
                         return array_map(static function () use ($configuration): array {
                             $vector = array_fill(0, $configuration->dimensions, 0.0);
@@ -441,7 +441,7 @@ final class RagTest extends TestCase
         config()->set('rag.embedding.configuration_version', 'v2');
         $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
         {
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 throw new RuntimeException('provider unavailable');
             }
@@ -619,7 +619,7 @@ final class RagTest extends TestCase
     {
         $this->app->bind(EmbeddingGenerator::class, static fn (): EmbeddingGenerator => new class implements EmbeddingGenerator
         {
-            public function generate(array $inputs, EmbeddingConfiguration $configuration): array
+            public function generate(int $organizationId, array $inputs, EmbeddingConfiguration $configuration): array
             {
                 return array_map(static function (string $input) use ($configuration): array {
                     $vector = array_fill(0, $configuration->dimensions, 0.0);

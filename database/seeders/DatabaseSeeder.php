@@ -52,6 +52,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             LegalDocumentSeeder::class,
             ScenarioNotificationSeeder::class,
+            PlatformSurveySeeder::class,
         ]);
     }
 }

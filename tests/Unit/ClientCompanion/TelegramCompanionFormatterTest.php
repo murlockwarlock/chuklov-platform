@@ -149,6 +149,22 @@ final class TelegramCompanionFormatterTest extends TestCase
         self::assertSame('https://example.com/path/?', $body['reply_markup']['inline_keyboard'][0][0]['url']);
     }
 
+    public function test_companion_portal_action_is_sent_as_a_telegram_web_app_button(): void
+    {
+        $url = 'https://crm.example.test/portal/telegram/launch/portal';
+        $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
+            recipientExternalId: 'telegram-chat',
+            semanticText: 'Откройте кабинет',
+            chunkIndex: 0,
+            chunkCount: 1,
+            locale: 'ru',
+            buttons: [new CompanionActionButton('Открыть кабинет', webAppUrl: $url)],
+        ));
+
+        self::assertSame($url, $body['reply_markup']['inline_keyboard'][0][0]['web_app']['url']);
+        self::assertArrayNotHasKey('url', $body['reply_markup']['inline_keyboard'][0][0]);
+    }
+
     public function test_malformed_utf8_in_button_callback_is_repaired_before_send(): void
     {
         $body = $this->sendAndReadRequest(new CompanionOutboundChunk(
@@ -318,6 +334,7 @@ final class TelegramCompanionFormatterTest extends TestCase
         $reflection->getProperty('text')->setValue($button, $text);
         $reflection->getProperty('callbackData')->setValue($button, $callbackData);
         $reflection->getProperty('url')->setValue($button, $url);
+        $reflection->getProperty('webAppUrl')->setValue($button, null);
 
         return $button;
     }

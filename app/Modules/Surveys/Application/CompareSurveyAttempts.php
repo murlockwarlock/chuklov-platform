@@ -43,21 +43,34 @@ final readonly class CompareSurveyAttempts
         if ($comparable) {
             $metricKeys = array_values(array_filter($comparisonConfig['metric_keys'] ?? [], 'is_string'));
             $status = $metricKeys === [] ? 'not_comparable' : 'stagnation_detected';
+            $decreased = false;
+            $increased = false;
             foreach ($metricKeys as $metricKey) {
-                $before = $previous->result_snapshot['metrics'][$metricKey]['value'] ?? null;
-                $after = $current->result_snapshot['metrics'][$metricKey]['value'] ?? null;
+                $basis = ($comparisonConfig['basis'] ?? null) === 'normalized_score' ? 'normalized_score' : 'value';
+                $before = $previous->result_snapshot['metrics'][$metricKey][$basis] ?? null;
+                $after = $current->result_snapshot['metrics'][$metricKey][$basis] ?? null;
+                if ($before === null || $after === null) {
+                    $before = $previous->result_snapshot['metrics'][$metricKey]['value'] ?? null;
+                    $after = $current->result_snapshot['metrics'][$metricKey]['value'] ?? null;
+                    $basis = 'value';
+                }
                 if (! is_numeric($before) || ! is_numeric($after)) {
                     $status = 'not_comparable';
                     break;
                 }
                 $delta = (float) $after - (float) $before;
-                $deltas[$metricKey] = ['before' => (float) $before, 'after' => (float) $after, 'delta' => $delta];
+                $deltas[$metricKey] = ['before' => (float) $before, 'after' => (float) $after, 'delta' => $delta, 'basis' => $basis];
                 if ($delta < 0) {
-                    $status = 'improved';
+                    $decreased = true;
+                }
+                if ($delta > 0) {
+                    $increased = true;
                 }
             }
             if (($comparisonConfig['operator'] ?? null) !== 'no_decrease') {
                 $status = 'not_comparable';
+            } elseif ($status !== 'not_comparable') {
+                $status = $decreased ? ($increased ? 'changed' : 'improved') : 'stagnation_detected';
             }
         }
 

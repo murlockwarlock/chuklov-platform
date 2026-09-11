@@ -59,6 +59,9 @@ final readonly class CreateSurveyDefinition
                 'scoring' => $data['scoring'],
                 'metric_schema_key' => $metricSchemaKey,
                 'source_reference' => array_key_exists('source_reference', $data) ? $data['source_reference'] : null,
+                'source' => $data['source'] ?? 'platform_default',
+                'approval_status' => $data['approval_status'] ?? 'draft',
+                'methodology' => $data['methodology'] ?? null,
                 'created_by_user_id' => $actor->getKey(),
             ]);
             $this->audit->handle($organization, $actor, 'survey.definition.created', SurveyDefinition::class, (string) $definition->getKey(), [

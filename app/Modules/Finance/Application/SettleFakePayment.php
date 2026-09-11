@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Application;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Enums\FinancialEntrySource;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
+use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Enums\ProviderVerificationStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
@@ -33,11 +34,12 @@ final class SettleFakePayment
     public function handle(GatewaySettlementEvidence $evidence): FinancialLedgerEntry
     {
         $transaction = PaymentGatewayTransaction::query()
+            ->where('organization_id', $evidence->organizationId)
             ->where('gateway', $this->gateway->name())
             ->where('provider_reference', $evidence->providerReference)
             ->first();
 
-        if ($transaction === null || (int) $transaction->organization_id !== $evidence->organizationId) {
+        if ($transaction === null) {
             throw (new ModelNotFoundException)->setModel(PaymentGatewayTransaction::class);
         }
 
@@ -55,13 +57,16 @@ final class SettleFakePayment
                 throw (new ModelNotFoundException)->setModel(PaymentGatewayTransaction::class);
             }
 
-            if ($transaction->status === PaymentGatewayStatus::Settled && $transaction->ledger_entry_id !== null) {
-                return $transaction->ledgerEntry()->firstOrFail();
-            }
-
             if ($verified->amountMinor !== $transaction->amount_minor || $verified->currency !== $transaction->currency) {
                 throw ValidationException::withMessages(['gateway' => 'Сумма подтверждения не совпадает с серверной суммой.']);
             }
+
+            $payloadHash = hash('sha256', implode('|', [
+                $verified->providerEventId,
+                $verified->providerReference,
+                $verified->amountMinor,
+                $verified->currency->value,
+            ]));
 
             $event = PaymentGatewayEvent::query()
                 ->where('organization_id', $evidence->organizationId)
@@ -71,11 +76,24 @@ final class SettleFakePayment
                 ->first();
 
             if ($event !== null) {
-                if ($event->verification_status !== ProviderVerificationStatus::Verified || $event->processed_at === null) {
-                    throw ValidationException::withMessages(['gateway' => 'Событие шлюза уже было отклонено или ещё обрабатывается.']);
+                if ($event->gateway_transaction_id !== $transaction->getKey()
+                    || $event->event_type !== PaymentGatewayEventType::Settlement
+                    || $event->provider_reference !== $verified->providerReference
+                    || $event->amount_minor !== $verified->amountMinor
+                    || $event->currency->value !== $verified->currency->value
+                    || $event->payload_hash !== $payloadHash
+                    || $event->verification_status !== ProviderVerificationStatus::Verified
+                    || $event->processed_at === null
+                    || ! in_array($transaction->status, [PaymentGatewayStatus::Settled, PaymentGatewayStatus::Refunded], true)
+                    || $transaction->ledger_entry_id === null) {
+                    throw ValidationException::withMessages(['gateway' => 'Событие шлюза не совпадает с исходной операцией.']);
                 }
 
                 return $transaction->ledgerEntry()->firstOrFail();
+            }
+
+            if ($transaction->status !== PaymentGatewayStatus::Pending) {
+                throw ValidationException::withMessages(['gateway' => 'Оплату можно подтвердить только для операции в ожидании.']);
             }
 
             $current = $this->reconciliation->handle(
@@ -101,17 +119,13 @@ final class SettleFakePayment
                 'organization_id' => $evidence->organizationId,
                 'gateway_transaction_id' => $transaction->getKey(),
                 'gateway' => $this->gateway->name(),
+                'event_type' => PaymentGatewayEventType::Settlement->value,
                 'provider_event_id' => $verified->providerEventId,
                 'provider_reference' => $verified->providerReference,
                 'verification_status' => ProviderVerificationStatus::Verified->value,
                 'amount_minor' => $verified->amountMinor,
                 'currency' => $verified->currency->value,
-                'payload_hash' => hash('sha256', implode('|', [
-                    $verified->providerEventId,
-                    $verified->providerReference,
-                    $verified->amountMinor,
-                    $verified->currency->value,
-                ])),
+                'payload_hash' => $payloadHash,
             ]);
             $event->save();
             $entry = $this->ledger->handle(

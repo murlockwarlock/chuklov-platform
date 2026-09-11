@@ -18,6 +18,9 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         $version->definition = $this->definition();
         $version->scoring = $this->scoring();
         $version->metric_schema_key = 'scale-v1';
+        $version->source = 'chuklov_approved';
+        $version->approval_status = 'approved';
+        $version->methodology = 'chuklov_approved_content';
 
         $state = SurveyDefinitionFormMapper::denormalize($version);
         $state['title'] = 'Изменённый тест';
@@ -34,6 +37,9 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         self::assertSame('option-poor', $questions[0]['options'][1]['value']);
         self::assertSame('metric-total', $canonical['scoring']['metrics'][0]['key']);
         self::assertSame('threshold-attention', $canonical['scoring']['thresholds'][0]['tag']);
+        self::assertSame('chuklov_approved', $canonical['source']);
+        self::assertSame('approved', $canonical['approval_status']);
+        self::assertSame('chuklov_approved_content', $canonical['methodology']);
     }
 
     public function test_new_identity_is_opaque_and_unique(): void

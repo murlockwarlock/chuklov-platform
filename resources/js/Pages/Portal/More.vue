@@ -77,16 +77,6 @@ const { t } = usePortalLocale();
             class="portal-list__chevron"
           />
         </Link>
-        <Link
-          :href="props.portal.urls.b2b"
-          class="portal-list__row"
-        >
-          <strong class="portal-list__title">{{ t('more.business') }}</strong>
-          <PortalIcon
-            name="arrow"
-            class="portal-list__chevron"
-          />
-        </Link>
       </nav>
     </section>
   </AppShell>
