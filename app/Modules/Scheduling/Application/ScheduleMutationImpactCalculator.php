@@ -54,6 +54,34 @@ final class ScheduleMutationImpactCalculator
         ]);
     }
 
+    /** @param array<string, list<ScheduleExceptionDefinition>> $definitionsByDate */
+    public function forExceptionSet(
+        Specialist $specialist,
+        array $definitionsByDate,
+    ): ScheduleMutationImpact {
+        $bookings = array_values(array_filter(
+            $this->futureBookingsForSpecialist($specialist->getKey()),
+            fn (Booking $booking): bool => $this->isAffectedByExceptionSet($booking, $specialist, $definitionsByDate),
+        ));
+
+        return $this->fromBookings($bookings, [
+            'type' => 'schedule_exception_set',
+            'specialist_id' => $specialist->getKey(),
+            'definitions' => array_map(
+                static fn (array $definitions): array => array_map(
+                    static fn (ScheduleExceptionDefinition $definition): array => [
+                        'date' => $definition->date,
+                        'exception_type' => $definition->type->value,
+                        'start_time' => $definition->interval?->start,
+                        'end_time' => $definition->interval?->end,
+                    ],
+                    $definitions,
+                ),
+                $definitionsByDate,
+            ),
+        ]);
+    }
+
     public function forUnavailablePeriod(
         Specialist $specialist,
         DateTimeInterface $startsAt,
@@ -328,6 +356,35 @@ final class ScheduleMutationImpactCalculator
         return $definition->interval === null
             || $localStart->format('H:i') < $definition->interval->start
             || $localEnd->format('H:i') > $definition->interval->end;
+    }
+
+    /** @param array<string, list<ScheduleExceptionDefinition>> $definitionsByDate */
+    private function isAffectedByExceptionSet(
+        Booking $booking,
+        Specialist $specialist,
+        array $definitionsByDate,
+    ): bool {
+        $timezone = $specialist->timezone ?? $this->context->organization()->defaultTimezone();
+        $localStart = $booking->startsAtUtc()->setTimezone($timezone);
+        $localEnd = $booking->blockingEndsAtUtc()->setTimezone($timezone);
+        $definitions = $definitionsByDate[$localStart->toDateString()] ?? null;
+
+        if ($definitions === null) {
+            return false;
+        }
+
+        if (collect($definitions)->contains(
+            static fn (ScheduleExceptionDefinition $definition): bool => $definition->type === ScheduleExceptionType::DayOff,
+        )) {
+            return true;
+        }
+
+        $intervals = array_values(array_filter(array_map(
+            static fn (ScheduleExceptionDefinition $definition): ?WallClockInterval => $definition->interval,
+            $definitions,
+        )));
+
+        return ! $this->fitsWallClockIntervals($localStart, $localEnd, $intervals);
     }
 
     /** @param list<WallClockInterval> $intervals */

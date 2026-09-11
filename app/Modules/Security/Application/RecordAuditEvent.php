@@ -78,6 +78,7 @@ class RecordAuditEvent
         'organization.scheduling.lead_time.updated' => ['minutes'],
         'specialist.schedule.updated' => ['weekday_count', 'interval_count'],
         'specialist.schedule.exception.created' => ['exception_type', 'source'],
+        'specialist.schedule.exception.updated' => ['exception_type', 'source'],
         'specialist.schedule.exception.deleted' => ['source'],
         'specialist.unavailable_period.created' => ['source'],
         'specialist.unavailable_period.deleted' => ['source'],

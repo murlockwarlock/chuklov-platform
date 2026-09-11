@@ -22,6 +22,44 @@ class CreateBooking extends CreateRecord
 
     protected static ?string $title = 'Создать запись на приём';
 
+    public function mount(): void
+    {
+        parent::mount();
+
+        $prefill = [];
+        $organizationId = app(OrganizationContext::class)->id();
+        $specialistId = request()->query('specialist_id');
+
+        if (is_numeric($specialistId)) {
+            $specialist = Specialist::query()
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->whereKey((int) $specialistId)
+                ->first();
+            if ($specialist instanceof Specialist) {
+                $prefill['specialist_id'] = $specialist->getKey();
+            }
+        }
+
+        $startsAt = request()->query('starts_at');
+        if (is_string($startsAt) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $startsAt) === 1) {
+            $local = CarbonImmutable::createFromFormat(
+                '!Y-m-d H:i',
+                $startsAt,
+                app(OrganizationContext::class)->defaultTimezone(),
+            );
+            if ($local instanceof CarbonImmutable) {
+                $prefill['starts_at'] = $local
+                    ->setTimezone($this->formTimezone())
+                    ->format('Y-m-d H:i');
+            }
+        }
+
+        if ($prefill !== []) {
+            $this->form->fillPartially($prefill, array_keys($prefill));
+        }
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();
@@ -55,5 +93,29 @@ class CreateBooking extends CreateRecord
                 : null,
             locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
         );
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        if (request()->boolean('return_to_journal')) {
+            $week = request()->query('week');
+            $parameters = is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1
+                ? ['week' => $week]
+                : [];
+            $url = ListBookings::getUrl();
+
+            return $parameters === [] ? $url : $url.'?'.http_build_query($parameters);
+        }
+
+        return parent::getRedirectUrl();
+    }
+
+    private function formTimezone(): string
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
+            : app(OrganizationContext::class)->defaultTimezone();
     }
 }

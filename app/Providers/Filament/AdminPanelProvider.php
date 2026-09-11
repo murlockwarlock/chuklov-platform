@@ -73,8 +73,8 @@ class AdminPanelProvider extends PanelProvider
             })
             ->pages([])
             ->navigationGroups([
-                'Клиенты',
                 'Записи',
+                'Клиенты',
                 'Настройки',
                 'Команда и услуги',
                 'Коммуникации',
