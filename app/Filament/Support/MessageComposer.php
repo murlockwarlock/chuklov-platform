@@ -14,14 +14,12 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Flex;
+use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
-use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
-
-use function Filament\Support\generate_icon_html;
 
 final class MessageComposer
 {
@@ -182,11 +180,44 @@ final class MessageComposer
         }
 
         if ($compact) {
+            $attachmentTrigger = Html::make(
+                view('filament.forms.components.messages-attachment-trigger')->render(),
+            );
+            $attachmentSummary = Html::make(
+                view('filament.forms.components.messages-attachment-summary')->render(),
+            );
+
             $fileUpload
                 ->hiddenLabel()
-                ->placeholder(generate_icon_html(Heroicon::OutlinedPaperClip)?->toHtml() ?? '')
-                ->extraAttributes(['class' => 'messages-attachment-upload'])
-                ->extraFieldWrapperAttributes(['class' => 'messages-attachment-field'])
+                ->extraAttributes(['class' => 'messages-attachment-upload-hidden'])
+                ->extraFieldWrapperAttributes(['class' => 'messages-attachment-field-hidden'])
+                ->extraAlpineAttributes([
+                    'x-on:messages-open-attachment.window' => '$refs.input.click()',
+                    'x-on:messages-remove-attachment.window' => 'pond && pond.getFiles().forEach(file => pond.removeFile(file.id, { revert: true }))',
+                    'x-init' => <<<'JS'
+                        $watch('pond', (pond) => {
+                            if (! pond || $el.__messagesAttachmentEventsPond === pond) {
+                                return
+                            }
+
+                            $el.__messagesAttachmentEventsPond = pond
+
+                            pond.on('addfile', (error, file) => {
+                                if (error) {
+                                    return
+                                }
+
+                                window.dispatchEvent(new CustomEvent('messages-attachment-selected', {
+                                    detail: { name: file.filename },
+                                }))
+                            })
+
+                            pond.on('removefile', () => {
+                                window.dispatchEvent(new CustomEvent('messages-attachment-cleared'))
+                            })
+                        })
+                    JS,
+                ])
                 ->extraInputAttributes(['aria-label' => 'Добавить вложение']);
         }
 
@@ -221,7 +252,7 @@ final class MessageComposer
             ));
             $compactMessageComponents[] = Flex::make([
                 $bodyEditor->grow(),
-                $fileUpload->grow(false),
+                $attachmentTrigger,
                 Action::make('sendMessage')
                     ->label('Отправить')
                     ->submit('sendMessage')
@@ -235,6 +266,8 @@ final class MessageComposer
                 Section::make()
                     ->schema([
                         ...$compactMessageComponents,
+                        $attachmentSummary,
+                        $fileUpload,
                         ...array_slice($mediaComponents, 1),
                     ])
                     ->columns(1)

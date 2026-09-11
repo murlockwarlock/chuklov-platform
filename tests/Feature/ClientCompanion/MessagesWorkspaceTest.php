@@ -115,6 +115,9 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertDontSee('PDF, TXT, JPG, PNG или WebP; до 20 МБ.')
             ->assertDontSee('Выбрать ранее загруженный файл')
             ->assertSee('messages-send-action')
+            ->assertSee('messages-attachment-trigger')
+            ->assertSee('messages-attachment-summary')
+            ->assertSee('messages-attachment-upload-hidden')
             ->assertDontSee('Открыть карточку клиента');
 
         $editor = $component->instance()->getSchemaComponent('form.body');
@@ -123,9 +126,8 @@ final class MessagesWorkspaceTest extends TestCase
 
         $upload = $component->instance()->getSchemaComponent('form.new_attachment');
         self::assertInstanceOf(FileUpload::class, $upload);
-        self::assertStringContainsString('messages-attachment-upload', (string) ($upload->getExtraAttributes()['class'] ?? ''));
-        self::assertStringContainsString('messages-attachment-field', (string) ($upload->getExtraFieldWrapperAttributes()['class'] ?? ''));
-        self::assertStringContainsString('<svg', (string) $upload->getPlaceholder());
+        self::assertStringContainsString('messages-attachment-upload-hidden', (string) ($upload->getExtraAttributes()['class'] ?? ''));
+        self::assertArrayHasKey('x-on:messages-open-attachment.window', $upload->getExtraAlpineAttributes());
 
         $component
             ->set('search', 'Новый клиент без диалога')
