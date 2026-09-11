@@ -70,6 +70,29 @@
     white-space: normal;
 }
 
+.messages-page.fi-page,
+.messages-page.fi-page .fi-page-header-main-ctn,
+.messages-page.fi-page .fi-page-main,
+.messages-page.fi-page .fi-page-content {
+    min-height: 0;
+}
+
+.messages-page.fi-page .fi-page-header-main-ctn {
+    overflow: hidden;
+}
+
+.messages-page.fi-page .fi-page-main {
+    display: flex;
+    height: auto;
+    flex: 1 1 0%;
+    flex-direction: column;
+}
+
+.messages-page.fi-page .fi-page-content {
+    height: auto;
+    overflow: hidden;
+}
+
 .messages-composer .fi-sc-form {
     @apply flex-row items-end gap-2;
 }
@@ -95,7 +118,11 @@
 }
 
 .messages-attachment-upload {
-    @apply w-10 shrink-0;
+    @apply h-10 w-10 shrink-0;
+}
+
+.messages-attachment-upload .fi-fo-file-upload-input-ctn {
+    @apply h-10 w-10;
 }
 
 .messages-attachment-upload .filepond--root {

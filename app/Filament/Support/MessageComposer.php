@@ -174,7 +174,7 @@ final class MessageComposer
             ->afterStateUpdated(function (Set $set): void {
                 $set('remove_media', false);
             })
-            ->helperText($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.')
+            ->helperText($compact ? null : ($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
             ->columnSpanFull();
         if ($mediaAcceptedFileTypes !== null) {
             $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
@@ -190,7 +190,7 @@ final class MessageComposer
 
         $mediaComponents = [
             $fileUpload,
-            ...$additionalMediaComponents,
+            ...($compact ? [] : $additionalMediaComponents),
             Hidden::make('remove_media')->default(false),
         ];
         if ($includeMediaUrl) {

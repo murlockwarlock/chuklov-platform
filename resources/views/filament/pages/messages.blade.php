@@ -1,5 +1,5 @@
-<x-filament-panels::page full-height>
-    <div wire:poll.visible.10s="refreshWorkspace" class="relative flex h-full min-h-0 min-w-0">
+<x-filament-panels::page full-height class="messages-page">
+    <div wire:poll.visible.10s="refreshWorkspace" class="relative flex h-full min-h-0 min-w-0 flex-1 overflow-hidden">
         <div class="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_22rem]">
             <aside class="{{ $mobileChatOpen ? 'hidden md:flex' : 'flex' }} h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-gray-900">
                 <div class="shrink-0 border-b border-gray-200 px-4 py-4 dark:border-white/10">
