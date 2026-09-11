@@ -219,8 +219,8 @@ final class MessageComposer
                 static fn (mixed $component): bool => $component !== $bodyEditor,
             ));
             $compactMessageComponents[] = Flex::make([
-                $fileUpload->grow(false),
                 $bodyEditor->grow(),
+                $fileUpload->grow(false),
                 Action::make('sendMessage')
                     ->label('Отправить')
                     ->submit('sendMessage')
