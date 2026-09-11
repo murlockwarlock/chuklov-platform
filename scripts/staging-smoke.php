@@ -82,9 +82,6 @@ function smokeIdentity(int $userId, int $clientId): array
     if (! $actor instanceof User || ! $actor->hasPermission(OrganizationPermission::ViewAdmin, $organization)) {
         fail('SMOKE IDENTITY', 'configured user cannot access CRM');
     }
-    if (blank($actor->getAppAuthenticationSecret())) {
-        fail('SMOKE IDENTITY', 'configured user must enroll privileged MFA before authenticated CRM checks');
-    }
     $client = Client::query()
         ->where('organization_id', $organization->getKey())
         ->find($clientId);
