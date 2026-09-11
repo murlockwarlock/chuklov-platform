@@ -30,6 +30,7 @@ use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -49,6 +50,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use LogicException;
 use UnitEnum;
 
@@ -274,7 +276,7 @@ class SchedulingConfiguration extends Page
                     ->columns(2)
                     ->columnSpanFull(),
                 Repeater::make('working_hours')
-                    ->label('Рабочие часы')
+                    ->label('Рабочие интервалы')
                     ->schema([
                         Select::make('weekday')
                             ->label('День недели')
@@ -296,11 +298,31 @@ class SchedulingConfiguration extends Page
                             ->label('Окончание')
                             ->seconds(false)
                             ->required(),
+                        DatePicker::make('starts_on')
+                            ->label('Действует с')
+                            ->format('Y-m-d')
+                            ->displayFormat('d.m.Y')
+                            ->native(false)
+                            ->nullable()
+                            ->default(today())
+                            ->helperText('Пусто — с самого начала.'),
+                        DatePicker::make('ends_on')
+                            ->label('До')
+                            ->format('Y-m-d')
+                            ->displayFormat('d.m.Y')
+                            ->native(false)
+                            ->nullable()
+                            ->afterOrEqual('starts_on')
+                            ->helperText('Пусто — бессрочно.'),
                     ])
-                    ->columns(3)
+                    ->columns(5)
                     ->defaultItems(0)
-                    ->addActionLabel('Добавить часы')
+                    ->addActionLabel('+ Добавить интервал')
                     ->reorderable(false)
+                    ->columnSpanFull(),
+                Placeholder::make('specialist_schedule_timezone')
+                    ->label('Часовой пояс графика')
+                    ->content(fn (): string => $this->specialistScheduleTimezoneLabel())
                     ->columnSpanFull(),
                 Checkbox::make('clear_working_hours')
                     ->label('Удалить всё рабочее расписание')
@@ -429,6 +451,10 @@ class SchedulingConfiguration extends Page
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
 
             throw $exception;
+        } catch (InvalidArgumentException $exception) {
+            throw ValidationException::withMessages([
+                'working_hours' => [$this->humanScheduleError($exception->getMessage())],
+            ]);
         } finally {
             $this->scrubZoomClientSecret();
         }
@@ -578,7 +604,26 @@ class SchedulingConfiguration extends Page
         ];
     }
 
-    /** @return list<array{weekday: int, start_time: string, end_time: string}> */
+    public function specialistScheduleTimezoneLabel(): string
+    {
+        $specialist = $this->selectedSpecialist();
+        $timezone = $specialist?->timezone ?? app(OrganizationContext::class)->defaultTimezone();
+        $offsetHours = now($timezone)->getOffset() / 3600;
+        $offset = $offsetHours === 0.0
+            ? 'UTC'
+            : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
+
+        return 'График задан по времени: '.TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+    }
+
+    private function humanScheduleError(string $message): string
+    {
+        return str_contains(mb_strtolower($message), 'overlap')
+            ? 'Рабочие интервалы не должны пересекаться.'
+            : $message;
+    }
+
+    /** @return list<array{weekday: int, start_time: string, end_time: string, starts_on: string|null, ends_on: string|null}> */
     private function workingHours(int $specialistId): array
     {
         $hours = SpecialistWorkingHour::query()
@@ -591,6 +636,8 @@ class SchedulingConfiguration extends Page
                 'weekday' => $hour->weekday,
                 'start_time' => substr((string) $hour->start_time, 0, 5),
                 'end_time' => substr((string) $hour->end_time, 0, 5),
+                'starts_on' => $hour->starts_on?->toDateString(),
+                'ends_on' => $hour->ends_on?->toDateString(),
             ])
             ->values()
             ->all();

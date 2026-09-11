@@ -6,7 +6,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
@@ -15,7 +15,10 @@ use InvalidArgumentException;
 
 final class GetScheduleCalendar
 {
-    public function __construct(private readonly OrganizationContext $context) {}
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly ResolveSpecialistWorkingHours $workingHoursResolver,
+    ) {}
 
     /** @return array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}> */
     public function forSpecialist(
@@ -51,12 +54,11 @@ final class GetScheduleCalendar
 
         $scheduleStart = $displayStart->subDays(2)->setTimezone($scheduleTimezone)->toDateString();
         $scheduleEnd = $displayEnd->addDays(2)->setTimezone($scheduleTimezone)->toDateString();
-        $workingHours = SpecialistWorkingHour::query()
-            ->where('organization_id', $this->context->id())
-            ->where('specialist_id', $specialist->getKey())
-            ->where('is_active', true)
-            ->get()
-            ->groupBy('weekday');
+        $workingHours = $this->workingHoursResolver->forRange(
+            specialist: $specialist,
+            dateFrom: LocalDate::from($scheduleStart),
+            dateTo: LocalDate::from($scheduleEnd),
+        );
         $exceptions = ScheduleException::query()
             ->where('organization_id', $this->context->id())
             ->where('specialist_id', $specialist->getKey())
@@ -70,15 +72,13 @@ final class GetScheduleCalendar
 
         for (; $scheduleDate->lessThanOrEqualTo($lastScheduleDate); $scheduleDate = $scheduleDate->addDay()) {
             $dateKey = $scheduleDate->toDateString();
+            $localDate = LocalDate::from($dateKey);
             $dateExceptions = $exceptions->get($dateKey, collect());
 
             if ($dateExceptions->contains(
                 static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
             )) {
-                $dayOffIntervals = $workingHours->get($scheduleDate->dayOfWeekIso, collect())
-                    ->map(static fn (SpecialistWorkingHour $workingHour) => $workingHour->wallClockInterval())
-                    ->filter()
-                    ->values();
+                $dayOffIntervals = collect($this->workingHoursResolver->intervalsForDate($workingHours, $localDate));
                 if ($dayOffIntervals->isEmpty()) {
                     $displayDateKey = $scheduleDate->setTimezone($displayTimezone)->toDateString();
                     if (isset($cells[$displayDateKey])) {
@@ -104,9 +104,8 @@ final class GetScheduleCalendar
                 ->filter()
                 ->values();
             $intervals = $customIntervals->isNotEmpty()
-                ? $customIntervals
-                : $workingHours->get($scheduleDate->dayOfWeekIso, collect())
-                    ->map(static fn (SpecialistWorkingHour $workingHour) => $workingHour->wallClockInterval());
+                ? $customIntervals->all()
+                : $this->workingHoursResolver->intervalsForDate($workingHours, $localDate);
 
             foreach ($intervals as $interval) {
                 $start = $this->parseDateTime($dateKey, $interval->start, $scheduleTimezone);

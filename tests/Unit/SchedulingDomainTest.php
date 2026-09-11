@@ -6,6 +6,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
 use App\Modules\Scheduling\Domain\ValueObjects\InstantInterval;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
+use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
@@ -19,6 +20,69 @@ class SchedulingDomainTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         WallClockInterval::from('17:00', '09:00');
+    }
+
+    public function test_recurring_intervals_keep_validity_dates_and_allow_non_overlapping_periods(): void
+    {
+        $definition = SpecialistScheduleDefinition::from([
+            [
+                'weekday' => 4,
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'starts_on' => '2026-10-01',
+                'ends_on' => '2026-12-31',
+            ],
+            [
+                'weekday' => 4,
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'starts_on' => '2027-01-01',
+                'ends_on' => null,
+            ],
+        ]);
+
+        self::assertSame([
+            [
+                'weekday' => 4,
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'starts_on' => '2026-10-01',
+                'ends_on' => '2026-12-31',
+            ],
+            [
+                'weekday' => 4,
+                'start_time' => '09:00',
+                'end_time' => '15:00',
+                'starts_on' => '2027-01-01',
+                'ends_on' => null,
+            ],
+        ], $definition->attributes());
+    }
+
+    public function test_recurring_schedule_keeps_three_intervals_sorted_for_one_weekday(): void
+    {
+        $definition = SpecialistScheduleDefinition::from([
+            ['weekday' => 1, 'start_time' => '18:00', 'end_time' => '20:00'],
+            ['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00'],
+            ['weekday' => 1, 'start_time' => '14:00', 'end_time' => '16:00'],
+        ]);
+
+        self::assertSame([
+            ['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00', 'starts_on' => null, 'ends_on' => null],
+            ['weekday' => 1, 'start_time' => '14:00', 'end_time' => '16:00', 'starts_on' => null, 'ends_on' => null],
+            ['weekday' => 1, 'start_time' => '18:00', 'end_time' => '20:00', 'starts_on' => null, 'ends_on' => null],
+        ], $definition->attributes());
+    }
+
+    public function test_recurring_schedule_rejects_overlapping_intervals_with_user_message(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Рабочие интервалы не должны пересекаться.');
+
+        SpecialistScheduleDefinition::from([
+            ['weekday' => 1, 'start_time' => '09:00', 'end_time' => '13:00'],
+            ['weekday' => 1, 'start_time' => '12:00', 'end_time' => '15:00'],
+        ]);
     }
 
     public function test_slot_calculation_consumes_duration_and_buffer_and_excludes_unavailable_intervals(): void

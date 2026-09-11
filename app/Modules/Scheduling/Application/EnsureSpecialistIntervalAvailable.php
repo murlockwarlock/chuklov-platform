@@ -9,7 +9,6 @@ use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
 use App\Modules\Scheduling\Domain\ValueObjects\InstantInterval;
@@ -26,6 +25,7 @@ final class EnsureSpecialistIntervalAvailable
         private readonly OrganizationContext $context,
         private readonly GetBookingLeadTime $leadTime,
         private readonly SlotCalculator $calculator,
+        private readonly ResolveSpecialistWorkingHours $workingHoursResolver,
     ) {}
 
     public function handle(
@@ -67,12 +67,7 @@ final class EnsureSpecialistIntervalAvailable
         $date = LocalDate::from($localStart->toDateString());
         $rangeStart = $this->localBoundary($date, $scheduleTimezone);
         $rangeEnd = $this->localBoundary($date->nextDay(), $scheduleTimezone);
-        $workingHours = SpecialistWorkingHour::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('specialist_id', $specialist->getKey())
-            ->where('is_active', true)
-            ->get()
-            ->groupBy('weekday');
+        $workingHours = $this->workingHoursResolver->forRange($specialist, $date, $date);
         $exceptions = ScheduleException::query()
             ->where('organization_id', $organization->getKey())
             ->where('specialist_id', $specialist->getKey())
@@ -115,9 +110,7 @@ final class EnsureSpecialistIntervalAvailable
         $slots = $this->calculator->calculate(
             date: $date,
             scheduleTimezone: $scheduleTimezone,
-            workingIntervals: array_values($workingHours->get($date->weekday(), collect())
-                ->map(fn (SpecialistWorkingHour $workingHour) => $workingHour->wallClockInterval())
-                ->all()),
+            workingIntervals: $this->workingHoursResolver->intervalsForDate($workingHours, $date),
             customIntervals: $customIntervals,
             dayOff: $dayOff,
             unavailableIntervals: $unavailableIntervals,

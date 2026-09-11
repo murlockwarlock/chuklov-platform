@@ -7,7 +7,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\ScheduleExceptionDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
@@ -16,10 +16,14 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Collection;
 
 final class ScheduleMutationImpactCalculator
 {
-    public function __construct(private readonly OrganizationContext $context) {}
+    public function __construct(
+        private readonly OrganizationContext $context,
+        private readonly ResolveSpecialistWorkingHours $workingHoursResolver,
+    ) {}
 
     public function forWorkingHours(Specialist $specialist, SpecialistScheduleDefinition $definition): ScheduleMutationImpact
     {
@@ -59,9 +63,20 @@ final class ScheduleMutationImpactCalculator
         Specialist $specialist,
         array $definitionsByDate,
     ): ScheduleMutationImpact {
+        $dates = array_keys($definitionsByDate);
+        $workingHours = $this->workingHoursResolver->forRange(
+            $specialist,
+            LocalDate::from((string) min($dates)),
+            LocalDate::from((string) max($dates)),
+        );
         $bookings = array_values(array_filter(
             $this->futureBookingsForSpecialist($specialist->getKey()),
-            fn (Booking $booking): bool => $this->isAffectedByExceptionSet($booking, $specialist, $definitionsByDate),
+            fn (Booking $booking): bool => $this->isAffectedByExceptionSet(
+                $booking,
+                $specialist,
+                $definitionsByDate,
+                $workingHours,
+            ),
         ));
 
         return $this->fromBookings($bookings, [
@@ -170,17 +185,13 @@ final class ScheduleMutationImpactCalculator
             ->where('id', '<>', $exception->getKey())
             ->get()
             ->groupBy(fn (ScheduleException $item): string => $item->dateKey());
-        $workingHours = SpecialistWorkingHour::query()
-            ->where('organization_id', $this->context->id())
-            ->where('specialist_id', $specialist->getKey())
-            ->where('is_active', true)
-            ->get()
-            ->groupBy('weekday');
         $date = $exception->dateKey();
+        $dateValue = LocalDate::from($date);
+        $workingHours = $this->workingHoursResolver->forRange($specialist, $dateValue, $dateValue);
 
         $affected = array_values(array_filter(
             $this->futureBookingsForSpecialist($specialist->getKey()),
-            function (Booking $booking) use ($date, $remainingExceptions, $workingHours, $specialist): bool {
+            function (Booking $booking) use ($date, $dateValue, $remainingExceptions, $workingHours, $specialist): bool {
                 $timezone = $specialist->timezone ?? $this->context->organization()->defaultTimezone();
                 $localStart = $booking->startsAtUtc()->setTimezone($timezone);
                 $localEnd = $booking->blockingEndsAtUtc()->setTimezone($timezone);
@@ -204,9 +215,7 @@ final class ScheduleMutationImpactCalculator
                     ->all();
                 $intervals = $customIntervals !== []
                     ? array_values($customIntervals)
-                    : array_values($workingHours->get($localStart->dayOfWeekIso, collect())
-                        ->map(static fn (SpecialistWorkingHour $item) => $item->wallClockInterval())
-                        ->all());
+                    : $this->workingHoursResolver->intervalsForDate($workingHours, $dateValue);
 
                 return ! $this->fitsWallClockIntervals($localStart, $localEnd, $intervals);
             },
@@ -324,7 +333,7 @@ final class ScheduleMutationImpactCalculator
     ): bool {
         $localStart = $booking->startsAtUtc()->setTimezone($specialist->timezone ?? $this->context->organization()->defaultTimezone());
         $localEnd = $booking->blockingEndsAtUtc()->setTimezone($specialist->timezone ?? $this->context->organization()->defaultTimezone());
-        $intervals = $definition->forWeekday($localStart->dayOfWeekIso);
+        $intervals = $definition->forDate(LocalDate::from($localStart->toDateString()));
 
         foreach ($intervals as $interval) {
             if ($localStart->format('Y-m-d') === $localEnd->format('Y-m-d')
@@ -363,6 +372,7 @@ final class ScheduleMutationImpactCalculator
         Booking $booking,
         Specialist $specialist,
         array $definitionsByDate,
+        Collection $workingHours,
     ): bool {
         $timezone = $specialist->timezone ?? $this->context->organization()->defaultTimezone();
         $localStart = $booking->startsAtUtc()->setTimezone($timezone);
@@ -383,6 +393,13 @@ final class ScheduleMutationImpactCalculator
             static fn (ScheduleExceptionDefinition $definition): ?WallClockInterval => $definition->interval,
             $definitions,
         )));
+
+        if ($intervals === []) {
+            $intervals = $this->workingHoursResolver->intervalsForDate(
+                $workingHours,
+                LocalDate::from($localStart->toDateString()),
+            );
+        }
 
         return ! $this->fitsWallClockIntervals($localStart, $localEnd, $intervals);
     }

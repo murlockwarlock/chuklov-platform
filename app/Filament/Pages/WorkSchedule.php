@@ -3,27 +3,25 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
-use App\Modules\Scheduling\Application\ApplyMonthlySchedulePreset;
-use App\Modules\Scheduling\Application\CreateScheduleException;
-use App\Modules\Scheduling\Application\DeleteScheduleException;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
-use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
-use App\Modules\Scheduling\Application\UpdateScheduleException;
+use App\Modules\Scheduling\Application\ResolveSpecialistWorkingHours;
+use App\Modules\Scheduling\Application\SetScheduleExceptionSet;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
@@ -46,20 +44,10 @@ final class WorkSchedule extends Page
 
     public string $month = '';
 
-    /** @var list<int> */
-    public array $selectedWeekdays = [];
+    /** @var list<string> */
+    public array $selectedDates = [];
 
     public ?string $pendingPreset = null;
-
-    public string $startTime = '09:00';
-
-    public string $endTime = '19:00';
-
-    public bool $breakEnabled = false;
-
-    public string $breakStart = '13:00';
-
-    public string $breakEnd = '14:00';
 
     public ?string $selectedDate = null;
 
@@ -67,19 +55,14 @@ final class WorkSchedule extends Page
 
     public string $overrideType = 'working';
 
-    public string $overrideStart = '09:00';
-
-    public string $overrideEnd = '19:00';
+    /** @var list<array{start_time: string, end_time: string}> */
+    public array $overrideIntervals = [];
 
     public string $overrideReason = '';
 
     public ?int $selectedExceptionId = null;
 
     public ?string $impactDigest = null;
-
-    public ?string $impactSource = null;
-
-    public ?string $monthlyAcknowledgedImpactDigest = null;
 
     /** @var list<array<string, mixed>> */
     public array $impactBookings = [];
@@ -115,151 +98,129 @@ final class WorkSchedule extends Page
                 ->where('is_active', true)
                 ->orderBy('display_name')
                 ->value('id');
-        $this->month = CarbonImmutable::now($this->crmTimezone())->format('Y-m');
-        $this->loadScheduleState();
+        $this->month = CarbonImmutable::now($this->specialistScheduleTimezone())->format('Y-m');
+        $this->clearSelection();
     }
 
     public function updatedSpecialistId(): void
     {
-        $this->loadScheduleState();
-        $this->clearImpact();
-        $this->selectedDate = null;
-        $this->selectedScheduleDate = null;
-        $this->pendingPreset = null;
+        if (! $this->selectedSpecialist() instanceof Specialist) {
+            $this->specialistId = Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->where('is_active', true)
+                ->orderBy('display_name')
+                ->value('id');
+        }
+
+        $this->month = CarbonImmutable::now($this->specialistScheduleTimezone())->format('Y-m');
+        $this->clearSelection();
     }
 
     public function previousMonth(): void
     {
         $this->month = $this->monthDate()->subMonth()->format('Y-m');
-        $this->pendingPreset = null;
-        $this->clearImpact();
+        $this->clearSelection();
     }
 
     public function nextMonth(): void
     {
         $this->month = $this->monthDate()->addMonth()->format('Y-m');
-        $this->pendingPreset = null;
-        $this->clearImpact();
+        $this->clearSelection();
     }
 
     public function currentMonth(): void
     {
-        $this->month = CarbonImmutable::now($this->crmTimezone())->format('Y-m');
-        $this->pendingPreset = null;
-        $this->clearImpact();
+        $this->month = CarbonImmutable::now($this->specialistScheduleTimezone())->format('Y-m');
+        $this->clearSelection();
     }
 
     public function applyPreset(string $preset): void
     {
-        if (! in_array($preset, ['weekdays', 'all', 'even', 'odd', 'clear'], true)) {
+        if (! in_array($preset, ['weekdays', 'all', 'even', 'odd'], true)) {
             return;
         }
 
+        $this->selectedDates = $this->datesForPreset($preset);
         $this->pendingPreset = $preset;
+        $this->loadEditorForSelection();
+        $this->clearImpact();
+    }
+
+    public function toggleDate(string $date): void
+    {
+        if (! $this->isDateInCurrentMonth($date)) {
+            return;
+        }
+
+        $wasEmpty = $this->selectedDates === [];
+        if (in_array($date, $this->selectedDates, true)) {
+            $this->selectedDates = array_values(array_diff($this->selectedDates, [$date]));
+            if ($this->selectedDates === []) {
+                $this->clearSelection();
+
+                return;
+            }
+            if ($this->selectedDate === $date) {
+                $this->selectedDate = $this->selectedDates[0];
+                $this->selectedScheduleDate = $this->selectedDate;
+                $this->loadEditorForSelection();
+            }
+        } else {
+            $this->selectedDates[] = $date;
+            sort($this->selectedDates);
+            if ($wasEmpty) {
+                $this->selectedDate = $date;
+                $this->selectedScheduleDate = $date;
+                $this->loadEditorForSelection();
+            }
+        }
+
+        $this->pendingPreset = null;
         $this->clearImpact();
     }
 
     public function editDate(string $date): void
     {
-        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || ! str_starts_with($date, $this->month)) {
-            return;
-        }
-
-        $this->selectedDate = $date;
-        $this->selectedScheduleDate = $this->scheduleDateForDisplayDate($date);
-        $exception = $this->selectedException();
-        $this->selectedExceptionId = $exception?->getKey();
-        $this->overrideReason = (string) ($exception->reason ?? '');
-
-        if ($exception?->exception_type === ScheduleExceptionType::DayOff) {
-            $this->overrideType = ScheduleExceptionType::DayOff->value;
-            $this->overrideStart = $this->startTime;
-            $this->overrideEnd = $this->endTime;
-        } elseif ($exception?->exception_type === ScheduleExceptionType::CustomWindow) {
-            $this->overrideType = ScheduleExceptionType::CustomWindow->value;
-            $this->overrideStart = substr((string) $exception->start_time, 0, 5);
-            $this->overrideEnd = substr((string) $exception->end_time, 0, 5);
-        } else {
-            $this->overrideType = 'working';
-            $this->overrideStart = $this->startTime;
-            $this->overrideEnd = $this->endTime;
-        }
-        $this->clearImpact();
+        $this->toggleDate($date);
     }
 
-    public function saveSchedule(): void
+    public function clearSelectedDates(): void
     {
-        $actor = auth()->user();
-        abort_unless($actor instanceof User, 403);
-        $specialist = $this->selectedSpecialist();
-
-        if (! $specialist instanceof Specialist) {
-            $this->errorMessage = 'Выберите специалиста.';
+        if ($this->selectedDates === []) {
+            $this->errorMessage = 'Выберите даты, которые нужно очистить.';
 
             return;
         }
 
-        $impactSource = $this->pendingPreset === null ? 'weekly' : 'monthly';
+        $this->overrideType = ScheduleExceptionType::DayOff->value;
+        $this->saveOverride();
+    }
 
-        try {
-            $preset = $this->pendingPreset;
-            if ($preset !== null) {
-                DB::transaction(function () use ($actor, $specialist, $preset, &$impactSource): void {
-                    $impactSource = 'monthly';
-                    $monthlyDigest = $this->impactSource === 'monthly'
-                        ? $this->impactDigest
-                        : $this->monthlyAcknowledgedImpactDigest;
-                    $monthlyAcknowledged = $this->monthlyAcknowledgedImpactDigest !== null
-                        || ($this->impactSource === 'monthly' && $this->acknowledgeImpact);
-                    app(ApplyMonthlySchedulePreset::class)->handle(
-                        actor: $actor,
-                        specialist: $specialist,
-                        month: $this->month,
-                        preset: $preset,
-                        startTime: $this->startTime,
-                        endTime: $this->endTime,
-                        breakEnabled: $this->breakEnabled,
-                        breakStart: $this->breakStart,
-                        breakEnd: $this->breakEnd,
-                        acknowledgeImpact: $monthlyAcknowledged,
-                        acknowledgedImpactDigest: $monthlyDigest,
-                    );
-                    if ($monthlyAcknowledged && $monthlyDigest !== null) {
-                        $this->monthlyAcknowledgedImpactDigest = $monthlyDigest;
-                    }
-
-                    $impactSource = 'weekly';
-                    app(SetSpecialistWorkingHours::class)->handle(
-                        actor: $actor,
-                        specialist: $specialist,
-                        definitions: $this->scheduleDefinitions(),
-                        acknowledgeImpact: $this->impactSource === 'weekly' && $this->acknowledgeImpact,
-                        acknowledgedImpactDigest: $this->impactSource === 'weekly' ? $this->impactDigest : null,
-                    );
-                });
-            } else {
-                app(SetSpecialistWorkingHours::class)->handle(
-                    actor: $actor,
-                    specialist: $specialist,
-                    definitions: $this->scheduleDefinitions(),
-                    acknowledgeImpact: $this->acknowledgeImpact,
-                    acknowledgedImpactDigest: $this->impactDigest,
-                );
-            }
-        } catch (ValidationException $exception) {
-            $this->setImpactFromException($exception, $impactSource);
-
-            return;
-        } catch (\InvalidArgumentException $exception) {
-            $this->errorMessage = $exception->getMessage();
+    public function returnToRegularSchedule(): void
+    {
+        if ($this->selectedDates === []) {
+            $this->errorMessage = 'Выберите дату, которую нужно вернуть по графику.';
 
             return;
         }
 
-        $this->loadScheduleState();
-        $this->pendingPreset = null;
-        $this->clearImpact();
-        Notification::make()->success()->title('График сохранён')->send();
+        $this->overrideType = 'working';
+        $this->saveOverride();
+    }
+
+    public function addOverrideInterval(): void
+    {
+        $this->overrideIntervals[] = ['start_time' => '09:00', 'end_time' => '10:00'];
+    }
+
+    public function removeOverrideInterval(int $index): void
+    {
+        if (! array_key_exists($index, $this->overrideIntervals)) {
+            return;
+        }
+
+        unset($this->overrideIntervals[$index]);
+        $this->overrideIntervals = array_values($this->overrideIntervals);
     }
 
     public function saveOverride(): void
@@ -267,64 +228,63 @@ final class WorkSchedule extends Page
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
         $specialist = $this->selectedSpecialist();
-        $exception = $this->selectedException();
 
-        if (! $specialist instanceof Specialist || $this->selectedDate === null || $this->selectedScheduleDate === null) {
-            $this->errorMessage = 'Выберите дату и специалиста.';
+        if (! $specialist instanceof Specialist || $this->selectedDates === []) {
+            $this->errorMessage = 'Выберите специалиста и даты.';
+
+            return;
+        }
+
+        if ($this->overrideType === ScheduleExceptionType::CustomWindow->value && $this->overrideIntervals === []) {
+            $this->errorMessage = 'Добавьте хотя бы один рабочий интервал.';
 
             return;
         }
 
         try {
-            if ($this->overrideType === 'working') {
-                if ($exception instanceof ScheduleException) {
-                    app(DeleteScheduleException::class)->handle(
-                        actor: $actor,
-                        exception: $exception,
-                        acknowledgeImpact: $this->acknowledgeImpact,
-                        acknowledgedImpactDigest: $this->impactDigest,
-                    );
-                }
-            } else {
-                $attributes = [
-                    'exception_date' => $this->selectedScheduleDate,
-                    'exception_type' => $this->overrideType,
-                    'start_time' => $this->overrideType === ScheduleExceptionType::CustomWindow->value ? $this->overrideStart : null,
-                    'end_time' => $this->overrideType === ScheduleExceptionType::CustomWindow->value ? $this->overrideEnd : null,
-                    'reason' => trim($this->overrideReason) === '' ? null : trim($this->overrideReason),
-                ];
-
-                if ($exception instanceof ScheduleException) {
-                    app(UpdateScheduleException::class)->handle(
-                        actor: $actor,
-                        exception: $exception,
-                        attributes: $attributes,
-                        acknowledgeImpact: $this->acknowledgeImpact,
-                        acknowledgedImpactDigest: $this->impactDigest,
-                    );
-                } else {
-                    app(CreateScheduleException::class)->handle(
-                        actor: $actor,
-                        specialist: $specialist,
-                        attributes: $attributes,
-                        acknowledgeImpact: $this->acknowledgeImpact,
-                        acknowledgedImpactDigest: $this->impactDigest,
-                    );
-                }
+            $definitions = [];
+            foreach ($this->selectedDates as $date) {
+                $definitions[$date] = match ($this->overrideType) {
+                    'working' => [],
+                    ScheduleExceptionType::DayOff->value => [[
+                        'exception_date' => $date,
+                        'exception_type' => ScheduleExceptionType::DayOff->value,
+                        'reason' => $this->normalizedReason(),
+                    ]],
+                    ScheduleExceptionType::CustomWindow->value => array_map(
+                        fn (array $interval): array => [
+                            'exception_date' => $date,
+                            'exception_type' => ScheduleExceptionType::CustomWindow->value,
+                            'start_time' => $interval['start_time'] ?? null,
+                            'end_time' => $interval['end_time'] ?? null,
+                            'reason' => $this->normalizedReason(),
+                        ],
+                        $this->overrideIntervals,
+                    ),
+                    default => throw new \InvalidArgumentException('Выберите корректный режим изменения.'),
+                };
             }
+
+            app(SetScheduleExceptionSet::class)->handle(
+                actor: $actor,
+                specialist: $specialist,
+                definitionsByDate: $definitions,
+                acknowledgeImpact: $this->acknowledgeImpact,
+                acknowledgedImpactDigest: $this->impactDigest,
+            );
         } catch (ValidationException $exception) {
             $this->setImpactFromException($exception);
 
             return;
         } catch (\InvalidArgumentException $exception) {
-            $this->errorMessage = $exception->getMessage();
+            $this->errorMessage = $this->humanScheduleError($exception->getMessage());
 
             return;
         }
 
-        $this->editDate($this->selectedDate);
+        $this->loadEditorForSelection();
         $this->clearImpact();
-        Notification::make()->success()->title('Изменение сохранено')->send();
+        Notification::make()->success()->title('Изменения сохранены')->send();
     }
 
     /** @return array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}> */
@@ -337,7 +297,7 @@ final class WorkSchedule extends Page
                 specialist: $specialist,
                 dateFrom: $this->monthDate()->startOfMonth()->toDateString(),
                 dateTo: $this->monthDate()->endOfMonth()->toDateString(),
-                displayTimezone: $this->crmTimezone(),
+                displayTimezone: $this->specialistScheduleTimezone(),
             )
             : [];
     }
@@ -346,10 +306,9 @@ final class WorkSchedule extends Page
     public function getMonthCellsProperty(): array
     {
         $monthStart = $this->monthDate()->startOfMonth();
-        $days = $monthStart->daysInMonth;
         $cells = array_fill(0, $monthStart->dayOfWeekIso - 1, null);
 
-        for ($day = 1; $day <= $days; $day++) {
+        for ($day = 1; $day <= $monthStart->daysInMonth; $day++) {
             $date = $monthStart->setDay($day)->toDateString();
             $cells[] = $this->scheduleDays[$date] ?? [
                 'date' => $date,
@@ -384,13 +343,19 @@ final class WorkSchedule extends Page
             1 => 'Январь', 2 => 'Февраль', 3 => 'Март', 4 => 'Апрель', 5 => 'Май', 6 => 'Июнь',
             7 => 'Июль', 8 => 'Август', 9 => 'Сентябрь', 10 => 'Октябрь', 11 => 'Ноябрь', 12 => 'Декабрь',
         ];
+        $date = $this->monthDate();
 
-        return $months[$this->monthDate()->month].' '.$this->monthDate()->year;
+        return $months[$date->month].' '.$date->year;
     }
 
     public function isToday(string $date): bool
     {
-        return $date === CarbonImmutable::now($this->crmTimezone())->toDateString();
+        return $date === CarbonImmutable::now($this->specialistScheduleTimezone())->toDateString();
+    }
+
+    public function isSelectedDate(string $date): bool
+    {
+        return in_array($date, $this->selectedDates, true);
     }
 
     public function crmTimezone(): string
@@ -401,40 +366,44 @@ final class WorkSchedule extends Page
     public function specialistScheduleTimezone(): string
     {
         $specialist = $this->selectedSpecialist();
-        $timezone = $specialist === null ? $this->crmTimezone() : ($specialist->timezone ?? $this->crmTimezone());
+        $timezone = $specialist?->timezone ?? $this->crmTimezone();
 
         return IanaTimezone::from($timezone)->value;
+    }
+
+    public function specialistScheduleTimezoneLabel(): string
+    {
+        $timezone = $this->specialistScheduleTimezone();
+        $offsetHours = CarbonImmutable::now($timezone)->getOffset() / 3600;
+        $offset = $offsetHours === 0.0
+            ? 'UTC'
+            : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
+
+        return 'График задан по времени: '.TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+    }
+
+    public function selectedDatesLabel(): string
+    {
+        return implode(', ', array_map(
+            static fn (string $date): string => CarbonImmutable::parse($date)->format('d.m.Y'),
+            $this->selectedDates,
+        ));
     }
 
     public function pendingPresetLabel(): ?string
     {
         return match ($this->pendingPreset) {
             'weekdays' => 'Будни',
-            'all' => 'Все даты',
+            'all' => 'Все дни',
             'even' => 'Чётные даты',
             'odd' => 'Нечётные даты',
-            'clear' => 'Все даты — выходные',
             default => null,
         };
     }
 
     public function isPresetWorkingDate(string $date): bool
     {
-        if ($this->pendingPreset === null) {
-            return false;
-        }
-
-        $day = (int) substr($date, -2);
-        $weekday = CarbonImmutable::parse($date, $this->crmTimezone())->dayOfWeekIso;
-
-        return match ($this->pendingPreset) {
-            'weekdays' => $weekday <= 5,
-            'all' => true,
-            'even' => $day % 2 === 0,
-            'odd' => $day % 2 === 1,
-            'clear' => false,
-            default => false,
-        };
+        return $this->isSelectedDate($date);
     }
 
     public function hasPendingImpact(): bool
@@ -442,54 +411,105 @@ final class WorkSchedule extends Page
         return $this->impactBookings !== [];
     }
 
-    private function loadScheduleState(): void
+    private function datesForPreset(string $preset): array
     {
-        $specialist = $this->selectedSpecialist();
-        $hours = $specialist instanceof Specialist
-            ? SpecialistWorkingHour::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->where('specialist_id', $specialist->getKey())
-                ->where('is_active', true)
-                ->orderBy('weekday')
-                ->orderBy('start_time')
-                ->get()
-            : collect();
-        $this->selectedWeekdays = array_values($hours->pluck('weekday')->map(fn (mixed $weekday): int => (int) $weekday)->unique()->values()->all());
-        $first = $hours->first();
-        $last = $hours->sortByDesc('end_time')->first();
-        $this->startTime = $first === null ? '09:00' : substr((string) $first->start_time, 0, 5);
-        $this->endTime = $last === null ? '19:00' : substr((string) $last->end_time, 0, 5);
-        $groupedHours = [];
-        foreach ($hours as $hour) {
-            $groupedHours[(int) $hour->weekday][] = $hour;
+        $dates = [];
+        $month = $this->monthDate();
+
+        for ($day = 1; $day <= $month->daysInMonth; $day++) {
+            $date = $month->setDay($day);
+            $isSelected = match ($preset) {
+                'weekdays' => $date->dayOfWeekIso <= 5,
+                'all' => true,
+                'even' => $date->day % 2 === 0,
+                'odd' => $date->day % 2 === 1,
+                default => false,
+            };
+
+            if ($isSelected) {
+                $dates[] = $date->toDateString();
+            }
         }
-        $breakIntervals = $this->uniformBreakIntervals($groupedHours);
-        $this->breakEnabled = is_array($breakIntervals);
-        if ($breakIntervals !== null) {
-            $this->breakStart = substr((string) $breakIntervals[0]->end_time, 0, 5);
-            $this->breakEnd = substr((string) $breakIntervals[1]->start_time, 0, 5);
+
+        return $dates;
+    }
+
+    private function loadEditorForSelection(): void
+    {
+        $date = $this->selectedDates[0] ?? null;
+        $this->selectedDate = $date;
+        $this->selectedScheduleDate = $date;
+        $this->selectedExceptionId = null;
+        $this->overrideReason = '';
+        $this->overrideType = 'working';
+        $this->overrideIntervals = $date === null ? [] : $this->recurringIntervalsForDate($date);
+
+        if ($date === null || $this->specialistId === null) {
+            return;
+        }
+
+        $exceptions = $this->selectedExceptionRows($date);
+        $first = $exceptions->first();
+        $this->selectedExceptionId = $first?->getKey();
+        $this->overrideReason = (string) ($first?->reason ?? '');
+
+        if ($exceptions->contains(
+            static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
+        )) {
+            $this->overrideType = ScheduleExceptionType::DayOff->value;
+
+            return;
+        }
+
+        $customIntervals = $exceptions
+            ->filter(static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow)
+            ->map(static fn (ScheduleException $exception): array => [
+                'start_time' => substr((string) $exception->start_time, 0, 5),
+                'end_time' => substr((string) $exception->end_time, 0, 5),
+            ])
+            ->values()
+            ->all();
+
+        if ($customIntervals !== []) {
+            $this->overrideType = ScheduleExceptionType::CustomWindow->value;
+            $this->overrideIntervals = $customIntervals;
         }
     }
 
-    /** @return list<array{weekday: int, start_time: string, end_time: string}> */
-    private function scheduleDefinitions(): array
+    /** @return list<array{start_time: string, end_time: string}> */
+    private function recurringIntervalsForDate(string $date): array
     {
-        $definitions = [];
-        foreach (array_values(array_unique(array_map('intval', $this->selectedWeekdays))) as $weekday) {
-            if ($this->breakEnabled) {
-                $first = WallClockInterval::from($this->startTime, $this->breakStart);
-                $second = WallClockInterval::from($this->breakEnd, $this->endTime);
-                $definitions[] = ['weekday' => $weekday, 'start_time' => $first->start, 'end_time' => $first->end];
-                $definitions[] = ['weekday' => $weekday, 'start_time' => $second->start, 'end_time' => $second->end];
+        $localDate = LocalDate::from($date);
+        $specialist = $this->selectedSpecialist();
 
-                continue;
-            }
-
-            $interval = WallClockInterval::from($this->startTime, $this->endTime);
-            $definitions[] = ['weekday' => $weekday, 'start_time' => $interval->start, 'end_time' => $interval->end];
+        if (! $specialist instanceof Specialist) {
+            return [];
         }
 
-        return $definitions;
+        $resolver = app(ResolveSpecialistWorkingHours::class);
+
+        return collect($resolver->intervalsForDate(
+            $resolver->forRange($specialist, $localDate, $localDate),
+            $localDate,
+        ))
+            ->map(static fn (WallClockInterval $interval): array => [
+                'start_time' => $interval->start,
+                'end_time' => $interval->end,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** @return Collection<int, ScheduleException> */
+    private function selectedExceptionRows(string $date): Collection
+    {
+        return ScheduleException::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('specialist_id', $this->specialistId)
+            ->where('exception_date', $date)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get();
     }
 
     private function selectedSpecialist(): ?Specialist
@@ -498,63 +518,9 @@ final class WorkSchedule extends Page
             ? null
             : Specialist::query()
                 ->where('organization_id', app(OrganizationContext::class)->id())
+                ->where('is_active', true)
                 ->whereKey($this->specialistId)
                 ->first();
-    }
-
-    private function selectedException(): ?ScheduleException
-    {
-        if ($this->specialistId === null || $this->selectedDate === null) {
-            return null;
-        }
-
-        return ScheduleException::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('specialist_id', $this->specialistId)
-            ->where('exception_date', $this->selectedScheduleDate)
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->first();
-    }
-
-    /**
-     * @param  array<int, list<SpecialistWorkingHour>>  $groupedHours
-     * @return array{SpecialistWorkingHour, SpecialistWorkingHour}|null
-     */
-    private function uniformBreakIntervals(array $groupedHours): ?array
-    {
-        $reference = reset($groupedHours);
-        if (! is_array($reference) || count($reference) !== 2) {
-            return null;
-        }
-
-        $referencePairs = $this->intervalPairs($reference);
-        foreach ($groupedHours as $intervals) {
-            if (count($intervals) !== 2 || $this->intervalPairs($intervals) !== $referencePairs) {
-                return null;
-            }
-        }
-
-        usort($reference, static fn (SpecialistWorkingHour $left, SpecialistWorkingHour $right): int => strcmp((string) $left->start_time, (string) $right->start_time));
-
-        return [$reference[0], $reference[1]];
-    }
-
-    /**
-     * @param  list<SpecialistWorkingHour>  $hours
-     * @return list<array{string, string}>
-     */
-    private function intervalPairs(array $hours): array
-    {
-        usort($hours, static fn (SpecialistWorkingHour $left, SpecialistWorkingHour $right): int => strcmp((string) $left->start_time, (string) $right->start_time));
-
-        return array_map(
-            static fn (SpecialistWorkingHour $hour): array => [
-                substr((string) $hour->start_time, 0, 5),
-                substr((string) $hour->end_time, 0, 5),
-            ],
-            $hours,
-        );
     }
 
     private function currentViewerSpecialist(): ?Specialist
@@ -571,28 +537,48 @@ final class WorkSchedule extends Page
 
     private function monthDate(): CarbonImmutable
     {
-        $date = CarbonImmutable::createFromFormat('!Y-m-d', $this->month.'-01', new \DateTimeZone($this->crmTimezone()));
+        $date = CarbonImmutable::createFromFormat(
+            '!Y-m-d',
+            $this->month.'-01',
+            $this->specialistScheduleTimezone(),
+        );
 
         if (! $date instanceof CarbonImmutable || $date->format('Y-m') !== $this->month) {
-            return CarbonImmutable::now($this->crmTimezone())->startOfMonth();
+            return CarbonImmutable::now($this->specialistScheduleTimezone())->startOfMonth();
         }
 
         return $date;
     }
 
-    private function scheduleDateForDisplayDate(string $date): string
+    private function isDateInCurrentMonth(string $date): bool
     {
-        $displayDate = CarbonImmutable::createFromFormat(
-            '!Y-m-d H:i',
-            $date.' 12:00',
-            new \DateTimeZone($this->crmTimezone()),
-        );
-
-        if (! $displayDate instanceof CarbonImmutable) {
-            return $date;
+        try {
+            $localDate = LocalDate::from($date);
+        } catch (\InvalidArgumentException) {
+            return false;
         }
 
-        return $displayDate->setTimezone($this->specialistScheduleTimezone())->toDateString();
+        return str_starts_with($localDate->value, $this->month.'-');
+    }
+
+    private function normalizedReason(): ?string
+    {
+        $reason = trim($this->overrideReason);
+
+        return $reason === '' ? null : $reason;
+    }
+
+    private function clearSelection(): void
+    {
+        $this->selectedDates = [];
+        $this->selectedDate = null;
+        $this->selectedScheduleDate = null;
+        $this->selectedExceptionId = null;
+        $this->overrideType = 'working';
+        $this->overrideIntervals = [];
+        $this->overrideReason = '';
+        $this->pendingPreset = null;
+        $this->clearImpact();
     }
 
     private function clearImpact(): void
@@ -600,18 +586,25 @@ final class WorkSchedule extends Page
         $this->impactDigest = null;
         $this->impactBookings = [];
         $this->acknowledgeImpact = false;
-        $this->impactSource = null;
-        $this->monthlyAcknowledgedImpactDigest = null;
         $this->errorMessage = '';
     }
 
-    private function setImpactFromException(ValidationException $exception, ?string $source = null): void
+    private function setImpactFromException(ValidationException $exception): void
     {
         $preview = ScheduleImpactPreview::stateFromValidationException($exception);
         $this->impactDigest = $preview['impact_digest'] ?? null;
         $this->impactBookings = $preview['schedule_impact_bookings'] ?? [];
         $this->acknowledgeImpact = false;
-        $this->impactSource = $source;
-        $this->errorMessage = $exception->errors()['schedule_impact'][0] ?? $exception->getMessage();
+        $errors = $exception->errors();
+        $this->errorMessage = $errors['schedule_impact'][0]
+            ?? $errors['exception_date'][0]
+            ?? $this->humanScheduleError($exception->getMessage());
+    }
+
+    private function humanScheduleError(string $message): string
+    {
+        return str_contains(mb_strtolower($message), 'overlap')
+            ? 'Рабочие интервалы не должны пересекаться.'
+            : $message;
     }
 }

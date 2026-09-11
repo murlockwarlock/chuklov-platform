@@ -15,12 +15,25 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Attributes\Url;
 
 class CreateBooking extends CreateRecord
 {
     protected static string $resource = BookingResource::class;
 
     protected static ?string $title = 'Создать запись на приём';
+
+    #[Url(as: 'return_to_journal', history: true)]
+    public bool $returnToJournal = false;
+
+    #[Url(as: 'specialist_id', history: true, nullable: true)]
+    public ?int $journalSpecialistId = null;
+
+    #[Url(as: 'week', history: true, nullable: true)]
+    public ?string $journalWeek = null;
+
+    #[Url(as: 'view', history: true, nullable: true)]
+    public ?string $journalView = null;
 
     public function mount(): void
     {
@@ -46,7 +59,7 @@ class CreateBooking extends CreateRecord
             $local = CarbonImmutable::createFromFormat(
                 '!Y-m-d H:i',
                 $startsAt,
-                app(OrganizationContext::class)->defaultTimezone(),
+                $this->formTimezone(),
             );
             if ($local instanceof CarbonImmutable) {
                 $prefill['starts_at'] = $local
@@ -97,11 +110,25 @@ class CreateBooking extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
-        if (request()->boolean('return_to_journal')) {
-            $week = request()->query('week');
-            $parameters = is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1
-                ? ['week' => $week]
-                : [];
+        if ($this->returnToJournal) {
+            $week = $this->journalWeek;
+            $parameters = [];
+            if (is_string($week) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $week) === 1) {
+                $parameters['week'] = $week;
+            }
+            if ($this->journalView === 'list') {
+                $parameters['view'] = 'list';
+            } else {
+                $parameters['view'] = 'week';
+            }
+            $specialistId = $this->journalSpecialistId;
+            if ($specialistId !== null && Specialist::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->where('is_active', true)
+                ->whereKey($specialistId)
+                ->exists()) {
+                $parameters['specialist_id'] = $specialistId;
+            }
             $url = ListBookings::getUrl();
 
             return $parameters === [] ? $url : $url.'?'.http_build_query($parameters);
