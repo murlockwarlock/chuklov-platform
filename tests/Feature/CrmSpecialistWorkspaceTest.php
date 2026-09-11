@@ -17,6 +17,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CreateScheduleException;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
@@ -153,6 +154,274 @@ final class CrmSpecialistWorkspaceTest extends TestCase
         self::assertTrue($component->instance()->breakEnabled);
         self::assertSame('13:00', $component->instance()->breakStart);
         self::assertSame('14:00', $component->instance()->breakEnd);
+    }
+
+    public function test_month_presets_use_calendar_dates_and_update_authoritative_availability(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $this->resolveFilamentContext($admin, $organization);
+        $component = Livewire::actingAs($admin)->test(WorkSchedule::class);
+
+        $component
+            ->set('month', '2026-10')
+            ->set('selectedWeekdays', [1, 2, 3, 4, 5])
+            ->set('startTime', '09:00')
+            ->set('endTime', '19:00')
+            ->call('applyPreset', 'even')
+            ->call('saveSchedule')
+            ->assertHasNoErrors();
+
+        self::assertDatabaseHas('schedule_exceptions', [
+            'organization_id' => $organization->id,
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-04',
+            'exception_type' => ScheduleExceptionType::CustomWindow->value,
+        ]);
+        self::assertDatabaseHas('schedule_exceptions', [
+            'organization_id' => $organization->id,
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+
+        $evenDate = app(CalculateAvailability::class)->forStaff(
+            $admin,
+            $specialist->id,
+            $service->id,
+            '2026-10-04',
+            '2026-10-04',
+            VisitFormat::Office,
+            'UTC',
+        );
+        $oddDate = app(CalculateAvailability::class)->forStaff(
+            $admin,
+            $specialist->id,
+            $service->id,
+            '2026-10-05',
+            '2026-10-05',
+            VisitFormat::Office,
+            'UTC',
+        );
+
+        self::assertNotEmpty($evenDate->slots);
+        self::assertCount(0, $oddDate->slots);
+
+        $component
+            ->call('applyPreset', 'weekdays')
+            ->call('saveSchedule')
+            ->call('applyPreset', 'all')
+            ->call('saveSchedule');
+        self::assertDatabaseHas('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-31',
+            'exception_type' => ScheduleExceptionType::CustomWindow->value,
+        ]);
+
+        $component
+            ->call('applyPreset', 'odd')
+            ->call('saveSchedule');
+        self::assertDatabaseHas('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-04',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+
+        $component
+            ->call('applyPreset', 'clear')
+            ->call('saveSchedule');
+        self::assertDatabaseHas('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-06',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+    }
+
+    public function test_month_preset_uses_existing_schedule_impact_acknowledgement_without_deleting_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, $this->weekdayDefinitions());
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => CarbonImmutable::create(2026, 10, 5, 10, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 10, 5, 11, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 10, 5, 11, 15, 0, 'UTC'),
+            ]);
+        Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => CarbonImmutable::create(2026, 10, 5, 15, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 10, 5, 16, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 10, 5, 16, 15, 0, 'UTC'),
+            ]);
+
+        $this->resolveFilamentContext($admin, $organization);
+        $component = Livewire::actingAs($admin)->test(WorkSchedule::class)
+            ->set('month', '2026-10')
+            ->call('applyPreset', 'even')
+            ->call('saveSchedule');
+
+        self::assertCount(2, $component->instance()->impactBookings);
+        self::assertDatabaseMissing('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+        ]);
+
+        $component
+            ->call('saveSchedule');
+        self::assertCount(2, $component->instance()->impactBookings);
+        self::assertDatabaseMissing('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+        ]);
+
+        $component
+            ->set('acknowledgeImpact', true)
+            ->call('saveSchedule')
+            ->assertHasNoErrors();
+
+        self::assertDatabaseHas('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+        self::assertModelExists($booking->fresh());
+    }
+
+    public function test_month_preset_and_weekly_schedule_acknowledgements_commit_atomically(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, $this->weekdayDefinitions());
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => CarbonImmutable::create(2026, 10, 5, 10, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 10, 5, 11, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 10, 5, 11, 15, 0, 'UTC'),
+            ]);
+
+        $this->resolveFilamentContext($admin, $organization);
+        $component = Livewire::actingAs($admin)->test(WorkSchedule::class)
+            ->set('month', '2026-10')
+            ->set('selectedWeekdays', [])
+            ->call('applyPreset', 'even')
+            ->call('saveSchedule');
+
+        self::assertSame('monthly', $component->instance()->impactSource);
+        self::assertDatabaseMissing('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+        ]);
+
+        $component
+            ->set('acknowledgeImpact', true)
+            ->call('saveSchedule');
+
+        self::assertSame('weekly', $component->instance()->impactSource);
+        self::assertDatabaseMissing('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+        ]);
+        self::assertCount(5, $specialist->workingHours()->get());
+
+        $component
+            ->set('acknowledgeImpact', true)
+            ->call('saveSchedule')
+            ->assertHasNoErrors();
+
+        self::assertDatabaseHas('schedule_exceptions', [
+            'specialist_id' => $specialist->id,
+            'exception_date' => '2026-10-05',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+        self::assertCount(0, $specialist->workingHours()->get());
+        self::assertModelExists($booking->fresh());
+    }
+
+    public function test_work_schedule_crm_projection_uses_organization_timezone_once_when_specialist_schedule_timezone_differs(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
+        $specialist->forceFill(['timezone' => 'UTC'])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '19:00',
+        ]]);
+
+        $this->resolveFilamentContext($admin, $organization);
+        $schedule = Livewire::actingAs($admin)->test(WorkSchedule::class)
+            ->set('month', '2026-10');
+        $journal = Livewire::actingAs($admin)->test(ListBookings::class)
+            ->set('weekStart', '2026-10-05');
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $scheduleDay = $schedule->instance()->getScheduleDaysProperty()['2026-10-05'];
+        $journalDay = $journal->instance()->getJournalDaysProperty()['2026-10-05'];
+        $availability = app(CalculateAvailability::class)->forClient(
+            $client,
+            $specialist->id,
+            $service->id,
+            '2026-10-05',
+            '2026-10-05',
+            VisitFormat::Office,
+            'Asia/Almaty',
+        );
+
+        self::assertSame('Asia/Almaty', $schedule->instance()->crmTimezone());
+        self::assertSame('14:00', $scheduleDay['intervals'][0]['start']);
+        self::assertSame('14:00', $journalDay['intervals'][0]['start']);
+        self::assertSame('UTC', $availability->scheduleTimezone);
+        self::assertSame('Asia/Almaty', $availability->displayTimezone);
+        self::assertSame('14:00', $availability->slots[0]->startsAt->setTimezone('Asia/Almaty')->format('H:i'));
+    }
+
+    public function test_day_off_exception_keeps_cross_date_crm_projection_consistent(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
+        $specialist->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 7,
+            'start_time' => '09:00',
+            'end_time' => '19:00',
+        ]]);
+        app(CreateScheduleException::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            attributes: [
+                'exception_date' => '2026-10-04',
+                'exception_type' => ScheduleExceptionType::DayOff->value,
+            ],
+        );
+
+        $this->resolveFilamentContext($admin, $organization);
+        $schedule = Livewire::actingAs($admin)->test(WorkSchedule::class)->set('month', '2026-10');
+        $journal = Livewire::actingAs($admin)->test(ListBookings::class)->set('weekStart', '2026-10-05');
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $scheduleDay = $schedule->instance()->getScheduleDaysProperty()['2026-10-05'];
+        $journalDay = $journal->instance()->getJournalDaysProperty()['2026-10-05'];
+        $availability = app(CalculateAvailability::class)->forClient(
+            $client,
+            $specialist->id,
+            $service->id,
+            '2026-10-05',
+            '2026-10-05',
+            VisitFormat::Office,
+            'Asia/Almaty',
+        );
+
+        self::assertFalse($scheduleDay['is_working']);
+        self::assertSame(ScheduleExceptionType::DayOff->value, $scheduleDay['exception_type']);
+        self::assertFalse($journalDay['is_working']);
+        self::assertCount(0, $availability->slots);
     }
 
     public function test_work_schedule_overrides_remove_and_restore_client_slots_without_deleting_bookings(): void

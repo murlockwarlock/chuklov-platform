@@ -9,7 +9,8 @@
         <div class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div class="min-w-0">
                 <p class="text-sm text-gray-500 dark:text-gray-400">Повторяющийся график и изменения на отдельные даты</p>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Часовой пояс расписания: <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->scheduleTimezone() }}</span></p>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Время специалиста: <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->specialistScheduleTimezone() }}</span></p>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Календарь CRM: <span class="font-medium text-gray-700 dark:text-gray-200">{{ $this->crmTimezone() }}</span></p>
             </div>
             <div class="w-full lg:max-w-xs">
                 <label for="work-schedule-specialist" class="fi-fo-field-wrp-label inline-flex text-sm font-medium text-gray-950 dark:text-white">Специалист</label>
@@ -25,17 +26,23 @@
             <section class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">Рабочие дни</h2>
-                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Выберите дни и сохраните общий интервал.</p>
+                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">Базовый график</h2>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Выберите дни недели и сохраните общий интервал.</p>
                     </div>
                 </div>
 
-                <div class="mt-4 grid grid-cols-2 gap-2">
-                    <button type="button" wire:click="applyPreset('weekdays')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Будни</button>
-                    <button type="button" wire:click="applyPreset('all')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Все дни</button>
-                    <button type="button" wire:click="applyPreset('even')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Чётные</button>
-                    <button type="button" wire:click="applyPreset('odd')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Нечётные</button>
-                    <button type="button" wire:click="applyPreset('clear')" class="col-span-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 hover:text-primary-700 dark:text-primary-400">Очистить</button>
+                <div class="mt-4 border-t border-gray-200 pt-4 dark:border-gray-800">
+                    <p class="text-sm font-medium text-gray-950 dark:text-white">Применить к месяцу</p>
+                    <div class="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" wire:click="applyPreset('weekdays')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Будни</button>
+                        <button type="button" wire:click="applyPreset('all')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Все дни</button>
+                        <button type="button" wire:click="applyPreset('even')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Чётные</button>
+                        <button type="button" wire:click="applyPreset('odd')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Нечётные</button>
+                        <button type="button" wire:click="applyPreset('clear')" class="col-span-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium text-primary-600 underline decoration-primary-300 underline-offset-4 hover:text-primary-700 dark:text-primary-400">Очистить</button>
+                    </div>
+                    @if ($this->pendingPresetLabel() !== null)
+                        <p class="mt-3 rounded-lg bg-primary-50 px-3 py-2 text-sm text-primary-800 dark:bg-primary-950/30 dark:text-primary-200">Выбрано: {{ $this->pendingPresetLabel() }}. Нажмите «Сохранить график».</p>
+                    @endif
                 </div>
 
                 <div class="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -116,7 +123,7 @@
                         @if ($cell === null)
                             <div class="min-h-24 min-w-0 bg-gray-50/70 dark:bg-gray-950/50"></div>
                         @else
-                            <button type="button" wire:click="editDate('{{ $cell['date'] }}')" class="min-h-24 min-w-0 bg-white p-2 text-left transition hover:bg-primary-50 dark:bg-gray-900 dark:hover:bg-primary-950/30 {{ $this->isToday($cell['date']) ? 'ring-2 ring-inset ring-primary-500' : '' }} {{ $selectedDate === $cell['date'] ? 'bg-primary-50 dark:bg-primary-950/50' : '' }}">
+                            <button type="button" wire:click="editDate('{{ $cell['date'] }}')" class="min-h-24 min-w-0 bg-white p-2 text-left transition hover:bg-primary-50 dark:bg-gray-900 dark:hover:bg-primary-950/30 {{ $this->isToday($cell['date']) ? 'ring-2 ring-inset ring-primary-500' : '' }} {{ $selectedDate === $cell['date'] ? 'bg-primary-50 dark:bg-primary-950/50' : '' }} {{ $this->isPresetWorkingDate($cell['date']) ? 'ring-2 ring-inset ring-emerald-400' : '' }}">
                                 <span class="text-xs font-semibold text-gray-700 dark:text-gray-200">{{ (int) substr($cell['date'], -2) }}</span>
                                 @if ($cell['is_working'])
                                     <span class="mt-2 block truncate text-[11px] font-medium text-emerald-700 dark:text-emerald-300">Работает</span>

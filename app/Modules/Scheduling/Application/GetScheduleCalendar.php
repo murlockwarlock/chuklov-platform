@@ -75,8 +75,24 @@ final class GetScheduleCalendar
             if ($dateExceptions->contains(
                 static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
             )) {
-                if (isset($cells[$dateKey])) {
-                    $cells[$dateKey]['exception_type'] = ScheduleExceptionType::DayOff->value;
+                $dayOffIntervals = $workingHours->get($scheduleDate->dayOfWeekIso, collect())
+                    ->map(static fn (SpecialistWorkingHour $workingHour) => $workingHour->wallClockInterval())
+                    ->filter()
+                    ->values();
+                if ($dayOffIntervals->isEmpty()) {
+                    $displayDateKey = $scheduleDate->setTimezone($displayTimezone)->toDateString();
+                    if (isset($cells[$displayDateKey])) {
+                        $cells[$displayDateKey]['exception_type'] = ScheduleExceptionType::DayOff->value;
+                    }
+                } else {
+                    foreach ($dayOffIntervals as $interval) {
+                        $this->markDisplayIntervalAsDayOff(
+                            $cells,
+                            $this->parseDateTime($dateKey, $interval->start, $scheduleTimezone),
+                            $this->parseDateTime($dateKey, $interval->end, $scheduleTimezone),
+                            $displayTimezone,
+                        );
+                    }
                 }
 
                 continue;
@@ -141,6 +157,32 @@ final class GetScheduleCalendar
                 $cells[$dateKey]['exception_type'] = $exceptions->contains(
                     static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow,
                 ) ? ScheduleExceptionType::CustomWindow->value : null;
+            }
+
+            $cursor = $segmentEnd;
+        }
+    }
+
+    /**
+     * @param  array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}>  $cells
+     */
+    private function markDisplayIntervalAsDayOff(
+        array &$cells,
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+        string $displayTimezone,
+    ): void {
+        $displayStart = $start->setTimezone($displayTimezone);
+        $displayEnd = $end->setTimezone($displayTimezone);
+        $cursor = $displayStart;
+
+        while ($cursor->lessThan($displayEnd)) {
+            $dayEnd = $cursor->startOfDay()->addDay();
+            $segmentEnd = $displayEnd->lessThan($dayEnd) ? $displayEnd : $dayEnd;
+            $dateKey = $cursor->toDateString();
+
+            if (isset($cells[$dateKey]) && $cursor->lessThan($segmentEnd)) {
+                $cells[$dateKey]['exception_type'] = ScheduleExceptionType::DayOff->value;
             }
 
             $cursor = $segmentEnd;
