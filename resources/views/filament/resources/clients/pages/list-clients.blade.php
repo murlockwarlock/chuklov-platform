@@ -9,7 +9,12 @@
 
         <aside class="min-w-0">
             <details class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:hidden">
-                <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950 dark:text-white">Категории</summary>
+                <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950 dark:text-white">
+                    <span class="flex min-w-0 items-center gap-2">
+                        <x-filament::icon icon="heroicon-o-tag" class="size-5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
+                        <span>Категории</span>
+                    </span>
+                </summary>
                 <div class="border-t border-gray-200 p-3 dark:border-gray-800">
                     <div class="grid gap-1">
                         @foreach ($labels as $key => $label)
@@ -23,9 +28,9 @@
             </details>
 
             <div class="hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:block">
-                <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                    <x-filament::icon icon="heroicon-o-tag" class="size-5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
                     <h2 class="text-base font-semibold text-gray-950 dark:text-white">Категории</h2>
-                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ $counts['all'] ?? 0 }}</span>
                 </div>
                 <div class="mt-3 grid gap-1">
                     @foreach ($labels as $key => $label)

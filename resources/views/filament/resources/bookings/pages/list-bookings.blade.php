@@ -4,7 +4,8 @@
         $grid = $this->journalGrid;
         $weekdays = [1 => 'Пн', 2 => 'Вт', 3 => 'Ср', 4 => 'Чт', 5 => 'Пт', 6 => 'Сб', 7 => 'Вс'];
         $rowHeight = 44;
-        $calendarHeight = $grid['rows'] * $rowHeight;
+        $calendarBottomPadding = 16;
+        $calendarHeight = ($grid['rows'] * $rowHeight) + $calendarBottomPadding;
         $minuteStyle = fn (int $minutes): string => 'top: '.(($minutes - $grid['start']) * ($rowHeight / 30)).'px;';
         $heightStyle = fn (int $start, int $end): string => 'top: '.(($start - $grid['start']) * ($rowHeight / 30)).'px; height: '.max($rowHeight, ($end - $start) * ($rowHeight / 30)).'px;';
         $isOpen = fn (array $day, int $minutes): bool => collect($day['intervals'])->contains(fn (array $interval): bool => $minutes >= $interval['start_minutes'] && $minutes < $interval['end_minutes']);

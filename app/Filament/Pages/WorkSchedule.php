@@ -34,7 +34,7 @@ final class WorkSchedule extends Page
 
     protected static ?string $navigationLabel = 'График работы';
 
-    protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
+    protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
     protected static string|UnitEnum|null $navigationGroup = 'Записи';
 
