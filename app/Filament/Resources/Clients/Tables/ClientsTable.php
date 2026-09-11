@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Clients\Tables;
 
 use App\Filament\Support\TimezoneOptions;
+use App\Modules\Analytics\Application\ClientSegmentQuery;
+use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use Filament\Actions\EditAction;
@@ -10,6 +12,7 @@ use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -35,7 +38,7 @@ class ClientsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('full_name')->label('Имя')->sortable()->wrap(),
-                TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—'),
+                TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
                 TextColumn::make('email')
                     ->label('Email')
                     ->placeholder('—')
@@ -53,7 +56,8 @@ class ClientsTable
                     ->label('Язык')
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('sm'),
                 IconColumn::make('activeBookingRestriction')
                     ->label('Запись')
                     ->boolean()
@@ -65,6 +69,10 @@ class ClientsTable
                     ->tooltip(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Запись разрешена' : 'Запись ограничена: '.$record->activeBookingRestriction->reason),
             ])
             ->filters([
+                SelectFilter::make('segment')
+                    ->label('Категория')
+                    ->options(ClientSegment::labels())
+                    ->query(fn (Builder $query, array $data): Builder => app(ClientSegmentQuery::class)->apply($query, $data['value'] ?? null)),
                 TernaryFilter::make('activeBookingRestriction')
                     ->label('Самостоятельная запись')
                     ->placeholder('Все клиенты')
