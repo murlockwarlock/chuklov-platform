@@ -87,6 +87,31 @@ final class ResetStagingClientAccountTest extends TestCase
         }
     }
 
+    public function test_client_card_shows_a_human_error_when_reset_is_blocked(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        ClientAttribution::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'source_type' => 'manual',
+            'source' => 'CRM',
+            'capture_channel' => 'crm',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('resetStagingAccount')
+            ->assertNotified('Аккаунт не сброшен');
+
+        self::assertDatabaseHas('clients', [
+            'organization_id' => $organization->getKey(),
+            'id' => $client->getKey(),
+        ]);
+    }
+
     public function test_reset_rejects_a_client_from_another_organization(): void
     {
         [$organization, $admin] = $this->fixture();

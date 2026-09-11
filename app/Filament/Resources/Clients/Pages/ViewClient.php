@@ -641,9 +641,17 @@ class ViewClient extends ViewRecord
             ->authorize(fn (): bool => $this->canResetStagingAccount())
             ->visible(fn (): bool => $this->canResetStagingAccount())
             ->action(function (): void {
-                app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
-                Notification::make()->title('Аккаунт сброшен для повторного теста')->success()->send();
-                $this->redirect(ClientResource::getUrl('index'));
+                try {
+                    app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
+                    Notification::make()->title('Аккаунт сброшен для повторного теста')->success()->send();
+                    $this->redirect(ClientResource::getUrl('index'));
+                } catch (ValidationException $exception) {
+                    Notification::make()
+                        ->title('Аккаунт не сброшен')
+                        ->body(collect($exception->errors())->flatten()->implode(' '))
+                        ->danger()
+                        ->send();
+                }
             });
     }
 
