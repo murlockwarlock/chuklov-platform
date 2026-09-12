@@ -19,3 +19,5 @@ a0746bad2d4e0695d80ff8689c49b1c57a24161e:tests/Feature/AI/AiLogRedactionTest.php
 6f2fefd3822671edd9087cda71c2c814a621dd9d:PROJECT_STATUS.md:generic-api-key:12
 # Synthetic evaluation case identifier in the candidate's first commit, not a credential.
 fd1f6c900db370abd61ba4d33511d0e3df1fa6b4:evals/source-backed/source-backed-agent-suites.json:generic-api-key:234
+# Internal B2B template key, not a credential.
+c9a8c2aca995944925d9808dbdae054e87f7f812:app/Modules/Scenarios/Application/EnsureOperationalNotificationDefaults.php:generic-api-key:135

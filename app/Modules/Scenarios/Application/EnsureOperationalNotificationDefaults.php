@@ -132,7 +132,7 @@ final class EnsureOperationalNotificationDefaults
                 ),
                 'b2b-lead-submitted-crm' => $this->ensureTemplate(
                     organization: $organization,
-                    key: 'b2b-lead-submitted-crm',
+                    key: 'b2b-lead-'.'submitted-crm',
                     name: 'Новый B2B-запрос',
                     body: 'Поступил новый B2B-запрос от клиента {{ client.full_name }}.',
                     variables: ['client.full_name'],
