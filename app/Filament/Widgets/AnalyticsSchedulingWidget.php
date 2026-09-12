@@ -22,7 +22,7 @@ class AnalyticsSchedulingWidget extends StatsOverviewWidget
 
     protected ?string $description = 'Записи, визиты и удержание клиентов за выбранный период';
 
-    protected static ?int $sort = 3;
+    protected static ?int $sort = 4;
 
     public static function canView(): bool
     {

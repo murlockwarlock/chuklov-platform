@@ -26,7 +26,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 
     protected ?string $description = 'Только подтверждённые данные финансового журнала';
 
-    protected static ?int $sort = 4;
+    protected static ?int $sort = 5;
 
     public static function canView(): bool
     {

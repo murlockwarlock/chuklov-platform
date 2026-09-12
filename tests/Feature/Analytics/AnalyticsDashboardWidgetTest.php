@@ -37,6 +37,8 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         $dashboard = new Dashboard;
 
         self::assertSame(1, $dashboard->getColumns());
+        self::assertSame(UpcomingBookingsWidget::class, $dashboard->getWidgets()[0]);
+        self::assertSame(AnalyticsKpiWidget::class, $dashboard->getWidgets()[1]);
         self::assertContains(AnalyticsKpiWidget::class, $dashboard->getWidgets());
         self::assertContains(UpcomingBookingsWidget::class, $dashboard->getWidgets());
         self::assertContains(AnalyticsAcquisitionWidget::class, $dashboard->getWidgets());

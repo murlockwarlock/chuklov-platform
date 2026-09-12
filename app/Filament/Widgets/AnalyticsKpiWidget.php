@@ -30,7 +30,7 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
 
     protected ?string $description = 'Главные показатели бизнеса за выбранный период';
 
-    protected static ?int $sort = 1;
+    protected static ?int $sort = 2;
 
     public static function canView(): bool
     {

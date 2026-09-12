@@ -50,11 +50,11 @@ final class Dashboard extends BaseDashboard
     public function getWidgets(): array
     {
         return [
+            UpcomingBookingsWidget::class,
             AnalyticsKpiWidget::class,
             AnalyticsAcquisitionWidget::class,
             AnalyticsSchedulingWidget::class,
             AnalyticsFinanceWidget::class,
-            UpcomingBookingsWidget::class,
             AnalyticsAiFailuresWidget::class,
             AnalyticsIngestionFailuresWidget::class,
         ];
