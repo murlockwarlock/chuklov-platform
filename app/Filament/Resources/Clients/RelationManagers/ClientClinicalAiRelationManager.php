@@ -148,7 +148,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
                                     'back' => (int) $data['back'],
                                 ],
                             );
-                            self::success('Анализ осанки поставлен в очередь.');
+                            self::success('Анализ осанки запущен.');
                         } catch (Throwable $exception) {
                             self::failure($exception);
                         }
@@ -161,7 +161,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
                     ->action(function () use ($actor, $client): void {
                         try {
                             app(StartClinicalSynthesis::class)->handle($actor, $client);
-                            self::success('Клиническое резюме поставлено в очередь.');
+                            self::success('Клиническое резюме создаётся.');
                         } catch (Throwable $exception) {
                             self::failure($exception);
                         }

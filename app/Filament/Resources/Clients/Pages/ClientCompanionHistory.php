@@ -185,10 +185,10 @@ final class ClientCompanionHistory extends ViewRecord
                     );
                 }),
             Action::make('technicalMetadata')
-                ->label('Расширенные технические метаданные')
+                ->label('Дополнительные сведения')
                 ->color('gray')
                 ->visible(fn (): bool => $this->canExportMetadata())
-                ->modalHeading('Расширенные технические метаданные')
+                ->modalHeading('Дополнительные сведения')
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Закрыть')
                 ->slideOver()

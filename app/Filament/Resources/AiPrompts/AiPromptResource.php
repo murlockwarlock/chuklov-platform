@@ -75,7 +75,7 @@ final class AiPromptResource extends Resource
                     ->iconButton()
                     ->tooltip('Редактировать промпт'),
                 Action::make('playground')
-                    ->label('Песочница')
+                    ->label('Проверить')
                     ->color('info')
                     ->icon(Heroicon::OutlinedPlay)
                     ->iconButton()
@@ -87,7 +87,7 @@ final class AiPromptResource extends Resource
                             ->rows(4)
                             ->default('{"query": "Тестовый запрос"}'),
                         Select::make('model_release_id')
-                            ->label('Модель для staging-проверки')
+                            ->label('Модель для проверки')
                             ->options(fn (AiPrompt $record): array => self::modelReleaseOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiPrompt $record): array => self::modelReleaseOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiPrompt $record): ?string => self::modelReleaseLabel($record, $value))
@@ -130,7 +130,7 @@ final class AiPromptResource extends Resource
                                 if ($result->runId > 0) {
                                     $notification->actions([
                                         Action::make('technicalData')
-                                            ->label('Технические данные')
+                                            ->label('Подробности проверки')
                                             ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
                                             ->button()
                                             ->openUrlInNewTab(),
@@ -139,14 +139,14 @@ final class AiPromptResource extends Resource
                                 $notification->send();
                             } else {
                                 Notification::make()
-                                    ->title('Ошибка выполнения в песочнице')
-                                    ->body($result->errorMessageSanitized ?? 'Провайдер не вернул проверяемый ответ.')
+                                    ->title('Не удалось проверить промпт')
+                                    ->body($result->errorMessageSanitized ?? 'Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.')
                                     ->danger()
                                     ->send();
                             }
                         } catch (Throwable $exception) {
                             Notification::make()
-                                ->title('Ошибка выполнения в песочнице')
+                                ->title('Не удалось проверить промпт')
                                 ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : 'Проверьте настройки и повторите попытку.')
                                 ->danger()
                                 ->send();

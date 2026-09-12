@@ -66,7 +66,7 @@ final class B2bLeadForm
                     ->live()
                     ->required(),
                 TextInput::make('manual_meeting_url')
-                    ->label('HTTPS-ссылка на встречу')
+                    ->label('Ссылка на встречу')
                     ->url()
                     ->maxLength(2000)
                     ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual->value)

@@ -97,7 +97,7 @@ final class FeedbackConfiguration extends Page
                     ])
                     ->columns(1),
                 Section::make('Внешние площадки')
-                    ->description('Ссылки только показываются клиенту после положительной оценки. Сервер их не запрашивает. Текст сообщения и отправка после завершения визита: Коммуникации → Шаблоны сообщений и Коммуникации → Авто-сообщения.')
+                    ->description('Ссылки показываются клиенту после положительной оценки. Текст и отправка сообщения после визита настраиваются в разделах «Шаблоны сообщений» и «Авто-сообщения».')
                     ->schema([
                         Placeholder::make('feedback_template_path')
                             ->label('Где изменить сообщение после визита')
@@ -107,10 +107,10 @@ final class FeedbackConfiguration extends Page
                         TextInput::make('review_url_en')->label('Ссылка на отзыв (EN)')->url()->maxLength(2048),
                         Repeater::make('review_destinations')
                             ->label('Площадки для оценки 8–10')
-                            ->helperText('Добавьте 2GIS, Google, Яндекс или другие площадки. Показываются только активные HTTPS-ссылки; запросов к площадкам система не делает.')
+                            ->helperText('Добавьте площадки, которые увидит клиент после оценки.')
                             ->schema([
                                 TextInput::make('label')->label('Название площадки')->required()->maxLength(160),
-                                TextInput::make('url')->label('HTTPS-ссылка')->url()->required()->maxLength(2048),
+                                TextInput::make('url')->label('Ссылка')->url()->required()->maxLength(2048),
                                 Toggle::make('isActive')->label('Показывать клиенту')->default(true),
                                 TextInput::make('sortOrder')->label('Порядок')->integer()->minValue(0)->default(0),
                             ])

@@ -42,11 +42,11 @@ class ListAiEvaluations extends ListRecords
                 ->modalHeading('Установить стандартные тестовые сценарии')
                 ->modalDescription('Добавит готовые обезличенные примеры для проверки AI. Реальные данные клиентов не используются.')
                 ->form([
-                    Section::make('Технические настройки')
+                    Section::make('Дополнительные настройки')
                         ->collapsed()
                         ->schema([
                             Toggle::make('activate_prompt_versions')
-                                ->label('Активировать исходные версии для staging')
+                                ->label('Использовать исходные версии для проверки')
                                 ->helperText('Используйте только в тестовом окружении после проверки промптов и выбора модели.')
                                 ->default(false),
                         ]),

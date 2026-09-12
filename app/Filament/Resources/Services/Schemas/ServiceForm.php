@@ -127,7 +127,7 @@ class ServiceForm
                             ->columnSpanFull(),
                         TextInput::make('external_image_url')
                             ->label('Ссылка на изображение')
-                            ->helperText('HTTPS-ссылка на изображение без загрузки файла.')
+                            ->helperText('Укажите ссылку на изображение, если не загружаете файл.')
                             ->maxLength(2048)
                             ->rules([new HttpsImageUrl])
                             ->columnSpanFull(),

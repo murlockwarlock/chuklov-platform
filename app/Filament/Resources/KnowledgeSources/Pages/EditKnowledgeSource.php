@@ -75,7 +75,7 @@ final class EditKnowledgeSource extends EditRecord
                 $this->fillForm();
                 $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === 'Готов'
                     ? 'Материал снова используется. Состояние поиска обновлено.'
-                    : 'Материал включён, но поиск по нему пока недоступен: не настроена модель индексации.';
+                    : 'Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.';
                 Notification::make()->title('Материал снова используется')->body($body)->success()->send();
             }),
             Action::make('delete')

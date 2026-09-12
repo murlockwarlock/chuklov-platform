@@ -110,7 +110,7 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
             $unavailable = ! $finance->available;
 
             $stats[] = Stat::make('Выручка', $this->financeValue($finance->revenueMinor, $currency, $unavailable))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Подтверждённые операции финансового журнала');
+                ->description($unavailable ? 'Расчёт недоступен' : 'По подтверждённым платежам');
             $stats[] = Stat::make('Средний чек', $this->financeValue($finance->averageReceiptMinor, $currency, $unavailable))
                 ->description($this->receiptDescription($finance, $unavailable));
             $stats[] = Stat::make('LTV новых клиентов', $this->financeValue($finance->realizedLtvMinor, $currency, $unavailable))

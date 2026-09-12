@@ -131,7 +131,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                         try {
                             app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
                             Notification::make()
-                                ->title('Анализ документа поставлен в очередь')
+                                ->title('Анализ документа запущен')
                                 ->success()
                                 ->send();
                         } catch (Throwable $exception) {

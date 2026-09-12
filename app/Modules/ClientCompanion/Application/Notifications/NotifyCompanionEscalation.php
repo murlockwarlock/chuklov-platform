@@ -9,8 +9,10 @@ use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
-use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Scenarios\Application\ScenarioEventPermissionPolicy;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -18,7 +20,10 @@ use Illuminate\Support\Facades\Log;
 
 final class NotifyCompanionEscalation
 {
-    public function __construct(private readonly NotificationChannelRegistry $channels) {}
+    public function __construct(
+        private readonly NotificationChannelRegistry $channels,
+        private readonly ScenarioEventPermissionPolicy $permissions,
+    ) {}
 
     public function handle(int $organizationId, int $escalationId): void
     {
@@ -49,17 +54,21 @@ final class NotifyCompanionEscalation
                     ->markAsRead(),
             ]);
 
-        $users = User::query()
-            ->whereHas('memberships', fn ($query) => $query
-                ->where('organization_id', $organizationId)
-                ->where('is_active', true))
-            ->get()
-            ->filter(fn (User $user): bool => $user->hasPermission(
-                OrganizationPermission::ManageCompanionHandoff,
-                $organization,
-            ));
-        foreach ($users as $user) {
-            $user->notifyNow($notification->toDatabase());
+        $memberships = OrganizationMembership::query()
+            ->where('organization_id', $organizationId)
+            ->active()
+            ->with('user')
+            ->get();
+        foreach ($memberships as $membership) {
+            if (! $this->permissions->allows(
+                ScenarioEventType::CompanionRequestedSpecialist,
+                $organizationId,
+                $membership,
+            ) || ! $membership->user instanceof User) {
+                continue;
+            }
+
+            $membership->user->notifyNow($notification->toDatabase());
         }
 
         $channel = $this->channels->get('telegram');
@@ -73,11 +82,26 @@ final class NotifyCompanionEscalation
             ->where('notifications_enabled', true)
             ->with(['staffUser', 'telegramNotificationIdentity'])
             ->get();
+        $specialistMemberships = OrganizationMembership::query()
+            ->where('organization_id', $organizationId)
+            ->active()
+            ->whereIn('user_id', $specialists->pluck('staff_user_id')->filter()->values())
+            ->get()
+            ->keyBy('user_id');
         foreach ($specialists as $specialist) {
             $identity = $specialist->telegramNotificationIdentity;
+            $membership = $specialist->staff_user_id === null
+                ? null
+                : $specialistMemberships->get($specialist->staff_user_id);
             if ($specialist->staffUser === null
                 || $identity === null
-                || $identity->verification_status !== ChannelIdentityStatus::Verified) {
+                || $identity->verification_status !== ChannelIdentityStatus::Verified
+                || $membership === null
+                || ! $this->permissions->allows(
+                    ScenarioEventType::CompanionRequestedSpecialist,
+                    $organizationId,
+                    $membership,
+                )) {
                 continue;
             }
 

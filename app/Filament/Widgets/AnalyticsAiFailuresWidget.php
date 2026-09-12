@@ -19,7 +19,7 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Состояние ИИ';
 
-    protected ?string $description = 'Только агрегированное число неуспешных запусков';
+    protected ?string $description = 'Ошибки при обработке запросов за выбранный период';
 
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
 
@@ -65,7 +65,7 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
     {
         return [
             Stat::make('Ошибки запусков ИИ', (string) ($this->getData() ?? 0))
-                ->description('Неуспешные логические запуски за период'),
+                ->description('Ошибки при обработке запросов'),
         ];
     }
 }

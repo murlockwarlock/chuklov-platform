@@ -18,6 +18,7 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
+use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateWorkingLocation;
@@ -31,6 +32,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
+use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
@@ -471,6 +473,134 @@ class PhaseOneBookingLocationsTest extends TestCase
 
         self::assertSame(['07:00', '08:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $specificDate->slots));
         self::assertSame(['02:00', '03:00'], array_map(static fn ($slot): string => $slot->startsAt->format('H:i'), $recurringDate->slots));
+    }
+
+    public function test_mixed_location_day_timezones_use_each_rule_local_date_for_portal_crm_and_booking(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'UTC'])->save();
+        $specialist->forceFill(['timezone' => 'UTC'])->save();
+        $client->forceFill(['timezone' => 'UTC'])->save();
+        $service->forceFill(['duration_minutes' => 30, 'buffer_minutes' => 0, 'formats' => ['home', 'online']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [
+            ['weekday' => 1, 'start_time' => '00:00', 'end_time' => '23:59'],
+            ['weekday' => 2, 'start_time' => '00:00', 'end_time' => '23:59'],
+            ['weekday' => 7, 'start_time' => '00:00', 'end_time' => '23:59'],
+        ]);
+        $this->saveLocationDay($admin, 'Midnight', 2, null, '12:00', '12:30', 'Pacific/Kiritimati');
+        $this->saveLocationDay($admin, 'Midnight', null, '2026-09-20', '23:00', '23:30', 'Pacific/Honolulu');
+        LocationDay::factory()->forOrganization($organization)->inactive()->create([
+            'area_name' => 'Closed',
+            'weekday' => 2,
+            'timezone' => 'Pacific/Kiritimati',
+        ]);
+
+        $recurringAvailability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-07',
+            dateTo: '2026-09-07',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'midnight',
+        );
+        $crmAvailability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'midnight',
+        );
+        $portalAvailability = app(CalculateAvailability::class)->forClient(
+            client: $client,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'Midnight',
+        );
+
+        self::assertSame(['2026-09-07T22:00:00+00:00'], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $recurringAvailability->slots,
+        ));
+        self::assertSame([
+            '2026-09-21T09:00:00+00:00',
+            '2026-09-21T22:00:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $crmAvailability->slots,
+        ));
+        self::assertSame([
+            '2026-09-21T09:00:00+00:00',
+            '2026-09-21T22:00:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $portalAvailability->slots,
+        ));
+
+        $selection = app(BookingLocationResolver::class)->matchingLocationDays(
+            'MIDNIGHT',
+            CarbonImmutable::create(2026, 9, 21, 9, 0, 0, 'UTC'),
+        );
+        self::assertCount(1, $selection);
+        self::assertSame('Pacific/Honolulu', $selection->sole()->timezone);
+        self::assertSame('2026-09-20', $selection->sole()->specific_date->toDateString());
+
+        $bookingAvailability = app(CalculateAvailability::class)->forBooking(
+            specialist: $specialist,
+            service: $service,
+            format: VisitFormat::HomeVisit,
+            startsAt: CarbonImmutable::create(2026, 9, 21, 9, 0, 0, 'UTC'),
+            displayTimezone: 'UTC',
+            now: CarbonImmutable::create(2026, 9, 1, 12, 0, 0, 'UTC'),
+            locationArea: 'Midnight',
+        );
+        self::assertSame(['2026-09-21T09:00:00+00:00'], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $bookingAvailability->slots,
+        ));
+
+        $booking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 21, 9, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+            clientTimezone: 'UTC',
+            idempotencyKey: 'mixed-location-day-timezone',
+            location: 'Midnight address',
+            locationArea: 'Midnight',
+        );
+        self::assertSame('Pacific/Honolulu', $booking->schedule_timezone);
+
+        $onlineAvailability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::Online,
+        );
+        self::assertNotEmpty($onlineAvailability->slots);
+
+        $this->expectException(ValidationException::class);
+        app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::HomeVisit,
+            locationArea: 'Closed',
+        );
     }
 
     public function test_conflicting_applicable_location_day_timezones_are_rejected(): void

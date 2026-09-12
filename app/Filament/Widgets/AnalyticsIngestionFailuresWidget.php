@@ -19,7 +19,7 @@ class AnalyticsIngestionFailuresWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Обработка базы знаний';
 
-    protected ?string $description = 'Только агрегированное число неуспешных операций';
+    protected ?string $description = 'Ошибки обработки материалов за выбранный период';
 
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
 
@@ -65,7 +65,7 @@ class AnalyticsIngestionFailuresWidget extends StatsOverviewWidget
     {
         return [
             Stat::make('Ошибки обработки знаний', (string) ($this->getData() ?? 0))
-                ->description('Неуспешные операции базы знаний за период'),
+                ->description('Ошибки обработки материалов'),
         ];
     }
 }

@@ -36,7 +36,7 @@ final class ListB2bLeads extends ListRecords
         $zoom = $readiness['automaticZoomConfigured'] ? 'Настроено' : 'Не настроено';
         $manual = $readiness['manualLinkFallbackAvailable'] ? 'Доступна' : 'Не настроено';
 
-        return "Длительность: {$duration} · календарь специалиста: {$calendar} · автоматический Zoom: {$zoom} · ручная HTTPS-ссылка: {$manual}. Слоты берутся из «Настроек расписания»; исключения — в «Изменениях расписания», паузы — в «Недоступном времени».";
+        return "Длительность разговора: {$duration} · календарь специалиста: {$calendar} · автоматическая встреча Zoom: {$zoom} · ручная ссылка: {$manual}. Время и исключения настраиваются в разделах «Настройки расписания», «Изменения расписания» и «Недоступное время».";
     }
 
     public function getBreadcrumbs(): array

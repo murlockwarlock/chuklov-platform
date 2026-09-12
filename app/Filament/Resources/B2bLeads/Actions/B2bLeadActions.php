@@ -118,7 +118,7 @@ final class B2bLeadActions
                         })
                         ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Automatic),
                     TextInput::make('manual_meeting_url')
-                        ->label('HTTPS-ссылка')
+                        ->label('Ссылка на встречу')
                         ->url()
                         ->maxLength(2000)
                         ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual)
@@ -146,9 +146,9 @@ final class B2bLeadActions
                 ->url(fn (): string => route('admin.b2b.sales-call.host-launch', ['salesCallId' => self::call($lead)->getKey()]))
                 ->openUrlInNewTab(),
             Action::make('retryProvider')
-                ->label('Повторить синхронизацию')
+                ->label('Повторить обновление встречи')
                 ->visible($canManage && in_array($lead->salesCall->provider_sync_status, [VideoMeetingSyncStatus::Failed, VideoMeetingSyncStatus::ReconciliationRequired, VideoMeetingSyncStatus::CancellationPending], true))
-                ->successNotificationTitle('Синхронизация поставлена в очередь')
+                ->successNotificationTitle('Обновление встречи запущено')
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -159,7 +159,7 @@ final class B2bLeadActions
                 ->label('Создать Zoom заново')
                 ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic)
                 ->requiresConfirmation()
-                ->successNotificationTitle('Создание Zoom поставлено в очередь')
+                ->successNotificationTitle('Создание встречи запущено')
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);

@@ -504,7 +504,7 @@ final class KnowledgeSourceProductizationTest extends TestCase
             ->callAction('reactivate')
             ->assertNotified(Notification::make()
                 ->title('Материал снова используется')
-                ->body('Материал включён, но поиск по нему пока недоступен: не настроена модель индексации.')
+                ->body('Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.')
                 ->success())
             ->assertSee('Используется')
             ->assertSee('Индексация недоступна');
@@ -526,9 +526,9 @@ final class KnowledgeSourceProductizationTest extends TestCase
         Livewire::actingAs($actor)
             ->test(ListKnowledgeSources::class)
             ->assertSuccessful()
-            ->assertSee('Семантический поиск: Не настроен')
-            ->assertSee('OpenAI · text-embedding-3-small')
-            ->assertSee('OPENAI_API_KEY')
+            ->assertSee('Поиск по смыслу: Не настроен')
+            ->assertSee('Не настроено подключение AI.')
+            ->assertDontSee('OPENAI_API_KEY')
             ->assertDontSee('sk-');
     }
 

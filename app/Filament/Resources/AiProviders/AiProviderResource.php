@@ -86,13 +86,13 @@ final class AiProviderResource extends Resource
                 TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->emptyStateHeading('Сервисов AI пока нет')
-            ->emptyStateDescription('Подключите сервис AI, которым будет пользоваться Chuklov. Сначала выберите провайдера и добавьте API-ключ.')
+            ->emptyStateDescription('Добавьте подключение AI: выберите сервис и укажите API-ключ.')
             ->recordActions([
                 Action::make('test_connection')
                     ->label('Проверить связь')
                     ->icon(Heroicon::OutlinedSignal)
                     ->iconButton()
-                    ->tooltip('Проверить связь с провайдером')
+                    ->tooltip('Проверить подключение')
                     ->color('gray')
                     ->action(function (AiProviderConfiguration $record): void {
                         $actor = Auth::user();

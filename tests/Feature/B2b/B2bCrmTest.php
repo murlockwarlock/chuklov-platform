@@ -51,7 +51,9 @@ final class B2bCrmTest extends TestCase
             ->assertCanSeeTableRecords([$ownLead])
             ->assertCanNotSeeTableRecords([$foreignLead])
             ->assertSee('Настроить слоты и Zoom')
-            ->assertSee('Длительность: Требуется действие');
+            ->assertSee('Длительность разговора: Требуется действие')
+            ->assertSee('ручная ссылка: Доступна')
+            ->assertDontSee('ручная HTTPS-ссылка');
 
         self::assertSame($organization->getKey(), $ownLead->organization_id);
         self::assertSame($foreignOrganization->getKey(), $foreignLead->organization_id);

@@ -5,6 +5,7 @@ namespace Tests\Feature\AI;
 use App\Filament\Pages\AiMonitoringOverview;
 use App\Filament\Resources\AiEvaluations\Pages\CreateAiEvaluation;
 use App\Filament\Resources\AiPrompts\Pages\EditAiPrompt;
+use App\Filament\Resources\AiPrompts\Pages\ListAiPrompts;
 use App\Filament\Resources\AiPrompts\RelationManagers\PromptVersionsRelationManager;
 use App\Filament\Resources\AiProviders\Pages\CreateAiProvider;
 use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
@@ -840,6 +841,23 @@ final class AiAdministrationUxTest extends TestCase
             ->assertSee('Продолжить черновик')
             ->mountAction('editPrompt')
             ->assertActionDataSet(['change_notes' => 'Уточнить тон']);
+    }
+
+    public function test_prompt_list_uses_a_human_action_label_for_playground_checks(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        app(CreateAiPrompt::class)->handle($admin, [
+            'key' => 'client_companion_workspace',
+            'name' => 'Agent 4',
+            'capability' => AiCapability::ClientCompanion->value,
+            'description' => 'Prompt description',
+        ]);
+        $this->resolveFilamentContext($organization, $admin);
+
+        Livewire::actingAs($admin)
+            ->test(ListAiPrompts::class)
+            ->assertSee('Проверить')
+            ->assertDontSee('Песочница');
     }
 
     public function test_evaluation_key_and_linked_prompt_lookup_are_immutable_bounded_and_tenant_scoped(): void

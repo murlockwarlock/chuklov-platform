@@ -40,7 +40,7 @@ final class BroadcastFailurePresentation
             'template_inactive_or_channel_unavailable' => 'Шаблон отключён или Telegram недоступен',
             'delivery_outcome_unknown' => 'Telegram не подтвердил результат. Проверьте чат перед повторной отправкой',
             'delivery_pre_send_failure' => 'Отправка не началась. Повторите попытку',
-            'queue_job_failed', 'queue_job_failed_terminal', 'queue_dispatch_failed', 'queue_dispatch_exhausted' => 'Задача отправки не выполнена. Проверьте очередь сообщений',
+            'queue_job_failed', 'queue_job_failed_terminal', 'queue_dispatch_failed', 'queue_dispatch_exhausted' => 'Не удалось отправить сообщение. Повторите попытку позже',
             'channel_error', 'telegram_channel_unavailable' => 'Не удалось связаться с Telegram. Повторите попытку',
             default => 'Отправка не выполнена. Проверьте настройки Telegram и получателя',
         };

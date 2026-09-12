@@ -87,7 +87,7 @@
                                 </div>
                             @endif
                             @if ($message['traceUrl'])
-                                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-3" href="{{ $message['traceUrl'] }}">Открыть технические данные AI</x-filament::button>
+                                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-3" href="{{ $message['traceUrl'] }}">Открыть подробности AI</x-filament::button>
                             @endif
                         </article>
                     </div>

@@ -88,15 +88,18 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->test(AnalyticsFinanceWidget::class)
             ->assertSuccessful()
             ->assertSee('Финансы')
+            ->assertSee('Оплата и задолженность за выбранный период')
             ->assertSee('Расчёт недоступен');
         Livewire::actingAs($admin)
             ->test(AnalyticsAiFailuresWidget::class)
             ->assertSuccessful()
-            ->assertSee('Ошибки запусков ИИ');
+            ->assertSee('Ошибки запусков ИИ')
+            ->assertSee('Ошибки при обработке запросов за выбранный период');
         Livewire::actingAs($admin)
             ->test(AnalyticsIngestionFailuresWidget::class)
             ->assertSuccessful()
-            ->assertSee('Ошибки обработки знаний');
+            ->assertSee('Ошибки обработки знаний')
+            ->assertSee('Ошибки обработки материалов за выбранный период');
         Livewire::actingAs($admin)
             ->test(UpcomingBookingsWidget::class)
             ->assertSuccessful()

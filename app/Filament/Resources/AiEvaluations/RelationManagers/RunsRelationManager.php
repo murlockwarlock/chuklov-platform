@@ -53,7 +53,7 @@ class RunsRelationManager extends RelationManager
                     ->label('Расчётная стоимость Chuklov')
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => self::money($state, $record, 'estimated_by_currency')),
                 TextColumn::make('provider_cost_minor_units')
-                    ->label('Стоимость от провайдера')
+                    ->label('Стоимость AI-сервиса')
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => self::money($state, $record, 'provider_reported_by_currency')),
                 TextColumn::make('average_latency_ms')
                     ->label('Среднее время')

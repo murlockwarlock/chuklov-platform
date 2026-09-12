@@ -24,7 +24,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Финансы';
 
-    protected ?string $description = 'Только подтверждённые данные финансового журнала';
+    protected ?string $description = 'Оплата и задолженность за выбранный период';
 
     protected static ?int $sort = 5;
 
@@ -72,7 +72,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 
         return [
             Stat::make('Выручка', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->revenueMinor, $currency))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Подтверждённые операции финансового журнала'),
+                ->description($unavailable ? 'Расчёт недоступен' : 'По подтверждённым платежам'),
             Stat::make('Средний чек', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->averageReceiptMinor, $currency))
                 ->description($this->receiptDescription($data, $unavailable)),
             Stat::make('LTV новых клиентов', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->realizedLtvMinor, $currency))

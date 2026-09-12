@@ -107,7 +107,7 @@
                     @endif
                 </article>
             @empty
-                <p class="text-gray-500 dark:text-gray-400">Технических запусков пока нет.</p>
+                <p class="text-gray-500 dark:text-gray-400">Запусков пока нет.</p>
             @endforelse
         </div>
     </div>
