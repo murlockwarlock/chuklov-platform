@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SourceBucket;
+use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -84,11 +85,17 @@ final class AcquisitionAnalytics
             WHEN {$utmSourceCondition} THEN attribution.utm_source
             ELSE NULL
         END";
+        $presentedSourceLabels = array_map(
+            static fn (string $label): string => str_replace("'", "''", $label),
+            array_values(array_unique(AttributionSourcePresentation::directSourceLabels())),
+        );
+        $presentedSourceLabelsSql = "'".implode("', '", $presentedSourceLabels)."'";
         $directSourceNeedsPrefix = "semantic_kind = '".self::SemanticKindDirect."'
             AND (
                 semantic_value IN ('".self::UnknownSourceLabel."', '".self::ReferralSourceLabel."', '".self::OtherSourceLabel."')
                 OR semantic_value LIKE '".self::UtmSourceLabelPrefix."%'
                 OR semantic_value LIKE '".self::DirectSourceLabelPrefix."%'
+                OR semantic_value IN ({$presentedSourceLabelsSql})
             )";
         $knownDirectSourceLabel = $this->knownDirectSourceLabelExpression();
         $sourceLabel = "CASE
@@ -166,13 +173,14 @@ final class AcquisitionAnalytics
     /** @return literal-string */
     private function knownDirectSourceLabelExpression(): string
     {
-        return "CASE
-            WHEN LOWER(semantic_value) = 'friend' THEN 'По рекомендации знакомых'
-            WHEN LOWER(semantic_value) = 'social' THEN 'Социальные сети'
-            WHEN LOWER(semantic_value) = 'search' THEN 'Поиск в интернете'
-            WHEN LOWER(semantic_value) = 'partner' THEN 'Партнёр'
-            WHEN LOWER(semantic_value) = 'other' THEN 'Другое'
-            ELSE semantic_value
-        END";
+        $cases = [];
+
+        foreach (AttributionSourcePresentation::directSourceLabels() as $source => $label) {
+            $source = str_replace("'", "''", strtolower($source));
+            $label = str_replace("'", "''", $label);
+            $cases[] = "WHEN LOWER(semantic_value) = '{$source}' THEN '{$label}'";
+        }
+
+        return 'CASE '.implode(' ', $cases).' ELSE semantic_value END';
     }
 }

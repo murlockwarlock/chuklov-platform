@@ -16,6 +16,14 @@ final class AttributionSourcePresentation
         'telegram' => 'Telegram',
         'email_auth' => 'Email',
         'portal' => 'Портал',
+        'site' => 'Сайт',
+        'web' => 'Сайт',
+        'website' => 'Сайт',
+        'instagram' => 'Instagram',
+        'facebook' => 'Социальные сети',
+        'vk' => 'Социальные сети',
+        'yandex' => 'Yandex',
+        'google' => 'Google',
         'source' => 'Не указан',
         'manual' => 'Не указан',
         'legacy' => 'Не указан',
@@ -42,5 +50,14 @@ final class AttributionSourcePresentation
     public static function knownLabels(): array
     {
         return self::SourceLabels;
+    }
+
+    /** @return array<string, string> */
+    public static function directSourceLabels(): array
+    {
+        return [
+            ...self::SourceLabels,
+            ...array_diff_key(self::TechnicalLabels, array_flip(['source', 'manual', 'legacy'])),
+        ];
     }
 }

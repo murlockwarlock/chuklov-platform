@@ -21,7 +21,7 @@ class AnalyticsAcquisitionWidget extends Widget
 
     protected int|string|array $columnSpan = 'full';
 
-    protected static ?int $sort = 3;
+    protected static ?int $sort = 2;
 
     public static function canView(): bool
     {

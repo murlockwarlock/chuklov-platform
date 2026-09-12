@@ -8,6 +8,7 @@ final readonly class SchedulingAnalyticsData
         public int $bookings,
         public int $cancellations,
         public int $reschedules,
+        public int $noShows,
         public int $visits,
         public int $homeRequests,
         public int $retainedClients,

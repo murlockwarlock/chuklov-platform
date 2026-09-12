@@ -21,6 +21,8 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
 
     protected ?string $description = 'Только агрегированное число неуспешных запусков';
 
+    protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
+
     protected static ?int $sort = 6;
 
     public static function canView(): bool

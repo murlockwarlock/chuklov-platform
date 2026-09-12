@@ -20,9 +20,9 @@ class AnalyticsSchedulingWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Записи и визиты';
 
-    protected ?string $description = 'Операционные показатели за выбранный период';
+    protected ?string $description = 'Записи, визиты и удержание клиентов за выбранный период';
 
-    protected static ?int $sort = 4;
+    protected static ?int $sort = 3;
 
     public static function canView(): bool
     {
@@ -69,9 +69,14 @@ class AnalyticsSchedulingWidget extends StatsOverviewWidget
             Stat::make('Завершённые визиты', (string) ($data === null ? 0 : $data->visits)),
             Stat::make('Отмены', (string) ($data === null ? 0 : $data->cancellations)),
             Stat::make('Переносы', (string) ($data === null ? 0 : $data->reschedules)),
+            Stat::make('Неявки', (string) ($data === null ? 0 : $data->noShows)),
             Stat::make('Запросы на выезд', (string) ($data === null ? 0 : $data->homeRequests)),
-            Stat::make('Записаны снова после визита', $this->retentionLabel($data))
+            Stat::make('Удержание клиентов', $this->retentionLabel($data))
                 ->description($this->retentionDescription($data)),
+            Stat::make('Удержаны', (string) ($data === null ? 0 : $data->retainedClients))
+                ->description('Есть следующая запись'),
+            Stat::make('Без следующей записи', (string) ($data === null ? 0 : $data->notRetainedClients))
+                ->description('После завершённого визита'),
         ];
     }
 
@@ -79,7 +84,7 @@ class AnalyticsSchedulingWidget extends StatsOverviewWidget
     {
         $rate = $data?->retentionRate();
 
-        return $rate === null ? '—' : number_format($rate, 1, ',', ' ').'%';
+        return $rate === null ? 'Нет данных' : number_format($rate, 1, ',', ' ').'%';
     }
 
     private function retentionDescription(?SchedulingAnalyticsData $data): string

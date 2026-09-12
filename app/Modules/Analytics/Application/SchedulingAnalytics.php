@@ -46,6 +46,7 @@ final class SchedulingAnalytics
             ->where('occurred_at', '<', $period->endUtc)
             ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as cancellations', [BookingEventType::Cancelled->value])
             ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as reschedules', [BookingEventType::Rescheduled->value])
+            ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as no_shows', [BookingEventType::NoShow->value])
             ->selectRaw('COUNT(DISTINCT CASE WHEN event_type = ? THEN booking_id END) as visits', [BookingEventType::Completed->value])
             ->first();
 
@@ -57,6 +58,7 @@ final class SchedulingAnalytics
             bookings: (int) ($bookingTotals->bookings ?? 0),
             cancellations: (int) ($eventTotals->cancellations ?? 0),
             reschedules: (int) ($eventTotals->reschedules ?? 0),
+            noShows: (int) ($eventTotals->no_shows ?? 0),
             visits: (int) ($eventTotals->visits ?? 0),
             homeRequests: (int) ($bookingTotals->home_requests ?? 0),
             retainedClients: $retainedClients,
