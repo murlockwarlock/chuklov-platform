@@ -63,7 +63,7 @@ class SchedulingConfiguration extends Page
 
     protected static ?string $navigationLabel = 'Настройки расписания';
 
-    protected ?string $subheading = 'Здесь задаются длительность B2B-разговора, специалист и его рабочие часы. Исключения и недоступное время настраиваются в соседних разделах группы «Записи». Автоматический Zoom использует защищённое подключение без показа секретов; для отдельных разговоров доступна ручная HTTPS-ссылка.';
+    protected ?string $subheading = 'Здесь настраиваются B2B-разговоры и рабочее время специалиста. Исключения и недоступное время — в разделе «Записи».';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
@@ -181,8 +181,7 @@ class SchedulingConfiguration extends Page
                     ->label('Буфер выезда после консультации (минуты)')
                     ->integer()
                     ->minValue(0)
-                    ->maxValue(1440)
-                    ->helperText('Для Chuklov 150 минут вместе с консультацией дают полный цикл HomeVisit 4,5 часа.'),
+                    ->maxValue(1440),
                 TextInput::make('lead_time_minutes')
                     ->label('Минимальный срок до записи (минуты)')
                     ->integer()
@@ -200,7 +199,7 @@ class SchedulingConfiguration extends Page
                     ->integer()
                     ->minValue(1)
                     ->maxValue(1440)
-                    ->helperText('Без этого значения клиентские слоты не публикуются. Бесплатный Zoom поддерживает автоматические разговоры до 40 минут; для большей длительности отметьте лицензированный хост.')
+                    ->helperText('Укажите длительность разговора. Для автоматической встречи доступная длительность зависит от тарифа Zoom.')
                     ->nullable(),
                 Select::make('default_timezone')
                     ->label('Часовой пояс организации')
@@ -210,7 +209,7 @@ class SchedulingConfiguration extends Page
                     ))
                     ->searchable()
                     ->required()
-                    ->helperText('Все расписания и запланированные рассылки показываются операторам в этом часовом поясе. Хранение выполняется в UTC.'),
+                    ->helperText('Используется для расписаний и уведомлений в CRM.'),
                 Checkbox::make('b2b_zoom_host_licensed')
                     ->label('У Zoom-хоста есть лицензия Meetings')
                     ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
@@ -239,11 +238,11 @@ class SchedulingConfiguration extends Page
                     ->columns(1)
                     ->columnSpanFull(),
                 Section::make('Подключение Zoom')
-                    ->description('Создайте приложение Server-to-Server OAuth в Zoom Marketplace и вставьте сюда его Account ID, Client ID, Client Secret и User ID ведущего. Секрет не показывается после сохранения; пустое поле при редактировании сохраняет прежний секрет.')
+                    ->description('Подключите Zoom для автоматического создания встреч. Если подключение не настроено, используйте ручную ссылку.')
                     ->schema([
                         Placeholder::make('zoom_instructions')
                             ->label('Что увидит клиент')
-                            ->content('Система создаст встречу в подключённом Zoom-аккаунте автоматически. После синхронизации ссылка появится у клиента.'),
+                            ->content('Встреча создаётся автоматически, а ссылка появится у клиента.'),
                         Placeholder::make('zoom_status')
                             ->label('Текущее состояние')
                             ->content(function (): string {
@@ -256,7 +255,7 @@ class SchedulingConfiguration extends Page
                             }),
                         Checkbox::make('zoom_enabled')
                             ->label('Разрешить автоматическое создание Zoom-встреч')
-                            ->helperText('Включайте после заполнения всех полей. Без активного подключения клиенту доступна только ручная ссылка.')
+                            ->helperText('Включите после заполнения данных Zoom. Если не включать, используйте ручную ссылку.')
                             ->columnSpanFull(),
                         TextInput::make('zoom_account_id')
                             ->label('Account ID')
@@ -269,11 +268,11 @@ class SchedulingConfiguration extends Page
                             ->password()
                             ->revealable()
                             ->maxLength(2048)
-                            ->helperText('Оставьте пустым при редактировании, чтобы сохранить сохранённый секрет.'),
+                            ->helperText('Оставьте пустым, чтобы не менять текущий ключ.'),
                         TextInput::make('zoom_host_user_id')
                             ->label('User ID ведущего Zoom')
                             ->maxLength(255)
-                            ->helperText('Это User ID пользователя, от имени которого создаются встречи.'),
+                            ->helperText('Укажите пользователя Zoom, от имени которого создаются встречи.'),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),

@@ -73,11 +73,10 @@ final class KnowledgeSourcePresentation
         try {
             $configuration = EmbeddingConfiguration::active();
         } catch (\Throwable) {
-            return 'Семантический поиск: Не настроен. Провайдер: OpenAI · text-embedding-3-small. Модель индексации превращает материалы базы знаний в данные для смыслового поиска AI. Не настроена конфигурация индексации.';
+            return 'Поиск по смыслу пока не настроен. Добавьте подключение AI и сохраните настройки поиска.';
         }
 
-        $provider = $this->providerLabel($configuration->provider);
-        $summary = 'Семантический поиск: '.$this->semanticSearchStatus().'. Провайдер: '.$provider.' · '.$configuration->model.'. Модель индексации превращает материалы базы знаний в данные для смыслового поиска AI.';
+        $summary = 'Поиск по смыслу: '.$this->semanticSearchStatus().'. Модель AI: '.$configuration->model.'.';
         $gap = $this->semanticSearchGap($configuration);
 
         return $gap === null ? $summary : $summary.' '.$gap;
@@ -88,15 +87,15 @@ final class KnowledgeSourcePresentation
         $configuration ??= EmbeddingConfiguration::active();
 
         if (! $this->providerCredentialIsConfigured($configuration->provider)) {
-            return 'Не настроена переменная окружения '.$this->credentialName($configuration->provider).'.';
+            return 'Не настроено подключение AI.';
         }
 
         try {
             EmbeddingPricingPolicy::active()->assertCompatible($configuration);
         } catch (InvalidArgumentException) {
-            return 'Не настроена стоимость индексации в окружении staging.';
+            return 'Не настроена стоимость обработки материалов.';
         } catch (\Throwable) {
-            return 'Не настроена конфигурация индексации в окружении staging.';
+            return 'Не настроены параметры поиска по смыслу.';
         }
 
         return null;
@@ -242,28 +241,6 @@ final class KnowledgeSourcePresentation
         $key = config('ai.providers.'.$provider.'.key');
 
         return is_string($key) && trim($key) !== '';
-    }
-
-    private function providerLabel(string $provider): string
-    {
-        return match (strtolower($provider)) {
-            'openai' => 'OpenAI',
-            'deepseek' => 'DeepSeek',
-            'anthropic' => 'Anthropic',
-            'ollama' => 'Ollama',
-            default => $provider,
-        };
-    }
-
-    private function credentialName(string $provider): string
-    {
-        return match (strtolower($provider)) {
-            'openai' => 'OPENAI_API_KEY',
-            'deepseek' => 'DEEPSEEK_API_KEY',
-            'anthropic' => 'ANTHROPIC_API_KEY',
-            'gemini' => 'GEMINI_API_KEY',
-            default => strtoupper($provider).'_API_KEY',
-        };
     }
 
     private function hasCompatibleReadyRun(KnowledgeSource $source): bool

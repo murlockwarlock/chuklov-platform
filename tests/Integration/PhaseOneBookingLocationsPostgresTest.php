@@ -7,13 +7,21 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -551,6 +559,159 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             format: VisitFormat::HomeVisit,
             locationArea: 'Conflict',
         );
+    }
+
+    public function test_postgresql_mixed_location_day_timezones_use_each_rule_local_date_for_portal_crm_and_booking(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $client, $specialist, $service] = $this->availabilityFixture();
+        $organization->forceFill(['timezone' => 'UTC'])->save();
+        $specialist->forceFill(['timezone' => 'UTC'])->save();
+        $client->forceFill(['timezone' => 'UTC'])->save();
+        $service->forceFill(['duration_minutes' => 30, 'buffer_minutes' => 0, 'formats' => ['home', 'online']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [
+            ['weekday' => 1, 'start_time' => '00:00', 'end_time' => '23:59'],
+            ['weekday' => 2, 'start_time' => '00:00', 'end_time' => '23:59'],
+            ['weekday' => 7, 'start_time' => '00:00', 'end_time' => '23:59'],
+        ]);
+        app(SaveLocationDay::class)->handle(
+            actor: $admin,
+            locationDay: null,
+            areaName: 'Midnight',
+            weekday: 2,
+            specificDate: null,
+            startTime: '12:00',
+            endTime: '12:30',
+            timezone: 'Pacific/Kiritimati',
+            isActive: true,
+            notes: null,
+        );
+        app(SaveLocationDay::class)->handle(
+            actor: $admin,
+            locationDay: null,
+            areaName: 'Midnight',
+            weekday: null,
+            specificDate: '2026-09-20',
+            startTime: '23:00',
+            endTime: '23:30',
+            timezone: 'Pacific/Honolulu',
+            isActive: true,
+            notes: null,
+        );
+        LocationDay::factory()->forOrganization($organization)->inactive()->create([
+            'area_name' => 'Closed',
+            'weekday' => 2,
+            'timezone' => 'Pacific/Kiritimati',
+        ]);
+
+        $recurringAvailability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-07',
+            dateTo: '2026-09-07',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'midnight',
+        );
+        $crmAvailability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'midnight',
+        );
+        $portalAvailability = app(CalculateAvailability::class)->forClient(
+            client: $client,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: '2026-09-21',
+            dateTo: '2026-09-21',
+            format: VisitFormat::HomeVisit,
+            displayTimezone: 'UTC',
+            locationArea: 'Midnight',
+        );
+
+        self::assertSame(['2026-09-07T22:00:00+00:00'], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $recurringAvailability->slots,
+        ));
+        self::assertSame([
+            '2026-09-21T09:00:00+00:00',
+            '2026-09-21T22:00:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $crmAvailability->slots,
+        ));
+        self::assertSame([
+            '2026-09-21T09:00:00+00:00',
+            '2026-09-21T22:00:00+00:00',
+        ], array_map(
+            static fn ($slot): string => $slot->startsAt->toIso8601String(),
+            $portalAvailability->slots,
+        ));
+
+        $booking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 21, 9, 0, 0, 'UTC'),
+            format: VisitFormat::HomeVisit,
+            clientTimezone: 'UTC',
+            idempotencyKey: 'postgres-mixed-location-day-timezone',
+            location: 'Midnight address',
+            locationArea: 'Midnight',
+        );
+        self::assertSame('Pacific/Honolulu', $booking->schedule_timezone);
+        self::assertSame(1, Booking::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('visit_format', VisitFormat::HomeVisit->value)
+            ->count());
+    }
+
+    public function test_postgresql_companion_handoff_materializes_only_permissioned_active_members(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $inactiveAdmin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $inactiveAdmin->membershipFor($organization)?->forceFill(['is_active' => false])->save();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+
+        $event = ScenarioEvent::factory()->forOrganization($organization)->create([
+            'event_name' => ScenarioEventType::CompanionRequestedSpecialist->value,
+            'aggregate_type' => 'companion_escalation',
+            'aggregate_id' => '1',
+            'payload' => [
+                'client_id' => $client->getKey(),
+                'escalation_id' => 1,
+                'reason' => 'human_requested',
+            ],
+        ]);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $actions = ScenarioAction::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('scenario_event_id', $event->getKey())
+            ->get();
+
+        self::assertCount(2, $actions);
+        self::assertSame([$admin->getKey(), $admin->getKey()], $actions
+            ->sortBy('channel_priority')
+            ->pluck('recipient_user_id')
+            ->map(static fn ($userId): int => (int) $userId)
+            ->values()
+            ->all());
+        self::assertSame(0, $actions->where('recipient_user_id', $staff->getKey())->count());
+        self::assertSame(0, $actions->where('recipient_user_id', $inactiveAdmin->getKey())->count());
     }
 
     /** @return array{Organization, Client, Specialist, Service} */

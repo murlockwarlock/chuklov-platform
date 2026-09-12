@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Collection;
 
 final class OrganizationScenarioRecipientResolver implements ScenarioRecipientResolver
 {
+    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions) {}
+
     /** @return list<ScenarioRecipient> */
     public function resolve(ScenarioRule $rule, ScenarioEvent $event): array
     {
@@ -55,14 +57,20 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
      */
     private function memberRecipients(ScenarioEvent $event, array $userIds): array
     {
-        return array_values($this->memberships($event, $userIds)->map(
-            fn (OrganizationMembership $membership): ScenarioRecipient => new ScenarioRecipient(
-                type: 'internal',
-                clientId: null,
-                userId: (int) $membership->user_id,
-                locale: 'ru',
-            ),
-        )->values()->all());
+        return array_values($this->memberships($event, $userIds)
+            ->filter(fn (OrganizationMembership $membership): bool => $this->permissions->allows(
+                $event->event_name,
+                (int) $event->organization_id,
+                $membership,
+            ))
+            ->map(
+                fn (OrganizationMembership $membership): ScenarioRecipient => new ScenarioRecipient(
+                    type: 'internal',
+                    clientId: null,
+                    userId: (int) $membership->user_id,
+                    locale: 'ru',
+                ),
+            )->values()->all());
     }
 
     /** @return list<ScenarioRecipient> */
@@ -82,6 +90,11 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             ->whereIn('role', $roles)
             ->orderBy('user_id')
             ->get()
+            ->filter(fn (OrganizationMembership $membership): bool => $this->permissions->allows(
+                $event->event_name,
+                (int) $event->organization_id,
+                $membership,
+            ))
             ->map(fn (OrganizationMembership $membership): ScenarioRecipient => new ScenarioRecipient(
                 type: 'internal',
                 clientId: null,
@@ -102,11 +115,17 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             ->first();
         $userId = $specialist?->staff_user_id;
 
-        if ($userId === null || ! OrganizationMembership::query()
+        $membership = $userId === null ? null : OrganizationMembership::query()
             ->where('organization_id', $event->organization_id)
             ->where('user_id', $userId)
             ->active()
-            ->exists()) {
+            ->first();
+
+        if ($membership === null || ! $this->permissions->allows(
+            $event->event_name,
+            (int) $event->organization_id,
+            $membership,
+        )) {
             return [];
         }
 

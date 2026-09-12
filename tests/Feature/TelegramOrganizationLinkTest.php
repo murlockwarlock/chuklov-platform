@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Auth\EditProfile;
 use App\Filament\Resources\Specialists\Pages\CreateSpecialist as CreateSpecialistPage;
+use App\Filament\Resources\Specialists\Pages\EditSpecialist;
 use App\Filament\Resources\Specialists\Pages\ViewSpecialist;
 use App\Models\User;
 use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
@@ -255,6 +256,42 @@ final class TelegramOrganizationLinkTest extends TestCase
         Livewire::actingAs($admin)
             ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
             ->assertActionVisible('createTelegramLink')
+            ->assertSee('Доступен')
+            ->assertSee('Да')
+            ->assertSee('Часовой пояс специалиста')
+            ->assertSee('Часовой пояс CRM')
+            ->assertSee('Email сотрудника')
+            ->assertSee('Telegram')
+            ->assertSee('Не подключён')
+            ->assertSee('Рабочих интервалов')
+            ->assertSee('Назначенных услуг')
+            ->assertSee('Всего записей')
+            ->mountAction('createTelegramLink')
+            ->assertActionDataSet(fn (array $data): bool => str_starts_with((string) ($data['link'] ?? ''), 'https://t.me/chuklov_test_bot?start=staff_'));
+
+        self::assertSame($staff->getKey(), OrganizationChannelLinkToken::query()->latest('id')->sole()->user_id);
+    }
+
+    public function test_specialist_edit_page_contains_the_telegram_connection_action_without_legacy_read_only_fields(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Редактирование Telegram',
+            staffUserId: $staff->getKey(),
+        );
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(EditSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertActionVisible('createTelegramLink')
+            ->assertSee('Подключить Telegram')
+            ->assertDontSee('Привязка Telegram сотрудника')
+            ->assertDontSee('Подтверждённый Telegram ID')
             ->mountAction('createTelegramLink')
             ->assertActionDataSet(fn (array $data): bool => str_starts_with((string) ($data['link'] ?? ''), 'https://t.me/chuklov_test_bot?start=staff_'));
 

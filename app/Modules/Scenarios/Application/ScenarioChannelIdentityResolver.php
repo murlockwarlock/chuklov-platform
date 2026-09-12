@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 final class ScenarioChannelIdentityResolver
 {
+    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions) {}
+
     public function resolve(ScenarioAction $action, string $channel): ?ScenarioChannelIdentity
     {
         if ($action->recipient_type === 'client' && $action->client_id !== null) {
@@ -30,6 +32,14 @@ final class ScenarioChannelIdentityResolver
                 ->first();
 
             if ($membership === null || ! $membership->notifications_enabled) {
+                return null;
+            }
+
+            if (! $this->permissions->allows(
+                $action->trigger_event,
+                (int) $action->organization_id,
+                $membership,
+            )) {
                 return null;
             }
 

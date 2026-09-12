@@ -42,7 +42,7 @@
             </div>
         </div>
         <div class="rounded-xl bg-gray-50 p-3 dark:bg-white/5">
-            <div class="text-xs text-gray-500">Стоимость от провайдера</div>
+            <div class="text-xs text-gray-500">Стоимость AI-сервиса</div>
             <div class="mt-1 text-lg font-semibold">
                 @if (($metrics['cost']['provider_reported_unknown_count'] ?? $metrics['cost']['provider_reported_currency_unknown_count'] ?? 0) > 0)
                     нет данных: стоимость не сообщена или валюта неизвестна
@@ -158,5 +158,5 @@
         {{ $metrics['judge']['label'] ?? 'не настроена' }}.
     </div>
 
-    <p class="text-xs text-gray-500">Подробности примеров показаны выше. Защищённый технический след AI доступен только через отдельное разрешение.</p>
+    <p class="text-xs text-gray-500">Подробности примеров показаны выше. Дополнительные сведения доступны по отдельному разрешению.</p>
 </div>

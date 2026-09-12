@@ -7,6 +7,7 @@ use App\Filament\Widgets\AnalyticsAcquisitionWidget;
 use App\Filament\Widgets\AnalyticsAiFailuresWidget;
 use App\Filament\Widgets\AnalyticsFinanceWidget;
 use App\Filament\Widgets\AnalyticsIngestionFailuresWidget;
+use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
@@ -36,6 +37,9 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         $dashboard = new Dashboard;
 
         self::assertSame(1, $dashboard->getColumns());
+        self::assertSame(UpcomingBookingsWidget::class, $dashboard->getWidgets()[0]);
+        self::assertSame(AnalyticsKpiWidget::class, $dashboard->getWidgets()[1]);
+        self::assertContains(AnalyticsKpiWidget::class, $dashboard->getWidgets());
         self::assertContains(UpcomingBookingsWidget::class, $dashboard->getWidgets());
         self::assertContains(AnalyticsAcquisitionWidget::class, $dashboard->getWidgets());
         self::assertContains(AnalyticsSchedulingWidget::class, $dashboard->getWidgets());
@@ -65,25 +69,37 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->test(AnalyticsAcquisitionWidget::class)
             ->assertSuccessful()
             ->assertSee('Привлечение')
-            ->assertSee('Новые клиенты');
+            ->assertSee('Новые клиенты')
+            ->assertSee('Источники новых клиентов');
+        Livewire::actingAs($admin)
+            ->test(AnalyticsKpiWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Ключевые показатели')
+            ->assertSee('Новые клиенты')
+            ->assertSee('Завершённые визиты');
         Livewire::actingAs($admin)
             ->test(AnalyticsSchedulingWidget::class)
             ->assertSuccessful()
             ->assertSee('Записи и визиты')
-            ->assertSee('Завершённые визиты');
+            ->assertSee('Завершённые визиты')
+            ->assertSee('Удержание клиентов')
+            ->assertSee('Неявки');
         Livewire::actingAs($admin)
             ->test(AnalyticsFinanceWidget::class)
             ->assertSuccessful()
             ->assertSee('Финансы')
+            ->assertSee('Оплата и задолженность за выбранный период')
             ->assertSee('Расчёт недоступен');
         Livewire::actingAs($admin)
             ->test(AnalyticsAiFailuresWidget::class)
             ->assertSuccessful()
-            ->assertSee('Ошибки запусков ИИ');
+            ->assertSee('Ошибки запусков ИИ')
+            ->assertSee('Ошибки при обработке запросов за выбранный период');
         Livewire::actingAs($admin)
             ->test(AnalyticsIngestionFailuresWidget::class)
             ->assertSuccessful()
-            ->assertSee('Ошибки обработки знаний');
+            ->assertSee('Ошибки обработки знаний')
+            ->assertSee('Ошибки обработки материалов за выбранный период');
         Livewire::actingAs($admin)
             ->test(UpcomingBookingsWidget::class)
             ->assertSuccessful()
@@ -103,6 +119,13 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         self::assertFalse(AnalyticsFinanceWidget::canView());
         self::assertNotContains(AnalyticsFinanceWidget::class, (new Dashboard)->getVisibleWidgets());
+
+        Livewire::actingAs($admin)
+            ->test(AnalyticsKpiWidget::class)
+            ->assertSuccessful()
+            ->assertDontSee('Выручка')
+            ->assertDontSee('Дебиторская задолженность')
+            ->assertDontSee('USD');
 
         Livewire::actingAs($admin)
             ->test(AnalyticsSchedulingWidget::class)
@@ -139,6 +162,16 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         self::assertSame(1, $component->instance()->getData()->bookings);
         self::assertSame('UTC', $organization->defaultTimezone());
+
+        $kpi = Livewire::actingAs($admin)->test(AnalyticsKpiWidget::class, [
+            'pageFilters' => [
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-08-10',
+                'end_date' => '2026-08-10',
+            ],
+        ]);
+
+        self::assertSame(1, $kpi->instance()->getData()['scheduling']->bookings);
     }
 
     public function test_dashboard_query_count_does_not_grow_with_client_count(): void

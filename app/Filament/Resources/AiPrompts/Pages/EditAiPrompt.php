@@ -49,7 +49,7 @@ class EditAiPrompt extends EditRecord
         return $schema->components([
             View::make('filament.resources.ai-prompts.active-workspace'),
             Section::make('Настройки промпта')
-                ->description('Название, описание и технические параметры карточки.')
+                ->description('Название и описание промпта.')
                 ->collapsed()
                 ->schema([$this->getFormContentComponent()]),
             Section::make('История версий')
@@ -112,7 +112,7 @@ class EditAiPrompt extends EditRecord
             ->schema([
                 Textarea::make('test_input')->label('Пример запроса')->rows(5)->default('{"query": "Тестовый запрос"}')->required(),
                 Select::make('model_release_id')
-                    ->label('Модель для staging-проверки')
+                    ->label('Модель для проверки')
                     ->options(fn (): array => AiPromptResource::modelReleaseOptions($this->prompt()))
                     ->searchable()
                     ->native(false)
@@ -135,7 +135,7 @@ class EditAiPrompt extends EditRecord
                     $this->notifyPlaygroundResult($result);
                 } catch (Throwable $exception) {
                     Notification::make()
-                        ->title('Ошибка выполнения в песочнице')
+                        ->title('Не удалось проверить промпт')
                         ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : 'Проверьте настройки и повторите попытку.')
                         ->danger()
                         ->send();
@@ -246,7 +246,7 @@ class EditAiPrompt extends EditRecord
             if ($result->runId > 0) {
                 $notification->actions([
                     Action::make('technicalData')
-                        ->label('Технические данные')
+                        ->label('Подробности проверки')
                         ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
                         ->button()
                         ->openUrlInNewTab(),
@@ -257,6 +257,6 @@ class EditAiPrompt extends EditRecord
             return;
         }
 
-        Notification::make()->title('Ошибка выполнения в песочнице')->body($result->errorMessageSanitized ?? 'Провайдер не вернул проверяемый ответ.')->danger()->send();
+        Notification::make()->title('Не удалось проверить промпт')->body($result->errorMessageSanitized ?? 'Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.')->danger()->send();
     }
 }

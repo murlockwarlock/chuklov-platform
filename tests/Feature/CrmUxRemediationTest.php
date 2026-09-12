@@ -216,6 +216,8 @@ final class CrmUxRemediationTest extends TestCase
         Livewire::actingAs($admin)
             ->test(SchedulingConfiguration::class)
             ->assertSuccessful()
+            ->assertSee('Здесь настраиваются B2B-разговоры и рабочее время специалиста.')
+            ->assertDontSee('защищённое подключение')
             ->assertSee('Адрес по умолчанию')
             ->assertSee('Напоминания о записи')
             ->assertSee('Клиенту')

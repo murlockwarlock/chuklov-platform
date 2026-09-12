@@ -28,7 +28,7 @@ final class B2bLeadInfolist
                 TextEntry::make('status')->label('Статус лида')->formatStateUsing(static fn ($state): string => self::leadStatus($state)),
                 TextEntry::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone()),
             ])->columns(2),
-            Section::make('Sales call')->schema([
+            Section::make('B2B-разговор')->schema([
                 TextEntry::make('salesCall.status')->label('Состояние разговора')->formatStateUsing(static fn ($state): string => $state instanceof B2bSalesCallStatus ? ($state === B2bSalesCallStatus::Scheduled ? 'Запланирован' : 'Отменён') : (string) $state),
                 TextEntry::make('salesCall.specialist.display_name')->label('Специалист')->placeholder('—'),
                 TextEntry::make('salesCall.starts_at')->label('Начало')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
@@ -69,7 +69,7 @@ final class B2bLeadInfolist
         return match ($call->provider_sync_status) {
             VideoMeetingSyncStatus::Ready => 'Ссылка готова',
             VideoMeetingSyncStatus::Pending => 'Создаём встречу…',
-            default => 'Нужна повторная синхронизация',
+            default => 'Ссылку нужно обновить',
         };
     }
 

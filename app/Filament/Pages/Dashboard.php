@@ -2,13 +2,16 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\TimezoneOptions;
 use App\Filament\Widgets\AnalyticsAcquisitionWidget;
 use App\Filament\Widgets\AnalyticsAiFailuresWidget;
 use App\Filament\Widgets\AnalyticsFinanceWidget;
 use App\Filament\Widgets\AnalyticsIngestionFailuresWidget;
+use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Organizations\Application\OrganizationContext;
 use Carbon\CarbonImmutable;
 use Closure;
 use Filament\Forms\Components\DatePicker;
@@ -22,17 +25,33 @@ final class Dashboard extends BaseDashboard
 {
     use HasFiltersAction;
 
-    protected static ?string $title = 'Инфопанель';
+    protected static ?string $title = 'Аналитика';
 
     public function getColumns(): int
     {
         return 1;
     }
 
+    public function getSubheading(): ?string
+    {
+        try {
+            $organization = app(OrganizationContext::class)->organization();
+            $period = DashboardPeriod::fromFilters($this->filters, $organization->defaultTimezone());
+            $startDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->startDate, 'UTC')->format('d.m.Y');
+            $endDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->endDate, 'UTC')->format('d.m.Y');
+            $range = $startDate === $endDate ? $startDate : $startDate.' — '.$endDate;
+
+            return 'Период: '.$range.' · Часовой пояс: '.TimezoneOptions::label($period->timezone).' ('.$period->timezone.')';
+        } catch (\Throwable) {
+            return 'Период: последние 30 дней';
+        }
+    }
+
     public function getWidgets(): array
     {
         return [
             UpcomingBookingsWidget::class,
+            AnalyticsKpiWidget::class,
             AnalyticsAcquisitionWidget::class,
             AnalyticsSchedulingWidget::class,
             AnalyticsFinanceWidget::class,
@@ -45,6 +64,7 @@ final class Dashboard extends BaseDashboard
     {
         return [
             FilterAction::make()
+                ->label('Период')
                 ->modalHeading('Период отчёта')
                 ->schema([
                     Select::make('period')

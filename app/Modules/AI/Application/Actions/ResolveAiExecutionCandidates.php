@@ -116,17 +116,17 @@ final class ResolveAiExecutionCandidates
         if ($hasProviderOutage) {
             return [
                 'status' => 'provider_unavailable',
-                'issues' => ['Провайдер клиентского компаньона временно недоступен.'],
+                'issues' => ['AI-компаньон временно недоступен. Повторите попытку позже.'],
             ];
         }
 
         if (($hasDisabledProvider || $hasDisabledProviderConfiguration) && ! $hasHealthyProvider) {
             $issues = [];
             if ($hasDisabledProvider) {
-                $issues[] = 'Провайдер клиентского компаньона отключён в ограничениях AI.';
+                $issues[] = 'AI-компаньон отключён в настройках AI.';
             }
             if ($hasDisabledProviderConfiguration) {
-                $issues[] = 'Провайдер клиентского компаньона отключён в настройках провайдера.';
+                $issues[] = 'AI-компаньон отключён в разделе «Провайдеры и модели».';
             }
 
             return [
@@ -145,7 +145,7 @@ final class ResolveAiExecutionCandidates
         if ($hasCapabilityRelease) {
             return [
                 'status' => 'not_configured',
-                'issues' => ['Провайдер или модель клиентского компаньона требуют завершить настройку и проверку.'],
+                'issues' => ['Завершите настройку AI-компаньона и проверьте подключение.'],
             ];
         }
 

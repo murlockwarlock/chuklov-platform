@@ -66,14 +66,22 @@ final readonly class BookingLocationResolver
         ?Collection $locationDays = null,
     ): Collection {
         $locationDays ??= $this->activeLocationDays($areaName);
-        if ($locationDays->isEmpty()) {
+        if (trim($areaName) === '') {
             return new Collection;
         }
+        $areaRules = $this->areaRules($areaName, $locationDays);
+        if ($areaRules->isEmpty()) {
+            return new Collection;
+        }
+        $matchingRules = new Collection;
+        foreach ($this->locationDaysByTimezone($areaRules) as $timezone => $timezoneRules) {
+            $date = LocalDate::from($startsAt->setTimezone($timezone)->toDateString());
+            $matchingRules = $matchingRules->merge($this->matchingLocationDaysInTimezone($timezoneRules, $date));
+        }
 
-        $timezone = $this->referenceTimezone($locationDays);
-        $date = LocalDate::from($startsAt->setTimezone($timezone)->toDateString());
+        $this->ensureMatchingTimezoneCompatibility($matchingRules);
 
-        return $this->matchingLocationDaysForDate($areaName, $date, $locationDays);
+        return $this->sortLocationDays($this->applySpecificDatePrecedence($matchingRules));
     }
 
     /**
@@ -91,30 +99,33 @@ final readonly class BookingLocationResolver
         }
 
         $locationDays ??= $this->activeLocationDays($areaName);
-        $areaRules = $locationDays->filter(
-            fn (LocationDay $locationDay): bool => mb_strtolower(trim($locationDay->area_name)) === $normalizedArea,
-        );
-        $specificRules = $areaRules->filter(
-            fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === $date->value,
-        );
-        $applicableRules = $specificRules->isNotEmpty()
-            ? $specificRules
-            : $areaRules->filter(
-                fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === null
-                    && $locationDay->weekday !== null
-                    && (int) $locationDay->weekday === $date->weekday(),
-            );
+        $areaRules = $this->areaRules($areaName, $locationDays);
+        if ($areaRules->isEmpty()) {
+            return new Collection;
+        }
+        $matchingRules = new Collection;
+        foreach ($this->locationDaysByTimezone($areaRules) as $timezoneRules) {
+            $matchingRules = $matchingRules->merge($this->matchingLocationDaysInTimezone($timezoneRules, $date));
+        }
 
-        $this->ensureSingleTimezone($applicableRules);
+        $this->ensureMatchingTimezoneCompatibility($matchingRules);
 
-        return $applicableRules
-            ->sortBy(fn (LocationDay $locationDay): string => sprintf(
-                '%s|%s|%010d',
-                (string) $locationDay->start_time,
-                (string) $locationDay->end_time,
-                (int) $locationDay->getKey(),
-            ))
+        return $this->sortLocationDays($this->applySpecificDatePrecedence($matchingRules));
+    }
+
+    /** @param Collection<int, LocationDay>|null $locationDays
+     * @return SupportCollection<string, Collection<int, LocationDay>>
+     */
+    public function locationDaysByTimezone(?Collection $locationDays): SupportCollection
+    {
+        $activeLocationDays = ($locationDays ?? new Collection)
+            ->filter(fn (LocationDay $locationDay): bool => $locationDay->is_active)
             ->values();
+        $this->ensureDefinitionTimezoneCompatibility($activeLocationDays);
+
+        return $activeLocationDays
+            ->groupBy(fn (LocationDay $locationDay): string => $this->validatedTimezone($locationDay))
+            ->map(fn (Collection $rules): Collection => $rules->values());
     }
 
     /**
@@ -313,13 +324,90 @@ final readonly class BookingLocationResolver
     }
 
     /** @param Collection<int, LocationDay> $locationDays */
-    private function referenceTimezone(Collection $locationDays): string
+    private function areaRules(string $areaName, Collection $locationDays): Collection
     {
-        $timezones = $this->validatedTimezones($locationDays);
+        $normalizedArea = mb_strtolower(trim($areaName));
+        if ($normalizedArea === '') {
+            return new Collection;
+        }
 
-        return $timezones->count() === 1
-            ? (string) $timezones->first()
-            : $this->context->organization()->defaultTimezone();
+        return $locationDays->filter(
+            fn (LocationDay $locationDay): bool => $locationDay->is_active
+                && mb_strtolower(trim($locationDay->area_name)) === $normalizedArea,
+        )->values();
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function matchingLocationDaysInTimezone(Collection $locationDays, LocalDate $date): Collection
+    {
+        $specificRules = $locationDays->filter(
+            fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === $date->value,
+        );
+
+        $applicableRules = $specificRules->isNotEmpty()
+            ? $specificRules
+            : $locationDays->filter(
+                fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) === null
+                    && $locationDay->weekday !== null
+                    && (int) $locationDay->weekday === $date->weekday(),
+            );
+
+        $this->ensureSingleTimezone($applicableRules);
+
+        return $applicableRules->values();
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function applySpecificDatePrecedence(Collection $locationDays): Collection
+    {
+        if ($locationDays->contains(fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) !== null)) {
+            return $locationDays->filter(
+                fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) !== null,
+            )->values();
+        }
+
+        return $locationDays->values();
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function ensureMatchingTimezoneCompatibility(Collection $locationDays): void
+    {
+        $specificRules = $locationDays->filter(
+            fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) !== null,
+        );
+
+        $this->ensureSingleTimezone($specificRules->isNotEmpty() ? $specificRules : $locationDays);
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function ensureDefinitionTimezoneCompatibility(Collection $locationDays): void
+    {
+        $applicabilityGroups = $locationDays
+            ->filter(fn (LocationDay $locationDay): bool => $locationDay->specific_date !== null || $locationDay->weekday !== null)
+            ->groupBy(function (LocationDay $locationDay): string {
+                $specificDate = $this->specificDateKey($locationDay);
+
+                return $specificDate !== null
+                    ? 'specific:'.$specificDate
+                    : 'recurring:'.(string) $locationDay->weekday;
+            });
+
+        foreach ($applicabilityGroups as $rules) {
+            $this->ensureSingleTimezone($rules);
+        }
+    }
+
+    /** @param Collection<int, LocationDay> $locationDays */
+    private function sortLocationDays(Collection $locationDays): Collection
+    {
+        return $locationDays
+            ->sortBy(fn (LocationDay $locationDay): string => sprintf(
+                '%s|%s|%010d',
+                (string) $locationDay->start_time,
+                (string) $locationDay->end_time,
+                (int) $locationDay->getKey(),
+            ))
+            ->values();
     }
 
     /** @param Collection<int, LocationDay> $locationDays */

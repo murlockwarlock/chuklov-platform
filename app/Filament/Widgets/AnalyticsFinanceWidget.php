@@ -2,10 +2,12 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\FinanceAnalyticsData;
 use App\Modules\Analytics\Application\FinanceAnalytics;
+use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -22,7 +24,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 
     protected ?string $heading = 'Финансы';
 
-    protected ?string $description = 'Только подтверждённые данные финансового журнала';
+    protected ?string $description = 'Оплата и задолженность за выбранный период';
 
     protected static ?int $sort = 5;
 
@@ -66,25 +68,27 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
     {
         $data = $this->getData();
         $currency = $data === null ? '' : $data->baseCurrency;
-        $suffix = $currency === '' ? '' : ' ('.$currency.')';
         $unavailable = $data === null || ! $data->available;
 
         return [
-            Stat::make('Выручка'.$suffix, $unavailable ? '—' : $this->formatMinor($data->revenueMinor, $currency))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Нетто по финансовому журналу'),
-            Stat::make('Средний платёж'.$suffix, $unavailable ? '—' : $this->formatMinor($data->averageReceiptMinor, $currency))
+            Stat::make('Выручка', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->revenueMinor, $currency))
+                ->description($unavailable ? 'Расчёт недоступен' : 'По подтверждённым платежам'),
+            Stat::make('Средний чек', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->averageReceiptMinor, $currency))
                 ->description($this->receiptDescription($data, $unavailable)),
-            Stat::make('Реализованный LTV'.$suffix, $unavailable ? '—' : $this->formatMinor($data->realizedLtvMinor, $currency))
+            Stat::make('LTV новых клиентов', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->realizedLtvMinor, $currency))
                 ->description($this->ltvDescription($data, $unavailable)),
-            Stat::make('Долг на конец периода'.$suffix, $unavailable ? '—' : $this->formatMinor($data->debtMinor, $currency))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Обязательства минус журнал до конца периода'),
+            Stat::make('Дебиторская задолженность', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->debtMinor, $currency))
+                ->description($unavailable ? 'Расчёт недоступен' : 'Показать должников')
+                ->url($unavailable ? null : FinancialObligationResource::getUrl('index', [
+                    'filters' => ['status' => ['value' => FinancialStatus::Outstanding->value]],
+                ])),
         ];
     }
 
     private function formatMinor(?string $minor, string $currency): string
     {
         if ($minor === null || $currency === '') {
-            return '—';
+            return 'Нет данных';
         }
 
         try {
@@ -94,7 +98,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
                 ->toScale($scale)
                 ->toString().' '.$currency;
         } catch (\Throwable) {
-            return '—';
+            return 'Нет данных';
         }
     }
 
@@ -105,8 +109,8 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
         }
 
         return $data->receiptCount === 0
-            ? 'Нет положительных платежей за период'
-            : 'Положительных платежей: '.$data->receiptCount;
+            ? 'Нет подтверждённых платежей за период'
+            : 'Подтверждённых платежей: '.$data->receiptCount;
     }
 
     private function ltvDescription(?FinanceAnalyticsData $data, bool $unavailable): string
@@ -117,6 +121,6 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 
         return $data->cohortClientCount === 0
             ? 'Нет новых клиентов за период'
-            : 'Средняя историческая стоимость новых клиентов';
+            : 'Фактически полученный доход · клиентов в когорте: '.$data->cohortClientCount;
     }
 }

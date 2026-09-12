@@ -93,7 +93,7 @@ class CasesRelationManager extends RelationManager
                     ->schema([
                         Textarea::make('expected_assertions')
                             ->label('Дополнительные проверки (JSON)')
-                            ->helperText('Технический раздел для сложных проверок. Не используйте исполняемый код.')
+                            ->helperText('Добавьте дополнительные проверки в формате JSON. Исполняемый код не поддерживается.')
                             ->formatStateUsing(static fn (mixed $state): string => is_array($state)
                                 ? (json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
                                 : (string) $state)

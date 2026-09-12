@@ -229,7 +229,7 @@ final class MessageComposer
         if ($includeMediaUrl) {
             array_splice($mediaComponents, 1, 0, [
                 TextInput::make($mediaUrlField)
-                    ->label('HTTPS-ссылка на медиа (одно)')
+                    ->label('Ссылка на медиа (одна)')
                     ->url()
                     ->maxLength(2000)
                     ->live()
@@ -240,7 +240,7 @@ final class MessageComposer
                         $set('remove_media', false);
                     })
                     ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->helperText('Ссылка должна вести непосредственно на файл и начинаться с HTTPS.')
+                    ->helperText('Укажите прямую ссылку на файл.')
                     ->columnSpanFull(),
             ]);
         }

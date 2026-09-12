@@ -347,9 +347,11 @@ class MilestoneThreeCrmTest extends TestCase
         $this->actingAs($admin);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        $component = Livewire::actingAs($admin)->test(EditSpecialist::class, ['record' => $specialist->getKey()]);
-        $telegramField = $component->instance()->getSchemaComponent('form.telegram_id');
-        self::assertSame('777000111', $telegramField->getState());
+        $component = Livewire::actingAs($admin)
+            ->test(EditSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertActionVisible('createTelegramLink')
+            ->assertDontSee('Привязка Telegram сотрудника')
+            ->assertDontSee('Подтверждённый Telegram ID');
         self::assertTrue($component->instance()->getSchemaComponent('form.notifications_enabled')->getState());
 
         $component
@@ -357,7 +359,6 @@ class MilestoneThreeCrmTest extends TestCase
                 'display_name' => $specialist->display_name,
                 'timezone' => $specialist->timezone,
                 'staff_user_id' => $staff->id,
-                'telegram_id' => '777000111',
                 'is_active' => true,
                 'notifications_enabled' => false,
             ])

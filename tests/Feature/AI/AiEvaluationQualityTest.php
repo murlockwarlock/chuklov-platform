@@ -194,7 +194,7 @@ final class AiEvaluationQualityTest extends TestCase
         self::assertTrue($comparison->compatible);
         self::assertCount(2, $comparison->runs);
         self::assertStringContainsString('Расчётная стоимость Chuklov', $comparison->toRussianSummary());
-        self::assertStringContainsString('Стоимость от провайдера', $comparison->toRussianSummary());
+        self::assertStringContainsString('Стоимость AI-сервиса', $comparison->toRussianSummary());
         self::assertStringContainsString('Токены', $comparison->toRussianSummary());
 
         $originalSnapshot = $runTwo->provenance_snapshot;

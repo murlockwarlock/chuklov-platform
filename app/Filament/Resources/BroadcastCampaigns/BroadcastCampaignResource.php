@@ -712,9 +712,9 @@ final class BroadcastCampaignResource extends Resource
         $managed = collect($items)->where('managed', true)->count();
         $external = count($items) - $managed;
         $kind = match (true) {
-            $managed > 0 && $external > 0 => 'Загруженные файлы и внешние HTTPS-ссылки',
+            $managed > 0 && $external > 0 => 'Загруженные файлы и внешние ссылки',
             $managed > 0 => 'Загруженные файлы',
-            default => 'Внешние HTTPS-ссылки',
+            default => 'Внешние ссылки',
         };
         $typeSummary = collect($items)
             ->countBy('type')

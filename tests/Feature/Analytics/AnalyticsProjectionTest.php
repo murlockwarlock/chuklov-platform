@@ -116,6 +116,7 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertSame(6, $scheduling->bookings);
         self::assertSame(1, $scheduling->cancellations);
         self::assertSame(1, $scheduling->reschedules);
+        self::assertSame(1, $scheduling->noShows);
         self::assertSame(2, $scheduling->visits);
         self::assertSame(1, $scheduling->homeRequests);
         self::assertSame(1, $scheduling->retainedClients);
@@ -182,6 +183,33 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertSame(2, collect($result->sources)->firstWhere('label', 'Другие')->count);
         self::assertContains('adopted-source', collect($result->sources)->pluck('label')->all());
         self::assertNotContains('legacy-only', collect($result->sources)->pluck('label')->all());
+    }
+
+    public function test_source_buckets_present_known_channel_sources_with_human_labels(): void
+    {
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin('UTC');
+        $expectedLabels = [
+            'telegram' => 'Telegram',
+            'website' => 'Сайт',
+            'instagram' => 'Instagram',
+            'yandex' => 'Yandex',
+        ];
+
+        foreach (array_keys($expectedLabels) as $source) {
+            $client = $this->client($organization, '2026-08-10 10:00:00');
+            $this->attribution($client, 'source', source: $source);
+        }
+
+        app(OrganizationContext::class)->set($organization);
+        $result = app(AcquisitionAnalytics::class)->handle($admin, $this->customPeriod($organization, '2026-08-01', '2026-08-27', $now));
+        $labels = collect($result->sources)->pluck('label')->all();
+
+        self::assertSame(4, $result->newClients);
+        foreach ($expectedLabels as $label) {
+            self::assertContains($label, $labels);
+        }
+        self::assertSame(4, collect($result->sources)->sum('count'));
     }
 
     public function test_low_count_unknown_source_remains_explicit_when_known_sources_overflow(): void
@@ -343,6 +371,7 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertSame(0, $acquisition->newClients);
         self::assertSame([], $acquisition->sources);
         self::assertSame(0, $scheduling->bookings);
+        self::assertSame(0, $scheduling->noShows);
         self::assertSame(0, $scheduling->visits);
         self::assertNull($scheduling->retentionRate());
         self::assertFalse($finance->available);

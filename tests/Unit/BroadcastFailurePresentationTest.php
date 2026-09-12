@@ -26,7 +26,7 @@ final class BroadcastFailurePresentationTest extends TestCase
             BroadcastFailurePresentation::label('telegram_bot_blocked'),
         );
         self::assertSame(
-            'Задача отправки не выполнена. Проверьте очередь сообщений',
+            'Не удалось отправить сообщение. Повторите попытку позже',
             BroadcastFailurePresentation::label('queue_job_failed_terminal'),
         );
         self::assertSame(

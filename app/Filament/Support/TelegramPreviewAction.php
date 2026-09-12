@@ -59,7 +59,7 @@ final class TelegramPreviewAction
 
         return match (true) {
             str_contains($message, 'too long') => 'Текст превышает лимит Telegram для выбранного формата.',
-            str_contains($message, 'media') => 'Проверьте медиа: добавьте поддерживаемый файл или HTTPS-ссылку.',
+            str_contains($message, 'media') => 'Проверьте вложение: добавьте поддерживаемый файл или ссылку.',
             default => 'Проверьте текст сообщения и доступные данные.',
         };
     }

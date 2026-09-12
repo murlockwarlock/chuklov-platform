@@ -121,7 +121,7 @@ final class AiMonitoringOverviewTest extends TestCase
         $viewData = (new AiMonitoringOverview)->getViewData();
 
         self::assertSame('provider_unavailable', $viewData['clientCompanion']['status']);
-        self::assertContains('Провайдер клиентского компаньона временно недоступен.', $viewData['clientCompanion']['issues']);
+        self::assertContains('AI-компаньон временно недоступен. Повторите попытку позже.', $viewData['clientCompanion']['issues']);
         self::assertNotContains('Нет активной модели для клиентского компаньона.', $viewData['clientCompanion']['issues']);
     }
 
@@ -163,7 +163,7 @@ final class AiMonitoringOverviewTest extends TestCase
         $viewData = (new AiMonitoringOverview)->getViewData();
 
         self::assertSame('disabled', $viewData['clientCompanion']['status']);
-        self::assertContains('Провайдер клиентского компаньона отключён в настройках провайдера.', $viewData['clientCompanion']['issues']);
+        self::assertContains('AI-компаньон отключён в разделе «Провайдеры и модели».', $viewData['clientCompanion']['issues']);
         self::assertNotContains('Провайдер или модель клиентского компаньона требуют завершить настройку и проверку.', $viewData['clientCompanion']['issues']);
     }
 

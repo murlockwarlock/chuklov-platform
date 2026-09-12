@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\SpecialistTelegramLinkAction;
 use App\Models\User;
 use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Specialists\Application\UpdateSpecialist;
@@ -18,6 +19,13 @@ class EditSpecialist extends EditRecord
     protected static string $resource = SpecialistResource::class;
 
     protected static ?string $title = 'Редактировать специалиста';
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            SpecialistTelegramLinkAction::make(),
+        ];
+    }
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {

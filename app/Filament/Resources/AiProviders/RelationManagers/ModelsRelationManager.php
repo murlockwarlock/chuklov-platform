@@ -61,7 +61,7 @@ class ModelsRelationManager extends RelationManager
             ->components([
                 Select::make('model_selection')
                     ->label('Модель')
-                    ->helperText('Рядом с каждой моделью указано, принимает ли она текст, изображения и PDF/документы. Это отдельно от рабочих задач Chuklov ниже.')
+                    ->helperText('Для каждой модели указано, принимает ли она текст, изображения и PDF/документы.')
                     ->options(fn (?AiModelConfiguration $record): array => AiModelCatalog::optionsForProvider(
                         $provider->provider_name,
                         $record?->model_name,
@@ -247,7 +247,7 @@ class ModelsRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('display_name')->label('Название')->sortable(),
                 TextColumn::make('model_name')
-                    ->label('Техническое имя')
+                    ->label('Имя модели')
                     ->formatStateUsing(function (string $state): string {
                         $provider = $this->getOwnerRecord();
                         if (! $provider instanceof AiProviderConfiguration) {

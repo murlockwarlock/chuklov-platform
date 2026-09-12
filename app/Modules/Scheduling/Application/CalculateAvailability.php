@@ -30,6 +30,7 @@ use Carbon\CarbonImmutable;
 use DateTimeZone;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -181,6 +182,8 @@ class CalculateAvailability
         );
         $scheduleTimezone = $this->locations->scheduleTimezone($specialist, $format, $locationSelection);
         $scheduleDate = LocalDate::from($startsAt->setTimezone($scheduleTimezone)->toDateString());
+        $bookingRangeStart = $this->localBoundary($scheduleDate, $scheduleTimezone);
+        $bookingRangeEnd = $this->localBoundary($scheduleDate->nextDay(), $scheduleTimezone);
 
         return $this->calculateForModels(
             specialist: $specialist,
@@ -192,6 +195,8 @@ class CalculateAvailability
             client: null,
             organizationId: $organization->getKey(),
             ignoreBookingId: $ignoreBookingId,
+            resultRangeStart: $bookingRangeStart,
+            resultRangeEnd: $bookingRangeEnd,
             leadTimeMinutes: $leadTimeMinutes,
             now: $now,
             durationMinutes: $service->durationMinutes() ?? 0,
@@ -342,6 +347,8 @@ class CalculateAvailability
         ?int $ignoreBookingId = null,
         ?CarbonImmutable $displayRangeStart = null,
         ?CarbonImmutable $displayRangeEnd = null,
+        ?CarbonImmutable $resultRangeStart = null,
+        ?CarbonImmutable $resultRangeEnd = null,
         ?string $displayDateFrom = null,
         ?string $displayDateTo = null,
         int $maxDateCount = 31,
@@ -386,12 +393,17 @@ class CalculateAvailability
         $dateEnd = $dateTo->nextDay();
         $rangeStart = $this->localBoundary($dateFrom, $scheduleTimezone)->subDays(2);
         $rangeEnd = $this->localBoundary($dateEnd, $scheduleTimezone)->addDays(2);
+        $workingDateFrom = $dateFrom;
+        $workingDateTo = $dateTo;
+        if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()) {
+            [$workingDateFrom, $workingDateTo] = $this->locationDayDateBounds($locationDays, $rangeStart, $rangeEnd);
+        }
 
-        $workingHours = $this->workingHoursResolver->forRange($specialist, $dateFrom, $dateTo);
+        $workingHours = $this->workingHoursResolver->forRange($specialist, $workingDateFrom, $workingDateTo);
         $exceptions = ScheduleException::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
-            ->whereBetween('exception_date', [$dateFrom->value, $dateTo->value])
+            ->whereBetween('exception_date', [$workingDateFrom->value, $workingDateTo->value])
             ->where('is_active', true)
             ->get()
             ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
@@ -432,76 +444,66 @@ class CalculateAvailability
             );
         }
 
-        $cursor = $dateFrom;
+        if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()) {
+            $resultRangeStart ??= $displayRangeStart ?? $this->localBoundary($dateFrom, $scheduleTimezone);
+            $resultRangeEnd ??= $displayRangeEnd ?? $this->localBoundary($dateTo->nextDay(), $scheduleTimezone);
+            $slots = $this->calculateHomeVisitSlots(
+                locationArea: (string) $locationArea,
+                locationDays: $locationDays,
+                rangeStart: $rangeStart,
+                rangeEnd: $rangeEnd,
+                resultRangeStart: $resultRangeStart,
+                resultRangeEnd: $resultRangeEnd,
+                workingHours: $workingHours,
+                exceptions: $exceptions,
+                unavailableIntervals: $unavailableIntervals,
+                bookingIntervals: $bookingIntervals,
+                durationMinutes: $durationMinutes,
+                bufferMinutes: $effectiveBufferMinutes,
+                leadTimeMinutes: $leadTimeMinutes,
+                now: $now,
+                displayTimezone: $resolvedDisplayTimezone,
+            );
+        } else {
+            $cursor = $dateFrom;
 
-        for ($index = 0; $index < $dateCount; $index++) {
-            $matchingLocationDays = $format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty()
-                ? $this->locations->matchingLocationDaysForDate((string) $locationArea, $cursor, $locationDays)
-                : (new LocationDay)->newCollection();
-            if ($format === VisitFormat::HomeVisit && $locationDays?->isNotEmpty() && $matchingLocationDays->isEmpty()) {
-                $cursor = $cursor->nextDay();
-
-                continue;
-            }
-
-            $dayTimezone = $matchingLocationDays->isNotEmpty()
-                ? $this->locations->scheduleTimezoneForLocationDays($specialist, $matchingLocationDays)
-                : $scheduleTimezone;
-            $dayDate = $matchingLocationDays->isNotEmpty()
-                ? $cursor
-                : LocalDate::from(
+            for ($index = 0; $index < $dateCount; $index++) {
+                $dayTimezone = $scheduleTimezone;
+                $dayDate = LocalDate::from(
                     $this->localBoundary($cursor, $scheduleTimezone)->setTimezone($dayTimezone)->toDateString(),
                 );
-            $allowedIntervals = [];
-            foreach ($matchingLocationDays as $locationDay) {
-                $locationInterval = $this->calculator->wallClockInterval(
-                    $dayDate,
-                    $locationDay->timezone,
-                    $locationDay->wallClockInterval(),
+                $dateExceptions = $exceptions->get($dayDate->value, collect());
+                $dayOff = $dateExceptions->contains(
+                    fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
                 );
-                if ($locationInterval === null) {
-                    continue;
-                }
-                $allowedIntervals[] = $locationInterval;
-            }
-            if ($matchingLocationDays->isNotEmpty() && $allowedIntervals === []) {
+                $customIntervals = array_values($dateExceptions
+                    ->filter(fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow)
+                    ->map(fn (ScheduleException $exception): ?WallClockInterval => $exception->wallClockInterval())
+                    ->filter()
+                    ->values()
+                    ->all());
+                $workingIntervals = $this->workingHoursResolver->intervalsForDate($workingHours, $dayDate);
+
+                $slots = [
+                    ...$slots,
+                    ...$this->calculator->calculate(
+                        date: $dayDate,
+                        scheduleTimezone: $dayTimezone,
+                        workingIntervals: $workingIntervals,
+                        customIntervals: $customIntervals,
+                        dayOff: $dayOff,
+                        unavailableIntervals: $unavailableIntervals,
+                        bookingIntervals: $bookingIntervals,
+                        durationMinutes: $durationMinutes,
+                        bufferMinutes: $effectiveBufferMinutes,
+                        leadTimeMinutes: $leadTimeMinutes,
+                        now: $now,
+                        format: $format,
+                        displayTimezone: $resolvedDisplayTimezone,
+                    ),
+                ];
                 $cursor = $cursor->nextDay();
-
-                continue;
             }
-
-            $dateExceptions = $exceptions->get($dayDate->value, collect());
-            $dayOff = $dateExceptions->contains(
-                fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
-            );
-            $customIntervals = array_values($dateExceptions
-                ->filter(fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow)
-                ->map(fn (ScheduleException $exception): ?WallClockInterval => $exception->wallClockInterval())
-                ->filter()
-                ->values()
-                ->all());
-            $workingIntervals = $this->workingHoursResolver->intervalsForDate($workingHours, $dayDate);
-
-            $slots = [
-                ...$slots,
-                ...$this->calculator->calculate(
-                    date: $dayDate,
-                    scheduleTimezone: $dayTimezone,
-                    workingIntervals: $workingIntervals,
-                    customIntervals: $customIntervals,
-                    dayOff: $dayOff,
-                    unavailableIntervals: $unavailableIntervals,
-                    bookingIntervals: $bookingIntervals,
-                    durationMinutes: $durationMinutes,
-                    bufferMinutes: $effectiveBufferMinutes,
-                    leadTimeMinutes: $leadTimeMinutes,
-                    now: $now,
-                    format: $format,
-                    displayTimezone: $resolvedDisplayTimezone,
-                    allowedIntervals: $allowedIntervals,
-                ),
-            ];
-            $cursor = $cursor->nextDay();
         }
 
         if ($displayRangeStart !== null && $displayRangeEnd !== null) {
@@ -537,6 +539,155 @@ class CalculateAvailability
             displayTimezone: $resolvedDisplayTimezone,
             slots: $maxSlots === null ? $slots : array_slice($slots, 0, max(0, $maxSlots)),
         );
+    }
+
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @param  SupportCollection<string, SupportCollection<int, ScheduleException>>  $exceptions
+     * @param  list<InstantInterval>  $unavailableIntervals
+     * @param  list<InstantInterval>  $bookingIntervals
+     * @return list<AvailabilitySlot>
+     */
+    private function calculateHomeVisitSlots(
+        string $locationArea,
+        Collection $locationDays,
+        CarbonImmutable $rangeStart,
+        CarbonImmutable $rangeEnd,
+        CarbonImmutable $resultRangeStart,
+        CarbonImmutable $resultRangeEnd,
+        SupportCollection $workingHours,
+        SupportCollection $exceptions,
+        array $unavailableIntervals,
+        array $bookingIntervals,
+        int $durationMinutes,
+        int $bufferMinutes,
+        int $leadTimeMinutes,
+        CarbonImmutable $now,
+        string $displayTimezone,
+    ): array {
+        $slots = [];
+        $hasSpecificRules = $locationDays->contains(
+            fn (LocationDay $locationDay): bool => $locationDay->specific_date !== null,
+        );
+
+        foreach ($this->locations->locationDaysByTimezone($locationDays) as $timezone => $timezoneRules) {
+            $dateFrom = LocalDate::from($rangeStart->setTimezone($timezone)->toDateString());
+            $dateTo = LocalDate::from($rangeEnd->subSecond()->setTimezone($timezone)->toDateString());
+            $dateCount = $this->dateCount($dateFrom, $dateTo);
+            $cursor = $dateFrom;
+
+            for ($index = 0; $index < $dateCount; $index++) {
+                $matchingLocationDays = $this->locations->matchingLocationDaysForDate(
+                    $locationArea,
+                    $cursor,
+                    $timezoneRules,
+                );
+                if ($matchingLocationDays->isEmpty()) {
+                    $cursor = $cursor->nextDay();
+
+                    continue;
+                }
+
+                $allowedIntervals = [];
+                foreach ($matchingLocationDays as $locationDay) {
+                    $locationInterval = $this->calculator->wallClockInterval(
+                        $cursor,
+                        $locationDay->timezone,
+                        $locationDay->wallClockInterval(),
+                    );
+                    if ($locationInterval === null) {
+                        continue;
+                    }
+                    $allowedIntervals[] = $locationInterval;
+                }
+                if ($allowedIntervals === []) {
+                    $cursor = $cursor->nextDay();
+
+                    continue;
+                }
+
+                $dateExceptions = $exceptions->get($cursor->value, collect());
+                $dayOff = $dateExceptions->contains(
+                    fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
+                );
+                $customIntervals = array_values($dateExceptions
+                    ->filter(fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow)
+                    ->map(fn (ScheduleException $exception): ?WallClockInterval => $exception->wallClockInterval())
+                    ->filter()
+                    ->values()
+                    ->all());
+                $generatedSlots = $this->calculator->calculate(
+                    date: $cursor,
+                    scheduleTimezone: $timezone,
+                    workingIntervals: $this->workingHoursResolver->intervalsForDate($workingHours, $cursor),
+                    customIntervals: $customIntervals,
+                    dayOff: $dayOff,
+                    unavailableIntervals: $unavailableIntervals,
+                    bookingIntervals: $bookingIntervals,
+                    durationMinutes: $durationMinutes,
+                    bufferMinutes: $bufferMinutes,
+                    leadTimeMinutes: $leadTimeMinutes,
+                    now: $now,
+                    format: VisitFormat::HomeVisit,
+                    displayTimezone: $displayTimezone,
+                    allowedIntervals: $allowedIntervals,
+                );
+                $matchingSpecificRule = $matchingLocationDays->contains(
+                    fn (LocationDay $locationDay): bool => $locationDay->specific_date !== null,
+                );
+
+                foreach ($generatedSlots as $slot) {
+                    if ($hasSpecificRules && ! $matchingSpecificRule
+                        && $this->locations->matchingLocationDays($locationArea, $slot->startsAt, $locationDays)->contains(
+                            fn (LocationDay $locationDay): bool => $locationDay->specific_date !== null,
+                        )) {
+                        continue;
+                    }
+
+                    if ($slot->startsAt->lessThan($resultRangeStart)
+                        || $slot->startsAt->greaterThanOrEqualTo($resultRangeEnd)) {
+                        continue;
+                    }
+
+                    $timestamp = $slot->startsAt->getTimestamp();
+                    if (! array_key_exists($timestamp, $slots)) {
+                        $slots[$timestamp] = $slot;
+                    }
+                }
+                $cursor = $cursor->nextDay();
+            }
+        }
+
+        $slots = array_values($slots);
+        usort($slots, static fn (AvailabilitySlot $left, AvailabilitySlot $right): int => $left->startsAt->getTimestamp() <=> $right->startsAt->getTimestamp());
+
+        return $slots;
+    }
+
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @return array{0: LocalDate, 1: LocalDate}
+     */
+    private function locationDayDateBounds(
+        Collection $locationDays,
+        CarbonImmutable $rangeStart,
+        CarbonImmutable $rangeEnd,
+    ): array {
+        $dateFrom = null;
+        $dateTo = null;
+
+        foreach ($this->locations->locationDaysByTimezone($locationDays)->keys() as $timezone) {
+            $timezoneDateFrom = $rangeStart->setTimezone($timezone)->toDateString();
+            $timezoneDateTo = $rangeEnd->subSecond()->setTimezone($timezone)->toDateString();
+            $dateFrom = $dateFrom === null || $timezoneDateFrom < $dateFrom ? $timezoneDateFrom : $dateFrom;
+            $dateTo = $dateTo === null || $timezoneDateTo > $dateTo ? $timezoneDateTo : $dateTo;
+        }
+
+        if ($dateFrom === null || $dateTo === null) {
+            throw new InvalidArgumentException('The location-day date range is invalid.');
+        }
+
+        return [LocalDate::from($dateFrom), LocalDate::from($dateTo)];
     }
 
     private function scheduleTimezone(Specialist $specialist): string
