@@ -27,9 +27,9 @@ final class Dashboard extends BaseDashboard
 
     protected static ?string $title = 'Аналитика';
 
-    public function getColumns(): int|array
+    public function getColumns(): int
     {
-        return ['default' => 1, 'lg' => 2];
+        return 1;
     }
 
     public function getSubheading(): ?string
