@@ -9,6 +9,9 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
+use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
+use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
@@ -90,6 +93,34 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $turn->organization_id, $data);
+    }
+
+    public function knowledgeIngestionFailed(
+        KnowledgeSource $source,
+        KnowledgeRevision $revision,
+        KnowledgeIngestionRun $run,
+        string $errorCode,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::KnowledgeIngestionFailed,
+            aggregateType: KnowledgeRevision::class,
+            aggregateId: (string) $revision->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'source_id' => (int) $source->getKey(),
+                'revision_id' => (int) $revision->getKey(),
+                'revision_version' => (int) $revision->version,
+                'ingestion_run_id' => (int) $run->getKey(),
+                'error_code' => $errorCode,
+                'attempt_number' => (int) $run->attempts,
+            ],
+            idempotencyKey: 'knowledge.ingestion.failed:'.$source->organization_id.':'.$revision->getKey().':'.$run->getKey().':'.$run->attempts,
+            correlationId: 'knowledge:revision:'.$revision->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $source->organization_id, $data);
     }
 
     public function payoutRequested(ReferralPayoutRequest $request, CarbonImmutable $occurredAt): ScenarioEvent

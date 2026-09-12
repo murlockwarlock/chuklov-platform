@@ -24,6 +24,7 @@ enum ScenarioEventType: string
     case PayoutStatusChanged = 'referral.payout.status_changed';
     case HomeVisitChanged = 'booking.home_visit.changed';
     case AiEvaluationFailed = 'ai.evaluation.failed';
+    case KnowledgeIngestionFailed = 'knowledge.ingestion.failed';
     case ReferralLinkVisited = 'referral.link.visited';
     case PaymentProviderEventPrepared = 'payment.provider.event.prepared';
     case TrackerDailyTaskAssigned = 'tracker.task.daily_assigned';

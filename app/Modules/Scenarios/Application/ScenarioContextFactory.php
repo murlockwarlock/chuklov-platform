@@ -16,6 +16,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Referrals\Application\BuildClientReferralLink;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
@@ -140,6 +141,25 @@ final class ScenarioContextFactory
             ];
         }
 
+        if ($context->event->event_name === ScenarioEventType::KnowledgeIngestionFailed) {
+            $revision = KnowledgeRevision::query()
+                ->where('organization_id', $context->event->organization_id)
+                ->where('knowledge_source_id', $this->payloadId($context->event, 'source_id'))
+                ->whereKey($this->payloadId($context->event, 'revision_id'))
+                ->with('source')
+                ->first();
+            if (! $revision instanceof KnowledgeRevision || $revision->source === null) {
+                throw (new ModelNotFoundException)->setModel(KnowledgeRevision::class);
+            }
+            $renderContext['knowledge'] = [
+                'source_title' => $revision->source->title,
+                'revision_version' => (int) $revision->version,
+                'crm_url' => $recipient->type === 'internal'
+                    ? url('/admin/knowledge-sources/'.$revision->source->getKey().'/edit')
+                    : null,
+            ];
+        }
+
         if (in_array($context->event->event_name, [ScenarioEventType::TrackerDailyTaskAssigned, ScenarioEventType::TrackerWeeklyTaskAssigned], true)) {
             $taskId = $this->payloadId($context->event, 'task_id');
             $task = TrackerTask::query()
@@ -220,6 +240,9 @@ final class ScenarioContextFactory
                 'title' => $context->surveyAttempt->surveyVersion->title,
                 'version' => $context->surveyAttempt->surveyVersion->version,
                 'completed_at' => $context->surveyAttempt->completed_at?->toIso8601String(),
+                'crm_url' => $recipient->type === 'internal'
+                    ? url('/admin/survey-attempts/'.$context->surveyAttempt->getKey())
+                    : null,
             ];
         }
 
@@ -245,7 +268,7 @@ final class ScenarioContextFactory
             }
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! isset($renderContext['tracker']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! isset($renderContext['tracker']) && ! isset($renderContext['knowledge']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -401,6 +424,7 @@ final class ScenarioContextFactory
             ScenarioEventType::BroadcastDeliveryFailed,
             ScenarioEventType::ClientFeedbackSubmitted,
             ScenarioEventType::AiEvaluationFailed,
+            ScenarioEventType::KnowledgeIngestionFailed,
             ScenarioEventType::ReferralLinkVisited,
             ScenarioEventType::PaymentProviderEventPrepared,
         ], true);

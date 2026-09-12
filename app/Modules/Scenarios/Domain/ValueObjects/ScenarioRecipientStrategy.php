@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Domain\ValueObjects;
 
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Scenarios\Domain\Enums\ScenarioAudienceType;
 use InvalidArgumentException;
@@ -12,6 +13,7 @@ final readonly class ScenarioRecipientStrategy
     public function __construct(
         public ScenarioAudienceType $type,
         public array $values = [],
+        public ?OrganizationPermission $permission = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -29,19 +31,32 @@ final readonly class ScenarioRecipientStrategy
             ScenarioAudienceType::Roles => self::roles($data['roles'] ?? []),
             ScenarioAudienceType::AssignedSpecialist => [],
         };
+        $permission = isset($data['permission'])
+            ? OrganizationPermission::tryFrom((string) $data['permission'])
+            : null;
 
-        return new self($type, $values);
+        if (array_key_exists('permission', $data) && $permission === null) {
+            throw new InvalidArgumentException('The scenario recipient permission is invalid.');
+        }
+
+        return new self($type, $values, $permission);
     }
 
-    /** @return array{type: string, user_ids?: list<int>, roles?: list<string>} */
+    /** @return array{type: string, user_ids?: list<int>, roles?: list<string>, permission?: string} */
     public function toArray(): array
     {
-        return match ($this->type) {
+        $strategy = match ($this->type) {
             ScenarioAudienceType::Client => ['type' => $this->type->value],
             ScenarioAudienceType::Members => ['type' => $this->type->value, 'user_ids' => $this->memberValues()],
             ScenarioAudienceType::Roles => ['type' => $this->type->value, 'roles' => $this->roleValues()],
             ScenarioAudienceType::AssignedSpecialist => ['type' => $this->type->value],
         };
+
+        if ($this->permission !== null) {
+            $strategy['permission'] = $this->permission->value;
+        }
+
+        return $strategy;
     }
 
     /** @return list<int> */

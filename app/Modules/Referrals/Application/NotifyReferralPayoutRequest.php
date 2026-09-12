@@ -26,7 +26,8 @@ final class NotifyReferralPayoutRequest
         $users = User::query()
             ->whereHas('memberships', fn ($query) => $query
                 ->where('organization_id', $organization->getKey())
-                ->where('is_active', true))
+                ->where('is_active', true)
+                ->where('notifications_enabled', true))
             ->get();
         $recipients = $users->filter(
             fn (User $user): bool => $user->hasPermission(OrganizationPermission::ViewFinance, $organization),
@@ -52,9 +53,11 @@ final class NotifyReferralPayoutRequest
                     ->button()
                     ->markAsRead(),
             ]);
+        $databaseNotification = $notification->toDatabase();
+        $databaseNotification->data['organization_id'] = $organization->getKey();
 
         foreach ($recipients as $recipient) {
-            $recipient->notifyNow($notification->toDatabase());
+            $recipient->notifyNow($databaseNotification);
         }
     }
 }

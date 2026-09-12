@@ -122,7 +122,10 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->sole();
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
-        $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereJsonContains('channel_priority', 'telegram')
+            ->sole();
         $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
         $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
 
@@ -204,8 +207,11 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->orderBy('recipient_type')
             ->get();
 
-        self::assertCount(2, $actions);
-        $specialistAction = $actions->firstWhere('recipient_type', 'internal');
+        self::assertCount(3, $actions);
+        $specialistAction = $actions->first(
+            fn (ScenarioAction $action): bool => $action->recipient_type === 'internal'
+                && $action->channel_priority === ['telegram'],
+        );
         self::assertNotNull($specialistAction);
         self::assertSame('Aikhana', $specialistAction->render_context['client']['full_name']);
         self::assertSame('@aikhana (ID: 123456789)', $specialistAction->render_context['client']['telegram_contact']);
@@ -254,7 +260,7 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->where('scenario_event_id', $event->getKey())
             ->orderBy('recipient_type')
             ->get();
-        self::assertCount(2, $actions);
+        self::assertCount(3, $actions);
         self::assertSame($client->id, $actions->firstWhere('recipient_type', 'client')?->client_id);
         self::assertSame($staff->id, $actions->firstWhere('recipient_type', 'internal')?->recipient_user_id);
 
@@ -408,6 +414,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         $this->makeDue($action);
@@ -436,6 +443,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         app(OrganizationContext::class)->set($organization);
@@ -471,6 +479,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         $this->makeDue($action);
