@@ -5,10 +5,8 @@ namespace App\Filament\Resources\Specialists\Schemas;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
-use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -59,23 +57,6 @@ class SpecialistForm
                         ->all())
                     ->searchable()
                     ->nullable(),
-                Placeholder::make('telegram_connection')
-                    ->label('Привязка Telegram сотрудника')
-                    ->content('После сохранения создайте одноразовую ссылку в карточке специалиста и отправьте её сотруднику. Если нужно сменить аккаунт, используйте действие «Перепривязать Telegram» в карточке специалиста.')
-                    ->columnSpanFull(),
-                TextInput::make('telegram_id')
-                    ->label('Подтверждённый Telegram ID')
-                    ->disabled()
-                    ->dehydrated(false)
-                    ->afterStateHydrated(function (TextInput $component, ?Specialist $record): void {
-                        $identity = $record?->telegramNotificationIdentity;
-                        $component->state($identity?->verification_status === ChannelIdentityStatus::Verified
-                            ? $identity->external_id
-                            : null);
-                    })
-                    ->placeholder('Не подключён')
-                    ->helperText('Только для просмотра. Подключение выполняется через подтверждённую ссылку в Telegram.')
-                    ->columnSpanFull(),
                 Toggle::make('is_active')
                     ->label('Активен')
                     ->required()
