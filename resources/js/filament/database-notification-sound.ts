@@ -48,15 +48,20 @@ function notificationId(element: Element): string | null {
     return key.match(notificationIdPattern)?.[0] ?? null;
 }
 
+function notificationEntries(root: HTMLElement): HTMLElement[] {
+    return [...root.querySelectorAll<HTMLElement>('.fi-no-notification-read-ctn, .fi-no-notification-unread-ctn')]
+        .filter((entry) => entry.hasAttribute('wire:key'));
+}
+
 function scanNotifications(): void {
     scanQueued = false;
-    const databaseNotifications = document.querySelector<HTMLElement>('.fi-no-database');
+    const databaseNotifications = document.getElementById('database-notifications');
 
-    if (databaseNotifications === null || databaseNotifications.querySelector('#database-notifications') === null) {
+    if (databaseNotifications === null) {
         return;
     }
 
-    const notifications = [...databaseNotifications.querySelectorAll<HTMLElement>('.fi-no-notification')];
+    const notifications = notificationEntries(databaseNotifications);
 
     if (!notificationListInitialized) {
         notifications.forEach((notification) => {
@@ -76,7 +81,8 @@ function scanNotifications(): void {
         }
 
         seenNotificationIds.add(id);
-        if (notification.classList.contains('fi-status-warning') || notification.classList.contains('fi-status-danger')) {
+        const presentation = notification.querySelector<HTMLElement>('.fi-no-notification');
+        if (presentation?.classList.contains('fi-status-warning') || presentation?.classList.contains('fi-status-danger')) {
             playNotificationSound();
         }
     });
