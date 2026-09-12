@@ -81,6 +81,7 @@ final class ScenarioRulesTable
             ScenarioEventType::PayoutStatusChanged->value => 'При изменении статуса выплаты',
             ScenarioEventType::HomeVisitChanged->value => 'При изменении выездного визита',
             ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
+            ScenarioEventType::KnowledgeIngestionFailed->value => 'При ошибке обработки материала',
             ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
             ScenarioEventType::PaymentProviderEventPrepared->value => 'Событие платёжного провайдера (подготовлено)',
             default => 'Событие',

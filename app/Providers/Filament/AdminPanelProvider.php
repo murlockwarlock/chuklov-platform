@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Auth\EditProfile;
 use App\Filament\Auth\Login;
+use App\Filament\Livewire\DatabaseNotifications;
 use App\Http\Controllers\RevokePrivilegedSessionsController;
 use App\Http\Middleware\EnsurePrivilegedSessionIsCurrent;
 use App\Http\Middleware\ResolveOrganization;
@@ -54,14 +55,23 @@ class AdminPanelProvider extends PanelProvider
             ->viteTheme('resources/css/filament/admin/theme.css');
 
         if (Vite::isRunningHot() || is_file(public_path('build/manifest.json'))) {
-            $panel->assets([
+            $assets = [
                 Js::make('chuklov-rich-text-editor', Vite::asset('resources/js/filament/rich-text-editor.ts'))->module(),
-            ]);
+            ];
+            $manifest = is_file(public_path('build/manifest.json'))
+                ? json_decode((string) file_get_contents(public_path('build/manifest.json')), true)
+                : [];
+
+            if (Vite::isRunningHot() || is_array($manifest) && array_key_exists('resources/js/filament/database-notification-sound.ts', $manifest)) {
+                $assets[] = Js::make('chuklov-database-notification-sound', Vite::asset('resources/js/filament/database-notification-sound.ts'))->module();
+            }
+
+            $panel->assets($assets);
         }
 
         return $panel
             ->spa()
-            ->databaseNotifications()
+            ->databaseNotifications(livewireComponent: DatabaseNotifications::class)
             ->databaseNotificationsPolling('30s')
             ->spaUrlExceptions([
                 '*/admin/attachments/*',

@@ -41,7 +41,7 @@ final class NotificationCatalogTest extends TestCase
             ->test(NotificationCatalog::class)
             ->assertSuccessful()
             ->assertSee('Клиент запросил специалиста')
-            ->assertSee('Активные сотрудники CRM с включёнными уведомлениями')
+            ->assertSee('Сотрудники с правом обработки обращений')
             ->assertSee('CRM')
             ->assertSee('Telegram')
             ->assertSee('Запрос специалиста из AI-компаньона')

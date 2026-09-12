@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioChannelIdentity;
+use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -35,10 +36,15 @@ final class ScenarioChannelIdentityResolver
                 return null;
             }
 
+            $permission = $action->rule?->recipient_strategy === null
+                ? null
+                : ScenarioRecipientStrategy::from($action->rule->recipient_strategy)->permission;
+
             if (! $this->permissions->allows(
                 $action->trigger_event,
                 (int) $action->organization_id,
                 $membership,
+                $permission,
             )) {
                 return null;
             }

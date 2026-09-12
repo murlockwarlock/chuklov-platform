@@ -57,8 +57,11 @@ final class NotifyCompanionEscalation
         $memberships = OrganizationMembership::query()
             ->where('organization_id', $organizationId)
             ->active()
+            ->where('notifications_enabled', true)
             ->with('user')
             ->get();
+        $databaseNotification = $notification->toDatabase();
+        $databaseNotification->data['organization_id'] = $organizationId;
         foreach ($memberships as $membership) {
             if (! $this->permissions->allows(
                 ScenarioEventType::CompanionRequestedSpecialist,
@@ -68,7 +71,7 @@ final class NotifyCompanionEscalation
                 continue;
             }
 
-            $membership->user->notifyNow($notification->toDatabase());
+            $membership->user->notifyNow($databaseNotification);
         }
 
         $channel = $this->channels->get('telegram');
@@ -101,7 +104,8 @@ final class NotifyCompanionEscalation
                     ScenarioEventType::CompanionRequestedSpecialist,
                     $organizationId,
                     $membership,
-                )) {
+                )
+                || ! $membership->notifications_enabled) {
                 continue;
             }
 

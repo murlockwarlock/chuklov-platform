@@ -3,6 +3,7 @@
 namespace App\Modules\Channels\Domain\ValueObjects;
 
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Channels\Domain\Enums\NotificationSeverity;
 
 final readonly class NotificationMessage
 {
@@ -28,6 +29,8 @@ final readonly class NotificationMessage
         public NotificationMessageMode $mode = NotificationMessageMode::Text,
         public bool $showCaptionAboveMedia = false,
         array $mediaItems = [],
+        public ?int $organizationId = null,
+        public NotificationSeverity $severity = NotificationSeverity::Info,
     ) {
         if (! array_is_list($actionButtons)) {
             throw new \InvalidArgumentException('Notification action buttons must be a list.');

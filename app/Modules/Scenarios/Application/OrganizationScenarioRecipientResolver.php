@@ -25,9 +25,9 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
 
         return match ($strategy->type) {
             ScenarioAudienceType::Client => $this->clientRecipient($event),
-            ScenarioAudienceType::Members => $this->memberRecipients($event, $this->memberIds($strategy)),
+            ScenarioAudienceType::Members => $this->memberRecipients($event, $strategy),
             ScenarioAudienceType::Roles => $this->roleRecipients($event, $strategy),
-            ScenarioAudienceType::AssignedSpecialist => $this->assignedSpecialistRecipient($event),
+            ScenarioAudienceType::AssignedSpecialist => $this->assignedSpecialistRecipient($event, $strategy),
         };
     }
 
@@ -55,13 +55,14 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
     /** @param list<int> $userIds
      * @return list<ScenarioRecipient>
      */
-    private function memberRecipients(ScenarioEvent $event, array $userIds): array
+    private function memberRecipients(ScenarioEvent $event, ScenarioRecipientStrategy $strategy): array
     {
-        return array_values($this->memberships($event, $userIds)
+        return array_values($this->memberships($event, $this->memberIds($strategy))
             ->filter(fn (OrganizationMembership $membership): bool => $this->permissions->allows(
                 $event->event_name,
                 (int) $event->organization_id,
                 $membership,
+                $strategy->permission,
             ))
             ->map(
                 fn (OrganizationMembership $membership): ScenarioRecipient => new ScenarioRecipient(
@@ -87,6 +88,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
         return array_values(OrganizationMembership::query()
             ->where('organization_id', $event->organization_id)
             ->active()
+            ->where('notifications_enabled', true)
             ->whereIn('role', $roles)
             ->orderBy('user_id')
             ->get()
@@ -94,6 +96,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
                 $event->event_name,
                 (int) $event->organization_id,
                 $membership,
+                $strategy->permission,
             ))
             ->map(fn (OrganizationMembership $membership): ScenarioRecipient => new ScenarioRecipient(
                 type: 'internal',
@@ -106,7 +109,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
     }
 
     /** @return list<ScenarioRecipient> */
-    private function assignedSpecialistRecipient(ScenarioEvent $event): array
+    private function assignedSpecialistRecipient(ScenarioEvent $event, ScenarioRecipientStrategy $strategy): array
     {
         $specialistId = (int) ($event->payload['specialist_id'] ?? 0);
         $specialist = Specialist::query()
@@ -119,12 +122,14 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             ->where('organization_id', $event->organization_id)
             ->where('user_id', $userId)
             ->active()
+            ->where('notifications_enabled', true)
             ->first();
 
         if ($membership === null || ! $this->permissions->allows(
             $event->event_name,
             (int) $event->organization_id,
             $membership,
+            $strategy->permission,
         )) {
             return [];
         }
@@ -149,6 +154,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
         return OrganizationMembership::query()
             ->where('organization_id', $event->organization_id)
             ->active()
+            ->where('notifications_enabled', true)
             ->whereIn('user_id', $userIds)
             ->orderBy('user_id')
             ->get();

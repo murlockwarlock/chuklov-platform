@@ -239,6 +239,8 @@ final class ExecuteScenarioAction
                 mode: $rendered->mode,
                 showCaptionAboveMedia: $rendered->showCaptionAboveMedia,
                 mediaItems: $mediaItems,
+                organizationId: (int) $action->organization_id,
+                severity: ScenarioNotificationPresentation::severity($action->trigger_event, $action->kind),
             ));
         } catch (InvalidArgumentException) {
             return NotificationDeliveryResult::permanentFailure('template_rendering_error');
@@ -277,6 +279,30 @@ final class ExecuteScenarioAction
                 return new NotificationActionButton(
                     text: $this->isRussian($locale) ? 'Открыть выплату' : 'Open payout',
                     url: $payoutUrl,
+                );
+            }
+
+            $salesCallUrl = $action->render_context['sales_call']['crm_url'] ?? null;
+            if (is_string($salesCallUrl) && trim($salesCallUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть B2B-запрос' : 'Open B2B lead',
+                    url: $salesCallUrl,
+                );
+            }
+
+            $surveyUrl = $action->render_context['survey']['crm_url'] ?? null;
+            if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть результат' : 'Open result',
+                    url: $surveyUrl,
+                );
+            }
+
+            $knowledgeUrl = $action->render_context['knowledge']['crm_url'] ?? null;
+            if (is_string($knowledgeUrl) && trim($knowledgeUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть материал' : 'Open material',
+                    url: $knowledgeUrl,
                 );
             }
 
