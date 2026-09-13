@@ -18,6 +18,7 @@ use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
@@ -28,6 +29,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -38,7 +40,7 @@ final class OperationalNotificationDeliveryTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_handoff_uses_durable_crm_and_permission_scoped_telegram_delivery(): void
+    public function test_handoff_keeps_event_permission_floor_for_crm_and_telegram_delivery(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -88,6 +90,15 @@ final class OperationalNotificationDeliveryTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('event_name', 'companion.requested_specialist')
             ->sole();
+        foreach (['companion-handoff-database', 'companion-handoff-telegram'] as $ruleKey) {
+            $rule = ScenarioRule::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('rule_key', $ruleKey)
+                ->sole();
+            $recipientStrategy = $rule->recipient_strategy;
+            $recipientStrategy['permission'] = OrganizationPermission::ViewSurveys->value;
+            $rule->forceFill(['recipient_strategy' => $recipientStrategy])->save();
+        }
         Queue::assertPushed(ProcessScenarioEvent::class, fn (ProcessScenarioEvent $job): bool => $job->scenarioEventId === $event->getKey());
 
         (new ProcessScenarioEvent($event->getKey()))->handle(app(MaterializeScenarioEvent::class));
@@ -148,6 +159,12 @@ final class OperationalNotificationDeliveryTest extends TestCase
         $otherMembership = $otherAdmin->memberships()->where('organization_id', $otherOrganization->getKey())->firstOrFail();
 
         self::assertTrue($policy->allows($eventType, $organization->getKey(), $adminMembership));
+        self::assertFalse($policy->allows(
+            $eventType,
+            $organization->getKey(),
+            $staffMembership,
+            OrganizationPermission::ViewSurveys,
+        ));
         self::assertFalse($policy->allows($eventType, $organization->getKey(), $staffMembership));
         self::assertFalse($policy->allows($eventType, $organization->getKey(), $inactiveMembership));
         self::assertFalse($policy->allows($eventType, $organization->getKey(), $otherMembership));

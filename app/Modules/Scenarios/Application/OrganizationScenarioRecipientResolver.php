@@ -134,10 +134,6 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
             return [];
         }
 
-        if (! $specialist->notifications_enabled) {
-            return [];
-        }
-
         return [new ScenarioRecipient(
             type: 'internal',
             clientId: null,

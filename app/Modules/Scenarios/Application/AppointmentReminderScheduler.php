@@ -309,7 +309,7 @@ final class AppointmentReminderScheduler
             );
         }
 
-        if ($booking->specialist->staff_user_id === null || ! $booking->specialist->notifications_enabled) {
+        if ($booking->specialist->staff_user_id === null) {
             return null;
         }
 

@@ -9,6 +9,7 @@ use App\Modules\Channels\Domain\Enums\NotificationSeverity;
 use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
@@ -17,6 +18,7 @@ use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -46,6 +48,13 @@ final class CrmNotificationCenterPostgresTest extends TestCase
         [$organization, $administrator, $staff, $foreignAdministrator, $client, $specialist, $service] = $this->fixture();
         app(OrganizationContext::class)->set($organization);
         app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $rule = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'booking-home-visit-review-database')
+            ->sole();
+        $recipientStrategy = $rule->recipient_strategy;
+        $recipientStrategy['permission'] = OrganizationPermission::ViewSurveys->value;
+        $rule->forceFill(['recipient_strategy' => $recipientStrategy])->save();
 
         $booking = Booking::factory()
             ->forOrganization($organization)
@@ -93,6 +102,56 @@ final class CrmNotificationCenterPostgresTest extends TestCase
             ->where('notifiable_type', User::class)
             ->where('notifiable_id', $administrator->getKey())
             ->count());
+    }
+
+    public function test_postgresql_uses_membership_preference_for_assigned_specialist_bell_delivery(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $staff, $foreignAdministrator, $client, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['notifications_enabled' => false])->save();
+        Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $staff->getKey(),
+            'is_active' => false,
+            'notifications_enabled' => false,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([
+            app(DatabaseNotificationChannel::class),
+        ]));
+
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested->value,
+                'visit_format' => VisitFormat::Office->value,
+                'starts_at' => CarbonImmutable::now()->addDay(),
+                'ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+                'blocking_ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+                'schedule_timezone' => 'UTC',
+                'client_timezone' => 'UTC',
+            ]);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'postgres-specialist-preference', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_user_id', $staff->getKey())
+            ->whereJsonContains('channel_priority', 'database')
+            ->sole();
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertSame(1, $staff->fresh()->notifications()->count());
+        self::assertSame(0, $foreignAdministrator->fresh()->notifications()->count());
     }
 
     /** @return array{Organization, User, User, User, Client, Specialist, Service} */

@@ -9,8 +9,6 @@ use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioChannelIdentity;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
-use App\Modules\Specialists\Domain\Models\Specialist;
-use Illuminate\Database\Eloquent\Builder;
 
 final class ScenarioChannelIdentityResolver
 {
@@ -46,18 +44,6 @@ final class ScenarioChannelIdentityResolver
                 $membership,
                 $permission,
             )) {
-                return null;
-            }
-
-            if (Specialist::query()
-                ->where('organization_id', $action->organization_id)
-                ->where('staff_user_id', $action->recipient_user_id)
-                ->where(function (Builder $query): void {
-                    $query
-                        ->where('is_active', false)
-                        ->orWhere('notifications_enabled', false);
-                })
-                ->exists()) {
                 return null;
             }
 

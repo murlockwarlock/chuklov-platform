@@ -39,6 +39,12 @@ final class CrmNotificationCenterTest extends TestCase
     public function test_new_booking_projects_once_to_the_assigned_specialists_crm_bell(): void
     {
         [$organization, $staff, $client, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['notifications_enabled' => false])->save();
+        Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $staff->getKey(),
+            'is_active' => false,
+            'notifications_enabled' => false,
+        ]);
         app(EnsureOperationalNotificationDefaults::class)->handle($organization);
         $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
         $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'crm-center-booking-created', now()->toImmutable());
@@ -107,6 +113,7 @@ final class CrmNotificationCenterTest extends TestCase
     public function test_appointment_reminder_uses_the_existing_reminder_occurrence_for_the_crm_bell(): void
     {
         [$organization, $staff, $client, $specialist, $service] = $this->fixture();
+        $specialist->forceFill(['notifications_enabled' => false])->save();
         $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Confirmed);
         $booking->forceFill([
             'starts_at' => now()->addHours(3),
@@ -276,6 +283,44 @@ final class CrmNotificationCenterTest extends TestCase
         app(EnsureOperationalNotificationDefaults::class)->handle($organization);
 
         self::assertSame(['type' => 'roles', 'roles' => ['staff'], 'permission' => 'manage_scheduling'], ScenarioRule::query()->findOrFail($updated->getKey())->recipient_strategy);
+    }
+
+    public function test_changing_an_operational_rule_event_drops_an_unrelated_hidden_permission(): void
+    {
+        [$organization] = $this->fixture();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($organization);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $rule = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'companion-handoff-database')
+            ->sole();
+
+        $updated = app(UpdateScenarioRule::class)->handle($admin, $rule, [
+            'rule_key' => $rule->rule_key,
+            'name' => $rule->name,
+            'trigger_event' => 'booking.completed',
+            'is_enabled' => $rule->is_enabled,
+            'delay_value' => $rule->delay_value,
+            'delay_unit' => $rule->delay_unit->value,
+            'purpose' => $rule->purpose->value,
+            'conditions' => $rule->conditions,
+            'recipient_strategy' => ['type' => 'roles', 'roles' => ['staff']],
+            'channel_priority' => $rule->channel_priority,
+            'template_version_id' => $rule->template_version_id,
+            'max_occurrences' => $rule->max_occurrences,
+            'repeat_interval_value' => $rule->repeat_interval_value,
+            'repeat_interval_unit' => $rule->repeat_interval_unit?->value,
+        ]);
+
+        self::assertArrayNotHasKey('permission', $updated->recipient_strategy);
+
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+
+        self::assertArrayNotHasKey(
+            'permission',
+            ScenarioRule::query()->findOrFail($updated->getKey())->recipient_strategy,
+        );
     }
 
     public function test_database_bell_and_read_actions_are_scoped_to_the_current_organization(): void

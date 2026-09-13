@@ -345,7 +345,11 @@ final class EnsureOperationalNotificationDefaults
                     ->first();
 
                 if ($existingRule instanceof ScenarioRule) {
-                    if (isset($definition['recipient']['permission'])) {
+                    $definitionEvent = ScenarioEventType::tryFrom((string) $definition['event']);
+
+                    if (isset($definition['recipient']['permission'])
+                        && $definitionEvent !== null
+                        && $existingRule->trigger_event === $definitionEvent) {
                         $recipientStrategy = is_array($existingRule->recipient_strategy)
                             ? $existingRule->recipient_strategy
                             : [];

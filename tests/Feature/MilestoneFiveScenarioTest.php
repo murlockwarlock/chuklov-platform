@@ -46,9 +46,7 @@ use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
-use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Carbon\CarbonImmutable;
 use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
@@ -1025,20 +1023,15 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNull($action->client_id);
     }
 
-    public function test_disabled_specialist_notifications_suppress_already_materialized_internal_actions(): void
+    public function test_disabled_membership_notifications_suppress_already_materialized_internal_actions(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
         app(OrganizationContext::class)->set($organization);
-        $specialist = app(UpdateSpecialist::class)->handle(
-            actor: $admin,
-            specialist: $specialist,
-            displayName: $specialist->display_name,
-            isActive: true,
-            timezone: $specialist->timezone,
-            staffUserId: $staff->id,
-            notificationSettings: SpecialistNotificationSettings::from('555000111', false),
-        );
+        $specialist->forceFill([
+            'staff_user_id' => $staff->id,
+            'notifications_enabled' => false,
+        ])->save();
         $templateVersion = $this->template($organization);
         $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($templateVersion)->create([
             'trigger_event' => 'booking.completed',
@@ -1051,6 +1044,7 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         app(MaterializeScenarioEvent::class)->handle($event->id);
         $action = ScenarioAction::query()->where('scenario_rule_id', $rule->id)->sole();
+        $staff->membershipFor($organization)->forceFill(['notifications_enabled' => false])->save();
 
         app(ExecuteScenarioAction::class)->handle($action->id);
 

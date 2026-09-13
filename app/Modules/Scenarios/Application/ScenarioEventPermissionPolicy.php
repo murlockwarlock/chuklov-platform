@@ -18,9 +18,13 @@ final class ScenarioEventPermissionPolicy
             return false;
         }
 
-        $permission = $requiredPermission ?? $this->requiredPermission($eventType);
+        $eventPermission = $this->requiredPermission($eventType);
 
-        return $permission === null || $membership->role->allows($permission);
+        if ($eventPermission !== null && ! $membership->role->allows($eventPermission)) {
+            return false;
+        }
+
+        return $requiredPermission === null || $membership->role->allows($requiredPermission);
     }
 
     private function requiredPermission(ScenarioEventType $eventType): ?OrganizationPermission
