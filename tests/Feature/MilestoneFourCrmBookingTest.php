@@ -26,8 +26,10 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -88,6 +90,99 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, $booking->fresh()->events()->count());
         self::assertSame(1, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
+    }
+
+    public function test_crm_can_create_a_confirmed_backdated_booking_without_adjusting_datetime(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $past = CarbonImmutable::create(2026, 3, 23, 9, 0, 0, 'UTC');
+
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $past,
+            format: VisitFormat::Office,
+            idempotencyKey: 'confirmed-backdated-booking',
+            confirmedBackdated: true,
+        );
+
+        self::assertSame($organization->getKey(), $booking->organization_id);
+        self::assertTrue($booking->startsAtUtc()->equalTo($past));
+        self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_crm_requires_explicit_confirmation_for_a_backdated_booking(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $past = CarbonImmutable::create(2026, 3, 23, 9, 0, 0, 'UTC');
+
+        try {
+            app(CreateBookingAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: $past,
+                format: VisitFormat::Office,
+                idempotencyKey: 'unconfirmed-backdated-booking',
+            );
+            self::fail('A backdated booking without confirmation must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(['Подтвердите создание записи задним числом.'], $exception->errors()['startsAt']);
+        }
+
+        self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
+        self::assertSame(0, Booking::query()->count());
+    }
+
+    public function test_crm_form_shows_backdated_warning_and_requires_confirmation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $past = CarbonImmutable::create(2026, 3, 23, 9, 0, 0, 'UTC');
+
+        Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => $past,
+                'visit_format' => 'office',
+                'party_size' => 1,
+            ])
+            ->assertFormFieldExists('confirm_backdated')
+            ->assertSee('Вы создаёте запись задним числом: 23.03.2026 09:00.')
+            ->call('create')
+            ->assertHasFormErrors(['confirm_backdated']);
+
+        self::assertSame(0, Booking::query()->count());
+    }
+
+    public function test_client_cannot_use_the_crm_backdated_confirmation(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $past = CarbonImmutable::create(2026, 3, 23, 9, 0, 0, 'UTC');
+
+        $this->expectException(AuthorizationException::class);
+
+        try {
+            app(CreateBookingAction::class)->handle(
+                actor: $client,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: $past,
+                format: VisitFormat::Office,
+                idempotencyKey: 'client-backdated-confirmation',
+                confirmedBackdated: true,
+            );
+        } finally {
+            self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
+            self::assertSame(0, Booking::query()->count());
+        }
     }
 
     public function test_crm_booking_creation_requires_manage_scheduling_permission(): void

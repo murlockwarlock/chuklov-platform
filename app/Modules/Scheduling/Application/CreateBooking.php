@@ -68,6 +68,7 @@ class CreateBooking
         ?float $longitude = null,
         ?string $mapUrl = null,
         ?Closure $beforeCreate = null,
+        bool $confirmedBackdated = false,
     ): Booking {
         $organization = $this->context->organization();
         $this->ensureOrganizationOwnership($organization->getKey(), $actor, $client, $specialist, $service);
@@ -105,7 +106,25 @@ class CreateBooking
             throw ValidationException::withMessages(['location' => 'Адрес приёма может изменить только специалист.']);
         }
 
+        if ($confirmedBackdated && ! ($actor instanceof User)) {
+            throw new AuthorizationException('Only CRM staff can confirm a backdated booking.');
+        }
+
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
+        $isBackdated = $requestedStart->lessThan(CarbonImmutable::now('UTC'));
+
+        if ($isBackdated && ! ($actor instanceof User)) {
+            throw ValidationException::withMessages([
+                'startsAt' => 'Самостоятельная запись задним числом недоступна.',
+            ]);
+        }
+
+        if ($isBackdated && ! $confirmedBackdated) {
+            throw ValidationException::withMessages([
+                'startsAt' => 'Подтвердите создание записи задним числом.',
+            ]);
+        }
+
         $resolvedMeetingLinkMode = $format === VisitFormat::Online
             ? $this->videoMeetings->resolveMeetingLinkMode($organization, $meetingLinkMode)
             : null;
@@ -158,6 +177,7 @@ class CreateBooking
             $mapUrl,
             $requestHash,
             $beforeCreate,
+            $isBackdated,
         ): Booking {
             $idempotency = $this->lockIdempotencyKey(
                 organizationId: $organization->getKey(),
@@ -243,6 +263,8 @@ class CreateBooking
                 displayTimezone: $resolvedClientTimezone,
                 workingLocationId: $workingLocationId,
                 locationArea: $locationArea,
+                leadTimeMinutes: $isBackdated ? 0 : null,
+                now: $isBackdated ? $requestedStart->subSecond() : null,
             );
             $slot = $this->matchingSlot($availability->slots, $requestedStart);
 
