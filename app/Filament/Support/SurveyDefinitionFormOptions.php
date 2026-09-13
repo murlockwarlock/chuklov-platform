@@ -78,6 +78,68 @@ final class SurveyDefinitionFormOptions
         return self::withUnavailableOption($options, $selected, 'Выбранный показатель больше недоступен.');
     }
 
+    /**
+     * @param  array<int|string, mixed>  $sections
+     * @return array<string, string>
+     */
+    public static function answerScaleOptions(array $sections, mixed $selected = null): array
+    {
+        $options = [];
+        foreach (self::orderedQuestions($sections) as $question) {
+            foreach (is_array($question['options'] ?? null) ? $question['options'] : [] as $option) {
+                if (! is_array($option) || ! is_string($option['value'] ?? null)) {
+                    continue;
+                }
+                $options[$option['value']] = self::humanText($option['label'] ?? null);
+            }
+        }
+
+        return self::withUnavailableOption($options, $selected, 'Выбранный вариант больше недоступен.');
+    }
+
+    /** @return array<string, string> */
+    public static function normalizationOptions(mixed $selected = null): array
+    {
+        return self::withUnavailableOption([
+            'symptom_burden_0_100' => 'Симптомная нагрузка, шкала 0–100',
+        ], $selected, 'Сохранённый способ нормализации больше недоступен.');
+    }
+
+    /** @return array<string, string> */
+    public static function comparisonOperatorOptions(mixed $selected = null): array
+    {
+        return self::withUnavailableOption([
+            'no_decrease' => 'Не должно быть ухудшения',
+        ], $selected, 'Сохранённое сравнение больше недоступно.');
+    }
+
+    /** @return array<string, string> */
+    public static function comparisonBasisOptions(mixed $selected = null): array
+    {
+        return self::withUnavailableOption([
+            'normalized_score' => 'Нормализованный результат',
+        ], $selected, 'Сохранённая основа сравнения больше недоступна.');
+    }
+
+    public static function answerScaleLabel(array $sections, mixed $value): string
+    {
+        return self::answerScaleOptions($sections, $value)[(string) $value] ?? 'Выбранный вариант больше недоступен.';
+    }
+
+    public static function questionTypeLabel(mixed $type): string
+    {
+        return match ($type) {
+            'single_choice' => 'Один вариант',
+            'multiple_choice' => 'Несколько вариантов',
+            'boolean' => 'Да / нет',
+            'integer' => 'Целое число',
+            'number' => 'Число',
+            'short_text' => 'Короткий текст',
+            'long_text' => 'Развёрнутый текст',
+            default => 'Тип ответа не указан',
+        };
+    }
+
     /** @param array<int|string, mixed> $sections */
     public static function questionType(array $sections, mixed $questionKey): ?string
     {

@@ -6,14 +6,20 @@ use App\Filament\Resources\SurveyDefinitions\Pages\CreateSurveyDefinition as Cre
 use App\Filament\Resources\SurveyDefinitions\Pages\EditSurveyDefinition;
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Surveys\Application\CreateSurveyDefinition as CreateSurveyDefinitionAction;
+use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
+use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Application\PublishSurveyVersion;
+use App\Modules\Surveys\Application\StartSurveyAttempt;
 use App\Modules\Surveys\Application\UpdateSurveyDefinitionDraft;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Repeater;
+use Filament\Schemas\Components\Tabs;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -24,39 +30,79 @@ final class SurveyDefinitionBuilderTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_editor_uses_human_tabs_and_collapsible_repeater_summaries(): void
+    {
+        [, $admin] = $this->fixture();
+        $component = Livewire::actingAs($admin)->test(CreateSurveyDefinitionPage::class);
+        $tabs = $component->instance()->getSchema('form')->getComponents()[0];
+
+        self::assertInstanceOf(Tabs::class, $tabs);
+        self::assertSame([
+            'Основное',
+            'Вопросы',
+            'Подсчёт результата',
+            'Результат для клиента',
+            'Публикация / версия',
+        ], array_map(
+            static fn ($tab): string => (string) $tab->getLabel(),
+            $tabs->getChildSchema()->getComponents(),
+        ));
+
+        $questionsTab = $tabs->getChildSchema()->getComponents()[1];
+        $questionsSection = $questionsTab->getChildSchema()->getComponents()[0];
+        $sections = $questionsSection->getChildComponents()[0];
+
+        self::assertInstanceOf(Repeater::class, $sections);
+        self::assertTrue($sections->isCollapsible());
+        self::assertTrue($sections->hasItemLabels());
+    }
+
+    public function test_edit_header_keeps_save_and_publish_actions_visible(): void
+    {
+        [, $admin] = $this->fixture();
+        $definition = app(CreateSurveyDefinitionAction::class)->handle($admin, $this->canonicalData());
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->assertSee('Сохранить черновик')
+            ->assertSee('Опубликовать черновик');
+    }
+
     public function test_repeater_add_lifecycle_generates_technical_identities_before_persistence(): void
     {
         [, $admin] = $this->fixture();
         $component = Livewire::actingAs($admin)->test(CreateSurveyDefinitionPage::class);
-        $component->callFormComponentAction('sections', 'add');
+        $component->set('surveyBuilderTab', '1');
+        $component->callFormComponentAction('1.sections', 'add');
         $state = $component->get('data');
         $initialSectionItemKey = array_key_first($state['sections']);
         $sectionItemKey = array_key_last($state['sections']);
-        $component->callFormComponentAction('sections', 'delete', [], ['item' => $initialSectionItemKey]);
+        $component->callFormComponentAction('1.sections', 'delete', [], ['item' => $initialSectionItemKey]);
         $state = $component->get('data');
         $sectionKey = $state['sections'][$sectionItemKey]['key'];
 
-        $component->callFormComponentAction("sections.{$sectionItemKey}.questions", 'add');
+        $component->callFormComponentAction("1.sections.{$sectionItemKey}.questions", 'add');
         $state = $component->get('data');
         $initialQuestionItemKey = array_key_first($state['sections'][$sectionItemKey]['questions']);
         $questionItemKey = array_key_last($state['sections'][$sectionItemKey]['questions']);
-        $component->callFormComponentAction("sections.{$sectionItemKey}.questions", 'delete', [], ['item' => $initialQuestionItemKey]);
+        $component->callFormComponentAction("1.sections.{$sectionItemKey}.questions", 'delete', [], ['item' => $initialQuestionItemKey]);
         $state = $component->get('data');
         $questionKey = $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['key'];
         $state['sections'][$sectionItemKey]['questions'][$questionItemKey]['type'] = 'single_choice';
         $component->fillForm($state);
 
-        $component->callFormComponentAction("sections.{$sectionItemKey}.questions.{$questionItemKey}.options", 'add');
-        $component->callFormComponentAction('metrics', 'add');
-        $component->callFormComponentAction('thresholds', 'add');
+        $component->callFormComponentAction("1.sections.{$sectionItemKey}.questions.{$questionItemKey}.options", 'add');
+        $component->set('surveyBuilderTab', '2');
+        $component->callFormComponentAction('2.metrics', 'add');
+        $component->callFormComponentAction('3.thresholds', 'add');
 
         $state = $component->get('data');
         $initialMetricItemKey = array_key_first($state['metrics']);
         $metricItemKey = array_key_last($state['metrics']);
-        $component->callFormComponentAction('metrics', 'delete', [], ['item' => $initialMetricItemKey]);
+        $component->callFormComponentAction('2.metrics', 'delete', [], ['item' => $initialMetricItemKey]);
         $initialThresholdItemKey = array_key_first($state['thresholds']);
         $thresholdItemKey = array_key_last($state['thresholds']);
-        $component->callFormComponentAction('thresholds', 'delete', [], ['item' => $initialThresholdItemKey]);
+        $component->callFormComponentAction('3.thresholds', 'delete', [], ['item' => $initialThresholdItemKey]);
         $state = $component->get('data');
         $optionItemKeys = array_keys($state['sections'][$sectionItemKey]['questions'][$questionItemKey]['options']);
         $optionValues = array_map(
@@ -86,7 +132,16 @@ final class SurveyDefinitionBuilderTest extends TestCase
         $state['thresholds'][$thresholdItemKey]['metric_key'] = $metricKey;
         $state['thresholds'][$thresholdItemKey]['min'] = 1;
         $state['thresholds'][$thresholdItemKey]['label'] = 'Результат';
-        $state['rules'] = [];
+        $state['rules'] = [[
+            'question_key' => $questionKey,
+            'metric_key' => $metricKey,
+            'operator' => 'value_map',
+            'points' => array_map(
+                static fn (string $value, int $index): array => ['value' => $value, 'points' => $index],
+                $optionValues,
+                array_keys($optionValues),
+            ),
+        ]];
         $state['comparison_metric_keys'] = [];
         $state['is_available'] = true;
 
@@ -289,6 +344,152 @@ final class SurveyDefinitionBuilderTest extends TestCase
             ->assertHasErrors();
 
         self::assertSame('published', $draft->fresh()->status->value);
+    }
+
+    public function test_platform_scoring_edits_create_a_new_version_without_rewriting_historical_attempts(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(InstallPlatformSurveyCatalog::class)->handle($organization);
+        $definition = SurveyDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
+            ->firstOrFail();
+        $published = $definition->activeVersion()->firstOrFail();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $attempt = app(StartSurveyAttempt::class)->handle($client, $definition);
+        $originalScoring = $published->scoring;
+
+        $state = SurveyDefinitionFormMapper::denormalize($published);
+        $state['answer_scale'][0]['points'] = 9;
+        $state['thresholds'][0]['label'] = 'Новый текст диапазона';
+        $state['summary'] = 'Новое объяснение результата.';
+        $state['result_metric_key'] = $state['metrics'][0]['key'];
+        $state['result_road_map'] = 'Новый следующий шаг.';
+
+        app(UpdateSurveyDefinitionDraft::class)->handle(
+            $admin,
+            $definition,
+            SurveyDefinitionFormMapper::normalize($state),
+        );
+
+        $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
+        self::assertSame(9, $draft->scoring['answer_scale']['never']);
+        self::assertSame('Новый текст диапазона', $draft->scoring['thresholds'][0]['label']['ru']);
+        self::assertSame('Новое объяснение результата.', $draft->scoring['summary']['ru']);
+        self::assertSame('Новый следующий шаг.', $draft->scoring['metrics'][0]['road_map']['ru']);
+
+        app(PublishSurveyVersion::class)->handle($admin, $draft);
+
+        $attempt->refresh();
+        $publishedAgain = $definition->refresh()->activeVersion()->firstOrFail();
+        self::assertNotSame($published->getKey(), $publishedAgain->getKey());
+        self::assertSame($published->getKey(), $attempt->survey_version_id);
+        self::assertSame($originalScoring, $published->fresh()->scoring);
+        self::assertSame(9, $publishedAgain->scoring['answer_scale']['never']);
+        self::assertSame('Новый текст диапазона', $publishedAgain->scoring['thresholds'][0]['label']['ru']);
+    }
+
+    public function test_unknown_scoring_is_preserved_when_an_unrelated_edit_is_saved(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => 'legacy-scoring',
+            'title' => 'Старый тест',
+            'title_en' => 'Legacy test',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => 'published',
+            'title' => 'Старый тест',
+            'title_en' => 'Legacy test',
+            'definition' => ['sections' => [[
+                'key' => 'section',
+                'title' => 'Раздел',
+                'questions' => [[
+                    'key' => 'boolean-question',
+                    'type' => 'boolean',
+                    'label' => 'Ответ',
+                    'required' => true,
+                ]],
+            ]]],
+            'scoring' => [
+                'schema' => 'historical-v2',
+                'calculation' => ['expression' => 'vendor-specific-expression'],
+                'result_bands' => [['from' => 0, 'to' => 10, 'text' => 'Исторический результат']],
+            ],
+            'metric_schema_key' => 'legacy-scale',
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+            'methodology' => 'legacy',
+            'published_at' => now(),
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['title'] = 'Изменённое название';
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($state)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
+        self::assertSame($version->scoring, $draft->scoring);
+        self::assertSame('Изменённое название', $draft->title);
+    }
+
+    public function test_legacy_scoring_hidden_state_cannot_replace_authoritative_scoring(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => 'legacy-scoring-tamper',
+            'title' => 'Старый тест',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => 'published',
+            'title' => 'Старый тест',
+            'definition' => ['sections' => [[
+                'key' => 'section',
+                'title' => 'Раздел',
+                'questions' => [[
+                    'key' => 'boolean-question',
+                    'type' => 'boolean',
+                    'label' => 'Ответ',
+                    'required' => true,
+                ]],
+            ]]],
+            'scoring' => [
+                'schema' => 'historical-v2',
+                'calculation' => ['expression' => 'vendor-specific-expression'],
+                'result_bands' => [['from' => 0, 'to' => 10, 'text' => 'Исторический результат']],
+            ],
+            'metric_schema_key' => 'legacy-scale',
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+            'methodology' => 'legacy',
+            'published_at' => now(),
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['legacy_scoring']['result_bands'][0]['text'] = 'Подмена';
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($state)
+            ->call('save')
+            ->assertHasErrors();
+
+        self::assertSame(1, $definition->refresh()->versions()->count());
+        self::assertSame('Исторический результат', $version->fresh()->scoring['result_bands'][0]['text']);
     }
 
     public function test_comparison_disable_reenable_and_new_scale_follow_the_compatibility_lifecycle(): void

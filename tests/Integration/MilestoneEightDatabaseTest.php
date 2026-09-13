@@ -102,14 +102,18 @@ final class MilestoneEightDatabaseTest extends TestCase
                 'title' => 'General',
                 'questions' => [[
                     'key' => 'answer',
-                    'type' => 'boolean',
+                    'type' => 'integer',
                     'label' => 'Answer',
                     'required' => true,
                 ]],
             ]]],
             'scoring' => [
                 'metrics' => [['key' => 'total', 'label' => 'Total']],
-                'rules' => [],
+                'rules' => [[
+                    'question_key' => 'answer',
+                    'metric_key' => 'total',
+                    'operator' => 'numeric_value',
+                ]],
                 'thresholds' => [],
             ],
         ];

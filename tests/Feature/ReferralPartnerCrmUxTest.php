@@ -7,12 +7,14 @@ use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProfiles;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ViewReferralPartnerProfile;
 use App\Models\User;
+use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
+use App\Modules\Referrals\Application\SaveReferralRewardProgram;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Filament\Facades\Filament;
 use Filament\Tables\Enums\RecordActionsPosition;
@@ -107,6 +109,67 @@ final class ReferralPartnerCrmUxTest extends TestCase
 
         self::assertTrue($toggle->isInline());
         self::assertSame('full', $toggle->getColumnSpan('default'));
+    }
+
+    public function test_referral_program_explains_percentage_terms_and_uses_organization_currency(): void
+    {
+        $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->filament($admin, $organization);
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'KZT',
+            'display_currency' => 'KZT',
+            'allowed_currencies' => ['KZT'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+            'rates' => [],
+        ]);
+        app(SaveReferralRewardProgram::class)->handle(
+            actor: $admin,
+            enabled: true,
+            qualificationRule: 'first_settled_payment',
+            formula: 'percentage_of_settlement',
+            fixedAmount: null,
+            fixedCurrency: null,
+            percentage: '10',
+            effectiveAt: now(),
+        );
+
+        Livewire::actingAs($admin)
+            ->test(ReferralRewardConfiguration::class)
+            ->assertSee('Программа включена')
+            ->assertSee('После первой подтверждённой оплаты')
+            ->assertSee('Если клиент оплатил 100 000 KZT, партнёру будет начислено 10 000 KZT.')
+            ->assertSee('Индивидуальные условия партнёра');
+    }
+
+    public function test_referral_program_explains_fixed_reward_example(): void
+    {
+        $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->filament($admin, $organization);
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'KZT',
+            'display_currency' => 'KZT',
+            'allowed_currencies' => ['KZT'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+            'rates' => [],
+        ]);
+        app(SaveReferralRewardProgram::class)->handle(
+            actor: $admin,
+            enabled: true,
+            qualificationRule: 'every_settled_payment',
+            formula: 'fixed_amount',
+            fixedAmount: '5000',
+            fixedCurrency: 'KZT',
+            percentage: null,
+            effectiveAt: now(),
+        );
+
+        Livewire::actingAs($admin)
+            ->test(ReferralRewardConfiguration::class)
+            ->assertSee('После подтверждённой оплаты партнёру будет начислено 5 000 KZT.');
     }
 
     public function test_partner_list_is_scoped_to_the_current_organization(): void

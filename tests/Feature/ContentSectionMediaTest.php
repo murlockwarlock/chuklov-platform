@@ -23,6 +23,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Facades\Filament;
 use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Schema;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -57,6 +58,11 @@ final class ContentSectionMediaTest extends TestCase
             ScenarioRuleForm::configure(Schema::make()),
         ] as $schema) {
             foreach ($schema->getComponents() as $component) {
+                if ($component instanceof Tabs) {
+                    self::assertSame('full', $component->getColumnSpan('default'));
+
+                    continue;
+                }
                 self::assertInstanceOf(Section::class, $component);
                 self::assertSame('full', $component->getColumnSpan('default'));
             }

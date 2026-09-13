@@ -101,7 +101,6 @@ final class SurveyDefinitionFormCompatibility
             return false;
         }
 
-        $metricKeys = [];
         foreach (is_array($scoring['metrics'] ?? null) ? $scoring['metrics'] : [] as $metric) {
             if (! is_array($metric)
                 || array_diff(array_keys($metric), self::HUMAN_METRIC_FIELDS) !== []
@@ -115,7 +114,6 @@ final class SurveyDefinitionFormCompatibility
                 || ! self::isHumanMetricText($metric, 'road_map')) {
                 return false;
             }
-            $metricKeys[$metric['key']] = true;
         }
         foreach (is_array($scoring['rules'] ?? null) ? $scoring['rules'] : [] as $rule) {
             if (! is_array($rule)

@@ -12,13 +12,26 @@ final class SurveyDefinitionScoringFormMapper
     {
         $scoring = [];
 
-        if (is_array($data['answer_scale'] ?? null)) {
+        $metricResultContent = is_array($data['metric_result_content'] ?? null)
+            ? $data['metric_result_content']
+            : [];
+        $selectedMetricKey = $data['result_metric_key'] ?? null;
+        if (is_string($selectedMetricKey) && $selectedMetricKey !== '') {
+            $selectedContent = self::selectedMetricContent($data);
+            if (is_array($metricResultContent[$selectedMetricKey] ?? null) || array_filter($selectedContent, static fn (mixed $value): bool => $value !== null) !== []) {
+                $metricResultContent[$selectedMetricKey] = [
+                    ...(is_array($metricResultContent[$selectedMetricKey] ?? null) ? $metricResultContent[$selectedMetricKey] : []),
+                    ...$selectedContent,
+                ];
+            }
+        }
+
+        if (is_array($data['answer_scale'] ?? null) && $data['answer_scale'] !== []) {
             $answerScale = [];
             foreach ($data['answer_scale'] as $scale) {
                 if (! is_array($scale) || ! is_string($scale['value'] ?? null) || $scale['value'] === '') {
                     continue;
                 }
-
                 $answerScale[$scale['value']] = self::number($scale['points'] ?? null);
             }
             $scoring['answer_scale'] = $answerScale;
@@ -30,6 +43,11 @@ final class SurveyDefinitionScoringFormMapper
                 continue;
             }
 
+            $metricKey = $metric['key'] ?? null;
+            if (is_string($metricKey) && is_array($metricResultContent[$metricKey] ?? null)) {
+                $metric = [...$metric, ...$metricResultContent[$metricKey]];
+            }
+
             $metricData = [
                 'key' => $metric['key'] ?? null,
                 'label' => self::localized($metric['label'] ?? null, $metric['label_en'] ?? null),
@@ -39,16 +57,30 @@ final class SurveyDefinitionScoringFormMapper
                     continue;
                 }
                 if ($key === 'question_keys') {
-                    $metricData[$key] = is_array($metric[$key]) ? array_values($metric[$key]) : [];
+                    if (is_array($metric[$key]) && $metric[$key] !== []) {
+                        $metricData[$key] = array_values($metric[$key]);
+                    }
 
                     continue;
                 }
                 if (in_array($key, ['attention_reason', 'observation', 'road_map'], true)) {
-                    $metricData[$key] = self::localized($metric[$key] ?? null, $metric[$key.'_en'] ?? null);
+                    $value = self::localized($metric[$key] ?? null, $metric[$key.'_en'] ?? null);
+                    if ($value !== null || (is_array($metricResultContent[$metricKey] ?? null) && array_key_exists($key, $metricResultContent[$metricKey]))) {
+                        $metricData[$key] = $value;
+                    }
 
                     continue;
                 }
-                $metricData[$key] = $key === 'max_value' ? self::number($metric[$key]) : $metric[$key];
+                if ($key === 'max_value') {
+                    if ($metric[$key] !== null && $metric[$key] !== '') {
+                        $metricData[$key] = self::number($metric[$key]);
+                    }
+
+                    continue;
+                }
+                if ($metric[$key] !== null && $metric[$key] !== '') {
+                    $metricData[$key] = $metric[$key];
+                }
             }
             $metrics[] = $metricData;
         }
@@ -119,7 +151,18 @@ final class SurveyDefinitionScoringFormMapper
         }
 
         foreach (['safe_steps', 'specialist_questions'] as $canonicalKey) {
-            if (! array_key_exists($canonicalKey, $data) || ! is_array($data[$canonicalKey])) {
+            $textKey = $canonicalKey.'_text';
+            $textEnglishKey = $textKey.'_en';
+            if (array_key_exists($textKey, $data) || array_key_exists($textEnglishKey, $data)) {
+                $items = self::localizedList(
+                    self::splitLines($data[$textKey] ?? null),
+                    self::splitLines($data[$textEnglishKey] ?? null),
+                );
+                $scoring[$canonicalKey] = $items;
+
+                continue;
+            }
+            if (! array_key_exists($canonicalKey, $data) || ! is_array($data[$canonicalKey]) || $data[$canonicalKey] === []) {
                 continue;
             }
             $items = [];
@@ -153,6 +196,7 @@ final class SurveyDefinitionScoringFormMapper
         }
 
         $data['metrics'] = [];
+        $data['metric_result_content'] = [];
         foreach (is_array($scoring['metrics'] ?? null) ? $scoring['metrics'] : [] as $metric) {
             if (! is_array($metric)) {
                 continue;
@@ -173,9 +217,22 @@ final class SurveyDefinitionScoringFormMapper
                     [$text, $textEn] = self::denormalizeText($metric[$key]);
                     $formMetric[$key] = $text;
                     $formMetric[$key.'_en'] = $textEn;
+                    if (is_string($metric['key'] ?? null)) {
+                        $data['metric_result_content'][$metric['key']][$key] = $text;
+                        $data['metric_result_content'][$metric['key']][$key.'_en'] = $textEn;
+                    }
                 }
             }
             $data['metrics'][] = $formMetric;
+        }
+
+        $firstMetricKey = $data['metrics'][0]['key'] ?? null;
+        $data['result_metric_key'] = is_string($firstMetricKey) ? $firstMetricKey : null;
+        if (is_string($firstMetricKey)) {
+            foreach (['attention_reason', 'observation', 'road_map'] as $key) {
+                $data['result_'.$key] = $data['metric_result_content'][$firstMetricKey][$key] ?? null;
+                $data['result_'.$key.'_en'] = $data['metric_result_content'][$firstMetricKey][$key.'_en'] ?? null;
+            }
         }
 
         $data['rules'] = [];
@@ -230,16 +287,70 @@ final class SurveyDefinitionScoringFormMapper
                 continue;
             }
             $data[$key] = [];
+            $ruItems = [];
+            $enItems = [];
             foreach (is_array($scoring[$key]) ? $scoring[$key] : [] as $item) {
                 [$text, $textEn] = self::denormalizeText($item);
                 $data[$key][] = ['text' => $text, 'text_en' => $textEn];
+                $ruItems[] = $text ?? '';
+                $enItems[] = $textEn ?? '';
             }
+            $data[$key.'_text'] = implode(PHP_EOL, $ruItems);
+            $data[$key.'_text_en'] = implode(PHP_EOL, $enItems);
         }
 
         return $data;
     }
 
-    /** @return string|array{ru: string, en: string}|null */
+    /** @return array<string, string|null> */
+    private static function selectedMetricContent(array $data): array
+    {
+        $content = [];
+        foreach (['attention_reason', 'observation', 'road_map'] as $key) {
+            $content[$key] = self::blankToNull($data['result_'.$key] ?? null);
+            $content[$key.'_en'] = self::blankToNull($data['result_'.$key.'_en'] ?? null);
+        }
+
+        return $content;
+    }
+
+    private static function blankToNull(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /** @return list<string> */
+    private static function splitLines(mixed $value): array
+    {
+        if (! is_string($value)) {
+            return [];
+        }
+
+        return array_map(static fn (string $line): string => trim($line), preg_split('/\R/u', $value) ?: []);
+    }
+
+    /** @param list<string> $ruItems  @param list<string> $enItems  @return list<string|array{ru: string, en: string}> */
+    private static function localizedList(array $ruItems, array $enItems): array
+    {
+        $items = [];
+        $count = max(count($ruItems), count($enItems));
+        for ($index = 0; $index < $count; $index++) {
+            $ru = self::blankToNull($ruItems[$index] ?? null);
+            $en = self::blankToNull($enItems[$index] ?? null);
+            if ($ru === null && $en === null) {
+                continue;
+            }
+            $items[] = self::localized($ru, $en);
+        }
+
+        return $items;
+    }
+
+    /** @return string|array{ru?: string, en?: string}|null */
     private static function localized(mixed $ru, mixed $en): string|array|null
     {
         if ($ru === null && ($en === null || trim((string) $en) === '')) {
@@ -248,8 +359,11 @@ final class SurveyDefinitionScoringFormMapper
         if (! is_string($en) || trim($en) === '') {
             return (string) $ru;
         }
+        if ($ru === null || trim($ru) === '') {
+            return ['en' => $en];
+        }
 
-        return ['ru' => (string) $ru, 'en' => $en];
+        return ['ru' => $ru, 'en' => $en];
     }
 
     private static function number(mixed $value): int|float|null
@@ -273,6 +387,9 @@ final class SurveyDefinitionScoringFormMapper
             return [(string) $value, null];
         }
 
-        return [(string) ($value['ru'] ?? $value['en'] ?? ''), isset($value['en']) ? (string) $value['en'] : null];
+        return [
+            array_key_exists('ru', $value) && $value['ru'] !== null ? (string) $value['ru'] : null,
+            array_key_exists('en', $value) && $value['en'] !== null ? (string) $value['en'] : null,
+        ];
     }
 }
