@@ -25,10 +25,10 @@ final class ScenarioNotificationSeeder extends Seeder
                 $this->seedLocale($organization, 'ru', 'Спасибо за ваш визит, {{ client.full_name }}.');
                 $this->seedB2b($organization, 'en', 'Your B2B conversation with {{ client.full_name }} (#{{ sales_call.id }}) is scheduled for {{ sales_call.local_date }} at {{ sales_call.local_time }} ({{ sales_call.timezone }}).');
                 $this->seedB2b($organization, 'ru', 'Разговор о развитии бизнеса с клиентом {{ client.full_name }} (№{{ sales_call.id }}) запланирован на {{ sales_call.local_date }} в {{ sales_call.local_time }} ({{ sales_call.timezone }}).');
-                $this->seedBookingRequest($organization, 'en', "Appointment request received\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nWe will confirm it soon.");
+                $this->seedBookingRequest($organization, 'en', "Your appointment request was received\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nWe will confirm it soon.");
                 $this->seedBookingRequest($organization, 'ru', "Заявка на запись принята\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nМы скоро подтвердим запись.");
-                $this->seedBookingConfirmation($organization, 'en', "Appointment confirmed\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}");
-                $this->seedBookingConfirmation($organization, 'ru', "Запись подтверждена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}");
+                $this->seedBookingConfirmation($organization, 'en', "Your appointment is confirmed\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}");
+                $this->seedBookingConfirmation($organization, 'ru', "Ваша запись подтверждена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}");
                 $this->seedBookingRescheduled($organization);
                 $this->seedBookingCancelled($organization);
                 $this->seedFeedback($organization, 'en', 'Please rate your visit, {{ client.full_name }}.');
@@ -145,7 +145,7 @@ final class ScenarioNotificationSeeder extends Seeder
         $version = NotificationTemplateVersion::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_id', $template->getKey())
-            ->where('version', 1)
+            ->latest('version')
             ->first();
 
         if ($version === null) {
@@ -222,7 +222,7 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'booking-created',
             locale: $locale,
-            name: 'Новая запись',
+            name: 'Заявка на запись',
             body: $body,
             variables: ['booking.specialist_name', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_details'],
         );
@@ -258,15 +258,15 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'booking-created-specialist',
             locale: 'ru',
-            name: 'Новая заявка на запись для специалиста',
-            body: "Новая запись\nНовая заявка на запись от клиента {{ client.full_name }}.\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
+            name: 'Новая запись от клиента',
+            body: "Новая запись от клиента\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
             variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_details'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
             'rule_key' => 'booking-created-specialist',
-            'name' => 'Новая заявка на запись для специалиста',
+            'name' => 'Новая запись от клиента',
             'trigger_event' => ScenarioEventType::BookingCreated->value,
             'is_enabled' => true,
             'delay_value' => 0,
@@ -325,15 +325,15 @@ final class ScenarioNotificationSeeder extends Seeder
             organization: $organization,
             templateKey: 'booking-confirmed-specialist',
             locale: 'ru',
-            name: 'Подтверждение записи для специалиста',
-            body: "Запись подтверждена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
+            name: 'Запись клиента подтверждена',
+            body: "Запись клиента подтверждена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
             variables: ['client.full_name', 'client.telegram_contact', 'booking.service_name', 'booking.local_date', 'booking.local_time', 'booking.timezone', 'booking.visit_details'],
         );
         $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
             'rule_key' => 'booking-confirmed-specialist',
-            'name' => 'Подтверждение записи для специалиста',
+            'name' => 'Запись клиента подтверждена',
             'trigger_event' => ScenarioEventType::BookingConfirmed->value,
             'is_enabled' => true,
             'delay_value' => 0,
@@ -358,10 +358,10 @@ final class ScenarioNotificationSeeder extends Seeder
             templateKey: 'booking-rescheduled',
             rulePrefix: 'booking-rescheduled',
             clientBodies: [
-                'en' => "Appointment rescheduled\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
-                'ru' => "Запись перенесена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
+                'en' => "Your appointment was rescheduled\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
+                'ru' => "Ваша запись перенесена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
             ],
-            specialistBody: "Запись перенесена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
+            specialistBody: "Запись клиента перенесена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
         );
     }
 
@@ -373,10 +373,10 @@ final class ScenarioNotificationSeeder extends Seeder
             templateKey: 'booking-cancelled',
             rulePrefix: 'booking-cancelled',
             clientBodies: [
-                'en' => "Appointment cancelled\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
-                'ru' => "Запись отменена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }}) отменена",
+                'en' => "Your appointment was cancelled\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}",
+                'ru' => "Ваша запись отменена\n{{ booking.specialist_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }}) отменена",
             ],
-            specialistBody: "Запись отменена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
+            specialistBody: "Запись клиента отменена\nКлиент: {{ client.full_name }}\n{{ booking.service_name }}\n{{ booking.local_date }} · {{ booking.local_time }} ({{ booking.timezone }})\n{{ booking.visit_details }}\nTelegram клиента: {{ client.telegram_contact }}.",
         );
     }
 
@@ -530,7 +530,7 @@ final class ScenarioNotificationSeeder extends Seeder
         $version = NotificationTemplateVersion::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_id', $template->getKey())
-            ->where('version', 1)
+            ->latest('version')
             ->first();
 
         if ($version === null) {
@@ -621,7 +621,7 @@ final class ScenarioNotificationSeeder extends Seeder
         $version = NotificationTemplateVersion::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_id', $template->getKey())
-            ->where('version', 1)
+            ->latest('version')
             ->first();
 
         if ($version === null) {

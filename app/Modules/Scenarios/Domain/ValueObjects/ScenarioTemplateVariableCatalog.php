@@ -64,6 +64,9 @@ final class ScenarioTemplateVariableCatalog
         'sales_call.join_url',
         'sales_call.crm_url',
         'sales_call.specialist_name',
+        'knowledge.source_title',
+        'knowledge.revision_version',
+        'knowledge.crm_url',
     ];
 
     /** @return list<string> */
@@ -145,6 +148,9 @@ final class ScenarioTemplateVariableCatalog
             'sales_call.join_url' => 'Ссылка участника Zoom',
             'sales_call.crm_url' => 'Ссылка на B2B-лид в CRM',
             'sales_call.specialist_name' => 'Имя специалиста',
+            'knowledge.source_title' => 'Название материала',
+            'knowledge.revision_version' => 'Версия материала',
+            'knowledge.crm_url' => 'Ссылка на материал в CRM',
         ];
     }
 

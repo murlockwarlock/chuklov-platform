@@ -55,14 +55,16 @@ final class InstallPlatformSurveyCatalog
                     ->latest('version')
                     ->first();
 
-                if ($published === null
-                    || (! $this->isApprovedPublishedVersion($published)
-                        && $this->fingerprint($published, $definitionData) !== $this->fingerprintData($definitionData))) {
-                    if ($published !== null) {
-                        $published->forceFill([
-                            'status' => SurveyVersionStatus::Retired,
-                            'retired_at' => now(),
-                        ])->save();
+                if ($published === null) {
+                    $existingVersion = SurveyVersion::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('survey_definition_id', $definition->getKey())
+                        ->lockForUpdate()
+                        ->latest('version')
+                        ->first();
+
+                    if ($existingVersion !== null) {
+                        continue;
                     }
 
                     $version = SurveyVersion::query()->create([
@@ -85,8 +87,33 @@ final class InstallPlatformSurveyCatalog
                     ]);
                     $definition->forceFill(['active_version_id' => $version->getKey()])->save();
                     $published = $version;
-                } elseif ((int) $definition->active_version_id !== (int) $published->getKey()) {
-                    $definition->forceFill(['active_version_id' => $published->getKey()])->save();
+                } elseif ($this->isUntouchedPlatformVersion($definition, $published)
+                    && $this->fingerprint($published, $definitionData) !== $this->fingerprintData($definitionData)) {
+                    $published->forceFill([
+                        'status' => SurveyVersionStatus::Retired,
+                        'retired_at' => now(),
+                    ])->save();
+
+                    $version = SurveyVersion::query()->create([
+                        'organization_id' => $organization->getKey(),
+                        'survey_definition_id' => $definition->getKey(),
+                        'version' => (int) $definition->versions()->max('version') + 1,
+                        'status' => SurveyVersionStatus::Published,
+                        'title' => $definitionData['title'],
+                        'title_en' => $definitionData['title_en'],
+                        'description' => $definitionData['description'],
+                        'description_en' => $definitionData['description_en'],
+                        'definition' => $definitionData['definition'],
+                        'scoring' => $definitionData['scoring'],
+                        'metric_schema_key' => $definitionData['metric_schema_key'],
+                        'source_reference' => null,
+                        'source' => $definitionData['source'],
+                        'approval_status' => $definitionData['approval_status'],
+                        'methodology' => $definitionData['methodology'],
+                        'published_at' => now(),
+                    ]);
+                    $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+                    $published = $version;
                 }
 
                 $installed[] = [
@@ -131,8 +158,13 @@ final class InstallPlatformSurveyCatalog
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
     }
 
-    private function isApprovedPublishedVersion(SurveyVersion $version): bool
+    private function isUntouchedPlatformVersion(SurveyDefinition $definition, SurveyVersion $version): bool
     {
-        return $version->source === 'chuklov_approved' || $version->approval_status === 'approved';
+        return $version->source === 'platform_default'
+            && $version->approval_status === 'draft'
+            && $version->source_reference === null
+            && $version->created_by_user_id === null
+            && (int) $definition->active_version_id === (int) $version->getKey()
+            && (int) $definition->versions()->max('version') === (int) $version->version;
     }
 }

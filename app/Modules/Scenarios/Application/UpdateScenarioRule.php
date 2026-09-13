@@ -4,6 +4,7 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Models\User;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -26,6 +27,11 @@ final class UpdateScenarioRule
     {
         $organization = $this->authorization->authorizeManage($actor);
         $this->authorization->assertOwned($rule);
+        $data['recipient_strategy'] = $this->preserveRecipientPermission(
+            $rule,
+            $data['recipient_strategy'] ?? null,
+            $data['trigger_event'] ?? null,
+        );
         $configuration = ScenarioRuleConfiguration::from($data);
         $this->conditions->validate($configuration->conditions);
         $this->authorization->assertRecipientStrategy($configuration->recipientStrategy);
@@ -109,5 +115,26 @@ final class UpdateScenarioRule
             || $template->purpose !== $purpose->value) {
             throw ValidationException::withMessages(['template_version_id' => 'Выбранный шаблон не соответствует назначению правила.']);
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function preserveRecipientPermission(ScenarioRule $rule, mixed $strategy, mixed $triggerEvent): array
+    {
+        $strategy = is_array($strategy) ? $strategy : [];
+        $newTriggerEvent = $triggerEvent instanceof ScenarioEventType
+            ? $triggerEvent
+            : ScenarioEventType::tryFrom((string) $triggerEvent);
+
+        if ($newTriggerEvent !== $rule->trigger_event) {
+            return $strategy;
+        }
+
+        $existingStrategy = $rule->recipient_strategy;
+
+        if (is_array($existingStrategy) && array_key_exists('permission', $existingStrategy)) {
+            $strategy['permission'] = $existingStrategy['permission'];
+        }
+
+        return $strategy;
     }
 }

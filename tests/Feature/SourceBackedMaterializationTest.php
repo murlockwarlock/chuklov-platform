@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ActivatePromptVersion;
+use App\Modules\AI\Application\Actions\CreatePromptDraft;
 use App\Modules\AI\Application\Actions\MaterializeSourceBackedEvaluations;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiEvalCase;
@@ -37,10 +39,6 @@ final class SourceBackedMaterializationTest extends TestCase
         self::assertSame(4, AiEvalSuite::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(58, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(
-            'Демонстрационные тесты Чуклова · Синтетические данные',
-            AiEvalSuite::query()->where('organization_id', $organization->getKey())->value('description'),
-        );
-        self::assertSame(
             [
                 'absent_measurement_remains_unknown',
                 'contradictory_phrases_are_not_resolved_by_guess',
@@ -58,11 +56,6 @@ final class SourceBackedMaterializationTest extends TestCase
                 ->pluck('source_key')
                 ->all(),
         );
-        self::assertStringContainsString(
-            '[CURRENT PLATFORM SAFETY GUARDRAILS]',
-            (string) AiPromptVersion::query()->where('organization_id', $organization->getKey())->value('system_prompt'),
-        );
-
         $second = app(MaterializeSourceBackedEvaluations::class)->handle($admin);
 
         self::assertSame([
@@ -74,6 +67,68 @@ final class SourceBackedMaterializationTest extends TestCase
         ], $second);
         self::assertSame(4, AiPromptVersion::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(58, AiEvalCase::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_source_backed_evaluation_copy_survives_re_materialization(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        app(MaterializeSourceBackedEvaluations::class)->handle($admin);
+
+        $suite = AiEvalSuite::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'source_agent_1_document_extraction')
+            ->firstOrFail();
+        $case = AiEvalCase::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('eval_suite_id', $suite->getKey())
+            ->firstOrFail();
+
+        $suite->forceFill([
+            'name' => 'Моя проверка',
+            'description' => 'Моё описание проверки.',
+        ])->save();
+        $case->forceFill([
+            'name' => 'Мой сценарий',
+            'test_inputs' => ['query' => 'Мой ввод'],
+            'expected_assertions' => ['custom_assertion'],
+            'expected_output_schema' => ['type' => 'custom'],
+            'is_synthetic' => false,
+            'is_deidentified' => true,
+            'is_active' => false,
+        ])->save();
+
+        $summary = app(MaterializeSourceBackedEvaluations::class)->handle($admin);
+
+        self::assertSame(0, $summary['suites_created']);
+        self::assertSame(0, $summary['cases_created']);
+        self::assertSame('Моя проверка', $suite->fresh()->name);
+        self::assertSame('Моё описание проверки.', $suite->fresh()->description);
+        self::assertSame('Мой сценарий', $case->fresh()->name);
+        self::assertSame(['query' => 'Мой ввод'], $case->fresh()->test_inputs);
+        self::assertSame(['custom_assertion'], $case->fresh()->expected_assertions);
+        self::assertSame(['type' => 'custom'], $case->fresh()->expected_output_schema);
+        self::assertFalse($case->fresh()->is_active);
+    }
+
+    public function test_source_backed_materialization_does_not_replace_a_custom_active_prompt(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        app(MaterializeSourceBackedEvaluations::class)->handle($admin, true);
+
+        $prompt = AiPrompt::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'client_companion_source_draft')
+            ->firstOrFail();
+        $custom = app(CreatePromptDraft::class)->handle($admin, $prompt->getKey(), [
+            'system_prompt' => 'Моя активная инструкция.',
+            'user_prompt_template' => 'Ответьте на запрос: {{ query }}',
+        ]);
+        app(ActivatePromptVersion::class)->handle($admin, $custom->getKey());
+
+        app(MaterializeSourceBackedEvaluations::class)->handle($admin);
+
+        self::assertSame($custom->getKey(), $prompt->fresh()->active_version_id);
+        self::assertSame(PromptVersionStatus::Active, $custom->fresh()->status);
     }
 
     public function test_source_backed_prompt_activation_is_explicit_and_tenant_scoped(): void

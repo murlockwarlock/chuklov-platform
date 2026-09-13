@@ -25,6 +25,8 @@ use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingExecutionSnapshot;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
 use Filament\Facades\Filament;
@@ -175,6 +177,10 @@ final class RagTest extends TestCase
         self::assertSame([], app(KnowledgeRetriever::class)->retrieve($actor, new RetrievalQuery('booking', 5)));
         $audit = AuditEvent::query()->where('action', 'knowledge.ingestion.failed')->sole();
         self::assertStringNotContainsString('booking retry content', json_encode($audit->metadata, JSON_THROW_ON_ERROR));
+        $scenarioEvent = ScenarioEvent::query()->where('organization_id', $source->organization_id)->sole();
+        self::assertSame(ScenarioEventType::KnowledgeIngestionFailed, $scenarioEvent->event_name);
+        self::assertSame($source->getKey(), $scenarioEvent->payload['source_id']);
+        self::assertSame($revision->getKey(), $scenarioEvent->payload['revision_id']);
 
         $this->bindDeterministicEmbeddings();
         app(ProcessKnowledgeIngestion::class)->handle($source->organization_id, $source->getKey(), $revision->getKey());

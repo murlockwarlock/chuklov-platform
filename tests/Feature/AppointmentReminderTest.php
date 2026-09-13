@@ -75,7 +75,7 @@ final class AppointmentReminderTest extends TestCase
             ->with('appointmentReminder')
             ->get();
 
-        self::assertCount(4, $actions);
+        self::assertCount(5, $actions);
         self::assertSame(
             [
                 '1|days' => '2026-09-04 14:00:00',
@@ -90,8 +90,23 @@ final class AppointmentReminderTest extends TestCase
                 ->all(),
         );
         self::assertSame(
-            '2026-09-05 13:30:00',
-            $actions->firstWhere('recipient_type', 'internal')->scheduled_for->utc()->format('Y-m-d H:i:s'),
+            ['database', 'telegram'],
+            $actions
+                ->where('recipient_type', 'internal')
+                ->map(fn (ScenarioAction $action): string => $action->channel_priority[0])
+                ->sort()
+                ->values()
+                ->all(),
+        );
+        self::assertSame(
+            ['2026-09-05 13:30:00'],
+            $actions
+                ->where('recipient_type', 'internal')
+                ->pluck('scheduled_for')
+                ->map(fn (mixed $scheduledFor): string => CarbonImmutable::parse((string) $scheduledFor)->utc()->format('Y-m-d H:i:s'))
+                ->unique()
+                ->values()
+                ->all(),
         );
         self::assertSame(ScenarioActionStatus::Scheduled, $actions->first()->status);
     }
@@ -119,10 +134,10 @@ final class AppointmentReminderTest extends TestCase
             ->with('appointmentReminder', 'deliveries')
             ->get();
 
-        self::assertCount(2, $actions);
-        self::assertEqualsCanonicalizing([30, 30], $actions->pluck('appointmentReminder.offset_value')->all());
+        self::assertCount(3, $actions);
+        self::assertEqualsCanonicalizing([30, 30, 30], $actions->pluck('appointmentReminder.offset_value')->all());
         self::assertSame(2, $actions->pluck('appointment_reminder_id')->unique()->count());
-        self::assertSame(2, $actions->flatMap(fn (ScenarioAction $action) => $action->deliveries)->count());
+        self::assertSame(3, $actions->flatMap(fn (ScenarioAction $action) => $action->deliveries)->count());
     }
 
     public function test_rescheduling_cancels_old_future_reminders_and_creates_new_offsets(): void
@@ -149,9 +164,9 @@ final class AppointmentReminderTest extends TestCase
         $secondEvent = app(RecordScenarioEvent::class)->bookingRescheduled($booking, 'rescheduled-test', CarbonImmutable::now());
         app(AppointmentReminderScheduler::class)->schedule($booking, $secondEvent);
 
-        self::assertSame(4, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->count());
-        self::assertSame(4, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Scheduled->value)->count());
-        self::assertSame(4, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->whereHas('deliveries', fn ($query) => $query->where('status', ScenarioDeliveryStatus::Suppressed->value))->count());
+        self::assertSame(5, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->count());
+        self::assertSame(5, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Scheduled->value)->count());
+        self::assertSame(5, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->whereHas('deliveries', fn ($query) => $query->where('status', ScenarioDeliveryStatus::Suppressed->value))->count());
         self::assertSame(
             '2026-09-06 16:00:00',
             ScenarioAction::query()
@@ -183,8 +198,8 @@ final class AppointmentReminderTest extends TestCase
         app(CancelBooking::class)->handle($admin, $booking);
 
         self::assertSame(BookingStatus::Cancelled, $booking->refresh()->status);
-        self::assertSame(4, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->count());
-        self::assertSame(4, ScenarioAction::query()->where('booking_id', $booking->getKey())->whereHas('deliveries', fn ($query) => $query->where('status', ScenarioDeliveryStatus::Suppressed->value))->count());
+        self::assertSame(5, ScenarioAction::query()->where('booking_id', $booking->getKey())->where('status', ScenarioActionStatus::Cancelled->value)->count());
+        self::assertSame(5, ScenarioAction::query()->where('booking_id', $booking->getKey())->whereHas('deliveries', fn ($query) => $query->where('status', ScenarioDeliveryStatus::Suppressed->value))->count());
     }
 
     public function test_online_client_reminder_uses_ready_zoom_url_as_the_action_button(): void

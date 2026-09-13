@@ -67,8 +67,8 @@ final class AppointmentReminderConcurrencyTest extends TestCase
 
         self::assertCount(2, $results);
         self::assertNotContains('error', $results);
-        self::assertSame(4, ScenarioAction::query()->where('organization_id', $organization->getKey())->where('kind', 'appointment_reminder')->count());
-        self::assertSame(4, DB::table('scenario_deliveries')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(5, ScenarioAction::query()->where('organization_id', $organization->getKey())->where('kind', 'appointment_reminder')->count());
+        self::assertSame(5, DB::table('scenario_deliveries')->where('organization_id', $organization->getKey())->count());
     }
 
     /** @return array{Organization, Client, Specialist, Service} */

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
-use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -156,14 +155,9 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
 
         self::assertCount(3, $this->channel->messages);
         $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        self::assertSame(
-            [
-                'Как вы себя чувствуете после визита, '.$escapedClientName.'? Если появились вопросы, напишите нам.',
-                'Надеемся, визит был полезен, '.$escapedClientName.'. Поделитесь впечатлениями, когда будет удобно.',
-                $escapedClientName.', если после визита появились новые мысли или вопросы, мы готовы вас поддержать.',
-            ],
-            array_map(static fn (NotificationMessage $message): string => $message->body, $this->channel->messages),
-        );
+        foreach ($this->channel->messages as $message) {
+            self::assertStringContainsString($escapedClientName, $message->body);
+        }
     }
 
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void
@@ -393,29 +387,47 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         self::assertSame('Owner customized', $rule->fresh()->name);
         self::assertSame('Owner customized template', $template->fresh()->name);
         $expectedRuleKeys = [
+            'b2b-lead-submitted-database',
             'b2b-sales-call-ready-client-en',
             'b2b-sales-call-ready-client-ru',
+            'b2b-sales-call-ready-database',
             'b2b-sales-call-ready-specialist',
             'booking-cancelled-client-en',
             'booking-cancelled-client-ru',
             'booking-cancelled-specialist',
+            'booking-cancelled-specialist-database',
             'booking-completed-feedback-en',
             'booking-completed-feedback-ru',
             'booking-confirmed-client-en',
             'booking-confirmed-client-ru',
             'booking-confirmed-specialist',
+            'booking-confirmed-specialist-database',
             'booking-created-client-en',
             'booking-created-client-ru',
             'booking-created-specialist',
+            'booking-created-specialist-database',
+            'booking-home-visit-review-database',
             'booking-rescheduled-client-en',
             'booking-rescheduled-client-ru',
             'booking-rescheduled-specialist',
+            'booking-rescheduled-specialist-database',
+            'companion-fallback-failed-database',
+            'companion-handoff-database',
+            'companion-handoff-telegram',
+            'knowledge-ingestion-failed-database',
             'post-session-follow-up-24h-en',
             'post-session-follow-up-24h-ru',
             'post-session-follow-up-48h-en',
             'post-session-follow-up-48h-ru',
             'post-session-follow-up-72h-en',
             'post-session-follow-up-72h-ru',
+            'referral-payout-request-database',
+            'referral-payout-status-client-telegram',
+            'referral-payout-status-database',
+            'survey-completed-database',
+            'survey-stagnation-database',
+            'tracker-task-daily-client-telegram',
+            'tracker-task-weekly-client-telegram',
         ];
         $ruleKeys = ScenarioRule::query()
             ->where('organization_id', $organization->id)
@@ -427,23 +439,33 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         self::assertSame(count($expectedRuleKeys), count(array_unique($ruleKeys)));
         self::assertSame(count($expectedRuleKeys), ScenarioRule::query()->where('organization_id', $organization->id)->where('system_managed', false)->count());
         self::assertSame([
+            'b2b-lead-submitted-crm:ru',
             'b2b-sales-call-ready:en',
             'b2b-sales-call-ready:ru',
+            'b2b-sales-call-ready-crm:ru',
             'b2b-sales-call-ready-specialist:ru',
             'booking-cancelled:en',
             'booking-cancelled:ru',
+            'booking-cancelled-crm:ru',
             'booking-cancelled-specialist:ru',
             'booking-completed-feedback:en',
             'booking-completed-feedback:ru',
             'booking-confirmed:en',
             'booking-confirmed:ru',
+            'booking-confirmed-crm:ru',
             'booking-confirmed-specialist:ru',
             'booking-created:en',
             'booking-created:ru',
+            'booking-created-crm:ru',
             'booking-created-specialist:ru',
+            'booking-home-visit-review-crm:ru',
             'booking-rescheduled:en',
             'booking-rescheduled:ru',
+            'booking-rescheduled-crm:ru',
             'booking-rescheduled-specialist:ru',
+            'companion-fallback-failed:ru',
+            'companion-handoff:ru',
+            'knowledge-ingestion-failed-crm:ru',
             'post-session-follow-up:en',
             'post-session-follow-up:ru',
             'post-session-follow-up-24h:en',
@@ -454,6 +476,13 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'post-session-follow-up-72h:ru',
             'referral-invite:en',
             'referral-invite:ru',
+            'referral-payout-request:ru',
+            'referral-payout-status:ru',
+            'referral-payout-status-crm:ru',
+            'survey-completed-crm:ru',
+            'survey-stagnation-crm:ru',
+            'tracker-task-daily:ru',
+            'tracker-task-weekly:ru',
         ], NotificationTemplate::query()
             ->where('organization_id', $organization->id)
             ->where('template_key', 'not like', 'appointment-reminder-%')

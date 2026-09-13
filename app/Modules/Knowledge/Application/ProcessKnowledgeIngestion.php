@@ -15,7 +15,11 @@ use App\Modules\Knowledge\Domain\ValueObjects\ChunkData;
 use App\Modules\Knowledge\Domain\ValueObjects\ChunkingConfiguration;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -28,6 +32,7 @@ final class ProcessKnowledgeIngestion
         private readonly DeterministicTextChunker $chunker,
         private readonly EmbeddingGenerator $embeddings,
         private readonly RecordAuditEvent $audit,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(int $organizationId, int $sourceId, int $revisionId): void
@@ -129,7 +134,18 @@ final class ProcessKnowledgeIngestion
             });
         } catch (Throwable $exception) {
             $errorCode = $this->errorCode($exception);
-            $failedCurrentAttempt = DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $run, $claimedAttempt, $errorCode): bool {
+            $failedEvent = DB::transaction(function () use ($organizationId, $sourceId, $revisionId, $run, $claimedAttempt, $errorCode): ?ScenarioEvent {
+                $source = KnowledgeSource::query()
+                    ->where('organization_id', $organizationId)
+                    ->whereKey($sourceId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $revision = KnowledgeRevision::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('knowledge_source_id', $sourceId)
+                    ->whereKey($revisionId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
                 $lockedRun = KnowledgeIngestionRun::query()
                     ->where('organization_id', $organizationId)
                     ->where('knowledge_source_id', $sourceId)
@@ -138,7 +154,7 @@ final class ProcessKnowledgeIngestion
                     ->lockForUpdate()
                     ->firstOrFail();
                 if ($lockedRun->attempts !== $claimedAttempt || $lockedRun->status->value !== 'processing') {
-                    return false;
+                    return null;
                 }
                 $attempt = KnowledgeIngestionAttempt::query()
                     ->where('organization_id', $organizationId)
@@ -158,12 +174,9 @@ final class ProcessKnowledgeIngestion
                         'completed_at' => $completedAt,
                     ]);
                 }
-                KnowledgeRevision::query()
-                    ->where('organization_id', $organizationId)
-                    ->where('knowledge_source_id', $sourceId)
-                    ->whereKey($revisionId)
-                    ->where('status', 'processing')
-                    ->update(['status' => 'failed']);
+                if ($revision->status->value === 'processing') {
+                    $revision->update(['status' => 'failed']);
+                }
                 $organization = Organization::query()->findOrFail($organizationId);
                 $this->audit->handle($organization, null, 'knowledge.ingestion.failed', KnowledgeRevision::class, (string) $revisionId, [
                     'source_id' => $sourceId,
@@ -173,11 +186,25 @@ final class ProcessKnowledgeIngestion
                     'attempt_number' => $claimedAttempt,
                 ]);
 
-                return true;
+                return $this->scenarioEvents->knowledgeIngestionFailed(
+                    $source,
+                    $revision,
+                    $lockedRun,
+                    $errorCode,
+                    CarbonImmutable::instance($completedAt),
+                );
             });
 
-            if (! $failedCurrentAttempt) {
+            if (! $failedEvent instanceof ScenarioEvent) {
                 return;
+            }
+
+            try {
+                ProcessScenarioEvent::dispatch((int) $failedEvent->getKey())
+                    ->onQueue((string) config('scenarios.queue', 'scenarios'))
+                    ->afterCommit();
+            } catch (Throwable $dispatchException) {
+                report($dispatchException);
             }
 
             throw new RuntimeException('Knowledge ingestion failed.');

@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/css/app.css',
                 'resources/js/app.ts',
                 'resources/js/filament/rich-text-editor.ts',
+                'resources/js/filament/database-notification-sound.ts',
                 'resources/css/filament/admin/theme.css',
             ],
             refresh: true,

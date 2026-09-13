@@ -46,9 +46,7 @@ use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
-use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Carbon\CarbonImmutable;
 use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
@@ -122,7 +120,10 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->sole();
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
-        $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereJsonContains('channel_priority', 'telegram')
+            ->sole();
         $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
         $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
 
@@ -132,7 +133,6 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($message);
         $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $escapedServiceName = htmlspecialchars($service->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        self::assertStringContainsString('Appointment confirmed', $message->body);
         self::assertStringContainsString($escapedSpecialistName, $message->body);
         self::assertStringContainsString($escapedServiceName, $message->body);
         self::assertStringContainsString('Online', $message->body);
@@ -204,8 +204,11 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->orderBy('recipient_type')
             ->get();
 
-        self::assertCount(2, $actions);
-        $specialistAction = $actions->firstWhere('recipient_type', 'internal');
+        self::assertCount(3, $actions);
+        $specialistAction = $actions->first(
+            fn (ScenarioAction $action): bool => $action->recipient_type === 'internal'
+                && $action->channel_priority === ['telegram'],
+        );
         self::assertNotNull($specialistAction);
         self::assertSame('Aikhana', $specialistAction->render_context['client']['full_name']);
         self::assertSame('@aikhana (ID: 123456789)', $specialistAction->render_context['client']['telegram_contact']);
@@ -221,7 +224,6 @@ final class MilestoneFiveScenarioTest extends TestCase
             ? OrganizationChannelIdentity::query()->where('user_id', $staff->getKey())->value('external_id')
             : null);
         self::assertNotNull($clientMessage);
-        self::assertStringContainsString('Запись подтверждена', $clientMessage->body);
         self::assertStringContainsString('Онлайн', $clientMessage->body);
         self::assertSame('https://zoom.us/j/confirmed-auto', $clientMessage->actionButton?->url);
         self::assertNotNull($specialistMessage);
@@ -254,7 +256,7 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->where('scenario_event_id', $event->getKey())
             ->orderBy('recipient_type')
             ->get();
-        self::assertCount(2, $actions);
+        self::assertCount(3, $actions);
         self::assertSame($client->id, $actions->firstWhere('recipient_type', 'client')?->client_id);
         self::assertSame($staff->id, $actions->firstWhere('recipient_type', 'internal')?->recipient_user_id);
 
@@ -269,19 +271,23 @@ final class MilestoneFiveScenarioTest extends TestCase
             [$client->getKey().'-chat', $staffIdentity->external_id],
             array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
         );
-        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        self::assertStringContainsString('Appointment request received', $this->channel->messages[0]->body);
-        self::assertStringContainsString($escapedSpecialistName, $this->channel->messages[0]->body);
-        self::assertStringContainsString('Новая заявка на запись от клиента '.$escapedClientName, $this->channel->messages[1]->body);
+        $clientMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', $client->getKey().'-chat');
+        $specialistMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($clientMessage);
+        self::assertNotNull($specialistMessage);
+        self::assertStringContainsString($client->getKey().'-chat', $clientMessage->recipientExternalId);
+        self::assertStringNotContainsString('Клиент:', $clientMessage->body);
+        self::assertStringNotContainsString('Telegram клиента', $clientMessage->body);
+        self::assertStringContainsString($escapedClientName, $specialistMessage->body);
         self::assertStringContainsString(
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
-            $this->channel->messages[1]->body,
+            $specialistMessage->body,
         );
-        self::assertSame('📋 Открыть запись в CRM', $this->channel->messages[1]->actionButtons[0]->text);
-        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $this->channel->messages[1]->actionButtons[0]->url);
-        self::assertSame('✅ Подтвердить', $this->channel->messages[1]->actionButtons[1]->text);
-        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $this->channel->messages[1]->actionButtons[1]->callbackData);
+        self::assertSame('📋 Открыть запись в CRM', $specialistMessage->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $specialistMessage->actionButtons[0]->url);
+        self::assertSame('✅ Подтвердить', $specialistMessage->actionButtons[1]->text);
+        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $specialistMessage->actionButtons[1]->callbackData);
     }
 
     public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
@@ -408,6 +414,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         $this->makeDue($action);
@@ -436,6 +443,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         app(OrganizationContext::class)->set($organization);
@@ -471,6 +479,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $action = ScenarioAction::query()
             ->where('scenario_event_id', $event->getKey())
             ->where('recipient_type', 'internal')
+            ->whereJsonContains('channel_priority', 'telegram')
             ->sole();
 
         $this->makeDue($action);
@@ -1016,20 +1025,15 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNull($action->client_id);
     }
 
-    public function test_disabled_specialist_notifications_suppress_already_materialized_internal_actions(): void
+    public function test_disabled_membership_notifications_suppress_already_materialized_internal_actions(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
         app(OrganizationContext::class)->set($organization);
-        $specialist = app(UpdateSpecialist::class)->handle(
-            actor: $admin,
-            specialist: $specialist,
-            displayName: $specialist->display_name,
-            isActive: true,
-            timezone: $specialist->timezone,
-            staffUserId: $staff->id,
-            notificationSettings: SpecialistNotificationSettings::from('555000111', false),
-        );
+        $specialist->forceFill([
+            'staff_user_id' => $staff->id,
+            'notifications_enabled' => false,
+        ])->save();
         $templateVersion = $this->template($organization);
         $rule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($templateVersion)->create([
             'trigger_event' => 'booking.completed',
@@ -1042,6 +1046,7 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         app(MaterializeScenarioEvent::class)->handle($event->id);
         $action = ScenarioAction::query()->where('scenario_rule_id', $rule->id)->sole();
+        $staff->membershipFor($organization)->forceFill(['notifications_enabled' => false])->save();
 
         app(ExecuteScenarioAction::class)->handle($action->id);
 

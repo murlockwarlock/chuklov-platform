@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Livewire\DatabaseNotifications;
 use App\Filament\Pages\FinanceConfiguration;
 use App\Filament\Pages\KnowledgeRetrievalInspector;
 use App\Filament\Pages\SchedulingConfiguration;
@@ -95,5 +96,18 @@ class FilamentFoundationTest extends TestCase
         self::assertSame(Heroicon::OutlinedCalendarDays, BookingResource::getNavigationIcon());
         self::assertSame(Heroicon::OutlinedClock, WorkSchedule::getNavigationIcon());
         self::assertSame(Heroicon::OutlinedUsers, ClientResource::getNavigationIcon());
+    }
+
+    public function test_database_notifications_keep_the_panel_bell_trigger(): void
+    {
+        $panel = Filament::getPanel('admin');
+        Filament::setCurrentPanel($panel);
+
+        $trigger = app(DatabaseNotifications::class)
+            ->getTrigger()
+            ->with(['unreadNotificationsCount' => 0])
+            ->render();
+
+        self::assertStringContainsString('fi-topbar-database-notifications-btn', $trigger);
     }
 }
