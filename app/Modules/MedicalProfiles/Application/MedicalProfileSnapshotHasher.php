@@ -6,13 +6,16 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 
 final class MedicalProfileSnapshotHasher
 {
-    public function forProfile(?MedicalProfile $profile): ?string
+    public function forProfile(?MedicalProfile $profile): string
     {
         if (! $profile instanceof MedicalProfile) {
-            return null;
+            return hash('sha256', json_encode([
+                'exists' => false,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         }
 
         return hash('sha256', json_encode([
+            'exists' => true,
             'id' => (int) $profile->getKey(),
             'organization_id' => (int) $profile->organization_id,
             'client_id' => (int) $profile->client_id,

@@ -146,6 +146,41 @@ final class MedicalProfileTest extends TestCase
         self::assertSame('Изменение из вкладки A', $retrieved?->anamnesis);
     }
 
+    public function test_stale_first_medical_profile_create_does_not_overwrite_newer_changes(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $hasher = app(MedicalProfileSnapshotHasher::class);
+        $updateAction = app(UpdateMedicalProfile::class);
+
+        self::assertFalse(MedicalProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->exists());
+
+        $tabASnapshot = $hasher->forProfile(null);
+        $tabBSnapshot = $hasher->forProfile(null);
+
+        self::assertSame($tabASnapshot, $tabBSnapshot);
+
+        $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Изменение A',
+            expectedSnapshot: $tabASnapshot,
+        ));
+
+        try {
+            $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+                anamnesis: 'Изменение B',
+                expectedSnapshot: $tabBSnapshot,
+            ));
+            self::fail('A stale first medical profile save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medical_profile', $exception->errors());
+        }
+
+        $retrieved = app(GetMedicalProfile::class)->handle($admin, $client);
+        self::assertSame('Изменение A', $retrieved?->anamnesis);
+    }
+
     public function test_cross_organization_staff_cannot_read_medical_profile(): void
     {
         [$orgA, $adminA, $clientA] = $this->setupOrganizationWithClient();
