@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SurveyDefinitions\Schemas;
 
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Filament\Support\SurveyDefinitionFormOptions;
+use App\Filament\Support\SurveyDefinitionScoringFormMapper;
 use Closure;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -513,22 +514,11 @@ final class SurveyDefinitionForm
         }
 
         $rules = $get('/data.rules');
-        $hasRule = false;
-        foreach (is_array($rules) ? $rules : [] as $rule) {
-            if (! is_array($rule) || ($rule['metric_key'] ?? null) !== $metricKey) {
-                continue;
-            }
-            $hasRule = true;
-            if (! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
-                return false;
-            }
-            $points = is_array($rule['points'] ?? null) ? $rule['points'] : [];
-            if ($points === [] || count(array_filter($points, static fn (mixed $point): bool => is_numeric($point) && is_finite((float) $point))) !== count($points)) {
-                return false;
-            }
-        }
 
-        return $hasRule;
+        return SurveyDefinitionScoringFormMapper::hasDerivedMaxValue(
+            is_array($rules) ? $rules : [],
+            $metricKey,
+        );
     }
 
     /** @param array<string, mixed> $state */

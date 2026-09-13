@@ -19,6 +19,7 @@ use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Tabs;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -66,6 +67,51 @@ final class SurveyDefinitionBuilderTest extends TestCase
             ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
             ->assertSee('Сохранить черновик')
             ->assertSee('Опубликовать черновик');
+    }
+
+    public function test_max_value_is_read_only_for_bounded_rules_and_editable_for_numeric_rules(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $bounded = $this->canonicalData();
+        $bounded['scoring']['rules'] = [$bounded['scoring']['rules'][0]];
+        $bounded['scoring']['metrics'][0]['max_value'] = 3;
+
+        $boundedDefinition = app(CreateSurveyDefinitionAction::class)->handle($admin, $bounded);
+        $boundedComponent = Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $boundedDefinition->getKey()]);
+        $boundedMax = $this->metricMaxField($boundedComponent);
+
+        self::assertTrue($boundedMax->isDisabled());
+
+        $selectedSum = $this->canonicalData();
+        $selectedSum['definition']['sections'][0]['questions'][0]['type'] = 'multiple_choice';
+        $selectedSum['definition']['sections'][0]['questions'][1]['condition'] = null;
+        $selectedSum['scoring']['rules'] = [[
+            'question_key' => 'q-source',
+            'metric_key' => 'metric-total',
+            'operator' => 'selected_sum',
+            'points' => ['option-good' => 1, 'option-poor' => 2],
+        ]];
+        $selectedSum['scoring']['metrics'][0]['max_value'] = 3;
+
+        $selectedSumDefinition = app(CreateSurveyDefinitionAction::class)->handle($admin, $selectedSum);
+        $selectedSumComponent = Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $selectedSumDefinition->getKey()]);
+        $selectedSumMax = $this->metricMaxField($selectedSumComponent);
+
+        self::assertTrue($selectedSumMax->isDisabled());
+
+        $numeric = $this->canonicalData();
+        $numeric['scoring']['rules'] = [$numeric['scoring']['rules'][1]];
+        $numeric['scoring']['metrics'][0]['max_value'] = 100;
+
+        $numericDefinition = app(CreateSurveyDefinitionAction::class)->handle($admin, $numeric);
+        $numericComponent = Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $numericDefinition->getKey()]);
+        $numericMax = $this->metricMaxField($numericComponent);
+
+        self::assertFalse($numericMax->isDisabled());
     }
 
     public function test_repeater_add_lifecycle_generates_technical_identities_before_persistence(): void
@@ -374,6 +420,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
 
         $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
         self::assertSame(9, $draft->scoring['rules'][0]['points']['never']);
+        self::assertSame(25, $draft->scoring['metrics'][0]['max_value']);
         self::assertSame('Новый текст диапазона', $draft->scoring['thresholds'][0]['label']['ru']);
         self::assertSame('Новое объяснение результата.', $draft->scoring['summary']['ru']);
         self::assertSame('Новый следующий шаг.', $draft->scoring['metrics'][0]['road_map']['ru']);
@@ -386,6 +433,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
         self::assertSame($published->getKey(), $attempt->survey_version_id);
         self::assertSame($originalScoring, $published->fresh()->scoring);
         self::assertSame(9, $publishedAgain->scoring['rules'][0]['points']['never']);
+        self::assertSame(25, $publishedAgain->scoring['metrics'][0]['max_value']);
         self::assertSame('Новый текст диапазона', $publishedAgain->scoring['thresholds'][0]['label']['ru']);
     }
 
@@ -613,6 +661,16 @@ final class SurveyDefinitionBuilderTest extends TestCase
         $state['sections'][0]['questions'] = [$source, $number, $dependent];
 
         return $state;
+    }
+
+    private function metricMaxField(mixed $component): TextInput
+    {
+        $field = collect($component->instance()->getSchema('form')->getFlatFields(withHidden: true))
+            ->first(static fn (mixed $field): bool => $field instanceof TextInput && $field->getName() === 'max_value');
+
+        self::assertInstanceOf(TextInput::class, $field);
+
+        return $field;
     }
 
     /** @return array{0: Organization, 1: User} */

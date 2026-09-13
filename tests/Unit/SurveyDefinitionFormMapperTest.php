@@ -181,6 +181,7 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
 
         self::assertSame(9, $scoring['rules'][0]['points']['never']);
+        self::assertSame(25, $scoring['metrics'][0]['max_value']);
         self::assertArrayNotHasKey('never', $scoring['answer_scale']);
         self::assertSame([
             'ru' => 'Новая низкая нагрузка',

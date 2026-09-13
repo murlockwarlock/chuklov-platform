@@ -76,30 +76,7 @@ final class SurveyDefinitionScoringFormMapper
             $metrics[] = $metricData;
         }
 
-        $rules = [];
-        foreach (is_array($data['rules'] ?? null) ? $data['rules'] : [] as $rule) {
-            if (! is_array($rule)) {
-                continue;
-            }
-            $points = [];
-            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $point) {
-                if (is_array($point) && is_string($point['value'] ?? null) && $point['value'] !== '') {
-                    $points[$point['value']] = self::number($point['points'] ?? null);
-                }
-            }
-            $ruleData = [
-                'question_key' => $rule['question_key'] ?? null,
-                'metric_key' => $rule['metric_key'] ?? null,
-                'operator' => $rule['operator'] ?? null,
-            ];
-            if ($points !== []) {
-                $ruleData['points'] = $points;
-            }
-            if (array_key_exists('multiplier', $rule) && $rule['multiplier'] !== null && $rule['multiplier'] !== '') {
-                $ruleData['multiplier'] = self::number($rule['multiplier']);
-            }
-            $rules[] = $ruleData;
-        }
+        $rules = self::normalizeRules(is_array($data['rules'] ?? null) ? $data['rules'] : []);
 
         $questionKeysByMetric = self::questionKeysByMetric($rules);
         $boundedMaxValues = self::boundedMaxValues($rules);
@@ -309,6 +286,46 @@ final class SurveyDefinitionScoringFormMapper
         }
 
         return $data;
+    }
+
+    /** @param array<int|string, mixed> $rules */
+    public static function hasDerivedMaxValue(array $rules, string $metricKey): bool
+    {
+        return array_key_exists(
+            $metricKey,
+            self::boundedMaxValues(self::normalizeRules($rules)),
+        );
+    }
+
+    /** @param array<int|string, mixed> $formRules @return list<array<string, mixed>> */
+    private static function normalizeRules(array $formRules): array
+    {
+        $rules = [];
+        foreach ($formRules as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+            $points = [];
+            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $point) {
+                if (is_array($point) && is_string($point['value'] ?? null) && $point['value'] !== '') {
+                    $points[$point['value']] = self::number($point['points'] ?? null);
+                }
+            }
+            $ruleData = [
+                'question_key' => $rule['question_key'] ?? null,
+                'metric_key' => $rule['metric_key'] ?? null,
+                'operator' => $rule['operator'] ?? null,
+            ];
+            if ($points !== []) {
+                $ruleData['points'] = $points;
+            }
+            if (array_key_exists('multiplier', $rule) && $rule['multiplier'] !== null && $rule['multiplier'] !== '') {
+                $ruleData['multiplier'] = self::number($rule['multiplier']);
+            }
+            $rules[] = $ruleData;
+        }
+
+        return $rules;
     }
 
     /** @param list<array<string, mixed>> $rules @return array<string, list<string>> */
