@@ -181,7 +181,7 @@ final class EnsureAppointmentReminderDefaults
         $version = NotificationTemplateVersion::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_id', $template->getKey())
-            ->where('version', 1)
+            ->latest('version')
             ->first();
 
         if ($version === null) {
@@ -203,10 +203,16 @@ final class EnsureAppointmentReminderDefaults
     /** @param array{template_key: string, recipient_type: string, format: string, name: string} $definition */
     private function ensureRule(Organization $organization, array $definition, int $templateId): void
     {
-        $rule = ScenarioRule::query()
+        $ruleExists = ScenarioRule::query()
             ->where('organization_id', $organization->getKey())
             ->where('rule_key', $definition['template_key'])
-            ->first() ?? new ScenarioRule;
+            ->exists();
+
+        if ($ruleExists) {
+            return;
+        }
+
+        $rule = new ScenarioRule;
         $rule->forceFill([
             'organization_id' => $organization->getKey(),
             'rule_key' => $definition['template_key'],
@@ -224,7 +230,7 @@ final class EnsureAppointmentReminderDefaults
             'max_occurrences' => 1,
             'repeat_interval_value' => null,
             'repeat_interval_unit' => null,
-            'version' => $rule->exists ? $rule->version : 1,
+            'version' => 1,
         ])->save();
     }
 }

@@ -155,11 +155,6 @@ final class MaterializeSourceBackedEvaluations
                 throw new InvalidArgumentException('An existing evaluation suite uses the source-backed key with a different configuration.');
             }
 
-            $suite->update([
-                'name' => (string) ($suiteData['name'] ?? $key),
-                'description' => 'Демонстрационные тесты Чуклова · Синтетические данные',
-            ]);
-
             return $suite;
         }
 
@@ -197,15 +192,6 @@ final class MaterializeSourceBackedEvaluations
                 ->where('source_key', $sourceKey)
                 ->first();
             if ($existing instanceof AiEvalCase) {
-                $existing->update([
-                    'name' => (string) ($caseData['name'] ?? $sourceKey),
-                    'test_inputs' => is_array($caseData['test_inputs'] ?? null) ? $caseData['test_inputs'] : [],
-                    'expected_assertions' => is_array($caseData['expected_assertions'] ?? null) ? $caseData['expected_assertions'] : [],
-                    'expected_output_schema' => $outputSchema,
-                    'is_synthetic' => (bool) ($caseData['is_synthetic'] ?? false),
-                    'is_deidentified' => (bool) ($caseData['is_deidentified'] ?? false),
-                ]);
-
                 continue;
             }
 

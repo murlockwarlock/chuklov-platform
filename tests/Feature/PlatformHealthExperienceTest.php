@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
@@ -132,6 +134,83 @@ final class PlatformHealthExperienceTest extends TestCase
         self::assertSame($approved->getKey(), $definition->fresh()->active_version_id);
         self::assertSame(2, $definition->fresh()->versions()->count());
         self::assertSame('chuklov_approved', $approved->fresh()->source);
+    }
+
+    public function test_platform_installer_preserves_a_custom_published_version(): void
+    {
+        [$organization] = $this->fixture();
+        $installer = app(InstallPlatformSurveyCatalog::class);
+        $installer->handle($organization);
+        $definition = SurveyDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
+            ->firstOrFail();
+        $current = $definition->activeVersion()->firstOrFail();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $custom = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => $definition->versions()->max('version') + 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => 'Мой тест',
+            'title_en' => 'My test',
+            'description' => 'Моё описание.',
+            'description_en' => 'My description.',
+            'definition' => $current->definition,
+            'scoring' => $current->scoring,
+            'metric_schema_key' => $current->metric_schema_key,
+            'source_reference' => null,
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+            'methodology' => $current->methodology,
+            'created_by_user_id' => $admin->getKey(),
+            'published_at' => now(),
+        ]);
+        $definition->forceFill(['active_version_id' => $custom->getKey()])->save();
+
+        $installer->handle($organization);
+
+        $definition->refresh();
+        self::assertSame($custom->getKey(), $definition->active_version_id);
+        self::assertSame(2, $definition->versions()->count());
+        self::assertSame('Мой тест', $custom->fresh()->title);
+        self::assertSame('Моё описание.', $custom->fresh()->description);
+    }
+
+    public function test_platform_installer_does_not_activate_a_default_over_an_existing_custom_draft(): void
+    {
+        [$organization] = $this->fixture();
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => PlatformSurveyCatalog::HEALTH_KEY,
+            'title' => 'Мой тест',
+            'title_en' => 'My test',
+            'description' => 'Моё описание.',
+            'description_en' => 'My description.',
+            'is_available' => true,
+        ]);
+        $draft = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => SurveyVersionStatus::Draft,
+            'title' => 'Мой тест',
+            'title_en' => 'My test',
+            'description' => 'Моё описание.',
+            'description_en' => 'My description.',
+            'definition' => ['sections' => []],
+            'scoring' => ['metrics' => []],
+            'source' => 'admin_custom',
+            'approval_status' => 'draft',
+            'methodology' => 'admin_custom',
+        ]);
+
+        app(InstallPlatformSurveyCatalog::class)->handle($organization);
+
+        self::assertSame(1, $definition->fresh()->versions()->count());
+        self::assertNull($definition->fresh()->active_version_id);
+        self::assertSame('Мой тест', $draft->fresh()->title);
+        self::assertSame('Моё описание.', $draft->fresh()->description);
     }
 
     public function test_completion_materializes_friendly_report_top_three_road_map_and_repeat_dynamics(): void

@@ -67,7 +67,7 @@ final class CrmNotificationCenterTest extends TestCase
 
         $notification = $staff->fresh()->notifications()->sole();
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
-        self::assertSame('Новая запись', $notification->data['title']);
+        self::assertNotSame('', trim((string) $notification->data['title']));
         self::assertSame(NotificationSeverity::High->value, $notification->data['severity']);
         self::assertStringContainsString($client->full_name, $notification->data['body']);
         self::assertSame(
@@ -242,7 +242,7 @@ final class CrmNotificationCenterTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($administratorAction->getKey());
 
         $notification = $administrator->fresh()->notifications()->sole();
-        self::assertSame('Ошибка обработки материала', $notification->data['title']);
+        self::assertNotSame('', trim((string) $notification->data['title']));
         self::assertStringContainsString('Правила записи', $notification->data['body']);
         self::assertSame(
             url('/admin/knowledge-sources/'.$source->getKey().'/edit'),

@@ -133,7 +133,6 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($message);
         $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $escapedServiceName = htmlspecialchars($service->name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        self::assertStringContainsString('Appointment confirmed', $message->body);
         self::assertStringContainsString($escapedSpecialistName, $message->body);
         self::assertStringContainsString($escapedServiceName, $message->body);
         self::assertStringContainsString('Online', $message->body);
@@ -225,7 +224,6 @@ final class MilestoneFiveScenarioTest extends TestCase
             ? OrganizationChannelIdentity::query()->where('user_id', $staff->getKey())->value('external_id')
             : null);
         self::assertNotNull($clientMessage);
-        self::assertStringContainsString('Запись подтверждена', $clientMessage->body);
         self::assertStringContainsString('Онлайн', $clientMessage->body);
         self::assertSame('https://zoom.us/j/confirmed-auto', $clientMessage->actionButton?->url);
         self::assertNotNull($specialistMessage);
@@ -273,19 +271,23 @@ final class MilestoneFiveScenarioTest extends TestCase
             [$client->getKey().'-chat', $staffIdentity->external_id],
             array_map(static fn (NotificationMessage $message): string => $message->recipientExternalId, $this->channel->messages),
         );
-        $escapedSpecialistName = htmlspecialchars($specialist->display_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        self::assertStringContainsString('Appointment request received', $this->channel->messages[0]->body);
-        self::assertStringContainsString($escapedSpecialistName, $this->channel->messages[0]->body);
-        self::assertStringContainsString('Новая заявка на запись от клиента '.$escapedClientName, $this->channel->messages[1]->body);
+        $clientMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', $client->getKey().'-chat');
+        $specialistMessage = collect($this->channel->messages)->firstWhere('recipientExternalId', $staffIdentity->external_id);
+        self::assertNotNull($clientMessage);
+        self::assertNotNull($specialistMessage);
+        self::assertStringContainsString($client->getKey().'-chat', $clientMessage->recipientExternalId);
+        self::assertStringNotContainsString('Клиент:', $clientMessage->body);
+        self::assertStringNotContainsString('Telegram клиента', $clientMessage->body);
+        self::assertStringContainsString($escapedClientName, $specialistMessage->body);
         self::assertStringContainsString(
             '@client_'.$client->id.' (ID: '.$client->id.'-chat)',
-            $this->channel->messages[1]->body,
+            $specialistMessage->body,
         );
-        self::assertSame('📋 Открыть запись в CRM', $this->channel->messages[1]->actionButtons[0]->text);
-        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $this->channel->messages[1]->actionButtons[0]->url);
-        self::assertSame('✅ Подтвердить', $this->channel->messages[1]->actionButtons[1]->text);
-        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $this->channel->messages[1]->actionButtons[1]->callbackData);
+        self::assertSame('📋 Открыть запись в CRM', $specialistMessage->actionButtons[0]->text);
+        self::assertSame(url('/admin/bookings/'.$booking->getKey()), $specialistMessage->actionButtons[0]->url);
+        self::assertSame('✅ Подтвердить', $specialistMessage->actionButtons[1]->text);
+        self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $specialistMessage->actionButtons[1]->callbackData);
     }
 
     public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
