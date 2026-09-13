@@ -20,6 +20,7 @@ final class UpdateNotificationTemplate
         private readonly ScenarioAuthorization $authorization,
         private readonly RecordAuditEvent $audit,
         private readonly NotificationTemplateMedia $media,
+        private readonly NotificationTemplateSnapshotHasher $snapshotHasher,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -28,6 +29,8 @@ final class UpdateNotificationTemplate
         $organization = $this->authorization->authorizeManage($actor);
         $this->authorization->assertOwned($template);
         $latestVersion = $template->versions()->latest('version')->firstOrFail();
+        $expectedSnapshot = $data['expected_snapshot'] ?? null;
+        unset($data['expected_snapshot']);
         $storedPaths = [];
 
         try {
@@ -44,13 +47,20 @@ final class UpdateNotificationTemplate
                 throw new AuthorizationException('Template identity cannot change after creation.');
             }
 
-            return DB::transaction(function () use ($actor, $configuration, $organization, $template): NotificationTemplate {
+            return DB::transaction(function () use ($actor, $configuration, $organization, $template, $expectedSnapshot): NotificationTemplate {
                 $lockedTemplate = NotificationTemplate::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($template->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
                 $latest = $lockedTemplate->versions()->latest('version')->firstOrFail();
+
+                if ($expectedSnapshot !== null
+                    && (! is_string($expectedSnapshot) || ! hash_equals($expectedSnapshot, $this->snapshotHasher->forTemplate($lockedTemplate, $latest)))) {
+                    throw ValidationException::withMessages([
+                        'body' => ['Шаблон изменился в другой вкладке. Обновите страницу перед сохранением.'],
+                    ]);
+                }
 
                 if ($lockedTemplate->purpose !== $configuration->purpose->value
                     && ScenarioRule::query()

@@ -13,6 +13,7 @@ use App\Rules\MajorUnitPrice;
 use App\Rules\ServicePriceCurrencyPair;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -27,6 +28,7 @@ class ServiceForm
     {
         return $schema
             ->components([
+                Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make('Основное')
                     ->schema([
                         TextInput::make('name')

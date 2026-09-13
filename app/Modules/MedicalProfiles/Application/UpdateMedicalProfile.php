@@ -23,6 +23,7 @@ final readonly class UpdateMedicalProfile
         private MedicalKeyResolverInterface $keyResolver,
         private RecordAuditEvent $audit,
         private GetMedicalProfile $getProfile,
+        private MedicalProfileSnapshotHasher $snapshotHasher,
     ) {}
 
     public function handle(User $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -45,12 +46,26 @@ final readonly class UpdateMedicalProfile
 
         $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
-        $result = DB::transaction(function () use ($actor, $organization, $client, $plainData, $encrypted, $keyVersion, $orgId) {
+        $result = DB::transaction(function () use ($actor, $organization, $client, $plainData, $encrypted, $keyVersion, $orgId, $command) {
+            Client::query()
+                ->where('organization_id', $orgId)
+                ->whereKey($client->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
             /** @var MedicalProfile|null $existing */
             $existing = MedicalProfile::query()
                 ->where('organization_id', $orgId)
                 ->where('client_id', $client->getKey())
+                ->lockForUpdate()
                 ->first();
+
+            if ($command->expectedSnapshot !== null
+                && ! hash_equals($command->expectedSnapshot, (string) $this->snapshotHasher->forProfile($existing))) {
+                throw ValidationException::withMessages([
+                    'medical_profile' => 'Медицинский профиль изменился в другой вкладке. Обновите его перед сохранением.',
+                ]);
+            }
 
             $isNew = $existing === null;
             $profile = $existing ?? new MedicalProfile;

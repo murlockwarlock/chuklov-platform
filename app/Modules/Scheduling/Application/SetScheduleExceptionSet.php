@@ -35,6 +35,7 @@ final class SetScheduleExceptionSet
         array $definitionsByDate,
         bool $acknowledgeImpact = false,
         ?string $acknowledgedImpactDigest = null,
+        ?string $expectedExceptionsDigest = null,
     ): void {
         $organization = $this->context->organization();
 
@@ -49,21 +50,29 @@ final class SetScheduleExceptionSet
             return;
         }
 
-        DB::transaction(function () use ($actor, $organization, $specialist, $definitions, $acknowledgeImpact, $acknowledgedImpactDigest): void {
+        DB::transaction(function () use ($actor, $organization, $specialist, $definitions, $acknowledgeImpact, $acknowledgedImpactDigest, $expectedExceptionsDigest): void {
             $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            $existing = ScheduleException::query()
+            $existingRows = ScheduleException::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('specialist_id', $lockedSpecialist->getKey())
                 ->whereIn('exception_date', array_keys($definitions))
                 ->where('is_active', true)
                 ->orderBy('id')
                 ->lockForUpdate()
-                ->get()
-                ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
+                ->get();
+
+            if ($expectedExceptionsDigest !== null
+                && ! hash_equals($expectedExceptionsDigest, $this->digestFromExceptions($existingRows))) {
+                throw ValidationException::withMessages([
+                    'exception_date' => 'График изменился в другой вкладке. Обновите страницу и повторите изменение.',
+                ]);
+            }
+
+            $existing = $existingRows->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
             $changedDefinitions = [];
             $impactDefinitions = [];
 
@@ -139,6 +148,29 @@ final class SetScheduleExceptionSet
                 );
             }
         });
+    }
+
+    /** @param list<string> $dates */
+    public function digest(Specialist $specialist, array $dates): string
+    {
+        $organization = $this->context->organization();
+
+        if ((int) $specialist->organization_id !== $organization->getKey()) {
+            throw new AuthorizationException('The specialist is outside the current organization.');
+        }
+
+        $normalizedDates = array_values(array_unique(array_map(
+            static fn (string $date): string => LocalDate::from($date)->value,
+            $dates,
+        )));
+
+        return $this->digestFromExceptions(ScheduleException::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('specialist_id', $specialist->getKey())
+            ->whereIn('exception_date', $normalizedDates)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get());
     }
 
     /** @param array<string, list<array<string, mixed>>> $definitionsByDate
@@ -233,5 +265,25 @@ final class SetScheduleExceptionSet
         ]))->sort()->values()->all();
 
         return $current === $target;
+    }
+
+    /** @param Collection<int, ScheduleException> $exceptions */
+    private function digestFromExceptions(Collection $exceptions): string
+    {
+        $state = $exceptions->map(static fn (ScheduleException $exception): array => [
+            'date' => $exception->dateKey(),
+            'type' => $exception->exception_type->value,
+            'start_time' => $exception->start_time === null ? null : substr((string) $exception->start_time, 0, 5),
+            'end_time' => $exception->end_time === null ? null : substr((string) $exception->end_time, 0, 5),
+            'reason' => $exception->reason,
+        ])->sortBy(static fn (array $exception): string => implode('|', [
+            $exception['date'],
+            $exception['type'],
+            (string) ($exception['start_time'] ?? ''),
+            (string) ($exception['end_time'] ?? ''),
+            (string) ($exception['reason'] ?? ''),
+        ]))->values()->all();
+
+        return hash('sha256', json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
 }

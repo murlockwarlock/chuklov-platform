@@ -6,6 +6,7 @@ use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
 use App\Modules\Surveys\Application\PublishSurveyVersion;
+use App\Modules\Surveys\Application\SurveyDefinitionSnapshotHasher;
 use App\Modules\Surveys\Application\UpdateSurveyDefinitionDraft;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
@@ -27,7 +28,11 @@ final class EditSurveyDefinition extends EditRecord
         abort_unless($record instanceof SurveyDefinition, 404);
         $version = $record->versions()->latest('version')->firstOrFail();
 
-        return [...$data, ...SurveyDefinitionFormMapper::denormalize($version)];
+        return [
+            ...$data,
+            ...SurveyDefinitionFormMapper::denormalize($version),
+            'expected_snapshot' => app(SurveyDefinitionSnapshotHasher::class)->forDefinition($record, $version),
+        ];
     }
 
     protected function handleRecordUpdate(Model $record, array $data): Model

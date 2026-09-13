@@ -12,6 +12,7 @@ use App\Modules\Content\Application\CreateContentSection;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
+use App\Modules\Identity\Application\ClientProfileSnapshotHasher;
 use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
 use App\Modules\Identity\Application\InitiateTelegramOrganizationLink;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
@@ -28,6 +29,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Services\Application\CreateService;
+use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
@@ -105,6 +107,46 @@ class MilestoneThreeCrmTest extends TestCase
         self::assertFalse($updated->is_active);
         self::assertSame(2, DB::table('audit_events')->where('organization_id', $organization->id)
             ->whereIn('action', ['service.created', 'service.updated'])->count());
+    }
+
+    public function test_stale_service_save_does_not_overwrite_newer_changes(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
+        $this->setOrganization($organization);
+        $snapshot = app(ServiceSnapshotHasher::class)->forService($service);
+        $attributes = [
+            'name' => 'Изменение из вкладки A',
+            'summary' => $service->summary,
+            'is_active' => true,
+            'catalog_type' => 'service',
+            'name_ru' => null,
+            'name_en' => null,
+            'description_ru' => null,
+            'description_en' => null,
+            'category' => $service->category,
+            'duration_minutes' => $service->duration_minutes,
+            'buffer_minutes' => $service->buffer_minutes,
+            'formats' => $service->formats,
+            'price' => null,
+            'price_currency' => null,
+            'payment_policy' => null,
+            'expected_snapshot' => $snapshot,
+        ];
+
+        app(UpdateService::class)->handle($admin, $service, $attributes);
+        $attributes['name'] = 'Устаревшее изменение из вкладки B';
+
+        try {
+            app(UpdateService::class)->handle($admin, $service, $attributes);
+            self::fail('A stale service save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('name', $exception->errors());
+        }
+
+        self::assertSame('Изменение из вкладки A', $service->refresh()->name);
     }
 
     public function test_service_catalog_entitlement_is_enforced_by_actions(): void
@@ -189,6 +231,33 @@ class MilestoneThreeCrmTest extends TestCase
                 'client.self_booking.blocked',
                 'client.self_booking.unblocked',
             ])->count());
+    }
+
+    public function test_stale_client_profile_save_does_not_overwrite_newer_changes(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        $this->setOrganization($organization);
+        $snapshot = app(ClientProfileSnapshotHasher::class)->forClient($client);
+
+        app(UpdateClientProfileFromCrm::class)->handle($admin, $client, [
+            'full_name' => 'Изменение из вкладки A',
+            'expected_snapshot' => $snapshot,
+        ]);
+
+        try {
+            app(UpdateClientProfileFromCrm::class)->handle($admin, $client, [
+                'full_name' => 'Устаревшее изменение из вкладки B',
+                'expected_snapshot' => $snapshot,
+            ]);
+            self::fail('A stale client profile save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('full_name', $exception->errors());
+        }
+
+        self::assertSame('Изменение из вкладки A', $client->refresh()->full_name);
     }
 
     public function test_client_actions_reject_cross_organization_records(): void

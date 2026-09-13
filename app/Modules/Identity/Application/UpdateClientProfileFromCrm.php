@@ -34,6 +34,7 @@ class UpdateClientProfileFromCrm
         private readonly OrganizationAuthorizer $authorizer,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly ClientProfileSnapshotHasher $snapshotHasher,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -48,14 +49,23 @@ class UpdateClientProfileFromCrm
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
 
+        $expectedSnapshot = $attributes['expected_snapshot'] ?? null;
+        unset($attributes['expected_snapshot']);
         $normalized = $this->normalize($attributes);
 
-        return DB::transaction(function () use ($actor, $client, $normalized, $organization): Client {
+        return DB::transaction(function () use ($actor, $client, $normalized, $organization, $expectedSnapshot): Client {
             $lockedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($client->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            if ($expectedSnapshot !== null
+                && (! is_string($expectedSnapshot) || ! hash_equals($expectedSnapshot, $this->snapshotHasher->forClient($lockedClient)))) {
+                throw ValidationException::withMessages([
+                    'full_name' => 'Профиль клиента изменился в другой вкладке. Обновите страницу перед сохранением.',
+                ]);
+            }
 
             if (array_key_exists('email', $normalized)
                 && $normalized['email'] !== $lockedClient->email

@@ -85,6 +85,10 @@ final class TelegramNotificationChannel implements NotificationChannel
                 $successfulSends++;
             }
 
+            if ($message->requireKnownExternalOutcome && $lastMessageId === null) {
+                return NotificationDeliveryResult::unknown('telegram_delivery_reference_missing');
+            }
+
             return NotificationDeliveryResult::delivered(
                 $lastMessageId,
             );

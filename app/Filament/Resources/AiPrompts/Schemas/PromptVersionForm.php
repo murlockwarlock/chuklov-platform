@@ -3,8 +3,10 @@
 namespace App\Filament\Resources\AiPrompts\Schemas;
 
 use App\Filament\Support\AiPromptTextSections;
+use App\Modules\AI\Application\Services\AiPromptVersionSnapshotHasher;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\ValueObjects\AiParameterConfig;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -18,6 +20,11 @@ final class PromptVersionForm
         $parameters = AiParameterConfig::fromArray((array) ($source?->parameter_config ?? []));
 
         return [
+            Hidden::make('expected_snapshot')
+                ->default($source instanceof AiPromptVersion ? app(AiPromptVersionSnapshotHasher::class)->forVersion($source) : null)
+                ->dehydrated()
+                ->nullable()
+                ->string(),
             Textarea::make('system_prompt')
                 ->label('Полный исходный prompt')
                 ->helperText('Полный текст новой версии. Активная версия не изменяется до явной активации черновика.')
@@ -69,6 +76,7 @@ final class PromptVersionForm
         $parameters = AiParameterConfig::fromArray((array) $source->parameter_config);
 
         return [
+            'expected_snapshot' => app(AiPromptVersionSnapshotHasher::class)->forVersion($source),
             'system_prompt' => $source->system_prompt,
             'user_prompt_template' => $source->user_prompt_template,
             'temperature' => $parameters->temperature,

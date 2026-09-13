@@ -37,6 +37,11 @@ final readonly class HandleTelegramBookingConfirmation
         }
 
         $expectedEventVersion = isset($matches[2]) ? (int) $matches[2] : null;
+        if ($expectedEventVersion === null) {
+            $bot->answerCallbackQuery(text: 'Состояние записи изменилось. Откройте CRM.');
+
+            return;
+        }
 
         $organization = $this->organization();
         if (! $organization instanceof Organization) {

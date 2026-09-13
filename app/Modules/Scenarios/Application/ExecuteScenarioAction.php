@@ -233,6 +233,7 @@ final class ExecuteScenarioAction
                 subject: $rendered->subject,
                 locale: $rendered->locale,
                 idempotencyKey: $delivery->idempotency_key,
+                requireKnownExternalOutcome: true,
                 webAppUrl: $webAppUrl,
                 actionButton: $actionButton,
                 actionButtons: $actionButtons,

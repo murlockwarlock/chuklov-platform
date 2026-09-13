@@ -5,6 +5,7 @@ namespace App\Filament\Resources\NotificationTemplates\Pages;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Modules\Scenarios\Application\NotificationTemplateSnapshotHasher;
 use App\Modules\Scenarios\Application\UpdateNotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
@@ -26,6 +27,7 @@ final class EditNotificationTemplate extends EditRecord
 
         return [
             ...$data,
+            'expected_snapshot' => app(NotificationTemplateSnapshotHasher::class)->forTemplate($this->record, $latest),
             'subject' => $latest->subject,
             'body' => $latest->body,
             'delivery_mode' => ($latest->delivery_mode ?? NotificationMessageMode::Text)->value,

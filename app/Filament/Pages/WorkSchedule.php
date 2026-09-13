@@ -70,6 +70,8 @@ final class WorkSchedule extends Page
     /** @var list<array<string, mixed>> */
     public array $impactBookings = [];
 
+    public ?string $exceptionsDigest = null;
+
     public bool $acknowledgeImpact = false;
 
     public string $errorMessage = '';
@@ -184,6 +186,7 @@ final class WorkSchedule extends Page
         }
 
         $this->pendingPreset = null;
+        $this->refreshExceptionsDigest();
         $this->clearImpact();
     }
 
@@ -279,6 +282,7 @@ final class WorkSchedule extends Page
                 definitionsByDate: $definitions,
                 acknowledgeImpact: $this->acknowledgeImpact,
                 acknowledgedImpactDigest: $this->impactDigest,
+                expectedExceptionsDigest: $this->exceptionsDigest,
             );
         } catch (ValidationException $exception) {
             $this->setImpactFromException($exception);
@@ -452,6 +456,7 @@ final class WorkSchedule extends Page
         $this->overrideReason = '';
         $this->overrideType = 'working';
         $this->overrideIntervals = $date === null ? [] : $this->recurringIntervalsForDate($date);
+        $this->refreshExceptionsDigest();
 
         if ($date === null || $this->specialistId === null) {
             return;
@@ -607,7 +612,17 @@ final class WorkSchedule extends Page
         $this->overrideIntervals = [];
         $this->overrideReason = '';
         $this->pendingPreset = null;
+        $this->exceptionsDigest = null;
         $this->clearImpact();
+    }
+
+    private function refreshExceptionsDigest(): void
+    {
+        $specialist = $this->selectedSpecialist();
+
+        $this->exceptionsDigest = $specialist instanceof Specialist && $this->selectedDates !== []
+            ? app(SetScheduleExceptionSet::class)->digest($specialist, $this->selectedDates)
+            : null;
     }
 
     private function clearImpact(): void

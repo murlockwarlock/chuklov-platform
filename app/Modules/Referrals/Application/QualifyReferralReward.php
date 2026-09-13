@@ -42,6 +42,7 @@ final class QualifyReferralReward
             $relationship = ReferralRelationship::query()
                 ->where('organization_id', $organizationId)
                 ->whereKey($evidence->referral_relationship_id)
+                ->lockForUpdate()
                 ->first();
 
             if (! $relationship instanceof ReferralRelationship
@@ -135,6 +136,9 @@ final class QualifyReferralReward
             }
 
             $settlement = $this->settlement($obligation, $ledgerEntry, $organizationId);
+            if ($settlement === null) {
+                return null;
+            }
             $reward = $this->calculator->calculate($version, $settlement);
 
             if (! $reward->isPositive()) {
@@ -195,11 +199,11 @@ final class QualifyReferralReward
         FinancialObligation $obligation,
         FinancialLedgerEntry $ledgerEntry,
         int $organizationId,
-    ): Money {
+    ): ?Money {
         $reconciliation = $this->reconciliation->handle($organizationId, (int) $obligation->getKey(), true);
 
         if (! $reconciliation->isSettled()) {
-            return Money::zero($obligation->settlement_currency);
+            return null;
         }
 
         $obligationData = $this->contract->validateObligation($obligation);
@@ -207,7 +211,7 @@ final class QualifyReferralReward
 
         if ((int) $ledgerEntry->obligation_id !== (int) $obligation->getKey()
             || $ledgerData['currencies']['settlement_currency'] !== $obligationData['currencies']['settlement_currency']) {
-            return Money::zero($obligationData['currencies']['settlement_currency']);
+            return null;
         }
 
         return Money::ofMinor(

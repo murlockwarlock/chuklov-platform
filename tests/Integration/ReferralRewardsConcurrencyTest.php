@@ -14,10 +14,12 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
+use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
 use App\Modules\Referrals\Application\SaveReferralRewardProgram;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -62,6 +64,48 @@ final class ReferralRewardsConcurrencyTest extends TestCase
         self::assertSame(1, ReferralRewardLedgerEntry::query()->count());
         self::assertSame(1, DB::table('referral_commercial_evidence')->where('integration_event_id', $event->getKey())->count());
         self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', 'earned')->count());
+    }
+
+    public function test_postgresql_concurrent_first_settled_payments_create_one_reward(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureFixed($admin, '10.00', 'USD');
+        $firstEvent = $this->settledEvent($organization, $referred, 'first-payment-race-one');
+        $secondEvent = $this->settledEvent($organization, $referred, 'first-payment-race-two');
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::consumeInProcess($firstEvent->getKey()),
+            static fn (): string => self::consumeInProcess($secondEvent->getKey()),
+        ]);
+
+        self::assertNotContains('error', $results);
+        self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', 'earned')->count());
+    }
+
+    public function test_postgresql_concurrent_manual_bonus_replays_one_entry(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $referrer] = $this->fixture();
+        $profile = ReferralPartnerProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $referrer->getKey())
+            ->firstOrFail();
+        $secondAdmin = User::factory()->forOrganization($organization)->create();
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::manualBonusInProcess($organization->getKey(), $admin->getKey(), $profile->getKey()),
+            static fn (): string => self::manualBonusInProcess($organization->getKey(), $secondAdmin->getKey(), $profile->getKey()),
+        ]);
+
+        self::assertNotContains('error', $results);
+        self::assertCount(2, array_filter($results, static fn (string $result): bool => str_starts_with($result, 'bonus:')));
+        self::assertSame(1, count(array_unique($results)));
+        self::assertSame(1, ReferralRewardLedgerEntry::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('entry_type', 'manual_credit')
+            ->count());
     }
 
     public function test_postgresql_concurrent_payout_requests_cannot_reserve_more_than_available(): void
@@ -153,6 +197,31 @@ final class ReferralRewardsConcurrencyTest extends TestCase
             );
 
             return 'reversal:'.$reversal->getKey();
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function manualBonusInProcess(int $organizationId, int $adminId, int $profileId): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $entry = app(CreditManualReferralBonus::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                partner: ReferralPartnerProfile::query()
+                    ->where('organization_id', $organizationId)
+                    ->findOrFail($profileId),
+                amount: '10.00',
+                currency: 'USD',
+                reason: 'Concurrent manual bonus',
+                comment: null,
+                idempotencyKey: 'concurrent-manual-bonus',
+            );
+
+            return 'bonus:'.$entry->getKey();
+        } catch (ValidationException) {
+            return 'validation';
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();
         }

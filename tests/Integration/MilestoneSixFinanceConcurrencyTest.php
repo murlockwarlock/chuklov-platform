@@ -54,6 +54,25 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
         self::assertTrue(app(ReconcileFinancialObligation::class)->handle($organization->id, $obligation->id)->isSettled());
     }
 
+    public function test_two_processes_can_create_the_first_currency_configuration_without_a_unique_violation(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->fixture(includeObligation: false, includeConfiguration: false);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::saveConfigurationInProcess($organization->id, $admin->id),
+            static fn (): string => self::saveConfigurationInProcess($organization->id, $admin->id),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertNotContains('error', $results);
+        self::assertNotContains('validation', $results);
+        self::assertSame(1, count(array_unique($results)));
+        self::assertSame(1, DB::table('organization_currency_configurations')
+            ->where('organization_id', $organization->id)
+            ->count());
+    }
+
     public function test_two_processes_apply_different_partial_payments_without_losing_one(): void
     {
         $this->requirePostgres();
@@ -180,7 +199,7 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
     }
 
     /** @return array{Organization, User, FinancialObligation, Booking} */
-    private function fixture(bool $includeObligation = true): array
+    private function fixture(bool $includeObligation = true, bool $includeConfiguration = true): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $admin = User::factory()->forOrganization($organization)->create();
@@ -201,23 +220,49 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
                 'blocking_ends_at' => now()->subHours(2),
             ]);
         app(OrganizationContext::class)->set($organization);
-        app(SaveCurrencyConfiguration::class)->handle($admin, [
-            'base_currency' => 'RUB',
-            'display_currency' => 'USD',
-            'allowed_currencies' => ['RUB', 'USD'],
-            'force_single_currency' => false,
-            'rounding_mode' => 'half_up',
-            'rates' => [
-                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '90'],
-                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.011111111111111111'],
-            ],
-        ]);
-        app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
+        if ($includeConfiguration) {
+            app(SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'RUB',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['RUB', 'USD'],
+                'force_single_currency' => false,
+                'rounding_mode' => 'half_up',
+                'rates' => [
+                    ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '90'],
+                    ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.011111111111111111'],
+                ],
+            ]);
+            app(SaveExchangeRate::class)->handle($admin, 'USD', 'RUB', '90');
+        }
         $obligation = $includeObligation
             ? app(CreateFinancialObligation::class)->handle($admin, $booking)
             : null;
 
         return [$organization, $admin, $obligation ?? new FinancialObligation, $booking];
+    }
+
+    private static function saveConfigurationInProcess(int $organizationId, int $adminId): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $configuration = app(SaveCurrencyConfiguration::class)->handle(
+                User::query()->findOrFail($adminId),
+                [
+                    'base_currency' => 'USD',
+                    'display_currency' => 'USD',
+                    'allowed_currencies' => ['USD'],
+                    'force_single_currency' => true,
+                    'rounding_mode' => 'half_up',
+                ],
+            );
+
+            return 'configuration:'.$configuration->getKey();
+        } catch (ValidationException) {
+            return 'validation';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
     }
 
     private static function recordInProcess(int $organizationId, int $adminId, int $obligationId, string $amount, string $key): string

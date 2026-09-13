@@ -179,6 +179,93 @@ final class SchedulingJournalProductionPassTest extends TestCase
         )->format('Y-m-d'));
     }
 
+    public function test_stale_schedule_tab_cannot_overwrite_newer_working_hours(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '12:00',
+        ]]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $tabA = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $tabB = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+
+        $tabA
+            ->fillForm([
+                'working_hours' => [[
+                    'weekday' => 5,
+                    'start_time' => '10:00',
+                    'end_time' => '13:00',
+                ]],
+                'clear_working_hours' => false,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $tabB
+            ->fillForm([
+                'working_hours' => [[
+                    'weekday' => 5,
+                    'start_time' => '14:00',
+                    'end_time' => '17:00',
+                ]],
+                'clear_working_hours' => false,
+            ])
+            ->call('save')
+            ->assertHasErrors(['working_hours']);
+
+        self::assertDatabaseHas('specialist_working_hours', [
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'weekday' => 5,
+            'start_time' => '10:00',
+            'end_time' => '13:00',
+        ]);
+        self::assertDatabaseMissing('specialist_working_hours', [
+            'specialist_id' => $specialist->getKey(),
+            'weekday' => 5,
+            'start_time' => '14:00',
+            'end_time' => '17:00',
+        ]);
+    }
+
+    public function test_stale_schedule_tab_cannot_overwrite_newer_date_override(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $tabA = Livewire::actingAs($admin)->test(WorkSchedule::class)->set('month', '2026-09');
+        $tabB = Livewire::actingAs($admin)->test(WorkSchedule::class)->set('month', '2026-09');
+
+        $tabA->call('toggleDate', '2026-09-07');
+        $tabB->call('toggleDate', '2026-09-07');
+
+        $tabA
+            ->set('overrideType', ScheduleExceptionType::DayOff->value)
+            ->call('saveOverride');
+
+        $tabB
+            ->set('overrideType', ScheduleExceptionType::CustomWindow->value)
+            ->set('overrideIntervals', [['start_time' => '14:00', 'end_time' => '16:00']])
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        self::assertSame('График изменился в другой вкладке. Обновите страницу и повторите изменение.', $tabB->instance()->errorMessage);
+        self::assertDatabaseHas('schedule_exceptions', [
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'exception_date' => '2026-09-07',
+            'exception_type' => ScheduleExceptionType::DayOff->value,
+        ]);
+        self::assertDatabaseMissing('schedule_exceptions', [
+            'specialist_id' => $specialist->getKey(),
+            'exception_date' => '2026-09-07',
+            'exception_type' => ScheduleExceptionType::CustomWindow->value,
+        ]);
+    }
+
     public function test_settings_shows_a_human_validation_error_for_overlapping_intervals(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();

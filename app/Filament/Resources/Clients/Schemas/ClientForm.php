@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Schemas;
 use App\Filament\Support\TimezoneOptions;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
@@ -17,6 +18,7 @@ class ClientForm
     {
         return $schema
             ->components([
+                Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 TextInput::make('full_name')
                     ->label('Имя и фамилия')
                     ->required()

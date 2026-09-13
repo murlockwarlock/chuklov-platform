@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -182,6 +183,21 @@ final class MilestoneFiveDeliveryRemediationTest extends TestCase
         self::assertSame('worker_lost_before_outcome', $delivery->attempts()->sole()->error_code);
         self::assertCount(0, $channel->messages);
         self::assertSame(0, app(ScheduleScenarioWork::class)->handle()['actions']);
+    }
+
+    public function test_scenario_external_delivery_requires_a_known_provider_outcome(): void
+    {
+        $channel = new RecordingNotificationChannel('primary');
+        $channel->onSend = static function (NotificationMessage $message): void {
+            self::assertTrue($message->requireKnownExternalOutcome);
+        };
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$channel]));
+        $action = $this->materializedAction(['primary']);
+
+        app(ExecuteScenarioAction::class)->handle($action->id);
+
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertCount(1, $channel->messages);
     }
 
     /** @param list<string> $channels */

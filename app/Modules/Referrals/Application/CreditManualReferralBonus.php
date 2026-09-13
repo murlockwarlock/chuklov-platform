@@ -94,6 +94,20 @@ final class CreditManualReferralBonus
                 ->where('organization_id', $organization->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $existing = ReferralRewardLedgerEntry::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing instanceof ReferralRewardLedgerEntry) {
+                if ($existing->request_hash !== $requestHash) {
+                    throw ValidationException::withMessages(['idempotency_key' => 'Этот идентификатор уже использован для другой операции.']);
+                }
+
+                return $existing;
+            }
+
             $entry = new ReferralRewardLedgerEntry;
             $entry->forceFill([
                 'organization_id' => $organization->getKey(),

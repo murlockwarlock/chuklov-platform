@@ -13,6 +13,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SetSpecialistWorkingHours
 {
@@ -34,6 +35,7 @@ class SetSpecialistWorkingHours
         array $definitions,
         bool $acknowledgeImpact = false,
         ?string $acknowledgedImpactDigest = null,
+        ?string $expectedWorkingHoursDigest = null,
     ): Collection {
         $organization = $this->context->organization();
 
@@ -44,12 +46,27 @@ class SetSpecialistWorkingHours
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $schedule = SpecialistScheduleDefinition::from($definitions);
 
-        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist, $acknowledgeImpact, $acknowledgedImpactDigest): Collection {
+        return DB::transaction(function () use ($actor, $organization, $schedule, $specialist, $acknowledgeImpact, $acknowledgedImpactDigest, $expectedWorkingHoursDigest): Collection {
             $lockedSpecialist = Specialist::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($specialist->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
+            $currentWorkingHours = SpecialistWorkingHour::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('specialist_id', $lockedSpecialist->getKey())
+                ->orderBy('weekday')
+                ->orderBy('start_time')
+                ->lockForUpdate()
+                ->get();
+
+            if ($expectedWorkingHoursDigest !== null
+                && ! hash_equals($expectedWorkingHoursDigest, $this->digestFromWorkingHours($currentWorkingHours))) {
+                throw ValidationException::withMessages([
+                    'working_hours' => 'График изменился в другой вкладке. Обновите страницу и повторите изменение.',
+                ]);
+            }
+
             $impact = $this->impactCalculator->forWorkingHours($lockedSpecialist, $schedule);
             $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
 
@@ -91,6 +108,22 @@ class SetSpecialistWorkingHours
         });
     }
 
+    public function digest(Specialist $specialist): string
+    {
+        $organization = $this->context->organization();
+
+        if ((int) $specialist->organization_id !== $organization->getKey()) {
+            throw new AuthorizationException('The specialist is outside the current organization.');
+        }
+
+        return $this->digestFromWorkingHours(SpecialistWorkingHour::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('specialist_id', $specialist->getKey())
+            ->orderBy('weekday')
+            ->orderBy('start_time')
+            ->get());
+    }
+
     private function recordImpactAcknowledgement(
         User $actor,
         Specialist $specialist,
@@ -113,5 +146,22 @@ class SetSpecialistWorkingHours
                 'impact_digest' => $impact->digest,
             ],
         );
+    }
+
+    /** @param Collection<int, SpecialistWorkingHour> $workingHours */
+    private function digestFromWorkingHours(Collection $workingHours): string
+    {
+        $definitions = $workingHours->map(static fn (SpecialistWorkingHour $workingHour): array => [
+            'weekday' => $workingHour->weekday,
+            'start_time' => substr((string) $workingHour->start_time, 0, 5),
+            'end_time' => substr((string) $workingHour->end_time, 0, 5),
+            'starts_on' => $workingHour->starts_on?->toDateString(),
+            'ends_on' => $workingHour->ends_on?->toDateString(),
+        ])->all();
+
+        return hash('sha256', json_encode(
+            SpecialistScheduleDefinition::from($definitions)->attributes(),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE,
+        ));
     }
 }

@@ -17,6 +17,7 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -712,6 +713,41 @@ final class MedicalSessionTest extends TestCase
         self::assertSame((int) $before->client_id, $updated->clientId);
         self::assertSame((int) $before->specialist_id, $updated->specialistId);
         self::assertSame((int) $before->booking_id, $updated->bookingId);
+    }
+
+    public function test_stale_medical_session_save_does_not_overwrite_newer_changes(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $session = $this->createSession($admin, $client, $specialist, pain: 'Исходная запись');
+        $snapshot = app(MedicalSessionSnapshotHasher::class)->forSession($session);
+
+        app(UpdateSession::class)->handle($admin, $session, new UpdateSessionCommand(
+            pain: 'Изменение из вкладки A',
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
+            protocol: null,
+            result: null,
+            expectedSnapshot: $snapshot,
+        ));
+
+        try {
+            app(UpdateSession::class)->handle($admin, $session, new UpdateSessionCommand(
+                pain: 'Устаревшее изменение из вкладки B',
+                tests: null,
+                observations: null,
+                rootCauseHypothesis: null,
+                protocol: null,
+                result: null,
+                expectedSnapshot: $snapshot,
+            ));
+            self::fail('A stale medical session save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('session', $exception->errors());
+        }
+
+        $retrieved = app(GetSession::class)->handle($admin, $session);
+        self::assertSame('Изменение из вкладки A', $retrieved?->pain);
     }
 
     /**

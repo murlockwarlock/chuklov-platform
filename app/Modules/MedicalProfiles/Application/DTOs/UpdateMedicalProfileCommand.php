@@ -10,6 +10,7 @@ final readonly class UpdateMedicalProfileCommand
         public ?string $operationsInjuries = null,
         public ?string $medicines = null,
         public ?string $supplements = null,
+        public ?string $expectedSnapshot = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -21,6 +22,7 @@ final readonly class UpdateMedicalProfileCommand
             operationsInjuries: isset($data['operations_injuries']) && is_string($data['operations_injuries']) ? trim($data['operations_injuries']) : null,
             medicines: isset($data['medicines']) && is_string($data['medicines']) ? trim($data['medicines']) : null,
             supplements: isset($data['supplements']) && is_string($data['supplements']) ? trim($data['supplements']) : null,
+            expectedSnapshot: isset($data['expected_snapshot']) && is_string($data['expected_snapshot']) ? $data['expected_snapshot'] : null,
         );
     }
 }

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
@@ -14,13 +15,19 @@ use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 class BookingForm
 {
@@ -148,7 +155,24 @@ class BookingForm
                     ->helperText(fn (): string => 'Часовой пояс CRM: '.self::viewerTimezoneLabel().'.')
                     ->live(onBlur: true)
                     ->seconds(false)
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('confirm_backdated', false);
+                    })
                     ->required(),
+                TextEntry::make('backdated_warning')
+                    ->label('Внимание')
+                    ->state(fn (Get $get): string => self::backdatedWarning($get))
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
+                Checkbox::make('confirm_backdated')
+                    ->label('Подтверждаю создание записи задним числом')
+                    ->default(false)
+                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
+                    ->validationMessages([
+                        'accepted' => 'Подтвердите создание записи задним числом.',
+                    ])
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
                 Select::make('visit_format')
                     ->label('Формат визита')
                     ->options([
@@ -243,5 +267,72 @@ class BookingForm
         $timezone = self::viewerTimezone();
 
         return TimezoneOptions::label($timezone).' ('.$timezone.')';
+    }
+
+    private static function isBackdated(Get $get): bool
+    {
+        $startsAt = self::startsAt($get('starts_at'));
+
+        return $startsAt instanceof CarbonImmutable && $startsAt->lessThan(CarbonImmutable::now('UTC'));
+    }
+
+    private static function backdatedWarning(Get $get): string
+    {
+        $startsAt = self::startsAt($get('starts_at'));
+        if (! $startsAt instanceof CarbonImmutable) {
+            return '';
+        }
+
+        $timezone = self::scheduleTimezone($get, $startsAt);
+
+        return 'Вы создаёте запись задним числом: '.$startsAt->setTimezone($timezone)->format('d.m.Y H:i').'.';
+    }
+
+    private static function startsAt(mixed $state): ?CarbonImmutable
+    {
+        if ($state instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($state)->utc();
+        }
+
+        if (! is_string($state) || trim($state) === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($state, self::viewerTimezone())->utc();
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    private static function scheduleTimezone(Get $get, CarbonImmutable $startsAt): string
+    {
+        $organization = app(OrganizationContext::class)->organization();
+        $specialist = Specialist::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey((int) $get('specialist_id'))
+            ->first();
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+
+        if (! $specialist instanceof Specialist || ! $format instanceof VisitFormat) {
+            return $specialist?->timezone ?? $organization->defaultTimezone();
+        }
+
+        try {
+            $workingLocationId = is_numeric($get('working_location_id'))
+                ? (int) $get('working_location_id')
+                : null;
+            $resolver = app(BookingLocationResolver::class);
+            $selection = $resolver->selection(
+                format: $format,
+                workingLocationId: $workingLocationId,
+                areaName: is_string($get('location_area')) ? $get('location_area') : null,
+                startsAt: $startsAt,
+            );
+
+            return $resolver->scheduleTimezone($specialist, $format, $selection);
+        } catch (InvalidArgumentException|ValidationException) {
+            return $specialist->timezone ?? $organization->defaultTimezone();
+        }
     }
 }

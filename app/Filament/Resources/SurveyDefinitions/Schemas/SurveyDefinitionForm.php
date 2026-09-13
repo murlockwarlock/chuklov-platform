@@ -28,6 +28,7 @@ final class SurveyDefinitionForm
                 Textarea::make('description_en')->label('Описание на английском')->maxLength(2000)->columnSpanFull(),
                 Toggle::make('is_available')->label('Доступен клиентам после публикации')->default(true),
                 Hidden::make('start_new_metric_scale')->default(false),
+                Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
             ])->columns(2)->columnSpanFull(),
             Section::make('Происхождение контента')->schema([
                 Hidden::make('source')->default('platform_default')->dehydrated(false),

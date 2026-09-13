@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Attribution\Application\AcceptManualAttribution;
+use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -19,6 +20,7 @@ use App\Modules\Referrals\Application\CreateReferralCampaignLink;
 use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\GetClientReferralOverview;
 use App\Modules\Referrals\Application\GetReferralRewardProgram;
+use App\Modules\Referrals\Application\QualifyReferralReward;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
@@ -27,6 +29,7 @@ use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
+use App\Modules\Referrals\Domain\Models\ReferralCommercialEvidence;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
@@ -244,6 +247,40 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame(0, app(ReferralRewardBalanceProjection::class)->forCurrency($referrer, CurrencyCode::USD)->available()->minorUnits());
         $this->expectException(ValidationException::class);
         app(RequestReferralPayout::class)->handle($referrer, '1.00', 'USD', 'reversed-withdrawal');
+    }
+
+    public function test_reversal_before_reward_qualification_cannot_credit_fixed_reward(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $relationship = $this->relationship($organization, $referrer, $referred);
+        $this->configureFixed($organization, $admin, '10.00', 'USD');
+        $event = $this->settledEvent($organization, $referred, 'reversal-before-qualification');
+        $payload = $event->payload;
+        $obligation = FinancialObligation::query()->findOrFail($payload['obligation_id']);
+        $ledgerEntry = FinancialLedgerEntry::query()->findOrFail($payload['ledger_entry_id']);
+        $evidence = new ReferralCommercialEvidence;
+        $evidence->forceFill([
+            'organization_id' => $organization->getKey(),
+            'integration_event_id' => $event->getKey(),
+            'referral_relationship_id' => $relationship->getKey(),
+            'referred_client_id' => $referred->getKey(),
+            'financial_obligation_id' => $obligation->getKey(),
+            'financial_ledger_entry_id' => $ledgerEntry->getKey(),
+            'evidence_type' => 'finance_obligation_settled',
+            'observation_source' => 'finance',
+            'observed_at' => $event->occurred_at,
+        ]);
+        $evidence->save();
+
+        app(CorrectFinancialPayment::class)->handle(
+            actor: $admin,
+            original: $ledgerEntry,
+            reason: 'Оплата отменена до начисления.',
+            idempotencyKey: 'reversal-before-qualification',
+        );
+
+        self::assertNull(app(QualifyReferralReward::class)->handle($evidence));
+        self::assertDatabaseCount('referral_reward_ledger_entries', 0);
     }
 
     public function test_portal_overview_exposes_separate_currency_balances_and_human_payout_statuses(): void

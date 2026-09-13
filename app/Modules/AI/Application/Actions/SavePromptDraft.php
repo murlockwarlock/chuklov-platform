@@ -3,6 +3,7 @@
 namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
+use App\Modules\AI\Application\Services\AiPromptVersionSnapshotHasher;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\ValueObjects\AiParameterConfig;
@@ -11,6 +12,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 final class SavePromptDraft
@@ -19,6 +21,7 @@ final class SavePromptDraft
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly AiPromptVersionSnapshotHasher $snapshotHasher,
     ) {}
 
     public function handle(User $actor, int $promptVersionId, array $data): AiPromptVersion
@@ -32,7 +35,9 @@ final class SavePromptDraft
             throw new InvalidArgumentException('Prompt text and request template are required.');
         }
 
-        return DB::transaction(function () use ($organization, $actor, $promptVersionId, $data, $systemPrompt, $userPromptTemplate): AiPromptVersion {
+        $expectedSnapshot = $data['expected_snapshot'] ?? null;
+
+        return DB::transaction(function () use ($organization, $actor, $promptVersionId, $data, $systemPrompt, $userPromptTemplate, $expectedSnapshot): AiPromptVersion {
             $version = AiPromptVersion::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($promptVersionId)
@@ -41,6 +46,12 @@ final class SavePromptDraft
 
             if (! $version instanceof AiPromptVersion || $version->status !== PromptVersionStatus::Draft) {
                 throw new InvalidArgumentException('Only a draft prompt version can be edited.');
+            }
+
+            if (! is_string($expectedSnapshot) || ! hash_equals($expectedSnapshot, $this->snapshotHasher->forVersion($version))) {
+                throw ValidationException::withMessages([
+                    'system_prompt' => 'Черновик изменился в другой вкладке. Обновите его перед сохранением.',
+                ]);
             }
 
             $parameterConfig = [

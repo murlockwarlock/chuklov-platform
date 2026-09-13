@@ -8,6 +8,7 @@ use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Models\User;
 use App\Modules\Channels\Application\BuildTelegramContentSectionMessage;
 use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Application\TelegramMessagePreview;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
@@ -322,6 +323,85 @@ final class CommunitiesContentSectionTest extends TestCase
         self::assertSame('delivered', $result->outcome->value);
         self::assertInstanceOf(FakeNutgram::class, $bot);
         $bot->assertCalled('sendMessage');
+    }
+
+    public function test_replayed_telegram_content_callback_does_not_send_the_section_twice(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'communities',
+            'locale' => 'ru',
+            'body' => '<p>Содержание сообществ.</p>',
+            'delivery_mode' => ContentDeliveryMode::Telegram,
+        ]);
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = $this->fakeNutgram();
+        $identity = new VerifiedChannelIdentity('telegram', 'replayed-content-chat', 'Client', 'ru');
+
+        $first = app(SendTelegramContentSection::class)->handle(
+            identity: $identity,
+            sectionKey: 'communities',
+            locale: 'ru',
+            requestId: 'telegram-callback-replay',
+        );
+        $second = app(SendTelegramContentSection::class)->handle(
+            identity: $identity,
+            sectionKey: 'communities',
+            locale: 'ru',
+            requestId: 'telegram-callback-replay',
+        );
+        $doubleClick = app(SendTelegramContentSection::class)->handle(
+            identity: $identity,
+            sectionKey: 'communities',
+            locale: 'ru',
+            requestId: 'telegram-callback-double-click',
+        );
+
+        self::assertSame('delivered', $first->outcome->value);
+        self::assertSame('suppressed', $second->outcome->value);
+        self::assertSame('suppressed', $doubleClick->outcome->value);
+        self::assertCount(1, $bot->getRequestHistory());
+    }
+
+    public function test_partial_telegram_content_retry_skips_already_sent_sections(): void
+    {
+        [$organization] = $this->organizationAndAdmin();
+        foreach (['Первый раздел', 'Второй раздел'] as $title) {
+            ContentSection::factory()->forOrganization($organization)->create([
+                'section_key' => 'communities',
+                'locale' => 'ru',
+                'title' => $title,
+                'body' => '<p>Содержание.</p>',
+                'delivery_mode' => ContentDeliveryMode::Telegram,
+            ]);
+        }
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = FakeNutgram::instance();
+        $bot->willReceivePartial(['message_id' => 1]);
+        $bot->willReceivePartial([], false);
+        $bot->willReceivePartial(['message_id' => 2]);
+        app()->instance(Nutgram::class, $bot);
+        app()->forgetInstance(NotificationChannelRegistry::class);
+        $identity = new VerifiedChannelIdentity('telegram', 'partial-content-chat', 'Client', 'ru');
+        $requestId = 'telegram-partial-retry-'.uniqid();
+
+        $first = app(SendTelegramContentSection::class)->handle(
+            identity: $identity,
+            sectionKey: 'communities',
+            locale: 'ru',
+            requestId: $requestId,
+        );
+        $second = app(SendTelegramContentSection::class)->handle(
+            identity: $identity,
+            sectionKey: 'communities',
+            locale: 'ru',
+            requestId: $requestId,
+        );
+
+        self::assertSame('retryable', $first->outcome->value);
+        self::assertSame('delivered', $second->outcome->value);
+        self::assertCount(3, $bot->getRequestHistory());
     }
 
     public function test_telegram_communities_callback_delivers_content_and_acknowledges_the_button(): void

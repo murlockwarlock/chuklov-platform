@@ -133,6 +133,7 @@ class CreateBooking extends CreateRecord
                 ? (int) $data['working_location_id']
                 : null,
             locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
+            confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
         );
     }
 

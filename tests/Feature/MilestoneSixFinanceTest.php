@@ -134,6 +134,62 @@ final class MilestoneSixFinanceTest extends TestCase
         }
     }
 
+    public function test_positive_payment_that_rounds_to_zero_in_settlement_currency_is_rejected(): void
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'price_minor' => 100,
+            'price_currency' => 'JPY',
+        ]);
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => now()->subHours(2),
+                'ends_at' => now()->subHour(),
+                'blocking_ends_at' => now()->subHour(),
+            ]);
+        $this->setOrganization($organization);
+
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'JPY',
+            'display_currency' => 'JPY',
+            'allowed_currencies' => ['JPY', 'USD'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'JPY', 'rate' => '0.01'],
+            ],
+        ]);
+        app(CompleteBooking::class)->handle($admin, $booking);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+
+        try {
+            app(RecordManualPayment::class)->handle(
+                actor: $admin,
+                obligation: $obligation,
+                amount: '0.01',
+                currency: 'USD',
+                paymentMethod: 'cash',
+                occurredAt: now(),
+                note: null,
+                receipt: null,
+                idempotencyKey: 'rounded-to-zero-payment',
+            );
+            self::fail('A payment that converts to zero settlement minor units must be rejected.');
+        } catch (ValidationException) {
+            self::assertDatabaseCount('financial_ledger_entries', 0);
+            self::assertSame(100, app(ReconcileFinancialObligation::class)
+                ->handle($organization->getKey(), $obligation->getKey())
+                ->outstanding
+                ->minorUnits());
+        }
+    }
+
     public function test_open_balance_uses_obligation_snapshot_after_rate_change_and_reaches_zero(): void
     {
         [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000, 'RUB');

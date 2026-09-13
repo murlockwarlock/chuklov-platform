@@ -18,7 +18,9 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -41,6 +43,7 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -119,6 +122,10 @@ class ViewClient extends ViewRecord
                     }
 
                     $profile = app(GetMedicalProfile::class)->handle($actor, $client);
+                    $profileRecord = MedicalProfile::query()
+                        ->where('organization_id', $client->organization_id)
+                        ->where('client_id', $client->getKey())
+                        ->first();
 
                     return [
                         'anamnesis' => $profile?->anamnesis,
@@ -126,6 +133,7 @@ class ViewClient extends ViewRecord
                         'operations_injuries' => $profile?->operationsInjuries,
                         'medicines' => $profile?->medicines,
                         'supplements' => $profile?->supplements,
+                        'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
                     ];
                 })
                 ->schema(self::medicalProfileSchema())
@@ -679,10 +687,11 @@ class ViewClient extends ViewRecord
             });
     }
 
-    /** @return array<Textarea> */
+    /** @return array<int, Hidden|Textarea> */
     private static function medicalProfileSchema(): array
     {
         return [
+            Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
             Textarea::make('anamnesis')
                 ->label('Анамнез')
                 ->rows(3)
