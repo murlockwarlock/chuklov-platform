@@ -15,6 +15,8 @@ final class CreateSurveyDefinition extends CreateRecord
 
     protected static ?string $title = 'Создать тест';
 
+    public string $surveyBuilderTab = '0';
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();

@@ -72,7 +72,7 @@ final class SurveyDefinitionFormMapper
 
         $scoring = is_array($data['legacy_scoring'] ?? null)
             ? $data['legacy_scoring']
-            : self::normalizeScoring($data);
+            : SurveyDefinitionScoringFormMapper::normalize($data);
 
         $normalized = [
             'title' => $data['title'] ?? null,
@@ -184,73 +184,18 @@ final class SurveyDefinitionFormMapper
         }
 
         $scoring = $version->scoring;
-        $metrics = [];
-        foreach (is_array($scoring['metrics'] ?? null) ? $scoring['metrics'] : [] as $metric) {
-            if (! is_array($metric)) {
-                continue;
-            }
-
-            [$label, $labelEn] = self::denormalizeText($metric['label'] ?? null);
-            $metrics[] = [
-                'key' => $metric['key'] ?? null,
-                'label' => $label,
-                'label_en' => $labelEn,
-            ];
-        }
-
-        $rules = [];
-        foreach (is_array($scoring['rules'] ?? null) ? $scoring['rules'] : [] as $rule) {
-            if (! is_array($rule)) {
-                continue;
-            }
-
-            $points = [];
-            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $value => $pointsValue) {
-                $points[] = ['value' => $value, 'points' => $pointsValue];
-            }
-            $rules[] = [
-                'question_key' => $rule['question_key'] ?? null,
-                'metric_key' => $rule['metric_key'] ?? null,
-                'operator' => $rule['operator'] ?? null,
-                'points' => $points,
-                'multiplier' => $rule['multiplier'] ?? null,
-            ];
-        }
-
-        $thresholds = [];
-        foreach (is_array($scoring['thresholds'] ?? null) ? $scoring['thresholds'] : [] as $threshold) {
-            if (! is_array($threshold)) {
-                continue;
-            }
-
-            [$label, $labelEn] = self::denormalizeText($threshold['label'] ?? null);
-            $thresholds[] = [
-                'metric_key' => $threshold['metric_key'] ?? null,
-                'min' => $threshold['min'] ?? null,
-                'max' => $threshold['max'] ?? null,
-                'tag' => $threshold['tag'] ?? null,
-                'label' => $label,
-                'label_en' => $labelEn,
-            ];
-        }
-
         $data = [
             'title' => $version->title,
             'title_en' => $version->title_en,
             'description' => $version->description,
             'description_en' => $version->description_en,
             'sections' => $formSections,
-            'metrics' => $metrics,
-            'rules' => $rules,
-            'thresholds' => $thresholds,
-            'comparison_metric_keys' => is_array($scoring['comparison']['metric_keys'] ?? null)
-                ? array_values($scoring['comparison']['metric_keys'])
-                : [],
             'start_new_metric_scale' => false,
             'source' => $version->source,
             'approval_status' => $version->approval_status,
             'methodology' => $version->methodology,
         ];
+        $data = [...$data, ...SurveyDefinitionScoringFormMapper::denormalize($scoring)];
 
         if (! SurveyDefinitionFormCompatibility::isHumanScoring($definition, $scoring)) {
             $data['legacy_scoring'] = $scoring;
@@ -345,70 +290,6 @@ final class SurveyDefinitionFormMapper
         }
 
         return is_string($value) && preg_match('/^[+-]?\d+$/', trim($value)) === 1;
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    private static function normalizeScoring(array $data): array
-    {
-        $metrics = [];
-        foreach (is_array($data['metrics'] ?? null) ? $data['metrics'] : [] as $metric) {
-            if (is_array($metric)) {
-                $metrics[] = [
-                    'key' => $metric['key'] ?? null,
-                    'label' => self::localized($metric['label'] ?? null, $metric['label_en'] ?? null),
-                ];
-            }
-        }
-
-        $rules = [];
-        foreach (is_array($data['rules'] ?? null) ? $data['rules'] : [] as $rule) {
-            if (! is_array($rule)) {
-                continue;
-            }
-            $points = [];
-            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $point) {
-                if (is_array($point)) {
-                    $points[(string) ($point['value'] ?? '')] = (float) ($point['points'] ?? 0);
-                }
-            }
-            $ruleData = [
-                'question_key' => $rule['question_key'] ?? null,
-                'metric_key' => $rule['metric_key'] ?? null,
-                'operator' => $rule['operator'] ?? null,
-            ];
-            if ($points !== []) {
-                $ruleData['points'] = $points;
-            }
-            if (array_key_exists('multiplier', $rule) && $rule['multiplier'] !== null && $rule['multiplier'] !== '') {
-                $ruleData['multiplier'] = (float) $rule['multiplier'];
-            }
-            $rules[] = $ruleData;
-        }
-
-        $thresholds = [];
-        foreach (is_array($data['thresholds'] ?? null) ? $data['thresholds'] : [] as $threshold) {
-            if (is_array($threshold)) {
-                $thresholds[] = array_filter([
-                    'metric_key' => $threshold['metric_key'] ?? null,
-                    'min' => array_key_exists('min', $threshold) && $threshold['min'] !== null && $threshold['min'] !== '' ? (float) $threshold['min'] : null,
-                    'max' => array_key_exists('max', $threshold) && $threshold['max'] !== null && $threshold['max'] !== '' ? (float) $threshold['max'] : null,
-                    'tag' => $threshold['tag'] ?? null,
-                    'label' => self::localized($threshold['label'] ?? null, $threshold['label_en'] ?? null),
-                ], static fn (mixed $value): bool => $value !== null);
-            }
-        }
-
-        $comparisonKeys = is_array($data['comparison_metric_keys'] ?? null) ? array_values($data['comparison_metric_keys']) : [];
-
-        return [
-            'metrics' => $metrics,
-            'rules' => $rules,
-            'thresholds' => $thresholds,
-            'comparison' => $comparisonKeys === [] ? null : ['operator' => 'no_decrease', 'metric_keys' => $comparisonKeys],
-        ];
     }
 
     /** @return string|array{ru: string, en: string} */

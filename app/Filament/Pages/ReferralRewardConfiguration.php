@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Models\User;
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -12,6 +13,7 @@ use App\Modules\Referrals\Domain\Enums\ReferralRewardFormula;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardQualificationRule;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -27,6 +29,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Carbon;
 use LogicException;
 use UnitEnum;
@@ -46,6 +49,12 @@ final class ReferralRewardConfiguration extends Page
 
     /** @var array<string, mixed>|null */
     public ?array $data = null;
+
+    public string $programSummary = '';
+
+    public string $programExample = '';
+
+    public string $programEffectiveAt = '';
 
     protected string $view = 'filament.pages.referral-reward-configuration';
 
@@ -82,6 +91,7 @@ final class ReferralRewardConfiguration extends Page
     public function mount(): void
     {
         $program = app(GetReferralRewardProgram::class)->handle();
+        $this->setProgramPresentation($program);
         $this->form->fill([
             'enabled' => $program['enabled'],
             'qualification_rule' => $program['qualificationRule'],
@@ -99,6 +109,23 @@ final class ReferralRewardConfiguration extends Page
     {
         return $schema
             ->components([
+                Section::make('Как сейчас работает')
+                    ->schema([
+                        Placeholder::make('program_summary')
+                            ->label('Текущие условия')
+                            ->content(fn (): string => $this->programSummary),
+                        Placeholder::make('program_example')
+                            ->label('Пример расчёта')
+                            ->content(fn (): string => $this->programExample),
+                        Placeholder::make('program_scope')
+                            ->label('Общие и индивидуальные условия')
+                            ->content('Общие условия действуют по умолчанию. Индивидуальные условия партнёра, если они заданы, заменяют общие для этого партнёра.'),
+                        Placeholder::make('program_effective_at')
+                            ->label('Дата начала действия')
+                            ->content(fn (): string => $this->programEffectiveAt),
+                    ])
+                    ->columns(2)
+                    ->columnSpanFull(),
                 Section::make('Реферальная программа')
                     ->description('Начисление выключено по умолчанию. Каждое сохранение создаёт новую версию, а история начислений не изменяется.')
                     ->schema([
@@ -205,6 +232,89 @@ final class ReferralRewardConfiguration extends Page
             percentage: is_string($data['percentage'] ?? null) ? $data['percentage'] : null,
             effectiveAt: $data['effective_at'] ?? null,
         );
+        $this->setProgramPresentation(app(GetReferralRewardProgram::class)->handle());
         Notification::make()->success()->title('Реферальная программа сохранена')->send();
+    }
+
+    /** @param array<string, mixed> $program */
+    private function setProgramPresentation(array $program): void
+    {
+        $this->programSummary = $this->summary($program);
+        $this->programExample = $this->example($program);
+        $this->programEffectiveAt = $this->effectiveAtLabel($program['effectiveAt'] ?? null);
+    }
+
+    /** @param array<string, mixed> $program */
+    private function summary(array $program): string
+    {
+        if (! (bool) ($program['enabled'] ?? false)) {
+            return 'Программа выключена: начисления не создаются.';
+        }
+
+        $qualification = ReferralRewardQualificationRule::tryFrom((string) ($program['qualificationRule'] ?? ''))?->label() ?? 'Правило начисления не указано';
+        $formula = ReferralRewardFormula::tryFrom((string) ($program['formula'] ?? ''));
+        $reward = $formula === ReferralRewardFormula::FixedAmount
+            ? 'фиксированная сумма '.self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null)
+            : 'процент '.((string) ($program['percentage'] ?? '—')).'% от оплаты';
+
+        return 'Программа включена. '.$qualification.'. Размер бонуса: '.$reward.'.';
+    }
+
+    /** @param array<string, mixed> $program */
+    private function example(array $program): string
+    {
+        if (! (bool) ($program['enabled'] ?? false)) {
+            return 'Включите программу и сохраните настройки, чтобы начисления стали возможны.';
+        }
+
+        $formula = ReferralRewardFormula::tryFrom((string) ($program['formula'] ?? ''));
+        if ($formula === ReferralRewardFormula::FixedAmount) {
+            return 'После подтверждённой оплаты партнёру будет начислено '.self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null).'.';
+        }
+
+        $currency = $this->organizationDisplayCurrency();
+        $percentage = (float) ($program['percentage'] ?? 0);
+        $reward = self::numberLabel(100000 * $percentage / 100);
+
+        return $currency === null
+            ? 'Пример недоступен: сначала настройте валюту организации.'
+            : 'Если клиент оплатил '.self::numberLabel(100000).' '.$currency.', партнёру будет начислено '.$reward.' '.$currency.'.';
+    }
+
+    private function effectiveAtLabel(mixed $value): string
+    {
+        if (! is_string($value) || $value === '') {
+            return 'Дата начала пока не задана.';
+        }
+
+        return 'Версия действует с '.Carbon::parse($value)
+            ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+            ->format('d.m.Y H:i').' ('.app(OrganizationContext::class)->defaultTimezone().').';
+    }
+
+    private function organizationDisplayCurrency(): ?string
+    {
+        try {
+            return app(CurrencyConfigurationService::class)
+                ->configuration(app(OrganizationContext::class)->id())
+                ->display_currency
+                ?->value;
+        } catch (ModelNotFoundException) {
+            return null;
+        }
+    }
+
+    private static function amountLabel(mixed $amount, mixed $currency): string
+    {
+        if (! is_string($amount) || $amount === '' || ! is_string($currency) || $currency === '') {
+            return 'сумма не указана';
+        }
+
+        return self::numberLabel((float) $amount).' '.$currency;
+    }
+
+    private static function numberLabel(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2, '.', ' '), '0'), '.');
     }
 }

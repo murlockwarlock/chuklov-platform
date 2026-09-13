@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Filament\Support\SurveyDefinitionFormOptions;
+use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use PHPUnit\Framework\TestCase;
 
@@ -144,6 +145,151 @@ final class SurveyDefinitionFormMapperTest extends TestCase
 
         self::assertSame($version->scoring, $state['legacy_scoring']);
         self::assertSame($version->scoring, SurveyDefinitionFormMapper::normalize($state)['scoring']);
+    }
+
+    public function test_current_nine_systems_scoring_is_human_editable_and_round_trips(): void
+    {
+        $this->assertPlatformScoringRoundTrip(PlatformSurveyCatalog::HEALTH_KEY);
+    }
+
+    public function test_current_extended_symptoms_scoring_is_human_editable_and_round_trips(): void
+    {
+        $this->assertPlatformScoringRoundTrip(PlatformSurveyCatalog::EXTENDED_SYMPTOMS_KEY);
+    }
+
+    public function test_current_scoring_edits_round_trip_points_thresholds_and_result_content(): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === PlatformSurveyCatalog::HEALTH_KEY,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['rules'][0]['points'][0]['points'] = 9;
+        $state['thresholds'][0]['label'] = 'Новая низкая нагрузка';
+        $state['thresholds'][0]['label_en'] = 'New low burden';
+        $state['summary'] = 'Обновлённое объяснение результата.';
+        $state['result_metric_key'] = $state['metrics'][0]['key'];
+        $state['result_road_map'] = 'Новый следующий шаг.';
+        $state['result_road_map_en'] = 'A new next step.';
+        $state['safe_steps_text'] = "Первый шаг.\nВторой шаг.";
+        $state['safe_steps_text_en'] = "First step.\nSecond step.";
+
+        $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
+
+        self::assertSame(9, $scoring['rules'][0]['points']['never']);
+        self::assertSame(25, $scoring['metrics'][0]['max_value']);
+        self::assertArrayNotHasKey('never', $scoring['answer_scale']);
+        self::assertSame([
+            'ru' => 'Новая низкая нагрузка',
+            'en' => 'New low burden',
+        ], $scoring['thresholds'][0]['label']);
+        self::assertSame([
+            'ru' => 'Обновлённое объяснение результата.',
+            'en' => 'The result shows which areas of wellbeing may be worth observing more closely. It is not a medical conclusion.',
+        ], $scoring['summary']);
+        self::assertSame([
+            'ru' => 'Новый следующий шаг.',
+            'en' => 'A new next step.',
+        ], $scoring['metrics'][0]['road_map']);
+        self::assertSame([
+            ['ru' => 'Первый шаг.', 'en' => 'First step.'],
+            ['ru' => 'Второй шаг.', 'en' => 'Second step.'],
+        ], $scoring['safe_steps']);
+        self::assertSame($catalogDefinition['scoring']['metrics'][1], $scoring['metrics'][1]);
+        self::assertSame($catalogDefinition['scoring']['specialist_questions'], $scoring['specialist_questions']);
+    }
+
+    public function test_question_membership_and_bounded_max_value_are_derived_from_rules(): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === PlatformSurveyCatalog::HEALTH_KEY,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['rules'][0]['metric_key'] = $state['metrics'][1]['key'];
+        foreach ($state['rules'][0]['points'] as &$point) {
+            if (($point['value'] ?? null) === 'almost_always') {
+                $point['points'] = 9;
+            }
+        }
+        unset($point);
+
+        $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
+
+        self::assertNotContains($state['rules'][0]['question_key'], $scoring['metrics'][0]['question_keys']);
+        self::assertContains($state['rules'][0]['question_key'], $scoring['metrics'][1]['question_keys']);
+        self::assertSame(29, $scoring['metrics'][1]['max_value']);
+    }
+
+    public function test_answer_scale_form_state_cannot_override_rule_points(): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === PlatformSurveyCatalog::HEALTH_KEY,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['answer_scale'][0]['points'] = 99;
+
+        self::assertSame(
+            $catalogDefinition['scoring'],
+            SurveyDefinitionFormMapper::normalize($state)['scoring'],
+        );
+    }
+
+    public function test_result_lists_keep_localized_items_aligned_when_a_translation_is_missing(): void
+    {
+        $version = new SurveyVersion;
+        $version->definition = $this->definition();
+        $version->scoring = [
+            'metrics' => [['key' => 'metric', 'label' => 'Показатель']],
+            'rules' => [['question_key' => 'q-source', 'metric_key' => 'metric', 'operator' => 'value_map', 'points' => ['option-good' => 1, 'option-poor' => 3]]],
+            'thresholds' => [],
+            'safe_steps' => [
+                ['ru' => 'Только русский'],
+                ['en' => 'Only English'],
+            ],
+        ];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
+
+        self::assertSame('Только русский', $scoring['safe_steps'][0]);
+        self::assertSame(['en' => 'Only English'], $scoring['safe_steps'][1]);
+    }
+
+    private function assertPlatformScoringRoundTrip(string $definitionKey): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === $definitionKey,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+
+        self::assertArrayNotHasKey('legacy_scoring', $state);
+        self::assertNotEmpty($state['answer_scale']);
+        self::assertSame($catalogDefinition['scoring']['metrics'][0]['max_value'], $state['metrics'][0]['max_value']);
+        self::assertArrayNotHasKey('question_keys', $state['metrics'][0]);
+        self::assertArrayHasKey('road_map', $state['metrics'][0]);
+        self::assertNotEmpty($state['summary']);
+        self::assertNotEmpty($state['safe_steps']);
+        self::assertNotEmpty($state['specialist_questions']);
+        self::assertEquals($catalogDefinition['definition'], SurveyDefinitionFormMapper::normalize($state)['definition']);
+        self::assertSame($catalogDefinition['scoring'], SurveyDefinitionFormMapper::normalize($state)['scoring']);
     }
 
     /** @return array<string, mixed> */

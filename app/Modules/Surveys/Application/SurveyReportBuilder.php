@@ -6,9 +6,12 @@ use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyComparison;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
+use App\Modules\Surveys\Domain\Services\SurveyScorer;
 
 final class SurveyReportBuilder
 {
+    public function __construct(private SurveyScorer $scorer) {}
+
     /**
      * @param  array<string, mixed>  $result
      * @return array<string, mixed>
@@ -43,7 +46,7 @@ final class SurveyReportBuilder
                 'score' => $normalized,
                 'max_value' => $maxValue,
                 'status' => $threshold['label'] ?? ['ru' => 'Стоит обратить внимание', 'en' => 'Worth observing'],
-                'evidence' => $this->evidence($metric, $questions, $attempt->answers_snapshot ?? [], $scoring),
+                'evidence' => $this->evidence($key, $questions, $attempt->answers_snapshot ?? [], $scoring),
                 'observation' => $metric['observation'] ?? ['ru' => 'Наблюдайте изменения самочувствия в динамике.', 'en' => 'Observe changes in your wellbeing over time.'],
                 'reason' => $this->reason($metric['attention_reason'] ?? null, (float) $rawValue),
                 'road_map' => $metric['road_map'] ?? ['ru' => 'Наблюдать эту зону без резких изменений нагрузки.', 'en' => 'Observe this area without making sudden changes to activity.'],
@@ -186,18 +189,21 @@ final class SurveyReportBuilder
     }
 
     /**
-     * @param  array<string, mixed>  $metric
      * @param  array<string, array<string, mixed>>  $questions
      * @param  array<string, mixed>  $answers
      * @param  array<string, mixed>  $scoring
      * @return list<array<string, mixed>>
      */
-    private function evidence(array $metric, array $questions, array $answers, array $scoring): array
+    private function evidence(string $metricKey, array $questions, array $answers, array $scoring): array
     {
         $evidence = [];
-        foreach ($metric['question_keys'] ?? [] as $questionKey) {
+        foreach ($this->scorer->questionKeysForMetric($scoring, $metricKey) as $questionKey) {
             $answer = $answers[$questionKey] ?? null;
-            if ($answer === null || $answer === 'never' || $answer === '') {
+            if ($answer === null || $answer === '') {
+                continue;
+            }
+            $score = $this->scorer->scoreQuestion($scoring, $questionKey, $answer, $metricKey);
+            if ($score === 0.0) {
                 continue;
             }
             $question = $questions[$questionKey] ?? null;
@@ -207,7 +213,7 @@ final class SurveyReportBuilder
             $evidence[] = [
                 'question' => $question['label'] ?? $questionKey,
                 'answer' => $this->optionLabel($question, $answer),
-                'score' => $this->answerScore($questionKey, $answer, $scoring),
+                'score' => $this->displayScore($score),
             ];
             if (count($evidence) === 3) {
                 break;
@@ -236,28 +242,13 @@ final class SurveyReportBuilder
         return $answer;
     }
 
-    /** @param array<string, mixed> $scoring */
-    private function answerScore(string $questionKey, mixed $answer, array $scoring): int
+    private function displayScore(float $score): int|float
     {
-        if (is_string($answer) && is_numeric($scoring['answer_scale'][$answer] ?? null)) {
-            return (int) $scoring['answer_scale'][$answer];
-        }
-        foreach ($scoring['rules'] ?? [] as $rule) {
-            if (is_array($rule) && ($rule['question_key'] ?? null) === $questionKey && is_array($rule['points'] ?? null)) {
-                if (is_array($answer)) {
-                    return (int) array_sum(array_map(
-                        static fn (mixed $selected): int => is_scalar($selected)
-                            ? (int) ($rule['points'][(string) $selected] ?? 0)
-                            : 0,
-                        $answer,
-                    ));
-                }
-
-                return (int) ($rule['points'][(string) $answer] ?? 0);
-            }
+        if (fmod($score, 1.0) === 0.0) {
+            return (int) $score;
         }
 
-        return 0;
+        return $score;
     }
 
     /**

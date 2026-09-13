@@ -147,6 +147,9 @@ final class PlatformHealthExperienceTest extends TestCase
             ->firstOrFail();
         $current = $definition->activeVersion()->firstOrFail();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $customScoring = $current->scoring;
+        $customScoring['summary']['ru'] = 'Мой текст результата.';
+        $customScoring['metrics'][0]['road_map']['ru'] = 'Мой следующий шаг.';
         $custom = SurveyVersion::query()->create([
             'organization_id' => $organization->getKey(),
             'survey_definition_id' => $definition->getKey(),
@@ -157,7 +160,7 @@ final class PlatformHealthExperienceTest extends TestCase
             'description' => 'Моё описание.',
             'description_en' => 'My description.',
             'definition' => $current->definition,
-            'scoring' => $current->scoring,
+            'scoring' => $customScoring,
             'metric_schema_key' => $current->metric_schema_key,
             'source_reference' => null,
             'source' => 'platform_default',
@@ -175,6 +178,8 @@ final class PlatformHealthExperienceTest extends TestCase
         self::assertSame(2, $definition->versions()->count());
         self::assertSame('Мой тест', $custom->fresh()->title);
         self::assertSame('Моё описание.', $custom->fresh()->description);
+        self::assertSame('Мой текст результата.', $custom->fresh()->scoring['summary']['ru']);
+        self::assertSame('Мой следующий шаг.', $custom->fresh()->scoring['metrics'][0]['road_map']['ru']);
     }
 
     public function test_platform_installer_does_not_activate_a_default_over_an_existing_custom_draft(): void

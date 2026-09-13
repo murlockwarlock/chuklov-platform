@@ -14,7 +14,7 @@ final class SurveyDefinitionValidator
      * @param  array<string, mixed>  $definition
      * @param  array<string, mixed>  $scoring
      */
-    public function validate(array $definition, array $scoring): void
+    public function validate(array $definition, array $scoring, bool $allowUnsupportedScoring = false): void
     {
         $sections = $definition['sections'] ?? null;
         if (! is_array($sections) || $sections === []) {
@@ -61,7 +61,9 @@ final class SurveyDefinitionValidator
             }
         }
 
-        $this->validateScoring($scoring, $knownQuestions);
+        if (! $allowUnsupportedScoring) {
+            $this->validateScoring($scoring, $knownQuestions);
+        }
     }
 
     /** @param array<string, mixed> $question */
@@ -164,11 +166,16 @@ final class SurveyDefinitionValidator
      */
     private function validateScoring(array $scoring, array $knownQuestions): void
     {
+        if (array_key_exists('answer_scale', $scoring)) {
+            $this->validateAnswerScale($scoring['answer_scale'], $knownQuestions);
+        }
         if (! is_array($scoring['metrics'] ?? null) || $scoring['metrics'] === []) {
             $this->fail('scoring.metrics', 'Настройте показатели результата.');
         }
 
         $metrics = [];
+        $metricQuestionKeys = [];
+        $metricMaxValues = [];
         foreach ($scoring['metrics'] as $metric) {
             if (! is_array($metric) || ! $this->filledString($metric['key'] ?? null) || ! $this->localizedText($metric['label'] ?? null)) {
                 $this->fail('scoring.metrics', 'Показатель заполнен некорректно.');
@@ -176,13 +183,37 @@ final class SurveyDefinitionValidator
             if (isset($metrics[$metric['key']])) {
                 $this->fail('scoring.metrics', 'Показатели должны быть уникальными.');
             }
+            if (array_key_exists('max_value', $metric) && $metric['max_value'] !== null && (! is_numeric($metric['max_value']) || ! is_finite((float) $metric['max_value']))) {
+                $this->fail('scoring.metrics', 'Максимальный результат показателя должен быть числом.');
+            }
+            if (array_key_exists('normalization', $metric) && $metric['normalization'] !== null && ! $this->filledString($metric['normalization'])) {
+                $this->fail('scoring.metrics', 'Способ нормализации показателя заполнен некорректно.');
+            }
+            if (array_key_exists('question_keys', $metric)) {
+                if (! is_array($metric['question_keys']) || ! array_is_list($metric['question_keys']) || $metric['question_keys'] === []) {
+                    $this->fail('scoring.metrics', 'Добавьте хотя бы один вопрос в показатель.');
+                }
+                foreach ($metric['question_keys'] as $questionKey) {
+                    if (! is_string($questionKey) || ! isset($knownQuestions[$questionKey])) {
+                        $this->fail('scoring.metrics', 'Показатель содержит недоступную ссылку на вопрос.');
+                    }
+                }
+                $metricQuestionKeys[$metric['key']] = array_values($metric['question_keys']);
+            }
+            foreach (['attention_reason', 'observation', 'road_map'] as $textKey) {
+                if (array_key_exists($textKey, $metric) && $metric[$textKey] !== null && ! $this->localizedText($metric[$textKey])) {
+                    $this->fail('scoring.metrics', 'Текст показателя заполнен некорректно.');
+                }
+            }
             $metrics[$metric['key']] = true;
+            $metricMaxValues[$metric['key']] = $metric['max_value'] ?? null;
         }
 
         $rules = $scoring['rules'] ?? [];
         if (! is_array($rules)) {
             $this->fail('scoring.rules', 'Правила подсчёта заполнены некорректно.');
         }
+        $rulesByMetric = [];
         foreach ($rules as $rule) {
             if (! is_array($rule)
                 || ! is_string($rule['question_key'] ?? null)
@@ -200,17 +231,27 @@ final class SurveyDefinitionValidator
                 }
                 $expectedType = $rule['operator'] === 'value_map' ? 'single_choice' : 'multiple_choice';
                 $question = $knownQuestions[$rule['question_key']];
-                if ($question['type'] === $expectedType) {
-                    $allowedValues = $this->optionValues($question['options']);
-                    foreach (array_keys($rule['points']) as $value) {
-                        if (! in_array((string) $value, $allowedValues, true)) {
-                            $this->fail('scoring.rules', 'Правило подсчёта содержит недоступный вариант ответа.');
-                        }
+                if ($question['type'] !== $expectedType) {
+                    $this->fail('scoring.rules', 'Правило подсчёта недоступно для выбранного типа вопроса.');
+                }
+                $allowedValues = $this->optionValues($question['options']);
+                foreach (array_keys($rule['points']) as $value) {
+                    if (! in_array((string) $value, $allowedValues, true)) {
+                        $this->fail('scoring.rules', 'Правило подсчёта содержит недоступный вариант ответа.');
                     }
                 }
             }
             if ($rule['operator'] === 'numeric_value' && isset($rule['multiplier']) && ! is_numeric($rule['multiplier'])) {
                 $this->fail('scoring.rules', 'Множитель должен быть числом.');
+            }
+            $rulesByMetric[$rule['metric_key']] = true;
+        }
+        $this->validateQuestionMembership($metricQuestionKeys, $rules, $metrics);
+        $this->validateAnswerScaleConsistency($scoring['answer_scale'] ?? null, $rules);
+        $this->validateBoundedMaxValues($metricMaxValues, $rules);
+        foreach (array_keys($metrics) as $metricKey) {
+            if (! isset($rulesByMetric[$metricKey])) {
+                $this->fail('scoring.metrics', 'Показатель должен содержать хотя бы одно правило.');
             }
         }
 
@@ -219,6 +260,7 @@ final class SurveyDefinitionValidator
             $this->fail('scoring.thresholds', 'Пороговые результаты заполнены некорректно.');
         }
         $tags = [];
+        $thresholdsByMetric = [];
         foreach ($thresholds as $threshold) {
             if (! is_array($threshold)
                 || ! is_string($threshold['metric_key'] ?? null)
@@ -240,6 +282,19 @@ final class SurveyDefinitionValidator
             if (isset($threshold['min'], $threshold['max']) && (float) $threshold['min'] > (float) $threshold['max']) {
                 $this->fail('scoring.thresholds', 'Минимум порога не может быть больше максимума.');
             }
+            $thresholdsByMetric[$threshold['metric_key']][] = $threshold;
+        }
+        $this->validateThresholdRanges($thresholdsByMetric);
+
+        foreach (['summary'] as $key) {
+            if (array_key_exists($key, $scoring) && ! $this->localizedText($scoring[$key])) {
+                $this->fail('scoring.'.$key, 'Текст результата заполнен некорректно.');
+            }
+        }
+        foreach (['safe_steps', 'specialist_questions'] as $key) {
+            if (array_key_exists($key, $scoring) && ! $this->localizedTextList($scoring[$key])) {
+                $this->fail('scoring.'.$key, 'Список результата заполнен некорректно.');
+            }
         }
 
         $comparison = $scoring['comparison'] ?? null;
@@ -253,7 +308,187 @@ final class SurveyDefinitionValidator
                 || array_diff($comparison['metric_keys'], array_keys($metrics)) !== []) {
                 $this->fail('scoring.comparison', 'Показатели для сравнения выбраны некорректно.');
             }
+            if (array_key_exists('basis', $comparison) && $comparison['basis'] !== 'normalized_score') {
+                $this->fail('scoring.comparison', 'Основа сравнения результатов не поддерживается.');
+            }
         }
+    }
+
+    /** @param array<string, array{type: string, options: mixed}> $knownQuestions */
+    private function validateAnswerScale(mixed $answerScale, array $knownQuestions): void
+    {
+        if (! is_array($answerScale) || $answerScale === []) {
+            $this->fail('scoring.answer_scale', 'Шкала ответов заполнена некорректно.');
+        }
+        $allowedValues = [];
+        foreach ($knownQuestions as $question) {
+            foreach ($this->optionValues($question['options']) as $value) {
+                $allowedValues[$value] = true;
+            }
+        }
+        foreach ($answerScale as $value => $points) {
+            if ((string) $value === '' || ! is_numeric($points) || ! is_finite((float) $points)) {
+                $this->fail('scoring.answer_scale', 'Шкала ответов заполнена некорректно.');
+            }
+            if (! isset($allowedValues[(string) $value])) {
+                $this->fail('scoring.answer_scale', 'Шкала содержит недоступный вариант ответа.');
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, list<string>>  $metricQuestionKeys
+     * @param  array<int, mixed>  $rules
+     * @param  array<string, bool>  $metrics
+     */
+    private function validateQuestionMembership(array $metricQuestionKeys, array $rules, array $metrics): void
+    {
+        $expected = [];
+        foreach (array_keys($metrics) as $metricKey) {
+            $expected[$metricKey] = [];
+        }
+        foreach ($rules as $rule) {
+            if (! is_array($rule)
+                || ! is_string($rule['metric_key'] ?? null)
+                || ! is_string($rule['question_key'] ?? null)) {
+                continue;
+            }
+            if (! in_array($rule['question_key'], $expected[$rule['metric_key']] ?? [], true)) {
+                $expected[$rule['metric_key']][] = $rule['question_key'];
+            }
+        }
+        foreach ($metricQuestionKeys as $metricKey => $questionKeys) {
+            if ($questionKeys !== ($expected[$metricKey] ?? [])) {
+                $this->fail('scoring.metrics', 'Вопросы показателя не совпадают с его правилами подсчёта.');
+            }
+        }
+    }
+
+    /** @param array<int, mixed> $rules */
+    private function validateAnswerScaleConsistency(mixed $answerScale, array $rules): void
+    {
+        if (! is_array($answerScale)) {
+            return;
+        }
+
+        $rulePoints = [];
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
+                continue;
+            }
+            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $value => $points) {
+                if (! is_numeric($points)) {
+                    continue;
+                }
+                $rulePoints[(string) $value][] = (float) $points;
+            }
+        }
+        foreach ($answerScale as $value => $points) {
+            if (! is_numeric($points)) {
+                continue;
+            }
+            foreach ($rulePoints[(string) $value] ?? [] as $rulePoint) {
+                if ((float) $points !== $rulePoint) {
+                    $this->fail('scoring.answer_scale', 'Общая шкала должна совпадать с баллами правил подсчёта.');
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $metricMaxValues
+     * @param  array<int, mixed>  $rules
+     */
+    private function validateBoundedMaxValues(array $metricMaxValues, array $rules): void
+    {
+        $maxValues = [];
+        $bounded = [];
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! is_string($rule['metric_key'] ?? null)) {
+                continue;
+            }
+            $metricKey = $rule['metric_key'];
+            $bounded[$metricKey] ??= true;
+            if (! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
+                $bounded[$metricKey] = false;
+
+                continue;
+            }
+            $points = is_array($rule['points'] ?? null) ? $rule['points'] : [];
+            if ($points === []) {
+                $bounded[$metricKey] = false;
+
+                continue;
+            }
+            $values = [];
+            foreach ($points as $point) {
+                if (! is_numeric($point) || ! is_finite((float) $point)) {
+                    $bounded[$metricKey] = false;
+
+                    continue 2;
+                }
+                $values[] = (float) $point;
+            }
+            $ruleMaximum = ($rule['operator'] ?? null) === 'selected_sum'
+                ? array_sum(array_map(static fn (float $point): float => max(0.0, $point), $values))
+                : max($values);
+            $maxValues[$metricKey] = ($maxValues[$metricKey] ?? 0.0) + $ruleMaximum;
+        }
+
+        foreach ($bounded as $metricKey => $isBounded) {
+            if (! $isBounded || ! array_key_exists($metricKey, $maxValues) || ! is_numeric($metricMaxValues[$metricKey] ?? null)) {
+                continue;
+            }
+            if ((float) $metricMaxValues[$metricKey] !== $maxValues[$metricKey]) {
+                $this->fail('scoring.metrics', 'Максимальный результат показателя не совпадает с его правилами подсчёта.');
+            }
+        }
+    }
+
+    /** @param array<string, list<array<string, mixed>>> $thresholdsByMetric */
+    private function validateThresholdRanges(array $thresholdsByMetric): void
+    {
+        foreach ($thresholdsByMetric as $thresholds) {
+            usort($thresholds, static function (array $left, array $right): int {
+                $leftMin = array_key_exists('min', $left) ? (float) $left['min'] : -INF;
+                $rightMin = array_key_exists('min', $right) ? (float) $right['min'] : -INF;
+
+                return $leftMin <=> $rightMin;
+            });
+            $previous = null;
+            foreach ($thresholds as $threshold) {
+                if ($previous !== null) {
+                    $previousMax = array_key_exists('max', $previous) ? (float) $previous['max'] : INF;
+                    $currentMin = array_key_exists('min', $threshold) ? (float) $threshold['min'] : -INF;
+                    if ($currentMin <= $previousMax) {
+                        $this->fail('scoring.thresholds', 'Диапазоны результата пересекаются.');
+                    }
+                    if ($this->integerRange($previous) && $this->integerRange($threshold) && $currentMin > $previousMax + 1) {
+                        $this->fail('scoring.thresholds', 'Между диапазонами результата есть пропуск.');
+                    }
+                }
+                $previous = $threshold;
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $threshold */
+    private function integerRange(array $threshold): bool
+    {
+        foreach (['min', 'max'] as $bound) {
+            if (array_key_exists($bound, $threshold) && fmod((float) $threshold[$bound], 1.0) !== 0.0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function localizedTextList(mixed $value): bool
+    {
+        return is_array($value)
+            && array_is_list($value)
+            && count(array_filter($value, fn (mixed $item): bool => $this->localizedText($item))) === count($value);
     }
 
     /** @return list<string> */

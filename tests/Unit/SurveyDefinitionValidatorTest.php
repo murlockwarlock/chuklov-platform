@@ -160,6 +160,149 @@ final class SurveyDefinitionValidatorTest extends TestCase
         (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
     }
 
+    public function test_answer_scale_reference_to_deleted_option_is_rejected(): void
+    {
+        $data = $this->data();
+        $data['scoring']['answer_scale'] = ['missing-option' => 1];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('An answer scale reference to a missing option was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Шкала содержит недоступный вариант ответа.', $exception->errors()['scoring.answer_scale'][0]);
+        }
+    }
+
+    public function test_answer_scale_cannot_disagree_with_rule_points(): void
+    {
+        $data = $this->data();
+        $data['scoring']['answer_scale'] = ['option-good' => 0];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('An answer scale mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Общая шкала должна совпадать с баллами правил подсчёта.', $exception->errors()['scoring.answer_scale'][0]);
+        }
+    }
+
+    public function test_metric_membership_cannot_disagree_with_rule_questions(): void
+    {
+        $data = $this->data();
+        $data['scoring']['metrics'][0]['question_keys'] = ['q-dependent'];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A metric membership mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Вопросы показателя не совпадают с его правилами подсчёта.', $exception->errors()['scoring.metrics'][0]);
+        }
+    }
+
+    public function test_bounded_metric_maximum_cannot_disagree_with_rule_points(): void
+    {
+        $data = $this->data();
+        $data['scoring']['metrics'][0]['max_value'] = 99;
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A metric maximum mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Максимальный результат показателя не совпадает с его правилами подсчёта.', $exception->errors()['scoring.metrics'][0]);
+        }
+    }
+
+    public function test_unsupported_scoring_type_can_be_preserved_only_in_legacy_mode(): void
+    {
+        $data = $this->data();
+        $data['definition']['sections'][0]['questions'][0]['type'] = 'boolean';
+        $data['definition']['sections'][0]['questions'][0]['options'] = [];
+        $data['definition']['sections'][0]['questions'][1]['condition'] = null;
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('An unsupported scoring type was accepted as human configuration.');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+
+        (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring'], true);
+        self::assertTrue(true);
+    }
+
+    public function test_unknown_scoring_shape_can_be_preserved_in_legacy_mode_without_reinterpretation(): void
+    {
+        $data = $this->data();
+        $data['scoring'] = [
+            'schema' => 'historical-v2',
+            'calculation' => ['expression' => 'vendor-specific-expression'],
+            'result_bands' => [['from' => 0, 'to' => 10, 'text' => 'Исторический результат']],
+        ];
+
+        (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring'], true);
+        self::assertTrue(true);
+    }
+
+    public function test_metric_without_a_rule_is_rejected_with_a_human_error(): void
+    {
+        $data = $this->data();
+        $data['scoring']['rules'] = [];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A metric without a rule was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Показатель должен содержать хотя бы одно правило.', $exception->errors()['scoring.metrics'][0]);
+        }
+    }
+
+    public function test_missing_rich_scoring_question_reference_is_rejected_without_technical_details(): void
+    {
+        $data = $this->data();
+        $data['scoring']['rules'][0]['question_key'] = 'missing-question';
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A missing scoring question reference was accepted.');
+        } catch (ValidationException $exception) {
+            $message = $exception->errors()['scoring.rules'][0];
+            self::assertSame('Правило подсчёта содержит недоступную ссылку.', $message);
+            self::assertStringNotContainsString('missing-question', $message);
+        }
+    }
+
+    public function test_overlapping_result_ranges_are_rejected(): void
+    {
+        $data = $this->data();
+        $data['scoring']['thresholds'] = [
+            ['metric_key' => 'metric', 'min' => 0, 'max' => 5, 'tag' => 'low', 'label' => 'Низкий'],
+            ['metric_key' => 'metric', 'min' => 5, 'max' => 10, 'tag' => 'high', 'label' => 'Высокий'],
+        ];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('Overlapping result ranges were accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Диапазоны результата пересекаются.', $exception->errors()['scoring.thresholds'][0]);
+        }
+    }
+
+    public function test_integer_result_range_gap_is_rejected(): void
+    {
+        $data = $this->data();
+        $data['scoring']['thresholds'] = [
+            ['metric_key' => 'metric', 'min' => 0, 'max' => 5, 'tag' => 'low', 'label' => 'Низкий'],
+            ['metric_key' => 'metric', 'min' => 7, 'max' => 10, 'tag' => 'high', 'label' => 'Высокий'],
+        ];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A result range gap was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Между диапазонами результата есть пропуск.', $exception->errors()['scoring.thresholds'][0]);
+        }
+    }
+
     /** @return array<string, mixed> */
     private function data(): array
     {

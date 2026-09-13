@@ -22,18 +22,36 @@ final readonly class UpdateSurveyDefinitionDraft
     ) {}
 
     /** @param array<string, mixed> $data */
-    public function handle(User $actor, SurveyDefinition $definition, array $data): SurveyDefinition
-    {
+    public function handle(
+        User $actor,
+        SurveyDefinition $definition,
+        array $data,
+        bool $preserveUnsupportedScoring = false,
+    ): SurveyDefinition {
         $organization = $this->authorization->manage($actor);
         $expectedSnapshot = $data['expected_snapshot'] ?? null;
         unset($data['expected_snapshot']);
         $this->authorization->assertDefinition($definition);
-        $this->validator->validate($data['definition'], $data['scoring']);
+        $this->validator->validate($data['definition'], $data['scoring'], $preserveUnsupportedScoring);
 
-        return DB::transaction(function () use ($actor, $organization, $definition, $data, $expectedSnapshot): SurveyDefinition {
+        return DB::transaction(function () use ($actor, $organization, $definition, $data, $expectedSnapshot, $preserveUnsupportedScoring): SurveyDefinition {
             $locked = SurveyDefinition::query()->where('organization_id', $organization->getKey())->whereKey($definition->getKey())->lockForUpdate()->firstOrFail();
             $draft = SurveyVersion::query()->where('organization_id', $organization->getKey())->where('survey_definition_id', $locked->getKey())->where('status', SurveyVersionStatus::Draft)->latest('version')->lockForUpdate()->first();
             $previousVersion = $draft ?? $locked->versions()->latest('version')->first();
+
+            if ($preserveUnsupportedScoring
+                && (! $previousVersion instanceof SurveyVersion || $data['scoring'] !== $previousVersion->scoring)) {
+                throw ValidationException::withMessages([
+                    'scoring' => ['Расширенные правила изменились. Обновите страницу перед сохранением.'],
+                ]);
+            }
+            if ($preserveUnsupportedScoring
+                && $previousVersion instanceof SurveyVersion
+                && ! $this->sameValue($data['definition'], $previousVersion->definition)) {
+                throw ValidationException::withMessages([
+                    'definition' => ['Этот тест использует расширенные правила подсчёта. Вопросы нельзя изменять, пока эти правила не поддерживаются редактором.'],
+                ]);
+            }
 
             if ($expectedSnapshot !== null
                 && (! is_string($expectedSnapshot) || ! $previousVersion instanceof SurveyVersion
@@ -101,5 +119,28 @@ final readonly class UpdateSurveyDefinitionDraft
 
             return $locked->refresh();
         });
+    }
+
+    private function sameValue(mixed $left, mixed $right): bool
+    {
+        return $this->canonicalize($left) === $this->canonicalize($right);
+    }
+
+    private function canonicalize(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalize($item), $value);
+        }
+
+        $normalized = [];
+        foreach ($value as $key => $item) {
+            $normalized[$key] = $this->canonicalize($item);
+        }
+        ksort($normalized);
+
+        return $normalized;
     }
 }
