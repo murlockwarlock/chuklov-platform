@@ -70,6 +70,8 @@ final class BookingLifecycleActions
                 ->label('Подтвердить выезд')
                 ->color('success')
                 ->icon('heroicon-o-truck')
+                ->requiresConfirmation()
+                ->modalDescription('Выезд будет подтверждён, а выбранное условие оплаты сохранится в записи.')
                 ->schema([
                     Textarea::make('reason')
                         ->label('Комментарий')
@@ -107,6 +109,8 @@ final class BookingLifecycleActions
                 ->label('Отклонить заявку')
                 ->color('danger')
                 ->icon('heroicon-o-x-mark')
+                ->requiresConfirmation()
+                ->modalDescription('Заявка будет отклонена и перестанет участвовать в работе.')
                 ->schema([
                     Textarea::make('reason')
                         ->label('Причина отказа')
@@ -213,6 +217,8 @@ final class BookingLifecycleActions
                 ->label('Завершить визит')
                 ->color('success')
                 ->icon('heroicon-o-check-circle')
+                ->requiresConfirmation()
+                ->modalDescription('Визит будет переведён в завершённое состояние. Проверьте клиента и время.')
                 ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling && $record->status === BookingStatus::Confirmed)
                 ->action(function (Booking $record, array $data): void {
@@ -232,6 +238,8 @@ final class BookingLifecycleActions
                 ->label('Отметить неявку')
                 ->color('danger')
                 ->icon('heroicon-o-user-minus')
+                ->requiresConfirmation()
+                ->modalDescription('Запись будет отмечена как не состоявшаяся. Проверьте клиента и время.')
                 ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && in_array($record->status, [BookingStatus::Requested, BookingStatus::Confirmed], true))
@@ -276,6 +284,8 @@ final class BookingLifecycleActions
                 ->label('Отменить')
                 ->color('danger')
                 ->icon('heroicon-o-x-circle')
+                ->requiresConfirmation()
+                ->modalDescription('Запись будет отменена и перестанет участвовать в расписании. Проверьте выбранную запись.')
                 ->schema([Textarea::make('reason')->label('Причина')->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && ! in_array($record->status->value, BookingStatus::terminalValues(), true))

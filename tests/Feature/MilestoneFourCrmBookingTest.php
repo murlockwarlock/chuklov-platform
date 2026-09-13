@@ -279,6 +279,29 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertActionExists('noShow');
     }
 
+    public function test_high_impact_booking_lifecycle_actions_require_confirmation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::HomeVisit,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()]);
+
+        foreach (['approveHomeVisit', 'rejectHomeVisit', 'complete', 'noShow', 'cancel'] as $actionName) {
+            self::assertTrue($component->instance()->getAction($actionName)->isConfirmationRequired(), $actionName);
+        }
+    }
+
     public function test_view_booking_noshow_action_handles_premature_execution_with_notification(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
