@@ -161,6 +161,49 @@ final class NotificationTemplateUxTest extends TestCase
         ], $latestVersion->variables);
     }
 
+    public function test_stale_template_edit_does_not_create_a_new_version(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'locale' => 'ru',
+        ]);
+        NotificationTemplateVersion::factory()->forTemplate($template)->createdBy($admin)->create();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $tabA = Livewire::actingAs($admin)->test(EditNotificationTemplate::class, ['record' => $template->getKey()]);
+        $tabB = Livewire::actingAs($admin)->test(EditNotificationTemplate::class, ['record' => $template->getKey()]);
+        self::assertNotEmpty($tabA->get('data.expected_snapshot'));
+        self::assertNotEmpty($tabB->get('data.expected_snapshot'));
+
+        $tabA
+            ->fillForm([
+                'name' => 'Изменение A',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'body' => 'Текст A {{ client.full_name }}',
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertSame(2, $template->versions()->count());
+
+        $tabB->fillForm([
+            'name' => 'Изменение B',
+            'purpose' => ScenarioRulePurpose::Service->value,
+            'is_active' => true,
+            'body' => 'Текст B {{ client.full_name }}',
+        ]);
+        self::assertNotEmpty($tabB->get('data.expected_snapshot'));
+
+        $tabB
+            ->call('save')
+            ->assertHasErrors(['body']);
+
+        $versions = $template->versions()->latest('version')->get();
+        self::assertCount(2, $versions);
+        self::assertSame('<p>Текст A {{ client.full_name }}</p>', $versions->first()->body);
+    }
+
     public function test_detail_pages_expose_header_edit_actions(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

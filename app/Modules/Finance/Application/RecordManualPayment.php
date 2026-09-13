@@ -154,6 +154,11 @@ final class RecordManualPayment
 
                 $current = $this->reconciliation->handle((int) $organization->getKey(), (int) $lockedObligation->getKey(), true);
                 $settlementSnapshot = $this->configuration->convert($organization, $money, $lockedObligation->settlement_currency);
+                $settlementMoney = Money::ofMinor($settlementSnapshot->targetAmountMinor, $settlementSnapshot->targetCurrency);
+
+                if ($settlementMoney->isZero()) {
+                    throw ValidationException::withMessages(['amount' => 'Сумма оплаты слишком мала для валюты обязательства.']);
+                }
 
                 if ((int) $settlementSnapshot->targetAmountMinor > $current->outstanding->minorUnits()) {
                     throw ValidationException::withMessages(['amount' => 'Сумма оплаты не может превышать текущую задолженность.']);

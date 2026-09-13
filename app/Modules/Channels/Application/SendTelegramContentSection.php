@@ -6,9 +6,12 @@ use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Identity\Application\VerifiedChannelIdentity;
+use Illuminate\Support\Facades\Cache;
 
 final class SendTelegramContentSection
 {
+    private const SECTION_DEDUPLICATION_TTL = 300;
+
     public function __construct(
         private readonly ListPublishedContentSections $sections,
         private readonly NotificationChannelRegistry $channels,
@@ -19,6 +22,7 @@ final class SendTelegramContentSection
         VerifiedChannelIdentity $identity,
         string $sectionKey,
         string $locale,
+        ?string $requestId = null,
     ): NotificationDeliveryResult {
         if ($identity->channel !== 'telegram' || trim($identity->externalId) === '') {
             return NotificationDeliveryResult::unavailable('telegram_identity_unavailable');
@@ -43,21 +47,125 @@ final class SendTelegramContentSection
             return NotificationDeliveryResult::unavailable('telegram_channel_unavailable');
         }
 
-        $lastResult = NotificationDeliveryResult::unavailable('content_unavailable');
+        $normalizedRequestId = $requestId === null ? null : trim($requestId);
+        $deliver = function () use ($channel, $identity, $localized, $locale, $normalizedRequestId): NotificationDeliveryResult {
+            $lastResult = NotificationDeliveryResult::unavailable('content_unavailable');
+            $deliveredSectionCount = 0;
+            $skippedSectionCount = 0;
 
-        foreach ($localized as $section) {
-            $lastResult = $channel->send($this->messages->handle(
-                $identity->externalId,
-                $section,
-                $locale,
-                includeMediaStream: true,
-            ));
+            foreach ($localized as $section) {
+                $sendSection = fn (): NotificationDeliveryResult => $channel->send($this->messages->handle(
+                    $identity->externalId,
+                    $section,
+                    $locale,
+                    includeMediaStream: true,
+                ));
 
-            if ($lastResult->outcome->value !== 'delivered') {
-                return $lastResult;
+                if ($normalizedRequestId !== null && $normalizedRequestId !== '') {
+                    $sectionFingerprint = hash('sha256', implode('|', [
+                        'telegram-content-section',
+                        $identity->externalId,
+                        $section->getKey(),
+                        $section->updated_at?->getTimestamp() ?? 0,
+                        $locale,
+                    ]));
+                    $sectionCompletedKey = 'telegram-content-section-callback:completed:'.$sectionFingerprint;
+
+                    if (Cache::has($sectionCompletedKey)) {
+                        $skippedSectionCount++;
+
+                        continue;
+                    }
+
+                    $sectionLock = Cache::lock('telegram-content-section-callback:lock:'.$sectionFingerprint, 60);
+                    if (! $sectionLock->get()) {
+                        return NotificationDeliveryResult::retryable('content_in_progress');
+                    }
+
+                    try {
+                        if (Cache::has($sectionCompletedKey)) {
+                            $skippedSectionCount++;
+
+                            continue;
+                        }
+
+                        $lastResult = $sendSection();
+                        if ($lastResult->outcome->value !== 'delivered') {
+                            return $lastResult;
+                        }
+
+                        $deliveredSectionCount++;
+                        Cache::put($sectionCompletedKey, true, self::SECTION_DEDUPLICATION_TTL);
+                    } finally {
+                        $sectionLock->release();
+                    }
+
+                    continue;
+                }
+
+                $lastResult = $sendSection();
+
+                if ($lastResult->outcome->value !== 'delivered') {
+                    return $lastResult;
+                }
+
+                $deliveredSectionCount++;
             }
+
+            if ($normalizedRequestId !== null
+                && $deliveredSectionCount === 0
+                && $skippedSectionCount > 0) {
+                return NotificationDeliveryResult::suppressed('duplicate_callback');
+            }
+
+            return $lastResult;
+        };
+
+        if ($requestId === null || trim($requestId) === '') {
+            return $deliver();
         }
 
-        return $lastResult;
+        return $this->deduplicateCallback(
+            requestId: trim($requestId),
+            externalId: $identity->externalId,
+            sectionKey: $sectionKey,
+            locale: $locale,
+            deliver: $deliver,
+        );
+    }
+
+    private function deduplicateCallback(
+        string $requestId,
+        string $externalId,
+        string $sectionKey,
+        string $locale,
+        callable $deliver,
+    ): NotificationDeliveryResult {
+        $fingerprint = hash('sha256', implode('|', [$requestId, $externalId, $sectionKey, $locale]));
+        $completedKey = 'telegram-content-callback:completed:'.$fingerprint;
+
+        if (Cache::has($completedKey)) {
+            return NotificationDeliveryResult::suppressed('duplicate_callback');
+        }
+
+        $lock = Cache::lock('telegram-content-callback:lock:'.$fingerprint, 60);
+        if (! $lock->get()) {
+            return NotificationDeliveryResult::retryable('callback_in_progress');
+        }
+
+        try {
+            if (Cache::has($completedKey)) {
+                return NotificationDeliveryResult::suppressed('duplicate_callback');
+            }
+
+            $result = $deliver();
+            if ($result->outcome->value === 'delivered') {
+                Cache::put($completedKey, true, 86400);
+            }
+
+            return $result;
+        } finally {
+            $lock->release();
+        }
     }
 }

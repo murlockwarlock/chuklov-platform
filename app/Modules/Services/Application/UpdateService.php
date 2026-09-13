@@ -30,6 +30,7 @@ class UpdateService
         private readonly EnsureScheduleMutationImpactAcknowledged $impactAcknowledgement,
         private readonly RecordAuditEvent $audit,
         private readonly ServiceMediaStorageInterface $media,
+        private readonly ServiceSnapshotHasher $snapshotHasher,
     ) {}
 
     /**
@@ -83,6 +84,8 @@ class UpdateService
             'price_currency' => $priceCurrency,
             'payment_policy' => $paymentPolicy,
         ];
+        $expectedSnapshot = $attributes['expected_snapshot'] ?? null;
+        unset($attributes['expected_snapshot']);
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
         $mediaMode = $this->mediaMode($attributes, $uploadedFile, $removeImage, $service);
@@ -118,12 +121,20 @@ class UpdateService
                 $validatedImagePath,
                 $acknowledgeImpact,
                 $acknowledgedImpactDigest,
+                $expectedSnapshot,
             ): Service {
                 $lockedService = Service::query()
                     ->where('organization_id', $organization->getKey())
                     ->whereKey($service->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
+
+                if ($expectedSnapshot !== null
+                    && (! is_string($expectedSnapshot) || ! hash_equals($expectedSnapshot, $this->snapshotHasher->forService($lockedService)))) {
+                    throw ValidationException::withMessages([
+                        'name' => ['Услуга изменилась в другой вкладке. Обновите страницу перед сохранением.'],
+                    ]);
+                }
                 $finalAttributes = $configuration->attributes();
                 [$finalAttributes['image_path'], $finalAttributes['external_image_url']] = $this->mediaAttributes(
                     $lockedService,

@@ -24,6 +24,7 @@ final readonly class UpdateSession
         private MedicalKeyResolverInterface $keyResolver,
         private RecordAuditEvent $audit,
         private GetSession $getSession,
+        private MedicalSessionSnapshotHasher $snapshotHasher,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
@@ -56,6 +57,13 @@ final readonly class UpdateSession
             if ($existing === null) {
                 throw ValidationException::withMessages([
                     'session' => 'The medical session was not found within the current organization.',
+                ]);
+            }
+
+            if ($command->expectedSnapshot !== null
+                && ! hash_equals($command->expectedSnapshot, $this->snapshotHasher->forSession($existing))) {
+                throw ValidationException::withMessages([
+                    'session' => 'Медицинский сеанс изменился в другой вкладке. Обновите его перед сохранением.',
                 ]);
             }
 

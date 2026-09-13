@@ -19,6 +19,8 @@ use App\Modules\Surveys\Application\CreateSurveyVersion;
 use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\SaveSurveyAttempt;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
+use App\Modules\Surveys\Application\SurveyDefinitionSnapshotHasher;
+use App\Modules\Surveys\Application\UpdateSurveyDefinitionDraft;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -76,6 +78,31 @@ final class MilestoneEightSurveyTest extends TestCase
         self::assertSame(SurveyVersionStatus::Retired, $versionOne->status);
         self::assertSame(2, $definition->fresh()->activeVersion()->value('version'));
         self::assertSame($organization->getKey(), $attempt->organization_id);
+    }
+
+    public function test_stale_survey_draft_save_does_not_overwrite_newer_changes(): void
+    {
+        [, $actor] = $this->fixture();
+        $definition = app(CreateSurveyDefinition::class)->handle($actor, $this->definitionData());
+        $version = $definition->versions()->latest('version')->firstOrFail();
+        $snapshot = app(SurveyDefinitionSnapshotHasher::class)->forDefinition($definition, $version);
+
+        $firstSave = $this->definitionData();
+        $firstSave['title'] = 'Изменение A';
+        $firstSave['expected_snapshot'] = $snapshot;
+        app(UpdateSurveyDefinitionDraft::class)->handle($actor, $definition, $firstSave);
+
+        $staleSave = $this->definitionData();
+        $staleSave['title'] = 'Изменение B';
+        $staleSave['expected_snapshot'] = $snapshot;
+
+        $this->expectException(ValidationException::class);
+        try {
+            app(UpdateSurveyDefinitionDraft::class)->handle($actor, $definition, $staleSave);
+        } finally {
+            self::assertSame('Изменение A', $definition->fresh()->title);
+            self::assertSame('Изменение A', $definition->versions()->latest('version')->firstOrFail()->title);
+        }
     }
 
     public function test_publish_revalidates_locked_draft_before_retiring_previous_version(): void

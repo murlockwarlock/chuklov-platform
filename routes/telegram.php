@@ -285,8 +285,17 @@ $bot->onCallbackQueryData('content:[a-z0-9][a-z0-9._-]{0,55}', function (
         $organizationContext->set($organization);
         $identity = $identityVerifier->handle($bot);
         $locale = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
-        $result = $sendContent->handle($identity, $sectionKey, $locale);
-        $bot->answerCallbackQuery(text: $result->outcome->value === 'delivered' ? 'Готово.' : 'Раздел пока недоступен.');
+        $result = $sendContent->handle(
+            identity: $identity,
+            sectionKey: $sectionKey,
+            locale: $locale,
+            requestId: (string) ($bot->callbackQuery()?->id ?? ''),
+        );
+        $bot->answerCallbackQuery(text: match ($result->outcome->value) {
+            'delivered' => 'Готово.',
+            'suppressed' => 'Раздел уже отправлен.',
+            default => 'Раздел пока недоступен.',
+        });
     } catch (Throwable) {
         $bot->answerCallbackQuery(text: 'Раздел пока недоступен.');
     }

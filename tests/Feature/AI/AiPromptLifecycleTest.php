@@ -8,7 +8,9 @@ use App\Modules\AI\Application\Actions\CreatePromptDraft;
 use App\Modules\AI\Application\Actions\ExportPromptBundle;
 use App\Modules\AI\Application\Actions\ImportPromptBundle;
 use App\Modules\AI\Application\Actions\RollbackPromptVersion;
+use App\Modules\AI\Application\Actions\SavePromptDraft;
 use App\Modules\AI\Application\Data\PromptBundle;
+use App\Modules\AI\Application\Services\AiPromptVersionSnapshotHasher;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -17,6 +19,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class AiPromptLifecycleTest extends TestCase
@@ -95,6 +98,43 @@ class AiPromptLifecycleTest extends TestCase
         $this->assertSame(PromptVersionStatus::Active, $rolledBack->status);
         $prompt->refresh();
         $this->assertSame($v1->id, $prompt->active_version_id);
+    }
+
+    public function test_stale_prompt_draft_save_does_not_overwrite_newer_changes(): void
+    {
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'stale_prompt',
+            'name' => 'Stale prompt',
+            'capability' => AiCapability::GeneralAssistant,
+        ]);
+
+        $draft = app(CreatePromptDraft::class)->handle($this->user, $prompt->id, [
+            'system_prompt' => 'Original instruction',
+            'user_prompt_template' => '{{query}}',
+        ]);
+        $snapshot = app(AiPromptVersionSnapshotHasher::class)->forVersion($draft);
+        $save = app(SavePromptDraft::class);
+
+        $save->handle($this->user, $draft->id, [
+            'system_prompt' => 'New instruction from tab A',
+            'user_prompt_template' => '{{query}}',
+            'expected_snapshot' => $snapshot,
+        ]);
+
+        try {
+            $save->handle($this->user, $draft->id, [
+                'system_prompt' => 'Stale instruction from tab B',
+                'user_prompt_template' => '{{query}}',
+                'expected_snapshot' => $snapshot,
+            ]);
+            self::fail('A stale prompt draft save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('system_prompt', $exception->errors());
+        }
+
+        $draft->refresh();
+        self::assertSame('New instruction from tab A', $draft->system_prompt);
     }
 
     public function test_export_and_import_prompt_bundle(): void

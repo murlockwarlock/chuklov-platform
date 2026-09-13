@@ -91,6 +91,10 @@ final class SurveyDefinitionFormMapper
             }
         }
 
+        if (array_key_exists('expected_snapshot', $data)) {
+            $normalized['expected_snapshot'] = $data['expected_snapshot'];
+        }
+
         return $normalized;
     }
 

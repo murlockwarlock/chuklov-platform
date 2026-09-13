@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Application\CreateNotificationTemplate;
+use App\Modules\Scenarios\Application\NotificationTemplateSnapshotHasher;
 use App\Modules\Scenarios\Application\UpdateNotificationTemplate;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
@@ -477,6 +478,7 @@ final class ScenarioRuleForm
 
         return [
             'template_version_id' => $version->getKey(),
+            'expected_snapshot' => app(NotificationTemplateSnapshotHasher::class)->forTemplate($template, $template->latestVersion()->firstOrFail()),
             'name' => $template->name,
             'locale' => $template->locale,
             'purpose' => $template->purpose,
@@ -493,6 +495,7 @@ final class ScenarioRuleForm
     {
         return [
             Hidden::make('template_version_id'),
+            Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
             Hidden::make('locale')->default('ru'),
             Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
             TextInput::make('name')

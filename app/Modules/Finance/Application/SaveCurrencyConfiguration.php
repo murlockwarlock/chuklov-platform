@@ -49,6 +49,10 @@ final class SaveCurrencyConfiguration
 
         try {
             return DB::transaction(function () use ($actor, $organization, $base, $display, $forceSingle, $rounding, $allowed, $submittedRates, $hasSubmittedRates): OrganizationCurrencyConfiguration {
+                Organization::query()
+                    ->whereKey($organization->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
                 $configuration = OrganizationCurrencyConfiguration::query()
                     ->where('organization_id', $organization->getKey())
                     ->lockForUpdate()

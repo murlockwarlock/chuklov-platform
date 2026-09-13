@@ -953,6 +953,10 @@ class PhaseOneBookingLocationsTest extends TestCase
         $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
         self::assertSame(BookingStatus::Requested, $staleBooking->refresh()->status);
 
+        $bot->hearCallbackQueryData('booking:confirm:'.$staleBooking->getKey())->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
+        self::assertSame(BookingStatus::Requested, $staleBooking->refresh()->status);
+
         $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
         $otherClient = Client::factory()->forOrganization($otherOrganization)->create();
         $otherSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create();
@@ -964,7 +968,7 @@ class PhaseOneBookingLocationsTest extends TestCase
             ->forService($otherService)
             ->create(['status' => BookingStatus::Requested]);
 
-        $bot->hearCallbackQueryData('booking:confirm:'.$otherBooking->getKey())->reply();
+        $bot->hearCallbackQueryData('booking:confirm:'.$otherBooking->getKey().':1')->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Действие недоступно. Откройте CRM.'], 0);
         self::assertSame(BookingStatus::Requested, $otherBooking->refresh()->status);
     }

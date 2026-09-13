@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -27,6 +28,7 @@ final class NotificationTemplateForm
     {
         return $schema
             ->components([
+                Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make('Основная информация')
                     ->description('Сообщение может состоять из текста, медиа или их комбинации. Формат и подпись сохраняются в версии шаблона.')
                     ->schema([

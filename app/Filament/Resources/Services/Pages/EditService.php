@@ -6,6 +6,7 @@ use App\Filament\Resources\Services\ServiceResource;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Resources\Pages\EditRecord;
@@ -21,6 +22,9 @@ class EditService extends EditRecord
 
     protected function mutateFormDataBeforeFill(array $data): array
     {
+        $record = $this->getRecord();
+        abort_unless($record instanceof Service, 404);
+
         $data['price'] = null;
 
         if (($data['price_minor'] ?? null) !== null && is_string($data['price_currency'] ?? null)) {
@@ -33,6 +37,7 @@ class EditService extends EditRecord
         unset($data['price_minor'], $data['image_path']);
         $data['service_image'] = null;
         $data['remove_image'] = false;
+        $data['expected_snapshot'] = app(ServiceSnapshotHasher::class)->forService($record);
 
         return $data;
     }

@@ -13,6 +13,7 @@ final readonly class UpdateSessionCommand
         public ?string $rootCauseHypothesis,
         public ?string $protocol,
         public ?string $result,
+        public ?string $expectedSnapshot = null,
     ) {}
 
     /**
@@ -49,6 +50,7 @@ final readonly class UpdateSessionCommand
             rootCauseHypothesis: self::normalizeOptionalValue($data['root_cause_hypothesis'], 'root_cause_hypothesis'),
             protocol: self::normalizeOptionalValue($data['protocol'], 'protocol'),
             result: self::normalizeOptionalValue($data['result'], 'result'),
+            expectedSnapshot: isset($data['expected_snapshot']) && is_string($data['expected_snapshot']) ? $data['expected_snapshot'] : null,
         );
     }
 

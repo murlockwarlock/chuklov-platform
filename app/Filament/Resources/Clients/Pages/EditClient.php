@@ -9,6 +9,7 @@ use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
 use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
+use App\Modules\Identity\Application\ClientProfileSnapshotHasher;
 use App\Modules\Identity\Application\UpdateClientProfileFromCrm;
 use App\Modules\Identity\Domain\Models\Client;
 use Filament\Resources\Pages\EditRecord;
@@ -57,6 +58,7 @@ class EditClient extends EditRecord
         $data['b2b_role'] = $profile?->b2b_role;
         $data['b2b_specialist_answer'] = $profile?->getRawOriginal('b2b_specialist_answer');
         $data['broadcast_tags'] = BroadcastClientTag::query()->where('organization_id', $record->organization_id)->where('client_id', $record->getKey())->orderBy('tag')->pluck('tag')->all();
+        $data['expected_snapshot'] = app(ClientProfileSnapshotHasher::class)->forClient($record);
 
         return $data;
     }

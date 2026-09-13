@@ -9,8 +9,10 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Section;
@@ -33,6 +35,7 @@ class EditMedicalSession extends EditRecord
             ->model($this->getRecord())
             ->operation('edit')
             ->components([
+                Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make('Клинические заметки')
                     ->schema([
                         Textarea::make('pain')->label('Боль')->rows(3)->placeholder('Что беспокоит клиента и где'),
@@ -73,6 +76,7 @@ class EditMedicalSession extends EditRecord
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
+            'expected_snapshot' => app(MedicalSessionSnapshotHasher::class)->forSession($record),
         ];
     }
 
@@ -163,6 +167,10 @@ class EditMedicalSession extends EditRecord
 
             $value = $data[$field];
             $normalized[$field] = is_string($value) && trim($value) === '' ? null : $value;
+        }
+
+        if (array_key_exists('expected_snapshot', $data)) {
+            $normalized['expected_snapshot'] = $data['expected_snapshot'];
         }
 
         return $normalized;

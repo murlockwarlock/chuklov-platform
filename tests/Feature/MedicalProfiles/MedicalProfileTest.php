@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
@@ -24,6 +25,7 @@ use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Tests\TestCase;
@@ -109,6 +111,39 @@ final class MedicalProfileTest extends TestCase
         self::assertNotNull($retrieved);
         self::assertSame('Обновлённый анамнез после консультации', $retrieved->anamnesis);
         self::assertSame('Новое лекарство', $retrieved->medicines);
+    }
+
+    public function test_stale_medical_profile_save_does_not_overwrite_newer_changes(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $updateAction = app(UpdateMedicalProfile::class);
+
+        $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Исходный анамнез',
+        ));
+        $profile = MedicalProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->firstOrFail();
+        $snapshot = app(MedicalProfileSnapshotHasher::class)->forProfile($profile);
+
+        $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Изменение из вкладки A',
+            expectedSnapshot: $snapshot,
+        ));
+
+        try {
+            $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+                anamnesis: 'Устаревшее изменение из вкладки B',
+                expectedSnapshot: $snapshot,
+            ));
+            self::fail('A stale medical profile save should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('medical_profile', $exception->errors());
+        }
+
+        $retrieved = app(GetMedicalProfile::class)->handle($admin, $client);
+        self::assertSame('Изменение из вкладки A', $retrieved?->anamnesis);
     }
 
     public function test_cross_organization_staff_cannot_read_medical_profile(): void

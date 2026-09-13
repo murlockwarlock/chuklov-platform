@@ -10,6 +10,7 @@ use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use App\Modules\Surveys\Domain\Services\SurveyDefinitionValidator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final readonly class UpdateSurveyDefinitionDraft
 {
@@ -17,19 +18,31 @@ final readonly class UpdateSurveyDefinitionDraft
         private SurveyAuthorization $authorization,
         private SurveyDefinitionValidator $validator,
         private RecordAuditEvent $audit,
+        private SurveyDefinitionSnapshotHasher $snapshotHasher,
     ) {}
 
     /** @param array<string, mixed> $data */
     public function handle(User $actor, SurveyDefinition $definition, array $data): SurveyDefinition
     {
         $organization = $this->authorization->manage($actor);
+        $expectedSnapshot = $data['expected_snapshot'] ?? null;
+        unset($data['expected_snapshot']);
         $this->authorization->assertDefinition($definition);
         $this->validator->validate($data['definition'], $data['scoring']);
 
-        return DB::transaction(function () use ($actor, $organization, $definition, $data): SurveyDefinition {
+        return DB::transaction(function () use ($actor, $organization, $definition, $data, $expectedSnapshot): SurveyDefinition {
             $locked = SurveyDefinition::query()->where('organization_id', $organization->getKey())->whereKey($definition->getKey())->lockForUpdate()->firstOrFail();
             $draft = SurveyVersion::query()->where('organization_id', $organization->getKey())->where('survey_definition_id', $locked->getKey())->where('status', SurveyVersionStatus::Draft)->latest('version')->lockForUpdate()->first();
             $previousVersion = $draft ?? $locked->versions()->latest('version')->first();
+
+            if ($expectedSnapshot !== null
+                && (! is_string($expectedSnapshot) || ! $previousVersion instanceof SurveyVersion
+                    || ! hash_equals($expectedSnapshot, $this->snapshotHasher->forDefinition($locked, $previousVersion)))) {
+                throw ValidationException::withMessages([
+                    'title' => ['Тест изменился в другой вкладке. Обновите страницу перед сохранением.'],
+                ]);
+            }
+
             if ($draft === null) {
                 $version = (int) SurveyVersion::query()
                     ->where('organization_id', $organization->getKey())

@@ -185,6 +185,27 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertCount(0, $bot->getRequestHistory());
     }
 
+    public function test_known_outcome_delivery_requires_a_telegram_message_reference(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = $this->createMock(Nutgram::class);
+        $bot->expects($this->once())
+            ->method('sendMessage')
+            ->willReturn(null);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'missing-reference-chat',
+            body: 'Тестовая доставка',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'missing-reference',
+            requireKnownExternalOutcome: true,
+        ));
+
+        self::assertSame('unknown', $result->outcome->value);
+        self::assertSame('telegram_delivery_reference_missing', $result->errorCode);
+    }
+
     public function test_photo_and_text_modes_send_in_the_configured_order(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
