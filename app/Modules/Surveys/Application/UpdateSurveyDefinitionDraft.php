@@ -45,6 +45,13 @@ final readonly class UpdateSurveyDefinitionDraft
                     'scoring' => ['Расширенные правила изменились. Обновите страницу перед сохранением.'],
                 ]);
             }
+            if ($preserveUnsupportedScoring
+                && $previousVersion instanceof SurveyVersion
+                && ! $this->sameValue($data['definition'], $previousVersion->definition)) {
+                throw ValidationException::withMessages([
+                    'definition' => ['Этот тест использует расширенные правила подсчёта. Вопросы нельзя изменять, пока эти правила не поддерживаются редактором.'],
+                ]);
+            }
 
             if ($expectedSnapshot !== null
                 && (! is_string($expectedSnapshot) || ! $previousVersion instanceof SurveyVersion
@@ -112,5 +119,28 @@ final readonly class UpdateSurveyDefinitionDraft
 
             return $locked->refresh();
         });
+    }
+
+    private function sameValue(mixed $left, mixed $right): bool
+    {
+        return $this->canonicalize($left) === $this->canonicalize($right);
+    }
+
+    private function canonicalize(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (array_is_list($value)) {
+            return array_map(fn (mixed $item): mixed => $this->canonicalize($item), $value);
+        }
+
+        $normalized = [];
+        foreach ($value as $key => $item) {
+            $normalized[$key] = $this->canonicalize($item);
+        }
+        ksort($normalized);
+
+        return $normalized;
     }
 }

@@ -173,6 +173,45 @@ final class SurveyDefinitionValidatorTest extends TestCase
         }
     }
 
+    public function test_answer_scale_cannot_disagree_with_rule_points(): void
+    {
+        $data = $this->data();
+        $data['scoring']['answer_scale'] = ['option-good' => 0];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('An answer scale mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Общая шкала должна совпадать с баллами правил подсчёта.', $exception->errors()['scoring.answer_scale'][0]);
+        }
+    }
+
+    public function test_metric_membership_cannot_disagree_with_rule_questions(): void
+    {
+        $data = $this->data();
+        $data['scoring']['metrics'][0]['question_keys'] = ['q-dependent'];
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A metric membership mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Вопросы показателя не совпадают с его правилами подсчёта.', $exception->errors()['scoring.metrics'][0]);
+        }
+    }
+
+    public function test_bounded_metric_maximum_cannot_disagree_with_rule_points(): void
+    {
+        $data = $this->data();
+        $data['scoring']['metrics'][0]['max_value'] = 99;
+
+        try {
+            (new SurveyDefinitionValidator)->validate($data['definition'], $data['scoring']);
+            self::fail('A metric maximum mismatch was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Максимальный результат показателя не совпадает с его правилами подсчёта.', $exception->errors()['scoring.metrics'][0]);
+        }
+    }
+
     public function test_unsupported_scoring_type_can_be_preserved_only_in_legacy_mode(): void
     {
         $data = $this->data();

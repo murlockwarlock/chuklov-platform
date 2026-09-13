@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
 use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
+use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -16,6 +17,8 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\CreateSurveyDefinition;
 use App\Modules\Surveys\Application\CreateSurveyVersion;
+use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
+use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\SaveSurveyAttempt;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
@@ -193,6 +196,53 @@ final class MilestoneEightSurveyTest extends TestCase
             ->test(ViewSurveyAttempt::class, ['record' => $attempt->getKey()])
             ->assertSee('Needs attention')
             ->assertDontSee('needs_attention');
+    }
+
+    public function test_platform_rule_points_drive_scorer_and_report_evidence_together(): void
+    {
+        [$organization, $actor, $client] = $this->fixture();
+        app(InstallPlatformSurveyCatalog::class)->handle($organization);
+        $definition = SurveyDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
+            ->firstOrFail();
+        $published = $definition->activeVersion()->firstOrFail();
+        $state = SurveyDefinitionFormMapper::denormalize($published);
+        foreach ($state['rules'][0]['points'] as &$point) {
+            if (($point['value'] ?? null) === 'never') {
+                $point['points'] = 2;
+            }
+        }
+        unset($point);
+
+        app(UpdateSurveyDefinitionDraft::class)->handle(
+            $actor,
+            $definition,
+            SurveyDefinitionFormMapper::normalize($state),
+        );
+        $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
+        app(PublishSurveyVersion::class)->handle($actor, $draft);
+        $active = $definition->refresh()->activeVersion()->firstOrFail();
+        $attempt = app(StartSurveyAttempt::class)->handle($client, $definition);
+
+        $answers = [];
+        foreach ($active->definition['sections'] as $section) {
+            foreach ($section['questions'] as $question) {
+                $answers[$question['key']] = 'never';
+            }
+        }
+        $firstQuestionKey = $active->scoring['rules'][0]['question_key'];
+        $firstMetricKey = $active->scoring['rules'][0]['metric_key'];
+        $answers[$firstQuestionKey] = 'never';
+
+        $completed = app(CompleteSurveyAttempt::class)->handle($client, $attempt, $answers);
+        $report = SurveyReport::query()->where('survey_attempt_id', $completed->getKey())->sole()->report_snapshot;
+
+        self::assertEquals(2.0, $completed->result_snapshot['metrics'][$firstMetricKey]['value']);
+        self::assertEquals(2.0, $report['metrics'][$firstMetricKey]['value']);
+        self::assertSame(2, $report['attention_areas'][0]['evidence'][0]['score']);
+        self::assertSame($firstMetricKey.'_low', $completed->result_snapshot['thresholds'][0]['tag']);
+        self::assertArrayNotHasKey('never', $active->scoring['answer_scale']);
     }
 
     public function test_hidden_required_question_is_not_required(): void

@@ -168,7 +168,7 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         $version->scoring = $catalogDefinition['scoring'];
 
         $state = SurveyDefinitionFormMapper::denormalize($version);
-        $state['answer_scale'][0]['points'] = 9;
+        $state['rules'][0]['points'][0]['points'] = 9;
         $state['thresholds'][0]['label'] = 'Новая низкая нагрузка';
         $state['thresholds'][0]['label_en'] = 'New low burden';
         $state['summary'] = 'Обновлённое объяснение результата.';
@@ -180,7 +180,8 @@ final class SurveyDefinitionFormMapperTest extends TestCase
 
         $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
 
-        self::assertSame(9, $scoring['answer_scale']['never']);
+        self::assertSame(9, $scoring['rules'][0]['points']['never']);
+        self::assertArrayNotHasKey('never', $scoring['answer_scale']);
         self::assertSame([
             'ru' => 'Новая низкая нагрузка',
             'en' => 'New low burden',
@@ -199,6 +200,50 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         ], $scoring['safe_steps']);
         self::assertSame($catalogDefinition['scoring']['metrics'][1], $scoring['metrics'][1]);
         self::assertSame($catalogDefinition['scoring']['specialist_questions'], $scoring['specialist_questions']);
+    }
+
+    public function test_question_membership_and_bounded_max_value_are_derived_from_rules(): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === PlatformSurveyCatalog::HEALTH_KEY,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['rules'][0]['metric_key'] = $state['metrics'][1]['key'];
+        foreach ($state['rules'][0]['points'] as &$point) {
+            if (($point['value'] ?? null) === 'almost_always') {
+                $point['points'] = 9;
+            }
+        }
+        unset($point);
+
+        $scoring = SurveyDefinitionFormMapper::normalize($state)['scoring'];
+
+        self::assertNotContains($state['rules'][0]['question_key'], $scoring['metrics'][0]['question_keys']);
+        self::assertContains($state['rules'][0]['question_key'], $scoring['metrics'][1]['question_keys']);
+        self::assertSame(29, $scoring['metrics'][1]['max_value']);
+    }
+
+    public function test_answer_scale_form_state_cannot_override_rule_points(): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === PlatformSurveyCatalog::HEALTH_KEY,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+        $state['answer_scale'][0]['points'] = 99;
+
+        self::assertSame(
+            $catalogDefinition['scoring'],
+            SurveyDefinitionFormMapper::normalize($state)['scoring'],
+        );
     }
 
     public function test_result_lists_keep_localized_items_aligned_when_a_translation_is_missing(): void
@@ -237,7 +282,7 @@ final class SurveyDefinitionFormMapperTest extends TestCase
         self::assertArrayNotHasKey('legacy_scoring', $state);
         self::assertNotEmpty($state['answer_scale']);
         self::assertSame($catalogDefinition['scoring']['metrics'][0]['max_value'], $state['metrics'][0]['max_value']);
-        self::assertNotEmpty($state['metrics'][0]['question_keys']);
+        self::assertArrayNotHasKey('question_keys', $state['metrics'][0]);
         self::assertArrayHasKey('road_map', $state['metrics'][0]);
         self::assertNotEmpty($state['summary']);
         self::assertNotEmpty($state['safe_steps']);

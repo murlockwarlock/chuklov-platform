@@ -220,28 +220,11 @@ final class SurveyDefinitionForm
                     ->content('Этот тест содержит расширенные правила, которые текущий редактор пока не поддерживает. Данные сохранены без изменений.')
                     ->visible(fn (Get $get): bool => self::hasLegacyScoring($get))
                     ->columnSpanFull(),
-                Repeater::make('answer_scale')
+                Placeholder::make('answer_scale_notice')
                     ->label('Шкала баллов')
-                    ->defaultItems(0)
-                    ->reorderable()
-                    ->cloneable(false)
-                    ->collapsed()
-                    ->itemLabel(fn (array $state): string => filled($state['value'] ?? null) ? 'Баллы за вариант' : 'Новая настройка баллов')
-                    ->addActionLabel('Добавить вариант шкалы')
-                    ->schema([
-                        Select::make('value')
-                            ->label('Вариант ответа')
-                            ->options(fn (Get $get): array => SurveyDefinitionFormOptions::answerScaleOptions(
-                                self::sections($get),
-                                $get('value'),
-                            ))
-                            ->required()
-                            ->searchable()
-                            ->validationMessages(['distinct' => 'Варианты шкалы должны быть уникальными.'])
-                            ->distinct(),
-                        TextInput::make('points')->label('Баллы')->numeric()->required(),
-                    ])->columns(2)
-                    ->disabled(fn (Get $get): bool => self::hasLegacyScoring($get)),
+                    ->content('Баллы задаются в правилах ниже для каждого вопроса и показателя. Общая шкала сохраняется автоматически только как совместимое представление этих правил.')
+                    ->visible(fn (Get $get): bool => ! self::hasLegacyScoring($get))
+                    ->columnSpanFull(),
                 Repeater::make('metrics')
                     ->label('Показатели')
                     ->required(fn (Get $get): bool => ! self::hasLegacyScoring($get))
@@ -255,19 +238,18 @@ final class SurveyDefinitionForm
                         Hidden::make('key')->default(fn (): string => SurveyDefinitionFormMapper::newIdentity()),
                         TextInput::make('label')->label('Название показателя')->required(),
                         TextInput::make('label_en')->label('Название показателя на английском'),
-                        TextInput::make('max_value')->label('Максимальный результат')->numeric(),
+                        TextInput::make('max_value')
+                            ->label('Максимальный результат')
+                            ->numeric()
+                            ->helperText('Для вопросов с вариантами рассчитывается по правилам.')
+                            ->disabled(fn (Get $get): bool => self::metricMaxIsDerived($get)),
                         Select::make('normalization')
                             ->label('Шкала результата')
                             ->options(fn (Get $get): array => SurveyDefinitionFormOptions::normalizationOptions($get('normalization')))
                             ->searchable(),
-                        Select::make('question_keys')
+                        Placeholder::make('question_membership_notice')
                             ->label('Вопросы в показателе')
-                            ->options(fn (Get $get): array => SurveyDefinitionFormOptions::allQuestionOptions(
-                                self::sections($get),
-                                $get('question_keys'),
-                            ))
-                            ->multiple()
-                            ->searchable()
+                            ->content('Связь вопроса с показателем задаётся в правилах подсчёта ниже.')
                             ->columnSpanFull(),
                     ])->columns(2)
                     ->disabled(fn (Get $get): bool => self::hasLegacyScoring($get)),
@@ -523,6 +505,32 @@ final class SurveyDefinitionForm
         return is_array($get('condition_legacy'));
     }
 
+    private static function metricMaxIsDerived(Get $get): bool
+    {
+        $metricKey = $get('key');
+        if (! is_string($metricKey) || $metricKey === '') {
+            return false;
+        }
+
+        $rules = $get('/data.rules');
+        $hasRule = false;
+        foreach (is_array($rules) ? $rules : [] as $rule) {
+            if (! is_array($rule) || ($rule['metric_key'] ?? null) !== $metricKey) {
+                continue;
+            }
+            $hasRule = true;
+            if (! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
+                return false;
+            }
+            $points = is_array($rule['points'] ?? null) ? $rule['points'] : [];
+            if ($points === [] || count(array_filter($points, static fn (mixed $point): bool => is_numeric($point) && is_finite((float) $point))) !== count($points)) {
+                return false;
+            }
+        }
+
+        return $hasRule;
+    }
+
     /** @param array<string, mixed> $state */
     private static function sectionSummary(array $state): string
     {
@@ -701,21 +709,7 @@ final class SurveyDefinitionForm
             return 'Для выбранного показателя правила ещё не настроены.';
         }
 
-        $scale = $get('/data.answer_scale');
-        if (! is_array($scale) || $scale === []) {
-            return 'Добавьте правила подсчёта, чтобы увидеть пример.';
-        }
-
-        foreach ($scale as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-            $label = SurveyDefinitionFormOptions::answerScaleLabel($sections, $item['value'] ?? null);
-            $points = $item['points'] ?? null;
-            $lines[] = $label.' = '.(is_numeric($points) ? (string) $points : 'баллы не заданы');
-        }
-
-        return $lines === [] ? 'Добавьте варианты шкалы, чтобы увидеть пример подсчёта.' : implode("\n", $lines);
+        return 'Добавьте правила подсчёта, чтобы увидеть пример.';
     }
 
     private static function resultPreview(Get $get): string

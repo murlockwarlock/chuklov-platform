@@ -26,17 +26,6 @@ final class SurveyDefinitionScoringFormMapper
             }
         }
 
-        if (is_array($data['answer_scale'] ?? null) && $data['answer_scale'] !== []) {
-            $answerScale = [];
-            foreach ($data['answer_scale'] as $scale) {
-                if (! is_array($scale) || ! is_string($scale['value'] ?? null) || $scale['value'] === '') {
-                    continue;
-                }
-                $answerScale[$scale['value']] = self::number($scale['points'] ?? null);
-            }
-            $scoring['answer_scale'] = $answerScale;
-        }
-
         $metrics = [];
         foreach (is_array($data['metrics'] ?? null) ? $data['metrics'] : [] as $metric) {
             if (! is_array($metric)) {
@@ -54,12 +43,14 @@ final class SurveyDefinitionScoringFormMapper
             ];
             foreach (['max_value', 'normalization', 'question_keys', 'attention_reason', 'observation', 'road_map'] as $key) {
                 if (! array_key_exists($key, $metric)) {
+                    if ($key === 'question_keys') {
+                        $metricData[$key] = [];
+                    }
+
                     continue;
                 }
                 if ($key === 'question_keys') {
-                    if (is_array($metric[$key]) && $metric[$key] !== []) {
-                        $metricData[$key] = array_values($metric[$key]);
-                    }
+                    $metricData[$key] = [];
 
                     continue;
                 }
@@ -108,6 +99,23 @@ final class SurveyDefinitionScoringFormMapper
                 $ruleData['multiplier'] = self::number($rule['multiplier']);
             }
             $rules[] = $ruleData;
+        }
+
+        $questionKeysByMetric = self::questionKeysByMetric($rules);
+        $boundedMaxValues = self::boundedMaxValues($rules);
+        foreach ($metrics as &$metric) {
+            $metricKey = $metric['key'] ?? null;
+            $metric['question_keys'] = is_string($metricKey)
+                ? ($questionKeysByMetric[$metricKey] ?? [])
+                : [];
+            if (is_string($metricKey) && array_key_exists($metricKey, $boundedMaxValues)) {
+                $metric['max_value'] = $boundedMaxValues[$metricKey];
+            }
+        }
+        unset($metric);
+        $answerScale = self::derivedAnswerScale($rules);
+        if ($answerScale !== null) {
+            $scoring['answer_scale'] = $answerScale;
         }
 
         $thresholds = [];
@@ -185,9 +193,10 @@ final class SurveyDefinitionScoringFormMapper
     {
         $data = [];
 
-        if (is_array($scoring['answer_scale'] ?? null)) {
+        $answerScale = self::derivedAnswerScale(is_array($scoring['rules'] ?? null) ? $scoring['rules'] : []);
+        if ($answerScale !== null) {
             $data['answer_scale'] = [];
-            foreach ($scoring['answer_scale'] as $value => $points) {
+            foreach ($answerScale as $value => $points) {
                 $data['answer_scale'][] = [
                     'value' => (string) $value,
                     'points' => $points,
@@ -207,7 +216,7 @@ final class SurveyDefinitionScoringFormMapper
                 'label' => $label,
                 'label_en' => $labelEn,
             ];
-            foreach (['max_value', 'normalization', 'question_keys'] as $key) {
+            foreach (['max_value', 'normalization'] as $key) {
                 if (array_key_exists($key, $metric)) {
                     $formMetric[$key] = $metric[$key];
                 }
@@ -300,6 +309,104 @@ final class SurveyDefinitionScoringFormMapper
         }
 
         return $data;
+    }
+
+    /** @param list<array<string, mixed>> $rules @return array<string, list<string>> */
+    private static function questionKeysByMetric(array $rules): array
+    {
+        $questionKeys = [];
+        foreach ($rules as $rule) {
+            if (! is_array($rule)
+                || ! is_string($rule['metric_key'] ?? null)
+                || ! is_string($rule['question_key'] ?? null)) {
+                continue;
+            }
+            $metricKey = $rule['metric_key'];
+            $questionKeys[$metricKey] ??= [];
+            if (! in_array($rule['question_key'], $questionKeys[$metricKey], true)) {
+                $questionKeys[$metricKey][] = $rule['question_key'];
+            }
+        }
+
+        return $questionKeys;
+    }
+
+    /** @param list<array<string, mixed>> $rules @return array<string, int|float> */
+    private static function boundedMaxValues(array $rules): array
+    {
+        $maxValues = [];
+        $bounded = [];
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! is_string($rule['metric_key'] ?? null)) {
+                continue;
+            }
+            $metricKey = $rule['metric_key'];
+            $bounded[$metricKey] ??= true;
+            if (! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
+                $bounded[$metricKey] = false;
+
+                continue;
+            }
+            $points = is_array($rule['points'] ?? null) ? $rule['points'] : [];
+            if ($points === []) {
+                $bounded[$metricKey] = false;
+
+                continue;
+            }
+            $values = [];
+            foreach ($points as $point) {
+                if (! is_numeric($point) || ! is_finite((float) $point)) {
+                    $bounded[$metricKey] = false;
+
+                    continue 2;
+                }
+                $values[] = (float) $point;
+            }
+            $ruleMaximum = ($rule['operator'] ?? null) === 'selected_sum'
+                ? array_sum(array_map(static fn (float $point): float => max(0.0, $point), $values))
+                : max($values);
+            $maxValues[$metricKey] = ($maxValues[$metricKey] ?? 0.0) + $ruleMaximum;
+        }
+
+        foreach ($bounded as $metricKey => $isBounded) {
+            if (! $isBounded || ! array_key_exists($metricKey, $maxValues)) {
+                continue;
+            }
+            $maxValues[$metricKey] = self::number($maxValues[$metricKey]);
+        }
+
+        return array_intersect_key($maxValues, array_filter($bounded));
+    }
+
+    /** @param list<array<string, mixed>> $rules @return array<string, int|float>|null */
+    private static function derivedAnswerScale(array $rules): ?array
+    {
+        $scale = [];
+        $conflicts = [];
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! in_array($rule['operator'] ?? null, ['value_map', 'selected_sum'], true)) {
+                continue;
+            }
+            foreach (is_array($rule['points'] ?? null) ? $rule['points'] : [] as $value => $points) {
+                if (! is_numeric($points) || ! is_finite((float) $points)) {
+                    continue;
+                }
+                $value = (string) $value;
+                if (array_key_exists($value, $scale) && (float) $scale[$value] !== (float) $points) {
+                    $conflicts[$value] = true;
+
+                    continue;
+                }
+                if (! isset($conflicts[$value])) {
+                    $scale[$value] = self::number($points);
+                }
+            }
+        }
+        foreach (array_keys($conflicts) as $value) {
+            unset($scale[$value]);
+        }
+
+        return $scale === [] ? null : $scale;
     }
 
     /** @return array<string, string|null> */

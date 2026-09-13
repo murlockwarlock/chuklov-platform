@@ -30,7 +30,7 @@ final class SurveyScorer
             if (! array_key_exists($rule['question_key'], $validatedAnswers)) {
                 continue;
             }
-            $metrics[$rule['metric_key']]['value'] += $this->points($rule, $validatedAnswers[$rule['question_key']]);
+            $metrics[$rule['metric_key']]['value'] += $this->scoreRule($rule, $validatedAnswers[$rule['question_key']]);
         }
 
         foreach ($metrics as $metricKey => $metric) {
@@ -92,6 +92,39 @@ final class SurveyScorer
         return $questions;
     }
 
+    /** @param array<string, mixed> $scoring */
+    public function scoreQuestion(array $scoring, string $questionKey, mixed $answer, ?string $metricKey = null): float
+    {
+        $score = 0.0;
+        foreach ($scoring['rules'] ?? [] as $rule) {
+            if (! is_array($rule)
+                || ($rule['question_key'] ?? null) !== $questionKey
+                || ($metricKey !== null && ($rule['metric_key'] ?? null) !== $metricKey)) {
+                continue;
+            }
+            $score += $this->scoreRule($rule, $answer);
+        }
+
+        return $score;
+    }
+
+    /** @param array<string, mixed> $scoring @return list<string> */
+    public function questionKeysForMetric(array $scoring, string $metricKey): array
+    {
+        $questionKeys = [];
+        foreach ($scoring['rules'] ?? [] as $rule) {
+            if (! is_array($rule)
+                || ($rule['metric_key'] ?? null) !== $metricKey
+                || ! is_string($rule['question_key'] ?? null)
+                || in_array($rule['question_key'], $questionKeys, true)) {
+                continue;
+            }
+            $questionKeys[] = $rule['question_key'];
+        }
+
+        return $questionKeys;
+    }
+
     /** @param array<string, mixed> $answers */
     private function conditionMatches(mixed $condition, array $answers): bool
     {
@@ -117,9 +150,9 @@ final class SurveyScorer
     }
 
     /** @param array<string, mixed> $rule */
-    private function points(array $rule, mixed $answer): float
+    public function scoreRule(array $rule, mixed $answer): float
     {
-        return match ($rule['operator']) {
+        return match ($rule['operator'] ?? null) {
             'value_map' => (float) ($rule['points'][(string) $answer] ?? ($rule['default'] ?? 0)),
             'selected_sum' => is_array($answer) ? array_sum(array_map(fn ($value): float => (float) ($rule['points'][(string) $value] ?? 0), $answer)) : 0.0,
             'numeric_value' => is_numeric($answer) ? (float) $answer * (float) ($rule['multiplier'] ?? 1) : 0.0,

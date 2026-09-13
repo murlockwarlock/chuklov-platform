@@ -360,7 +360,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
         $originalScoring = $published->scoring;
 
         $state = SurveyDefinitionFormMapper::denormalize($published);
-        $state['answer_scale'][0]['points'] = 9;
+        $state['rules'][0]['points'][0]['points'] = 9;
         $state['thresholds'][0]['label'] = 'Новый текст диапазона';
         $state['summary'] = 'Новое объяснение результата.';
         $state['result_metric_key'] = $state['metrics'][0]['key'];
@@ -373,7 +373,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
         );
 
         $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
-        self::assertSame(9, $draft->scoring['answer_scale']['never']);
+        self::assertSame(9, $draft->scoring['rules'][0]['points']['never']);
         self::assertSame('Новый текст диапазона', $draft->scoring['thresholds'][0]['label']['ru']);
         self::assertSame('Новое объяснение результата.', $draft->scoring['summary']['ru']);
         self::assertSame('Новый следующий шаг.', $draft->scoring['metrics'][0]['road_map']['ru']);
@@ -385,7 +385,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
         self::assertNotSame($published->getKey(), $publishedAgain->getKey());
         self::assertSame($published->getKey(), $attempt->survey_version_id);
         self::assertSame($originalScoring, $published->fresh()->scoring);
-        self::assertSame(9, $publishedAgain->scoring['answer_scale']['never']);
+        self::assertSame(9, $publishedAgain->scoring['rules'][0]['points']['never']);
         self::assertSame('Новый текст диапазона', $publishedAgain->scoring['thresholds'][0]['label']['ru']);
     }
 
@@ -440,6 +440,18 @@ final class SurveyDefinitionBuilderTest extends TestCase
         $draft = $definition->refresh()->versions()->where('status', 'draft')->latest('version')->firstOrFail();
         self::assertSame($version->scoring, $draft->scoring);
         self::assertSame('Изменённое название', $draft->title);
+
+        $mutatedState = SurveyDefinitionFormMapper::denormalize($draft);
+        $mutatedState['sections'][0]['questions'][0]['label'] = 'Изменённый вопрос';
+
+        Livewire::actingAs($admin)
+            ->test(EditSurveyDefinition::class, ['record' => $definition->getKey()])
+            ->fillForm($mutatedState)
+            ->call('save')
+            ->assertHasErrors();
+
+        self::assertSame($draft->definition, $draft->fresh()->definition);
+        self::assertSame($draft->scoring, $draft->fresh()->scoring);
     }
 
     public function test_legacy_scoring_hidden_state_cannot_replace_authoritative_scoring(): void
