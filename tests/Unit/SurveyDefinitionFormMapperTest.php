@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Filament\Support\SurveyDefinitionFormOptions;
+use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use PHPUnit\Framework\TestCase;
 
@@ -144,6 +145,39 @@ final class SurveyDefinitionFormMapperTest extends TestCase
 
         self::assertSame($version->scoring, $state['legacy_scoring']);
         self::assertSame($version->scoring, SurveyDefinitionFormMapper::normalize($state)['scoring']);
+    }
+
+    public function test_current_nine_systems_scoring_is_human_editable_and_round_trips(): void
+    {
+        $this->assertPlatformScoringRoundTrip(PlatformSurveyCatalog::HEALTH_KEY);
+    }
+
+    public function test_current_extended_symptoms_scoring_is_human_editable_and_round_trips(): void
+    {
+        $this->assertPlatformScoringRoundTrip(PlatformSurveyCatalog::EXTENDED_SYMPTOMS_KEY);
+    }
+
+    private function assertPlatformScoringRoundTrip(string $definitionKey): void
+    {
+        $catalogDefinition = array_values(array_filter(
+            (new PlatformSurveyCatalog)->definitions(),
+            static fn (array $definition): bool => $definition['definition_key'] === $definitionKey,
+        ))[0];
+        $version = new SurveyVersion;
+        $version->definition = $catalogDefinition['definition'];
+        $version->scoring = $catalogDefinition['scoring'];
+
+        $state = SurveyDefinitionFormMapper::denormalize($version);
+
+        self::assertArrayNotHasKey('legacy_scoring', $state);
+        self::assertNotEmpty($state['answer_scale']);
+        self::assertSame($catalogDefinition['scoring']['metrics'][0]['max_value'], $state['metrics'][0]['max_value']);
+        self::assertNotEmpty($state['metrics'][0]['question_keys']);
+        self::assertArrayHasKey('road_map', $state['metrics'][0]);
+        self::assertNotEmpty($state['summary']);
+        self::assertNotEmpty($state['safe_steps']);
+        self::assertNotEmpty($state['specialist_questions']);
+        self::assertSame($catalogDefinition['scoring'], SurveyDefinitionFormMapper::normalize($state)['scoring']);
     }
 
     /** @return array<string, mixed> */
