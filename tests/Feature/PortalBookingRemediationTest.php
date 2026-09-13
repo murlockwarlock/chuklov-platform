@@ -141,6 +141,38 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('bookingResult.bookingId', Booking::query()->sole()->getKey()));
     }
 
+    public function test_cancelled_booking_is_not_replayed_as_a_new_portal_booking(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $consents = $this->acceptedConsents($organization);
+        $payload = [
+            'service_id' => $service->getKey(),
+            'specialist_id' => $specialist->getKey(),
+            'starts_at' => '2026-03-20T09:00:00+00:00',
+            'format' => VisitFormat::Office->value,
+            'consents' => $consents,
+        ];
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $payload)
+            ->assertRedirect();
+        $firstBooking = Booking::query()->sole();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.cancel', $firstBooking->getKey()))
+            ->assertRedirect();
+        self::assertSame(BookingStatus::Cancelled, $firstBooking->refresh()->status);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $payload)
+            ->assertRedirect();
+
+        self::assertSame(2, Booking::query()->count());
+        self::assertSame(BookingStatus::Cancelled, $firstBooking->refresh()->status);
+        $secondBooking = Booking::query()->where('id', '<>', $firstBooking->getKey())->sole();
+        self::assertSame(BookingStatus::Requested, $secondBooking->status);
+    }
+
     public function test_booking_exposes_each_required_published_document_for_the_compact_consent_flow(): void
     {
         [, $client, $specialist, $service] = $this->portalFixture(language: 'en');

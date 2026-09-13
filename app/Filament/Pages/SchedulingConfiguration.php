@@ -31,6 +31,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -140,6 +141,9 @@ class SchedulingConfiguration extends Page
             'zoom_client_secret' => null,
             'zoom_host_user_id' => $zoom['hostUserId'],
             'working_hours' => $specialistId === null ? [] : $this->workingHours((int) $specialistId),
+            'working_hours_digest' => $selectedSpecialist instanceof Specialist
+                ? app(SetSpecialistWorkingHours::class)->digest($selectedSpecialist)
+                : null,
             'clear_working_hours' => false,
         ]);
     }
@@ -155,7 +159,14 @@ class SchedulingConfiguration extends Page
                     ->searchable()
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
-                        $set('working_hours', $state === null ? [] : $this->workingHours((int) $state));
+                        $specialist = $state === null ? null : Specialist::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->find((int) $state);
+                        $set('working_hours', $specialist instanceof Specialist ? $this->workingHours((int) $state) : []);
+                        $set(
+                            'working_hours_digest',
+                            $specialist instanceof Specialist ? app(SetSpecialistWorkingHours::class)->digest($specialist) : null,
+                        );
                         $set('clear_working_hours', false);
 
                         if ($this->currentViewerSpecialist() !== null) {
@@ -321,6 +332,7 @@ class SchedulingConfiguration extends Page
                     ->addActionLabel('+ Добавить интервал')
                     ->reorderable(false)
                     ->columnSpanFull(),
+                Hidden::make('working_hours_digest')->dehydrated(),
                 Placeholder::make('specialist_schedule_timezone')
                     ->label('Часовой пояс графика')
                     ->content(fn (): string => $this->specialistScheduleTimezoneLabel())
@@ -419,6 +431,9 @@ class SchedulingConfiguration extends Page
                         $clearWorkingHours ? [] : $workingHours,
                         (bool) ($data['acknowledge_impact'] ?? false),
                         isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                        isset($data['working_hours_digest']) && trim((string) $data['working_hours_digest']) !== ''
+                            ? (string) $data['working_hours_digest']
+                            : null,
                     );
                 }
                 $viewerSpecialist = $this->currentViewerSpecialist() ?? $specialist;
@@ -448,6 +463,7 @@ class SchedulingConfiguration extends Page
                     );
                 }
             });
+            $this->data['working_hours_digest'] = app(SetSpecialistWorkingHours::class)->digest($specialist);
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
 

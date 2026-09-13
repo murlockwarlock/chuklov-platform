@@ -85,6 +85,7 @@ class ApproveHomeVisitBooking
                 $service->getKey(),
             );
 
+            $isBackdated = $lockedBooking->startsAtUtc()->lessThan(CarbonImmutable::now('UTC'));
             $availability = $this->availability->forBooking(
                 specialist: $specialist,
                 service: $service,
@@ -93,6 +94,8 @@ class ApproveHomeVisitBooking
                 displayTimezone: $lockedBooking->client_timezone,
                 workingLocationId: $lockedBooking->working_location_id,
                 locationArea: $lockedBooking->location_area,
+                leadTimeMinutes: $isBackdated ? 0 : null,
+                now: $isBackdated ? $lockedBooking->startsAtUtc()->subSecond() : null,
             );
             $slot = $this->matchingSlot($availability->slots, $lockedBooking->startsAtUtc());
 

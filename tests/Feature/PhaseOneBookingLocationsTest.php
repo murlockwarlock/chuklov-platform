@@ -353,6 +353,53 @@ class PhaseOneBookingLocationsTest extends TestCase
         );
     }
 
+    public function test_confirmed_backdated_home_visit_can_be_approved_without_moving_its_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $service->forceFill([
+            'duration_minutes' => 60,
+            'buffer_minutes' => 0,
+            'formats' => ['home'],
+        ])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 5,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        app(SaveLocationDay::class)->handle(
+            actor: $admin,
+            locationDay: null,
+            areaName: 'Bang Tao',
+            weekday: 5,
+            specificDate: null,
+            startTime: '10:00',
+            endTime: '18:00',
+            timezone: 'Asia/Bangkok',
+            isActive: true,
+            notes: null,
+        );
+        $past = CarbonImmutable::create(2026, 8, 28, 5, 0, 0, 'UTC');
+
+        $booking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $past,
+            format: VisitFormat::HomeVisit,
+            location: '123 Moo 5, Bang Tao',
+            locationArea: 'Bang Tao',
+            idempotencyKey: 'backdated-home-visit',
+            confirmedBackdated: true,
+        );
+        $approved = app(ApproveHomeVisitBooking::class)->handle($admin, $booking);
+
+        self::assertSame(BookingStatus::Confirmed, $approved->status);
+        self::assertTrue($approved->startsAtUtc()->equalTo($past));
+        self::assertSame('Asia/Bangkok', $approved->schedule_timezone);
+        self::assertSame($organization->getKey(), $approved->organization_id);
+    }
+
     public function test_new_home_visit_requires_a_destination_address(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
