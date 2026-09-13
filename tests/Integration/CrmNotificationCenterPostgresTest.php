@@ -9,7 +9,6 @@ use App\Modules\Channels\Domain\Enums\NotificationSeverity;
 use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
-use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
@@ -18,7 +17,6 @@ use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
-use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -48,13 +46,6 @@ final class CrmNotificationCenterPostgresTest extends TestCase
         [$organization, $administrator, $staff, $foreignAdministrator, $client, $specialist, $service] = $this->fixture();
         app(OrganizationContext::class)->set($organization);
         app(EnsureOperationalNotificationDefaults::class)->handle($organization);
-        $rule = ScenarioRule::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('rule_key', 'booking-home-visit-review-database')
-            ->sole();
-        $recipientStrategy = $rule->recipient_strategy;
-        $recipientStrategy['permission'] = OrganizationPermission::ViewSurveys->value;
-        $rule->forceFill(['recipient_strategy' => $recipientStrategy])->save();
 
         $booking = Booking::factory()
             ->forOrganization($organization)
