@@ -203,7 +203,7 @@ final class ClinicalAiPresentation
             return 'Результат получен, но не может быть отображён в текущем формате.';
         }
 
-        $lines = preg_split('/\R+/', $result, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $lines = preg_split('/\R+/u', $result, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $preview = implode("\n", array_slice(array_map(static fn (string $line): string => trim($line), $lines), 0, 5));
 
         return Str::limit($preview !== '' ? $preview : $result, 700);

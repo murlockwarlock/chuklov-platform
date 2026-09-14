@@ -561,6 +561,21 @@ final class ClientAttachmentsUxTest extends TestCase
         );
     }
 
+    public function test_clinical_preview_preserves_cyrillic_text_when_shortening_result(): void
+    {
+        $preview = ClinicalAiPresentation::preview(
+            AiCapability::ClinicalSynthesizer,
+            ['client_summary' => 'Описание микрохирургического удаления опухоли и двух попыток.'],
+            null,
+        );
+
+        self::assertTrue(mb_check_encoding($preview, 'UTF-8'));
+        self::assertStringContainsString('микрохирургического', $preview);
+        self::assertStringContainsString('опухоли', $preview);
+        self::assertStringContainsString('двух', $preview);
+        self::assertStringNotContainsString('�', $preview);
+    }
+
     public function test_foreign_client_runs_do_not_become_file_row_status(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();

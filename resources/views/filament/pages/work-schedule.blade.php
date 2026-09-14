@@ -39,7 +39,7 @@
                     <button type="button" wire:click="applyPreset('all')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Все дни</button>
                     <button type="button" wire:click="applyPreset('even')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Чётные</button>
                     <button type="button" wire:click="applyPreset('odd')" class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Нечётные</button>
-                    <button type="button" wire:click="clearSelectedDates" @disabled($selectedDates === []) class="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">Очистить</button>
+                    <button type="button" wire:click="clearDateSelection" @disabled($selectedDates === []) class="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">Снять выбор</button>
                 </div>
             </div>
 
@@ -94,10 +94,29 @@
                     </div>
                     <div class="flex min-w-0 flex-wrap gap-2">
                         <button type="button" wire:click="saveOverride" wire:loading.attr="disabled" class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-60">Сохранить изменения</button>
-                        <button type="button" wire:click="clearSelectedDates" class="rounded-lg border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">Очистить даты</button>
+                        <button type="button" wire:click="clearSelectedDates" class="rounded-lg border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">Убрать рабочее время</button>
                         <button type="button" wire:click="returnToRegularSchedule" class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">Вернуть по графику</button>
                     </div>
                 </div>
+
+                @if ($errorMessage !== '')
+                    <div role="alert" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{{ $errorMessage }}</div>
+                @endif
+
+                @if ($this->hasPendingImpact())
+                    <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+                        <p class="font-medium">Изменение затрагивает будущие записи</p>
+                        <ul class="mt-2 list-inside list-disc space-y-1">
+                            @foreach ($impactBookings as $booking)
+                                <li>{{ $booking['client'] ?? 'Клиент' }} · {{ $booking['service'] ?? 'Услуга' }} · {{ \App\Filament\Support\ScheduleImpactPreview::dateTimeLabel($booking['local_start'] ?? null) }}</li>
+                            @endforeach
+                        </ul>
+                        <label class="mt-3 flex min-w-0 items-start gap-2">
+                            <input type="checkbox" wire:model.live="acknowledgeImpact" class="mt-0.5 shrink-0 rounded border-amber-400 text-amber-600 shadow-sm">
+                            <span>Подтверждаю изменение графика. Записи сохранятся и потребуют отдельного решения.</span>
+                        </label>
+                    </div>
+                @endif
 
                 <div class="mt-5 grid min-w-0 gap-4 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
                     <label class="min-w-0 text-sm font-medium text-gray-950 dark:text-white">
@@ -145,24 +164,6 @@
                     <input type="text" wire:model.live="overrideReason" maxlength="500" class="mt-2 block w-full min-w-0 rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 </label>
 
-                @if ($errorMessage !== '')
-                    <div role="alert" class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{{ $errorMessage }}</div>
-                @endif
-
-                @if ($this->hasPendingImpact())
-                    <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
-                        <p class="font-medium">Изменение затрагивает будущие записи</p>
-                        <ul class="mt-2 list-inside list-disc space-y-1">
-                            @foreach ($impactBookings as $booking)
-                                <li>{{ $booking['client'] ?? 'Клиент' }} · {{ $booking['service'] ?? 'Услуга' }} · {{ $booking['local_start'] ?? 'Дата не указана' }}</li>
-                            @endforeach
-                        </ul>
-                        <label class="mt-3 flex min-w-0 items-start gap-2">
-                            <input type="checkbox" wire:model.live="acknowledgeImpact" class="mt-0.5 shrink-0 rounded border-amber-400 text-amber-600 shadow-sm">
-                            <span>Подтверждаю изменение графика. Записи сохранятся и потребуют отдельного решения.</span>
-                        </label>
-                    </div>
-                @endif
             </section>
         @endif
     </div>

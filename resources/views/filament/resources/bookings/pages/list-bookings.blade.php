@@ -31,13 +31,16 @@
                 </div>
             </div>
 
-            <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
                 @if (count($this->specialistOptions) > 1)
-                    <select wire:model.live="selectedSpecialistId" class="min-w-0 rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                        @foreach ($this->specialistOptions as $id => $name)
-                            <option value="{{ $id }}">{{ $name }}</option>
-                        @endforeach
-                    </select>
+                    <div class="w-full sm:w-64">
+                        <label for="booking-journal-specialist" class="fi-fo-field-wrp-label inline-flex text-sm font-medium text-gray-950 dark:text-white">Специалист</label>
+                        <select id="booking-journal-specialist" wire:model.live="selectedSpecialistId" class="fi-select-input mt-2 block w-full rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                            @foreach ($this->specialistOptions as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                 @endif
                 @if ($this->canCreateBooking())
                     <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">Добавить запись</a>

@@ -207,6 +207,11 @@ final class WorkSchedule extends Page
         $this->saveOverride();
     }
 
+    public function clearDateSelection(): void
+    {
+        $this->clearSelection();
+    }
+
     public function returnToRegularSchedule(): void
     {
         if ($this->selectedDates === []) {
@@ -398,7 +403,7 @@ final class WorkSchedule extends Page
     public function selectedDatesLabel(): string
     {
         return implode(', ', array_map(
-            static fn (string $date): string => CarbonImmutable::parse($date)->format('d.m.Y'),
+            static fn (string $date): string => CarbonImmutable::parse($date)->format('d.m'),
             $this->selectedDates,
         ));
     }

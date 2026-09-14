@@ -115,7 +115,7 @@ final class ScheduleImpactPreview
                 (string) ($booking['client'] ?? 'Клиент'),
                 (string) ($booking['service'] ?? 'Услуга'),
                 (string) ($booking['specialist'] ?? 'Специалист'),
-                self::dateLabel($booking['local_start'] ?? null),
+                self::dateTimeLabel($booking['local_start'] ?? null),
                 self::statusLabel($booking['status'] ?? null),
             ),
             array_values(array_filter($bookings, static fn (mixed $booking): bool => is_array($booking))),
@@ -127,7 +127,7 @@ final class ScheduleImpactPreview
         return is_array($bookings) && $bookings !== [];
     }
 
-    private static function dateLabel(mixed $value): string
+    public static function dateTimeLabel(mixed $value): string
     {
         if (! is_string($value) || $value === '') {
             return 'Дата не указана';
