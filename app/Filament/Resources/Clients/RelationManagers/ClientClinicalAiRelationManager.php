@@ -23,6 +23,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Surveys\Application\SurveyAuthorization;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -180,60 +181,67 @@ final class ClientClinicalAiRelationManager extends RelationManager
                     resolveRun: static fn (Model $record): ?AiRun => $record instanceof AiRun ? $record : null,
                 )
                     ->visible(fn (AiRun $record): bool => $record->status === AiRunStatus::Succeeded),
-                Action::make('acceptReview')
-                    ->label('Проверено')
-                    ->color('success')
-                    ->visible(fn (AiRun $record): bool => $canReviewAiProposals
-                        && $record->status === AiRunStatus::Succeeded
-                        && $record->human_review_status === HumanReviewStatus::PendingReview)
-                    ->requiresConfirmation()
-                    ->action(function (AiRun $record) use ($actor): void {
-                        app(ReviewAiRun::class)->handle(
-                            actor: $actor,
-                            runId: $record->id,
-                            decision: HumanReviewDecision::Accepted,
-                            safeReasonCode: HumanReviewReasonCode::SpecialistConfirmed->value,
-                        );
-                        $this->resetTable();
-                        self::success('Результат подтверждён специалистом.');
-                    }),
-                Action::make('rejectReview')
-                    ->label('Отклонить')
-                    ->color('danger')
-                    ->visible(fn (AiRun $record): bool => $canReviewAiProposals
-                        && $record->status === AiRunStatus::Succeeded
-                        && $record->human_review_status === HumanReviewStatus::PendingReview)
-                    ->schema([
-                        Select::make('reason_code')
-                            ->label('Причина')
-                            ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()]))
-                            ->required(),
-                        Textarea::make('notes')->label('Заметка специалиста')->rows(3),
-                    ])
-                    ->action(function (AiRun $record, array $data) use ($actor): void {
-                        app(ReviewAiRun::class)->handle(
-                            actor: $actor,
-                            runId: $record->id,
-                            decision: HumanReviewDecision::Rejected,
-                            safeReasonCode: (string) $data['reason_code'],
-                            notes: isset($data['notes']) ? (string) $data['notes'] : null,
-                        );
-                        $this->resetTable();
-                        self::failureNotification('Результат отклонён специалистом.');
-                    }),
-                Action::make('rerun')
-                    ->label('Повторить анализ')
-                    ->icon('heroicon-o-arrow-path')
-                    ->visible(fn (AiRun $record): bool => $record->status->isTerminal())
-                    ->requiresConfirmation()
-                    ->action(function (AiRun $record) use ($actor, $client): void {
-                        try {
-                            self::rerun($record, $actor, $client);
-                            self::success('Новый запуск создан. Предыдущий результат сохранён в истории.');
-                        } catch (Throwable $exception) {
-                            self::failure($exception);
-                        }
-                    }),
+                ActionGroup::make([
+                    Action::make('acceptReview')
+                        ->label('Проверено')
+                        ->color('success')
+                        ->visible(fn (AiRun $record): bool => $canReviewAiProposals
+                            && $record->status === AiRunStatus::Succeeded
+                            && $record->human_review_status === HumanReviewStatus::PendingReview)
+                        ->requiresConfirmation()
+                        ->action(function (AiRun $record) use ($actor): void {
+                            app(ReviewAiRun::class)->handle(
+                                actor: $actor,
+                                runId: $record->id,
+                                decision: HumanReviewDecision::Accepted,
+                                safeReasonCode: HumanReviewReasonCode::SpecialistConfirmed->value,
+                            );
+                            $this->resetTable();
+                            self::success('Результат подтверждён специалистом.');
+                        }),
+                    Action::make('rejectReview')
+                        ->label('Отклонить')
+                        ->color('danger')
+                        ->visible(fn (AiRun $record): bool => $canReviewAiProposals
+                            && $record->status === AiRunStatus::Succeeded
+                            && $record->human_review_status === HumanReviewStatus::PendingReview)
+                        ->schema([
+                            Select::make('reason_code')
+                                ->label('Причина')
+                                ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()]))
+                                ->required(),
+                            Textarea::make('notes')->label('Заметка специалиста')->rows(3),
+                        ])
+                        ->action(function (AiRun $record, array $data) use ($actor): void {
+                            app(ReviewAiRun::class)->handle(
+                                actor: $actor,
+                                runId: $record->id,
+                                decision: HumanReviewDecision::Rejected,
+                                safeReasonCode: (string) $data['reason_code'],
+                                notes: isset($data['notes']) ? (string) $data['notes'] : null,
+                            );
+                            $this->resetTable();
+                            self::failureNotification('Результат отклонён специалистом.');
+                        }),
+                    Action::make('rerun')
+                        ->label('Повторить анализ')
+                        ->icon('heroicon-o-arrow-path')
+                        ->visible(fn (AiRun $record): bool => $record->status->isTerminal())
+                        ->requiresConfirmation()
+                        ->action(function (AiRun $record) use ($actor, $client): void {
+                            try {
+                                self::rerun($record, $actor, $client);
+                                self::success('Новый запуск создан. Предыдущий результат сохранён в истории.');
+                            } catch (Throwable $exception) {
+                                self::failure($exception);
+                            }
+                        }),
+                ])
+                    ->label('Действия')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->button()
+                    ->color('gray')
+                    ->size('sm'),
             ])
             ->defaultSort('created_at', 'desc')
             ->paginated([10, 25])

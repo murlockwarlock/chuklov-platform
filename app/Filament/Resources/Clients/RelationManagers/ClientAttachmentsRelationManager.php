@@ -150,24 +150,33 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),
             ])
             ->recordActions([
+                Action::make('preview')
+                    ->label('Просмотр')
+                    ->icon('heroicon-o-eye')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Закрыть')
+                    ->modalWidth('7xl')
+                    ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
+                        'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
+                        'filename' => $record->original_filename,
+                        'mimeType' => strtolower($record->mime_type),
+                    ]))
+                    ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
+                Action::make('download')
+                    ->label('Скачать')
+                    ->action(function (MedicalAttachment $record) use ($actor): mixed {
+                        return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
+                    }),
+                ClinicalAiResultAction::make(
+                    name: 'openDocumentAnalysisResult',
+                    actor: $actor,
+                    client: $client,
+                    resolveRun: fn (Model $record): ?AiRun => $record instanceof MedicalAttachment
+                        ? $this->latestDocumentAnalysisRun($record)
+                        : null,
+                )
+                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
                 ActionGroup::make([
-                    Action::make('preview')
-                        ->label('Просмотр')
-                        ->icon('heroicon-o-eye')
-                        ->modalSubmitAction(false)
-                        ->modalCancelActionLabel('Закрыть')
-                        ->modalWidth('7xl')
-                        ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
-                            'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
-                            'filename' => $record->original_filename,
-                            'mimeType' => strtolower($record->mime_type),
-                        ]))
-                        ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
-                    Action::make('download')
-                        ->label('Скачать')
-                        ->action(function (MedicalAttachment $record) use ($actor): mixed {
-                            return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
-                        }),
                     Action::make('startDocumentAnalysis')
                         ->label('Запустить анализ')
                         ->icon('heroicon-o-sparkles')
@@ -208,15 +217,6 @@ final class ClientAttachmentsRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
-                    ClinicalAiResultAction::make(
-                        name: 'openDocumentAnalysisResult',
-                        actor: $actor,
-                        client: $client,
-                        resolveRun: fn (Model $record): ?AiRun => $record instanceof MedicalAttachment
-                            ? $this->latestDocumentAnalysisRun($record)
-                            : null,
-                    )
-                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
                     Action::make('acceptDocumentAnalysisReview')
                         ->label('Проверено')
                         ->icon('heroicon-o-check-circle')

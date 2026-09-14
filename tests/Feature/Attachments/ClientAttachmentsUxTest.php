@@ -23,6 +23,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -66,20 +67,26 @@ final class ClientAttachmentsUxTest extends TestCase
         self::assertStringContainsString('<iframe', $component->getMountedActionModalHtml());
     }
 
-    public function test_attachment_row_actions_are_compactly_grouped_to_avoid_horizontal_overflow(): void
+    public function test_attachment_row_actions_keep_primary_actions_visible_and_group_secondary_actions(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
         $this->attachment($organization, $admin, $client);
 
         $actions = $this->mount($admin, $client)->instance()->getTable()->getRecordActions();
 
-        self::assertCount(1, $actions);
-        self::assertInstanceOf(ActionGroup::class, $actions[0]);
-        self::assertSame('Действия', $actions[0]->getLabel());
-        self::assertArrayHasKey('preview', $actions[0]->getFlatActions());
-        self::assertArrayHasKey('download', $actions[0]->getFlatActions());
-        self::assertArrayHasKey('startDocumentAnalysis', $actions[0]->getFlatActions());
-        self::assertArrayHasKey('openDocumentAnalysisResult', $actions[0]->getFlatActions());
+        self::assertCount(4, $actions);
+        self::assertInstanceOf(Action::class, $actions[0]);
+        self::assertInstanceOf(Action::class, $actions[1]);
+        self::assertInstanceOf(Action::class, $actions[2]);
+        self::assertSame('preview', $actions[0]->getName());
+        self::assertSame('download', $actions[1]->getName());
+        self::assertSame('openDocumentAnalysisResult', $actions[2]->getName());
+        self::assertInstanceOf(ActionGroup::class, $actions[3]);
+        self::assertSame('Действия', $actions[3]->getLabel());
+        self::assertArrayHasKey('startDocumentAnalysis', $actions[3]->getFlatActions());
+        self::assertArrayHasKey('retryDocumentAnalysis', $actions[3]->getFlatActions());
+        self::assertArrayHasKey('acceptDocumentAnalysisReview', $actions[3]->getFlatActions());
+        self::assertArrayHasKey('rejectDocumentAnalysisReview', $actions[3]->getFlatActions());
     }
 
     public function test_latest_document_run_controls_status_polling_and_actions(): void
@@ -185,6 +192,15 @@ final class ClientAttachmentsUxTest extends TestCase
             'ownerRecord' => $client,
             'pageClass' => ViewClient::class,
         ]);
+        $clinicalActions = $clinicalAi->instance()->getTable()->getRecordActions();
+        self::assertCount(2, $clinicalActions);
+        self::assertInstanceOf(Action::class, $clinicalActions[0]);
+        self::assertSame('openResult', $clinicalActions[0]->getName());
+        self::assertInstanceOf(ActionGroup::class, $clinicalActions[1]);
+        self::assertSame('Действия', $clinicalActions[1]->getLabel());
+        self::assertArrayHasKey('acceptReview', $clinicalActions[1]->getFlatActions());
+        self::assertArrayHasKey('rejectReview', $clinicalActions[1]->getFlatActions());
+        self::assertArrayHasKey('rerun', $clinicalActions[1]->getFlatActions());
         $clinicalAi
             ->assertSuccessful()
             ->assertTableColumnStateSet('status', AiRunStatus::Succeeded, $run)
