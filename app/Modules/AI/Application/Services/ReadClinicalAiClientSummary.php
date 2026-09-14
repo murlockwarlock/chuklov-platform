@@ -6,8 +6,6 @@ use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Domain\Enums\AiCapability;
-use App\Modules\AI\Domain\Enums\AiRunStatus;
-use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalProfileAuthorization;
@@ -32,6 +30,7 @@ final readonly class ReadClinicalAiClientSummary
         private MedicalProfileAuthorization $profileAuthorization,
         private SurveyAuthorization $surveyAuthorization,
         private GetClinicalAiResult $resultReader,
+        private FindLatestReviewedAiRun $findLatestReviewedAiRun,
     ) {}
 
     /**
@@ -43,7 +42,8 @@ final readonly class ReadClinicalAiClientSummary
      *         synthesis: array{label: string, state: string, color: string, lastReadyAt: string|null}
      *     },
      *     readiness: list<array{label: string, available: bool, availability: string}>,
-     *     synthesisPreview: string|null
+     *     synthesisPreview: string|null,
+     *     synthesisPreviewAt: string|null
      * }|null
      */
     public function handle(User $actor, Client $client): ?array
@@ -57,7 +57,21 @@ final readonly class ReadClinicalAiClientSummary
         $documentRun = $this->latestRun($client, AiCapability::ClinicalDocumentExtraction, $organizationId);
         $postureRun = $this->latestRun($client, AiCapability::PostureAnalysis, $organizationId);
         $synthesisRun = $this->latestRun($client, AiCapability::ClinicalSynthesizer, $organizationId);
-        $latestReadySynthesis = $this->latestSuccessfulRun($client, AiCapability::ClinicalSynthesizer, $organizationId);
+        $documentReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::ClinicalDocumentExtraction,
+            $organizationId,
+        );
+        $postureReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::PostureAnalysis,
+            $organizationId,
+        );
+        $synthesisReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::ClinicalSynthesizer,
+            $organizationId,
+        );
 
         return [
             'explanation' => 'Анализы документов и осанки сначала проверяет специалист. Подтверждённые результаты вместе с медицинским профилем, сессиями и опросами используются для клинического резюме.',
@@ -76,11 +90,20 @@ final readonly class ReadClinicalAiClientSummary
                     'label' => 'Клиническое резюме',
                     'state' => ClinicalAiPresentation::synthesisStatus($synthesisRun),
                     'color' => ClinicalAiPresentation::synthesisStatusColor($synthesisRun),
-                    'lastReadyAt' => $this->dateLabel($latestReadySynthesis?->finished_at ?? $latestReadySynthesis?->created_at),
+                    'lastReadyAt' => $this->dateLabel($synthesisReviewedRun?->finished_at ?? $synthesisReviewedRun?->created_at),
                 ],
             ],
-            'readiness' => $this->readinessFor($actor, $client, $organizationId),
-            'synthesisPreview' => $this->synthesisPreview($actor, $client, $latestReadySynthesis),
+            'readiness' => $this->readinessFor(
+                $actor,
+                $client,
+                $organizationId,
+                $documentRun,
+                $documentReviewedRun,
+                $postureRun,
+                $postureReviewedRun,
+            ),
+            'synthesisPreview' => $this->synthesisPreview($actor, $client, $synthesisReviewedRun),
+            'synthesisPreviewAt' => $this->dateLabel($synthesisReviewedRun?->finished_at ?? $synthesisReviewedRun?->created_at),
         ];
     }
 
@@ -88,10 +111,33 @@ final readonly class ReadClinicalAiClientSummary
     public function readiness(User $actor, Client $client): ?array
     {
         $organization = $this->organizationFor($actor, $client);
+        if ($organization === null) {
+            return null;
+        }
 
-        return $organization === null
-            ? null
-            : $this->readinessFor($actor, $client, (int) $organization->getKey());
+        $organizationId = (int) $organization->getKey();
+        $documentRun = $this->latestRun($client, AiCapability::ClinicalDocumentExtraction, $organizationId);
+        $postureRun = $this->latestRun($client, AiCapability::PostureAnalysis, $organizationId);
+        $documentReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::ClinicalDocumentExtraction,
+            $organizationId,
+        );
+        $postureReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::PostureAnalysis,
+            $organizationId,
+        );
+
+        return $this->readinessFor(
+            $actor,
+            $client,
+            $organizationId,
+            $documentRun,
+            $documentReviewedRun,
+            $postureRun,
+            $postureReviewedRun,
+        );
     }
 
     public function readinessDescription(User $actor, Client $client): string
@@ -152,37 +198,21 @@ final readonly class ReadClinicalAiClientSummary
             ]);
     }
 
-    private function latestSuccessfulRun(Client $client, AiCapability $capability, int $organizationId): ?AiRun
-    {
-        return AiRun::query()
-            ->where('organization_id', $organizationId)
-            ->where('client_id', $client->getKey())
-            ->where('capability', $capability)
-            ->where('status', AiRunStatus::Succeeded)
-            ->orderByDesc('finished_at')
-            ->orderByDesc('id')
-            ->first([
-                'id',
-                'organization_id',
-                'client_id',
-                'capability',
-                'status',
-                'human_review_status',
-                'finished_at',
-                'created_at',
-            ]);
-    }
-
     /** @return list<array{label: string, available: bool, availability: string}> */
-    private function readinessFor(User $actor, Client $client, int $organizationId): array
-    {
+    private function readinessFor(
+        User $actor,
+        Client $client,
+        int $organizationId,
+        ?AiRun $documentRun,
+        ?AiRun $documentReviewedRun,
+        ?AiRun $postureRun,
+        ?AiRun $postureReviewedRun,
+    ): array {
         $profileAvailable = $this->profileAuthorization->allowsView($actor, $client)
             && MedicalProfile::query()
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $client->getKey())
                 ->exists();
-        $documentAvailable = $this->hasReviewedRun($client, AiCapability::ClinicalDocumentExtraction, $organizationId);
-        $postureAvailable = $this->hasReviewedRun($client, AiCapability::PostureAnalysis, $organizationId);
         $sessionsAvailable = MedicalSession::query()
             ->where('organization_id', $organizationId)
             ->where('client_id', $client->getKey())
@@ -201,16 +231,8 @@ final readonly class ReadClinicalAiClientSummary
                 'available' => $profileAvailable,
                 'availability' => $profileAvailable ? 'доступен' : 'нет данных',
             ],
-            [
-                'label' => 'Проверенный анализ документов',
-                'available' => $documentAvailable,
-                'availability' => $documentAvailable ? 'доступен' : 'нет данных',
-            ],
-            [
-                'label' => 'Проверенный анализ осанки',
-                'available' => $postureAvailable,
-                'availability' => $postureAvailable ? 'доступен' : 'нет данных',
-            ],
+            $this->sourceReadiness('Проверенный анализ документов', $documentReviewedRun !== null, $documentRun, $documentReviewedRun),
+            $this->sourceReadiness('Проверенный анализ осанки', $postureReviewedRun !== null, $postureRun, $postureReviewedRun),
             [
                 'label' => 'Последние сессии',
                 'available' => $sessionsAvailable,
@@ -226,18 +248,26 @@ final readonly class ReadClinicalAiClientSummary
         ];
     }
 
-    private function hasReviewedRun(Client $client, AiCapability $capability, int $organizationId): bool
+    /** @return array{label: string, available: bool, availability: string} */
+    private function sourceReadiness(string $label, bool $available, ?AiRun $latestRun, ?AiRun $reviewedRun): array
     {
-        return AiRun::query()
-            ->where('organization_id', $organizationId)
-            ->where('client_id', $client->getKey())
-            ->where('capability', $capability)
-            ->where('status', AiRunStatus::Succeeded)
-            ->whereIn('human_review_status', [
-                HumanReviewStatus::Accepted,
-                HumanReviewStatus::EditedAndAccepted,
-            ])
-            ->exists();
+        $reviewedAt = $this->dateLabel($reviewedRun?->finished_at ?? $reviewedRun?->created_at);
+        $usingPreviousReviewed = $available
+            && $latestRun !== null
+            && $reviewedRun !== null
+            && (int) $latestRun->getKey() !== (int) $reviewedRun->getKey();
+        $availability = match (true) {
+            ! $available => 'проверенный результат отсутствует',
+            $usingPreviousReviewed && $reviewedAt !== null => 'используется предыдущий проверенный результат от '.$reviewedAt,
+            $usingPreviousReviewed => 'используется предыдущий проверенный результат',
+            default => 'доступен',
+        };
+
+        return [
+            'label' => $label,
+            'available' => $available,
+            'availability' => $availability,
+        ];
     }
 
     private function synthesisPreview(User $actor, Client $client, ?AiRun $run): ?string

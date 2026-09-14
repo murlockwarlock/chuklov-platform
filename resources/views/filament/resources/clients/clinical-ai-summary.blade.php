@@ -23,7 +23,7 @@
                 <span class="min-w-0">
                     <span class="inline-flex max-w-full rounded-full px-2 py-1 text-xs font-medium {{ $badgeClasses[$state['color']] ?? $badgeClasses['gray'] }}">{{ $state['state'] }}</span>
                     @if ($state['label'] === 'Клиническое резюме' && $state['lastReadyAt'])
-                        <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">Последний результат: {{ $state['lastReadyAt'] }}</span>
+                        <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">Последний проверенный результат: {{ $state['lastReadyAt'] }}</span>
                     @endif
                 </span>
             </span>

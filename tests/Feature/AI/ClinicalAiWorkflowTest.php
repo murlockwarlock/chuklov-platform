@@ -245,11 +245,136 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertIsArray($summary);
         self::assertSame('Отклонено', $summary['states']['documents']['state']);
         self::assertTrue($summary['readiness'][1]['available']);
-        self::assertSame('Готово', $summary['states']['synthesis']['state']);
+        self::assertSame('Проверено', $summary['states']['synthesis']['state']);
         self::assertStringContainsString('Короткая сводка для специалиста.', (string) $summary['synthesisPreview']);
         self::assertStringNotContainsString('"client_summary"', (string) $summary['synthesisPreview']);
         self::assertSame($synthesisRun->getKey(), AiRun::query()->find($synthesisRun->getKey())?->getKey());
         self::assertSame(HumanReviewStatus::Rejected, $latestDocumentRun->fresh()->human_review_status);
+    }
+
+    public function test_pending_synthesis_is_not_presented_as_ready_or_previewed(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Непроверенная сводка.'],
+            HumanReviewStatus::PendingReview,
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Требует проверки', $summary['states']['synthesis']['state']);
+        self::assertNull($summary['synthesisPreview']);
+        self::assertNull($summary['states']['synthesis']['lastReadyAt']);
+    }
+
+    public function test_rejected_synthesis_is_not_presented_as_ready_or_previewed(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Отклонённая сводка.'],
+            HumanReviewStatus::Rejected,
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['synthesis']['state']);
+        self::assertNull($summary['synthesisPreview']);
+        self::assertNull($summary['states']['synthesis']['lastReadyAt']);
+    }
+
+    public function test_previous_accepted_synthesis_remains_the_explicit_preview_when_newer_run_is_rejected(): void
+    {
+        $acceptedRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Последнее проверенное резюме.'],
+        );
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Новое отклонённое резюме.'],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Последнее проверенное резюме.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('Новое отклонённое резюме.', (string) $summary['synthesisPreview']);
+        self::assertSame('12.09.2026 10:00', $summary['states']['synthesis']['lastReadyAt']);
+        self::assertSame('12.09.2026 10:00', $summary['synthesisPreviewAt']);
+    }
+
+    public function test_previous_accepted_synthesis_remains_the_explicit_preview_when_newer_run_is_pending(): void
+    {
+        $acceptedRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Предыдущее проверенное резюме.'],
+        );
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Новое резюме ожидает проверки.'],
+            HumanReviewStatus::PendingReview,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Требует проверки', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Предыдущее проверенное резюме.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('Новое резюме ожидает проверки.', (string) $summary['synthesisPreview']);
+        self::assertSame('12.09.2026 10:00', $summary['states']['synthesis']['lastReadyAt']);
+        self::assertSame('12.09.2026 10:00', $summary['synthesisPreviewAt']);
+    }
+
+    public function test_source_readiness_explains_previous_reviewed_document_and_posture_results(): void
+    {
+        $documentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Предыдущий проверенный документ.'],
+        );
+        $documentRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Новый документ отклонён.'],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $postureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Предыдущее наблюдение.']]]],
+        );
+        $postureRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Новое наблюдение отклонено.']]]],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['documents']['state']);
+        self::assertSame('Отклонено', $summary['states']['posture']['state']);
+        self::assertTrue($summary['readiness'][1]['available']);
+        self::assertTrue($summary['readiness'][2]['available']);
+        self::assertStringContainsString('12.09.2026 10:00', $summary['readiness'][1]['availability']);
+        self::assertStringContainsString('12.09.2026 10:00', $summary['readiness'][2]['availability']);
     }
 
     public function test_synthesis_bounds_large_reviewed_context_before_persisting_the_prompt(): void

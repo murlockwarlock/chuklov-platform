@@ -191,7 +191,7 @@ final class MessagesWorkspaceTest extends TestCase
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $this->client->getKey(),
             'status' => AiRunStatus::Succeeded,
-            'human_review_status' => HumanReviewStatus::NotRequired,
+            'human_review_status' => HumanReviewStatus::Accepted,
             'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
             'context_provenance' => [],
             'token_usage' => [],
@@ -216,7 +216,8 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertSee('Клиническая сводка')
             ->assertSee('Анализ документов')
             ->assertSee('Клиническое резюме')
-            ->assertSee('Готово')
+            ->assertSee('Проверено')
+            ->assertSee('Последнее проверенное клиническое резюме:')
             ->assertSee('Короткая сводка для специалиста.')
             ->assertDontSee('"client_summary"')
             ->assertSee(ClientResource::getUrl('view', [
@@ -244,6 +245,41 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertDontSee('Клиническая сводка')
             ->assertDontSee('Клиническое резюме')
             ->assertDontSee('client_summary');
+    }
+
+    public function test_messages_sidebar_does_not_render_pending_synthesis_as_an_active_preview(): void
+    {
+        $run = AiRun::create([
+            'organization_id' => $this->organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $this->client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::PendingReview,
+            'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $payload = json_encode(['client_summary' => 'Непроверенная сводка.'], JSON_THROW_ON_ERROR);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->assertSee('Клиническая сводка')
+            ->assertSee('Требует проверки')
+            ->assertDontSee('Последнее проверенное клиническое резюме:')
+            ->assertDontSee('Непроверенная сводка.');
     }
 
     public function test_crm_reply_uses_verified_telegram_binding_for_the_existing_companion_conversation(): void

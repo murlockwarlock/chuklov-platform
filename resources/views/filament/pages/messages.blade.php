@@ -285,6 +285,9 @@
                                     @endforeach
                                 </div>
                                 @if ($clinicalSummary['synthesisPreview'] ?? null)
+                                    @if ($clinicalSummary['synthesisPreviewAt'] ?? null)
+                                        <p class="mt-3 break-words text-xs text-gray-500 dark:text-gray-400">Последнее проверенное клиническое резюме: {{ $clinicalSummary['synthesisPreviewAt'] }}</p>
+                                    @endif
                                     <p class="mt-3 whitespace-pre-line break-words text-xs leading-5 text-gray-600 dark:text-gray-300">{{ $clinicalSummary['synthesisPreview'] }}</p>
                                 @endif
                                 @if ($clientSummary['urls']['clinicalAi'] ?? null)

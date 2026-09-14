@@ -98,21 +98,43 @@ final class ClinicalAiPresentation
 
     public static function synthesisStatus(?AiRun $run): string
     {
-        return match (true) {
-            $run === null => 'Нет',
-            ! $run->status->isTerminal() => 'Создаётся',
-            $run->status === AiRunStatus::Succeeded => 'Готово',
-            default => 'Ошибка',
+        if ($run === null) {
+            return 'Нет';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'Создаётся';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'Ошибка';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
+            HumanReviewStatus::Rejected => 'Отклонено',
+            default => 'Требует проверки',
         };
     }
 
     public static function synthesisStatusColor(?AiRun $run): string
     {
-        return match (true) {
-            $run === null => 'gray',
-            ! $run->status->isTerminal() => 'info',
-            $run->status === AiRunStatus::Succeeded => 'success',
-            default => 'danger',
+        if ($run === null) {
+            return 'gray';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'info';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'danger';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'success',
+            HumanReviewStatus::Rejected => 'danger',
+            default => 'warning',
         };
     }
 
