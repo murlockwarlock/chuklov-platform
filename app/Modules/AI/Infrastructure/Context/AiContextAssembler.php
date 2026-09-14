@@ -5,6 +5,7 @@ namespace App\Modules\AI\Infrastructure\Context;
 use App\Models\User;
 use App\Modules\AI\Application\Attachments\AiAttachmentResolver;
 use App\Modules\AI\Application\Data\ContextAssemblyResult;
+use App\Modules\AI\Application\Services\ClinicalSynthesizerMedicalProfileContext;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Exceptions\AiRagRetrievalException;
@@ -29,6 +30,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
         private readonly ?GetMedicalProfile $getMedicalProfile = null,
         private readonly ?MedicalSessionAuthorization $sessionAuthorization = null,
         private readonly ?AiAttachmentResolver $attachmentResolver = null,
+        private readonly ?ClinicalSynthesizerMedicalProfileContext $medicalProfileContext = null,
     ) {}
 
     public function assemble(
@@ -119,7 +121,9 @@ class AiContextAssembler implements AiContextAssemblerInterface
 
                     $profile = $this->getMedicalProfile->handle($actor, $client);
                     if ($profile !== null) {
-                        $variables['anamnesis'] = $profile->anamnesis ?? '';
+                        $variables['anamnesis'] = $capability === AiCapability::ClinicalSynthesizer
+                            ? ($this->medicalProfileContext ?? app(ClinicalSynthesizerMedicalProfileContext::class))->build($profile)
+                            : ($profile->anamnesis ?? '');
                         $variables['complaints_goals'] = $profile->complaintsGoals ?? '';
                         $provenanceSummary['medical_summary_included'] = true;
                     }

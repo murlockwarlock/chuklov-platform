@@ -2,16 +2,22 @@
 
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
+use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
+use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -52,6 +58,17 @@ final class SessionInfolist
                                 return $parts ? implode(' · ', $parts) : 'Дата не указана';
                             }),
                     ])->columns(3),
+                Section::make('Клиническое резюме')
+                    ->schema([
+                        ViewEntry::make('clinicalSummary')
+                            ->hiddenLabel()
+                            ->view(
+                                'filament.resources.clients.session-clinical-summary',
+                                fn (MedicalSession $record, ViewEntry $entry): array => self::clinicalSummaryViewData($record, $entry),
+                            )
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::clinicalSummary($record, $section) !== null),
                 Section::make('Динамика подтверждённых фактов')
                     ->schema([
                         RepeatableEntry::make('comparison')
@@ -127,5 +144,53 @@ final class SessionInfolist
             BookingStatus::Completed => 'Завершена',
             BookingStatus::NoShow => 'Не состоялась',
         };
+    }
+
+    /** @return array{summary: array<string, mixed>|null, clinicalAiUrl: string|null} */
+    private static function clinicalSummaryViewData(MedicalSession $record, ViewEntry $entry): array
+    {
+        $summary = self::clinicalSummary($record, $entry);
+
+        return [
+            'summary' => $summary,
+            'clinicalAiUrl' => $summary === null ? null : self::clinicalAiUrl(self::parentClient($record, $entry)),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private static function clinicalSummary(MedicalSession $record, Component $component): ?array
+    {
+        $actor = auth()->user();
+        $client = self::parentClient($record, $component);
+
+        if (! $actor instanceof User || $client === null || ! app(MedicalSessionAuthorization::class)->allowsView($actor, $record)) {
+            return null;
+        }
+
+        return app(ReadClinicalAiClientSummary::class)->handle($actor, $client);
+    }
+
+    private static function parentClient(MedicalSession $record, Component $component): ?Client
+    {
+        $livewire = $component->getLivewire();
+        $parent = method_exists($livewire, 'getParentRecord') ? $livewire->getParentRecord() : null;
+
+        return $parent instanceof Client && (int) $record->client_id === (int) $parent->getKey() ? $parent : null;
+    }
+
+    private static function clinicalAiUrl(?Client $client): ?string
+    {
+        if (! $client instanceof Client) {
+            return null;
+        }
+
+        $clinicalRelation = array_search(ClientClinicalAiRelationManager::class, ClientResource::getRelations(), true);
+
+        return $clinicalRelation === false
+            ? ClientResource::getUrl('view', ['record' => $client])
+            : ClientResource::getUrl('view', [
+                'record' => $client,
+                'relation' => (string) $clinicalRelation,
+            ]);
     }
 }

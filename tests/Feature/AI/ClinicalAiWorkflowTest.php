@@ -29,6 +29,8 @@ use App\Modules\AI\Infrastructure\Providers\AiProviderExecutionConfiguration;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -216,6 +218,76 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
         self::assertStringContainsString('Old document fact', (string) $originalPrompt);
         self::assertStringNotContainsString('New document fact', (string) $originalPrompt);
+    }
+
+    public function test_synthesis_prompt_includes_the_complete_medical_profile_and_profile_changes_change_idempotency(): void
+    {
+        Queue::fake();
+        app(UpdateMedicalProfile::class)->handle($this->staff, $this->client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Анамнез X',
+            complaintsGoals: 'Жалобы и цели W',
+            operationsInjuries: 'Операция Y',
+            medicines: 'Лекарство Z',
+            supplements: 'Добавка Q',
+        ));
+
+        $firstRun = app(StartClinicalSynthesis::class)->handle($this->staff, $this->client);
+        $firstPayload = AiRunPayload::query()->where('ai_run_id', $firstRun->id)->firstOrFail();
+        $firstPrompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $firstPayload->encrypted_user_prompt,
+            $firstPayload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Анамнез X', (string) $firstPrompt);
+        self::assertStringContainsString('Жалобы и цели W', (string) $firstPrompt);
+        self::assertStringContainsString('Операция Y', (string) $firstPrompt);
+        self::assertStringContainsString('Лекарство Z', (string) $firstPrompt);
+        self::assertStringContainsString('Добавка Q', (string) $firstPrompt);
+
+        app(UpdateMedicalProfile::class)->handle($this->staff, $this->client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Анамнез X',
+            complaintsGoals: 'Жалобы и цели W',
+            operationsInjuries: 'Новая операция Y2',
+            medicines: 'Новое лекарство Z2',
+            supplements: 'Новая добавка Q2',
+        ));
+
+        $secondRun = app(StartClinicalSynthesis::class)->handle($this->staff, $this->client);
+        $secondPayload = AiRunPayload::query()->where('ai_run_id', $secondRun->id)->firstOrFail();
+        $secondPrompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $secondPayload->encrypted_user_prompt,
+            $secondPayload->encryption_key_version,
+        );
+
+        self::assertNotSame($firstRun->idempotency_key, $secondRun->idempotency_key);
+        self::assertStringContainsString('Новая операция Y2', (string) $secondPrompt);
+        self::assertStringContainsString('Новое лекарство Z2', (string) $secondPrompt);
+        self::assertStringContainsString('Новая добавка Q2', (string) $secondPrompt);
+    }
+
+    public function test_synthesis_prompt_does_not_fabricate_empty_optional_medical_profile_fields(): void
+    {
+        Queue::fake();
+        app(UpdateMedicalProfile::class)->handle($this->staff, $this->client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Только анамнез',
+            complaintsGoals: 'Только жалобы и цели',
+        ));
+
+        $run = app(StartClinicalSynthesis::class)->handle($this->staff, $this->client);
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->id)->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Только анамнез', (string) $prompt);
+        self::assertStringContainsString('Только жалобы и цели', (string) $prompt);
+        self::assertStringNotContainsString('Операция Y', (string) $prompt);
+        self::assertStringNotContainsString('Лекарство Z', (string) $prompt);
+        self::assertStringNotContainsString('Добавка Q', (string) $prompt);
     }
 
     public function test_clinical_client_summary_uses_latest_state_and_human_synthesis_preview(): void

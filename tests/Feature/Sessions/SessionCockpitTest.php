@@ -3,14 +3,23 @@
 namespace Tests\Feature\Sessions;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\CreateMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\EditMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ViewMedicalSession;
 use App\Models\User;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -38,6 +47,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Livewire;
+use Mockery;
 use Tests\TestCase;
 
 final class SessionCockpitTest extends TestCase
@@ -246,7 +256,7 @@ final class SessionCockpitTest extends TestCase
         );
 
         $encryptor = app(MedicalEncryptorInterface::class);
-        $mock = \Mockery::mock(MedicalEncryptorInterface::class);
+        $mock = Mockery::mock(MedicalEncryptorInterface::class);
         $mock->shouldReceive('decryptField')->never();
         app()->instance(MedicalEncryptorInterface::class, $mock);
 
@@ -353,7 +363,7 @@ final class SessionCockpitTest extends TestCase
 
         $session = $this->createSession($admin, $client, $specialist, pain: 'Секретная боль');
         $original = app(MedicalEncryptorInterface::class);
-        $mock = \Mockery::mock(MedicalEncryptorInterface::class);
+        $mock = Mockery::mock(MedicalEncryptorInterface::class);
         $mock->shouldReceive('decryptField')
             ->times(6)
             ->andReturnUsing(static fn (int $organizationId, ?string $ciphertext): ?string => $ciphertext === null ? null : 'Расшифрованное поле');
@@ -399,6 +409,136 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('Первичная запись о боли')
             ->assertSee('Предыдущая запись о боли')
             ->assertSee('Файлы сеанса');
+    }
+
+    public function test_filament_session_cockpit_shows_reviewed_clinical_summary_and_canonical_workspace_link(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $run = $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'client_summary' => 'Проверенная сводка в карточке сеанса.',
+            'main_request' => 'Главный запрос клиента.',
+        ]);
+        $run->update(['finished_at' => Carbon::parse('2026-08-15 10:00:00', 'UTC')]);
+
+        $clinicalRelation = array_search(
+            ClientClinicalAiRelationManager::class,
+            ClientResource::getRelations(),
+            true,
+        );
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Клиническое резюме')
+            ->assertSee('Проверено')
+            ->assertSee('Последнее проверенное')
+            ->assertSee('Проверенная сводка в карточке сеанса.')
+            ->assertSee(ClientResource::getUrl('view', [
+                'record' => $client,
+                'relation' => (string) $clinicalRelation,
+            ]), false)
+            ->assertDontSee('"client_summary"');
+    }
+
+    public function test_filament_session_cockpit_shows_a_human_empty_state_without_a_reviewed_summary(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Клиническое резюме')
+            ->assertSee('Нет')
+            ->assertSee('Клиническое резюме ещё не создано.')
+            ->assertDontSee('AiRun')
+            ->assertDontSee('client_id');
+    }
+
+    public function test_filament_session_cockpit_uses_previous_reviewed_summary_when_latest_synthesis_is_pending(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $acceptedRun = $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'client_summary' => 'Предыдущая проверенная сводка.',
+        ]);
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-08-14 10:00:00', 'UTC')]);
+        $pendingRun = $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::PendingReview, [
+            'client_summary' => 'Непроверенная новая сводка.',
+        ]);
+        $pendingRun->update(['finished_at' => Carbon::parse('2026-08-15 10:00:00', 'UTC')]);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Требует проверки')
+            ->assertSee('Последнее проверенное')
+            ->assertSee('Предыдущая проверенная сводка.')
+            ->assertDontSee('Непроверенная новая сводка.');
+    }
+
+    public function test_filament_session_cockpit_uses_previous_reviewed_summary_when_latest_synthesis_is_rejected(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $acceptedRun = $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'client_summary' => 'Предыдущая подтверждённая сводка.',
+        ]);
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-08-14 10:00:00', 'UTC')]);
+        $rejectedRun = $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Rejected, [
+            'client_summary' => 'Отклонённая новая сводка.',
+        ]);
+        $rejectedRun->update(['finished_at' => Carbon::parse('2026-08-15 10:00:00', 'UTC')]);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Отклонено')
+            ->assertSee('Последнее проверенное')
+            ->assertSee('Предыдущая подтверждённая сводка.')
+            ->assertDontSee('Отклонённая новая сводка.');
+    }
+
+    public function test_filament_session_cockpit_omits_clinical_summary_without_ai_permission(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'client_summary' => 'Секретная клиническая сводка.',
+        ]);
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturnUsing(
+            static fn (User $actor, Organization $currentOrganization, OrganizationPermission $permission): bool => $permission !== OrganizationPermission::ViewAiRuns,
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertDontSee('Клиническое резюме')
+            ->assertDontSee('Секретная клиническая сводка.');
     }
 
     public function test_filament_detail_page_exposes_authorized_nested_edit_navigation(): void
@@ -797,6 +937,38 @@ final class SessionCockpitTest extends TestCase
             ->firstOrFail();
     }
 
+    private function clinicalSynthesisRun(
+        int $organizationId,
+        int $clientId,
+        HumanReviewStatus $reviewStatus,
+        array $payload,
+    ): AiRun {
+        $run = AiRun::create([
+            'organization_id' => $organizationId,
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $clientId,
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => $reviewStatus,
+            'input_references' => [['type' => 'client', 'id' => $clientId]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $organizationId,
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($organizationId, $encodedPayload, 1),
+            'encrypted_output_text' => $encryptor->encryptField($organizationId, $encodedPayload, 1),
+        ]);
+
+        return $run;
+    }
+
     private function relativeUrl(?string $url): string
     {
         $url ??= '/';
@@ -814,7 +986,7 @@ final class SessionCockpitTest extends TestCase
 
     private function decryptCallsInHistory(User $actor, Client $client): int
     {
-        $mock = \Mockery::mock(MedicalEncryptorInterface::class);
+        $mock = Mockery::mock(MedicalEncryptorInterface::class);
         $mock->shouldReceive('decryptField')
             ->andReturnUsing(function (int $orgId, ?string $cipher, int $version): ?string {
                 self::fail('MedicalEncryptorInterface::decryptField must not be invoked from the history read path, got cipher for org '.$orgId.' version '.$version);
