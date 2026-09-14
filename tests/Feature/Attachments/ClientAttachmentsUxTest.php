@@ -5,15 +5,19 @@ namespace Tests\Feature\Attachments;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientAttachmentsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
+use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -128,14 +132,30 @@ final class ClientAttachmentsUxTest extends TestCase
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
         $attachment = $this->attachment($organization, $admin, $client);
-        $run = $this->createAiRun($organization, $client, $attachment, AiRunStatus::Succeeded);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: [
+                'exam_type' => 'МРТ',
+                'anatomical_region' => 'Поясничный отдел',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Человеческое резюме результата.',
+            ],
+        );
 
         $attachments = $this->mount($admin, $client);
         $attachments
             ->assertTableColumnStateSet('analysis_status', 'Готово', $attachment)
             ->assertTableActionVisible('openDocumentAnalysisResult', $attachment);
         $attachments->mountTableAction('openDocumentAnalysisResult', $attachment);
-        self::assertStringContainsString('Результат анализа', $attachments->getMountedActionModalHtml());
+        $attachmentsHtml = $attachments->getMountedActionModalHtml();
+        $attachmentsData = $attachments->instance()->getMountedAction()->getRawData();
+        self::assertStringContainsString('Результат анализа', $attachmentsHtml);
+        self::assertStringContainsString('Человеческое резюме результата.', $attachmentsData['result']);
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [
@@ -147,7 +167,150 @@ final class ClientAttachmentsUxTest extends TestCase
             ->assertTableColumnStateSet('status', AiRunStatus::Succeeded, $run)
             ->assertTableActionVisible('openResult', $run);
         $clinicalAi->mountTableAction('openResult', $run);
-        self::assertStringContainsString('Результат анализа', $clinicalAi->getMountedActionModalHtml());
+        $clinicalAiHtml = $clinicalAi->getMountedActionModalHtml();
+        $clinicalAiData = $clinicalAi->instance()->getMountedAction()->getRawData();
+        self::assertStringContainsString('Результат анализа', $clinicalAiHtml);
+        self::assertStringContainsString('Человеческое резюме результата.', $clinicalAiData['result']);
+    }
+
+    public function test_staff_without_trace_permission_sees_human_result_without_audit_or_internal_payload(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: [
+                'exam_type' => 'МРТ',
+                'anatomical_region' => 'Поясничный отдел',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Понятный результат для специалиста.',
+                'internal_key' => 'не показывать',
+            ],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+        $run->update([
+            'context_provenance' => [
+                'attachments' => [[
+                    'attachment_id' => 987654,
+                    'attachment_uuid' => 'private-uuid',
+                    'attachment_type' => AttachmentType::MedicalReport->value,
+                    'mime_type' => 'application/pdf',
+                ]],
+            ],
+        ]);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+
+        $attachments = $this->mount($staff, $client);
+        $attachments->mountTableAction('openDocumentAnalysisResult', $attachment);
+        $attachmentsHtml = $attachments->getMountedActionModalHtml();
+        $attachmentsData = $attachments->instance()->getMountedAction()->getRawData();
+
+        self::assertStringContainsString('Понятный результат для специалиста.', $attachmentsData['result']);
+        self::assertSame('Ожидает проверки специалиста', $attachmentsData['review']);
+        self::assertStringContainsString('Медицинский документ · PDF', $attachmentsData['sources']);
+        self::assertStringNotContainsString('Техническая информация (аудит)', $attachmentsHtml);
+        self::assertArrayNotHasKey('technical', $attachmentsData);
+        self::assertStringNotContainsString('prompt_version_id', $attachmentsHtml);
+        self::assertStringNotContainsString('model_release_id', $attachmentsHtml);
+        self::assertStringNotContainsString('"exam_type"', $attachmentsData['result']);
+        self::assertStringNotContainsString('internal_key', $attachmentsData['result']);
+        self::assertStringNotContainsString('987654', $attachmentsData['sources']);
+        self::assertStringNotContainsString('private-uuid', $attachmentsData['sources']);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $clinicalAi = Livewire::actingAs($staff)->test(ClientClinicalAiRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+        $clinicalAi->mountTableAction('openResult', $run);
+        $clinicalAiHtml = $clinicalAi->getMountedActionModalHtml();
+        $clinicalAiData = $clinicalAi->instance()->getMountedAction()->getRawData();
+
+        self::assertStringContainsString('Понятный результат для специалиста.', $clinicalAiData['result']);
+        self::assertStringNotContainsString('Техническая информация (аудит)', $clinicalAiHtml);
+        self::assertArrayNotHasKey('technical', $clinicalAiData);
+        self::assertStringNotContainsString('"exam_type"', $clinicalAiData['result']);
+    }
+
+    public function test_trace_actor_sees_human_result_and_permissioned_audit_details(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: [
+                'exam_type' => 'МРТ',
+                'anatomical_region' => 'Поясничный отдел',
+                'key_findings' => [],
+                'structural_deformations' => [],
+                'critical_flags' => [],
+                'plain_summary' => 'Human result remains primary.',
+            ],
+            reviewStatus: HumanReviewStatus::Accepted,
+        );
+
+        $component = $this->mount($admin, $client);
+        $component->mountTableAction('openDocumentAnalysisResult', $attachment);
+        $html = $component->getMountedActionModalHtml();
+        $data = $component->instance()->getMountedAction()->getRawData();
+
+        self::assertStringContainsString('Human result remains primary.', $data['result']);
+        self::assertStringContainsString('Техническая информация (аудит)', $html);
+        self::assertStringContainsString('Запуск: #'.$run->getKey(), $data['technical']);
+        self::assertStringContainsString('Проверка: Принято специалистом', $data['technical']);
+        self::assertStringNotContainsString('"exam_type"', $data['result']);
+    }
+
+    public function test_unknown_structured_payload_uses_safe_text_or_human_fallback(): void
+    {
+        self::assertStringContainsString(
+            'Что обнаружено',
+            ClinicalAiPresentation::result(
+                AiCapability::ClinicalDocumentExtraction,
+                ['key_findings' => [['location' => 'L4-L5', 'pathology' => 'Изменение']]],
+                '{"key_findings":[{"location":"L4-L5","pathology":"Изменение"}]}',
+            ),
+        );
+        self::assertStringContainsString(
+            'Визуальные наблюдения',
+            ClinicalAiPresentation::result(
+                AiCapability::PostureAnalysis,
+                ['visual_findings' => [['plane' => 'front', 'observations' => ['Плечи на разной высоте']]]],
+                '{"visual_findings":[{"plane":"front","observations":["Плечи на разной высоте"]}]}',
+            ),
+        );
+        self::assertStringContainsString(
+            'Сводка по клиенту',
+            ClinicalAiPresentation::result(
+                AiCapability::ClinicalSynthesizer,
+                ['client_summary' => 'Сводка', 'source_facts' => ['Факт']],
+                '{"client_summary":"Сводка","source_facts":["Факт"]}',
+            ),
+        );
+        self::assertSame(
+            'Безопасный текст результата.',
+            ClinicalAiPresentation::result(
+                AiCapability::ClinicalDocumentExtraction,
+                ['unknown_internal_key' => 'secret'],
+                'Безопасный текст результата.',
+            ),
+        );
+        self::assertSame(
+            'Результат получен, но не может быть отображён в текущем формате.',
+            ClinicalAiPresentation::result(
+                AiCapability::ClinicalDocumentExtraction,
+                ['unknown_internal_key' => 'secret'],
+                '{"unknown_internal_key":"secret"}',
+            ),
+        );
     }
 
     public function test_foreign_client_runs_do_not_become_file_row_status(): void
@@ -247,8 +410,10 @@ final class ClientAttachmentsUxTest extends TestCase
         Client $client,
         MedicalAttachment $attachment,
         AiRunStatus $status,
+        ?array $payload = null,
+        HumanReviewStatus $reviewStatus = HumanReviewStatus::NotRequired,
     ): AiRun {
-        return AiRun::create([
+        $run = AiRun::create([
             'organization_id' => $organization->getKey(),
             'capability' => AiCapability::ClinicalDocumentExtraction,
             'workflow_key' => AiCapability::ClinicalDocumentExtraction->value,
@@ -256,6 +421,7 @@ final class ClientAttachmentsUxTest extends TestCase
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $client->getKey(),
             'status' => $status,
+            'human_review_status' => $reviewStatus,
             'input_references' => [
                 ['type' => 'client', 'id' => $client->getKey()],
                 ['type' => 'medical_attachment', 'id' => $attachment->getKey()],
@@ -263,5 +429,27 @@ final class ClientAttachmentsUxTest extends TestCase
             'context_provenance' => [],
             'token_usage' => [],
         ]);
+
+        if ($payload !== null) {
+            $encryptor = app(MedicalEncryptorInterface::class);
+            $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+            AiRunPayload::create([
+                'organization_id' => $organization->getKey(),
+                'ai_run_id' => $run->getKey(),
+                'encryption_key_version' => 1,
+                'encrypted_output_text' => $encryptor->encryptField(
+                    $organization->getKey(),
+                    $encodedPayload,
+                    1,
+                ),
+                'encrypted_output_payload' => $encryptor->encryptField(
+                    $organization->getKey(),
+                    $encodedPayload,
+                    1,
+                ),
+            ]);
+        }
+
+        return $run;
     }
 }

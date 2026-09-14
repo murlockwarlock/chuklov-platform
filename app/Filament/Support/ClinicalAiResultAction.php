@@ -8,60 +8,92 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Closure;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Section;
 use Illuminate\Database\Eloquent\Model;
+use LogicException;
 
 final class ClinicalAiResultAction
 {
     public static function make(string $name, User $actor, Client $client, Closure $resolveRun): Action
     {
+        $canViewTrace = self::canViewTrace($actor);
+
         return Action::make($name)
             ->label('Открыть результат')
             ->icon('heroicon-o-eye')
-            ->fillForm(function (Model $record) use ($actor, $client, $resolveRun): array {
+            ->fillForm(function (Model $record) use ($actor, $client, $resolveRun, $canViewTrace): array {
                 $run = $resolveRun($record);
                 abort_unless($run instanceof AiRun, 404);
                 $result = app(GetClinicalAiResult::class)->handle($actor, $run->id, $client->id);
-
-                return [
-                    'result' => self::resultText($result->outputPayload, $result->outputText),
+                $form = [
+                    'result' => ClinicalAiPresentation::result($run->capability, $result->outputPayload, $result->outputText),
+                    'review' => ClinicalAiPresentation::review($run->human_review_status),
                     'sources' => self::sourceText($run, $result->attachmentProvenance),
-                    'technical' => self::technicalText($run),
                 ];
+
+                if ($canViewTrace) {
+                    $form['technical'] = self::technicalText($run);
+                }
+
+                return $form;
             })
-            ->schema([
-                Textarea::make('result')
-                    ->label('Результат анализа')
-                    ->rows(14)
-                    ->disabled()
-                    ->dehydrated(false),
-                Textarea::make('sources')
-                    ->label('Источники')
-                    ->rows(4)
-                    ->disabled()
-                    ->dehydrated(false),
-                Section::make('Техническая информация (аудит)')
-                    ->schema([
-                        Textarea::make('technical')
-                            ->label('Версии и время запуска')
-                            ->rows(4)
-                            ->disabled()
-                            ->dehydrated(false),
-                    ])
-                    ->collapsed(),
-            ]);
+            ->schema(self::schema($canViewTrace));
     }
 
-    private static function resultText(?array $payload, ?string $text): string
+    private static function canViewTrace(User $actor): bool
     {
-        if ($payload !== null) {
-            return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'Результат отсутствует.';
+        try {
+            $organization = app(OrganizationContext::class)->organization();
+
+            return app(OrganizationAuthorizer::class)->allows(
+                $actor,
+                $organization,
+                OrganizationPermission::ViewAiTrace,
+            );
+        } catch (LogicException) {
+            return false;
+        }
+    }
+
+    private static function schema(bool $canViewTrace): array
+    {
+        $schema = [
+            Textarea::make('result')
+                ->label('Результат анализа')
+                ->rows(14)
+                ->disabled()
+                ->dehydrated(false),
+            Textarea::make('review')
+                ->label('Проверка специалиста')
+                ->rows(2)
+                ->disabled()
+                ->dehydrated(false),
+            Textarea::make('sources')
+                ->label('Источники')
+                ->rows(4)
+                ->disabled()
+                ->dehydrated(false),
+        ];
+
+        if ($canViewTrace) {
+            $schema[] = Section::make('Техническая информация (аудит)')
+                ->schema([
+                    Textarea::make('technical')
+                        ->label('Версии и время запуска')
+                        ->rows(4)
+                        ->disabled()
+                        ->dehydrated(false),
+                ])
+                ->collapsed();
         }
 
-        return $text ?: 'Результат отсутствует.';
+        return $schema;
     }
 
     private static function sourceText(AiRun $record, array $provenance): string
@@ -85,7 +117,7 @@ final class ClinicalAiResultAction
             return 'Профиль клиента и выбранные источники анализа.';
         }
 
-        return collect($provenance)
+        $sources = collect($provenance)
             ->map(static function (array $source): string {
                 $role = match ($source['role'] ?? null) {
                     'front' => 'Спереди',
@@ -108,6 +140,8 @@ final class ClinicalAiResultAction
             })
             ->filter()
             ->implode("\n");
+
+        return $sources !== '' ? $sources : 'Профиль клиента и выбранные источники анализа.';
     }
 
     private static function technicalText(AiRun $record): string

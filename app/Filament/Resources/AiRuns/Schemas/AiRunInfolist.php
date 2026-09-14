@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiRuns\Schemas;
 
+use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetAiRunProtectedTrace;
 use App\Modules\AI\Application\Data\AiRunProtectedTraceData;
@@ -182,7 +183,14 @@ class AiRunInfolist
                             ->schema([
                                 TextEntry::make('protected_trace_output')
                                     ->label('Результат для специалиста')
-                                    ->state(fn (AiRun $record): string => self::traceText($record, [self::class, 'outputText']))
+                                    ->state(fn (AiRun $record): string => self::traceText(
+                                        $record,
+                                        fn (AiRunProtectedTraceData $trace): string => ClinicalAiPresentation::result(
+                                            $record->capability,
+                                            $trace->outputPayload,
+                                            $trace->outputText,
+                                        ),
+                                    ))
                                     ->columnSpanFull()
                                     ->wrap()
                                     ->markdown(),
@@ -295,67 +303,6 @@ class AiRunInfolist
             $references !== '' ? $references : 'Явные ссылки на источники не записаны.',
             'Извлечённый контекст: '.self::pretty($trace->contextProvenance),
         ]));
-    }
-
-    private static function outputText(AiRunProtectedTraceData $trace): string
-    {
-        if ($trace->outputPayload === null) {
-            return $trace->outputText ?: 'Результат отсутствует.';
-        }
-
-        $labels = [
-            'client_summary' => 'Клиент',
-            'main_request' => 'Основной запрос',
-            'source_facts' => 'Факты',
-            'hypotheses' => 'Гипотезы',
-            'critical_limitations_risks' => 'Ограничения и риски',
-            'blind_spots_questions' => 'Что уточнить',
-            'recommended_first_session_focus' => 'Фокус первой сессии',
-            'missing_information' => 'Недостающая информация',
-            'exam_type' => 'Тип исследования',
-            'anatomical_region' => 'Анатомическая область',
-            'key_findings' => 'Ключевые находки',
-            'structural_deformations' => 'Структурные изменения',
-            'critical_flags' => 'Критические ограничения',
-            'plain_summary' => 'Понятное резюме',
-            'visual_findings' => 'Визуальные наблюдения',
-            'leading_compensatory_patterns' => 'Ведущие компенсаторные паттерны',
-            'practitioner_focus' => 'Фокус специалиста',
-            'limitations' => 'Ограничения анализа',
-        ];
-        $sections = [];
-        foreach ($trace->outputPayload as $key => $value) {
-            $label = $labels[(string) $key] ?? (string) $key;
-            $sections[] = '### '.$label."\n".self::humanValue($value);
-        }
-
-        return implode("\n\n", $sections);
-    }
-
-    private static function humanValue(mixed $value): string
-    {
-        if (is_array($value)) {
-            $items = [];
-            foreach ($value as $item) {
-                if (is_array($item)) {
-                    $items[] = '- '.implode(' · ', array_map(
-                        static fn (string|int $key, mixed $itemValue): string => (string) $key.': '.self::humanValue($itemValue),
-                        array_keys($item),
-                        array_values($item),
-                    ));
-                } else {
-                    $items[] = '- '.self::humanValue($item);
-                }
-            }
-
-            return implode("\n", $items) ?: 'Нет данных.';
-        }
-
-        if ($value === null || $value === '') {
-            return 'Нет данных.';
-        }
-
-        return (string) $value;
     }
 
     private static function pretty(mixed $value): string
