@@ -38,6 +38,7 @@ final class RecipientsRelationManager extends RelationManager
                     ->placeholder('Имя не указано')
                     ->limit(80)
                     ->url(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (BroadcastRecipient $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
                 TextColumn::make('channel')->label('Канал')->formatStateUsing(fn (?string $state): string => $state === 'telegram' ? 'Telegram' : '—'),

@@ -31,10 +31,12 @@ class BookingInfolist
                         TextEntry::make('client.full_name')
                             ->label('Клиент')
                             ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                            ->color(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
                             ->wrap(),
                         TextEntry::make('specialist.display_name')
                             ->label('Специалист')
                             ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist))
+                            ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist) === null ? null : 'primary')
                             ->wrap(),
                         TextEntry::make('service.name')->label('Услуга')->wrap(),
                         TextEntry::make('visit_format')

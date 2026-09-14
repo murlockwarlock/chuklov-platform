@@ -21,7 +21,8 @@ final class B2bLeadInfolist
             Section::make('Лид')->schema([
                 TextEntry::make('client.full_name')
                     ->label('Клиент')
-                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client)),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                 TextEntry::make('client.email')->label('Email')->placeholder('—'),
                 TextEntry::make('client.phone')->label('Телефон')->placeholder('—'),
                 TextEntry::make('b2b_specialist_answer')->label('Сегмент')->formatStateUsing(static fn (): string => '#Массажист_B2B'),
@@ -33,7 +34,8 @@ final class B2bLeadInfolist
                 TextEntry::make('salesCall.specialist.display_name')
                     ->label('Специалист')
                     ->placeholder('—')
-                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist)),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist) === null ? null : 'primary'),
                 TextEntry::make('salesCall.starts_at')->label('Начало')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.ends_at')->label('Окончание')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.meeting_mode')->label('Режим')->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode && $state === VideoMeetingMode::Manual ? 'Используется ручная ссылка' : 'Zoom автоматически'),

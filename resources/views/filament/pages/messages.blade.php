@@ -40,7 +40,7 @@
                                     <span class="flex min-w-0 items-center justify-between gap-2">
                                         <span class="min-w-0 truncate text-sm font-semibold text-gray-950 dark:text-white">
                                             @if ($dialog['clientUrl'] ?? null)
-                                                <a href="{{ $dialog['clientUrl'] }}" class="pointer-events-auto relative z-20 hover:text-primary-600 dark:hover:text-primary-300">{{ $dialog['name'] }}</a>
+                                                <a href="{{ $dialog['clientUrl'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $dialog['name'] }}</a>
                                             @else
                                                 {{ $dialog['name'] }}
                                             @endif
@@ -76,7 +76,7 @@
                         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-800 dark:bg-primary-950/50 dark:text-primary-200">{{ $selectedDialog['initials'] }}</span>
                         <div class="min-w-0 flex-1">
                             @if ($clientSummary['urls']['client'])
-                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold text-gray-950 hover:text-primary-600 dark:text-white dark:hover:text-primary-300">
+                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold crm-entity-link">
                                     {{ $selectedDialog['name'] }}
                                 </a>
                             @else
@@ -204,7 +204,7 @@
                         <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-800 dark:bg-primary-950/50 dark:text-primary-200">{{ $clientSummary['initials'] }}</span>
                         <div class="min-w-0 flex-1">
                             @if ($clientSummary['urls']['client'])
-                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold text-gray-950 hover:text-primary-600 dark:text-white dark:hover:text-primary-300">{{ $clientSummary['name'] }}</a>
+                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold crm-entity-link">{{ $clientSummary['name'] }}</a>
                             @else
                                 <h2 class="min-w-0 truncate text-base font-semibold text-gray-950 dark:text-white">{{ $clientSummary['name'] }}</h2>
                             @endif

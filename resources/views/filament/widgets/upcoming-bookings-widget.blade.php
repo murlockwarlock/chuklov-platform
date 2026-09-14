@@ -77,7 +77,7 @@
                                     {{-- Row 3: Client Name (no truncate, wraps) --}}
                                     <div class="text-xs font-semibold text-slate-900 dark:text-white break-words mb-1 leading-snug">
                                         @if ($clientUrl)
-                                            <a href="{{ $clientUrl }}" class="pointer-events-auto relative z-20 hover:text-amber-600 dark:hover:text-amber-400">{{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}</a>
+                                            <a href="{{ $clientUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}</a>
                                         @else
                                             {{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}
                                         @endif
@@ -95,7 +95,7 @@
                                     {{-- Row 6: Specialist (subtle top divider, secondary text) --}}
                                     <div class="text-[11px] text-slate-500 dark:text-gray-400 pt-1.5 border-t border-slate-200/60 dark:border-white/5 break-words">
                                         @if ($specialistUrl)
-                                            <a href="{{ $specialistUrl }}" class="pointer-events-auto relative z-20 hover:text-amber-600 dark:hover:text-amber-400">{{ $booking->specialist?->display_name ?: 'Специалист' }}</a>
+                                            <a href="{{ $specialistUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->specialist?->display_name ?: 'Специалист' }}</a>
                                         @else
                                             {{ $booking->specialist?->display_name ?: 'Специалист' }}
                                         @endif

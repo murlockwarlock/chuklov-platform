@@ -65,7 +65,10 @@ class SpecialistResource extends Resource
                     ->placeholder('Не привязан')
                     ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
                         ? null
-                        : CrmEntityLinks::specialistUrl($record)),
+                        : CrmEntityLinks::specialistUrl($record))
+                    ->color(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : (CrmEntityLinks::specialistUrl($record) === null ? null : 'primary')),
                 TextEntry::make('staffUser.email')->label('Email сотрудника')->placeholder('Не указан'),
                 TextEntry::make('telegramNotificationIdentity.verification_status')
                     ->label('Telegram')

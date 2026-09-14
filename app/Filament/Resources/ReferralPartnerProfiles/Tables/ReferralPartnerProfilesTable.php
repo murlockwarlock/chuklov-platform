@@ -34,6 +34,7 @@ final class ReferralPartnerProfilesTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralPartnerProfile $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status')
                     ->label('Статус')

@@ -74,12 +74,14 @@ final class ReferralRelationshipResource extends Resource
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients))
+                    ->color(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null),
                 TextColumn::make('referred.full_name')
                     ->label('Кого пригласил')
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referred, $canViewClients))
+                    ->color(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referred, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referred, $canViewClients) === null)
                     ->description(fn (ReferralRelationship $record): string => self::establishmentMethodLabel($record->establishment_method)),
                 TextColumn::make('establishment_method')

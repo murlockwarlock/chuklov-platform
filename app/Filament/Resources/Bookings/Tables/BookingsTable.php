@@ -40,6 +40,7 @@ class BookingsTable
                 ->sortable()
                 ->wrap()
                 ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
                 ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
@@ -71,6 +72,7 @@ class BookingsTable
                 ->sortable()
                 ->wrap()
                 ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                ->color(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null));
         }
 

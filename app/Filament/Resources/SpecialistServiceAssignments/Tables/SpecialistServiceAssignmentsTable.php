@@ -27,6 +27,7 @@ class SpecialistServiceAssignmentsTable
                     ->label('Специалист')
                     ->sortable()
                     ->url(fn (SpecialistServiceAssignment $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (SpecialistServiceAssignment $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (SpecialistServiceAssignment $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('service.name')->label('Услуга')->sortable(),
                 TextColumn::make('created_at')->label('Назначено')->dateTime('d.m.Y H:i')->sortable(),

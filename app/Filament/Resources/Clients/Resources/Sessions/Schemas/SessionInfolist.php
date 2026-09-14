@@ -32,7 +32,8 @@ final class SessionInfolist
                         TextEntry::make('specialist.display_name')
                             ->label('Специалист')
                             ->placeholder('—')
-                            ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist)),
+                            ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist))
+                            ->color(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist) === null ? null : 'primary'),
                         TextEntry::make('bookingLabel')
                             ->label('Запись на приём')
                             ->state(function (MedicalSession $record, TextEntry $entry): string {

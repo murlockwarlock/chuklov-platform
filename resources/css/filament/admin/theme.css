@@ -3,6 +3,10 @@
 @source '../../../../app/Filament/**/*';
 @source '../../../../resources/views/filament/**/*';
 
+.crm-entity-link {
+    @apply text-primary-600 dark:text-primary-400 hover:underline focus-visible:rounded-sm focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
+}
+
 .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header > :first-child {
     min-width: 0;
     max-width: 100%;

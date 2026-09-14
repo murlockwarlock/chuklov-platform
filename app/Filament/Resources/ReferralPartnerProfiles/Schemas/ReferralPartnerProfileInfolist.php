@@ -24,7 +24,8 @@ final class ReferralPartnerProfileInfolist
                     TextEntry::make('client.full_name')
                         ->label('Клиент')
                         ->wrap()
-                        ->url(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client)),
+                        ->url(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                        ->color(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('status')
                         ->label('Статус')
                         ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => $state instanceof ReferralPartnerStatus

@@ -28,6 +28,7 @@ class ScheduleExceptionsTable
                     ->label('Специалист')
                     ->sortable()
                     ->url(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (ScheduleException $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('exception_date')->label('Дата')->date()->sortable(),
                 TextColumn::make('exception_type')

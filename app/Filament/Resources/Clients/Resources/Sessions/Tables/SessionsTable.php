@@ -34,6 +34,7 @@ class SessionsTable
                     ->placeholder('—')
                     ->wrap()
                     ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (MedicalSession $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('booking_starts_at')
                     ->label('Дата записи на приём')

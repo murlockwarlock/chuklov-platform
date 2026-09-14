@@ -90,7 +90,7 @@
                                 <div class="absolute inset-x-1 z-10 min-w-0 overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md {{ $booking['status_class'] }}" style="{{ $this->bookingStyle($booking) }}">
                                     <a href="{{ $booking['url'] }}" aria-label="Открыть запись" class="absolute inset-0 z-0 rounded-md"></a>
                                     <div class="relative z-10 pointer-events-none">
-                                        <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 hover:underline">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                        <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                         <span class="block truncate">{{ $booking['service'] }}</span>
                                         <span class="block truncate opacity-80">{{ $booking['status'] }}{{ $booking['is_online'] ? ' · Онлайн' : '' }}</span>
                                     </div>
@@ -121,7 +121,7 @@
                                         <a href="{{ $booking['url'] }}" aria-label="Открыть запись" class="absolute inset-0 z-0 rounded-lg"></a>
                                         <div class="relative z-10 pointer-events-none">
                                             <div class="flex min-w-0 items-start justify-between gap-2">
-                                                <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 hover:underline">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
                                             </div>
                                             <div class="mt-1 truncate text-xs">{{ $booking['service'] }} · {{ $booking['status'] }}{{ $booking['is_online'] ? ' · Онлайн' : '' }}</div>

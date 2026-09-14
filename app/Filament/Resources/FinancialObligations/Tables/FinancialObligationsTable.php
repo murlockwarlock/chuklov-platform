@@ -40,6 +40,7 @@ final class FinancialObligationsTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (FinancialObligation $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('service.name')
                     ->label('Услуга')

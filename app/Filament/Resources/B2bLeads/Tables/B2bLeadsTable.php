@@ -31,6 +31,7 @@ final class B2bLeadsTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('b2b_specialist_answer')->label('Сегмент')->formatStateUsing(static fn (): string => '#Массажист_B2B')->badge(),
                 TextColumn::make('status')->label('Статус')->formatStateUsing(static fn ($state): string => self::status($state))->badge()->sortable(),
@@ -40,6 +41,7 @@ final class B2bLeadsTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null),
                 TextColumn::make('salesCall.starts_at')->label('Разговор')->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('salesCall.provider_sync_status')->label('Zoom')->formatStateUsing(static fn ($state): string => self::provider($state))->badge(),

@@ -38,6 +38,7 @@ class SpecialistsTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
+                    ->color(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (Specialist $record): bool => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
                 IconColumn::make('is_active')->label('Доступен')->boolean()->sortable(),
                 TextColumn::make('timezone')
@@ -54,6 +55,9 @@ class SpecialistsTable
                     ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
                         ? null
                         : CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
+                    ->color(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : (CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null ? null : 'primary'))
                     ->disabledClick(fn (Specialist $record): bool => $record->staff_user_id === null
                         || CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
             ])

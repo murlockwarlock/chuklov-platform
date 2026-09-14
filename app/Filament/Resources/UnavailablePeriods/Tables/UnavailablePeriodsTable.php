@@ -24,6 +24,7 @@ class UnavailablePeriodsTable
                     ->label('Специалист')
                     ->sortable()
                     ->url(fn (UnavailablePeriod $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (UnavailablePeriod $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (UnavailablePeriod $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('starts_at')
                     ->label('Начало')

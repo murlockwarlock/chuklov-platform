@@ -91,6 +91,7 @@ final class ReferralPayoutRequestResource extends Resource
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients))
+                    ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralPayoutRequest $record): bool => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null),
                 TextColumn::make('amount_minor')
                     ->label('Сумма')
@@ -179,7 +180,8 @@ final class ReferralPayoutRequestResource extends Resource
                     TextEntry::make('beneficiary.full_name')
                         ->label('Партнёр')
                         ->wrap()
-                        ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary)),
+                        ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary))
+                        ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary) === null ? null : 'primary'),
                     TextEntry::make('beneficiary.referralPartnerProfile.status')
                         ->label('Статус партнёра')
                         ->formatStateUsing(fn (mixed $state): string => self::partnerStatusLabel($state))

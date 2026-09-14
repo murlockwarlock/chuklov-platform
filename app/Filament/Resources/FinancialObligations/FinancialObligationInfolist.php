@@ -24,7 +24,8 @@ final class FinancialObligationInfolist
 
                             return $client === null ? '—' : ($client->full_name ?? '—');
                         })
-                        ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client)),
+                        ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                        ->color(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('booking_summary')
                         ->label('Запись')
                         ->state(fn (FinancialObligation $record): string => $record->booking === null ? '—' : 'Запись на приём')

@@ -73,6 +73,7 @@ final class FeedbackSubmissionResource extends Resource
                     ->searchable()
                     ->wrap()
                     ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (FeedbackSubmission $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('score')->label('Оценка')->badge()->sortable(),
                 TextColumn::make('source')->label('Источник')->wrap(),
@@ -97,7 +98,8 @@ final class FeedbackSubmissionResource extends Resource
                 ->schema([
                     TextEntry::make('client.full_name')
                         ->label('Клиент')
-                        ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client)),
+                        ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                        ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('score')->label('Оценка'),
                     TextEntry::make('source')->label('Источник'),
                     TextEntry::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i'),

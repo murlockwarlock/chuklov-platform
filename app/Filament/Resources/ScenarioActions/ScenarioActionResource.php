@@ -54,6 +54,7 @@ final class ScenarioActionResource extends Resource
                             ->label('Клиент')
                             ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
                             ->url(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                            ->color(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
                             ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
                         TextEntry::make('business_event')
                             ->label('Событие')
@@ -105,7 +106,10 @@ final class ScenarioActionResource extends Resource
                     })
                     ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
                         ? CrmEntityLinks::clientUrl($record->client)
-                        : null),
+                        : null)
+                    ->color(fn (ScenarioAction $record): ?string => $record->recipient_type !== 'client'
+                        ? null
+                        : (CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')),
                 TextEntry::make('purpose')
                     ->label('Тип сообщения')
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),

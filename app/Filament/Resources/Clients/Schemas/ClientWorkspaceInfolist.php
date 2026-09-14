@@ -115,6 +115,12 @@ final class ClientWorkspaceInfolist
 
                                 return $referrer instanceof Client ? CrmEntityLinks::clientUrl($referrer) : null;
                             })
+                            ->color(function (Client $record): ?string {
+                                $relationship = $record->getRelationValue('referralRelationship');
+                                $referrer = $relationship?->getRelationValue('referrer');
+
+                                return $referrer instanceof Client && CrmEntityLinks::clientUrl($referrer) !== null ? 'primary' : null;
+                            })
                             ->helperText(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');
 

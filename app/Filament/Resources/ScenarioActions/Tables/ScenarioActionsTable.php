@@ -40,6 +40,9 @@ final class ScenarioActionsTable
                     ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
                         ? CrmEntityLinks::clientUrl($record->client, $canViewClients)
                         : null)
+                    ->color(fn (ScenarioAction $record): ?string => $record->recipient_type !== 'client'
+                        ? null
+                        : (CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary'))
                     ->disabledClick(fn (ScenarioAction $record): bool => $record->recipient_type !== 'client'
                         || CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status_summary')

@@ -4,7 +4,7 @@
         $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($client);
         $clientHeading = $clientUrl === null
             ? $clientName
-            : new \Illuminate\Support\HtmlString('<a href="'.e($clientUrl).'" class="hover:text-primary-600 dark:hover:text-primary-300">'.e($clientName).'</a>');
+            : new \Illuminate\Support\HtmlString('<a href="'.e($clientUrl).'" class="crm-entity-link">'.e($clientName).'</a>');
     @endphp
 
     <div class="space-y-6">

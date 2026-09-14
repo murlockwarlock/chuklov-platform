@@ -46,6 +46,7 @@ class ClientsTable
                     ->sortable()
                     ->wrap()
                     ->url(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients))
+                    ->color(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (Client $record): bool => CrmEntityLinks::clientUrl($record, $canViewClients) === null),
                 TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
                 TextColumn::make('email')
