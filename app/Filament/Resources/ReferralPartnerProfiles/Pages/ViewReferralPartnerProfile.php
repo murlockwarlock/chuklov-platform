@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\ReferralPartnerProfiles\Pages;
 
 use App\Filament\Pages\ReferralRewardConfiguration;
-use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -79,7 +79,7 @@ final class ViewReferralPartnerProfile extends ViewRecord
                 ->label('Открыть клиента')
                 ->icon('heroicon-o-user')
                 ->extraAttributes(['data-testid' => 'partner-primary-open-client'])
-                ->url(fn (): string => ClientResource::getUrl('view', ['record' => $this->partnerProfile()->client_id]))
+                ->url(fn (): ?string => CrmEntityLinks::clientUrl($this->partnerProfile()->client))
                 ->visible(fn (): bool => $this->canViewClient()),
             Action::make('createCampaignLink')
                 ->label('Создать ссылку')
@@ -459,11 +459,7 @@ final class ViewReferralPartnerProfile extends ViewRecord
 
     private function canViewClient(): bool
     {
-        return app(OrganizationAuthorizer::class)->allows(
-            $this->actor(),
-            app(OrganizationContext::class)->organization(),
-            OrganizationPermission::ViewClients,
-        );
+        return CrmEntityLinks::clientUrl($this->partnerProfile()->client) !== null;
     }
 
     private function canManageClients(): bool

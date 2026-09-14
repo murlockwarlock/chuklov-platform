@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\FinanceConfiguration;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\FinancialObligations\FinancialPaymentsRelationManager;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
@@ -77,6 +78,29 @@ final class FinanceCrmUxTest extends TestCase
 
         self::assertStringNotContainsString('ledger', strtolower($component->html()));
         self::assertStringNotContainsString('обязатель', mb_strtolower($component->html()));
+    }
+
+    public function test_finance_client_name_links_to_the_canonical_client_view_in_list_and_view(): void
+    {
+        [$organization, $admin, $client, , $obligation] = $this->financeFixture(singleCurrency: true);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+        $clientUrl = ClientResource::getUrl('view', ['record' => $client->getKey()]);
+
+        $listHtml = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertTableColumnStateSet('client.full_name', $client->full_name, $obligation)
+            ->html();
+        self::assertStringContainsString('href="'.$clientUrl.'"', $listHtml);
+
+        $viewHtml = Livewire::actingAs($admin)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->assertSuccessful()
+            ->html();
+        self::assertStringContainsString('href="'.$clientUrl.'"', $viewHtml);
     }
 
     public function test_finance_list_statuses_follow_reconciliation_for_partial_and_full_payment(): void

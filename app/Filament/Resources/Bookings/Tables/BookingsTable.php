@@ -5,6 +5,9 @@ namespace App\Filament\Resources\Bookings\Tables;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -28,12 +31,16 @@ class BookingsTable
 {
     public static function configure(Table $table, bool $includeAttention = true, bool $includeClient = true): Table
     {
+        $canViewClients = $includeClient && ClientResource::canViewAny();
+        $canViewSpecialists = SpecialistResource::canViewAny();
         $canManageScheduling = BookingResource::canCreate();
         $columns = [
             TextColumn::make('specialist.display_name')
                 ->label('Специалист')
                 ->sortable()
                 ->wrap()
+                ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
                 ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
             TextColumn::make('starts_at')
@@ -58,7 +65,13 @@ class BookingsTable
         ];
 
         if ($includeClient) {
-            array_unshift($columns, TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable()->wrap());
+            array_unshift($columns, TextColumn::make('client.full_name')
+                ->label('Клиент')
+                ->searchable()
+                ->sortable()
+                ->wrap()
+                ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null));
         }
 
         if ($includeAttention) {

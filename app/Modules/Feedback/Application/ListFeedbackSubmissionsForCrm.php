@@ -24,6 +24,6 @@ final class ListFeedbackSubmissionsForCrm
 
         return FeedbackSubmission::query()
             ->where('organization_id', $organization->getKey())
-            ->with('client:id,full_name');
+            ->with('client:id,organization_id,full_name');
     }
 }

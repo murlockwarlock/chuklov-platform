@@ -56,7 +56,8 @@ final class SurveyAttemptResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->wrap()
-                    ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients)),
+                    ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->disabledClick(fn (SurveyAttempt $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('surveyDefinition.title')->label('Тест')->sortable()->wrap(),
                 TextColumn::make('surveyVersion.version')->label('Версия')->visibleFrom('sm'),
                 TextColumn::make('status')

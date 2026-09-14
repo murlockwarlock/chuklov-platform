@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -30,7 +31,8 @@ final class SessionInfolist
                             ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('specialist.display_name')
                             ->label('Специалист')
-                            ->placeholder('—'),
+                            ->placeholder('—')
+                            ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist)),
                         TextEntry::make('bookingLabel')
                             ->label('Запись на приём')
                             ->state(function (MedicalSession $record, TextEntry $entry): string {

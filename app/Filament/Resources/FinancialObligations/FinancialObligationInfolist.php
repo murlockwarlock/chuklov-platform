@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\FinancialObligations;
 
 use App\Filament\Resources\Bookings\BookingResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use Filament\Infolists\Components\TextEntry;
@@ -22,7 +23,8 @@ final class FinancialObligationInfolist
                             $client = $record->client;
 
                             return $client === null ? '—' : ($client->full_name ?? '—');
-                        }),
+                        })
+                        ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client)),
                     TextEntry::make('booking_summary')
                         ->label('Запись')
                         ->state(fn (FinancialObligation $record): string => $record->booking === null ? '—' : 'Запись на приём')

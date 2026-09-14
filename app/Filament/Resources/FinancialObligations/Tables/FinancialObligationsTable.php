@@ -4,6 +4,8 @@ namespace App\Filament\Resources\FinancialObligations\Tables;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\FinancePresentation;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
@@ -27,6 +29,8 @@ final class FinancialObligationsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->columns([
@@ -34,7 +38,9 @@ final class FinancialObligationsTable
                     ->label('Клиент')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->disabledClick(fn (FinancialObligation $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('service.name')
                     ->label('Услуга')
                     ->searchable()

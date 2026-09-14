@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\SpecialistServiceAssignments\Tables;
 
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Scheduling\Application\RemoveSpecialistServiceAssignment;
@@ -17,9 +19,15 @@ class SpecialistServiceAssignmentsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewSpecialists = SpecialistResource::canViewAny();
+
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('specialist.display_name')
+                    ->label('Специалист')
+                    ->sortable()
+                    ->url(fn (SpecialistServiceAssignment $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->disabledClick(fn (SpecialistServiceAssignment $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('service.name')->label('Услуга')->sortable(),
                 TextColumn::make('created_at')->label('Назначено')->dateTime('d.m.Y H:i')->sortable(),
             ])

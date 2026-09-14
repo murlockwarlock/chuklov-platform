@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\B2bLeads\Schemas;
 
-use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\B2B\Domain\Enums\B2bLeadStatus;
 use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
@@ -21,7 +21,7 @@ final class B2bLeadInfolist
             Section::make('Лид')->schema([
                 TextEntry::make('client.full_name')
                     ->label('Клиент')
-                    ->url(fn (B2bLead $record): string => ClientResource::getUrl('view', ['record' => $record->client_id])),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client)),
                 TextEntry::make('client.email')->label('Email')->placeholder('—'),
                 TextEntry::make('client.phone')->label('Телефон')->placeholder('—'),
                 TextEntry::make('b2b_specialist_answer')->label('Сегмент')->formatStateUsing(static fn (): string => '#Массажист_B2B'),
@@ -30,7 +30,10 @@ final class B2bLeadInfolist
             ])->columns(2),
             Section::make('B2B-разговор')->schema([
                 TextEntry::make('salesCall.status')->label('Состояние разговора')->formatStateUsing(static fn ($state): string => $state instanceof B2bSalesCallStatus ? ($state === B2bSalesCallStatus::Scheduled ? 'Запланирован' : 'Отменён') : (string) $state),
-                TextEntry::make('salesCall.specialist.display_name')->label('Специалист')->placeholder('—'),
+                TextEntry::make('salesCall.specialist.display_name')
+                    ->label('Специалист')
+                    ->placeholder('—')
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist)),
                 TextEntry::make('salesCall.starts_at')->label('Начало')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.ends_at')->label('Окончание')->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.meeting_mode')->label('Режим')->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode && $state === VideoMeetingMode::Manual ? 'Используется ручная ссылка' : 'Zoom автоматически'),

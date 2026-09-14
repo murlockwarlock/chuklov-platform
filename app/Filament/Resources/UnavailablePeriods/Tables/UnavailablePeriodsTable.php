@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\UnavailablePeriods\Tables;
 
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\DeleteUnavailablePeriod;
@@ -14,9 +16,15 @@ class UnavailablePeriodsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewSpecialists = SpecialistResource::canViewAny();
+
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('specialist.display_name')
+                    ->label('Специалист')
+                    ->sortable()
+                    ->url(fn (UnavailablePeriod $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->disabledClick(fn (UnavailablePeriod $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('starts_at')
                     ->label('Начало')
                     ->dateTime('d.m.Y H:i')

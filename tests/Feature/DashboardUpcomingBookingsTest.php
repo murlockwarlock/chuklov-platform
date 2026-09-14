@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\Dashboard;
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\GetDashboardUpcomingBookings;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -143,19 +147,33 @@ final class DashboardUpcomingBookingsTest extends TestCase
     {
         [$org, $admin] = $this->setupOrganizationWithAdmin('Europe/Moscow');
         app(OrganizationContext::class)->set($org);
+        OrganizationFeatureFlag::factory()->forOrganization($org)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
 
         $now = CarbonImmutable::now('Europe/Moscow')->startOfDay()->addHours(10);
-        $this->createBookingForOrg($org, $now, 'Евгений Пронин', BookingStatus::Requested);
+        $booking = $this->createBookingForOrg($org, $now, 'Евгений Пронин', BookingStatus::Requested);
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
 
-        Livewire::test(UpcomingBookingsWidget::class)
+        $widget = Livewire::test(UpcomingBookingsWidget::class)
             ->assertSuccessful()
             ->assertSee('Ближайшие записи')
             ->assertSee('Евгений Пронин')
             ->assertSee('Ожидает подтверждения')
             ->assertSee('Сегодня:');
+
+        $html = $widget->html();
+        self::assertStringContainsString(
+            'href="'.ClientResource::getUrl('view', ['record' => $booking->client_id]).'"',
+            $html,
+        );
+        self::assertStringContainsString(
+            'href="'.SpecialistResource::getUrl('view', ['record' => $booking->specialist_id]).'"',
+            $html,
+        );
     }
 
     /** @return array{0: Organization, 1: User} */

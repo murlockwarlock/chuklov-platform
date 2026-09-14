@@ -46,7 +46,7 @@ final class ListReferralPartnersForCrm
 
         return ReferralPartnerProfile::query()
             ->where('organization_id', $organization->getKey())
-            ->with('client:id,full_name,email,phone')
+            ->with('client:id,organization_id,full_name,email,phone')
             ->addSelect([
                 'visits_count' => $visits,
                 'registrations_count' => $registrations,

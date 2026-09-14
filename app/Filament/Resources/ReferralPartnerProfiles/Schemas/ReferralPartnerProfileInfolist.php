@@ -3,7 +3,9 @@
 namespace App\Filament\Resources\ReferralPartnerProfiles\Schemas;
 
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ViewReferralPartnerProfile;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
@@ -19,7 +21,10 @@ final class ReferralPartnerProfileInfolist
         return $schema->components([
             Section::make('Партнёр и результаты')
                 ->schema([
-                    TextEntry::make('client.full_name')->label('Клиент')->wrap(),
+                    TextEntry::make('client.full_name')
+                        ->label('Клиент')
+                        ->wrap()
+                        ->url(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client)),
                     TextEntry::make('status')
                         ->label('Статус')
                         ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => $state instanceof ReferralPartnerStatus

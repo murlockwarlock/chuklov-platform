@@ -25,8 +25,8 @@ final class ListReferralRelationshipsForCrm
         return ReferralRelationship::query()
             ->where('organization_id', $organization->getKey())
             ->with([
-                'referrer:id,full_name',
-                'referred:id,full_name',
+                'referrer:id,organization_id,full_name',
+                'referred:id,organization_id,full_name',
                 'referred.attribution',
             ])
             ->withCount('commercialEvidence')

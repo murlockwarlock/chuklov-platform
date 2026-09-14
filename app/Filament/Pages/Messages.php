@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\MessageComposer;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
@@ -392,6 +393,30 @@ final class Messages extends Page
 
         $workspace = app(ReadCompanionWorkspace::class);
         $dialogs = $workspace->dialogs($actor, $this->search, $this->selectedClientId);
+        $canViewClients = ClientResource::canViewAny();
+        $dialogClientIds = collect($dialogs)
+            ->pluck('clientId')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        $dialogClients = $canViewClients && $dialogClientIds !== []
+            ? Client::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->whereIn('id', $dialogClientIds)
+                ->select(['id', 'organization_id', 'full_name'])
+                ->get()
+                ->keyBy(fn (Client $dialogClient): int => (int) $dialogClient->getKey())
+            : collect();
+        $dialogs = array_map(function (array $dialog) use ($dialogClients, $canViewClients): array {
+            $dialogClient = $dialogClients->get((int) ($dialog['clientId'] ?? 0));
+            $dialog['clientUrl'] = $dialogClient instanceof Client
+                ? CrmEntityLinks::clientUrl($dialogClient, $canViewClients)
+                : null;
+
+            return $dialog;
+        }, $dialogs);
         $client = $this->selectedClient();
         if ($client instanceof Client) {
             $this->syncHistory($actor, $client);
@@ -406,7 +431,7 @@ final class Messages extends Page
         if ($client instanceof Client) {
             $summary = $workspace->clientSummary($actor, $client);
             $summary['urls'] = [
-                'client' => ClientResource::getUrl('view', ['record' => $client]),
+                'client' => CrmEntityLinks::clientUrl($client),
                 'bookings' => BookingResource::getUrl('index'),
                 'sessions' => ClientResource::getUrl('sessions', ['record' => $client]),
                 'upcomingBooking' => is_array($summary['upcomingBooking'] ?? null)

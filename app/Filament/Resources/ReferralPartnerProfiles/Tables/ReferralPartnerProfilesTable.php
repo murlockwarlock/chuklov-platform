@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ReferralPartnerProfiles\Tables;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProfiles;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
@@ -18,6 +20,8 @@ final class ReferralPartnerProfilesTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPartnerProfiles
                 && $livewire->shouldPollMetrics() ? '5s' : null)
@@ -28,7 +32,9 @@ final class ReferralPartnerProfilesTable
                     ->label('Партнёр')
                     ->searchable()
                     ->sortable()
-                    ->wrap(),
+                    ->wrap()
+                    ->url(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->disabledClick(fn (ReferralPartnerProfile $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status')
                     ->label('Статус')
                     ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => self::statusLabel($state))
