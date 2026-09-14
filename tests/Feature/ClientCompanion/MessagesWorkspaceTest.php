@@ -100,6 +100,7 @@ final class MessagesWorkspaceTest extends TestCase
             ->test(Messages::class)
             ->set('search', 'Мария Сообщения')
             ->assertSee('Мария Сообщения')
+            ->assertSee(ClientResource::getUrl('view', ['record' => $this->client->getKey()]), false)
             ->call('selectClient', $this->client->getKey())
             ->assertActionExists('export')
             ->assertActionExists('technicalMetadata')

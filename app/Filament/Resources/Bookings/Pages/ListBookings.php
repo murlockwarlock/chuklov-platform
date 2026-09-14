@@ -4,6 +4,8 @@ namespace App\Filament\Resources\Bookings\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -150,6 +152,7 @@ class ListBookings extends ListRecords
             ->with(['client', 'service', 'specialist'])
             ->orderBy('starts_at')
             ->get();
+        $canViewClients = ClientResource::canViewAny();
 
         foreach ($bookings as $booking) {
             $localStart = $booking->startsAtUtc()->setTimezone($timezone);
@@ -159,7 +162,7 @@ class ListBookings extends ListRecords
                 continue;
             }
 
-            $calendar[$date]['bookings'][] = $this->bookingProjection($booking, $localStart, $localEnd);
+            $calendar[$date]['bookings'][] = $this->bookingProjection($booking, $localStart, $localEnd, $canViewClients);
         }
 
         return $calendar;
@@ -350,8 +353,8 @@ class ListBookings extends ListRecords
         ];
     }
 
-    /** @return array{id: int, client: string, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
-    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd): array
+    /** @return array{id: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
         $endMinutes = ((int) $localEnd->format('H')) * 60 + (int) $localEnd->format('i');
@@ -363,6 +366,7 @@ class ListBookings extends ListRecords
         return [
             'id' => $booking->getKey(),
             'client' => $clientName !== '' ? $clientName : 'Клиент',
+            'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
             'service' => $serviceName !== '' ? $serviceName : 'Услуга',
             'start_time' => $localStart->format('H:i'),
             'end_time' => $localEnd->format('H:i'),

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\ScenarioActions\Tables;
 
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use BackedEnum;
@@ -16,6 +18,8 @@ final class ScenarioActionsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->defaultSort(fn (Builder $query): Builder => $query
@@ -32,7 +36,15 @@ final class ScenarioActionsTable
                 TextColumn::make('recipient_summary')
                     ->label('Получатель')
                     ->state(fn (ScenarioAction $record): string => self::recipientLabel($record))
-                    ->wrap(),
+                    ->wrap()
+                    ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
+                        ? CrmEntityLinks::clientUrl($record->client, $canViewClients)
+                        : null)
+                    ->color(fn (ScenarioAction $record): ?string => $record->recipient_type !== 'client'
+                        ? null
+                        : (CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary'))
+                    ->disabledClick(fn (ScenarioAction $record): bool => $record->recipient_type !== 'client'
+                        || CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status_summary')
                     ->label('Статус')
                     ->state(fn (ScenarioAction $record): string => self::statusSummary($record))

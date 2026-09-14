@@ -21,32 +21,44 @@
 
                 <div class="min-h-0 flex-1 overflow-y-auto">
                     @forelse ($dialogs as $dialog)
-                        <button
-                            type="button"
+                        <div
                             wire:key="dialog-{{ $dialog['clientId'] }}"
-                            wire:click="selectClient({{ $dialog['clientId'] }})"
-                            aria-pressed="{{ $dialog['selected'] ? 'true' : 'false' }}"
-                            class="flex w-full min-w-0 items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:border-white/5 dark:hover:bg-white/5 {{ $dialog['selected'] ? 'bg-primary-50/70 ring-1 ring-inset ring-primary-200 dark:bg-primary-950/30 dark:ring-primary-800' : '' }}"
+                            class="relative flex w-full min-w-0 items-start gap-3 border-b border-gray-100 px-4 py-3 text-left transition hover:bg-gray-50 dark:border-white/5 dark:hover:bg-white/5 {{ $dialog['selected'] ? 'bg-primary-50/70 ring-1 ring-inset ring-primary-200 dark:bg-primary-950/30 dark:ring-primary-800' : '' }}"
                         >
-                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-700 dark:bg-white/10 dark:text-gray-200">
-                                {{ $dialog['initials'] }}
-                            </span>
-                            <span class="min-w-0 flex-1">
-                                <span class="flex min-w-0 items-center justify-between gap-2">
-                                    <span class="min-w-0 truncate text-sm font-semibold text-gray-950 dark:text-white">{{ $dialog['name'] }}</span>
-                                    @if ($dialog['lastActivityLabel'])
-                                        <time class="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">{{ $dialog['lastActivityLabel'] }}</time>
-                                    @endif
+                            <button
+                                type="button"
+                                wire:click="selectClient({{ $dialog['clientId'] }})"
+                                aria-pressed="{{ $dialog['selected'] ? 'true' : 'false' }}"
+                                aria-label="Выбрать диалог"
+                                class="absolute inset-0 z-0 rounded-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+                            ></button>
+                            <div class="relative z-10 pointer-events-none flex min-w-0 w-full items-start gap-3">
+                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                                    {{ $dialog['initials'] }}
                                 </span>
-                                <span class="mt-1 block min-w-0 truncate text-xs text-gray-600 dark:text-gray-300">{{ $dialog['preview'] ?: 'История пока пуста' }}</span>
-                                <span class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                                    @if ($dialog['channelLabel'])
-                                        <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-white/10 dark:text-gray-300">{{ $dialog['channelLabel'] }}</span>
-                                    @endif
-                                    <span class="max-w-full truncate text-[11px] text-gray-500 dark:text-gray-400">{{ $dialog['stateLabel'] }}</span>
+                                <span class="min-w-0 flex-1">
+                                    <span class="flex min-w-0 items-center justify-between gap-2">
+                                        <span class="min-w-0 truncate text-sm font-semibold text-gray-950 dark:text-white">
+                                            @if ($dialog['clientUrl'] ?? null)
+                                                <a href="{{ $dialog['clientUrl'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $dialog['name'] }}</a>
+                                            @else
+                                                {{ $dialog['name'] }}
+                                            @endif
+                                        </span>
+                                        @if ($dialog['lastActivityLabel'])
+                                            <time class="shrink-0 text-[11px] text-gray-500 dark:text-gray-400">{{ $dialog['lastActivityLabel'] }}</time>
+                                        @endif
+                                    </span>
+                                    <span class="mt-1 block min-w-0 truncate text-xs text-gray-600 dark:text-gray-300">{{ $dialog['preview'] ?: 'История пока пуста' }}</span>
+                                    <span class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                                        @if ($dialog['channelLabel'])
+                                            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-white/10 dark:text-gray-300">{{ $dialog['channelLabel'] }}</span>
+                                        @endif
+                                        <span class="max-w-full truncate text-[11px] text-gray-500 dark:text-gray-400">{{ $dialog['stateLabel'] }}</span>
+                                    </span>
                                 </span>
-                            </span>
-                        </button>
+                            </div>
+                        </div>
                     @empty
                         <div class="px-5 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                             {{ trim($search) !== '' ? 'Клиенты не найдены' : 'Диалогов пока нет' }}
@@ -63,9 +75,13 @@
                         </button>
                         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-800 dark:bg-primary-950/50 dark:text-primary-200">{{ $selectedDialog['initials'] }}</span>
                         <div class="min-w-0 flex-1">
-                            <a href="{{ \App\Filament\Resources\Clients\ClientResource::getUrl('view', ['record' => $selectedClient]) }}" class="block min-w-0 truncate text-base font-semibold text-gray-950 hover:text-primary-600 dark:text-white dark:hover:text-primary-300">
-                                {{ $selectedDialog['name'] }}
-                            </a>
+                            @if ($clientSummary['urls']['client'])
+                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold crm-entity-link">
+                                    {{ $selectedDialog['name'] }}
+                                </a>
+                            @else
+                                <span class="block min-w-0 truncate text-base font-semibold text-gray-950 dark:text-white">{{ $selectedDialog['name'] }}</span>
+                            @endif
                             <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
                                 <span>{{ $selectedDialog['channelLabel'] ?: 'Канал не подключён' }}</span>
                                 <span aria-hidden="true">·</span>
@@ -187,7 +203,11 @@
                     <div class="flex items-start gap-3 border-b border-gray-200 px-5 py-5 dark:border-white/10">
                         <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-800 dark:bg-primary-950/50 dark:text-primary-200">{{ $clientSummary['initials'] }}</span>
                         <div class="min-w-0 flex-1">
-                            <h2 class="min-w-0 truncate text-base font-semibold text-gray-950 dark:text-white">{{ $clientSummary['name'] }}</h2>
+                            @if ($clientSummary['urls']['client'])
+                                <a href="{{ $clientSummary['urls']['client'] }}" class="block min-w-0 truncate text-base font-semibold crm-entity-link">{{ $clientSummary['name'] }}</a>
+                            @else
+                                <h2 class="min-w-0 truncate text-base font-semibold text-gray-950 dark:text-white">{{ $clientSummary['name'] }}</h2>
+                            @endif
                             @if ($clientSummary['phone'])
                                 <p dir="ltr" class="mt-1 whitespace-nowrap text-left text-sm text-gray-600 dark:text-gray-300">{{ $clientSummary['phoneLabel'] ?? $clientSummary['phone'] }}</p>
                             @endif
@@ -218,7 +238,9 @@
                         </div>
 
                         <div class="flex min-w-0 flex-wrap gap-2">
-                            <x-filament::button tag="a" href="{{ $clientSummary['urls']['client'] }}" size="sm" color="primary">Открыть карточку</x-filament::button>
+                            @if ($clientSummary['urls']['client'])
+                                <x-filament::button tag="a" href="{{ $clientSummary['urls']['client'] }}" size="sm" color="primary">Открыть карточку</x-filament::button>
+                            @endif
                             <x-filament::button tag="a" href="{{ $clientSummary['urls']['bookings'] }}" size="sm" color="gray" outlined>Записи</x-filament::button>
                             <x-filament::button tag="a" href="{{ $clientSummary['urls']['sessions'] }}" size="sm" color="gray" outlined>Сессии</x-filament::button>
                         </div>

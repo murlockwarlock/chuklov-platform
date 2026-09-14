@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ScenarioActions;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioActions\Pages\ViewScenarioAction;
 use App\Filament\Resources\ScenarioActions\Tables\ScenarioActionsTable;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -52,6 +53,8 @@ final class ScenarioActionResource extends Resource
                         TextEntry::make('business_client')
                             ->label('Клиент')
                             ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
+                            ->url(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                            ->color(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
                             ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
                         TextEntry::make('business_event')
                             ->label('Событие')
@@ -100,7 +103,13 @@ final class ScenarioActionResource extends Resource
                         $user = $record->recipientUser;
 
                         return 'Сотрудник: '.($user instanceof User ? $user->name : 'недоступен');
-                    }),
+                    })
+                    ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
+                        ? CrmEntityLinks::clientUrl($record->client)
+                        : null)
+                    ->color(fn (ScenarioAction $record): ?string => $record->recipient_type !== 'client'
+                        ? null
+                        : (CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')),
                 TextEntry::make('purpose')
                     ->label('Тип сообщения')
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Specialists\Tables;
 
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
@@ -25,10 +27,19 @@ class SpecialistsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewSpecialists = SpecialistResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('display_name')->label('Имя специалиста')->searchable()->sortable()->wrap(),
+                TextColumn::make('display_name')
+                    ->label('Имя специалиста')
+                    ->searchable()
+                    ->sortable()
+                    ->wrap()
+                    ->url(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
+                    ->color(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null ? null : 'primary')
+                    ->disabledClick(fn (Specialist $record): bool => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
                 IconColumn::make('is_active')->label('Доступен')->boolean()->sortable(),
                 TextColumn::make('timezone')
                     ->label('Часовой пояс')
@@ -37,7 +48,18 @@ class SpecialistsTable
                         : TimezoneOptions::label($state))
                     ->placeholder('Часовой пояс организации')
                     ->visibleFrom('sm'),
-                TextColumn::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан')->visibleFrom('md'),
+                TextColumn::make('staffUser.name')
+                    ->label('Сотрудник CRM')
+                    ->placeholder('Не привязан')
+                    ->visibleFrom('md')
+                    ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
+                    ->color(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : (CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null ? null : 'primary'))
+                    ->disabledClick(fn (Specialist $record): bool => $record->staff_user_id === null
+                        || CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
             ])
             ->filters([
                 TernaryFilter::make('is_active')->label('Доступен'),

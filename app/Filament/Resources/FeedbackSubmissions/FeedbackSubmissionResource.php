@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\FeedbackSubmissions;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ListFeedbackSubmissions;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ViewFeedbackSubmission;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
@@ -61,10 +63,18 @@ final class FeedbackSubmissionResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('client.full_name')->label('Клиент')->searchable()->wrap(),
+                TextColumn::make('client.full_name')
+                    ->label('Клиент')
+                    ->searchable()
+                    ->wrap()
+                    ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (FeedbackSubmission $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('score')->label('Оценка')->badge()->sortable(),
                 TextColumn::make('source')->label('Источник')->wrap(),
                 TextColumn::make('internal_feedback_present')
@@ -86,7 +96,10 @@ final class FeedbackSubmissionResource extends Resource
         return $schema->components([
             Section::make('Структурные данные')
                 ->schema([
-                    TextEntry::make('client.full_name')->label('Клиент'),
+                    TextEntry::make('client.full_name')
+                        ->label('Клиент')
+                        ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                        ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('score')->label('Оценка'),
                     TextEntry::make('source')->label('Источник'),
                     TextEntry::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i'),

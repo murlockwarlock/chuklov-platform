@@ -1,4 +1,12 @@
 <x-filament-panels::page>
+    @php
+        $clientName = $client->full_name ?: 'Клиент';
+        $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($client);
+        $clientHeading = $clientUrl === null
+            ? $clientName
+            : new \Illuminate\Support\HtmlString('<a href="'.e($clientUrl).'" class="crm-entity-link">'.e($clientName).'</a>');
+    @endphp
+
     <div class="space-y-6">
         @if (session('companion_status'))
             <div class="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-800 dark:border-success-800 dark:bg-success-950/30 dark:text-success-200">
@@ -7,7 +15,7 @@
         @endif
 
         <x-filament::section
-            :heading="$client->full_name ?: 'Клиент'"
+            :heading="$clientHeading"
             :description="$companion['stateLabel'].($companion['openEscalation'] ? ' · '.$companion['openEscalation']['reasonLabel'] : '')"
         >
             <div class="flex flex-wrap items-center gap-2">

@@ -212,6 +212,7 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertActionExists('technicalMetadata')
             ->assertSee('Скачать историю')
             ->assertSee('Дополнительные сведения')
+            ->assertSee(ClientResource::getUrl('view', ['record' => $this->client->getKey()]), false)
             ->assertDontSee(route('admin.clients.companion.export', ['client' => $this->client]))
             ->assertDontSee(route('admin.clients.companion.metadata-export', ['client' => $this->client]));
 

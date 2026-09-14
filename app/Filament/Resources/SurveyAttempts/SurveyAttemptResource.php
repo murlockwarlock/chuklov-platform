@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\SurveyAttempts;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\SurveyAttempts\Pages\ListSurveyAttempts;
 use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -44,10 +46,19 @@ final class SurveyAttemptResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('client.full_name')->label('Клиент')->searchable()->sortable()->wrap(),
+                TextColumn::make('client.full_name')
+                    ->label('Клиент')
+                    ->searchable()
+                    ->sortable()
+                    ->wrap()
+                    ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (SurveyAttempt $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('surveyDefinition.title')->label('Тест')->sortable()->wrap(),
                 TextColumn::make('surveyVersion.version')->label('Версия')->visibleFrom('sm'),
                 TextColumn::make('status')
@@ -65,7 +76,11 @@ final class SurveyAttemptResource extends Resource
         return $schema->components([
             Section::make('Параметры теста')
                 ->schema([
-                    TextEntry::make('client.full_name')->label('Клиент')->wrap(),
+                    TextEntry::make('client.full_name')
+                        ->label('Клиент')
+                        ->wrap()
+                        ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client))
+                        ->color(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('surveyDefinition.title')->label('Тест')->wrap(),
                     TextEntry::make('surveyVersion.version')->label('Версия'),
                     TextEntry::make('started_at')->label('Начат')->dateTime('d.m.Y H:i'),
@@ -92,7 +107,7 @@ final class SurveyAttemptResource extends Resource
     {
         return parent::getEloquentQuery()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->with(['client:id,full_name', 'surveyDefinition:id,title', 'surveyVersion:id,version']);
+            ->with(['client:id,organization_id,full_name', 'surveyDefinition:id,title', 'surveyVersion:id,version']);
     }
 
     public static function getPages(): array

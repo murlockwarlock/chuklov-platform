@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Clients\Tables;
 
+use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\TimezoneOptions;
 use App\Modules\Analytics\Application\ClientSegmentQuery;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
@@ -21,6 +23,8 @@ class ClientsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->searchable()
             ->defaultSort(fn (Builder $query): Builder => $query
@@ -37,7 +41,13 @@ class ClientsTable
                     ->fontFamily('mono')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('full_name')->label('Имя')->sortable()->wrap(),
+                TextColumn::make('full_name')
+                    ->label('Имя')
+                    ->sortable()
+                    ->wrap()
+                    ->url(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients))
+                    ->color(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (Client $record): bool => CrmEntityLinks::clientUrl($record, $canViewClients) === null),
                 TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
                 TextColumn::make('email')
                     ->label('Email')

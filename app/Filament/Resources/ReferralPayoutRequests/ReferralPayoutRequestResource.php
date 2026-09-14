@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\ReferralPayoutRequests;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPayoutRequests\Pages\ListReferralPayoutRequests;
 use App\Filament\Resources\ReferralPayoutRequests\Pages\ViewReferralPayoutRequest;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -77,12 +79,20 @@ final class ReferralPayoutRequestResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->poll(fn (HasTable $livewire): ?string => $livewire instanceof ListReferralPayoutRequests
                 && $livewire->shouldPollStatus() ? '5s' : null)
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('beneficiary.full_name')->label('Партнёр / клиент')->searchable()->wrap(),
+                TextColumn::make('beneficiary.full_name')
+                    ->label('Партнёр / клиент')
+                    ->searchable()
+                    ->wrap()
+                    ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients))
+                    ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (ReferralPayoutRequest $record): bool => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null),
                 TextColumn::make('amount_minor')
                     ->label('Сумма')
                     ->formatStateUsing(fn (mixed $state, ReferralPayoutRequest $record): string => self::amount($record))
@@ -167,7 +177,11 @@ final class ReferralPayoutRequestResource extends Resource
         return $schema->components([
             Section::make('Запрос на выплату')
                 ->schema([
-                    TextEntry::make('beneficiary.full_name')->label('Партнёр')->wrap(),
+                    TextEntry::make('beneficiary.full_name')
+                        ->label('Партнёр')
+                        ->wrap()
+                        ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary))
+                        ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary) === null ? null : 'primary'),
                     TextEntry::make('beneficiary.referralPartnerProfile.status')
                         ->label('Статус партнёра')
                         ->formatStateUsing(fn (mixed $state): string => self::partnerStatusLabel($state))

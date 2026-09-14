@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\ScheduleExceptions\Tables;
 
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Scheduling\Application\DeleteScheduleException;
@@ -18,9 +20,16 @@ class ScheduleExceptionsTable
 {
     public static function configure(Table $table): Table
     {
+        $canViewSpecialists = SpecialistResource::canViewAny();
+
         return $table
             ->columns([
-                TextColumn::make('specialist.display_name')->label('Специалист')->sortable(),
+                TextColumn::make('specialist.display_name')
+                    ->label('Специалист')
+                    ->sortable()
+                    ->url(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
+                    ->disabledClick(fn (ScheduleException $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('exception_date')->label('Дата')->date()->sortable(),
                 TextColumn::make('exception_type')
                     ->label('Тип')

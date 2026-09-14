@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Schemas;
 
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
@@ -107,6 +108,18 @@ final class ClientWorkspaceInfolist
                                 $name = trim((string) $referrer?->full_name);
 
                                 return $name !== '' ? $name : ($referrer === null ? 'Не указан' : 'Клиент #'.$relationship->referrer_client_id);
+                            })
+                            ->url(function (Client $record): ?string {
+                                $relationship = $record->getRelationValue('referralRelationship');
+                                $referrer = $relationship?->getRelationValue('referrer');
+
+                                return $referrer instanceof Client ? CrmEntityLinks::clientUrl($referrer) : null;
+                            })
+                            ->color(function (Client $record): ?string {
+                                $relationship = $record->getRelationValue('referralRelationship');
+                                $referrer = $relationship?->getRelationValue('referrer');
+
+                                return $referrer instanceof Client && CrmEntityLinks::clientUrl($referrer) !== null ? 'primary' : null;
                             })
                             ->helperText(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');

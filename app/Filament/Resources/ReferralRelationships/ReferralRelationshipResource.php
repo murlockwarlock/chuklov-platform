@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ReferralRelationships;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralRelationships\Pages\ListReferralRelationships;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -61,15 +63,26 @@ final class ReferralRelationshipResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $canViewClients = ClientResource::canViewAny();
+
         return $table
             ->stackedOnMobile()
             ->description('Кто пригласил клиента и как была зафиксирована рекомендация.')
             ->columns([
-                TextColumn::make('referrer.full_name')->label('Кто пригласил')->searchable()->wrap(),
+                TextColumn::make('referrer.full_name')
+                    ->label('Кто пригласил')
+                    ->searchable()
+                    ->wrap()
+                    ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients))
+                    ->color(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null),
                 TextColumn::make('referred.full_name')
                     ->label('Кого пригласил')
                     ->searchable()
                     ->wrap()
+                    ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referred, $canViewClients))
+                    ->color(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referred, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referred, $canViewClients) === null)
                     ->description(fn (ReferralRelationship $record): string => self::establishmentMethodLabel($record->establishment_method)),
                 TextColumn::make('establishment_method')
                     ->label('Как зафиксировано')

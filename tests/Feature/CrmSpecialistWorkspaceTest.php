@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Specialists\Pages\EditSpecialist;
 use App\Models\User;
@@ -58,6 +59,7 @@ final class CrmSpecialistWorkspaceTest extends TestCase
     public function test_journal_renders_bookings_in_organization_timezone_and_keeps_the_existing_table_available(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
         $specialist->forceFill(['timezone' => 'Asia/Almaty'])->save();
         app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, $this->weekdayDefinitions());
         $client = Client::factory()->forOrganization($organization)->create(['full_name' => 'Иван Петров']);
@@ -79,6 +81,10 @@ final class CrmSpecialistWorkspaceTest extends TestCase
 
         self::assertSame('2026-09-07', $component->instance()->weekStart);
         self::assertSame('Иван Петров', $days['2026-09-10']['bookings'][0]['client']);
+        self::assertSame(
+            ClientResource::getUrl('view', ['record' => $client->getKey()]),
+            $days['2026-09-10']['bookings'][0]['client_url'],
+        );
         self::assertSame('14:30', $days['2026-09-10']['bookings'][0]['start_time']);
         self::assertTrue($days['2026-09-10']['is_working']);
         self::assertFalse($days['2026-09-13']['is_working']);

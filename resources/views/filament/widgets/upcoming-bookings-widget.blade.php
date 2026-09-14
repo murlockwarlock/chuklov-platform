@@ -1,5 +1,7 @@
 @php
     $data = $this->getData();
+    $canViewClients = \App\Filament\Resources\Clients\ClientResource::canViewAny();
+    $canViewSpecialists = \App\Filament\Resources\Specialists\SpecialistResource::canViewAny();
 @endphp
 
 <div class="fi-wi-upcoming-bookings w-full">
@@ -48,9 +50,13 @@
                                     $statusLabel = \App\Filament\Widgets\UpcomingBookingsWidget::statusLabel($booking->status);
                                     $statusColor = \App\Filament\Widgets\UpcomingBookingsWidget::statusColor($booking->status);
                                     $formatLabel = \App\Filament\Widgets\UpcomingBookingsWidget::formatLabel($booking->visit_format);
+                                    $bookingUrl = \App\Filament\Resources\Bookings\BookingResource::getUrl('view', ['record' => $booking->id]);
+                                    $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($booking->client, $canViewClients);
+                                    $specialistUrl = \App\Filament\Support\CrmEntityLinks::specialistUrl($booking->specialist, $canViewSpecialists);
                                 @endphp
-                                <a href="{{ \App\Filament\Resources\Bookings\BookingResource::getUrl('view', ['record' => $booking->id]) }}"
-                                   class="block bg-slate-50/70 dark:bg-white/[0.03] hover:bg-slate-100/90 dark:hover:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[6px] p-3 transition duration-150 group shadow-none min-w-0">
+                                <div class="relative block bg-slate-50/70 dark:bg-white/[0.03] hover:bg-slate-100/90 dark:hover:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[6px] p-3 transition duration-150 group shadow-none min-w-0">
+                                    <a href="{{ $bookingUrl }}" aria-label="Открыть запись" class="absolute inset-0 z-0 rounded-[6px]"></a>
+                                    <div class="relative z-10 pointer-events-none">
                                     {{-- Row 1: Time & Format --}}
                                     <div class="flex items-center justify-between gap-2 mb-1.5">
                                         <span class="font-mono text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition">
@@ -70,7 +76,11 @@
 
                                     {{-- Row 3: Client Name (no truncate, wraps) --}}
                                     <div class="text-xs font-semibold text-slate-900 dark:text-white break-words mb-1 leading-snug">
-                                        {{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}
+                                        @if ($clientUrl)
+                                            <a href="{{ $clientUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}</a>
+                                        @else
+                                            {{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}
+                                        @endif
                                     </div>
 
                                     {{-- Row 4: Service Name (no truncate, wraps) --}}
@@ -84,9 +94,14 @@
 
                                     {{-- Row 6: Specialist (subtle top divider, secondary text) --}}
                                     <div class="text-[11px] text-slate-500 dark:text-gray-400 pt-1.5 border-t border-slate-200/60 dark:border-white/5 break-words">
-                                        {{ $booking->specialist?->display_name ?: 'Специалист' }}
+                                        @if ($specialistUrl)
+                                            <a href="{{ $specialistUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->specialist?->display_name ?: 'Специалист' }}</a>
+                                        @else
+                                            {{ $booking->specialist?->display_name ?: 'Специалист' }}
+                                        @endif
                                     </div>
-                                </a>
+                                    </div>
+                                </div>
                             @empty
                                 <div class="py-8 text-center text-xs text-slate-400 dark:text-gray-500 bg-slate-50/40 dark:bg-white/[0.01] rounded-[6px] border border-dashed border-slate-200/60 dark:border-white/5">
                                     Записей нет

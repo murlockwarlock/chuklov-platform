@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\BroadcastCampaigns\RelationManagers;
 
+use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\BroadcastFailurePresentation;
+use App\Filament\Support\CrmEntityLinks;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
@@ -26,11 +28,18 @@ final class RecipientsRelationManager extends RelationManager
         abort_unless($actor instanceof User, 403);
         abort_unless($campaign instanceof BroadcastCampaign, 404);
         abort_unless((int) $campaign->organization_id === app(OrganizationContext::class)->id(), 404);
+        $canViewClients = ClientResource::canViewAny();
 
         return $table
             ->poll(fn (): ?string => $this->shouldPoll() ? '5s' : null)
             ->columns([
-                TextColumn::make('client.full_name')->label('Клиент')->placeholder('Имя не указано')->limit(80),
+                TextColumn::make('client.full_name')
+                    ->label('Клиент')
+                    ->placeholder('Имя не указано')
+                    ->limit(80)
+                    ->url(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
+                    ->color(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
+                    ->disabledClick(fn (BroadcastRecipient $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
                 TextColumn::make('channel')->label('Канал')->formatStateUsing(fn (?string $state): string => $state === 'telegram' ? 'Telegram' : '—'),
                 TextColumn::make('reason')->label('Причина')->state(function (BroadcastRecipient $record): string {

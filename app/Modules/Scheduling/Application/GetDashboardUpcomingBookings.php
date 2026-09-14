@@ -74,8 +74,8 @@ final readonly class GetDashboardUpcomingBookings
                     'location_snapshot',
                 ])
                 ->with([
-                    'client:id,full_name',
-                    'specialist:id,display_name',
+                    'client:id,organization_id,full_name',
+                    'specialist:id,organization_id,display_name',
                     'service:id,name',
                 ])
                 ->orderBy('starts_at', 'asc')

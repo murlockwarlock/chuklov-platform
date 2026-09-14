@@ -3,8 +3,11 @@
 namespace App\Filament\Resources\Clients\Resources\Sessions\Tables;
 
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\CrmEntityLinks;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -16,6 +19,7 @@ class SessionsTable
     {
         $canViewSessions = MedicalSessionResource::canViewAny();
         $canManageSessions = MedicalSessionResource::canCreate();
+        $canViewSpecialists = SpecialistResource::canViewAny();
 
         return $table
             ->paginated([25, 50])
@@ -28,7 +32,10 @@ class SessionsTable
                 TextColumn::make('specialist.display_name')
                     ->label('Специалист')
                     ->placeholder('—')
-                    ->wrap(),
+                    ->wrap()
+                    ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
+                    ->color(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
+                    ->disabledClick(fn (MedicalSession $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('booking_starts_at')
                     ->label('Дата записи на приём')
                     ->state(fn ($record): ?string => $record->booking === null
