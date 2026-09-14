@@ -107,7 +107,8 @@ final class ClinicalAiResultAction
     private static function sourceText(AiRun $record, array $provenance): string
     {
         if ($record->capability === AiCapability::ClinicalSynthesizer) {
-            $references = collect((array) $record->input_references)->filter('is_array');
+            $references = collect((array) $record->input_references)
+                ->filter(static fn (mixed $reference): bool => is_array($reference));
             $hasSessions = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_session');
             $hasSurveys = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'survey_attempt');
             $hasUpstream = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'ai_run');

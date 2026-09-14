@@ -214,6 +214,40 @@ final class ClientAttachmentsUxTest extends TestCase
         self::assertStringContainsString('Проверьте результат', $clinicalAiData['lifecycle']);
     }
 
+    public function test_clinical_synthesis_result_can_be_opened_from_clinical_ai_tab(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: [
+                'client_summary' => 'Сводка по клиенту.',
+                'main_request' => 'Основной запрос клиента.',
+                'source_facts' => ['Подтверждённый факт.'],
+            ],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+        $run->update([
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+
+        $clinicalAi->mountTableAction('openResult', $run);
+        $data = $clinicalAi->instance()->getMountedAction()->getRawData();
+
+        self::assertStringContainsString('Сводка по клиенту.', $data['result']);
+        self::assertStringContainsString('Профиль клиента', $data['sources']);
+    }
+
     public function test_result_lifecycle_uses_human_review_status_without_making_profile_or_delivery_claims(): void
     {
         $pending = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::PendingReview);
