@@ -3,8 +3,8 @@
 namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Support\ClinicalAiPresentation;
+use App\Filament\Support\ClinicalAiResultAction;
 use App\Models\User;
-use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
@@ -28,7 +28,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Section;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -168,40 +167,13 @@ final class ClientClinicalAiRelationManager extends RelationManager
                     }),
             ])
             ->recordActions([
-                Action::make('openResult')
-                    ->label('Открыть результат')
-                    ->icon('heroicon-o-eye')
-                    ->visible(fn (AiRun $record): bool => $record->status === AiRunStatus::Succeeded)
-                    ->fillForm(function (AiRun $record) use ($actor, $client): array {
-                        $result = app(GetClinicalAiResult::class)->handle($actor, $record->id, $client->id);
-
-                        return [
-                            'result' => self::resultText($result->outputPayload, $result->outputText),
-                            'sources' => self::sourceText($record, $result->attachmentProvenance),
-                            'technical' => self::technicalText($record),
-                        ];
-                    })
-                    ->schema([
-                        Textarea::make('result')
-                            ->label('Результат анализа')
-                            ->rows(14)
-                            ->disabled()
-                            ->dehydrated(false),
-                        Textarea::make('sources')
-                            ->label('Источники')
-                            ->rows(4)
-                            ->disabled()
-                            ->dehydrated(false),
-                        Section::make('Техническая информация (аудит)')
-                            ->schema([
-                                Textarea::make('technical')
-                                    ->label('Версии и время запуска')
-                                    ->rows(4)
-                                    ->disabled()
-                                    ->dehydrated(false),
-                            ])
-                            ->collapsed(),
-                    ]),
+                ClinicalAiResultAction::make(
+                    name: 'openResult',
+                    actor: $actor,
+                    client: $client,
+                    resolveRun: static fn (Model $record): ?AiRun => $record instanceof AiRun ? $record : null,
+                )
+                    ->visible(fn (AiRun $record): bool => $record->status === AiRunStatus::Succeeded),
                 Action::make('acceptReview')
                     ->label('Проверено')
                     ->color('success')
@@ -314,76 +286,6 @@ final class ClientClinicalAiRelationManager extends RelationManager
         $lines[] = 'Источник 9 систем/MSQ и его оценивание: отсутствует в авторитетных материалах.';
 
         return implode("\n", $lines);
-    }
-
-    /** @param array<string, mixed>|null $payload */
-    private static function resultText(?array $payload, ?string $text): string
-    {
-        if ($payload !== null) {
-            return json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: 'Результат отсутствует.';
-        }
-
-        return $text ?: 'Результат отсутствует.';
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $provenance
-     */
-    private static function sourceText(AiRun $record, array $provenance): string
-    {
-        if ($record->capability === AiCapability::ClinicalSynthesizer) {
-            $references = collect((array) $record->input_references);
-            $hasSessions = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_session');
-            $hasSurveys = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'survey_attempt');
-            $hasUpstream = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'ai_run');
-
-            return implode("\n", [
-                'Профиль клиента: доступен.',
-                'Проверенные результаты предыдущих анализов: '.($hasUpstream ? 'доступны.' : 'отсутствуют.'),
-                'История сеансов: '.($hasSessions ? 'доступна.' : 'отсутствует.'),
-                'Совместимые опросы: '.($hasSurveys ? 'доступны.' : 'отсутствуют.'),
-                'Источник 9 систем/MSQ и его оценивание: отсутствует в авторитетных материалах.',
-            ]);
-        }
-
-        if ($provenance === []) {
-            return 'Профиль клиента и выбранные источники анализа.';
-        }
-
-        return collect($provenance)
-            ->map(static function (array $source): string {
-                $role = match ($source['role'] ?? null) {
-                    'front' => 'Спереди',
-                    'side' => 'Сбоку',
-                    'back' => 'Сзади',
-                    default => null,
-                };
-                $type = match ($source['attachment_type'] ?? null) {
-                    AttachmentType::MedicalReport->value => 'Медицинский документ',
-                    AttachmentType::PosturePhoto->value => 'Фото осанки',
-                    default => 'Защищённый файл',
-                };
-                $format = match (strtolower((string) ($source['mime_type'] ?? ''))) {
-                    'application/pdf' => 'PDF',
-                    'image/jpeg', 'image/png', 'image/webp' => 'Изображение',
-                    default => null,
-                };
-
-                return trim(implode(' · ', array_filter([$role, $type, $format])));
-            })
-            ->filter()
-            ->implode("\n");
-    }
-
-    private static function technicalText(AiRun $record): string
-    {
-        return implode("\n", [
-            'Запуск: #'.$record->getKey(),
-            'Версия промпта: '.($record->prompt_version_id ?? '—'),
-            'Релиз модели: '.($record->model_release_id ?? '—'),
-            'Сгенерирован: '.($record->finished_at?->format('d.m.Y H:i:s') ?? '—'),
-            'Проверка: '.ClinicalAiPresentation::review($record->human_review_status),
-        ]);
     }
 
     private static function rerun(AiRun $record, User $actor, Client $client): void

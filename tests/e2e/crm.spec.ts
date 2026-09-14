@@ -898,16 +898,35 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(uploadedFileCell).toHaveCount(1);
     await expect(uploadedFileCell).toBeVisible();
     await expect(uploadedFileCell).toContainText('ux-a-report.pdf');
-    const openAttachment = uploadedRow.getByRole('button', { name: 'Открыть', exact: true });
-    await expect(openAttachment).toHaveCount(1);
+    const previewAttachment = uploadedRow.getByRole('button', { name: 'Просмотр', exact: true });
+    await expect(previewAttachment).toHaveCount(1);
+    const [previewResponse] = await Promise.all([
+        page.waitForResponse((response) => {
+            const url = new URL(response.url());
+
+            return response.status() === 200
+                && url.pathname.startsWith('/admin/attachments/')
+                && url.searchParams.get('mode') === 'preview';
+        }),
+        previewAttachment.click(),
+    ]);
+    await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
+    expect(previewResponse.headers()['content-type']).toContain('application/pdf');
+    expect(previewResponse.headers()['content-disposition']).toContain('inline');
+    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+
+    const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
+    await expect(downloadAttachment).toHaveCount(1);
     const [download, attachmentResponse] = await Promise.all([
         page.waitForEvent('download'),
         page.waitForResponse((response) => {
-            const pathname = new URL(response.url()).pathname;
+            const url = new URL(response.url());
 
-            return response.status() === 200 && /^\/admin\/attachments\/[^/]+$/.test(pathname);
+            return response.status() === 200
+                && url.pathname.startsWith('/admin/attachments/')
+                && url.searchParams.get('mode') === 'download';
         }),
-        openAttachment.click(),
+        downloadAttachment.click(),
     ]);
     expect(download.suggestedFilename()).toBe('ux-a-report.pdf');
     expect(attachmentResponse.headers()['content-type']).toContain('application/pdf');

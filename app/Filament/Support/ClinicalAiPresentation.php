@@ -29,6 +29,28 @@ final class ClinicalAiPresentation
         return $status?->label() ?? 'Неизвестный статус';
     }
 
+    public static function documentStatus(?AiRunStatus $status): string
+    {
+        return match ($status) {
+            null => 'Не запускался',
+            AiRunStatus::Preparing, AiRunStatus::Queued => 'В очереди',
+            AiRunStatus::Running => 'Анализируется',
+            AiRunStatus::Succeeded => 'Готово',
+            default => 'Ошибка',
+        };
+    }
+
+    public static function documentStatusColor(?AiRunStatus $status): string
+    {
+        return match ($status) {
+            null => 'gray',
+            AiRunStatus::Preparing, AiRunStatus::Queued => 'warning',
+            AiRunStatus::Running => 'info',
+            AiRunStatus::Succeeded => 'success',
+            default => 'danger',
+        };
+    }
+
     public static function review(HumanReviewStatus|string $status): string
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);

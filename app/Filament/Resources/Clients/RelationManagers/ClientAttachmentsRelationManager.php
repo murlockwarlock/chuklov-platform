@@ -3,8 +3,12 @@
 namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Support\ClinicalAiPresentation;
+use App\Filament\Support\ClinicalAiResultAction;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
@@ -13,6 +17,9 @@ use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -23,10 +30,13 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\View\View;
 use Throwable;
 
 final class ClientAttachmentsRelationManager extends RelationManager
 {
+    private ?array $latestDocumentAnalysisRuns = null;
+
     protected static string $relationship = 'medicalAttachments';
 
     protected static ?string $title = 'Файлы и МРТ';
@@ -47,9 +57,16 @@ final class ClientAttachmentsRelationManager extends RelationManager
 
         abort_unless($actor instanceof User, 403);
         abort_unless($client instanceof Client, 404);
+        $organization = app(OrganizationContext::class)->organization();
+        $canViewAiRuns = app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            $organization,
+            OrganizationPermission::ViewAiRuns,
+        );
 
         return $table
             ->heading('Файлы и МРТ')
+            ->poll(fn (): ?string => $canViewAiRuns && $this->shouldPoll() ? '5s' : null)
             ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientAttachments::class)->query($actor, $client),
@@ -73,6 +90,12 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->label('Загружен')
                     ->dateTime('d.m.Y H:i')
                     ->visibleFrom('md'),
+                TextColumn::make('analysis_status')
+                    ->label('Статус анализа')
+                    ->state(fn (MedicalAttachment $record): string => $this->analysisStatus($record))
+                    ->badge()
+                    ->color(fn (MedicalAttachment $record): string => $this->analysisStatusColor($record))
+                    ->visible($canViewAiRuns),
             ])
             ->headerActions([
                 Action::make('upload')
@@ -116,8 +139,20 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),
             ])
             ->recordActions([
+                Action::make('preview')
+                    ->label('Просмотр')
+                    ->icon('heroicon-o-eye')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Закрыть')
+                    ->modalWidth('7xl')
+                    ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
+                        'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
+                        'filename' => $record->original_filename,
+                        'mimeType' => strtolower($record->mime_type),
+                    ]))
+                    ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
                 Action::make('download')
-                    ->label('Открыть')
+                    ->label('Скачать')
                     ->action(function (MedicalAttachment $record) use ($actor): mixed {
                         return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
                     }),
@@ -125,11 +160,11 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->label('Запустить анализ')
                     ->icon('heroicon-o-sparkles')
                     ->requiresConfirmation()
-                    ->visible(fn (MedicalAttachment $record): bool => $record->attachment_type === AttachmentType::MedicalReport
-                        && $record->evaluation_fixture_key === null)
+                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canStartDocumentAnalysis($record))
                     ->action(function (MedicalAttachment $record) use ($actor): void {
                         try {
                             app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
+                            $this->latestDocumentAnalysisRuns = null;
                             Notification::make()
                                 ->title('Анализ документа запущен')
                                 ->success()
@@ -141,10 +176,162 @@ final class ClientAttachmentsRelationManager extends RelationManager
                                 ->send();
                         }
                     }),
+                Action::make('retryDocumentAnalysis')
+                    ->label('Повторить анализ')
+                    ->icon('heroicon-o-arrow-path')
+                    ->requiresConfirmation()
+                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canRetryDocumentAnalysis($record))
+                    ->action(function (MedicalAttachment $record) use ($actor): void {
+                        try {
+                            app(StartClinicalDocumentAnalysis::class)->handle($actor, $record, true);
+                            $this->latestDocumentAnalysisRuns = null;
+                            Notification::make()
+                                ->title('Повторный анализ поставлен в очередь')
+                                ->success()
+                                ->send();
+                        } catch (Throwable $exception) {
+                            Notification::make()
+                                ->title(ClinicalAiPresentation::failure(null, $exception))
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+                ClinicalAiResultAction::make(
+                    name: 'openDocumentAnalysisResult',
+                    actor: $actor,
+                    client: $client,
+                    resolveRun: fn (Model $record): ?AiRun => $record instanceof MedicalAttachment
+                        ? $this->latestDocumentAnalysisRun($record)
+                        : null,
+                )
+                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
             ])
             ->paginated([10, 25])
             ->emptyStateHeading('Файлов пока нет')
             ->emptyStateDescription('Загрузите медицинское заключение или фото осанки.');
+    }
+
+    private function shouldPoll(): bool
+    {
+        $client = $this->getOwnerRecord();
+        if (! $client instanceof Client) {
+            return false;
+        }
+
+        return AiRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $client->getKey())
+            ->where('capability', AiCapability::ClinicalDocumentExtraction)
+            ->whereIn('status', [AiRunStatus::Preparing, AiRunStatus::Queued, AiRunStatus::Running])
+            ->exists();
+    }
+
+    private function analysisStatus(MedicalAttachment $attachment): string
+    {
+        if ($attachment->attachment_type !== AttachmentType::MedicalReport) {
+            return '—';
+        }
+
+        return ClinicalAiPresentation::documentStatus($this->latestDocumentAnalysisRun($attachment)?->status);
+    }
+
+    private function analysisStatusColor(MedicalAttachment $attachment): string
+    {
+        if ($attachment->attachment_type !== AttachmentType::MedicalReport) {
+            return 'gray';
+        }
+
+        return ClinicalAiPresentation::documentStatusColor($this->latestDocumentAnalysisRun($attachment)?->status);
+    }
+
+    private function canStartDocumentAnalysis(MedicalAttachment $attachment): bool
+    {
+        return $attachment->attachment_type === AttachmentType::MedicalReport
+            && $attachment->evaluation_fixture_key === null
+            && $this->latestDocumentAnalysisRun($attachment) === null;
+    }
+
+    private function canRetryDocumentAnalysis(MedicalAttachment $attachment): bool
+    {
+        return $attachment->attachment_type === AttachmentType::MedicalReport
+            && $attachment->evaluation_fixture_key === null
+            && $this->latestDocumentAnalysisRun($attachment)?->status?->isTerminal() === true;
+    }
+
+    private function canOpenDocumentAnalysisResult(MedicalAttachment $attachment): bool
+    {
+        return $attachment->attachment_type === AttachmentType::MedicalReport
+            && $this->latestDocumentAnalysisRun($attachment)?->status === AiRunStatus::Succeeded;
+    }
+
+    private function latestDocumentAnalysisRun(MedicalAttachment $attachment): ?AiRun
+    {
+        return $this->latestDocumentAnalysisRuns()[(int) $attachment->getKey()] ?? null;
+    }
+
+    /** @return array<int, AiRun> */
+    private function latestDocumentAnalysisRuns(): array
+    {
+        if ($this->latestDocumentAnalysisRuns !== null) {
+            return $this->latestDocumentAnalysisRuns;
+        }
+
+        $client = $this->getOwnerRecord();
+        if (! $client instanceof Client) {
+            return $this->latestDocumentAnalysisRuns = [];
+        }
+
+        $organizationId = app(OrganizationContext::class)->id();
+        $attachmentIds = MedicalAttachment::query()
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $client->getKey())
+            ->pluck('id')
+            ->map(static fn (int|string $id): int => (int) $id)
+            ->flip()
+            ->all();
+
+        if ($attachmentIds === []) {
+            return $this->latestDocumentAnalysisRuns = [];
+        }
+
+        $runs = AiRun::query()
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $client->getKey())
+            ->where('capability', AiCapability::ClinicalDocumentExtraction)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'organization_id',
+                'client_id',
+                'capability',
+                'status',
+                'input_references',
+                'context_provenance',
+                'prompt_version_id',
+                'model_release_id',
+                'human_review_status',
+                'finished_at',
+                'created_at',
+            ]);
+        $latest = [];
+
+        foreach ($runs as $run) {
+            foreach ((array) $run->input_references as $reference) {
+                if (! is_array($reference) || ($reference['type'] ?? null) !== 'medical_attachment') {
+                    continue;
+                }
+
+                $attachmentId = (int) ($reference['id'] ?? 0);
+                if ($attachmentId < 1 || ! isset($attachmentIds[$attachmentId]) || isset($latest[$attachmentId])) {
+                    continue;
+                }
+
+                $latest[$attachmentId] = $run;
+            }
+        }
+
+        return $this->latestDocumentAnalysisRuns = $latest;
     }
 
     private static function formatBytes(int $bytes): string
