@@ -4,9 +4,11 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\MessageComposer;
 use App\Models\User;
+use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
@@ -438,6 +440,18 @@ final class Messages extends Page
                     ? BookingResource::getUrl('view', ['record' => $summary['upcomingBooking']['id']])
                     : null,
             ];
+
+            $clinicalSummary = app(ReadClinicalAiClientSummary::class)->handle($actor, $client);
+            if ($clinicalSummary !== null) {
+                $clinicalRelation = array_search(ClientClinicalAiRelationManager::class, ClientResource::getRelations(), true);
+                $summary['clinical'] = $clinicalSummary;
+                $summary['urls']['clinicalAi'] = $clinicalRelation === false
+                    ? ClientResource::getUrl('view', ['record' => $client])
+                    : ClientResource::getUrl('view', [
+                        'record' => $client,
+                        'relation' => (string) $clinicalRelation,
+                    ]);
+            }
         }
 
         return [

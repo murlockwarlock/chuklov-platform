@@ -273,6 +273,9 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertSuccessful()
             ->assertTableHeaderActionsExistInOrder(['postureAnalysis', 'clinicalSynthesis'])
             ->assertSee('Клинический AI')
+            ->assertSee('Анализы документов')
+            ->assertSee('Не запускался')
+            ->assertSee('Источники клинического резюме')
             ->assertSee('Анализы ещё не запускались');
     }
 

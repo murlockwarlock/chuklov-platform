@@ -4,7 +4,12 @@ namespace App\Filament\Support;
 
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
+use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewDecision;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
@@ -13,9 +18,13 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Closure;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Component;
 use LogicException;
 
 final class ClinicalAiResultAction
@@ -23,12 +32,16 @@ final class ClinicalAiResultAction
     public static function make(string $name, User $actor, Client $client, Closure $resolveRun): Action
     {
         $canViewTrace = self::canViewTrace($actor);
+        $canReview = self::canReview($actor, $client);
 
         return Action::make($name)
             ->label('Открыть результат')
             ->icon('heroicon-o-eye')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')
+            ->extraModalFooterActions(fn (): array => $canReview
+                ? self::reviewActions($actor, $resolveRun)
+                : [])
             ->fillForm(function (Model $record) use ($actor, $client, $resolveRun, $canViewTrace): array {
                 $run = $resolveRun($record);
                 abort_unless($run instanceof AiRun, 404);
@@ -64,6 +77,112 @@ final class ClinicalAiResultAction
         }
     }
 
+    private static function canReview(User $actor, Client $client): bool
+    {
+        try {
+            $organization = app(OrganizationContext::class)->organization();
+            $authorizer = app(OrganizationAuthorizer::class);
+
+            return (int) $client->organization_id === (int) $organization->getKey()
+                && $authorizer->allows($actor, $organization, OrganizationPermission::ViewClients)
+                && $authorizer->allows($actor, $organization, OrganizationPermission::ViewAiRuns)
+                && $authorizer->allows($actor, $organization, OrganizationPermission::ReviewAiProposals);
+        } catch (LogicException) {
+            return false;
+        }
+    }
+
+    private static function reviewActions(User $actor, Closure $resolveRun): array
+    {
+        return [
+            Action::make('confirmClinicalAiResult')
+                ->label('Подтвердить результат')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->requiresConfirmation()
+                ->modalHeading('Подтвердить результат')
+                ->modalDescription('Результат будет отмечен как проверенный специалистом и сможет использоваться при формировании клинического резюме.')
+                ->modalSubmitActionLabel('Подтвердить результат')
+                ->modalCancelActionLabel('Отмена')
+                ->cancelParentActions()
+                ->visible(fn (Model $record): bool => self::reviewableRun($record, $resolveRun) instanceof AiRun)
+                ->action(function (Model $record, Component $livewire) use ($actor, $resolveRun): void {
+                    $run = self::reviewableRun($record, $resolveRun);
+                    abort_unless($run instanceof AiRun, 404);
+
+                    app(ReviewAiRun::class)->handle(
+                        actor: $actor,
+                        runId: (int) $run->getKey(),
+                        decision: HumanReviewDecision::Accepted,
+                        safeReasonCode: HumanReviewReasonCode::SpecialistConfirmed->value,
+                    );
+
+                    self::refreshLivewireTable($livewire);
+                    Notification::make()
+                        ->title('Результат подтверждён специалистом.')
+                        ->success()
+                        ->send();
+                }),
+            Action::make('rejectClinicalAiResult')
+                ->label('Отклонить результат')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->modalHeading('Отклонить результат')
+                ->modalDescription('Результат останется в истории, но не будет использоваться как подтверждённый источник для клинического резюме.')
+                ->modalSubmitActionLabel('Отклонить результат')
+                ->modalCancelActionLabel('Отмена')
+                ->cancelParentActions()
+                ->schema([
+                    Select::make('reason_code')
+                        ->label('Причина')
+                        ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(
+                            fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()],
+                        ))
+                        ->required(),
+                    Textarea::make('notes')
+                        ->label('Заметка специалиста')
+                        ->rows(3),
+                ])
+                ->visible(fn (Model $record): bool => self::reviewableRun($record, $resolveRun) instanceof AiRun)
+                ->action(function (Model $record, array $data, Component $livewire) use ($actor, $resolveRun): void {
+                    $run = self::reviewableRun($record, $resolveRun);
+                    abort_unless($run instanceof AiRun, 404);
+
+                    app(ReviewAiRun::class)->handle(
+                        actor: $actor,
+                        runId: (int) $run->getKey(),
+                        decision: HumanReviewDecision::Rejected,
+                        safeReasonCode: (string) $data['reason_code'],
+                        notes: filled($data['notes'] ?? null) ? (string) $data['notes'] : null,
+                    );
+
+                    self::refreshLivewireTable($livewire);
+                    Notification::make()
+                        ->title('Результат отклонён специалистом.')
+                        ->danger()
+                        ->send();
+                }),
+        ];
+    }
+
+    private static function reviewableRun(Model $record, Closure $resolveRun): ?AiRun
+    {
+        $run = $resolveRun($record);
+
+        return $run instanceof AiRun
+            && $run->status === AiRunStatus::Succeeded
+            && $run->human_review_status === HumanReviewStatus::PendingReview
+            ? $run
+            : null;
+    }
+
+    private static function refreshLivewireTable(Component $livewire): void
+    {
+        if (method_exists($livewire, 'resetTable')) {
+            $livewire->resetTable();
+        }
+    }
+
     private static function schema(bool $canViewTrace): array
     {
         $schema = [
@@ -72,10 +191,10 @@ final class ClinicalAiResultAction
                 ->rows(14)
                 ->disabled()
                 ->dehydrated(false),
-            Textarea::make('review')
+            Placeholder::make('review')
                 ->label('Проверка специалиста')
-                ->rows(2)
-                ->disabled()
+                ->badge()
+                ->color(fn (mixed $state): string => ClinicalAiPresentation::reviewColor((string) $state))
                 ->dehydrated(false),
             Textarea::make('lifecycle')
                 ->label('Состояние результата')

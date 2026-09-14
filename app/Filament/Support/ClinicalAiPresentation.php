@@ -6,6 +6,8 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
+use Illuminate\Support\Str;
 use Throwable;
 
 final class ClinicalAiPresentation
@@ -51,11 +53,97 @@ final class ClinicalAiPresentation
         };
     }
 
+    public static function sourceStatus(?AiRun $run): string
+    {
+        if ($run === null) {
+            return 'Не запускался';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'В работе';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'Ошибка';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::PendingReview => 'Требует проверки',
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
+            HumanReviewStatus::Rejected => 'Отклонено',
+            default => 'Готово',
+        };
+    }
+
+    public static function sourceStatusColor(?AiRun $run): string
+    {
+        if ($run === null) {
+            return 'gray';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'info';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'danger';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::PendingReview => 'warning',
+            HumanReviewStatus::Rejected => 'danger',
+            default => 'success',
+        };
+    }
+
+    public static function synthesisStatus(?AiRun $run): string
+    {
+        return match (true) {
+            $run === null => 'Нет',
+            ! $run->status->isTerminal() => 'Создаётся',
+            $run->status === AiRunStatus::Succeeded => 'Готово',
+            default => 'Ошибка',
+        };
+    }
+
+    public static function synthesisStatusColor(?AiRun $run): string
+    {
+        return match (true) {
+            $run === null => 'gray',
+            ! $run->status->isTerminal() => 'info',
+            $run->status === AiRunStatus::Succeeded => 'success',
+            default => 'danger',
+        };
+    }
+
     public static function review(HumanReviewStatus|string $status): string
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
 
         return $status?->label() ?? 'Проверка не определена';
+    }
+
+    public static function reviewColor(HumanReviewStatus|string $status): string
+    {
+        $value = $status instanceof HumanReviewStatus ? $status->value : $status;
+        $reviewStatus = HumanReviewStatus::tryFrom($value);
+
+        if ($reviewStatus === null) {
+            foreach (HumanReviewStatus::cases() as $candidate) {
+                if ($candidate->label() === $value) {
+                    $reviewStatus = $candidate;
+
+                    break;
+                }
+            }
+        }
+
+        return match ($reviewStatus) {
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'success',
+            HumanReviewStatus::PendingReview => 'warning',
+            HumanReviewStatus::Rejected => 'danger',
+            default => 'gray',
+        };
     }
 
     public static function reviewGuidance(HumanReviewStatus|string $status): string
@@ -106,6 +194,19 @@ final class ClinicalAiPresentation
             AiCapability::ClinicalSynthesizer => self::synthesizerResult($payload),
             default => null,
         } ?? 'Результат получен, но не может быть отображён в текущем формате.';
+    }
+
+    public static function preview(AiCapability|string $capability, ?array $payload, ?string $text): string
+    {
+        $result = trim(self::result($capability, $payload, $text));
+        if ($result === '') {
+            return 'Результат получен, но не может быть отображён в текущем формате.';
+        }
+
+        $lines = preg_split('/\R+/', $result, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $preview = implode("\n", array_slice(array_map(static fn (string $line): string => trim($line), $lines), 0, 5));
+
+        return Str::limit($preview !== '' ? $preview : $result, 700);
     }
 
     public static function failure(?AiErrorCategory $category, ?Throwable $exception = null): string

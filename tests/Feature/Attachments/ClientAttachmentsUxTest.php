@@ -248,6 +248,41 @@ final class ClientAttachmentsUxTest extends TestCase
         self::assertStringContainsString('Профиль клиента', $data['sources']);
     }
 
+    public function test_result_modal_exposes_review_actions_and_uses_shared_review_authority(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: ['plain_summary' => 'Результат для проверки внутри модального окна.'],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+
+        $component = $this->mount($admin, $client);
+        $component->mountTableAction('openDocumentAnalysisResult', $attachment);
+        $resultAction = $component->instance()->getMountedAction();
+        $confirmAction = $resultAction?->getModalAction('confirmClinicalAiResult');
+        $rejectAction = $resultAction?->getModalAction('rejectClinicalAiResult');
+
+        self::assertInstanceOf(Action::class, $confirmAction);
+        self::assertInstanceOf(Action::class, $rejectAction);
+        self::assertTrue($confirmAction->isVisible());
+        self::assertTrue($rejectAction->isVisible());
+        self::assertSame('Подтвердить результат', $confirmAction->getLabel());
+        self::assertSame('Отклонить результат', $rejectAction->getLabel());
+
+        $component
+            ->mountTableAction('confirmClinicalAiResult')
+            ->callMountedTableAction()
+            ->assertNotified('Результат подтверждён специалистом.');
+
+        self::assertSame(HumanReviewStatus::Accepted, $run->fresh()->human_review_status);
+        $component->assertTableActionHidden('acceptDocumentAnalysisReview', $attachment);
+    }
+
     public function test_result_lifecycle_uses_human_review_status_without_making_profile_or_delivery_claims(): void
     {
         $pending = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::PendingReview);
@@ -339,6 +374,10 @@ final class ClientAttachmentsUxTest extends TestCase
             ->assertTableActionVisible('openDocumentAnalysisResult', $attachment)
             ->assertTableActionHidden('acceptDocumentAnalysisReview', $attachment)
             ->assertTableActionHidden('rejectDocumentAnalysisReview', $attachment);
+        $attachments->mountTableAction('openDocumentAnalysisResult', $attachment);
+        $resultAction = $attachments->instance()->getMountedAction();
+        self::assertNull($resultAction?->getModalAction('confirmClinicalAiResult'));
+        self::assertNull($resultAction?->getModalAction('rejectClinicalAiResult'));
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [

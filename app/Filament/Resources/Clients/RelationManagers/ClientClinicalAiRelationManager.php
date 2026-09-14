@@ -9,6 +9,7 @@ use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
+use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
@@ -21,7 +22,6 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
-use App\Modules\Surveys\Application\SurveyAuthorization;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Placeholder;
@@ -33,6 +33,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\View\View;
 use Throwable;
 
 final class ClientClinicalAiRelationManager extends RelationManager
@@ -72,6 +73,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
 
         return $table
             ->heading('Клинический AI')
+            ->description(fn (): ?View => self::clinicalAiSummary($actor, $client))
             ->poll(fn (): ?string => $this->shouldPoll() ? '5s' : null)
             ->stackedOnMobile()
             ->modifyQueryUsing(function (Builder $query) use ($client): Builder {
@@ -100,7 +102,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
                 TextColumn::make('human_review_status')
                     ->label('Проверка специалиста')
                     ->badge()
-                    ->color(fn (HumanReviewStatus|string $state): string => self::reviewColor($state))
+                    ->color(fn (HumanReviewStatus|string $state): string => ClinicalAiPresentation::reviewColor($state))
                     ->formatStateUsing(fn (HumanReviewStatus|string $state): string => ClinicalAiPresentation::review($state))
                     ->wrap(),
                 TextColumn::make('error_category')
@@ -268,6 +270,15 @@ final class ClientClinicalAiRelationManager extends RelationManager
             ->exists();
     }
 
+    private static function clinicalAiSummary(User $actor, Client $client): ?View
+    {
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($actor, $client);
+
+        return $summary === null
+            ? null
+            : view('filament.resources.clients.clinical-ai-summary', ['summary' => $summary]);
+    }
+
     /** @return array<int, string> */
     private static function postureOptions(Client $client): array
     {
@@ -286,26 +297,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
 
     private static function sourceAvailability(User $actor, Client $client): string
     {
-        $lines = [];
-        foreach ([
-            AiCapability::ClinicalDocumentExtraction->value => 'Анализ медицинского документа',
-            AiCapability::PostureAnalysis->value => 'Анализ осанки',
-        ] as $capability => $label) {
-            $available = AiRun::query()
-                ->where('organization_id', $client->organization_id)
-                ->where('client_id', $client->getKey())
-                ->where('capability', $capability)
-                ->where('status', AiRunStatus::Succeeded)
-                ->whereIn('human_review_status', [HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted])
-                ->exists();
-            $lines[] = $label.': '.($available ? 'проверен специалистом' : 'пока отсутствует или ожидает проверки');
-        }
-
-        $surveyAvailable = app(SurveyAuthorization::class)->allowsView($actor, $client);
-        $lines[] = 'Результаты совместимых опросов: '.($surveyAvailable ? 'будут включены при наличии' : 'недоступны для текущего специалиста');
-        $lines[] = 'Источник 9 систем/MSQ и его оценивание: отсутствует в авторитетных материалах.';
-
-        return implode("\n", $lines);
+        return app(ReadClinicalAiClientSummary::class)->readinessDescription($actor, $client);
     }
 
     private static function rerun(AiRun $record, User $actor, Client $client): void
@@ -351,18 +343,6 @@ final class ClientClinicalAiRelationManager extends RelationManager
             'queued', 'preparing' => 'gray',
             'invalid_output' => 'warning',
             'failed', 'timed_out', 'cancelled' => 'danger',
-            default => 'gray',
-        };
-    }
-
-    private static function reviewColor(HumanReviewStatus|string $status): string
-    {
-        $status = $status instanceof HumanReviewStatus ? $status->value : (string) $status;
-
-        return match ($status) {
-            'accepted', 'edited_and_accepted' => 'success',
-            'pending_review' => 'warning',
-            'rejected' => 'danger',
             default => 'gray',
         };
     }

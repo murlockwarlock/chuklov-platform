@@ -7,6 +7,7 @@ use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Evaluations\ControlledPostureFixtureRepository;
+use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
@@ -66,6 +67,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         $this->organization = Organization::create([
             'name' => 'Clinical AI Test Clinic',
             'slug' => 'clinical-ai-test-clinic',
+            'timezone' => 'UTC',
         ]);
         $this->staff = User::factory()->forOrganization($this->organization, OrganizationRole::Staff)->create();
         $this->client = $this->newClient('Synthetic client');
@@ -214,6 +216,40 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
         self::assertStringContainsString('Old document fact', (string) $originalPrompt);
         self::assertStringNotContainsString('New document fact', (string) $originalPrompt);
+    }
+
+    public function test_clinical_client_summary_uses_latest_state_and_human_synthesis_preview(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Предыдущий подтверждённый документ.'],
+        );
+        $latestDocumentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Новый результат отклонён.'],
+            HumanReviewStatus::Rejected,
+        );
+        $synthesisRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            [
+                'client_summary' => 'Короткая сводка для специалиста.',
+                'main_request' => 'Уточнить основную жалобу.',
+            ],
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['documents']['state']);
+        self::assertTrue($summary['readiness'][1]['available']);
+        self::assertSame('Готово', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Короткая сводка для специалиста.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('"client_summary"', (string) $summary['synthesisPreview']);
+        self::assertSame($synthesisRun->getKey(), AiRun::query()->find($synthesisRun->getKey())?->getKey());
+        self::assertSame(HumanReviewStatus::Rejected, $latestDocumentRun->fresh()->human_review_status);
     }
 
     public function test_synthesis_bounds_large_reviewed_context_before_persisting_the_prompt(): void
