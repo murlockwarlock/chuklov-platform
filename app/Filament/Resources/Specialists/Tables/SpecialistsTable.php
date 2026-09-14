@@ -47,7 +47,15 @@ class SpecialistsTable
                         : TimezoneOptions::label($state))
                     ->placeholder('Часовой пояс организации')
                     ->visibleFrom('sm'),
-                TextColumn::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан')->visibleFrom('md'),
+                TextColumn::make('staffUser.name')
+                    ->label('Сотрудник CRM')
+                    ->placeholder('Не привязан')
+                    ->visibleFrom('md')
+                    ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
+                    ->disabledClick(fn (Specialist $record): bool => $record->staff_user_id === null
+                        || CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
             ])
             ->filters([
                 TernaryFilter::make('is_active')->label('Доступен'),

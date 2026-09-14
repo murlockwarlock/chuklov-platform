@@ -8,6 +8,7 @@ use App\Filament\Resources\Specialists\Pages\ListSpecialists;
 use App\Filament\Resources\Specialists\Pages\ViewSpecialist;
 use App\Filament\Resources\Specialists\Schemas\SpecialistForm;
 use App\Filament\Resources\Specialists\Tables\SpecialistsTable;
+use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\TimezoneOptions;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -59,7 +60,12 @@ class SpecialistResource extends Resource
                 TextEntry::make('viewer_timezone')
                     ->label('Часовой пояс CRM')
                     ->formatStateUsing(fn (?string $state): string => self::timezoneLabel($state, 'Часовой пояс организации')),
-                TextEntry::make('staffUser.name')->label('Сотрудник CRM')->placeholder('Не привязан'),
+                TextEntry::make('staffUser.name')
+                    ->label('Сотрудник CRM')
+                    ->placeholder('Не привязан')
+                    ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
+                        ? null
+                        : CrmEntityLinks::specialistUrl($record)),
                 TextEntry::make('staffUser.email')->label('Email сотрудника')->placeholder('Не указан'),
                 TextEntry::make('telegramNotificationIdentity.verification_status')
                     ->label('Telegram')

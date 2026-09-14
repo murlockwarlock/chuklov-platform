@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
+use App\Filament\Resources\Specialists\Pages\ListSpecialists;
+use App\Filament\Resources\Specialists\Pages\ViewSpecialist;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Resources\SurveyAttempts\Pages\ListSurveyAttempts;
 use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
@@ -149,6 +151,31 @@ final class CrmEntityClickThroughTest extends TestCase
             'href="'.SpecialistResource::getUrl('view', ['record' => $recipient->getKey()]).'"',
             $html,
         );
+    }
+
+    public function test_linked_staff_name_uses_the_canonical_specialist_card(): void
+    {
+        $organization = Organization::factory()->create();
+        $actor = User::factory()->forOrganization($organization)->create();
+        $staff = User::factory()->forOrganization($organization)->create(['name' => 'Linked Staff']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Canonical Specialist',
+            'staff_user_id' => $staff->getKey(),
+        ]);
+        $this->setFilamentContext($actor, $organization);
+
+        $listHtml = Livewire::actingAs($actor)
+            ->test(ListSpecialists::class)
+            ->assertSuccessful()
+            ->html();
+        $viewHtml = Livewire::actingAs($actor)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertSuccessful()
+            ->html();
+        $linkedStaffPattern = '/<a\s+href="'.preg_quote(SpecialistResource::getUrl('view', ['record' => $specialist->getKey()]), '/').'"[^>]*>.*?Linked Staff.*?<\/a>/s';
+
+        self::assertMatchesRegularExpression($linkedStaffPattern, $listHtml);
+        self::assertMatchesRegularExpression($linkedStaffPattern, $viewHtml);
     }
 
     /** @return array{0: User, 1: Client, 2: SurveyAttempt} */
