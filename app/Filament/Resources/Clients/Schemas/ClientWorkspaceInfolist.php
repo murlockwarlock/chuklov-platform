@@ -34,10 +34,6 @@ final class ClientWorkspaceInfolist
             ->components([
                 Section::make('Клиент')
                     ->schema([
-                        TextEntry::make('id')
-                            ->label('ID')
-                            ->formatStateUsing(fn (mixed $state): string => '#'.$state)
-                            ->fontFamily('mono'),
                         TextEntry::make('phone')
                             ->label('Телефон')
                             ->placeholder('Не указан')
@@ -107,7 +103,9 @@ final class ClientWorkspaceInfolist
                                 $referrer = $relationship?->getRelationValue('referrer');
                                 $name = trim((string) $referrer?->full_name);
 
-                                return $name !== '' ? $name : ($referrer === null ? 'Не указан' : 'Клиент #'.$relationship->referrer_client_id);
+                                return $name !== '' ? $name : ($referrer instanceof Client
+                                    ? 'Клиент без имени'
+                                    : ($relationship === null ? 'Не указан' : 'Клиент недоступен'));
                             })
                             ->url(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');
@@ -227,7 +225,7 @@ final class ClientWorkspaceInfolist
                     ->extraAttributes(['class' => 'h-fit']),
 
                 Section::make('Клинический профиль')
-                    ->description('Защищённые данные (Class C)')
+                    ->description('Защищённые данные')
                     ->schema([
                         TextEntry::make('anamnesis')
                             ->label('Клинический анамнез')

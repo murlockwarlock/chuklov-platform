@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 final class MedicalAttachmentTest extends TestCase
@@ -226,13 +227,14 @@ final class MedicalAttachmentTest extends TestCase
         $response->assertOk();
         $response->assertHeader('Content-Type', 'application/pdf');
         $response->assertHeader('X-Content-Type-Options', 'nosniff');
+        self::assertStringContainsString('attachment', (string) $response->headers->get('Content-Disposition'));
         self::assertStringContainsString('medical_report.pdf', (string) $response->headers->get('Content-Disposition'));
 
         // 2. Expired signed URL fails closed (403)
         $expiredUrl = URL::temporarySignedRoute(
             'admin.attachments.download',
             now()->subMinutes(1),
-            ['uuid' => $attachment->uuid],
+            ['uuid' => $attachment->uuid, 'mode' => 'download'],
         );
         $expiredResponse = $this->actingAs($admin)->get($expiredUrl);
         $expiredResponse->assertForbidden();
@@ -263,6 +265,117 @@ final class MedicalAttachmentTest extends TestCase
         self::assertFalse((bool) config('filesystems.disks.private.serve'));
     }
 
+    public function test_authorized_staff_can_preview_pdf_image_and_text_inline(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $uploader = app(UploadMedicalAttachment::class);
+        $urlGenerator = app(GetTemporaryAttachmentUrl::class);
+
+        $pdf = $uploader->handle($admin, new AttachmentUploadCommand(
+            file: $this->fakePdf('report.pdf'),
+            attachmentType: AttachmentType::MedicalReport,
+            clientId: (int) $client->getKey(),
+        ));
+        $pdfUrl = $urlGenerator->handlePreview($admin, $pdf);
+
+        self::assertIsString($pdfUrl);
+        self::assertStringNotContainsString($pdf->storage_path, $pdfUrl);
+        $this->actingAs($admin)
+            ->get($pdfUrl)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('Content-Disposition', 'inline; filename=report.pdf');
+
+        $image = $uploader->handle($admin, new AttachmentUploadCommand(
+            file: UploadedFile::fake()->image('posture.jpg', 100, 100),
+            attachmentType: AttachmentType::PosturePhoto,
+            clientId: (int) $client->getKey(),
+        ));
+        $imageUrl = $urlGenerator->handlePreview($admin, $image);
+
+        self::assertIsString($imageUrl);
+        $this->actingAs($admin)
+            ->get($imageUrl)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('Content-Disposition', 'inline; filename=posture.jpg');
+
+        $text = $uploader->handle($admin, new AttachmentUploadCommand(
+            file: UploadedFile::fake()->createWithContent('notes.txt', 'safe text'),
+            attachmentType: AttachmentType::MedicalReport,
+            clientId: (int) $client->getKey(),
+        ));
+        $textUrl = $urlGenerator->handlePreview($admin, $text);
+
+        self::assertIsString($textUrl);
+        $textResponse = $this->actingAs($admin)->get($textUrl);
+        $textResponse
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('Content-Disposition', 'inline; filename=notes.txt');
+        self::assertStringStartsWith('text/plain', (string) $textResponse->headers->get('Content-Type'));
+
+        self::assertStringStartsWith("medical/attachments/{$organization->getKey()}/", $pdf->storage_path);
+    }
+
+    public function test_preview_mode_rejects_unsupported_mime_and_tampered_modes(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $uuid = (string) Str::uuid();
+        $path = "medical/attachments/{$organization->getKey()}/{$uuid}.bin";
+        Storage::disk('private')->put($path, '<script>alert(1)</script>');
+        $attachment = new MedicalAttachment;
+        $attachment->forceFill([
+            'uuid' => $uuid,
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'uploaded_by_user_id' => $admin->getKey(),
+            'attachment_type' => AttachmentType::MedicalReport,
+            'disk' => 'private',
+            'storage_path' => $path,
+            'original_filename' => 'unsafe.html',
+            'mime_type' => 'text/html',
+            'size_bytes' => 25,
+            'sha256_checksum' => hash('sha256', '<script>alert(1)</script>'),
+        ]);
+        $attachment->save();
+
+        self::assertNull(app(GetTemporaryAttachmentUrl::class)->handlePreview($admin, $attachment));
+
+        $invalidPreviewUrl = URL::temporarySignedRoute(
+            'admin.attachments.download',
+            now()->addMinutes(15),
+            ['uuid' => $attachment->uuid, 'mode' => 'preview'],
+        );
+        $invalidPreviewResponse = $this->actingAs($admin)->get($invalidPreviewUrl);
+        self::assertContains($invalidPreviewResponse->status(), [403, 404]);
+
+        $unknownModeUrl = URL::temporarySignedRoute(
+            'admin.attachments.download',
+            now()->addMinutes(15),
+            ['uuid' => $attachment->uuid, 'mode' => 'unknown'],
+        );
+        $this->actingAs($admin)->get($unknownModeUrl)->assertForbidden();
+
+        $pdf = app(UploadMedicalAttachment::class)->handle($admin, new AttachmentUploadCommand(
+            file: $this->fakePdf('signed.pdf'),
+            attachmentType: AttachmentType::MedicalReport,
+            clientId: (int) $client->getKey(),
+        ));
+        $previewUrl = app(GetTemporaryAttachmentUrl::class)->handlePreview($admin, $pdf);
+        self::assertIsString($previewUrl);
+
+        $this->actingAs($admin)->get($previewUrl.'&mode=download')->assertForbidden();
+        $expiredUrl = URL::temporarySignedRoute(
+            'admin.attachments.download',
+            now()->subMinute(),
+            ['uuid' => $pdf->uuid, 'mode' => 'preview'],
+        );
+        $this->actingAs($admin)->get($expiredUrl)->assertForbidden();
+    }
+
     public function test_cross_organization_staff_cannot_download_attachment_with_signed_url(): void
     {
         [$orgA, $adminA, $clientA] = $this->setupOrganizationWithClient();
@@ -277,6 +390,7 @@ final class MedicalAttachmentTest extends TestCase
         ));
 
         $signedUrl = app(GetTemporaryAttachmentUrl::class)->handle($adminA, $attachmentA, 15);
+        $previewUrl = app(GetTemporaryAttachmentUrl::class)->handlePreview($adminA, $attachmentA, 15);
 
         // Admin B from Org B attempts to use the URL
         config()->set('tenancy.default_organization_id', $orgB->getKey());
@@ -284,6 +398,8 @@ final class MedicalAttachmentTest extends TestCase
 
         $response = $this->actingAs($adminB)->get($signedUrl);
         $response->assertNotFound();
+        self::assertIsString($previewUrl);
+        $this->actingAs($adminB)->get($previewUrl)->assertNotFound();
     }
 
     private function fakePdf(string $name = 'test.pdf'): UploadedFile

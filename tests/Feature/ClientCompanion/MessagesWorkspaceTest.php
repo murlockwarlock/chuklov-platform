@@ -6,7 +6,15 @@ use App\Filament\Pages\Messages;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ViewClient;
+use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Models\User;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionWorkspace;
@@ -20,8 +28,11 @@ use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
@@ -35,6 +46,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
+use Mockery;
 use Tests\TestCase;
 
 final class MessagesWorkspaceTest extends TestCase
@@ -167,6 +179,107 @@ final class MessagesWorkspaceTest extends TestCase
 
         $this->expectException(ModelNotFoundException::class);
         $component->call('selectClient', $foreignClient->getKey())->assertStatus(404);
+    }
+
+    public function test_messages_sidebar_shows_human_clinical_summary_and_canonical_workspace_link(): void
+    {
+        $run = AiRun::create([
+            'organization_id' => $this->organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $this->client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $payload = json_encode([
+            'client_summary' => 'Короткая сводка для специалиста.',
+            'main_request' => 'Уточнить основную жалобу.',
+        ], JSON_THROW_ON_ERROR);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->assertSee('Клиническая сводка')
+            ->assertSee('Анализ документов')
+            ->assertSee('Клиническое резюме')
+            ->assertSee('Проверено')
+            ->assertSee('Последнее проверенное клиническое резюме:')
+            ->assertSee('Короткая сводка для специалиста.')
+            ->assertDontSee('"client_summary"')
+            ->assertSee(ClientResource::getUrl('view', [
+                'record' => $this->client,
+                'relation' => (string) array_search(
+                    ClientClinicalAiRelationManager::class,
+                    ClientResource::getRelations(),
+                    true,
+                ),
+            ]), false);
+    }
+
+    public function test_messages_sidebar_omits_clinical_summary_without_ai_permission(): void
+    {
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturnUsing(
+            static fn (User $actor, Organization $organization, OrganizationPermission $permission): bool => $permission !== OrganizationPermission::ViewAiRuns,
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->assertDontSee('Клиническая сводка')
+            ->assertDontSee('Клиническое резюме')
+            ->assertDontSee('client_summary');
+    }
+
+    public function test_messages_sidebar_does_not_render_pending_synthesis_as_an_active_preview(): void
+    {
+        $run = AiRun::create([
+            'organization_id' => $this->organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $this->client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::PendingReview,
+            'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $payload = json_encode(['client_summary' => 'Непроверенная сводка.'], JSON_THROW_ON_ERROR);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->getKey(), $payload, 1),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->assertSee('Клиническая сводка')
+            ->assertSee('Требует проверки')
+            ->assertDontSee('Последнее проверенное клиническое резюме:')
+            ->assertDontSee('Непроверенная сводка.');
     }
 
     public function test_crm_reply_uses_verified_telegram_binding_for_the_existing_companion_conversation(): void

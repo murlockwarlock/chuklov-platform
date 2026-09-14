@@ -7,6 +7,7 @@ use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Evaluations\ControlledPostureFixtureRepository;
+use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
@@ -66,6 +67,7 @@ final class ClinicalAiWorkflowTest extends TestCase
         $this->organization = Organization::create([
             'name' => 'Clinical AI Test Clinic',
             'slug' => 'clinical-ai-test-clinic',
+            'timezone' => 'UTC',
         ]);
         $this->staff = User::factory()->forOrganization($this->organization, OrganizationRole::Staff)->create();
         $this->client = $this->newClient('Synthetic client');
@@ -153,6 +155,19 @@ final class ClinicalAiWorkflowTest extends TestCase
                 'practitioner_focus' => [],
                 'limitations' => [],
             ],
+            HumanReviewStatus::EditedAndAccepted,
+        );
+        $pendingDocumentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Pending document must not be used.'],
+            HumanReviewStatus::PendingReview,
+        );
+        $rejectedPostureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Rejected posture must not be used']]]],
+            HumanReviewStatus::Rejected,
         );
 
         $synthesisAction = app(StartClinicalSynthesis::class);
@@ -174,6 +189,8 @@ final class ClinicalAiWorkflowTest extends TestCase
                 ->pluck('id')
                 ->all(),
         );
+        self::assertNotContains($pendingDocumentRun->id, collect($synthesisRun->input_references)->pluck('id')->all());
+        self::assertNotContains($rejectedPostureRun->id, collect($synthesisRun->input_references)->pluck('id')->all());
 
         $synthesisRun->update(['status' => AiRunStatus::Failed]);
         $retrySynthesisRun = $synthesisAction->handle($this->staff, $this->client);
@@ -199,6 +216,165 @@ final class ClinicalAiWorkflowTest extends TestCase
         );
         self::assertStringContainsString('Old document fact', (string) $originalPrompt);
         self::assertStringNotContainsString('New document fact', (string) $originalPrompt);
+    }
+
+    public function test_clinical_client_summary_uses_latest_state_and_human_synthesis_preview(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Предыдущий подтверждённый документ.'],
+        );
+        $latestDocumentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Новый результат отклонён.'],
+            HumanReviewStatus::Rejected,
+        );
+        $synthesisRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            [
+                'client_summary' => 'Короткая сводка для специалиста.',
+                'main_request' => 'Уточнить основную жалобу.',
+            ],
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['documents']['state']);
+        self::assertTrue($summary['readiness'][1]['available']);
+        self::assertSame('Проверено', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Короткая сводка для специалиста.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('"client_summary"', (string) $summary['synthesisPreview']);
+        self::assertSame($synthesisRun->getKey(), AiRun::query()->find($synthesisRun->getKey())?->getKey());
+        self::assertSame(HumanReviewStatus::Rejected, $latestDocumentRun->fresh()->human_review_status);
+    }
+
+    public function test_pending_synthesis_is_not_presented_as_ready_or_previewed(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Непроверенная сводка.'],
+            HumanReviewStatus::PendingReview,
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Требует проверки', $summary['states']['synthesis']['state']);
+        self::assertNull($summary['synthesisPreview']);
+        self::assertNull($summary['states']['synthesis']['lastReadyAt']);
+    }
+
+    public function test_rejected_synthesis_is_not_presented_as_ready_or_previewed(): void
+    {
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Отклонённая сводка.'],
+            HumanReviewStatus::Rejected,
+        );
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['synthesis']['state']);
+        self::assertNull($summary['synthesisPreview']);
+        self::assertNull($summary['states']['synthesis']['lastReadyAt']);
+    }
+
+    public function test_previous_accepted_synthesis_remains_the_explicit_preview_when_newer_run_is_rejected(): void
+    {
+        $acceptedRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Последнее проверенное резюме.'],
+        );
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Новое отклонённое резюме.'],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Последнее проверенное резюме.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('Новое отклонённое резюме.', (string) $summary['synthesisPreview']);
+        self::assertSame('12.09.2026 10:00', $summary['states']['synthesis']['lastReadyAt']);
+        self::assertSame('12.09.2026 10:00', $summary['synthesisPreviewAt']);
+    }
+
+    public function test_previous_accepted_synthesis_remains_the_explicit_preview_when_newer_run_is_pending(): void
+    {
+        $acceptedRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Предыдущее проверенное резюме.'],
+        );
+        $acceptedRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+
+        $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Новое резюме ожидает проверки.'],
+            HumanReviewStatus::PendingReview,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Требует проверки', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Предыдущее проверенное резюме.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('Новое резюме ожидает проверки.', (string) $summary['synthesisPreview']);
+        self::assertSame('12.09.2026 10:00', $summary['states']['synthesis']['lastReadyAt']);
+        self::assertSame('12.09.2026 10:00', $summary['synthesisPreviewAt']);
+    }
+
+    public function test_source_readiness_explains_previous_reviewed_document_and_posture_results(): void
+    {
+        $documentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Предыдущий проверенный документ.'],
+        );
+        $documentRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Новый документ отклонён.'],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $postureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Предыдущее наблюдение.']]]],
+        );
+        $postureRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Новое наблюдение отклонено.']]]],
+            HumanReviewStatus::Rejected,
+        )->update(['finished_at' => Carbon::parse('2026-09-14 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Отклонено', $summary['states']['documents']['state']);
+        self::assertSame('Отклонено', $summary['states']['posture']['state']);
+        self::assertTrue($summary['readiness'][1]['available']);
+        self::assertTrue($summary['readiness'][2]['available']);
+        self::assertStringContainsString('12.09.2026 10:00', $summary['readiness'][1]['availability']);
+        self::assertStringContainsString('12.09.2026 10:00', $summary['readiness'][2]['availability']);
     }
 
     public function test_synthesis_bounds_large_reviewed_context_before_persisting_the_prompt(): void
@@ -521,8 +697,12 @@ final class ClinicalAiWorkflowTest extends TestCase
      * @param  list<AiInputReference>  $references
      * @param  array<string, mixed>  $payload
      */
-    private function reviewedRun(AiCapability $capability, array $references, array $payload): AiRun
-    {
+    private function reviewedRun(
+        AiCapability $capability,
+        array $references,
+        array $payload,
+        HumanReviewStatus $reviewStatus = HumanReviewStatus::Accepted,
+    ): AiRun {
         $run = AiRun::create([
             'organization_id' => $this->organization->id,
             'capability' => $capability,
@@ -531,7 +711,7 @@ final class ClinicalAiWorkflowTest extends TestCase
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $this->client->id,
             'status' => AiRunStatus::Succeeded,
-            'human_review_status' => HumanReviewStatus::Accepted,
+            'human_review_status' => $reviewStatus,
             'input_references' => array_map(static fn (AiInputReference $reference): array => $reference->toArray(), $references),
             'context_provenance' => [],
             'token_usage' => [],

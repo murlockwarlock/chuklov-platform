@@ -258,6 +258,44 @@
                             @endif
                         </section>
 
+                        @if ($clientSummary['clinical'] ?? null)
+                            @php
+                                $clinicalSummary = $clientSummary['clinical'];
+                                $clinicalBadgeClasses = [
+                                    'success' => 'bg-success-50 text-success-700 dark:bg-success-950/30 dark:text-success-200',
+                                    'info' => 'bg-info-50 text-info-700 dark:bg-info-950/30 dark:text-info-200',
+                                    'warning' => 'bg-warning-50 text-warning-700 dark:bg-warning-950/30 dark:text-warning-200',
+                                    'danger' => 'bg-danger-50 text-danger-700 dark:bg-danger-950/30 dark:text-danger-200',
+                                    'gray' => 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-200',
+                                ];
+                                $clinicalStates = [
+                                    $clinicalSummary['states']['documents'],
+                                    $clinicalSummary['states']['posture'],
+                                    $clinicalSummary['states']['synthesis'],
+                                ];
+                            @endphp
+                            <section class="border-t border-gray-100 pt-5 dark:border-white/10">
+                                <h3 class="text-sm font-semibold text-gray-950 dark:text-white">Клиническая сводка</h3>
+                                <div class="mt-3 space-y-2">
+                                    @foreach ($clinicalStates as $state)
+                                        <div class="flex min-w-0 items-center justify-between gap-2 text-sm">
+                                            <span class="min-w-0 break-words text-gray-600 dark:text-gray-300">{{ $state['label'] }}</span>
+                                            <span class="shrink-0 rounded-full px-2 py-1 text-xs font-medium {{ $clinicalBadgeClasses[$state['color']] ?? $clinicalBadgeClasses['gray'] }}">{{ $state['state'] }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                                @if ($clinicalSummary['synthesisPreview'] ?? null)
+                                    @if ($clinicalSummary['synthesisPreviewAt'] ?? null)
+                                        <p class="mt-3 break-words text-xs text-gray-500 dark:text-gray-400">Последнее проверенное клиническое резюме: {{ $clinicalSummary['synthesisPreviewAt'] }}</p>
+                                    @endif
+                                    <p class="mt-3 whitespace-pre-line break-words text-xs leading-5 text-gray-600 dark:text-gray-300">{{ $clinicalSummary['synthesisPreview'] }}</p>
+                                @endif
+                                @if ($clientSummary['urls']['clinicalAi'] ?? null)
+                                    <x-filament::button tag="a" href="{{ $clientSummary['urls']['clinicalAi'] }}" size="sm" color="gray" outlined class="mt-3 w-full">Открыть Клинический AI</x-filament::button>
+                                @endif
+                            </section>
+                        @endif
+
                     </div>
                 </aside>
             @endif

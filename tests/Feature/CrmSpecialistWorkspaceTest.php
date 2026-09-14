@@ -207,6 +207,27 @@ final class CrmSpecialistWorkspaceTest extends TestCase
         self::assertSame(16, count($component->instance()->selectedDates));
     }
 
+    public function test_work_schedule_can_cancel_multi_date_selection_without_mutating_schedule(): void
+    {
+        [$organization, $admin, $specialist] = $this->organizationWithAdminAndSpecialist('UTC');
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(WorkSchedule::class)
+            ->set('month', '2026-10')
+            ->call('applyPreset', 'even');
+
+        self::assertStringContainsString('02.10', $component->instance()->selectedDatesLabel());
+        self::assertStringNotContainsString('2026', $component->instance()->selectedDatesLabel());
+        $component->assertSee('Снять выбор')->assertSee('Убрать рабочее время');
+
+        $component->call('clearDateSelection')->assertSet('selectedDates', []);
+
+        self::assertSame([], $component->instance()->selectedDates);
+        self::assertDatabaseCount('schedule_exceptions', 0);
+        self::assertCount(0, $specialist->fresh()->workingHours);
+    }
+
     public function test_selected_date_clear_uses_existing_schedule_impact_acknowledgement_without_deleting_booking(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
@@ -238,6 +259,12 @@ final class CrmSpecialistWorkspaceTest extends TestCase
             ->call('clearSelectedDates');
 
         self::assertCount(2, $component->instance()->impactBookings);
+        $html = $component->html();
+        self::assertStringContainsString('05.10.2026 10:00', $html);
+        self::assertLessThan(
+            strpos($html, 'Действие'),
+            strpos($html, 'Изменение затрагивает будущие записи'),
+        );
         self::assertDatabaseMissing('schedule_exceptions', [
             'specialist_id' => $specialist->id,
             'exception_date' => '2026-10-05',

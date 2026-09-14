@@ -745,6 +745,20 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString('Всемирное время', $component->instance()->specialistScheduleTimezoneLabel());
     }
 
+    public function test_journal_specialist_selector_uses_the_labeled_schedule_control(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Второй специалист',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $html = Livewire::actingAs($admin)->test(ListBookings::class)->html();
+
+        self::assertStringContainsString('booking-journal-specialist', $html);
+        self::assertStringContainsString('Специалист', $html);
+    }
+
     public function test_journal_keeps_specialist_week_and_view_in_url_and_booking_navigation_context(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture();

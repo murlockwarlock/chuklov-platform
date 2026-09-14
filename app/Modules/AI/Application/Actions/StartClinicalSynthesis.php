@@ -4,11 +4,10 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
-use App\Modules\AI\Domain\Enums\AiRunStatus;
-use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Identity\Domain\Models\Client;
@@ -30,6 +29,7 @@ final readonly class StartClinicalSynthesis
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private GetClinicalAiResult $resultReader,
+        private FindLatestReviewedAiRun $findLatestReviewedAiRun,
         private GetMedicalProfile $getMedicalProfile,
         private MedicalSessionAuthorization $sessionAuthorization,
         private GetSession $getSession,
@@ -44,8 +44,16 @@ final readonly class StartClinicalSynthesis
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewAiRuns);
         $this->sessionAuthorization->authorizeViewClient($actor, $client);
 
-        $documentRun = $this->latestReviewedRun($client, AiCapability::ClinicalDocumentExtraction);
-        $postureRun = $this->latestReviewedRun($client, AiCapability::PostureAnalysis);
+        $documentRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::ClinicalDocumentExtraction,
+            (int) $organization->getKey(),
+        );
+        $postureRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::PostureAnalysis,
+            (int) $organization->getKey(),
+        );
         $documentResult = $documentRun === null ? null : $this->resultReader->handle($actor, $documentRun->id, $client->id);
         $postureResult = $postureRun === null ? null : $this->resultReader->handle($actor, $postureRun->id, $client->id);
         $profile = $this->getMedicalProfile->handle($actor, $client);
@@ -111,22 +119,6 @@ final readonly class StartClinicalSynthesis
             idempotencyKey: $idempotencyKey,
             actor: $actor,
         ));
-    }
-
-    private function latestReviewedRun(Client $client, AiCapability $capability): ?AiRun
-    {
-        return AiRun::query()
-            ->where('organization_id', $client->organization_id)
-            ->where('client_id', $client->getKey())
-            ->where('capability', $capability)
-            ->where('status', AiRunStatus::Succeeded)
-            ->whereIn('human_review_status', [
-                HumanReviewStatus::Accepted,
-                HumanReviewStatus::EditedAndAccepted,
-            ])
-            ->orderByDesc('finished_at')
-            ->orderByDesc('id')
-            ->first();
     }
 
     private function idempotencyKey(int $organizationId, string $baseKey, bool $rerun): string

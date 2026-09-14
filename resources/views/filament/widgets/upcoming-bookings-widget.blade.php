@@ -53,6 +53,8 @@
                                     $bookingUrl = \App\Filament\Resources\Bookings\BookingResource::getUrl('view', ['record' => $booking->id]);
                                     $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($booking->client, $canViewClients);
                                     $specialistUrl = \App\Filament\Support\CrmEntityLinks::specialistUrl($booking->specialist, $canViewSpecialists);
+                                    $clientName = trim((string) ($booking->client?->full_name ?? ''));
+                                    $clientName = $clientName !== '' ? $clientName : ($booking->client ? 'Клиент без имени' : 'Клиент недоступен');
                                 @endphp
                                 <div class="relative block bg-slate-50/70 dark:bg-white/[0.03] hover:bg-slate-100/90 dark:hover:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[6px] p-3 transition duration-150 group shadow-none min-w-0">
                                     <a href="{{ $bookingUrl }}" aria-label="Открыть запись" class="absolute inset-0 z-0 rounded-[6px]"></a>
@@ -77,9 +79,9 @@
                                     {{-- Row 3: Client Name (no truncate, wraps) --}}
                                     <div class="text-xs font-semibold text-slate-900 dark:text-white break-words mb-1 leading-snug">
                                         @if ($clientUrl)
-                                            <a href="{{ $clientUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}</a>
+                                            <a href="{{ $clientUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $clientName }}</a>
                                         @else
-                                            {{ $booking->client?->full_name ?: ('Клиент #' . $booking->client_id) }}
+                                            {{ $clientName }}
                                         @endif
                                     </div>
 

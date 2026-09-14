@@ -60,6 +60,133 @@ final class AiExactPricingTest extends TestCase
         $pricing->calculateCostMinorUnits(1, 0);
     }
 
+    public function test_catalog_pricing_omits_unpriced_optional_meters_from_bounded_reservation(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'input_price_per_million' => '1.00',
+            'output_price_per_million' => '2.00',
+            'cache_read_input_price_per_million' => '0.10',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+            'catalog_source' => 'https://provider.example/pricing',
+            'catalog_pricing_as_of' => '2026-08-22',
+        ]);
+
+        $exposure = [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 1_000_000,
+            'cache_read_input_tokens' => 1_000_000,
+            'cache_write_input_tokens' => 1_000_000,
+            'reasoning_tokens' => 1_000_000,
+            'provider_requests' => 1,
+            'total_tokens' => 2_000_000,
+        ];
+
+        $reservedExposure = $pricing->boundedReservationExposure($exposure);
+
+        self::assertSame(1_000_000, $reservedExposure['cache_read_input_tokens']);
+        self::assertSame(0, $reservedExposure['cache_write_input_tokens']);
+        self::assertSame(0, $reservedExposure['reasoning_tokens']);
+        self::assertSame(
+            310,
+            $pricing->calculateCostMinorUnits(
+                promptTokens: $reservedExposure['input_tokens'],
+                completionTokens: $reservedExposure['output_tokens'],
+                cacheReadInputTokens: $reservedExposure['cache_read_input_tokens'],
+                cacheWriteInputTokens: $reservedExposure['cache_write_input_tokens'],
+                reasoningTokens: $reservedExposure['reasoning_tokens'],
+                providerRequests: $reservedExposure['provider_requests'],
+            ),
+        );
+    }
+
+    public function test_catalog_pricing_with_unpriced_optional_meters_can_settle_provider_usage(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'input_price_per_million' => '1.00',
+            'output_price_per_million' => '2.00',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+            'catalog_source' => 'https://provider.example/pricing',
+            'catalog_pricing_as_of' => '2026-08-22',
+        ]);
+
+        self::assertSame(
+            300,
+            $pricing->calculateCostMinorUnits(
+                promptTokens: 1_000_000,
+                completionTokens: 1_000_000,
+                cacheReadInputTokens: 1_000_000,
+                cacheWriteInputTokens: 1_000_000,
+                reasoningTokens: 1_000_000,
+                providerRequests: 1,
+            ),
+        );
+    }
+
+    public function test_every_executable_catalog_model_can_price_the_bounded_reservation(): void
+    {
+        $exposure = [
+            'input_tokens' => 1_000_000,
+            'output_tokens' => 1_000_000,
+            'cache_read_input_tokens' => 1_000_000,
+            'cache_write_input_tokens' => 1_000_000,
+            'reasoning_tokens' => 1_000_000,
+            'provider_requests' => 1,
+            'total_tokens' => 2_000_000,
+        ];
+        $checked = 0;
+
+        foreach (AiModelCatalog::all() as $definition) {
+            if ($definition->pricing === null || ! $definition->pricing->isComplete()) {
+                continue;
+            }
+
+            $reservedExposure = $definition->pricing->boundedReservationExposure($exposure);
+            $definition->pricing->calculateCostMinorUnits(
+                promptTokens: $reservedExposure['input_tokens'],
+                completionTokens: $reservedExposure['output_tokens'],
+                cacheReadInputTokens: $reservedExposure['cache_read_input_tokens'],
+                cacheWriteInputTokens: $reservedExposure['cache_write_input_tokens'],
+                reasoningTokens: $reservedExposure['reasoning_tokens'],
+                providerRequests: $reservedExposure['provider_requests'],
+            );
+            $checked++;
+        }
+
+        self::assertGreaterThan(0, $checked);
+    }
+
+    public function test_manual_pricing_with_missing_optional_meter_remains_fail_closed(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'input_price_per_million' => '1.00',
+            'output_price_per_million' => '2.00',
+            'cache_read_input_price_per_million' => null,
+            'cache_write_input_price_per_million' => null,
+            'reasoning_price_per_million' => null,
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_MANUAL,
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $pricing->boundedReservationExposure([
+            'input_tokens' => 1,
+            'output_tokens' => 1,
+            'cache_read_input_tokens' => 0,
+            'cache_write_input_tokens' => 0,
+            'reasoning_tokens' => 0,
+            'provider_requests' => 1,
+            'total_tokens' => 2,
+        ]);
+    }
+
     public function test_v2_compatibility_minor_units_round_up_without_changing_exact_rates(): void
     {
         $pricing = AiPricingSnapshot::fromArray([

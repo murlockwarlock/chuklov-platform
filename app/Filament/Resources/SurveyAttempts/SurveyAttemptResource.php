@@ -126,10 +126,12 @@ final class SurveyAttemptResource extends Resource
         if (! is_array($metrics)) {
             return [];
         }
-        foreach ($metrics as $key => $metric) {
+        $metricNumber = 0;
+        foreach ($metrics as $metric) {
             if (is_array($metric)) {
-                $label = $metric['label'] ?? $key;
-                $display[self::humanLabel($label, (string) $key)] = (string) ($metric['value'] ?? '');
+                $metricNumber++;
+                $label = self::humanLabel($metric['label'] ?? null, 'Показатель '.$metricNumber);
+                $display[$label] = (string) ($metric['value'] ?? '');
             }
         }
 

@@ -49,7 +49,7 @@ final class SessionInfolist
                                 $status = self::statusLabel($booking->status);
                                 $parts = array_filter([$date, $status], static fn ($v): bool => filled($v));
 
-                                return $parts ? implode(' · ', $parts) : '#'.$booking->getKey();
+                                return $parts ? implode(' · ', $parts) : 'Дата не указана';
                             }),
                     ])->columns(3),
                 Section::make('Динамика подтверждённых фактов')

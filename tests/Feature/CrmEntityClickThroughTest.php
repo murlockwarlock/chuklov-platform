@@ -67,6 +67,32 @@ final class CrmEntityClickThroughTest extends TestCase
         );
     }
 
+    public function test_survey_attempt_view_does_not_expose_unlabelled_metric_keys(): void
+    {
+        [$actor, , $attempt] = $this->surveyAttemptFixture();
+        $attempt->forceFill([
+            'result_snapshot' => [
+                'metrics' => [
+                    'internal_metric_key' => ['value' => 3],
+                    'second_internal_key' => ['value' => 8],
+                ],
+                'thresholds' => [],
+            ],
+        ])->save();
+
+        $html = Livewire::actingAs($actor)
+            ->test(ViewSurveyAttempt::class, ['record' => $attempt->getKey()])
+            ->assertSuccessful()
+            ->html();
+
+        self::assertStringContainsString('Показатель 1', $html);
+        self::assertStringContainsString('Показатель 2', $html);
+        self::assertStringContainsString('3', $html);
+        self::assertStringContainsString('8', $html);
+        self::assertStringNotContainsString('internal_metric_key', $html);
+        self::assertStringNotContainsString('second_internal_key', $html);
+    }
+
     public function test_booking_view_links_to_canonical_client_and_specialist_views(): void
     {
         [$actor, $client, $specialist, $booking] = $this->bookingFixture();
