@@ -21,6 +21,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -139,72 +140,79 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),
             ])
             ->recordActions([
-                Action::make('preview')
-                    ->label('Просмотр')
-                    ->icon('heroicon-o-eye')
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Закрыть')
-                    ->modalWidth('7xl')
-                    ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
-                        'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
-                        'filename' => $record->original_filename,
-                        'mimeType' => strtolower($record->mime_type),
-                    ]))
-                    ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
-                Action::make('download')
-                    ->label('Скачать')
-                    ->action(function (MedicalAttachment $record) use ($actor): mixed {
-                        return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
-                    }),
-                Action::make('startDocumentAnalysis')
-                    ->label('Запустить анализ')
-                    ->icon('heroicon-o-sparkles')
-                    ->requiresConfirmation()
-                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canStartDocumentAnalysis($record))
-                    ->action(function (MedicalAttachment $record) use ($actor): void {
-                        try {
-                            app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
-                            $this->latestDocumentAnalysisRuns = null;
-                            Notification::make()
-                                ->title('Анализ документа запущен')
-                                ->success()
-                                ->send();
-                        } catch (Throwable $exception) {
-                            Notification::make()
-                                ->title(ClinicalAiPresentation::failure(null, $exception))
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-                Action::make('retryDocumentAnalysis')
-                    ->label('Повторить анализ')
-                    ->icon('heroicon-o-arrow-path')
-                    ->requiresConfirmation()
-                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canRetryDocumentAnalysis($record))
-                    ->action(function (MedicalAttachment $record) use ($actor): void {
-                        try {
-                            app(StartClinicalDocumentAnalysis::class)->handle($actor, $record, true);
-                            $this->latestDocumentAnalysisRuns = null;
-                            Notification::make()
-                                ->title('Повторный анализ поставлен в очередь')
-                                ->success()
-                                ->send();
-                        } catch (Throwable $exception) {
-                            Notification::make()
-                                ->title(ClinicalAiPresentation::failure(null, $exception))
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-                ClinicalAiResultAction::make(
-                    name: 'openDocumentAnalysisResult',
-                    actor: $actor,
-                    client: $client,
-                    resolveRun: fn (Model $record): ?AiRun => $record instanceof MedicalAttachment
-                        ? $this->latestDocumentAnalysisRun($record)
-                        : null,
-                )
-                    ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
+                ActionGroup::make([
+                    Action::make('preview')
+                        ->label('Просмотр')
+                        ->icon('heroicon-o-eye')
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Закрыть')
+                        ->modalWidth('7xl')
+                        ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
+                            'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
+                            'filename' => $record->original_filename,
+                            'mimeType' => strtolower($record->mime_type),
+                        ]))
+                        ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
+                    Action::make('download')
+                        ->label('Скачать')
+                        ->action(function (MedicalAttachment $record) use ($actor): mixed {
+                            return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
+                        }),
+                    Action::make('startDocumentAnalysis')
+                        ->label('Запустить анализ')
+                        ->icon('heroicon-o-sparkles')
+                        ->requiresConfirmation()
+                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canStartDocumentAnalysis($record))
+                        ->action(function (MedicalAttachment $record) use ($actor): void {
+                            try {
+                                app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
+                                $this->latestDocumentAnalysisRuns = null;
+                                Notification::make()
+                                    ->title('Анализ документа запущен')
+                                    ->success()
+                                    ->send();
+                            } catch (Throwable $exception) {
+                                Notification::make()
+                                    ->title(ClinicalAiPresentation::failure(null, $exception))
+                                    ->danger()
+                                    ->send();
+                            }
+                        }),
+                    Action::make('retryDocumentAnalysis')
+                        ->label('Повторить анализ')
+                        ->icon('heroicon-o-arrow-path')
+                        ->requiresConfirmation()
+                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canRetryDocumentAnalysis($record))
+                        ->action(function (MedicalAttachment $record) use ($actor): void {
+                            try {
+                                app(StartClinicalDocumentAnalysis::class)->handle($actor, $record, true);
+                                $this->latestDocumentAnalysisRuns = null;
+                                Notification::make()
+                                    ->title('Повторный анализ поставлен в очередь')
+                                    ->success()
+                                    ->send();
+                            } catch (Throwable $exception) {
+                                Notification::make()
+                                    ->title(ClinicalAiPresentation::failure(null, $exception))
+                                    ->danger()
+                                    ->send();
+                            }
+                        }),
+                    ClinicalAiResultAction::make(
+                        name: 'openDocumentAnalysisResult',
+                        actor: $actor,
+                        client: $client,
+                        resolveRun: fn (Model $record): ?AiRun => $record instanceof MedicalAttachment
+                            ? $this->latestDocumentAnalysisRun($record)
+                            : null,
+                    )
+                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
+                ])
+                    ->label('Действия')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->button()
+                    ->color('gray')
+                    ->size('sm'),
             ])
             ->paginated([10, 25])
             ->emptyStateHeading('Файлов пока нет')

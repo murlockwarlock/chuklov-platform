@@ -23,6 +23,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Filament\Actions\ActionGroup;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
@@ -63,6 +64,22 @@ final class ClientAttachmentsUxTest extends TestCase
 
         $component->mountTableAction('preview', $attachment);
         self::assertStringContainsString('<iframe', $component->getMountedActionModalHtml());
+    }
+
+    public function test_attachment_row_actions_are_compactly_grouped_to_avoid_horizontal_overflow(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $this->attachment($organization, $admin, $client);
+
+        $actions = $this->mount($admin, $client)->instance()->getTable()->getRecordActions();
+
+        self::assertCount(1, $actions);
+        self::assertInstanceOf(ActionGroup::class, $actions[0]);
+        self::assertSame('Действия', $actions[0]->getLabel());
+        self::assertArrayHasKey('preview', $actions[0]->getFlatActions());
+        self::assertArrayHasKey('download', $actions[0]->getFlatActions());
+        self::assertArrayHasKey('startDocumentAnalysis', $actions[0]->getFlatActions());
+        self::assertArrayHasKey('openDocumentAnalysisResult', $actions[0]->getFlatActions());
     }
 
     public function test_latest_document_run_controls_status_polling_and_actions(): void
