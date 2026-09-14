@@ -213,6 +213,8 @@ final class ClientAttachmentsRelationManager extends RelationManager
 
     private function shouldPoll(): bool
     {
+        $this->latestDocumentAnalysisRuns = null;
+
         $client = $this->getOwnerRecord();
         if (! $client instanceof Client) {
             return false;

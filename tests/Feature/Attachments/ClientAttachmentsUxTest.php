@@ -76,6 +76,12 @@ final class ClientAttachmentsUxTest extends TestCase
         self::assertSame('5s', $active->instance()->getTable()->getPollingInterval());
 
         $run->update(['status' => AiRunStatus::Succeeded]);
+        $active->call('$refresh');
+        $active
+            ->assertTableColumnStateSet('analysis_status', 'Готово', $attachment)
+            ->assertTableActionVisible('openDocumentAnalysisResult', $attachment);
+        self::assertNull($active->instance()->getTable()->getPollingInterval());
+
         $succeeded = $this->mount($admin, $client);
         $succeeded
             ->assertTableColumnStateSet('analysis_status', 'Готово', $attachment)
