@@ -86,7 +86,7 @@ class ClientResource extends Resource
 
         $fullName = trim((string) $record->getAttribute('full_name'));
 
-        return $fullName !== '' ? $fullName : '#'.$record->getKey();
+        return $fullName !== '' ? $fullName : 'Клиент без имени';
     }
 
     /** @return Collection<int, GlobalSearchResult> */

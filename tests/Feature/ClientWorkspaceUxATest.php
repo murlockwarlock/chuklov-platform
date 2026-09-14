@@ -366,7 +366,7 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertDontSee('Просмотр');
     }
 
-    public function test_view_client_uses_id_fallback_for_blank_full_name(): void
+    public function test_view_client_uses_human_fallback_for_blank_full_name(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
         $client = Client::factory()->forOrganization($organization)->create([
@@ -378,7 +378,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'record' => (string) $client->getKey(),
         ]);
 
-        $fallback = '#'.$client->getKey();
+        $fallback = 'Клиент без имени';
         self::assertSame($fallback, (string) $component->instance()->getTitle());
         self::assertSame(['База клиентов', $fallback], array_values($component->instance()->getBreadcrumbs()));
     }
@@ -772,7 +772,8 @@ final class ClientWorkspaceUxATest extends TestCase
 
         Livewire::test(ViewClient::class, ['record' => $client->getKey()])
             ->assertSuccessful()
-            ->assertSee('#'.$client->id)
+            ->assertDontSee('#'.$client->id)
+            ->assertDontSee('Class C')
             ->assertSee('Анна Иванова')
             ->assertSee('+7 (999) 123-45-67')
             ->assertSee('anna@example.test')
@@ -782,6 +783,15 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertActionExists('edit')
             ->assertActionExists('editMedicalProfile')
             ->assertSee('Дополнительные действия');
+    }
+
+    public function test_client_record_title_uses_a_human_fallback_without_database_id(): void
+    {
+        [$organization] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create(['full_name' => null]);
+
+        self::assertSame('Клиент без имени', ClientResource::getRecordTitle($client));
+        self::assertStringNotContainsString((string) $client->getKey(), ClientResource::getRecordTitle($client));
     }
 
     public function test_client_cockpit_medical_profile_action_persists_encrypted_data(): void
