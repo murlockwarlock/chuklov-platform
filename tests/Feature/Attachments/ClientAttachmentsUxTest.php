@@ -67,26 +67,25 @@ final class ClientAttachmentsUxTest extends TestCase
         self::assertStringContainsString('<iframe', $component->getMountedActionModalHtml());
     }
 
-    public function test_attachment_row_actions_keep_primary_actions_visible_and_group_secondary_actions(): void
+    public function test_attachment_row_actions_keep_primary_views_visible_and_group_secondary_actions(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
         $this->attachment($organization, $admin, $client);
 
         $actions = $this->mount($admin, $client)->instance()->getTable()->getRecordActions();
 
-        self::assertCount(4, $actions);
+        self::assertCount(3, $actions);
         self::assertInstanceOf(Action::class, $actions[0]);
         self::assertInstanceOf(Action::class, $actions[1]);
-        self::assertInstanceOf(Action::class, $actions[2]);
         self::assertSame('preview', $actions[0]->getName());
-        self::assertSame('download', $actions[1]->getName());
-        self::assertSame('openDocumentAnalysisResult', $actions[2]->getName());
-        self::assertInstanceOf(ActionGroup::class, $actions[3]);
-        self::assertSame('Действия', $actions[3]->getLabel());
-        self::assertArrayHasKey('startDocumentAnalysis', $actions[3]->getFlatActions());
-        self::assertArrayHasKey('retryDocumentAnalysis', $actions[3]->getFlatActions());
-        self::assertArrayHasKey('acceptDocumentAnalysisReview', $actions[3]->getFlatActions());
-        self::assertArrayHasKey('rejectDocumentAnalysisReview', $actions[3]->getFlatActions());
+        self::assertSame('openDocumentAnalysisResult', $actions[1]->getName());
+        self::assertInstanceOf(ActionGroup::class, $actions[2]);
+        self::assertSame('Действия', $actions[2]->getLabel());
+        self::assertArrayHasKey('download', $actions[2]->getFlatActions());
+        self::assertArrayHasKey('startDocumentAnalysis', $actions[2]->getFlatActions());
+        self::assertArrayHasKey('retryDocumentAnalysis', $actions[2]->getFlatActions());
+        self::assertArrayHasKey('acceptDocumentAnalysisReview', $actions[2]->getFlatActions());
+        self::assertArrayHasKey('rejectDocumentAnalysisReview', $actions[2]->getFlatActions());
     }
 
     public function test_latest_document_run_controls_status_polling_and_actions(): void

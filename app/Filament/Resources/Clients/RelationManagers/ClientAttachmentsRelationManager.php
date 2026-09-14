@@ -162,11 +162,6 @@ final class ClientAttachmentsRelationManager extends RelationManager
                         'mimeType' => strtolower($record->mime_type),
                     ]))
                     ->visible(fn (MedicalAttachment $record): bool => GetTemporaryAttachmentUrl::supportsPreview($record->mime_type)),
-                Action::make('download')
-                    ->label('Скачать')
-                    ->action(function (MedicalAttachment $record) use ($actor): mixed {
-                        return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
-                    }),
                 ClinicalAiResultAction::make(
                     name: 'openDocumentAnalysisResult',
                     actor: $actor,
@@ -177,6 +172,11 @@ final class ClientAttachmentsRelationManager extends RelationManager
                 )
                     ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
                 ActionGroup::make([
+                    Action::make('download')
+                        ->label('Скачать')
+                        ->action(function (MedicalAttachment $record) use ($actor): mixed {
+                            return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
+                        }),
                     Action::make('startDocumentAnalysis')
                         ->label('Запустить анализ')
                         ->icon('heroicon-o-sparkles')
